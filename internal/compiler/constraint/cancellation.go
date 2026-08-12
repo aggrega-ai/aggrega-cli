@@ -40,8 +40,9 @@ package constraint
 //
 // # Cancellation is not a host power
 //
-// It is never declared on a check's capability axis. A host power is something a
-// check's predicate reads in order to decide; this is something the caller tells
+// It is never declared on the host-power axis, which sits on the stage whose
+// fact production exercises the power. A host power is something the compiler
+// reaches for in order to make a fact true; this is something the caller tells
 // the traversal, and no check ever sees it.
 type Cancellation func() error
 

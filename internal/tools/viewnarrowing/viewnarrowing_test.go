@@ -242,7 +242,7 @@ func TestTheVerdictTracksTheDeclarationAndNotTheFile(t *testing.T) {
 
 import "github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 
-var Rule = constraint.Check[constraint.%[1]s, constraint.NoHostPowers, constraint.NodeSocketSubject]{
+var Rule = constraint.Check[constraint.%[1]s, constraint.NodeSocketSubject]{
 	Run: func(v constraint.%[1]s, s constraint.NodeSocketSubject) []constraint.Objection {
 		componentType, declared := v.InstanceComponentType(s.NodeID())
 		if !declared {

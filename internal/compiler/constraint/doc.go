@@ -7,10 +7,10 @@
 //
 // # A check is a value, and its declaration is the whole of it
 //
-// A check is a [Check] value naming three things: the facts it reads, the host
-// powers it needs, and what it is invoked once per. It carries the sentinel of
-// the rule it enforces and what a violation does to the build, and it carries
-// no stage, no caller list and no traversal.
+// A check is a [Check] value naming two things: the facts it reads, and what it
+// is invoked once per. It carries the sentinel of the rule it enforces and what
+// a violation does to the build, and it carries no stage, no caller list and no
+// traversal.
 //
 // That absence is the mechanism. Where a check runs follows from the facts it
 // declared, because a view exposes exactly the facts complete at one point in
@@ -18,6 +18,15 @@
 // follows from that same point; and what it iterates follows from its subject.
 // A field asserting any of the three could disagree with the value derived from
 // the declaration, and the disagreement would be visible to nobody.
+//
+// A check names no host power either, and that is a property of the framework
+// rather than an omission from the type. A power — the filesystem, the plugin
+// cache, an artifact fetch, workspace configuration, a call across the plugin
+// boundary — is what the compiler reaches for while it produces facts, so it is
+// declared on the stage whose production exercises it. A check receives its
+// view and its subject and nothing else, so every value it reads was already
+// produced for it, including every value some production used a power to
+// obtain.
 //
 // # One sealed subject type per derived kind
 //

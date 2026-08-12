@@ -126,6 +126,12 @@ type stageDecl struct {
 	// slot on the fact would let them disagree about what that shared
 	// production is allowed to do, and the disagreement would be invisible.
 	//
+	// A fact has no slot for one in any case: factDecl declares a stage, a
+	// carrier, a subject key and a result, and there is nowhere in that to
+	// record a filesystem read. So a power cannot arrive through a fact even by
+	// accident. Declaring it here is not the preferred route to the axis; it is
+	// the only one.
+	//
 	// Each stage states what its OWN production exercises, not what it adds to
 	// the stage it extends. The two readings differ, and the accumulating one
 	// is the weaker: under it the last stage reports needing nothing new, which

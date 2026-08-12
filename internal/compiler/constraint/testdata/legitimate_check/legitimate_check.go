@@ -24,7 +24,7 @@ type view struct{ names []string }
 
 // UnreadParameter is the check as a value: the rule's sentinel, what a violation
 // does to the build, and the predicate over the facts and one subject.
-var UnreadParameter = constraint.Check[view, constraint.NoHostPowers, constraint.DocumentSubject]{
+var UnreadParameter = constraint.Check[view, constraint.DocumentSubject]{
 	Sentinel: ErrUnreadParameter,
 	Severity: constraint.SeverityWarning,
 	Run: func(v view, s constraint.DocumentSubject) []constraint.Objection {

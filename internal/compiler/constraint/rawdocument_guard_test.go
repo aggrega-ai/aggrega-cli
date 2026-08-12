@@ -373,8 +373,9 @@ func TestNoAccessorReturnsAnUnadmittedShape(t *testing.T) {
 			functionTypeViolations++
 			t.Errorf("%s returns a function type.\n"+
 				"INVARIANT: an accessor returns a fact and never a callable. A fact is a value already "+
-				"read out of the pipeline product; a callable is a power the caller invokes, and the "+
-				"powers a check holds are declared on their own axis rather than reached through a view.\n"+
+				"read out of the pipeline product; a callable is a power the caller invokes, and a "+
+				"power is declared on the stage whose fact production exercises it rather than "+
+				"reached through a view.\n"+
 				"CONSEQUENCE: a check handed a callable holds whatever that callable reaches — the "+
 				"filesystem, the plugin cache, workspace configuration — and none of it appears in the "+
 				"check's declared view. The declaration is what placement, caller coverage and traversal "+

@@ -25,7 +25,7 @@ var ErrRuleBroken = errors.New("rule broken")
 type view struct{ names []string }
 
 // NodeRule declares the node kind: once per component instance.
-var NodeRule = constraint.Check[view, constraint.NoHostPowers, constraint.NodeSubject]{
+var NodeRule = constraint.Check[view, constraint.NodeSubject]{
 	Sentinel: ErrRuleBroken,
 	Severity: constraint.SeverityFatal,
 	Run: func(v view, s constraint.NodeSubject) []constraint.Objection {

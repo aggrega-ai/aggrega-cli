@@ -75,8 +75,11 @@ type LeafProvenance struct {
 //
 // Host powers — the filesystem, the plugin cache, workspace
 // configuration — are never facts and never appear here. They are
-// declared on a separate axis, so a view cannot be the route to one. See
-// [NoHostPowers].
+// declared on a separate axis, so a view cannot be the route to one. A
+// power is declared on the stage whose own fact production exercises it,
+// and every stage states its value, including a stage that reaches for
+// nothing. A check declares none: it receives its view and its subject and
+// nothing else, so every value it reads was already produced for it.
 type View interface{}
 
 // DocumentView exposes the facts complete at the document stage: one

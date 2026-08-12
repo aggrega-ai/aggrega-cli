@@ -26,7 +26,7 @@ type localView struct{ names []string }
 func (l localView) EntityAssertionNameSet(string) []string { return l.names }
 
 // LocallyDeclaredViewRule declares that local view.
-var LocallyDeclaredViewRule = constraint.Check[localView, constraint.NoHostPowers, constraint.DocumentAssertionSubject]{
+var LocallyDeclaredViewRule = constraint.Check[localView, constraint.DocumentAssertionSubject]{
 	Sentinel: ErrAssertionNameCollision,
 	Severity: constraint.SeverityFatal,
 	Run: func(v localView, s constraint.DocumentAssertionSubject) []constraint.Objection {
@@ -46,7 +46,7 @@ var LocallyDeclaredViewRule = constraint.Check[localView, constraint.NoHostPower
 // cannot place a fact the chain does not carry, so it reports the fact rather
 // than a stage — and reporting it is what keeps a misspelling from being read as
 // a check needing nothing.
-var MisspelledFactRule = constraint.Check[constraint.RenderedView, constraint.NoHostPowers, constraint.BoundaryProviderPathSubject]{
+var MisspelledFactRule = constraint.Check[constraint.RenderedView, constraint.BoundaryProviderPathSubject]{
 	Sentinel: ErrFileCollision,
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.RenderedView, s constraint.BoundaryProviderPathSubject) []constraint.Objection {

@@ -28,7 +28,7 @@ func TestRunOnDocumentRunsOnceAgainstThePresentedDocument(t *testing.T) {
 	var seenFile, seenLocator string
 
 	got := RunOnDocument("catalog/aggregate.yaml", view{paramNames: []string{"db_size"}},
-		Check[view, NoHostPowers, DocumentSubject]{
+		Check[view, DocumentSubject]{
 			Sentinel: errRuleBroken,
 			Severity: SeverityFatal,
 			Run: func(v view, s DocumentSubject) []Objection {
@@ -75,7 +75,7 @@ func TestRunOnDocumentReturnsNilWhenTheCheckRaisesNothing(t *testing.T) {
 	t.Parallel()
 
 	got := RunOnDocument("aggregate.yaml", struct{}{},
-		Check[struct{}, NoHostPowers, DocumentSubject]{
+		Check[struct{}, DocumentSubject]{
 			Sentinel: errRuleBroken,
 			Severity: SeverityWarning,
 			Run:      func(struct{}, DocumentSubject) []Objection { return nil },

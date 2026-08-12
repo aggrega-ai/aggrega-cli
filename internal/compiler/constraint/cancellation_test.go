@@ -63,8 +63,8 @@ func largeCancellationFixture(n int) traversalFixture {
 // does, and records the invocation. It raises rather than returning nil so that a
 // cancelled walk is shown to discard objections it had already collected — a
 // check that raised nothing would make that assertion vacuous.
-func countingCheck[S Subject](visit func()) Check[traversalView, NoHostPowers, S] {
-	return Check[traversalView, NoHostPowers, S]{
+func countingCheck[S Subject](visit func()) Check[traversalView, S] {
+	return Check[traversalView, S]{
 		Sentinel: errRuleBroken,
 		Severity: SeverityFatal,
 		Run: func(_ traversalView, s S) []Objection {

@@ -13,11 +13,10 @@ import (
 
 // This file holds this package's rules expressed as constraint declarations:
 // each is a value naming the sentinel it enforces, what a violation does to the
-// build, the facts it reads, the host powers it needs, and what it is invoked
-// once per. Declared that way, a rule's point in the compilation follows from
-// the facts it reads rather than from where a call happens to sit, and the
-// provenance its diagnostic carries is supplied to it rather than assembled in
-// its body.
+// build, the facts it reads, and what it is invoked once per. Declared that
+// way, a rule's point in the compilation follows from the facts it reads rather
+// than from where a call happens to sit, and the provenance its diagnostic
+// carries is supplied to it rather than assembled in its body.
 //
 // Every rule this package enforces now reaches that shape, because every input
 // their predicates read is a declared fact: a socket's and a slot's declared
@@ -73,7 +72,6 @@ import (
 // inconsistency into an authoring diagnostic.
 var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 	constraint.GraphView,
-	constraint.NoHostPowers,
 	constraint.EdgeSubject,
 ]{
 	Sentinel: ErrSelectorViolation(),
@@ -125,7 +123,6 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 // is no declaration to evaluate.
 var AttachmentSatisfiesFeatureApplicability = constraint.Check[
 	constraint.GraphView,
-	constraint.NoHostPowers,
 	constraint.NodeAttachmentSubject,
 ]{
 	Sentinel: ErrSelectorViolation(),
@@ -167,7 +164,6 @@ var AttachmentSatisfiesFeatureApplicability = constraint.Check[
 // question's finding with the other's evidence.
 var SlotFillSatisfiesSlotSelector = constraint.Check[
 	constraint.GraphView,
-	constraint.NoHostPowers,
 	constraint.NodeSlotSubject,
 ]{
 	Sentinel: ErrSlotSelectorUnsatisfied(),
@@ -226,7 +222,6 @@ var SlotFillSatisfiesSlotSelector = constraint.Check[
 // attachment either: the two have different remediations.
 var RequiredAttachmentTypeAttached = constraint.Check[
 	constraint.GraphView,
-	constraint.NoHostPowers,
 	constraint.NodeSubject,
 ]{
 	Sentinel: resolver.ErrMissingRequiredFeature(),
@@ -277,7 +272,6 @@ var RequiredAttachmentTypeAttached = constraint.Check[
 // it has to be rather than moving where it may run.
 var AttachmentRequirementWellFormed = constraint.Check[
 	constraint.NormalizedView,
-	constraint.NoHostPowers,
 	constraint.NodeSubject,
 ]{
 	Sentinel: ErrMalformedAttachmentRequirement(),
@@ -322,7 +316,6 @@ var AttachmentRequirementWellFormed = constraint.Check[
 // of a named type at any name; a slot demands one named binding point be bound.
 var RequiredAttachmentSlotBound = constraint.Check[
 	constraint.GraphView,
-	constraint.NoHostPowers,
 	constraint.NodeSlotSubject,
 ]{
 	Sentinel: ErrRequiredSlotUnfilled(),
@@ -361,7 +354,6 @@ var RequiredAttachmentSlotBound = constraint.Check[
 // and the provenance record is the whole of the actionable signal.
 var OverriddenAnnotationAdvisory = constraint.Check[
 	constraint.GraphView,
-	constraint.NoHostPowers,
 	constraint.NodeAttachmentPillarLeafSubject,
 ]{
 	Sentinel: ErrOverriddenAnnotation(),

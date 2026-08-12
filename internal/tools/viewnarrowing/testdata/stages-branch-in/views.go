@@ -7,7 +7,7 @@
 // joins is not stated by the embedding.
 package branchin
 
-type Check[V View, C any, S any] struct {
+type Check[V View, S any] struct {
 	Run func(V, S) []string
 }
 

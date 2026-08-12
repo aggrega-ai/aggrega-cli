@@ -55,6 +55,6 @@ func newDocumentSubject(sourceFile string) DocumentSubject {
 // one document, so there is no interval to cut: a caller that wants to stop
 // stops before presenting the next document. A parameter here would be one this
 // function never reads.
-func RunOnDocument[V View, C any](sourceFile string, view V, check Check[V, C, DocumentSubject]) []Objection {
+func RunOnDocument[V View](sourceFile string, view V, check Check[V, DocumentSubject]) []Objection {
 	return check.Run(view, newDocumentSubject(sourceFile))
 }

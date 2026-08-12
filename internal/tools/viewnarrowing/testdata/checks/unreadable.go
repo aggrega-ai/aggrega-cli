@@ -24,7 +24,7 @@ var (
 // is settled outside its own body. It must be reported as unreadable rather than
 // cleared: a verdict drawn from the accessors visible here would be a verdict
 // over a requirement set known to be incomplete.
-var ViewHandedToAHelperRule = constraint.Check[constraint.HydratedView, constraint.NoHostPowers, constraint.NodeLocalsKeySubject]{
+var ViewHandedToAHelperRule = constraint.Check[constraint.HydratedView, constraint.NodeLocalsKeySubject]{
 	Sentinel: ErrLocalsOrder,
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.HydratedView, s constraint.NodeLocalsKeySubject) []constraint.Objection {
@@ -42,7 +42,7 @@ func orderedCorrectly(v constraint.HydratedView, node string) bool {
 // SubjectOnlyRule reads nothing from its view. Its declaration therefore places
 // it at nothing — any view satisfies an empty requirement — which is a different
 // answer from over-declaration and is reported as its own.
-var SubjectOnlyRule = constraint.Check[constraint.GraphView, constraint.NoHostPowers, constraint.EdgeSubject]{
+var SubjectOnlyRule = constraint.Check[constraint.GraphView, constraint.EdgeSubject]{
 	Sentinel: ErrEdgeSocketUndeclared,
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.EdgeSubject) []constraint.Objection {
@@ -55,7 +55,7 @@ var SubjectOnlyRule = constraint.Check[constraint.GraphView, constraint.NoHostPo
 
 // PredicateElsewhereRule supplies its predicate as a named function rather than
 // writing it in place, so its body is not here to read.
-var PredicateElsewhereRule = constraint.Check[constraint.HydratedView, constraint.NoHostPowers, constraint.NodeProvidesKeySubject]{
+var PredicateElsewhereRule = constraint.Check[constraint.HydratedView, constraint.NodeProvidesKeySubject]{
 	Sentinel: ErrProvidesUnresolved,
 	Severity: constraint.SeverityWarning,
 	Run:      runProvidesResolved,

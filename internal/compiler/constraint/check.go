@@ -4,7 +4,7 @@
 package constraint
 
 // Check is a constraint check as a value: the sentinel naming the rule, what a
-// violation of it does to the build, and the predicate itself. Its three type
+// violation of it does to the build, and the predicate itself. Its two type
 // parameters are the whole of its declaration.
 //
 // V names the facts the check reads — one of the view interfaces, each of which
@@ -12,10 +12,16 @@ package constraint
 // view exposes named facts and never a raw document, the type parameter states
 // what the check reads exhaustively rather than approximately.
 //
-// C names the host powers the check needs. Reading the filesystem, resolving a
-// plugin, loading workspace configuration are declared here and never folded
-// into V, so a view cannot be the route to one. See [NoHostPowers], which is
-// what a check declares when it needs none — the ordinary case.
+// There is no parameter for a host power, because a check declares none.
+// Reading the filesystem, resolving a plugin, fetching an artifact, reading
+// workspace configuration are what the compiler reaches for while it produces
+// facts, never what a predicate does; so the power is declared on the stage
+// whose fact production exercises it, and a stage reaching for nothing declares
+// that rather than omitting it. A check receives its view and its subject and
+// nothing else, so every value it reads was already produced for it, including
+// every value some production used a power to obtain. A view is not the route
+// to a power either: no accessor hands back a callable, and a guard in this
+// package refuses one that does.
 //
 // S names what the check is invoked once per. A subject also carries the
 // provenance of the thing it stands for, which is how an objection acquires a
@@ -50,14 +56,11 @@ package constraint
 // own unexported marker, so a check declaring one kind cannot be handed
 // another, and no type declared outside this package satisfies Subject at all.
 //
-// C is unconstrained, and the reason is worth stating rather than leaving as an
-// omission. There is one capability and the axis is expected to stay empty. A
-// marker interface closing the axis would add a seal that buys nothing, because
-// the axis is already closed where it matters: invoking a check means supplying
-// a value of C, and the framework is what invokes, so a check declaring a power
-// the framework cannot construct cannot be invoked at all. The bound sits at
-// the supply point rather than on the type.
-type Check[V View, C any, S Subject] struct {
+// Both parameters are named at every use, because Go has no type-parameter
+// defaults. That is the reason each one has to earn its place: a parameter
+// carrying no value position would still have to be written out at every
+// declaration, so the cost of an idle one is paid by every author.
+type Check[V View, S Subject] struct {
 	// Sentinel names the rule the check enforces. An objection the check
 	// raises carries it, and it is the identity a caller matches on.
 	Sentinel error
@@ -70,7 +73,8 @@ type Check[V View, C any, S Subject] struct {
 	// satisfies the rule.
 	//
 	// It takes exactly the view and the subject. Everything else a check could
-	// want is either a fact, and therefore on the view, or a host power, and
-	// therefore declared in C.
+	// want is either a fact, and therefore on the view, or a host power, which
+	// a check never declares — a power is declared on the stage whose fact
+	// production exercises it, and no predicate holds one.
 	Run func(V, S) []Objection
 }

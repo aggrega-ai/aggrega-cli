@@ -36,7 +36,7 @@ Accessors take arguments rather than being bound to a subject, because facts are
 
 One fact, one accessor, with no convenience variants. A fact exposed both as a predicate and as a set-returning form would be two code paths for one question. An accessor may return a composite record where the fact itself is composite; that is one fact, not several.
 
-Host powers — the filesystem, the plugin cache, workspace configuration — are never facts and never appear here. They are declared on a separate axis, so a view cannot be the route to one. See [NoHostPowers].`
+Host powers — the filesystem, the plugin cache, workspace configuration — are never facts and never appear here. They are declared on a separate axis, so a view cannot be the route to one. A power is declared on the stage whose own fact production exercises it, and every stage states its value, including a stage that reaches for nothing. A check declares none: it receives its view and its subject and nothing else, so every value it reads was already produced for it.`
 )
 
 // emitViews renders the view chain: one interface per stage, nesting by

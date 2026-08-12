@@ -827,16 +827,23 @@ func nonVariadicParams(fn *ast.FuncDecl) int {
 }
 
 // checkSubjectTypeArgument reports the subject type a Check instantiation names,
-// which is its third type argument.
+// which is its last type argument.
+//
+// The arity is asserted rather than the position being counted from the end of
+// whatever it finds, because a wrong arity here is silent: this walk reports
+// "not a Check" for a shape it does not recognise, so an instantiation that
+// gained or lost a parameter would simply stop being discovered and the guards
+// reading this would go on passing over an empty set. The callers each refuse a
+// zero for that reason, and this assertion is what makes the refusal legible.
 func checkSubjectTypeArgument(expr ast.Expr) (string, bool) {
 	instantiation, ok := expr.(*ast.IndexListExpr)
-	if !ok || len(instantiation.Indices) != 3 {
+	if !ok || len(instantiation.Indices) != 2 {
 		return "", false
 	}
 	if base, ok := instantiation.X.(*ast.Ident); !ok || base.Name != "Check" {
 		return "", false
 	}
-	subject, ok := instantiation.Indices[2].(*ast.Ident)
+	subject, ok := instantiation.Indices[1].(*ast.Ident)
 	if !ok {
 		return "", false
 	}

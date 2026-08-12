@@ -7,7 +7,7 @@
 // sufficient view, so reading this shape must refuse rather than pick one.
 package branchout
 
-type Check[V View, C any, S any] struct {
+type Check[V View, S any] struct {
 	Run func(V, S) []string
 }
 

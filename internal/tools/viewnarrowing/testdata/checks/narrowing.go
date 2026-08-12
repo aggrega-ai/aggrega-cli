@@ -29,7 +29,7 @@ var (
 // OverDeclaringSocketRule declares the graph view and reads only facts that are
 // complete two stages earlier, so it is placed later in the compilation than the
 // facts it reads require. That is the whole defect being read for.
-var OverDeclaringSocketRule = constraint.Check[constraint.GraphView, constraint.NoHostPowers, constraint.NodeSocketSubject]{
+var OverDeclaringSocketRule = constraint.Check[constraint.GraphView, constraint.NodeSocketSubject]{
 	Sentinel: ErrSocketRequirement,
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeSocketSubject) []constraint.Objection {
@@ -49,7 +49,7 @@ var OverDeclaringSocketRule = constraint.Check[constraint.GraphView, constraint.
 // over-declaration case while proving nothing. It declares the topology view and
 // reads a topology-stage fact, so the narrowest view that suffices is the one it
 // declares and nothing is reported about it.
-var ExactlyDeclaredParameterRule = constraint.Check[constraint.TopologyView, constraint.NoHostPowers, constraint.NodeParameterSubject]{
+var ExactlyDeclaredParameterRule = constraint.Check[constraint.TopologyView, constraint.NodeParameterSubject]{
 	Sentinel: ErrParameterUnresolved,
 	Severity: constraint.SeverityWarning,
 	Run: func(v constraint.TopologyView, s constraint.NodeParameterSubject) []constraint.Objection {
@@ -74,7 +74,7 @@ var ExactlyDeclaredParameterRule = constraint.Check[constraint.TopologyView, con
 // expressions would find the component type here and miss the slot predicate,
 // reporting a narrower requirement set than the body actually has. That is a
 // sharper failure than seeing nothing, because it looks like an answer.
-var AccessorThroughAVariableRule = constraint.Check[constraint.GraphView, constraint.NoHostPowers, constraint.NodeSlotSubject]{
+var AccessorThroughAVariableRule = constraint.Check[constraint.GraphView, constraint.NodeSlotSubject]{
 	Sentinel: ErrSlotRequirement,
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeSlotSubject) []constraint.Objection {

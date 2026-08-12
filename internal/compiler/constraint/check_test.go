@@ -21,7 +21,7 @@ import (
 func TestCheckCarriesNoStageNoCallerListAndNoTraversal(t *testing.T) {
 	t.Parallel()
 
-	typ := reflect.TypeOf(Check[DocumentView, NoHostPowers, DocumentSubject]{})
+	typ := reflect.TypeOf(Check[DocumentView, DocumentSubject]{})
 
 	got := make([]string, 0, typ.NumField())
 	for i := range typ.NumField() {
@@ -31,9 +31,8 @@ func TestCheckCarriesNoStageNoCallerListAndNoTraversal(t *testing.T) {
 
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Check's fields are %v; want exactly %v.\n"+
-			"INVARIANT: a check declares the facts it reads, the host powers it needs and what it is "+
-			"invoked once per, and nothing else. It carries no stage, no caller list and no "+
-			"traversal.\n"+
+			"INVARIANT: a check declares the facts it reads and what it is invoked once per, and "+
+			"nothing else. It carries no stage, no caller list and no traversal.\n"+
 			"CONSEQUENCE: the point a check runs at follows from its view, its caller coverage follows "+
 			"from that point, and what it iterates follows from its subject. A field asserting any of "+
 			"the three can disagree with the value computed from the declaration, and nothing detects "+
@@ -45,11 +44,12 @@ func TestCheckCarriesNoStageNoCallerListAndNoTraversal(t *testing.T) {
 // TestCheckRunSignatureIsExactlyTheViewAndTheSubject pins the other half of the
 // declaration: a check's predicate receives the facts and one subject instance,
 // and hands back objections. Anything else it might receive would be a fact the
-// view does not name or a host power the capability axis does not declare.
+// view does not name, or a host power — which no check declares at all, because
+// a power belongs to the stage whose fact production exercises it.
 func TestCheckRunSignatureIsExactlyTheViewAndTheSubject(t *testing.T) {
 	t.Parallel()
 
-	typ := reflect.TypeOf(Check[DocumentView, NoHostPowers, DocumentSubject]{})
+	typ := reflect.TypeOf(Check[DocumentView, DocumentSubject]{})
 	run, ok := typ.FieldByName("Run")
 	if !ok {
 		t.Fatalf("Check has no Run field, so there is no predicate to check")
@@ -82,7 +82,7 @@ func TestCheckDeclaredOverTheDocumentKindRunsThroughThePushEntry(t *testing.T) {
 
 	type view struct{ declaredParameters []string }
 
-	unread := Check[view, NoHostPowers, DocumentSubject]{
+	unread := Check[view, DocumentSubject]{
 		Sentinel: errRuleBroken,
 		Severity: SeverityWarning,
 		Run: func(v view, s DocumentSubject) []Objection {
