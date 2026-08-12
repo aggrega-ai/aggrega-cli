@@ -37,7 +37,7 @@ var composeOmittedProvenanceKeys = []string{
 //   - Sourced-mode caller (this package's renderSourced): every service
 //     in the merged base+overlay maps to the sole consumer nodeCtx —
 //     the single-origin case. All services get consumer labels.
-//   - Future Release-level merger of cross-context fragments would
+//   - A future merge of fragments drawn from several contexts would
 //     populate one entry per service pointing at the originating
 //     fragment's nodeCtx — services emitted by an FR map to the FR's
 //     nodeCtx; services emitted by a regular Recipe map to that

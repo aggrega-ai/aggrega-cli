@@ -41,7 +41,8 @@
 // provider declares that it merges its dispatch group's per-node output, and
 // merged output means the per-node halves are inputs to the merge rather than
 // artifacts in their own right. Only the assembled docker-compose.yaml is
-// emitted.
+// emitted, and it lands at the dispatch path — one file for the whole dispatch
+// group, however many nodes contributed to it.
 //
 // # Determinism
 //

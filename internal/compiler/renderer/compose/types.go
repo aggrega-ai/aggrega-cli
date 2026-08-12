@@ -12,10 +12,10 @@ import (
 )
 
 // ComposeFile is a Compose Specification document (no `version:` key — the
-// modern compose-spec deprecates it; Compose v2.2+ ignores it). Fragment
-// outputs from SynthesizeWorkload populate Services/Volumes/Networks with the
-// node's contributions; the Release-level merger collects fragments and emits a
-// single ComposeFile at the Release output root.
+// modern compose-spec deprecates it; Compose v2.2+ ignores it). It is the shape
+// on both sides of the merge: SynthesizeWorkloadCore fills one with a single
+// node's contributions, and AssembleBoundaryCore folds those into the one this
+// package emits.
 type ComposeFile struct {
 	Services map[string]Service `yaml:"services,omitempty"`
 	Volumes  map[string]Volume  `yaml:"volumes,omitempty"`
@@ -26,8 +26,9 @@ type ComposeFile struct {
 // Service is one compose service definition. Fields populated only as needed
 // — omitempty on every field so per-node fragments stay minimal.
 //
-// The set of fields here is the currently synthesisable surface. Expansion
-// (e.g., secrets, deploy) lands as needed in future iterations.
+// The set of fields here is the currently synthesisable surface, and it grows
+// as needed: deploy is synthesised today, while a service-level secrets block
+// is not yet part of it.
 type Service struct {
 	Image           string                   `yaml:"image,omitempty"`
 	PullPolicy      string                   `yaml:"pull_policy,omitempty"`
@@ -265,10 +266,12 @@ type Volume struct {
 	Labels     map[string]string `yaml:"labels,omitempty"`
 }
 
-// Network is a top-level docker network declaration. The Release-level merger
-// emits one network per boundary, named after the boundary's
-// `aggrega.ai/namespace` annotation when present; per-node fragments do not
-// declare networks.
+// Network is a top-level docker network declaration. The merge declares one
+// network per distinct `aggrega.ai/namespace` annotation among the contributing
+// nodes, and attaches each node's services to the network its own annotation
+// names; a node carrying no such annotation attaches to a network named for the
+// dispatch path instead. So a dispatch group holds as many networks as its nodes
+// name between them, which is one only when they agree.
 type Network struct {
 	Driver     string            `yaml:"driver,omitempty"`
 	DriverOpts map[string]string `yaml:"driver_opts,omitempty"`
