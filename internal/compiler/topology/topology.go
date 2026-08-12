@@ -798,6 +798,29 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 				entity, fmt.Sprintf(".%s", nodeID))...)
 		}
 
+		// Attachment socket names on the same authored block. An attachment may
+		// only name a socket the Feature it attaches declares, wherever the
+		// attachment was written — so the rule is reached through the resolver's
+		// own validator rather than restated, and a module's attachment cannot be
+		// judged by a different standard than an Aggregate's.
+		//
+		// It is asked here because it cannot be asked earlier: the pre-flatten walk
+		// reads the Aggregate and Release documents, and a module's document is not
+		// among them until the loader has brought it in. Left unasked, an invented
+		// socket on a module's attachment does not merely go unreported — the
+		// feature-projected edge is drawn and reaches the consuming node's render
+		// context, so the mistake lands in the emitted artifact.
+		if catalog.Feature != nil {
+			for _, att := range flat.FeatureAttachments[nodeID] {
+				if att.Feature.Uses.Len() == 0 {
+					continue
+				}
+				errs = append(errs, resolver.ValidateFeatureUsesAgainstSchema(
+					entity, fmt.Sprintf(".%s.features[%q].uses", nodeID, att.InstanceName),
+					att.Feature.Uses, att.Feature.Type, catalog)...)
+			}
+		}
+
 		// Component values — validated against the sub-aggregate's own resolved
 		// parameter context (carried on the node), so parameter-dependent
 		// predicates evaluate correctly rather than predicate-inert.

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cov-release-contrib-module
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: cov-app-contrib-module
+  manifest: cov-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        data.consumer: {}
+        data.store: {}

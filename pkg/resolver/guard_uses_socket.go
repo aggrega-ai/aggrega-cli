@@ -340,16 +340,22 @@ func collectReleaseScopeAttachments(release *types.Release) []scopeAttachment {
 // requires the socket to appear in the Component's usesSchema — an author-named
 // socket is accepted, and the IR edge records that the socket was not
 // catalog-declared so a governance policy can refuse it. Attachment `uses` goes to
-// [validateFeatureUsesAgainstSchema], which still halts on a socket the Feature
+// [ValidateFeatureUsesAgainstSchema], which still halts on a socket the Feature
 // does not declare.
 //
-// Every attachment surface is walked, not only the component instance's own: an
-// attachment declared at a subsystem, at a Release boundary, or on a Release
-// boundary component names sockets on the same Feature entity and is validated
-// against the same usesSchema. Where the attachment is declared changes which
-// components its edge is contributed from; it does not change what a valid socket
-// name is, so one rule covers all four attachment surfaces and its coverage does
-// not depend on the author's choice of scope.
+// Every attachment surface these two documents declare is walked, not only the
+// component instance's own: an attachment declared at a subsystem, at a Release
+// boundary, or on a Release boundary component names sockets on the same Feature
+// entity and is validated against the same usesSchema. Where the attachment is
+// declared changes which components its edge is contributed from; it does not
+// change what a valid socket name is, so one rule covers every attachment surface
+// and its coverage does not depend on the author's choice of scope.
+//
+// One attachment surface is out of this walk's reach rather than out of the rule's:
+// a component inside a sub-aggregate module, whose document is loaded only as the
+// graph is flattened. Its attachments are validated once flattening has made them
+// visible, through the same exported validator, so the coverage boundary is a
+// division of labour rather than a hole.
 func guardUsesSocket(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil {
@@ -361,13 +367,13 @@ func guardUsesSocket(na types.NormalizedAggregate, release *types.Release, catal
 
 	if catalog.Feature != nil {
 		for _, sa := range collectAggregateScopeAttachments(na) {
-			errs = append(errs, validateFeatureUsesAgainstSchema(
+			errs = append(errs, ValidateFeatureUsesAgainstSchema(
 				entity, sa.field, sa.uses, sa.featType, catalog)...)
 		}
 		if release != nil {
 			relEntity := fmt.Sprintf("Release %s", release.Metadata.Name)
 			for _, sa := range collectReleaseScopeAttachments(release) {
-				errs = append(errs, validateFeatureUsesAgainstSchema(
+				errs = append(errs, ValidateFeatureUsesAgainstSchema(
 					relEntity, sa.field, sa.uses, sa.featType, catalog)...)
 			}
 		}
@@ -395,7 +401,7 @@ func guardUsesSocket(na types.NormalizedAggregate, release *types.Release, catal
 		if catalog.Feature != nil {
 			for featName, feat := range comp.Features.All() {
 				if feat.Uses.Len() > 0 {
-					errs = append(errs, validateFeatureUsesAgainstSchema(
+					errs = append(errs, ValidateFeatureUsesAgainstSchema(
 						entity,
 						fmt.Sprintf("%s.features[%q].uses", base, featName),
 						feat.Uses,
@@ -434,7 +440,7 @@ func guardUsesSocket(na types.NormalizedAggregate, release *types.Release, catal
 // The relaxation is scoped to this surface alone. A Release may still only wire
 // within a socket the consuming component declares ([guardReleaseUsesSocket]), and
 // a Feature attachment may still only name a socket the Feature declares
-// ([validateFeatureUsesAgainstSchema]) — separate functions with their own inline
+// ([ValidateFeatureUsesAgainstSchema]) — separate functions with their own inline
 // checks, so those halts hold structurally rather than by care. The asymmetry is
 // deliberate: the Aggregate author owns the application's topology, while the
 // operator surface configures and wires within an architecture it did not author.
@@ -454,13 +460,20 @@ func ValidateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[t
 	return nil
 }
 
-// validateFeatureUsesAgainstSchema validates an attachment's `uses` block against
+// ValidateFeatureUsesAgainstSchema validates an attachment's `uses` block against
 // the attached catalog Feature's usesSchema. Two failure modes — the Feature
 // declares no usesSchema, so no socket may be named; or it declares one and the
 // attachment names a socket absent from it — and a silent skip on an unknown
 // catalog Feature type. Used for every attachment on the one `features` surface,
 // whatever the attachment produces: they all resolve through the Feature catalog
 // kind.
+//
+// It is exported because the same rule is asked at two stages, and one
+// implementation serves both. Every attachment surface an Aggregate or a Release
+// declares is reachable while those documents are in view and is validated there;
+// an attachment authored inside a sub-aggregate module is not, because that
+// module's document is loaded only as the graph is flattened. Both stages call this
+// function, so neither can hold a different idea of what a valid socket name is.
 //
 // Both halts survive the relaxation on the component's own `uses` surface, and
 // their survival is deliberate. An attachment does not author the application's
@@ -469,7 +482,7 @@ func ValidateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[t
 // therefore is not a stale twin of [ValidateUsesAgainstSchema] left un-relaxed by
 // accident — the two enforce a same-shaped condition on surfaces with different
 // authority, and separating them is what lets one relax without the other.
-func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.UsesSocketValue], featType string, catalog CatalogLookup) []*ResolverError {
+func ValidateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.UsesSocketValue], featType string, catalog CatalogLookup) []*ResolverError {
 	catFeat, found := catalog.Feature(featType)
 	if !found {
 		return nil
