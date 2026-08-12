@@ -52,7 +52,7 @@ const (
 	// SubjectNode is the subject kind node, keyed by 8 declared facts.
 	SubjectNode SubjectKind = "node"
 
-	// SubjectNodeSocket is the subject kind (node, socket), keyed by 2 declared facts.
+	// SubjectNodeSocket is the subject kind (node, socket), keyed by 4 declared facts.
 	SubjectNodeSocket SubjectKind = "(node, socket)"
 
 	// SubjectEdge is the subject kind edge, keyed by 6 declared facts.
@@ -64,7 +64,7 @@ const (
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 2 declared facts.
 	SubjectNodeAttachmentSocket SubjectKind = "(node, attachment, socket)"
 
-	// SubjectNodeSlot is the subject kind (node, slot), keyed by 2 declared facts.
+	// SubjectNodeSlot is the subject kind (node, slot), keyed by 4 declared facts.
 	SubjectNodeSlot SubjectKind = "(node, slot)"
 
 	// SubjectNodeMechanism is the subject kind (node, mechanism), keyed by 1 declared fact.

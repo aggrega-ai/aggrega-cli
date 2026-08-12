@@ -399,6 +399,52 @@ var facts = []factDecl{
 			"the labels of the node an edge points at.",
 	},
 	{
+		Name:        "slot-inject-mechanism-names",
+		Stage:       "normalized",
+		SourceField: "types.AttachmentSlot.Inject",
+		Subject:     []string{"node", "slot"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "slot", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "SlotInjectMechanismNames are the delivery mechanisms an attachment " +
+			"slot allows for the material bound to it, in author order.\n\nThe " +
+			"names are an allowlist and nothing more: they constrain which " +
+			"mechanisms a fill may dictate delivery through, never what any of " +
+			"them carries. The shape of one delivery entry is the entity " +
+			"contract's to state, and restating it here would give one rule two " +
+			"homes.\n\nEmpty is a declaration rather than an absence, and a rule " +
+			"reading this fact must not take it for \"unconstrained\" — it is the " +
+			"most constrained answer a slot can give. A slot naming no mechanism " +
+			"states that its material is consumed by the Recipe internally rather " +
+			"than delivered to the workload, so a fill dictating any delivery for " +
+			"it is refused.",
+	},
+	{
+		Name:        "slot-sensitive",
+		Stage:       "normalized",
+		SourceField: "types.AttachmentSlot.Sensitive",
+		Subject:     []string{"node", "slot"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "slot", Type: "string"},
+		},
+		Returns: "bool",
+		Doc: "SlotSensitive reports whether an attachment slot declares that " +
+			"whatever binds it handles secret material.\n\nIt is a marker and not " +
+			"a constraint. No fill is accepted or rejected because of it and no " +
+			"rendered output changes; what it does is make one declaration " +
+			"readable — it is carried onto the slot's projected validation " +
+			"surface as an extension keyword, and it is read when deriving " +
+			"whether the attachment binding the slot handles sensitive " +
+			"material.\n\nFalse is the answer for a slot that says nothing on the " +
+			"point as well as for one that declares the marker off, and the two " +
+			"are deliberately not distinguished: what a rule over this fact asks " +
+			"is whether the slot claims secret material, and a slot silent on it " +
+			"claims none.",
+	},
+	{
 		Name:        "feature-applies-to",
 		Stage:       "normalized",
 		SourceField: "types.FeatureSpec.AppliesTo",
@@ -695,6 +741,70 @@ var facts = []factDecl{
 			"down as the base wrote them, so the authored node already holds " +
 			"every inherited constraint and there is no second, composed view " +
 			"to prefer over it.",
+	},
+	{
+		Name:        "socket-value-schema-text",
+		Stage:       "normalized",
+		SourceField: "types.UsesSchemaEntry.ValueSchema",
+		Subject:     []string{"node", "socket"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "[]byte",
+		Doc: "SocketValueSchemaText is the contract a component type's dependency " +
+			"socket declares over the developer's configuration for one edge, as " +
+			"authored, serialized to opaque bytes — empty when the socket " +
+			"declares none.\n\nThe bytes are opaque by type, so nothing about the " +
+			"declared shape is legible from the fact beyond the document itself. " +
+			"That is what lets a rule whose predicate is \"what was written on " +
+			"this edge conforms to the contract its socket declares\" receive the " +
+			"whole contract without receiving the entity that carries it, and it " +
+			"is why the fact is the authored document rather than a compiled form " +
+			"of it: compiling can fail for reasons that have nothing to do with " +
+			"the author's input, so a compiled result would make an absent fact " +
+			"mean two different things. A rule needing the compiled form compiles " +
+			"these bytes itself and reports its own failure.\n\nEmptiness is one " +
+			"answer rather than two. A socket that declares no contract for this " +
+			"pillar and a socket the catalog declares no entry for both leave an " +
+			"edge's configuration for it unvalidated, and the question a rule " +
+			"over this fact asks is whether there is a contract to evaluate at " +
+			"all.\n\nIt covers the developer's pillar alone. The operator's " +
+			"per-edge pillar is a separate authored field with its own fact, and " +
+			"the two are separately omittable — a socket may declare a contract " +
+			"for one and none for the other — so one fact spanning both could not " +
+			"report which of them was written.",
+	},
+	{
+		Name:        "socket-infra-schema-text",
+		Stage:       "normalized",
+		SourceField: "types.UsesSchemaEntry.InfraSchema",
+		Subject:     []string{"node", "socket"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "[]byte",
+		Doc: "SocketInfraSchemaText is the contract a component type's dependency " +
+			"socket declares over the operator's configuration for one edge, as " +
+			"authored, serialized to opaque bytes — empty when the socket " +
+			"declares none.\n\nIt is the counterpart of the contract over the " +
+			"developer's per-edge pillar and a separate fact rather than the same " +
+			"one in another shape, for the reason the two payload facts are " +
+			"separate: the pillars are written on different documents by " +
+			"different hands, and a socket may declare a contract for one and " +
+			"none for the other. One fact spanning both would report a single " +
+			"presence for two independently authored fields.\n\nThe bytes are " +
+			"opaque by type, and they are the authored document rather than a " +
+			"compiled form of it: compiling can fail for reasons that have " +
+			"nothing to do with the author's input, so a compiled result would " +
+			"make an absent fact mean two different things. A rule needing the " +
+			"compiled form compiles these bytes itself and reports its own " +
+			"failure.\n\nEmptiness is one answer rather than two, exactly as it " +
+			"is for the developer's pillar: a socket declaring no contract and a " +
+			"socket the catalog declares no entry for both leave an edge's " +
+			"operator configuration unvalidated, and what a rule asks is whether " +
+			"there is a contract to evaluate at all.",
 	},
 
 	// ---------------------------------------------------------------- topology

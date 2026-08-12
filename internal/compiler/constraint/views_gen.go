@@ -298,6 +298,40 @@ type NormalizedView interface {
 	// Keyed by (node, slot); read from types.AttachmentSlot.Selector.
 	SlotSelector(componentType string, slot string) string
 
+	// SlotInjectMechanismNames are the delivery mechanisms an attachment slot
+	// allows for the material bound to it, in author order.
+	//
+	// The names are an allowlist and nothing more: they constrain which
+	// mechanisms a fill may dictate delivery through, never what any of them
+	// carries. The shape of one delivery entry is the entity contract's to
+	// state, and restating it here would give one rule two homes.
+	//
+	// Empty is a declaration rather than an absence, and a rule reading this
+	// fact must not take it for "unconstrained" — it is the most constrained
+	// answer a slot can give. A slot naming no mechanism states that its
+	// material is consumed by the Recipe internally rather than delivered to
+	// the workload, so a fill dictating any delivery for it is refused.
+	//
+	// Keyed by (node, slot); read from types.AttachmentSlot.Inject.
+	SlotInjectMechanismNames(componentType string, slot string) []string
+
+	// SlotSensitive reports whether an attachment slot declares that whatever
+	// binds it handles secret material.
+	//
+	// It is a marker and not a constraint. No fill is accepted or rejected
+	// because of it and no rendered output changes; what it does is make one
+	// declaration readable — it is carried onto the slot's projected
+	// validation surface as an extension keyword, and it is read when deriving
+	// whether the attachment binding the slot handles sensitive material.
+	//
+	// False is the answer for a slot that says nothing on the point as well as
+	// for one that declares the marker off, and the two are deliberately not
+	// distinguished: what a rule over this fact asks is whether the slot
+	// claims secret material, and a slot silent on it claims none.
+	//
+	// Keyed by (node, slot); read from types.AttachmentSlot.Sensitive.
+	SlotSensitive(componentType string, slot string) bool
+
 	// FeatureAppliesTo is the single label constraint a Feature declares on
 	// which components it may attach to, empty when it constrains nothing.
 	//
@@ -565,6 +599,65 @@ type NormalizedView interface {
 	//
 	// Keyed by node; read from types.ComponentSpec.Schema.
 	AuthoredComponentSchemaText(componentType string) []byte
+
+	// SocketValueSchemaText is the contract a component type's dependency
+	// socket declares over the developer's configuration for one edge, as
+	// authored, serialized to opaque bytes — empty when the socket declares
+	// none.
+	//
+	// The bytes are opaque by type, so nothing about the declared shape is
+	// legible from the fact beyond the document itself. That is what lets a
+	// rule whose predicate is "what was written on this edge conforms to the
+	// contract its socket declares" receive the whole contract without
+	// receiving the entity that carries it, and it is why the fact is the
+	// authored document rather than a compiled form of it: compiling can fail
+	// for reasons that have nothing to do with the author's input, so a
+	// compiled result would make an absent fact mean two different things. A
+	// rule needing the compiled form compiles these bytes itself and reports
+	// its own failure.
+	//
+	// Emptiness is one answer rather than two. A socket that declares no
+	// contract for this pillar and a socket the catalog declares no entry for
+	// both leave an edge's configuration for it unvalidated, and the question
+	// a rule over this fact asks is whether there is a contract to evaluate at
+	// all.
+	//
+	// It covers the developer's pillar alone. The operator's per-edge pillar
+	// is a separate authored field with its own fact, and the two are
+	// separately omittable — a socket may declare a contract for one and
+	// none for the other — so one fact spanning both could not report which
+	// of them was written.
+	//
+	// Keyed by (node, socket); read from types.UsesSchemaEntry.ValueSchema.
+	SocketValueSchemaText(componentType string, socket string) []byte
+
+	// SocketInfraSchemaText is the contract a component type's dependency
+	// socket declares over the operator's configuration for one edge, as
+	// authored, serialized to opaque bytes — empty when the socket declares
+	// none.
+	//
+	// It is the counterpart of the contract over the developer's per-edge
+	// pillar and a separate fact rather than the same one in another shape,
+	// for the reason the two payload facts are separate: the pillars are
+	// written on different documents by different hands, and a socket may
+	// declare a contract for one and none for the other. One fact spanning
+	// both would report a single presence for two independently authored
+	// fields.
+	//
+	// The bytes are opaque by type, and they are the authored document rather
+	// than a compiled form of it: compiling can fail for reasons that have
+	// nothing to do with the author's input, so a compiled result would make
+	// an absent fact mean two different things. A rule needing the compiled
+	// form compiles these bytes itself and reports its own failure.
+	//
+	// Emptiness is one answer rather than two, exactly as it is for the
+	// developer's pillar: a socket declaring no contract and a socket the
+	// catalog declares no entry for both leave an edge's operator
+	// configuration unvalidated, and what a rule asks is whether there is a
+	// contract to evaluate at all.
+	//
+	// Keyed by (node, socket); read from types.UsesSchemaEntry.InfraSchema.
+	SocketInfraSchemaText(componentType string, socket string) []byte
 }
 
 // TopologyView exposes the facts complete at the topology stage: the

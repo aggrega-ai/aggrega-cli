@@ -6,8 +6,12 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // inRepoTargets maps each target whose committed copy lives inside this module to
@@ -230,5 +234,234 @@ func TestTupleSharesAreReported(t *testing.T) {
 		t.Errorf("two facts sharing a stage, a source carrier and a subject were not reported as sharing "+
 			"a tuple; the near-duplicate print is not firing, so an empty share list would mean nothing.\n"+
 			"got: %+v", deriveTupleShares(probed))
+	}
+}
+
+// authoredSlotCarrier is the structure whose authored fields the facts below
+// must account for: one attachment slot as an entity declares it.
+const authoredSlotCarrier = "types.AttachmentSlot"
+
+// attachmentSlotFieldsWithoutFacts records, per authored field of the slot
+// declaration, why no fact reads it. An entry is a claim that no rule over the
+// slot's shape has an input there, and the pairing below refuses one that has
+// gone stale — a field the declaration stopped carrying, or one a fact has since
+// been declared for.
+var attachmentSlotFieldsWithoutFacts = map[string]string{
+	"Description": "prose addressed to whoever reads the declaration. The " +
+		"validation surface projected from a slot is built from the slot's other " +
+		"fields and consults this one nowhere, so a rule over the slot's shape has " +
+		"no input here and a fact carrying it would be read by nothing",
+}
+
+// slotFieldFindings is what the pairing reports over one declaration: authored
+// fields nothing accounts for, facts naming a field the declaration does not
+// carry, and recorded reasons that no longer hold.
+type slotFieldFindings struct {
+	unexplained []string
+	dangling    []string
+	stale       []string
+}
+
+// pairAuthoredFieldsWithFacts partitions a declaration's authored field set
+// against the facts declared over it and the reasons recorded for the rest.
+//
+// A field is authored when it is exported and carries a yaml key, because the
+// key is the name someone writes in the document; a field excluded from
+// serialization is correctly outside the pairing.
+//
+// It is one implementation rather than one per caller. The calibration below
+// feeds it a declaration carrying a field nothing covers, and a calibration
+// running its own copy of this partition would only prove that copy fires.
+func pairAuthoredFieldsWithFacts(
+	decl reflect.Type,
+	carrier string,
+	decls []factDecl,
+	without map[string]string,
+) slotFieldFindings {
+	authored := map[string]bool{}
+	for i := 0; i < decl.NumField(); i++ {
+		f := decl.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		key, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		if key == "" || key == "-" {
+			continue
+		}
+		authored[f.Name] = true
+	}
+
+	covered := map[string]string{}
+	for _, f := range decls {
+		if field, ok := strings.CutPrefix(f.SourceField, carrier+"."); ok {
+			covered[field] = f.Name
+		}
+	}
+
+	var out slotFieldFindings
+	for name := range authored {
+		if covered[name] == "" && without[name] == "" {
+			out.unexplained = append(out.unexplained, name)
+		}
+	}
+	for field := range covered {
+		if !authored[field] {
+			out.dangling = append(out.dangling, field)
+		}
+	}
+	for field, why := range without {
+		switch {
+		case why == "":
+			out.stale = append(out.stale, field+" (recorded with no reason given)")
+		case !authored[field]:
+			out.stale = append(out.stale, field+" (the declaration no longer carries this authored field)")
+		case covered[field] != "":
+			out.stale = append(out.stale, field+" (fact "+covered[field]+" now reads it)")
+		}
+	}
+
+	sort.Strings(out.unexplained)
+	sort.Strings(out.dangling)
+	sort.Strings(out.stale)
+	return out
+}
+
+// TestEveryAuthoredAttachmentSlotFieldHasAFact holds the slot declaration and
+// the facts over it in lockstep, in both directions.
+//
+// The failure it prevents is silent, which is why it is a test rather than a
+// convention. A rule over a slot's shape reads facts; an authored field no fact
+// reads is simply never looked at, so the rule still runs, still passes, and
+// reports nothing about that field. Nothing goes red, so nothing prompts anyone
+// to look — and a census someone has to remember to re-run is not enforcement.
+//
+// Both directions are asserted. An authored field with neither a fact nor a
+// recorded reason fails, and so does a fact naming a field the declaration does
+// not carry, which is what a rename leaves behind.
+func TestEveryAuthoredAttachmentSlotFieldHasAFact(t *testing.T) {
+	t.Parallel()
+
+	slot := reflect.TypeOf(types.AttachmentSlot{})
+	found := pairAuthoredFieldsWithFacts(slot, authoredSlotCarrier, facts, attachmentSlotFieldsWithoutFacts)
+
+	// A declaration reporting no authored fields would satisfy every assertion
+	// below while checking nothing, so the population is asserted before the
+	// findings are read.
+	empty := pairAuthoredFieldsWithFacts(slot, authoredSlotCarrier, nil, nil)
+	if len(empty.unexplained) == 0 {
+		t.Fatalf("%s reports no authored fields at all, so this pairing checks nothing",
+			authoredSlotCarrier)
+	}
+	t.Logf("%s carries %d authored field(s)", authoredSlotCarrier, len(empty.unexplained))
+
+	if len(found.unexplained) > 0 {
+		t.Errorf("%s declares %d authored field(s) that no fact reads and no recorded reason "+
+			"covers: %v\neach is either a field a rule over the slot's shape cannot see, which "+
+			"wants a fact, or one no rule has a use for, which wants its reason recorded beside "+
+			"the others", authoredSlotCarrier, len(found.unexplained), found.unexplained)
+	}
+	if len(found.dangling) > 0 {
+		t.Errorf("%d fact(s) read a field %s does not carry as an authored field: %v\n"+
+			"a fact naming a field that was renamed or removed reads nothing",
+			len(found.dangling), authoredSlotCarrier, found.dangling)
+	}
+	if len(found.stale) > 0 {
+		t.Errorf("%d recorded reason(s) no longer hold: %v\nremove each entry",
+			len(found.stale), found.stale)
+	}
+}
+
+// TestTheAttachmentSlotPairingReportsWhatItIsGiven calibrates the pairing above.
+//
+// The calibration matters more than the assertion. Over a declaration whose
+// every field is accounted for the pairing reports nothing, and an empty finding
+// is indistinguishable from a partition that inspects nothing unless it is shown
+// to fire. So each row feeds it a declaration it must object to, and requires
+// the objection back.
+func TestTheAttachmentSlotPairingReportsWhatItIsGiven(t *testing.T) {
+	t.Parallel()
+
+	// Each probe stands in for the slot declaration. The yaml keys are what make
+	// a field authored, so they are spelled out rather than left off.
+	type uncoveredField struct {
+		Required bool   `yaml:"required,omitempty"`
+		Cadence  string `yaml:"cadence,omitempty"`
+	}
+	type renamedAway struct {
+		Cadence string `yaml:"cadence,omitempty"`
+	}
+	type unauthoredField struct {
+		Required bool   `yaml:"required,omitempty"`
+		Internal string `yaml:"-"`
+	}
+
+	cases := []struct {
+		name    string
+		decl    reflect.Type
+		without map[string]string
+		read    func(slotFieldFindings) []string
+		want    string
+	}{
+		{
+			name: "an authored field no fact reads is reported",
+			decl: reflect.TypeOf(uncoveredField{}),
+			read: func(f slotFieldFindings) []string { return f.unexplained },
+			want: "Cadence",
+		},
+		{
+			name: "a fact reading a field the declaration dropped is reported",
+			decl: reflect.TypeOf(renamedAway{}),
+			read: func(f slotFieldFindings) []string { return f.dangling },
+			want: "Required",
+		},
+		{
+			name:    "a reason recorded for a field the declaration does not carry is reported",
+			decl:    reflect.TypeOf(uncoveredField{}),
+			without: map[string]string{"Retired": "a reason for a field that is gone"},
+			read:    func(f slotFieldFindings) []string { return f.stale },
+			want:    "Retired",
+		},
+		{
+			name:    "a reason recorded for a field a fact now reads is reported",
+			decl:    reflect.TypeOf(uncoveredField{}),
+			without: map[string]string{"Required": "a reason a fact has overtaken"},
+			read:    func(f slotFieldFindings) []string { return f.stale },
+			want:    "Required",
+		},
+		{
+			name:    "a reason recorded with no reason given is reported",
+			decl:    reflect.TypeOf(uncoveredField{}),
+			without: map[string]string{"Cadence": ""},
+			read:    func(f slotFieldFindings) []string { return f.stale },
+			want:    "Cadence",
+		},
+		{
+			name: "a field excluded from the document is not demanded",
+			decl: reflect.TypeOf(unauthoredField{}),
+			read: func(f slotFieldFindings) []string { return f.unexplained },
+			want: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := pairAuthoredFieldsWithFacts(tc.decl, authoredSlotCarrier, facts, tc.without)
+			reported := tc.read(got)
+			if tc.want == "" {
+				if len(reported) > 0 {
+					t.Errorf("the pairing objected to %v; nothing was owed here, so it is "+
+						"reporting a field that is not authored", reported)
+				}
+				return
+			}
+			for _, r := range reported {
+				if strings.HasPrefix(r, tc.want) {
+					return
+				}
+			}
+			t.Errorf("the pairing did not name %q; it is not firing, so an empty finding over the "+
+				"real declaration would mean nothing.\ngot: %+v", tc.want, got)
+		})
 	}
 }
