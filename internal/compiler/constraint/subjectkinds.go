@@ -692,6 +692,63 @@ func newNodePipelineStepSubject(sourceFile, node, step string, segments ...strin
 	}
 }
 
+// NodeAttachmentPipelineStepSubject is the subject of a check invoked once per
+// step of the pipeline one attachment's FeatureRecipe carries on a node.
+//
+// It is keyed per attachment as well as per node because the pipeline is
+// authored on the FeatureRecipe the attachment binds, a different document from
+// the node's own Recipe. Two attachments on one node therefore carry
+// independently authored pipelines, and nothing makes their step identifiers
+// distinct from each other or from the node's own — so the attachment is what
+// tells one pipeline from another, and a kind carrying only the node and the
+// step could not.
+type NodeAttachmentPipelineStepSubject interface {
+	Subject
+
+	// NodeID identifies the node carrying the attachment, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// AttachmentName is the attachment whose FeatureRecipe declares the
+	// pipeline.
+	AttachmentName() string
+
+	// StepID is the step the check was invoked for: the identifier the entry
+	// carries rather than its position, because a position moves when a step is
+	// inserted above it. Which pipeline the identifier belongs to is said by the
+	// kind it is reached within.
+	StepID() string
+
+	nodeAttachmentPipelineStep()
+}
+
+type nodeAttachmentPipelineStepSubject struct {
+	provenance
+	node       string
+	attachment string
+	stepID     string
+}
+
+func (nodeAttachmentPipelineStepSubject) nodeAttachmentPipelineStep() {}
+
+func (s nodeAttachmentPipelineStepSubject) NodeID() string { return s.node }
+
+func (s nodeAttachmentPipelineStepSubject) AttachmentName() string { return s.attachment }
+
+func (s nodeAttachmentPipelineStepSubject) StepID() string { return s.stepID }
+
+func newNodeAttachmentPipelineStepSubject(
+	sourceFile, node, attachment, step string,
+	segments ...string,
+) NodeAttachmentPipelineStepSubject {
+	return nodeAttachmentPipelineStepSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		attachment: attachment,
+		stepID:     step,
+	}
+}
+
 // BoundaryProviderPathSubject is the subject of a check invoked once per output
 // path written for one provider within one boundary.
 //
@@ -789,6 +846,65 @@ func newBoundaryAttachmentSubject(
 		provenance: newProvenance(sourceFile, segments...),
 		boundary:   boundary,
 		attachment: attachment,
+	}
+}
+
+// BoundaryAttachmentPipelineStepSubject is the subject of a check invoked once
+// per step of the pipeline one boundary-scope attachment's FeatureRecipe
+// carries.
+//
+// It is rooted at a boundary rather than at a node for the reason the
+// boundary-attachment kind is: the attachment is declared at the boundary, and
+// it reaches every component the boundary holds, so a component-rooted key
+// would present one authored pipeline many times over and would have no answer
+// at all for a boundary holding no components.
+//
+// The step identifiers here are unrelated to any component's, so this is a
+// separate kind rather than the node-rooted one reached differently: no
+// node-rooted key can name a pipeline authored against a boundary.
+type BoundaryAttachmentPipelineStepSubject interface {
+	Subject
+
+	// BoundaryName is the boundary the attachment was declared on, as every
+	// keyed fact takes it.
+	BoundaryName() string
+
+	// AttachmentName is the attachment whose FeatureRecipe declares the
+	// pipeline: the name the operator wrote it under.
+	AttachmentName() string
+
+	// StepID is the step the check was invoked for: the identifier the entry
+	// carries rather than its position, because a position moves when a step is
+	// inserted above it.
+	StepID() string
+
+	boundaryAttachmentPipelineStep()
+}
+
+type boundaryAttachmentPipelineStepSubject struct {
+	provenance
+	boundary   string
+	attachment string
+	stepID     string
+}
+
+func (boundaryAttachmentPipelineStepSubject) boundaryAttachmentPipelineStep() {}
+
+func (s boundaryAttachmentPipelineStepSubject) BoundaryName() string { return s.boundary }
+
+func (s boundaryAttachmentPipelineStepSubject) AttachmentName() string { return s.attachment }
+
+func (s boundaryAttachmentPipelineStepSubject) StepID() string { return s.stepID }
+
+func newBoundaryAttachmentPipelineStepSubject(
+	sourceFile, boundary, attachment, step string,
+	segments ...string,
+) BoundaryAttachmentPipelineStepSubject {
+	return boundaryAttachmentPipelineStepSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		boundary:   boundary,
+		attachment: attachment,
+		stepID:     step,
 	}
 }
 

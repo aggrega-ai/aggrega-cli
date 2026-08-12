@@ -49,7 +49,7 @@ const (
 	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 1 declared fact.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
-	// SubjectNode is the subject kind node, keyed by 7 declared facts.
+	// SubjectNode is the subject kind node, keyed by 8 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 2 declared facts.
@@ -58,7 +58,7 @@ const (
 	// SubjectEdge is the subject kind edge, keyed by 6 declared facts.
 	SubjectEdge SubjectKind = "edge"
 
-	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 10 declared facts.
+	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 11 declared facts.
 	SubjectNodeAttachment SubjectKind = "(node, attachment)"
 
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 2 declared facts.
@@ -76,7 +76,7 @@ const (
 	// SubjectNodePillarLeaf is the subject kind (node, pillar, leaf), keyed by 1 declared fact.
 	SubjectNodePillarLeaf SubjectKind = "(node, pillar, leaf)"
 
-	// SubjectBoundaryAttachment is the subject kind (boundary, attachment), keyed by 1 declared fact.
+	// SubjectBoundaryAttachment is the subject kind (boundary, attachment), keyed by 2 declared facts.
 	SubjectBoundaryAttachment SubjectKind = "(boundary, attachment)"
 
 	// SubjectNodeParameter is the subject kind (node, parameter), keyed by 1 declared fact.
@@ -87,6 +87,12 @@ const (
 
 	// SubjectNodePipelineStep is the subject kind (node, pipeline-step), keyed by 5 declared facts.
 	SubjectNodePipelineStep SubjectKind = "(node, pipeline-step)"
+
+	// SubjectNodeAttachmentPipelineStep is the subject kind (node, attachment, pipeline-step), keyed by 2 declared facts.
+	SubjectNodeAttachmentPipelineStep SubjectKind = "(node, attachment, pipeline-step)"
+
+	// SubjectBoundaryAttachmentPipelineStep is the subject kind (boundary, attachment, pipeline-step), keyed by 2 declared facts.
+	SubjectBoundaryAttachmentPipelineStep SubjectKind = "(boundary, attachment, pipeline-step)"
 
 	// SubjectNodeProvidesKey is the subject kind (node, provides-key), keyed by 2 declared facts.
 	SubjectNodeProvidesKey SubjectKind = "(node, provides-key)"
@@ -122,6 +128,8 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeParameter, Coordinates: []string{"node", "parameter"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentPillarLeaf, Coordinates: []string{"node", "attachment", "pillar", "leaf"}, Traversal: TraversalPull},
 	{Kind: SubjectNodePipelineStep, Coordinates: []string{"node", "pipeline-step"}, Traversal: TraversalPull},
+	{Kind: SubjectNodeAttachmentPipelineStep, Coordinates: []string{"node", "attachment", "pipeline-step"}, Traversal: TraversalPull},
+	{Kind: SubjectBoundaryAttachmentPipelineStep, Coordinates: []string{"boundary", "attachment", "pipeline-step"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeProvidesKey, Coordinates: []string{"node", "provides-key"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeLocalsKey, Coordinates: []string{"node", "locals-key"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryProviderPath, Coordinates: []string{"boundary", "provider", "path"}, Traversal: TraversalPull},

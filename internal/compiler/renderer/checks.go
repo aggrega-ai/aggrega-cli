@@ -9,6 +9,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // This file holds this package's rules expressed as constraint declarations:
@@ -187,6 +188,182 @@ var ProvidesTemplateSelfContained = constraint.Check[
 		}
 		return []constraint.Objection{s.Raise(
 			ErrProvidesSelfContainment(), violation.Ref.Path,
+		)}
+	},
+}
+
+// The provider-compatibility rule, declared once per pipeline the rule governs.
+//
+// One rule, three values, and the reason is the type rather than the rule: a
+// check carries exactly one subject type parameter, and three separately
+// authored pipelines are three subject kinds — a component's own Recipe
+// pipeline, the pipeline an attachment's FeatureRecipe carries on a node, and the
+// pipeline a boundary-scope attachment's FeatureRecipe carries. A step
+// identifier is meaningful only together with the pipeline it was written in, so
+// one value over one kind would govern one of the three and read as though it
+// governed the rule.
+//
+// # What each predicate does, and what it deliberately does not do
+//
+// Each reads the scope the step's export declares, the capabilities the step's
+// plugin declares, and the provider rendering the documents that scope names —
+// then objects when the provider is absent from the declared set. Matching is
+// exact-string against the enumerated declaration, with no family abstraction:
+// an empty capability set declares compatibility with nothing and therefore
+// matches no provider, so a step whose plugin declares none objects rather than
+// passing as unconstrained.
+//
+// None of them holds a loop over steps, because each is invoked once per step.
+// None reads a descriptor: the capabilities and the scope arrive as declared
+// facts, so a predicate here crosses to no guest and holds no plugin
+// self-report — which is what lets the rule be complete at the point every
+// plugin has described itself rather than at the point documents exist.
+//
+// # The provider facts are keyed where the value varies, and never by the part it plays
+//
+// A provider does not vary across the steps of one pipeline: one entity declares
+// one capability for the whole of it. So the provider facts are keyed by the node
+// or the attachment rather than by the step, and there is one fact per authoring
+// site rather than one per part a provider plays at a site.
+//
+// That distinction is load-bearing here and easy to lose. The provider rendering
+// a node's own documents is the provider a step of that node's own pipeline is
+// matched against, AND it is the provider a host-addressed step of an
+// attachment's pipeline on that node is matched against — one value, read at two
+// sites. Which part it plays is a property of the reading site, so it is stated
+// in each predicate below and carried in no fact name.
+//
+// # Emptiness
+//
+// An absent provider for the documents a scope names means the site has no such
+// documents, and the rule does not enforce there. The concrete case is a
+// host-addressed step at a site that stands against no host component: a
+// component's own pipeline and a boundary-scope attachment's pipeline both have
+// one, and a step addressing host documents there is refused by the rule that
+// owns the missing document set rather than reported here as a compatibility
+// claim against an empty provider.
+//
+// The opposite case does not arise at any site a traversal reaches: the
+// capability an entity declares is required by both the Recipe and FeatureRecipe
+// contracts, so the provider rendering a site's own documents is always present
+// wherever a step of that site is enumerated.
+
+// PipelineStepProviderCompatible reports each step of a node's own Recipe
+// pipeline whose plugin does not declare compatibility with the provider
+// rendering the documents the step addresses.
+//
+// A node's own pipeline stands against no host component, so a step addressing
+// host documents has no provider to be matched against and is left to the rule
+// that owns the missing document set. Every other step addresses the node's own
+// documents, which the node's own provider renders.
+//
+// Its detail names that provider, because the locator names the authored step
+// and a provider is selected rather than written — so the value the author has
+// to reconcile the declaration against appears nowhere else in the objection.
+var PipelineStepProviderCompatible = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodePipelineStepSubject,
+]{
+	Sentinel: ErrPluginProviderIncompatible(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodePipelineStepSubject,
+	) []constraint.Objection {
+		if v.StepExportScope(s.NodeID(), s.StepID()) == types.ScopeHost {
+			return nil
+		}
+		provider := v.NodeRenderingProvider(s.NodeID())
+		if providerCompatible(provider, v.StepPluginCompatibleCapabilities(s.NodeID(), s.StepID())) {
+			return nil
+		}
+		return []constraint.Objection{s.Raise(ErrPluginProviderIncompatible(), provider)}
+	},
+}
+
+// AttachmentPipelineStepProviderCompatible reports each step of the pipeline an
+// attachment's FeatureRecipe carries on a node whose plugin does not declare
+// compatibility with the provider rendering the documents the step addresses.
+//
+// This is the one site where both arms are live, and the two providers are
+// different values from different authored entities: a step addressing the
+// attachment's own documents is matched against the provider its FeatureRecipe
+// declares, while a step addressing the host component's documents is matched
+// against the provider the host node's own Recipe declares — the same value that
+// site's own pipeline is matched against. A host component with no bound Recipe
+// renders no host documents, so a host-addressed step there is left to the rule
+// that owns the missing document set.
+//
+// Its detail names the attachment and the provider. The locator names the
+// authored step inside the FeatureRecipe, which is the document to edit, and
+// neither the attachment that bound it nor the selected provider appears there.
+var AttachmentPipelineStepProviderCompatible = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentPipelineStepSubject,
+]{
+	Sentinel: ErrPluginProviderIncompatible(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentPipelineStepSubject,
+	) []constraint.Objection {
+		provider := v.AttachmentRenderingProvider(s.NodeID(), s.AttachmentName())
+		if v.AttachmentStepExportScope(s.NodeID(), s.AttachmentName(), s.StepID()) == types.ScopeHost {
+			provider = v.NodeRenderingProvider(s.NodeID())
+			if provider == "" {
+				return nil
+			}
+		}
+		declared := v.AttachmentStepPluginCompatibleCapabilities(
+			s.NodeID(), s.AttachmentName(), s.StepID(),
+		)
+		if providerCompatible(provider, declared) {
+			return nil
+		}
+		return []constraint.Objection{s.Raise(
+			ErrPluginProviderIncompatible(), s.AttachmentName(), provider,
+		)}
+	},
+}
+
+// BoundaryAttachmentPipelineStepProviderCompatible reports each step of the
+// pipeline a boundary-scope attachment's FeatureRecipe carries whose plugin does
+// not declare compatibility with the provider rendering the documents the step
+// addresses.
+//
+// A boundary-scope attachment stands against no single component, so it has no
+// host documents and a host-addressed step is left to the rule that owns the
+// missing document set — the same shape a node's own pipeline has, reached for a
+// different reason. Every other step addresses the attachment's own documents,
+// which the provider its FeatureRecipe declares renders.
+//
+// Its detail names the attachment and the provider, on the same reading the
+// node-carried attachment pipeline follows: the locator names the authored step
+// inside the FeatureRecipe and carries neither.
+var BoundaryAttachmentPipelineStepProviderCompatible = constraint.Check[
+	constraint.DescribedView,
+	constraint.BoundaryAttachmentPipelineStepSubject,
+]{
+	Sentinel: ErrPluginProviderIncompatible(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.BoundaryAttachmentPipelineStepSubject,
+	) []constraint.Objection {
+		if v.BoundaryAttachmentStepExportScope(
+			s.BoundaryName(), s.AttachmentName(), s.StepID(),
+		) == types.ScopeHost {
+			return nil
+		}
+		provider := v.BoundaryAttachmentRenderingProvider(s.BoundaryName(), s.AttachmentName())
+		declared := v.BoundaryAttachmentStepPluginCompatibleCapabilities(
+			s.BoundaryName(), s.AttachmentName(), s.StepID(),
+		)
+		if providerCompatible(provider, declared) {
+			return nil
+		}
+		return []constraint.Objection{s.Raise(
+			ErrPluginProviderIncompatible(), s.AttachmentName(), provider,
 		)}
 	},
 }

@@ -964,6 +964,20 @@ var subjectKindBindings = map[SubjectKind]struct {
 			return newNodePipelineStepSubject(f, "web", "render", "spec", "pipeline", "render")
 		},
 	},
+	SubjectNodeAttachmentPipelineStep: {
+		iface: reflect.TypeOf((*NodeAttachmentPipelineStepSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newNodeAttachmentPipelineStepSubject(f, "web", "tls", "stamp",
+				"spec", "pipeline", "stamp")
+		},
+	},
+	SubjectBoundaryAttachmentPipelineStep: {
+		iface: reflect.TypeOf((*BoundaryAttachmentPipelineStepSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newBoundaryAttachmentPipelineStepSubject(f, "prod", "shared-db", "annotate",
+				"spec", "pipeline", "annotate")
+		},
+	},
 	SubjectBoundaryProviderPath: {
 		iface: reflect.TypeOf((*BoundaryProviderPathSubject)(nil)).Elem(),
 		make: func(f string) Subject {

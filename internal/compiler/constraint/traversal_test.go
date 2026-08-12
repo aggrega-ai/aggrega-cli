@@ -62,6 +62,9 @@ type traversalFixture struct {
 	provides  map[string][]AuthoredCoordinate
 	pipeline  map[string][]AuthoredCoordinate
 	artifacts map[string][]AuthoredCoordinate
+
+	attachPipeline         map[string][]AuthoredCoordinate
+	boundaryAttachPipeline map[string][]AuthoredCoordinate
 }
 
 func fixtureKey(parts ...string) string { return strings.Join(parts, "\x00") }
@@ -111,6 +114,14 @@ func (f traversalFixture) PipelineSteps(node string) []AuthoredCoordinate {
 
 func (f traversalFixture) Artifacts(node string) []AuthoredCoordinate {
 	return f.artifacts[fixtureKey(node)]
+}
+
+func (f traversalFixture) AttachmentPipelineSteps(node, attachment string) []AuthoredCoordinate {
+	return f.attachPipeline[fixtureKey(node, attachment)]
+}
+
+func (f traversalFixture) BoundaryAttachmentPipelineSteps(boundary, attachment string) []AuthoredCoordinate {
+	return f.boundaryAttachPipeline[fixtureKey(boundary, attachment)]
 }
 
 func (f traversalFixture) Providers(boundary string) []string {
@@ -225,6 +236,23 @@ func newTraversalFixture() traversalFixture {
 		},
 		artifacts: map[string][]AuthoredCoordinate{
 			fixtureKey("web"): {{Value: "values-yaml", SourceFile: "recipes/web.yaml"}},
+		},
+
+		// The SAME step identifier under two attachments on one node, which is the
+		// case the attachment coordinate exists to separate: the two are distinct
+		// steps in independently authored documents, nothing declares step
+		// identifiers unique across documents, and a key carrying only the node and
+		// the step would answer for whichever was asked last. The two files differ,
+		// so the provenance transcript tells them apart as well as the readback.
+		attachPipeline: map[string][]AuthoredCoordinate{
+			fixtureKey("web", "tls"):     {{Value: "stamp", SourceFile: "featurerecipes/tls.yaml"}},
+			fixtureKey("web", "logging"): {{Value: "stamp", SourceFile: "featurerecipes/logging.yaml"}},
+		},
+		// One of the boundary's two attachments carries a pipeline and the other
+		// carries none, so a transcript shows the walk entering an attachment that
+		// declares no pipeline and yielding nothing there rather than stopping.
+		boundaryAttachPipeline: map[string][]AuthoredCoordinate{
+			fixtureKey("prod", "shared-db"): {{Value: "annotate", SourceFile: "featurerecipes/shared-db.yaml"}},
 		},
 	}
 }
@@ -398,6 +426,36 @@ func traversalCases() []traversalCase {
 			},
 			want: []string{
 				"recipes/web.yaml|.spec.pipeline.render",
+			},
+		},
+		{
+			// Two invocations whose locators are identical in their dotted part and
+			// differ only in the file, because each step is authored at its own
+			// FeatureRecipe's spec level under the same key. That is the same
+			// document-spec shape a node's Recipe-authored coordinates take, and it
+			// is why the file comes from the enumerated entry: the attachment was
+			// written in the Aggregate and the step was not.
+			kind: SubjectNodeAttachmentPipelineStep,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeAttachmentPipelineSteps(cancelled, f, f, f, v,
+					raisingCheck[NodeAttachmentPipelineStepSubject]())
+			},
+			want: []string{
+				"featurerecipes/tls.yaml|.spec.pipeline.stamp",
+				"featurerecipes/logging.yaml|.spec.pipeline.stamp",
+			},
+		},
+		{
+			// One invocation from two enumerated attachments on one boundary, and
+			// none at all from the second boundary: the walk enters an attachment
+			// that declares no pipeline, yields nothing there, and carries on.
+			kind: SubjectBoundaryAttachmentPipelineStep,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryAttachmentPipelineSteps(cancelled, f, f, f, v,
+					raisingCheck[BoundaryAttachmentPipelineStepSubject]())
+			},
+			want: []string{
+				"featurerecipes/shared-db.yaml|.spec.pipeline.annotate",
 			},
 		},
 		{
@@ -865,6 +923,36 @@ func coordinateFlowCases() []coordinateFlowCase {
 				}, func(s NodePipelineStepSubject) string { return s.NodeID() + "|" + s.StepID() })
 			},
 			want: []string{"web|render"},
+		},
+
+		// The kind whose reason for existing is exactly what this readback shows: the
+		// two invocations carry the same node and the same step identifier, and the
+		// attachment is the only thing that separates them. A traversal that dropped
+		// the attachment would produce two identical records here, while every
+		// declaration assertion stayed green.
+		{
+			kind: SubjectNodeAttachmentPipelineStep,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeAttachmentPipelineStepSubject]) ([]Objection, error) {
+					return RunOnNodeAttachmentPipelineSteps(nil, f, f, f, traversalView{}, c)
+				}, func(s NodeAttachmentPipelineStepSubject) string {
+					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.StepID()
+				})
+			},
+			want: []string{"web|tls|stamp", "web|logging|stamp"},
+		},
+		{
+			kind: SubjectBoundaryAttachmentPipelineStep,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, BoundaryAttachmentPipelineStepSubject]) ([]Objection, error) {
+					return RunOnBoundaryAttachmentPipelineSteps(nil, f, f, f, traversalView{}, c)
+				}, func(s BoundaryAttachmentPipelineStepSubject) string {
+					return s.BoundaryName() + "|" + s.AttachmentName() + "|" + s.StepID()
+				})
+			},
+			want: []string{"prod|shared-db|annotate"},
 		},
 		{
 			kind: SubjectNodeArtifact,

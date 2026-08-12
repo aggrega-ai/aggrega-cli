@@ -546,6 +546,76 @@ func RunOnNodePipelineSteps[V View](
 	})
 }
 
+// RunOnNodeAttachmentPipelineSteps invokes check once per step of the pipeline
+// each attachment's FeatureRecipe carries, in node order, then attachment order,
+// then pipeline order.
+//
+// The locator is .spec.pipeline.<id> in the FeatureRecipe's own file, which is a
+// different document from the Aggregate the attachment was written in — so the
+// file comes from the enumerated entry and not from the node, exactly as it does
+// for the coordinates a node's Recipe authors. The segment names the step's
+// declared identifier rather than a position, because a position moves when a
+// step is inserted above it.
+//
+// The attachment reaches the subject as a coordinate without reaching the
+// locator, and that is not an inconsistency: the locator names the document the
+// author edits to change the step, while the coordinate is what tells this
+// pipeline from the node's own and from another attachment's when a fact is
+// keyed.
+func RunOnNodeAttachmentPipelineSteps[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	attachments AttachmentEnumerator,
+	steps AttachmentPipelineStepEnumerator,
+	view V,
+	check Check[V, NodeAttachmentPipelineStepSubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentPipelineStepSubject {
+		var out []NodeAttachmentPipelineStepSubject
+		for _, attachment := range attachments.Attachments(node.ID) {
+			for _, entry := range steps.AttachmentPipelineSteps(node.ID, attachment) {
+				out = append(out, newNodeAttachmentPipelineStepSubject(
+					entry.SourceFile, node.ID, attachment, entry.Value,
+					documentSpecSegments(authoredKeyPipeline, entry.Value)...,
+				))
+			}
+		}
+		return out
+	})
+}
+
+// RunOnBoundaryAttachmentPipelineSteps invokes check once per step of the
+// pipeline each boundary-scope attachment's FeatureRecipe carries, in boundary
+// order, then attachment order, then pipeline order.
+//
+// The locator is .spec.pipeline.<id> in the FeatureRecipe's own file, on the same
+// reasoning as the node-carried attachment pipeline: the step is authored in the
+// FeatureRecipe, which is the document an author edits to change it, and that
+// document is neither the Release the attachment was declared in nor any
+// component's Recipe.
+func RunOnBoundaryAttachmentPipelineSteps[V View](
+	cancelled Cancellation,
+	boundaries BoundaryEnumerator,
+	attachments BoundaryAttachmentEnumerator,
+	steps BoundaryAttachmentPipelineStepEnumerator,
+	view V,
+	check Check[V, BoundaryAttachmentPipelineStepSubject],
+) ([]Objection, error) {
+	return runOverBoundaries(cancelled, boundaries, view, check.Run,
+		func(boundary AuthoredCoordinate) []BoundaryAttachmentPipelineStepSubject {
+			var out []BoundaryAttachmentPipelineStepSubject
+			for _, attachment := range attachments.BoundaryAttachments(boundary.Value) {
+				for _, entry := range steps.BoundaryAttachmentPipelineSteps(boundary.Value, attachment) {
+					out = append(out, newBoundaryAttachmentPipelineStepSubject(
+						entry.SourceFile, boundary.Value, attachment, entry.Value,
+						documentSpecSegments(authoredKeyPipeline, entry.Value)...,
+					))
+				}
+			}
+			return out
+		})
+}
+
 // RunOnNodeArtifacts invokes check once per artifact each node projects, in node
 // order and then artifact order.
 //

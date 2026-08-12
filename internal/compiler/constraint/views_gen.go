@@ -842,6 +842,155 @@ type DescribedView interface {
 	// Keyed by node; read from wasm.ProviderContract.BoundaryAssembly.
 	ProviderBoundaryAssembly(node string) string
 
+	// NodeRenderingProvider is the provider that renders a node's own
+	// documents, as the engine kind its Recipe's declared capability projects
+	// to.
+	//
+	// It is keyed by the node alone, and that is the granularity the value
+	// actually varies over: one Recipe declares one capability for the whole
+	// node, so a per-step key would name a coordinate the answer does not
+	// depend on and would invite a reader to believe two steps could differ
+	// here.
+	//
+	// The fact holds a provider and not a part a provider plays. This one
+	// value is what a rule over a node's own pipeline matches its steps
+	// against, and it is equally what a rule over a pipeline attached to that
+	// node matches the attachment's host-addressed steps against — the same
+	// provider renders the documents in both cases. Which of those a reader is
+	// doing is a property of the rule, so it is stated where the rule is
+	// declared and never folded into the name here.
+	//
+	// Emptiness is a real answer: a node with no bound Recipe renders through
+	// no provider, and a rule asking what renders its documents has nothing to
+	// match rather than an unconstrained match.
+	//
+	// Keyed by node; read from types.RecipeSpec.Capability.
+	NodeRenderingProvider(node string) string
+
+	// AttachmentRenderingProvider is the provider that renders one
+	// attachment's own documents on a node, as the engine kind its bound
+	// FeatureRecipe's declared capability projects to.
+	//
+	// It is a separate fact from the provider rendering the node's own
+	// documents rather than the same fact reached differently. An attachment
+	// binds its own FeatureRecipe, which declares its own capability, so the
+	// two values are independently authored and a node whose attachment
+	// renders through a different provider is ordinary rather than
+	// exceptional.
+	//
+	// It is keyed per attachment and not per step, for the reason the
+	// node-scoped provider is keyed per node: one FeatureRecipe declares one
+	// capability for every step of the pipeline it carries.
+	//
+	// Emptiness is a real answer, as it is for the node-scoped provider: an
+	// attachment with no bound FeatureRecipe renders through no provider.
+	//
+	// Keyed by (node, attachment); read from
+	// types.FeatureRecipeSpec.Capability.
+	AttachmentRenderingProvider(node string, attachment string) string
+
+	// AttachmentStepPluginCompatibleCapabilities are the provider capabilities
+	// the plugin behind one step of an attachment's pipeline declares its step
+	// is compatible with, in declared order.
+	//
+	// An empty result is a claim rather than a missing value, on the same
+	// reading the node-scoped form carries: a plugin declaring no capability
+	// claims compatibility with nothing.
+	//
+	// It is keyed per attachment as well as per node because the pipeline is
+	// authored on the FeatureRecipe the attachment binds, which is a different
+	// document from the node's own Recipe. Two attachments on one node carry
+	// independently authored pipelines, and nothing makes their step
+	// identifiers distinct from each other or from the node's own — so a key
+	// without the attachment would answer for whichever pipeline happened to
+	// be asked last.
+	//
+	// Keyed by (node, attachment, pipeline-step); read from
+	// wasm.PluginDescriptor.Capabilities.
+	AttachmentStepPluginCompatibleCapabilities(node string, attachment string, step string) []string
+
+	// AttachmentStepExportScope is the document root the export one step of an
+	// attachment's pipeline dispatches to declares it operates on, empty when
+	// the export declares none.
+	//
+	// Emptiness is one answer rather than two, exactly as it is for the
+	// node-scoped form: an export declaring no scope and a plugin declaring no
+	// such export both leave the scope unstated, and the question a rule asks
+	// is which document set the step addresses.
+	//
+	// The scope is what decides which provider a step is matched against,
+	// because an attachment's pipeline reaches two document sets: the
+	// attachment's own output, rendered by the attachment's provider, and the
+	// host node's documents, rendered by the node's. So this fact and the two
+	// provider facts compose, and neither provider fact has to know which one
+	// a given step will select.
+	//
+	// Keyed by (node, attachment, pipeline-step); read from
+	// wasm.PluginExport.Scope.
+	AttachmentStepExportScope(node string, attachment string, step string) string
+
+	// BoundaryAttachmentRenderingProvider is the provider that renders one
+	// boundary-scope attachment's documents, as the engine kind its bound
+	// FeatureRecipe's declared capability projects to.
+	//
+	// It is rooted at a boundary rather than at a node because that is where
+	// the attachment is declared: such an attachment reaches every component
+	// the boundary holds, so keying it by a component would present one
+	// authored attachment many times over and would have no answer at all for
+	// a boundary holding no components.
+	//
+	// It is keyed per attachment and not per step, for the reason the other
+	// two provider facts are keyed at their own granularity: one FeatureRecipe
+	// declares one capability for every step of its pipeline.
+	//
+	// A boundary-scope attachment addresses no host documents, because it
+	// stands against no single component — so a rule over its pipeline
+	// matches every step against this one provider, and the host-addressed
+	// case does not arise.
+	//
+	// Keyed by (boundary, attachment); read from
+	// types.FeatureRecipeSpec.Capability.
+	BoundaryAttachmentRenderingProvider(boundary string, attachment string) string
+
+	// BoundaryAttachmentStepPluginCompatibleCapabilities are the provider
+	// capabilities the plugin behind one step of a boundary-scope attachment's
+	// pipeline declares its step is compatible with, in declared order.
+	//
+	// An empty result is a claim rather than a missing value, on the reading
+	// every form of this fact carries: a plugin declaring no capability claims
+	// compatibility with nothing.
+	//
+	// It is a separate fact from the node-rooted forms rather than the same
+	// fact reached through a different coordinate. A boundary-scope
+	// attachment's pipeline is authored on a FeatureRecipe the operator
+	// attached at the boundary, and the step identifiers in it are unrelated
+	// to any component's — so the coordinates that identify it are the
+	// boundary and the attachment, and a node-rooted key could not name it at
+	// all.
+	//
+	// Keyed by (boundary, attachment, pipeline-step); read from
+	// wasm.PluginDescriptor.Capabilities.
+	BoundaryAttachmentStepPluginCompatibleCapabilities(boundary string, attachment string, step string) []string
+
+	// BoundaryAttachmentStepExportScope is the document root the export one
+	// step of a boundary-scope attachment's pipeline dispatches to declares it
+	// operates on, empty when the export declares none.
+	//
+	// Emptiness is one answer rather than two, exactly as it is for every form
+	// of this fact: an export declaring no scope and a plugin declaring no
+	// such export both leave the scope unstated.
+	//
+	// The scope is still worth reading even though a boundary-scope attachment
+	// addresses only its own documents, and that is the point of keeping it a
+	// declared fact rather than assuming the answer. A step declaring it
+	// addresses host documents is asking for a document set this site does not
+	// have, which is a rule's finding about the authoring rather than a
+	// condition a rule may take for granted.
+	//
+	// Keyed by (boundary, attachment, pipeline-step); read from
+	// wasm.PluginExport.Scope.
+	BoundaryAttachmentStepExportScope(boundary string, attachment string, step string) string
+
 	// AuthoredNodeProvides is the template text a node's Recipe declares for
 	// one provides key, as written and before anything is evaluated.
 	//

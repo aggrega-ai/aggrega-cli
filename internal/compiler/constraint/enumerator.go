@@ -272,11 +272,60 @@ type ProvidesKeyEnumerator interface {
 	ProvidesKeys(node string) []AuthoredCoordinate
 }
 
-// PipelineStepEnumerator supplies the steps of one node's Recipe pipeline.
+// The pipeline-step axis is supplied by three enumerators, one per authored
+// pipeline, and the split is a property of the authoring rather than a
+// convenience.
+//
+// A pipeline is authored on the entity that carries it, and three entities carry
+// one: a component's Recipe, the FeatureRecipe an attachment binds on a node,
+// and the FeatureRecipe an operator attaches at a boundary. Those are three
+// separate documents, and the identifiers inside them are chosen independently —
+// nothing declares them unique across documents, and a step identifier is
+// therefore meaningful only together with the pipeline it was written in.
+//
+// So the coordinates that identify a step are the coordinates that identify its
+// pipeline plus the step's own, and each of the three gets its own enumerator
+// and its own subject kind. Widening one enumerator to cover all three would
+// hand the framework steps from several documents under one key, and a fact
+// keyed that way would answer with whichever pipeline was asked last.
+
+// PipelineStepEnumerator supplies the steps of one node's own Recipe pipeline,
+// and only those.
+//
+// The pipelines an attachment carries are supplied by
+// [AttachmentPipelineStepEnumerator] and
+// [BoundaryAttachmentPipelineStepEnumerator], never here: an implementation
+// folding an attachment's steps into this answer would present them under a key
+// that cannot tell them from the node's own.
 type PipelineStepEnumerator interface {
-	// PipelineSteps returns a node's pipeline steps, identified by the
-	// identifier each step declares, in pipeline order.
+	// PipelineSteps returns the steps of a node's own Recipe pipeline,
+	// identified by the identifier each step declares, in pipeline order.
 	PipelineSteps(node string) []AuthoredCoordinate
+}
+
+// AttachmentPipelineStepEnumerator supplies the steps of the pipeline one
+// attachment's FeatureRecipe carries on a node.
+//
+// Each entry carries its own file, because a FeatureRecipe is a different
+// document from the Aggregate the attachment was written in.
+type AttachmentPipelineStepEnumerator interface {
+	// AttachmentPipelineSteps returns the steps of one attachment's pipeline,
+	// identified by the identifier each step declares, in pipeline order.
+	AttachmentPipelineSteps(node string, attachment string) []AuthoredCoordinate
+}
+
+// BoundaryAttachmentPipelineStepEnumerator supplies the steps of the pipeline
+// one boundary-scope attachment's FeatureRecipe carries.
+//
+// The axis is keyed per boundary and not per node for the same reason the
+// boundary's own attachment axis is: such an attachment is declared once at the
+// boundary and reaches every component the boundary holds, so enumerating its
+// pipeline per component would present one authored pipeline many times over.
+type BoundaryAttachmentPipelineStepEnumerator interface {
+	// BoundaryAttachmentPipelineSteps returns the steps of one boundary-scope
+	// attachment's pipeline, identified by the identifier each step declares, in
+	// pipeline order.
+	BoundaryAttachmentPipelineSteps(boundary string, attachment string) []AuthoredCoordinate
 }
 
 // ArtifactEnumerator supplies the artifacts one node projects.
