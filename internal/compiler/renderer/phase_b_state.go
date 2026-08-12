@@ -99,6 +99,17 @@ type PhaseBState struct {
 	// downstream consumer match them structurally.
 	Diagnostics []Diagnostic
 
+	// DerivedKeys is the per-node accumulator for the names the node's provider
+	// guest declares it derived, keyed by the guest's own key space. A node can
+	// render across more than one crossing — a source render, a workload
+	// synthesis, an artifacts placement — and each returns its own declaration, so
+	// the declarations merge here: a space already present gains the new crossing's
+	// names rather than replacing them. The orchestrator moves the merged set into
+	// the node's dispatch group, where duplicates across contributors are checked
+	// once every contributor has rendered. Empty for a node whose guest declares
+	// nothing, which leaves the check inert for it.
+	DerivedKeys types.OrderedMap[[]string]
+
 	// Trace is the per-node trace.Writer threaded from the orchestrator.
 	// nil-safe: a no-op writer when --trace is off, an async fs writer
 	// when --trace is on. Sub-passes call state.Trace.Write directly to

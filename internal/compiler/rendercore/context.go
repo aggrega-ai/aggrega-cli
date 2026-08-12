@@ -94,6 +94,21 @@ type NodeRenderContext struct {
 	// machine-matchable downstream. Like WarningSink it never affects emitted
 	// bytes and is host-only: not part of any wire projection sent to a guest.
 	UnsupportedFieldSink func(renderctx.Diagnostic)
+	// DerivedKeySink, when non-nil, receives the names a provider engine's guest
+	// declares it derived while rendering this node, keyed by the guest's own key
+	// space. A provider engine forwards whatever the guest declared, verbatim: the
+	// host reads a space name and a key only as strings to compare for equality,
+	// and derives no key of its own. The orchestrator wires it to the per-node
+	// accumulator whose contents are checked for duplicates once every contributor
+	// to an assembled output has rendered. A node may render across more than one
+	// crossing — a source render, a workload synthesis, an artifacts placement — so
+	// the sink is called once per crossing and the accumulator merges them.
+	//
+	// Like WarningSink it never affects emitted bytes: a duplicate halts the build
+	// and no declaration changes what is written, so rendered output is
+	// byte-identical whether or not a sink is attached. Host-only: not part of any
+	// wire projection sent to a guest.
+	DerivedKeySink func(types.OrderedMap[[]string])
 }
 
 // ProvenanceContext carries build identity for resource labels.

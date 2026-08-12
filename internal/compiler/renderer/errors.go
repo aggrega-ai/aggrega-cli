@@ -232,6 +232,33 @@ var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-
 	Message: "assembled output collision: two contributors write the same output path",
 })
 
+// ErrDerivedKeyCollision fires when two contributors to one assembled output
+// declare the same derived name in the same key space. A provider guest derives
+// the names its output addresses resources by, and those names live inside the
+// file bytes the host writes verbatim — so the host cannot see them. The guest
+// declares them instead, and this sentinel is the halt when the declarations are
+// not injective within a space: the colliding contributors halt loudly rather
+// than one silently displacing the other in the merged output (a Loud Guardrail,
+// per the No Ghost Infrastructure invariant).
+//
+// The check is blind to what a key means. It compares declared strings for
+// equality within one declared space, so it covers every key space any guest
+// declares — a second provider needs no second guard — and it interprets no
+// provider format, learns no key's meaning, and derives no key itself.
+//
+// It is a sibling of ErrAssembledOutputCollision, not a widening of it, and the
+// two must not be merged. They differ in what collides and in who can see it:
+// ErrAssembledOutputCollision says two contributors write one output path, which
+// the host observes directly because it assembles the files. This sentinel says
+// two contributors chose one name inside their content, which the host observes
+// only because the guests declared it. A caller matching one is not asking about
+// the other.
+func ErrDerivedKeyCollision() error { return errDerivedKeyCollision }
+
+var errDerivedKeyCollision = cerrors.Register("compiler-renderer/derived-key-collision", cerrors.Meta{
+	Message: "derived name collision: two contributors derived the same name in one key space",
+})
+
 // ErrCircularImport is the $import-surface name for a mapping-library import
 // expansion cycle. It is the shared refcycle.ErrCycle sentinel — the same
 // identity the $ref surface reports via ErrCircularRef — so one detector

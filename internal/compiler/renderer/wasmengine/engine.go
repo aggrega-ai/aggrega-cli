@@ -286,6 +286,7 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 	if err := e.surfaceNodeDiagnostics(nodeCtx, out.Diagnostics); err != nil {
 		return nil, err
 	}
+	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
 
 	seen := make(map[string]struct{}, len(out.Files))
 	for _, f := range out.Files {
@@ -340,6 +341,7 @@ func (e *Engine) SynthesizeWorkload(
 	if err := e.surfaceNodeDiagnostics(nodeCtx, out.Diagnostics); err != nil {
 		return nil, err
 	}
+	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
 
 	intermediate := renderer.RenderIsIntermediate(e)
 	emitted := make([]renderer.EmittedFile, 0, len(out.Files))
@@ -384,6 +386,7 @@ func (e *Engine) EmitArtifacts(
 	if err := e.surfaceNodeDiagnostics(nodeCtx, out.Diagnostics); err != nil {
 		return nil, err
 	}
+	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
 
 	importNames := make(map[string]bool, len(proj.Entries))
 	for _, ent := range proj.Entries {
@@ -583,6 +586,23 @@ func (e *Engine) surfaceNodeDiagnostics(nodeCtx renderer.NodeRenderContext, diag
 			nodeCtx.NodeID, nodeCtx.ProviderName, strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// surfaceDerivedKeys forwards the names a guest declares it derived to the node's
+// derived-key sink (nil-safe), verbatim and uninspected. It is the one place a
+// provider engine hands a declaration to the host, so every render crossing
+// declares through the same seam.
+//
+// Nothing here reads a space name or a key. The guest's declaration is carried
+// through unchanged: the host's later check compares the strings for equality
+// within a space, so a provider format is never parsed and a key's meaning is
+// never learned. Forwarding an empty declaration would be indistinguishable from
+// forwarding nothing, so a guest that declares nothing costs the sink no call.
+func (e *Engine) surfaceDerivedKeys(nodeCtx renderer.NodeRenderContext, declared types.OrderedMap[[]string]) {
+	if nodeCtx.DerivedKeySink == nil || declared.Len() == 0 {
+		return
+	}
+	nodeCtx.DerivedKeySink(declared)
 }
 
 // advertisesExport reports whether the guest's describe() self-report declares an

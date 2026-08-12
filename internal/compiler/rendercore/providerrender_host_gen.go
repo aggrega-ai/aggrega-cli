@@ -95,10 +95,12 @@ type CatalogProjection struct {
 	MappingLibraries types.OrderedMap[types.MappingLibrary] `json:"mapping_libraries,omitempty" yaml:"mapping_libraries,omitempty" cbor:"mapping_libraries,omitempty"`
 }
 
-// RenderNodeOutput The payload a Provider guest returns from its render_node export: the serialized bytes of each output file the guest emitted, and any diagnostics the guest raised while rendering. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
+// RenderNodeOutput The payload a Provider guest returns from its render_node export: the serialized bytes of each output file the guest emitted, the names it derived into each of its own key spaces, and any diagnostics the guest raised while rendering. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
 type RenderNodeOutput struct {
 	// Files The output files the guest emitted, in emission order. Each names its on-disk path and carries the serialized bytes the host writes verbatim.
 	Files []RenderedFile `json:"files" yaml:"files" cbor:"files"`
+	// DerivedKeys The names the guest derived while rendering this node, keyed by the key space it derived them into, each space carrying its names in derivation order. A guest that derives the name its output addresses a resource by has put that name inside the file bytes the host writes verbatim, where the host cannot see it; declaring it here is how the guest asks the host to confirm no two derivations landed on one name. The host compares declared names for equality within one declared space and does nothing else — it does not parse a name, does not learn what a space or a name means, and never derives one itself. Two contributors to the same assembled output that declare the same name in the same space halt the build, and the halt names the space, the name, and both contributors. Both the space names and the names within them are the guest's own vocabulary: a guest wanting uniqueness across a narrower or wider scope than one assembled output expresses that scope in the space name it declares. Preserves declaration order so the payload is byte-identical across runs of identical input. Absent when the guest derives no names it wants checked, which leaves the check inert for that guest.
+	DerivedKeys types.OrderedMap[[]string] `json:"derived_keys,omitempty" yaml:"derived_keys,omitempty" cbor:"derived_keys,omitempty"`
 	// Diagnostics Diagnostics the guest raised while rendering. Each element is the shared Wasm-plugin diagnostic shape.
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty" cbor:"diagnostics,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
@@ -1103,6 +1105,16 @@ func (t RenderNodeOutput) MarshalJSON() ([]byte, error) {
 		}
 	}
 	buf.WriteByte(']')
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"derived_keys\":")
+	if enc, err := json.Marshal(t.DerivedKeys); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
 	if len(t.Diagnostics) != 0 {
 		if !first {
 			buf.WriteByte(',')
@@ -1167,6 +1179,16 @@ func (t *RenderNodeOutput) UnmarshalJSON(data []byte) error {
 			}
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
+			}
+		case "derived_keys":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.DerivedKeys); err != nil {
+					return err
+				}
 			}
 		case "diagnostics":
 			t.Diagnostics = nil
@@ -5202,7 +5224,7 @@ func (t RenderNodeOutput) EncodeCBOR() ([]byte, error) {
 // canonical key order (fixed at generation time), omitting empty
 // non-required fields so the map head's pair count matches.
 func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
-	n := 1
+	n := 2
 	if t.Error != "" {
 		n++
 	}
@@ -5232,6 +5254,21 @@ func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 				return nil, mErr
 			} else {
 				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "derived_keys")
+	{
+		keys := t.DerivedKeys.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.DerivedKeys.Get(k)
+			dst = appendCBORHead(dst, 4, uint64(len(mv)))
+			for i := range mv {
+				ev := mv[i]
+				dst = appendCBORTextString(dst, ev)
 			}
 		}
 	}
@@ -5271,6 +5308,40 @@ func (t *RenderNodeOutput) decodeCBOR(dec *cborDec) error {
 					s = append(s, ev)
 				}
 				t.Files = s
+			}
+		case "derived_keys":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[[]string]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv []string
+					{
+						sn, err := dec.readArrayHeader()
+						if err != nil {
+							return err
+						}
+						s := make([]string, 0, sn)
+						for si := 0; si < sn; si++ {
+							var ev string
+							if s, err := dec.readTextString(); err != nil {
+								return err
+							} else {
+								ev = s
+							}
+							s = append(s, ev)
+						}
+						mv = s
+					}
+					om.Set(mk, mv)
+				}
+				t.DerivedKeys = om
 			}
 		case "diagnostics":
 			{

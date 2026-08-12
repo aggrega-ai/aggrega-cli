@@ -90,9 +90,13 @@ type dispatchKey struct {
 // into this dispatch group — used for diagnostic messages on collision /
 // chart-name-mismatch errors and for chart-name cascade lookups against
 // the resolver-side BoundaryAnnotations map.
+// derivedKeys accumulates the names every contributor to this group declares it
+// derived, across all of them, so the injectivity check runs once per group with
+// every declaration in view rather than per contributor as each arrives.
 type pendingDispatch struct {
 	files                  map[string]map[string][]byte
 	formats                map[string]map[string]string
+	derivedKeys            derivedKeySet
 	intermediates          map[string][]EmittedFile
 	nodeAnnotations        map[string]map[string]string
 	nodeComponent          map[string]string
@@ -740,6 +744,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Structured unsupported-field diagnostics route here, kept apart from the
 		// free-form warnings so the class stays suppressible by its stable code.
 		nodeCtx.UnsupportedFieldSink = func(d Diagnostic) { state.Diagnostics = append(state.Diagnostics, d) }
+		// The names the node's provider guest declares it derived accumulate here,
+		// merged across every crossing that carries this node context, and move into
+		// the node's dispatch group below once the group key exists. The sink is
+		// attached before any crossing runs, for the same reason the warning sink is:
+		// a declaration made by a crossing that ran before the sink existed would be
+		// lost, and losing a declaration is losing exactly the evidence the
+		// duplicate check reads.
+		nodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
+			mergeDerivedKeys(&state.DerivedKeys, declared)
+		}
 		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID,
 				fmt.Sprintf("node %q source resolution", nodeID))
@@ -1018,6 +1032,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		dispatch[key].files[nodeID] = nodeFileMap
 		dispatch[key].formats[nodeID] = nodeFormatMap
+		// Record this contributor's derived-name declarations against the group its
+		// output merges into, under the same authoring-level producer name a path
+		// collision reports, so both collision reports point at something the author
+		// can find in their own input. The check itself runs once per group, after
+		// every contributor has rendered.
+		dispatch[key].derivedKeys.putAll(state.DerivedKeys, nodeProducerLabel(nodeID))
 		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
 		dispatch[key].nodeComponent[nodeID] = node.Component
 		dispatch[key].engineByNode[nodeID] = engine
@@ -1228,6 +1248,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if len(nodeFiles) > 0 {
 			dispatch[dKey].files[syntheticNodeID] = nodeFiles
 		}
+		// This boundary-scope feature's derived-name declarations join the same
+		// per-group check its files do, under the same authoring-level producer name
+		// a path collision would report it by. Recorded unconditionally rather than
+		// alongside the file routing above: a contributor whose output is entirely
+		// pre-assembly fragments still derived the names it declared, and those
+		// names still meet the other contributors' names in the merged output.
+		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], nodeProducerLabel(syntheticNodeID))
 		// Record the boundary as a contributor for the dispatch group's
 		// diagnostic context.
 		alreadyContributing := false
@@ -1328,6 +1355,22 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// — it never falls back to a lower-version engine that happens to assemble.
 	for _, key := range orderedDispatch {
 		if err := selectBoundaryAssembler(dispatch[key], key); err != nil {
+			return nil, err
+		}
+	}
+
+	// Derived-name injectivity across each group's contributors. Every contributor
+	// has rendered by now, so each group holds every declaration its contributors
+	// made and the check sees the whole picture at once.
+	//
+	// It runs before any assembly rather than after, because a duplicate is settled
+	// entirely by the declarations already in hand: no assembler output is needed to
+	// detect it, and halting here means the build stops before an assembler merges
+	// output whose names were already known to collide. Groups are walked in
+	// dispatch order so a build with duplicates in more than one group reports the
+	// same one first on every run.
+	for _, key := range orderedDispatch {
+		if err := dispatch[key].derivedKeys.resolve(key.Path, key.Provider); err != nil {
 			return nil, err
 		}
 	}

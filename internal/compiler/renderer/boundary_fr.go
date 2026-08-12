@@ -87,6 +87,15 @@ type BoundaryFRState struct {
 	Files        map[boundaryFRKey][]EmittedFile
 	ValidatedFRs map[string]error
 
+	// DerivedKeys carries the names each boundary-scope FeatureRecipe's guest
+	// declares it derived, keyed exactly as Files is so a declaration routes to
+	// the same dispatch group the declaring contributor's files route to. A
+	// boundary-scope FeatureRecipe is a contributor to an assembled output like any
+	// component, so its declarations join the same per-group injectivity check;
+	// keying it any other way would leave the check covering components and
+	// silently skipping features.
+	DerivedKeys map[boundaryFRKey]types.OrderedMap[[]string]
+
 	// ConsumerEnvOverrides carries per-consumer environment overrides a
 	// boundary-scope FeatureRecipe's resource-gen emits, keyed
 	// consumer-nodeID -> {envVar: value}. The orchestrator applies each named
@@ -103,6 +112,7 @@ func NewBoundaryFRState() *BoundaryFRState {
 		Provides:             map[boundaryFRKey]map[string]any{},
 		Files:                map[boundaryFRKey][]EmittedFile{},
 		ValidatedFRs:         map[string]error{},
+		DerivedKeys:          map[boundaryFRKey]types.OrderedMap[[]string]{},
 		ConsumerEnvOverrides: map[string]map[string]string{},
 	}
 }
@@ -314,6 +324,16 @@ func dispatchBoundaryScopeFR(
 	// consumer node whose sink (if any) targets a different accumulator, so wire
 	// it explicitly here to the boundary-FR render state.
 	frNodeCtx.WarningSink = func(w string) { state.Warnings = append(state.Warnings, w) }
+	// The derived-name declarations this FR's guest makes are rewired for the same
+	// reason: the copied context's sink targets the consumer node's accumulator,
+	// and a declaration landing there would be attributed to that component
+	// instead of to this feature — and would be checked against the wrong dispatch
+	// group, since the FR's output routes to the group at its own evaluated path.
+	frNodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
+		merged := boundaryFRState.DerivedKeys[key]
+		mergeDerivedKeys(&merged, declared)
+		boundaryFRState.DerivedKeys[key] = merged
+	}
 	// The boundary-scope FR's source resolves through the shared
 	// resolve+extract helper against the boundary's own infra — the SAME
 	// infra (graph.Spec.BoundaryFeatures) the lock-time descent pins from —
