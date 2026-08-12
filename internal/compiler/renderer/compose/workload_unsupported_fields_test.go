@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -227,6 +228,234 @@ func TestUnsupportedField_PersistentTemplatePartial(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no persistentTemplate diagnostic (all: %+v)", diags)
+	}
+}
+
+// ephemeralSizeLimitWorkload builds a Workload whose one volume is an ephemeral
+// volume, with sizeLimit set to limit and omitted when limit is empty. The main
+// container mounts it by default; mountedEphemeralSizeLimitWorkload's false
+// variant is the unmounted shape.
+func ephemeralSizeLimitWorkload(limit string) *types.Workload {
+	return mountedEphemeralSizeLimitWorkload(limit, true)
+}
+
+// mountedEphemeralSizeLimitWorkload is ephemeralSizeLimitWorkload with the mount
+// made explicit, so a case can cover the declared-but-unmounted shape. The size a
+// target cannot carry is dropped either way, so the two shapes must agree about
+// the sizeLimit warning and differ only in the separate unmounted advisory.
+func mountedEphemeralSizeLimitWorkload(limit string, mounted bool) *types.Workload {
+	w := baseDegradeWorkload()
+	if mounted {
+		withMainContainer(w, func(c *types.ContainerSpec) {
+			c.VolumeMounts = []types.VolumeMount{{Name: "scratch", Path: "/tmp/scratch"}}
+		})
+	}
+	w.Volumes.Set("scratch", types.VolumeSpec{Ephemeral: &types.EphemeralVolume{SizeLimit: limit}})
+	return w
+}
+
+// TestUnsupportedField_EphemeralSizeLimitIndependentOfMounting proves the dropped
+// size is reported for a declared volume whatever mounts it. The value is lost the
+// same way in both shapes, so a warning wired to the mount rather than to the
+// declaration would go quiet on exactly the volumes that are otherwise fine.
+func TestUnsupportedField_EphemeralSizeLimitIndependentOfMounting(t *testing.T) {
+	t.Parallel()
+	const coordinate = "volumes.scratch.ephemeral.sizeLimit"
+	for _, mounted := range []bool{true, false} {
+		mounted := mounted
+		name := "mounted"
+		if !mounted {
+			name = "unmounted"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, diags, err := SynthesizeWorkloadCore(
+				mountedEphemeralSizeLimitWorkload("100Mi", mounted), nodeCtxFor("api"))
+			if err != nil {
+				t.Fatalf("synth: %v", err)
+			}
+			var n int
+			for _, d := range diags {
+				if d.SourceRef == coordinate {
+					n++
+				}
+			}
+			if n != 1 {
+				t.Fatalf("got %d diagnostics at %s, want 1 (all: %+v)", n, coordinate, diags)
+			}
+		})
+	}
+}
+
+// TestUnsupportedField_EphemeralSizeLimit proves an authored ephemeral sizeLimit
+// is announced rather than dropped in silence: compose's tmpfs short form carries
+// no size, so the value reaches no part of the output. The warning names the field
+// at its authored coordinate and carries the class code, and a volume that omits
+// the optional field raises nothing — the guard is satisfiable precisely because
+// sizeLimit is optional.
+func TestUnsupportedField_EphemeralSizeLimit(t *testing.T) {
+	t.Parallel()
+	const coordinate = "volumes.scratch.ephemeral.sizeLimit"
+
+	// Authored: exactly one diagnostic, at the authored coordinate.
+	_, diags, err := SynthesizeWorkloadCore(ephemeralSizeLimitWorkload("100Mi"), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth with sizeLimit: %v", err)
+	}
+	var got []renderctx.Diagnostic
+	for _, d := range diags {
+		if d.SourceRef == coordinate {
+			got = append(got, d)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d diagnostics at %s, want 1 (all: %+v)", len(got), coordinate, diags)
+	}
+	d := got[0]
+	if d.Severity != "warning" {
+		t.Errorf("severity = %q, want warning", d.Severity)
+	}
+	if d.Code != rendercore.UnsupportedFieldCode {
+		t.Errorf("code = %q, want %q", d.Code, rendercore.UnsupportedFieldCode)
+	}
+	if !strings.Contains(d.Message, coordinate) {
+		t.Errorf("message %q does not name the authored coordinate", d.Message)
+	}
+	if !strings.Contains(d.Message, "compose") {
+		t.Errorf("message %q does not name the target", d.Message)
+	}
+	// Full omission, not a reduced form: nothing size-derived reaches the output.
+	if strings.Contains(d.Message, "does not fully support") {
+		t.Errorf("message %q uses the partial-support wording; the value is dropped outright", d.Message)
+	}
+
+	// Omitted: nothing for the field. The volume itself still translates.
+	_, bare, err := SynthesizeWorkloadCore(ephemeralSizeLimitWorkload(""), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth without sizeLimit: %v", err)
+	}
+	for _, d := range bare {
+		if strings.Contains(d.SourceRef, "sizeLimit") {
+			t.Errorf("an unauthored sizeLimit produced a diagnostic: %+v", d)
+		}
+	}
+}
+
+// TestUnsupportedField_EphemeralSizeLimitOutOfBand proves the warning is
+// advisory: the authored sizeLimit changes no rendered byte, so the tmpfs entry a
+// reader gets is the same either way.
+func TestUnsupportedField_EphemeralSizeLimitOutOfBand(t *testing.T) {
+	t.Parallel()
+	bareFiles, _, err := SynthesizeWorkloadCore(ephemeralSizeLimitWorkload(""), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth without sizeLimit: %v", err)
+	}
+	sizedFiles, sizedDiags, err := SynthesizeWorkloadCore(ephemeralSizeLimitWorkload("100Mi"), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth with sizeLimit: %v", err)
+	}
+	if len(sizedDiags) == 0 {
+		t.Fatal("expected a diagnostic for the authored sizeLimit, got none")
+	}
+	if !bytes.Equal(bareFiles[0].Body, sizedFiles[0].Body) {
+		t.Errorf("an authored sizeLimit changed rendered bytes (must be out-of-band)\n--- without ---\n%s\n--- with ---\n%s",
+			bareFiles[0].Body, sizedFiles[0].Body)
+	}
+}
+
+// TestUnsupportedField_EphemeralSizeLimitCarriesTheSuppressibleClass proves the
+// warning is suppressible by the same filter as the rest of the class, rather
+// than asserting that it belongs to the class. The suppression is keyed on the
+// diagnostic's own code, so the property that decides it is that this
+// diagnostic's code is byte-equal to the code the class's own constructor
+// produces — established here against that constructor rather than against a
+// literal, so repointing the constructor at another class fails this test.
+func TestUnsupportedField_EphemeralSizeLimitCarriesTheSuppressibleClass(t *testing.T) {
+	t.Parallel()
+	_, diags, err := SynthesizeWorkloadCore(ephemeralSizeLimitWorkload("100Mi"), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth: %v", err)
+	}
+
+	classCode := rendercore.UnsupportedFieldDiagnostic(composeTargetName, "probe").Code
+	if classCode == "" {
+		t.Fatal("the class constructor produced an empty code; nothing for a filter to key on")
+	}
+
+	var found bool
+	for _, d := range diags {
+		if d.SourceRef != "volumes.scratch.ephemeral.sizeLimit" {
+			continue
+		}
+		found = true
+		if d.Code != classCode {
+			t.Errorf("code = %q, want the class code %q the suppression filter keys on", d.Code, classCode)
+		}
+	}
+	if !found {
+		t.Fatalf("no sizeLimit diagnostic to check the class of (all: %+v)", diags)
+	}
+
+	// The filter drops exactly the diagnostics carrying that code. Applying that
+	// one predicate leaves nothing behind for this workload, which is what
+	// --no-unsupported-field-warnings does to it on the display surface.
+	for _, d := range diags {
+		if d.Code == classCode {
+			continue
+		}
+		t.Errorf("a diagnostic outside the suppressible class survives: %+v", d)
+	}
+}
+
+// TestUnsupportedField_RequiredSizeFieldsStaySilent is a load-bearing negative:
+// the two persistent variants' size fields are deliberately NOT in the
+// unsupported-field class, and this test is what stops them being added later.
+//
+// The reason is the class's own contract. Every warning in it names something the
+// author chose to write and can choose to remove, so the advisory is actionable.
+// The entity schema declares size required on both persistent variants, so no
+// authoring change can avoid such a warning: it would fire on every stateful
+// workload with no remedy but the flag that silences the whole class, including
+// the advisories whose job is catching silent configuration loss. The compose
+// provider page teaches the storage-sizing difference declaratively instead.
+//
+// Both variants are covered because a change that reinstated one would very
+// likely reinstate the other, and each is exercised with its own required size.
+func TestUnsupportedField_RequiredSizeFieldsStaySilent(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		variant  string
+		spec     types.VolumeSpec
+		stateful bool
+	}{
+		{"persistent", types.VolumeSpec{Persistent: &types.PersistentVolume{Size: "10Gi"}}, false},
+		{"persistentTemplate", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "1Gi"}}, true},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.variant, func(t *testing.T) {
+			t.Parallel()
+			w := baseDegradeWorkload()
+			if tc.stateful {
+				w.Form = "stateful"
+			}
+			withMainContainer(w, func(c *types.ContainerSpec) {
+				c.VolumeMounts = []types.VolumeMount{{Name: "data", Path: "/var/data"}}
+			})
+			w.Volumes.Set("data", tc.spec)
+
+			_, diags, err := SynthesizeWorkloadCore(w, nodeCtxFor("store"))
+			if err != nil {
+				t.Fatalf("synth: %v", err)
+			}
+			for _, d := range diags {
+				if strings.Contains(d.SourceRef, "size") || strings.Contains(d.Message, "size and omitted") {
+					t.Errorf("%s.size raised a diagnostic; the required size fields are deliberately silent: %+v",
+						tc.variant, d)
+				}
+			}
+		})
 	}
 }
 

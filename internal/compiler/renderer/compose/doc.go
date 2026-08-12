@@ -60,9 +60,16 @@
 //
 // Aggrega's Workload model carries Kubernetes-shaped semantics (pod
 // specifications, probes, volume types, service types). Compose is
-// shape-poorer, so some translations are degraded, and where they are, the
-// rendered YAML says so in a comment. The translation never silently drops
-// information: a field it cannot express either maps onto a sensible compose
-// primitive with a comment explaining the degradation, or halts with a
-// translation error naming what could not be expressed.
+// shape-poorer, so some translations are degraded and some authored fields
+// reach no part of the output. Where a field cannot be expressed, the
+// translation either reports it out-of-band — UnsupportedFieldDiagnostic for a
+// field nothing in the output carries, PartialSupportDiagnostic for one carried
+// in reduced form — or halts with a translation error naming what could not be
+// expressed. An out-of-band diagnostic never alters the rendered bytes: the
+// emitted fragment is byte-for-byte what it would be without it.
+//
+// Not every divergence is reported. A probe degraded to a shell-command wrapper
+// is translated silently, so the reported set is the fields the translation
+// cannot carry rather than every point where compose and Kubernetes semantics
+// differ.
 package compose

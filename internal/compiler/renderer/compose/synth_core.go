@@ -91,9 +91,10 @@ func SynthesizeWorkloadCore(
 	// container in author order (that container's dropped extended resources,
 	// then its `as: env` attachment placeholders, then its runAsNonRoot), then
 	// the main container's pod-level drops, then the same per-container entries
-	// for each init container in authored order, then the per-volume
-	// partial-support entries. They ride the render-output ABI back to the host
-	// out-of-band; the rendered fragment bytes are unaffected.
+	// for each init container in authored order, then the per-volume entries — a
+	// dropped size, a reduced-fidelity variant, and an unmounted declaration each
+	// being a separate fact about one volume. They ride the render-output ABI back
+	// to the host out-of-band; the rendered fragment bytes are unaffected.
 	var diags []renderctx.Diagnostic
 
 	frag := ComposeFile{
@@ -159,13 +160,15 @@ func SynthesizeWorkloadCore(
 	// Top-level Volumes: one entry per persistent or persistentTemplate
 	// volume. Author order isn't expressed here — compose volumes are a map.
 	//
-	// The same walk reports a declared volume no container mounts. This is the
-	// only site that sees every volume variant, which is what makes it the right
-	// one: the switch below emits a top-level entry for the two persistent
-	// variants, so an unmounted volume of those kinds at least reaches the output
-	// unused, while a configmap, secret or ephemeral volume is expressed solely at
-	// a container's mount point and so leaves no trace at all when nothing mounts
-	// it. Reporting from here covers both without a second rule.
+	// The same walk reports a declared volume no container mounts, and any part of
+	// a variant the translation cannot carry. This is the only site that sees every
+	// volume variant, which is what makes it the right one: the switch below emits a
+	// top-level entry for the two persistent variants, so an unmounted volume of
+	// those kinds at least reaches the output unused, while a configmap, secret or
+	// ephemeral volume is expressed solely at a container's mount point and so
+	// leaves no trace at all when nothing mounts it. Reporting from here covers
+	// both without a second rule, and covers a volume whatever mounts it — a
+	// dropped size is dropped just the same when a container does mount the volume.
 	mounted := mountedVolumeNames(w)
 	for name, v := range w.Volumes.All() {
 		switch {
@@ -179,6 +182,18 @@ func SynthesizeWorkloadCore(
 			frag.Volumes[volumeName(componentID, name)] = Volume{}
 			diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName, "persistentTemplate",
 				"per-replica volume templating is not available and the volume degrades to a shared persistent volume"))
+		}
+
+		// An ephemeral volume becomes a service-level tmpfs entry, whose short form
+		// carries no size, so an authored sizeLimit reaches no part of the output.
+		// Reported only when it is authored: the field is optional, so a volume that
+		// leaves it out has lost nothing and nothing to act on. Checked here rather
+		// than as a branch of the switch above, because the switch decides what the
+		// volume emits and this decides nothing — keeping it outside is what makes
+		// the advisory unable to perturb a single rendered byte.
+		if v.Ephemeral != nil && v.Ephemeral.SizeLimit != "" {
+			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName,
+				"volumes."+name+".ephemeral.sizeLimit"))
 		}
 
 		// A volume nothing mounts is a distinct fact from any fidelity loss in

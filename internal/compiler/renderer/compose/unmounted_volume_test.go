@@ -116,13 +116,21 @@ func TestUnmountedVolume_ConfigMapDiagnosed(t *testing.T) {
 // containers — a long-running container and an init container — because an init
 // container's mounts are translated, so a volume mounted only there is wired and
 // must not be reported.
+//
+// Each case names the volume it declares so the assertion can match the unmounted
+// advisory's exact coordinate. Matching every source ref merely *beginning*
+// volumes. would be a looser test rather than a stricter one: other volume-scoped
+// advisories share that prefix and sit deeper in the authored path — a dropped
+// ephemeral sizeLimit among them — and catching one of those here would report a
+// failure of the mounting rule that has not happened.
 func TestUnmountedVolume_MountedVolumesSilent(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name  string
-		build func() *types.Workload
+		name   string
+		volume string
+		build  func() *types.Workload
 	}{
-		{"mounted by the main container", func() *types.Workload {
+		{"mounted by the main container", "data", func() *types.Workload {
 			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 			c := types.ContainerSpec{Image: "app:1.0"}
 			c.VolumeMounts = []types.VolumeMount{{Name: "data", Path: "/var/data"}}
@@ -130,7 +138,7 @@ func TestUnmountedVolume_MountedVolumesSilent(t *testing.T) {
 			w.Volumes.Set("data", types.VolumeSpec{Persistent: &types.PersistentVolume{Size: "1Gi"}})
 			return w
 		}},
-		{"mounted only by an init container", func() *types.Workload {
+		{"mounted only by an init container", "settings", func() *types.Workload {
 			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 			w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
 			initC := types.ContainerSpec{Name: "seed", Image: "seeder:1.0"}
@@ -139,7 +147,7 @@ func TestUnmountedVolume_MountedVolumesSilent(t *testing.T) {
 			w.Volumes.Set("settings", types.VolumeSpec{ConfigMap: &types.ConfigMapVolume{Source: "app-config"}})
 			return w
 		}},
-		{"mounted by a sidecar", func() *types.Workload {
+		{"mounted by a sidecar", "scratch", func() *types.Workload {
 			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 			w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
 			side := types.ContainerSpec{Image: "logger:1.0"}
@@ -159,10 +167,8 @@ func TestUnmountedVolume_MountedVolumesSilent(t *testing.T) {
 			if err != nil {
 				t.Fatalf("SynthesizeWorkloadCore: %v", err)
 			}
-			for _, d := range diags {
-				if strings.HasPrefix(d.SourceRef, "volumes.") {
-					t.Errorf("a mounted volume produced an unmounted advisory: %+v", d)
-				}
+			if got := volumeDiags(diags, tc.volume); len(got) != 0 {
+				t.Errorf("a mounted volume produced %d unmounted advisory(ies): %+v", len(got), got)
 			}
 		})
 	}
