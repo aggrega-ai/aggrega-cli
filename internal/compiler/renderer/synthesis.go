@@ -46,7 +46,7 @@ type WorkloadSynthesizer interface {
 // naming the provider that lacks the capability.
 func dispatchWorkloadSynthesis(
 	ctx context.Context,
-	engine Engine,
+	engine Provider,
 	tmplCtx *types.TemplateContext,
 	w *types.Workload,
 	nodeCtx NodeRenderContext,
@@ -84,9 +84,9 @@ func dispatchWorkloadSynthesis(
 // yields an empty lookup.
 //
 // This is a render-context projection, not provider logic: it lives in the
-// renderer so every host-side synthesizer surface — the in-tree provider
-// engines and the wasmengine adapter that projects a workload onto the provider
-// render wire — builds the lookup from one source of truth rather than
+// renderer so every host-side surface that reads it — the workload-reference
+// validation and the wasmengine adapter that projects a workload onto the
+// provider render wire — builds the lookup from one source of truth rather than
 // re-deriving it.
 func AttachmentProvidesFromContext(tmplCtx *types.TemplateContext) map[string]types.OrderedMap[string] {
 	provides, _ := AttachmentProjectionFromContext(tmplCtx, types.OrderedMap[types.IRFeatureEntry]{})

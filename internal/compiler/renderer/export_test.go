@@ -35,7 +35,7 @@ type LinkPassNode struct {
 	// Provider is the endpoint's resolved provider engine.
 	Provider string
 	// Engine is the endpoint's provider engine (a real wasmengine engine).
-	Engine Engine
+	Engine Provider
 	// Annotations is the endpoint's resolved placement annotations.
 	Annotations map[string]string
 	// Files is the endpoint's group-relative assembled output, keyed by
@@ -58,7 +58,7 @@ func RunCrossBoundaryLinkPassForTest(
 ) (warnings []string, filesByPath map[string]map[string][]byte, err error) {
 	graph := &types.IRGraph{Spec: types.IRSpec{Edges: edges}}
 	nodeDispatch := map[string]dispatchKey{}
-	nodeEngine := map[string]Engine{}
+	nodeEngine := map[string]Provider{}
 	nodeAnnotations := map[string]map[string]string{}
 	assembledByDispatch := map[dispatchKey]*assembledGroup{}
 

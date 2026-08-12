@@ -305,8 +305,8 @@ containers:
 	t.Error("no api deployment found")
 }
 
-// captureComposerEngine implements both renderer.Engine and
-// renderer.ReleaseComposer; ComposeRelease records the IntermediateFiles
+// captureComposerEngine implements both renderer.Provider and
+// renderer.BoundaryAssembler; AssembleBoundary records the per-node intermediates
 // it receives so the test can assert which EmittedFile entries the
 // orchestrator routed via the per-(path, provider) intermediates pipe.
 type captureComposerEngine struct {
@@ -441,7 +441,7 @@ func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) 
 			}
 
 			capture := &captureComposerEngine{}
-			factory := func(string) (renderer.Engine, error) { return capture, nil }
+			factory := func(string) (renderer.Provider, error) { return capture, nil }
 
 			if _, err := renderer.RenderAll(context.Background(), input, lookup, factory); err != nil {
 				t.Fatalf("RenderAll: %v", err)
@@ -455,7 +455,7 @@ func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) 
 				}
 			}
 			if !found {
-				t.Fatalf("expected a %v EmittedFile named %q to reach ComposeRelease via the per-boundary intermediates pipe; captured = %+v",
+				t.Fatalf("expected a %v EmittedFile named %q to reach AssembleBoundary via the per-boundary intermediates pipe; captured = %+v",
 					v.wantOrigin, v.filename, capture.captured)
 			}
 		})

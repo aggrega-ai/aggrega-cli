@@ -83,7 +83,7 @@ func renderWithNondeterministicProvider(t *testing.T, spec types.RecipeSpec) err
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	factory := func(string) (renderer.Engine, error) { return nondeterministicEngine{}, nil }
+	factory := func(string) (renderer.Provider, error) { return nondeterministicEngine{}, nil }
 
 	_, err := renderer.RenderAll(context.Background(), input, lookup, factory)
 	if err == nil {

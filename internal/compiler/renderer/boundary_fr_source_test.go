@@ -112,7 +112,7 @@ func TestDispatchBoundaryScopeFR_RemoteSourceCacheExtractsFromProjection(t *test
 	}
 
 	var captured any
-	factory := func(string) (Engine, error) { return sourceCaptureEngine{captured: &captured}, nil }
+	factory := func(string) (Provider, error) { return sourceCaptureEngine{captured: &captured}, nil }
 	key := boundaryFRKey{BoundaryPath: "cluster", FRInstance: "bridge"}
 
 	if err := dispatchBoundaryScopeFR(
@@ -212,7 +212,7 @@ func TestDispatchBoundaryScopeFR_InfraTemplatedSourceResolvesFromProjectionInfra
 	}
 
 	var captured any
-	factory := func(string) (Engine, error) { return sourceCaptureEngine{captured: &captured}, nil }
+	factory := func(string) (Provider, error) { return sourceCaptureEngine{captured: &captured}, nil }
 	key := boundaryFRKey{BoundaryPath: "cluster", FRInstance: "bridge"}
 
 	if err := dispatchBoundaryScopeFR(
@@ -264,7 +264,7 @@ func TestDispatchBoundaryScopeFR_LocalSourceForwardsVerbatim(t *testing.T) {
 	}
 
 	var captured any
-	factory := func(string) (Engine, error) { return sourceCaptureEngine{captured: &captured}, nil }
+	factory := func(string) (Provider, error) { return sourceCaptureEngine{captured: &captured}, nil }
 	key := boundaryFRKey{BoundaryPath: "cluster", FRInstance: "bridge"}
 
 	if err := dispatchBoundaryScopeFR(

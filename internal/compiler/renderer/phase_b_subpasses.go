@@ -248,7 +248,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 // An engine that does not implement ArtifactsEmitter, while the Recipe declares
 // artifacts:, produces a CATALOG_ERROR — mirroring the WorkloadSynthesizer gate
 // at B.4.
-func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBState, engine Engine, nodeCtx NodeRenderContext) error {
+func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBState, engine Provider, nodeCtx NodeRenderContext) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 3
 		return nil
@@ -292,7 +292,7 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // produce a CATALOG_ERROR via dispatchWorkloadSynthesis. Sourced-mode
 // Recipes (no parsed Workload) are a no-op at B.4 — their files are
 // produced by engine.Render at the orchestrator level.
-func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBState, engine Engine, nodeCtx NodeRenderContext) error {
+func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBState, engine Provider, nodeCtx NodeRenderContext) error {
 	if state.ParsedWorkload == nil {
 		state.PhaseReached = 4
 		return nil
@@ -714,7 +714,7 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // boundary-scope caller routes them by the Intermediate flag.
 func renderFeatureRecipeFiles(
 	ctx context.Context,
-	frEngine Engine,
+	frEngine Provider,
 	fr *types.FeatureRecipe,
 	frCtx *types.TemplateContext,
 	frNodeCtx NodeRenderContext,

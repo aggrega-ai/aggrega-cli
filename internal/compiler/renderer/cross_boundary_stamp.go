@@ -33,7 +33,7 @@ import (
 func stampCrossBoundaryLinkSentinels(
 	tmplCtx *types.TemplateContext,
 	nodeID, providerName, recipeName string,
-	engine Engine,
+	engine Provider,
 	node types.IRNode,
 	graph *types.IRGraph,
 	nodeRecipes map[string]*types.Recipe,

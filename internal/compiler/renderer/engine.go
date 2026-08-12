@@ -11,7 +11,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
-// Engine renders one node's values dictionary into on-disk-style artifacts.
+// Provider renders one node's values dictionary into on-disk-style artifacts.
 // Each returned RenderedFile carries a relative path (e.g., "Chart.yaml",
 // "templates/deployment.yaml"), its file contents, and the producer-declared
 // format the guest rendered it in (empty when the guest declares none).
@@ -19,7 +19,7 @@ import (
 // (and, for chart-structure engines, a `charts/<nodeID>/` sub-chart prefix). The
 // per-file format travels with its file so a downstream consumer can prefer the
 // producer's format over the path extension; it never affects the emitted bytes.
-type Engine interface {
+type Provider interface {
 	Render(ctx context.Context, values map[string]any, nodeCtx NodeRenderContext) ([]RenderedFile, error)
 	// Contract reports which Recipe input kinds this engine renders. It is
 	// the Go analog of the Wasm provider plugin's describe() ABI — each engine
@@ -47,7 +47,7 @@ type NodeInputValidator interface {
 	ValidateNodeInput(ctx context.Context, values map[string]any, nodeCtx NodeRenderContext) ([]Diagnostic, error)
 }
 
-// CodecProvider is the optional capability an Engine implements to supply a
+// CodecProvider is the optional capability a Provider implements to supply a
 // pipeline codec — how the provider's emitted output is carved into addressable
 // units and reassembled byte-faithfully after a step edits some of them. An
 // engine reports (codec, true) when its provider guest advertises the carve and
@@ -99,7 +99,7 @@ type CrossBoundaryLinker interface {
 // pair. It is the single seam the link pass reads, so an engine's linking
 // capability resolves independently of its concrete type. A nil engine, or one
 // that does not implement the interface, reports false.
-func linksCrossBoundary(engine Engine) bool {
+func linksCrossBoundary(engine Provider) bool {
 	if l, ok := engine.(CrossBoundaryLinker); ok {
 		return l.LinksCrossBoundary()
 	}
@@ -137,7 +137,7 @@ type ProviderContract struct {
 	ArtifactsStandalone bool
 }
 
-// EngineFactory returns the Engine implementation for a given provider name
+// EngineFactory returns the Provider implementation for a given provider name
 // (from `recipe.spec.capability`). Returning an error halts the build.
 // Engines may be cached/singleton'd by the factory; the orchestrator makes no
 // assumption about instance identity.
@@ -146,25 +146,24 @@ type ProviderContract struct {
 // callers deliberately resolve each distinct provider once, but the render path
 // calls the factory at every crossing it dispatches — per node, per
 // resource-generating attachment, per boundary-scope FeatureRecipe, per codec
-// selection. So a factory that returns a fresh Engine per call yields one Engine
-// per crossing; a factory that memoizes on the identity it resolves collapses
-// that to one Engine per distinct provider identity.
+// selection. So a factory that returns a fresh Provider per call yields one
+// Provider per crossing; a factory that memoizes on the identity it resolves
+// collapses that to one Provider per distinct provider identity.
 //
-// The choice is not cost-neutral, because an Engine that reuses a guest instance
+// The choice is not cost-neutral, because a Provider that reuses a guest instance
 // across crossings holds that instance for its own lifetime, and nothing releases
-// it when a crossing ends — closing the Engine is what releases it. So a factory
+// it when a crossing ends — closing the Provider is what releases it. So a factory
 // that memoizes also exposes a way to close what it memoized, and its caller
 // closes at build end. A factory that neither memoizes nor closes accumulates one
 // such instance per crossing for the whole build.
-type EngineFactory func(providerName string) (Engine, error)
+type EngineFactory func(providerName string) (Provider, error)
 
 // ProviderVersionResolver reports the resolved provider-rendering plugin version
 // behind a provider binding (recipe.spec.capability, version pin included), or the
-// empty string when the binding renders through the in-tree engine with no
-// resolved plugin version. It shares the provider→plugin resolution the engine
-// factory performs, so the version reported here is the one behind the engine the
-// factory returns for the same binding. A nil resolver reports every binding as
-// version-less.
+// empty string when no provider-rendering plugin version resolves behind that
+// binding. It shares the provider→plugin resolution the engine factory performs,
+// so the version reported here is the one behind the engine the factory returns
+// for the same binding. A nil resolver reports every binding as version-less.
 type ProviderVersionResolver func(providerRef string) string
 
 // BoundaryAssembler is the optional interface a provider engine implements to
@@ -175,10 +174,9 @@ type ProviderVersionResolver func(providerRef string) string
 // one docker-compose.yaml per dispatch path. Engines that only produce flat
 // per-node output do not implement this.
 //
-// Replaces the previous two-tier (BoundaryComposer + ReleaseComposer) split.
-// Per-(evaluated_path, provider) dispatch is the single assembly tier; the
-// orchestrator groups contributors by dispatch key and invokes
-// AssembleBoundary once per group.
+// Per-(evaluated_path, provider) dispatch is the single assembly tier: the
+// orchestrator groups contributors by dispatch key and invokes AssembleBoundary
+// once per group.
 type BoundaryAssembler interface {
 	// AssembleBoundary returns assembled files relative to the dispatch path.
 	// The orchestrator prefixes them with `boundaries/<evaluated_path>/`
@@ -218,7 +216,7 @@ type BoundaryAssemblyReporter interface {
 // empty string when engine reports none. It is the single seam the classification
 // helpers read, so an engine's assembly behaviour resolves independently of its
 // concrete type.
-func boundaryAssemblyOf(engine Engine) string {
+func boundaryAssemblyOf(engine Provider) string {
 	if r, ok := engine.(BoundaryAssemblyReporter); ok {
 		return r.BoundaryAssembly()
 	}
@@ -245,7 +243,7 @@ type AssemblyNameAnnotationReporter interface {
 // seam the guard and cascade read, so a group's assembly-name rule resolves from
 // the engine's own claim independently of its concrete type. A nil engine reports
 // none.
-func assemblyNameAnnotationOf(engine Engine) (annotation string, requireUnique bool) {
+func assemblyNameAnnotationOf(engine Provider) (annotation string, requireUnique bool) {
 	if r, ok := engine.(AssemblyNameAnnotationReporter); ok {
 		return r.AssemblyNameAnnotation()
 	}
@@ -262,7 +260,7 @@ func assemblyNameAnnotationOf(engine Engine) (annotation string, requireUnique b
 // assembly self-report, so a provider routed to a Wasm guest classifies from the
 // guest's live describe() claim. This is the single home of the
 // intermediate-marking rule; every classification site reads it here.
-func RenderIsIntermediate(engine Engine) bool {
+func RenderIsIntermediate(engine Provider) bool {
 	return boundaryAssemblyOf(engine) == wasm.BoundaryAssemblyMerge
 }
 
@@ -272,7 +270,7 @@ func RenderIsIntermediate(engine Engine) bool {
 // position ("nest"), false for a flat-output provider ("none") or an engine that
 // reports no assembly claim. The assembler election and the artifacts classifier
 // read it to decide whether a dispatch group has an assembler.
-func AssemblesBoundary(engine Engine) bool {
+func AssemblesBoundary(engine Provider) bool {
 	switch boundaryAssemblyOf(engine) {
 	case wasm.BoundaryAssemblyMerge, wasm.BoundaryAssemblyNest:
 		return true

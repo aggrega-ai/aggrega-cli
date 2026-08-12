@@ -114,7 +114,7 @@ func TestBoundaryConsumerEnvChannel_PopulatesViaEngineHook(t *testing.T) {
 	release.Spec.Boundaries.Set("cluster", types.Boundary{Description: "cluster"})
 
 	state := NewBoundaryFRState()
-	factory := func(string) (Engine, error) {
+	factory := func(string) (Provider, error) {
 		return envOverrideStubEngine{overrides: map[string]map[string]string{
 			"api": {"FOO_ADDR": "svc-x:1234"},
 		}}, nil

@@ -17,15 +17,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// stubEngine is a no-op Engine used by tests across the package that need an
-// Engine value but not real rendering.
+// stubEngine is a no-op Provider used by tests across the package that need a
+// Provider value but not real rendering.
 type stubEngine struct{}
 
 func (stubEngine) Render(_ context.Context, _ map[string]any, _ NodeRenderContext) ([]RenderedFile, error) {
 	return nil, nil
 }
 
-// Capabilities satisfies the Engine interface for the test stub. Permissive (all
+// Capabilities satisfies the Provider interface for the test stub. Permissive (all
 // input kinds) so the central gate never declines it. Embedded by
 // stubArtifactsEmitter and the host-capabilities test wrappers, which inherit it.
 func (stubEngine) Contract() ProviderContract {

@@ -87,7 +87,7 @@ func runMergedRender(t *testing.T, merged map[string]renderer.AssembledFile) *re
 		},
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
-	factory := func(_ string) (renderer.Engine, error) {
+	factory := func(_ string) (renderer.Provider, error) {
 		return &mergeFormatAssembler{merged: merged}, nil
 	}
 	res, err := renderer.RenderAll(context.Background(), input, lookup, factory)

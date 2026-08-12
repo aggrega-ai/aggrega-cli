@@ -32,8 +32,8 @@ func ProviderEngineKind(providerRef string) string {
 
 // providerVersionGreater orders resolved provider versions for boundary-assembler
 // selection within a dispatch group. A populated version outranks the empty
-// version — a version-less binding (the in-tree fallback route, which carries no
-// resolved plugin version) sorts below every versioned binding. Between two
+// version — a version-less binding, one for which no provider-rendering plugin
+// version was resolved, sorts below every versioned binding. Between two
 // populated versions the higher semver wins; a version that does not parse as
 // semver sorts below one that does, and two unparseable versions order lexically,
 // so the ordering is total and deterministic for any input.

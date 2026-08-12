@@ -62,7 +62,7 @@ func wireCrossBoundaryLinks(
 	graph *types.IRGraph,
 	allProvides NodeProvides,
 	nodeDispatch map[string]dispatchKey,
-	nodeEngine map[string]Engine,
+	nodeEngine map[string]Provider,
 	nodeAnnotations map[string]map[string]string,
 	assembledByDispatch map[dispatchKey]*assembledGroup,
 	engineFactory EngineFactory,

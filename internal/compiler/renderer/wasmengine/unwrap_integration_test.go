@@ -62,7 +62,7 @@ func TestWasmEngineExposesCodecAndArtifactsSeams(t *testing.T) {
 	loader := &wasm.Loader{}
 	w := wasmengine.New(failingLookup, "test://x", loader)
 
-	var e renderer.Engine = w
+	var e renderer.Provider = w
 	if _, ok := e.(renderer.CodecProvider); !ok {
 		t.Error("wrapper must implement CodecProvider — the pipeline-codec seam")
 	}

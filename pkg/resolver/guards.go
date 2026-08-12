@@ -49,11 +49,12 @@ type CatalogLookup struct {
 	// entity serving it, plus a found flag and an error. The binding is the bare
 	// provider name ("helm") or a version-pinned form ("helm:1.0.0", "helm:^1.0.0")
 	// where the pin constrains the plugin version. A pluginType: provider Plugin
-	// serves the provider names in its targets; this accessor finds the
+	// serves the provider names in its capabilities; this accessor finds the
 	// unique such Plugin whose version satisfies the pin (highest-in-range for a
-	// caret, highest overall when unpinned). A bare miss returns (_, false, nil) so
-	// the caller falls back to the in-tree engine; a version pin nothing satisfies
-	// returns a non-nil error so the caller halts loudly. May be nil in catalog-less
+	// caret, highest overall when unpinned). A bare miss returns (_, false, nil),
+	// leaving the binding served by no plugin — the render path reports that as an
+	// unknown provider and halts; a version pin nothing satisfies returns a
+	// non-nil error so the caller halts loudly. May be nil in catalog-less
 	// paths; a consumer that needs it then resolves nothing.
 	ProviderPlugin func(ref string) (types.Plugin, bool, error)
 	// SchemaLibraries is the catalog's resolved SchemaLibrary set keyed by

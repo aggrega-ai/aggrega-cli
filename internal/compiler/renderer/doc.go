@@ -7,7 +7,7 @@
 // It assembles the template context (matching template-context-v1alpha1.schema.json),
 // evaluates provides with self-containment guards, pre-hydrates inject pipes,
 // and executes Phase A (injectMapping) and Phase B (valuesMapping), including
-// Phase B.6 dispatch for boundary-scope FeatureRecipes. Per-node Engine output
+// Phase B.6 dispatch for boundary-scope FeatureRecipes. Per-node Provider output
 // is routed to per-(evaluated-path, provider) BoundaryAssembler invocations
 // keyed on the contributing boundary's evaluated directory and subDirectory;
 // two boundaries that evaluate to the same (path, provider) tuple share an

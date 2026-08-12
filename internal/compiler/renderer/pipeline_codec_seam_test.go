@@ -31,7 +31,7 @@ func (m markerCodec) Reassemble(name string, body []byte, segs []frp.Unit, patch
 	return m.inner.Reassemble(name, body, segs, patched)
 }
 
-// codecProviderEngine is a minimal Engine that also implements CodecProvider,
+// codecProviderEngine is a minimal Provider that also implements CodecProvider,
 // returning a markerCodec — a local stand-in for any provider engine that
 // overrides the stock codec.
 type codecProviderEngine struct {
@@ -49,7 +49,7 @@ func (e codecProviderEngine) PipelineCodec(yamlIndent int) (frp.Codec, bool) {
 	return markerCodec{inner: newStockYAMLCodec(yamlIndent), segments: e.segments}, true
 }
 
-// plainEngine is an Engine that does NOT implement CodecProvider — it must fall
+// plainEngine is a Provider that does NOT implement CodecProvider — it must fall
 // back to the stock codec.
 type plainEngine struct{}
 
@@ -64,7 +64,7 @@ func (plainEngine) Contract() ProviderContract { return ProviderContract{} }
 func TestSelectCodec_PicksProviderCodec(t *testing.T) {
 	t.Parallel()
 	var segs int32
-	factory := func(name string) (Engine, error) {
+	factory := func(name string) (Provider, error) {
 		switch name {
 		case "marker":
 			return codecProviderEngine{segments: &segs}, nil
@@ -105,7 +105,7 @@ func TestSelectCodec_PicksProviderCodec(t *testing.T) {
 func TestRunNodePipeline_RoutesThroughProviderCodec(t *testing.T) {
 	t.Parallel()
 	var segs int32
-	factory := func(name string) (Engine, error) {
+	factory := func(name string) (Provider, error) {
 		if name == "marker" {
 			return codecProviderEngine{segments: &segs}, nil
 		}

@@ -93,8 +93,8 @@ func wasmEngineFactory(t *testing.T) renderer.EngineFactory {
 	// loop with no goroutines and each test builds its own factory, so this map is
 	// touched by one goroutine over its life and needs no guard. Should node
 	// rendering ever go concurrent, it would.
-	memo := map[string]renderer.Engine{}
-	return func(providerRef string) (renderer.Engine, error) {
+	memo := map[string]renderer.Provider{}
+	return func(providerRef string) (renderer.Provider, error) {
 		bare := renderer.ProviderEngineKind(providerRef)
 		switch bare {
 		case "", "helm", "compose", "helm-chart", "terraform":

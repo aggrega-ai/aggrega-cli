@@ -99,7 +99,7 @@ type pendingDispatch struct {
 	subCharts              []SubChartInfo
 	assembler              BoundaryAssembler
 	assemblerCandidates    []assemblerCandidate
-	engineByNode           map[string]Engine
+	engineByNode           map[string]Provider
 	contributingBoundaries []string
 }
 
@@ -110,7 +110,7 @@ type pendingDispatch struct {
 // appended in node-processing order, so iterating them in order keeps the
 // earliest node's engine on a version tie.
 type assemblerCandidate struct {
-	engine  Engine
+	engine  Provider
 	version string
 }
 
@@ -335,7 +335,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// boundary; the pass reads these maps to route the crossing and to project the
 	// consumed end's resolved annotations into the per-edge payload.
 	nodeDispatch := map[string]dispatchKey{}
-	nodeEngine := map[string]Engine{}
+	nodeEngine := map[string]Provider{}
 	nodeAnnotations := map[string]map[string]string{}
 
 	// Deferred-PATCH accumulator, keyed by the dispatch group of the assembler
@@ -687,10 +687,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		state.Diagnostics = append(state.Diagnostics, sensitiveByValue...)
 		// Resolved provider-rendering plugin version behind this binding, shared
-		// with the engine the factory returns for it. Empty for a binding that
-		// renders through the in-tree engine (no resolved plugin version). Stamped
-		// on the aggrega.ai/provider-version label and used to pick the dispatch
-		// group's boundary assembler when the group mixes provider versions.
+		// with the engine the factory returns for it. Empty when no provider-
+		// rendering plugin version resolves behind the binding. Stamped on the
+		// aggrega.ai/provider-version label and used to pick the dispatch group's
+		// boundary assembler when the group mixes provider versions.
 		providerVersion := ""
 		if input.ProviderVersion != nil {
 			providerVersion = input.ProviderVersion(providerRef)
@@ -974,7 +974,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				intermediates:   map[string][]EmittedFile{},
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
-				engineByNode:    map[string]Engine{},
+				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, key)
 		}
@@ -1208,7 +1208,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				intermediates:   map[string][]EmittedFile{},
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
-				engineByNode:    map[string]Engine{},
+				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, dKey)
 		}
@@ -1559,7 +1559,7 @@ func resolveFeatureRecipes(
 // rejection switch. The consequence for whoever debugs one: an engine that is
 // handed a kind its own report did not declare has been mis-routed — that is a
 // defect on this path, not something the author of the Recipe can fix.
-func gateInputKind(nodeID, providerName string, engine Engine, hasSource, hasWorkload, hasArtifacts bool) error {
+func gateInputKind(nodeID, providerName string, engine Provider, hasSource, hasWorkload, hasArtifacts bool) error {
 	caps := engine.Contract()
 	switch {
 	case hasSource:
@@ -1680,19 +1680,18 @@ func buildNodeRenderContext(
 // selectBoundaryAssembler elects a dispatch group's boundary assembler and, on a
 // mismatch, halts with the No-Ghost-Infrastructure loud guardrail. The assembler
 // is the engine of the highest resolved provider version among the group's nodes
-// (providerVersionGreater); a version-less node — the in-tree fallback route,
-// carrying no resolved plugin version — ranks below any versioned node. Ties
-// break on node-processing order: candidates append in that order and the scan
-// replaces the leader only on a strict version win, so the earliest node keeps
-// the assembler on a tie.
+// (providerVersionGreater); a version-less node, one carrying no resolved plugin
+// version, ranks below any versioned node. Ties break on node-processing order:
+// candidates append in that order and the scan replaces the leader only on a
+// strict version win, so the earliest node keeps the assembler on a tie.
 //
-// The guardrail applies to the ELECTED engine, never a lower-version fallback:
-// when that engine cannot assemble but the in-tree engine it stands in for can (a
-// rendering plugin advertising per-node rendering without the matching
-// boundary-assembly export), the build halts rather than silently emitting
-// unmerged per-node fragments. A group with no candidates (e.g. only boundary-
-// scope FeatureRecipe contributions) leaves the assembler unset — the group
-// finalizes flat.
+// The guardrail applies to the ELECTED engine, never a lower-version candidate:
+// when that engine's own self-report claims its provider assembles the group but
+// its rendering plugin does not advertise the matching boundary-assembly export,
+// the build halts rather than silently emitting unmerged per-node fragments. A
+// group whose elected engine makes no assembly claim finalizes flat, as does a
+// group with no candidates at all (e.g. only boundary-scope FeatureRecipe
+// contributions), which leaves the assembler unset.
 func selectBoundaryAssembler(pd *pendingDispatch, key dispatchKey) error {
 	selected := groupAssemblerEngine(pd)
 	if selected == nil {
@@ -1719,7 +1718,7 @@ func selectBoundaryAssembler(pd *pendingDispatch, key dispatchKey) error {
 // that assembles it. Returns nil when the group has no candidates — e.g. only
 // boundary-scope FeatureRecipe contributions — in which case the group finalizes
 // flat.
-func groupAssemblerEngine(pd *pendingDispatch) Engine {
+func groupAssemblerEngine(pd *pendingDispatch) Provider {
 	best := -1
 	for i := range pd.assemblerCandidates {
 		if best == -1 || providerVersionGreater(pd.assemblerCandidates[i].version, pd.assemblerCandidates[best].version) {

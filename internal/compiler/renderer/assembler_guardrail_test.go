@@ -22,7 +22,7 @@ import (
 // assembles yet genuinely cannot, which is exactly the mismatch the guardrail
 // catches.
 type renderOnlyAssemblerWrapper struct {
-	wrapped renderer.Engine
+	wrapped renderer.Provider
 }
 
 func (renderOnlyAssemblerWrapper) Render(_ context.Context, _ map[string]any, _ renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
@@ -61,7 +61,7 @@ func (w renderOnlyAssemblerWrapper) EmitArtifacts(_ context.Context, proj render
 }
 
 // TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts proves the Loud
-// Guardrail: when a provider whose in-tree engine assembles a dispatch group is
+// Guardrail: when a provider that self-reports assembling a dispatch group is
 // served by an engine that can render per node but cannot assemble (a rendering
 // plugin advertising per-node rendering without the matching boundary-assembly
 // export), the build halts with ErrBoundaryAssemblerMissing rather than silently
@@ -102,14 +102,14 @@ func TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts(t *testing.T) 
 	// The guardrail is only meaningful if the dispatched engine genuinely
 	// cannot assemble while reporting — via its forwarded host-capability holder —
 	// that the provider it stands in for does.
-	if _, ok := renderer.Engine(wrapper).(renderer.BoundaryAssembler); ok {
+	if _, ok := renderer.Provider(wrapper).(renderer.BoundaryAssembler); ok {
 		t.Fatal("wrapper unexpectedly implements BoundaryAssembler directly; guardrail scenario not exercised")
 	}
 	if !renderer.AssemblesBoundary(wrapper) {
 		t.Fatal("wrapper must report it assembles via its forwarded self-report for this scenario")
 	}
 
-	factory := func(string) (renderer.Engine, error) { return wrapper, nil }
+	factory := func(string) (renderer.Provider, error) { return wrapper, nil }
 
 	_, err := renderer.RenderAll(context.Background(), input, lookup, factory)
 	if err == nil {

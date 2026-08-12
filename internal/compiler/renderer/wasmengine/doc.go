@@ -2,14 +2,15 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Package wasmengine is a host-only adapter that implements the host renderer's
-// Engine and WorkloadSynthesizer interfaces by rendering one node through the
+// Provider and WorkloadSynthesizer interfaces by rendering one node through the
 // helm provider Wasm guest across the provider render ABI. It projects a node's
-// values, provenance, annotations, and either its chart source or its evaluated
-// workload into a RenderNodeInput, invokes the guest's render_node export through
-// the production describe-gated loader, and folds the returned files back into
-// the interface's own output shape. Given identical input it reproduces the
-// in-tree helm engine byte-for-byte, because both surfaces drive the same
-// filesystem-free render and synthesis core — one in-process, one across the ABI.
+// values, provenance, annotations, and either its chart source listing or its
+// evaluated workload into a RenderNodeInput, invokes the guest's render_node
+// export through the production describe-gated loader, and folds the returned
+// files back into the interface's own output shape. It returns the guest's
+// per-file output verbatim — each file's path, bytes, and declared format — so
+// the emitted bytes are the guest's own and this adapter reinterprets none of
+// them; a duplicate output path is a loud error rather than a silent overwrite.
 //
 // The adapter loads and closes a fresh guest plugin per Render or
 // SynthesizeWorkload call: it resolves the plugin's bytes through the injected
@@ -23,9 +24,10 @@
 // only; it changes neither isolation nor output.
 //
 // The adapter is host-only Go and carries no wasip1 build tag. It stays free of
-// any provider package import: it fronts an in-tree Go engine through the
-// renderer.Engine interface, whose SourceProjector projects a sourced node's
-// chart source onto the render wire and whose per-slot secret projection it
-// reuses. It is the provider engine the hybrid dispatch selects for a provider
-// that resolves to a Wasm rendering Plugin.
+// any provider package import: every piece of provider knowledge sits in the
+// guest. For a sourced node the host walks the acquired source root into a
+// name-only listing carrying no file content, and the guest resolves that
+// listing itself and asks the host to pack the selection it chooses. It is the
+// provider engine the hybrid dispatch selects for a provider that resolves to a
+// Wasm rendering Plugin.
 package wasmengine

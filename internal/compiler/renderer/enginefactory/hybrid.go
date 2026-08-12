@@ -26,7 +26,7 @@ type engineCloser interface {
 
 // NewHybrid builds a catalog-driven Wasm routing EngineFactory: a provider whose
 // name resolves to a provider-rendering Plugin — the Plugin that lists the
-// provider in its targets — advertising a render_node export renders
+// provider in its capabilities — advertising a render_node export renders
 // through the wasmengine adapter. A provider that resolves to no such Plugin is a
 // loud halt (renderer.ErrUnknownProvider); rendering is Wasm-only, so there is no
 // in-tree engine to fall back to.
@@ -79,8 +79,8 @@ func NewHybrid(
 	// over the hybrid's life — a plain map needs no mutex. Should node rendering
 	// ever go concurrent, this memo (and the shared loader's per-call load) would
 	// need a guard.
-	memo := map[string]renderer.Engine{}
-	factory := func(providerRef string) (renderer.Engine, error) {
+	memo := map[string]renderer.Provider{}
+	factory := func(providerRef string) (renderer.Provider, error) {
 		bare := renderer.ProviderEngineKind(providerRef)
 		engine, memoKey, err := routeEngine(providerRef, bare, catalogLookup, pluginLookup, sharedLoader)
 		if err != nil {
@@ -127,7 +127,7 @@ func NewHybrid(
 
 // routeEngine resolves providerRef to its provider-rendering Wasm adapter,
 // following the version-pinned binding → provider-Plugin (via the Plugin's
-// targets and version constraint) → render_node chain against the
+// capabilities and version constraint) → render_node chain against the
 // catalog. It returns the engine and the memo key that identifies it (the
 // resolved Plugin identity). A provider that resolves to no serving render_node
 // plugin is a loud halt (renderer.ErrUnknownProvider): rendering is Wasm-only, so
@@ -138,7 +138,7 @@ func routeEngine(
 	catalogLookup resolver.CatalogLookup,
 	pluginLookup pluginpath.Lookup,
 	sharedLoader *wasm.Loader,
-) (renderer.Engine, string, error) {
+) (renderer.Provider, string, error) {
 	plugin, routed, err := resolvePluginIdentity(providerRef, catalogLookup)
 	if err != nil {
 		return nil, "", err

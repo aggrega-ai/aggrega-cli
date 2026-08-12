@@ -454,19 +454,18 @@ var errPluginProviderIncompatible = cerrors.Register("compiler-renderer/plugin-p
 	Message: "pipeline plugin is not compatible with the rendering provider",
 })
 
-// ErrBoundaryAssemblerMissing fires when a provider whose in-tree engine
-// assembles a dispatch group into a single artifact (a merged
-// docker-compose.yaml, an umbrella chart) is served by a rendering plugin
-// that advertises per-node rendering but not the matching boundary-assembly
-// export. The dispatched engine can render each node but cannot merge them,
-// so assembly would be silently skipped and the build would emit unmerged
-// per-node fragments. Per the No Ghost Infrastructure / Loud Guardrails
-// invariant the build halts here instead, naming the provider, the dispatch
-// path, and the missing assemble_boundary export, rather than producing an
-// unassembled result the operator only discovers at debug time. The remedy
-// is to serve the provider through a plugin that advertises both render_node
-// and assemble_boundary, or to render the provider through its in-tree
-// engine. Category: TRANSLATION_ERROR.
+// ErrBoundaryAssemblerMissing fires when a provider that self-reports assembling
+// a dispatch group into a single artifact (a merged docker-compose.yaml, an
+// umbrella chart) is served by a rendering plugin that advertises per-node
+// rendering but not the matching boundary-assembly export. The dispatched engine
+// can render each node but cannot merge them, so assembly would be silently
+// skipped and the build would emit unmerged per-node fragments. Per the No Ghost
+// Infrastructure / Loud Guardrails invariant the build halts here instead, naming
+// the provider, the dispatch path, and the missing assemble_boundary export,
+// rather than producing an unassembled result the operator only discovers at
+// debug time. The remedy is to serve the provider through a plugin that
+// advertises both render_node and assemble_boundary.
+// Category: TRANSLATION_ERROR.
 func ErrBoundaryAssemblerMissing() error { return errBoundaryAssemblerMissing }
 
 var errBoundaryAssemblerMissing = cerrors.Register("compiler-renderer/boundary-assembler-missing", cerrors.Meta{

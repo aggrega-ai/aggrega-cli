@@ -91,10 +91,10 @@ type RendererInput struct {
 	// plugin version behind each node's provider binding — the value of the
 	// aggrega.ai/provider-version label and the ordering key for boundary-
 	// assembler selection across a mixed-version dispatch group. nil reports
-	// every binding as version-less: nodes render through the in-tree engine and
-	// carry no provider-version label. The build wiring sets it from the same
-	// hybrid dispatch that resolves the rendering engine, so the reported version
-	// and the selected engine agree.
+	// every binding as version-less: no node carries a provider-version label,
+	// and each group's assembler is its first candidate in node-processing order.
+	// The build wiring sets it from the same hybrid dispatch that resolves the
+	// rendering engine, so the reported version and the selected engine agree.
 	ProviderVersion ProviderVersionResolver
 
 	// NodeProgress, when non-nil, is invoked once per node as the per-node render

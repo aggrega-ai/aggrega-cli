@@ -126,7 +126,7 @@ func TestRenderAll_MixedProviderVersionGroup_AssemblesAtHighest(t *testing.T) {
 	run := func() (map[string]renderer.AssembledFile, string, int) {
 		var assembledBy string
 		var assembleCount int
-		factory := func(providerRef string) (renderer.Engine, error) {
+		factory := func(providerRef string) (renderer.Provider, error) {
 			ver := ""
 			if i := strings.LastIndex(providerRef, ":"); i >= 0 {
 				ver = providerRef[i+1:]

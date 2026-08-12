@@ -45,7 +45,7 @@ const ValidateNodeInputExport = "validate_node_input"
 const BoundaryEnvOverridesExport = "boundary_env_overrides"
 
 // Engine renders one node through a provider Wasm guest, implementing the host
-// renderer.Engine and renderer.WorkloadSynthesizer interfaces. It resolves the
+// renderer.Provider and renderer.WorkloadSynthesizer interfaces. It resolves the
 // guest's bytes via lookup and loads them through the injected shared loader once
 // per call. The adapter is provider-agnostic: it drives whichever guest the
 // provider advertises, and hands the guest a generic name-only enumeration of a
@@ -92,7 +92,7 @@ type Engine struct {
 }
 
 var (
-	_ renderer.Engine                         = (*Engine)(nil)
+	_ renderer.Provider                       = (*Engine)(nil)
 	_ renderer.NodeInputValidator             = (*Engine)(nil)
 	_ renderer.WorkloadSynthesizer            = (*Engine)(nil)
 	_ renderer.ArtifactsEmitter               = (*Engine)(nil)
@@ -258,7 +258,7 @@ func (e *Engine) Close(ctx context.Context) error {
 // guest's per-file output verbatim — each file's path, bytes, and the format the
 // guest declared it in. nodeCtx.Source must be the resolved filesystem path the
 // orchestrator populates before dispatch; a non-string value is an orchestrator
-// bug rather than authoring drift, matching the in-tree engine's contract. A
+// bug rather than authoring drift. A
 // duplicate output path from the guest is a loud error rather than a silent
 // last-writer-wins overwrite.
 func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
@@ -852,9 +852,9 @@ func (e *Engine) nodeProjection(nodeCtx renderer.NodeRenderContext, values types
 }
 
 // renderContext builds the wire render context from the host node context: the
-// render-wide indentation width and the node's merged annotations flattened into
-// a single bucket, so the guest's own bucket-merge reproduces the same flat map
-// the in-tree engine reads.
+// render-wide indentation width and the node's already-merged annotations placed
+// in a single bucket in sorted key order, so the wire payload is deterministic
+// and the guest's own bucket-merge yields that same flat map.
 func (e *Engine) renderContext(nodeCtx renderer.NodeRenderContext) renderer.RenderContext {
 	return renderer.RenderContext{
 		Annotations: flattenAnnotations(nodeCtx.Annotations),

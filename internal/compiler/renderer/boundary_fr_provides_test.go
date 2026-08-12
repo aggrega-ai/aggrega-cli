@@ -167,7 +167,7 @@ func TestBoundaryScopeFRProvides_PrepassIdempotentWithDispatch(t *testing.T) {
 
 	// Run the Phase B.6 dispatch for the same FR; it re-evaluates the provides.
 	var captured any
-	factory := func(string) (Engine, error) { return sourceCaptureEngine{captured: &captured}, nil }
+	factory := func(string) (Provider, error) { return sourceCaptureEngine{captured: &captured}, nil }
 	if err := dispatchBoundaryScopeFR(
 		context.Background(), fr, "db", key, &PhaseBState{}, state,
 		NodeRenderContext{}, factory, graph, release, nil, nil, RendererInput{},

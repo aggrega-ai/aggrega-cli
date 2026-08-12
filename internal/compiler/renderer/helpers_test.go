@@ -458,7 +458,7 @@ func TestDispatchWorkloadSynthesis_AllBranches(t *testing.T) {
 		t.Errorf("nil workload: files=%v err=%v", files, err)
 	}
 
-	// Engine without WorkloadSynthesizer → CATALOG_ERROR.
+	// Provider without WorkloadSynthesizer → CATALOG_ERROR.
 	plainEngine := &noopEngine{}
 	w := &types.Workload{}
 	_, err = dispatchWorkloadSynthesis(ctx, plainEngine, tmplCtx, w, nodeCtx, "p-name")
@@ -467,7 +467,7 @@ func TestDispatchWorkloadSynthesis_AllBranches(t *testing.T) {
 	}
 }
 
-// noopEngine is a minimal Engine impl for the synthesis-dispatch test.
+// noopEngine is a minimal Provider impl for the synthesis-dispatch test.
 type noopEngine struct{}
 
 func (noopEngine) Render(ctx context.Context, _ map[string]any, _ NodeRenderContext) ([]RenderedFile, error) {

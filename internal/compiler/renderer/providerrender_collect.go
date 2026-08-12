@@ -10,7 +10,7 @@ import (
 )
 
 // collectRenderedFiles collects a Provider guest's per-file serialized bytes
-// into the map[string][]byte shape [Engine.Render] returns, keyed by path. It
+// into the map[string][]byte shape [Provider.Render] returns, keyed by path. It
 // is a collector, not a serializer: the guest returns each file's serialized
 // bytes ([RenderedFile.Content]) and the host writes them verbatim, so the
 // on-disk output is byte-identical to what the guest emitted. Determinism is

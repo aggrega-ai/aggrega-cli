@@ -67,7 +67,7 @@ func (e *collisionAssemblerEngine) AssembleBoundary(_ context.Context, _ rendere
 // instances, all in one boundary and all rendered by engine, and returns
 // whatever the pipeline produced. Every instance renders through the same
 // engine, so instances emitting one path is the collision under test.
-func runCollisionRender(instances []string, engine renderer.Engine) (*renderer.RenderResult, error) {
+func runCollisionRender(instances []string, engine renderer.Provider) (*renderer.RenderResult, error) {
 	nodes := types.OrderedMap[types.IRNode]{}
 	for _, id := range instances {
 		nodes.Set(id, types.IRNode{Component: "core/api", BoundaryPath: "default"})
@@ -92,7 +92,7 @@ func runCollisionRender(instances []string, engine renderer.Engine) (*renderer.R
 		},
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
-	factory := func(_ string) (renderer.Engine, error) { return engine, nil }
+	factory := func(_ string) (renderer.Provider, error) { return engine, nil }
 	return renderer.RenderAll(context.Background(), input, lookup, factory)
 }
 

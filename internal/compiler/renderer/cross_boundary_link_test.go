@@ -49,7 +49,7 @@ const (
 // fixtureEngine builds a real wasmengine engine over a compiled test guest,
 // resolved from its on-disk fixture bytes. It skips the test when the wasm
 // toolchain is absent (EnsureFixtureBuilt marks that case).
-func fixtureEngine(t *testing.T, loader *wasm.Loader, fixture string) renderer.Engine {
+func fixtureEngine(t *testing.T, loader *wasm.Loader, fixture string) renderer.Provider {
 	t.Helper()
 	path := wasmtest.EnsureFixtureBuilt(t, fixture)
 	guestBytes, err := os.ReadFile(path)
@@ -81,7 +81,7 @@ func linkEdge() types.IREdge {
 func TestCrossBoundaryLink_SameProviderWires(t *testing.T) {
 	loader := wasm.NewCachingLoader(nil)
 	engine := fixtureEngine(t, loader, linkFixture)
-	factory := func(string) (renderer.Engine, error) { return engine, nil }
+	factory := func(string) (renderer.Provider, error) { return engine, nil }
 
 	nodes := map[string]renderer.LinkPassNode{
 		"consumer": {Path: "app", Provider: linkProvider, Engine: engine, Files: map[string][]byte{linkFile: []byte(linkFileInitYAML)}},
@@ -129,7 +129,7 @@ func TestCrossBoundaryLink_SameProviderWires(t *testing.T) {
 func TestCrossBoundaryLink_Deterministic(t *testing.T) {
 	loader := wasm.NewCachingLoader(nil)
 	engine := fixtureEngine(t, loader, linkFixture)
-	factory := func(string) (renderer.Engine, error) { return engine, nil }
+	factory := func(string) (renderer.Provider, error) { return engine, nil }
 
 	run := func() map[string]map[string][]byte {
 		nodes := map[string]renderer.LinkPassNode{
@@ -164,7 +164,7 @@ func TestCrossBoundaryLink_CrossProviderUnsupported(t *testing.T) {
 	// The target end is a genuinely different, non-linking provider, so only
 	// the source advertises linking — the "at least one advertises" gate.
 	otherEng := fixtureEngine(t, loader, renderFixture)
-	factory := func(p string) (renderer.Engine, error) {
+	factory := func(p string) (renderer.Provider, error) {
 		if p == otherProvider {
 			return otherEng, nil
 		}
@@ -209,7 +209,7 @@ func TestCrossBoundaryLink_CrossProviderUnsupported(t *testing.T) {
 func TestCrossBoundaryLink_OpaqueTargetHalts(t *testing.T) {
 	loader := wasm.NewCachingLoader(nil)
 	engine := fixtureEngine(t, loader, linkFixture)
-	factory := func(string) (renderer.Engine, error) { return engine, nil }
+	factory := func(string) (renderer.Provider, error) { return engine, nil }
 
 	nodes := map[string]renderer.LinkPassNode{
 		"consumer": {Path: "app", Provider: linkProvider, Engine: engine, Files: map[string][]byte{linkFile: []byte(linkFileInitYAML)}},
