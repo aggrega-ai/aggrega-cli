@@ -158,6 +158,15 @@ func SynthesizeWorkloadCore(
 
 	// Top-level Volumes: one entry per persistent or persistentTemplate
 	// volume. Author order isn't expressed here — compose volumes are a map.
+	//
+	// The same walk reports a declared volume no container mounts. This is the
+	// only site that sees every volume variant, which is what makes it the right
+	// one: the switch below emits a top-level entry for the two persistent
+	// variants, so an unmounted volume of those kinds at least reaches the output
+	// unused, while a configmap, secret or ephemeral volume is expressed solely at
+	// a container's mount point and so leaves no trace at all when nothing mounts
+	// it. Reporting from here covers both without a second rule.
+	mounted := mountedVolumeNames(w)
 	for name, v := range w.Volumes.All() {
 		switch {
 		case v.Persistent != nil:
@@ -170,6 +179,12 @@ func SynthesizeWorkloadCore(
 			frag.Volumes[volumeName(componentID, name)] = Volume{}
 			diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName, "persistentTemplate",
 				"per-replica volume templating is not available and the volume degrades to a shared persistent volume"))
+		}
+
+		// A volume nothing mounts is a distinct fact from any fidelity loss in
+		// the variant itself, so both may be reported for one volume.
+		if !mounted[name] {
+			diags = append(diags, unmountedVolumeDiagnostic(name, v))
 		}
 	}
 
@@ -193,6 +208,56 @@ func SynthesizeWorkloadCore(
 			Intermediate: true,
 		},
 	}, diags, nil
+}
+
+// mountedVolumeNames returns the set of volume names some container of the
+// workload mounts. Init containers count: their mounts are translated alongside
+// the long-running containers', so a volume mounted only by an init container is
+// wired and must not be reported as unmounted.
+//
+// The result is used for membership tests only and never iterated, so it carries
+// no author order to preserve.
+func mountedVolumeNames(w *types.Workload) map[string]bool {
+	mounted := make(map[string]bool)
+	for _, c := range w.Containers.All() {
+		for _, vm := range c.VolumeMounts {
+			mounted[vm.Name] = true
+		}
+	}
+	for _, c := range w.InitContainers {
+		for _, vm := range c.VolumeMounts {
+			mounted[vm.Name] = true
+		}
+	}
+	return mounted
+}
+
+// unmountedVolumeDiagnostic builds the advisory for a volume the workload
+// declares that no container mounts. The consequence differs by variant, so the
+// message states the one that applies: a configmap, secret or ephemeral volume
+// reaches the output only through a container's mount point and so is absent
+// entirely, whereas a persistent volume still becomes a named volume that
+// nothing then uses.
+func unmountedVolumeDiagnostic(name string, v types.VolumeSpec) renderctx.Diagnostic {
+	mountPointOnly := ""
+	switch {
+	case v.ConfigMap != nil:
+		mountPointOnly = "configmap"
+	case v.Secret != nil:
+		mountPointOnly = "secret"
+	case v.Ephemeral != nil:
+		mountPointOnly = "ephemeral"
+	}
+
+	consequence := "so the named volume is created and nothing uses it"
+	if mountPointOnly != "" {
+		consequence = fmt.Sprintf(
+			"and this target expresses a %s volume only at a container's mount point, so nothing is emitted for it",
+			mountPointOnly)
+	}
+
+	return rendercore.PartialSupportDiagnostic(composeTargetName, "volumes."+name,
+		fmt.Sprintf("no container in this workload mounts it, %s; mount it from a container, or remove it", consequence))
 }
 
 // pickMainContainerName chooses the main container by convention:
