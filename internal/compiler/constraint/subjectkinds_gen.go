@@ -70,7 +70,7 @@ const (
 	// SubjectNodeMechanism is the subject kind (node, mechanism), keyed by 1 declared fact.
 	SubjectNodeMechanism SubjectKind = "(node, mechanism)"
 
-	// SubjectNodeMechanismDeliveryKey is the subject kind (node, mechanism, delivery-key), keyed by 1 declared fact.
+	// SubjectNodeMechanismDeliveryKey is the subject kind (node, mechanism, delivery-key), keyed by 2 declared facts.
 	SubjectNodeMechanismDeliveryKey SubjectKind = "(node, mechanism, delivery-key)"
 
 	// SubjectNodePillarLeaf is the subject kind (node, pillar, leaf), keyed by 1 declared fact.
@@ -85,11 +85,11 @@ const (
 	// SubjectNodePipelineStep is the subject kind (node, pipeline-step), keyed by 5 declared facts.
 	SubjectNodePipelineStep SubjectKind = "(node, pipeline-step)"
 
+	// SubjectNodeProvidesKey is the subject kind (node, provides-key), keyed by 2 declared facts.
+	SubjectNodeProvidesKey SubjectKind = "(node, provides-key)"
+
 	// SubjectNodeLocalsKey is the subject kind (node, locals-key), keyed by 1 declared fact.
 	SubjectNodeLocalsKey SubjectKind = "(node, locals-key)"
-
-	// SubjectNodeProvidesKey is the subject kind (node, provides-key), keyed by 1 declared fact.
-	SubjectNodeProvidesKey SubjectKind = "(node, provides-key)"
 
 	// SubjectBoundaryProviderPath is the subject kind (boundary, provider, path), keyed by 2 declared facts.
 	SubjectBoundaryProviderPath SubjectKind = "(boundary, provider, path)"
@@ -118,8 +118,8 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeParameter, Coordinates: []string{"node", "parameter"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentPillarLeaf, Coordinates: []string{"node", "attachment", "pillar", "leaf"}, Traversal: TraversalPull},
 	{Kind: SubjectNodePipelineStep, Coordinates: []string{"node", "pipeline-step"}, Traversal: TraversalPull},
-	{Kind: SubjectNodeLocalsKey, Coordinates: []string{"node", "locals-key"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeProvidesKey, Coordinates: []string{"node", "provides-key"}, Traversal: TraversalPull},
+	{Kind: SubjectNodeLocalsKey, Coordinates: []string{"node", "locals-key"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryProviderPath, Coordinates: []string{"boundary", "provider", "path"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifact, Coordinates: []string{"node", "artifact"}, Traversal: TraversalPull},
 }

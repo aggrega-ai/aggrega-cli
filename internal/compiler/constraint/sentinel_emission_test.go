@@ -284,6 +284,14 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 			"halts on its absence.\n"+
 			"Alphabetically: %s", len(offFramework), strings.Join(namedList(offFramework, 12), ", "))
 	}
+
+	// The off-framework count above cannot tell a rule somebody examined and left
+	// inline from a rule nobody has looked at, and the listing is what separates
+	// them. It runs unconditionally, including when nothing is off-framework: an
+	// inventory describing sites that have all moved is exactly the state its
+	// staleness guard exists to fail on.
+	reportInlineCheckResidue(t, emitters)
+
 	if len(forwarding) > 0 {
 		t.Logf("%d sentinel(s) have no emission site of their own because their declaration names "+
 			"another sentinel, each shown beside the sentinel whose identity it carries so the "+

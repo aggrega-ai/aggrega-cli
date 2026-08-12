@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 )
 
 // This file holds this package's rules expressed as constraint declarations:
@@ -84,6 +85,108 @@ var CrossBoundaryLinkPlaceholderResolved = constraint.Check[
 		}
 		return []constraint.Objection{s.Raise(
 			ErrOrphanCrossBoundaryLinkSentinel(), s.ProviderName(), s.EmittedPath(),
+		)}
+	},
+}
+
+// SelfInjectKeyNotDeliveredByAnEdge reports each delivery key a component
+// declares for itself that one of its own dependency edges also delivers under
+// the same mechanism.
+//
+// Two authoring surfaces can deliver a value under one key: the component's own
+// injection block, and the injection block on an entry in its dependency block.
+// A key written on both is ambiguous about which value arrives, so the build
+// halts and the author resolves it by removing one of the two. Presence in both
+// is the whole signal: the rule compares no values and does not treat two
+// sources agreeing as acceptable, because the agreement is a property of one
+// input rather than of the authoring.
+//
+// It is invoked once per key the component declares for itself, which is the
+// side the objection is attributed to, and reads one fact — the sockets whose
+// edges deliver that same key under that same mechanism. A non-empty answer is
+// the violation, and each socket in it is its own objection, so an author
+// wiring the same key through two dependencies is told about both rather than
+// about whichever sorted first.
+//
+// Its detail names the socket alone. The locator already names the mechanism
+// and the key, because the subject stands for the entry the author wrote at
+// that position; the socket belongs to a different entry the locator does not
+// reach, so naming it is what makes the objection point at the second
+// declaration as well as the first.
+var SelfInjectKeyNotDeliveredByAnEdge = constraint.Check[
+	constraint.GraphView,
+	constraint.NodeMechanismDeliveryKeySubject,
+]{
+	Sentinel: ErrSelfInjectKeyCollision(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.GraphView,
+		s constraint.NodeMechanismDeliveryKeySubject,
+	) []constraint.Objection {
+		sockets := v.UsesInjectDeliverySockets(s.NodeID(), s.MechanismName(), s.DeliveryKey())
+		if len(sockets) == 0 {
+			return nil
+		}
+		out := make([]constraint.Objection, 0, len(sockets))
+		for _, socket := range sockets {
+			out = append(out, s.Raise(ErrSelfInjectKeyCollision(), socket))
+		}
+		return out
+	},
+}
+
+// ProvidesTemplateSelfContained reports each provides entry whose template
+// reaches outside the self-contained data a provides template is evaluated
+// against.
+//
+// A provides entry is evaluated against node-local data alone — the instance
+// identifier, the configuration pillars, and the node's own resolved locals —
+// so a reference to anything else would render empty rather than fail. The rule
+// refuses the reference instead, which is what turns a silently empty value
+// into a halt naming the expression to fix. The admitted set is not restated
+// here: the rule evaluates the same declared scope the provides evaluation
+// itself uses, so a field added to that surface becomes reachable from a
+// template with no edit to this rule.
+//
+// It reads one fact, the template text as authored, and that is what lets the
+// rule run before anything is evaluated. The resolved value cannot serve as the
+// input, because a template this rule refuses is exactly one whose value is
+// never produced. Reading the text also means the rule derives its own
+// references rather than receiving a reference set collected in the direction a
+// consumption question needs — attributing a reference wrongly here would
+// refuse authoring the template language permits.
+//
+// A template that does not parse is not this rule's finding. Evaluation reports
+// the parse error against the same entry, so refusing it here as well would
+// report one authoring fault twice.
+//
+// Its detail names the offending expression. The locator names the provides
+// entry, which is the position the author edits, and the expression is what
+// inside that entry has to change.
+var ProvidesTemplateSelfContained = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeProvidesKeySubject,
+]{
+	Sentinel: ErrProvidesSelfContainment(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeProvidesKeySubject,
+	) []constraint.Objection {
+		text := v.AuthoredNodeProvides(s.NodeID(), s.ProvidesKey())
+		if text == "" {
+			return nil
+		}
+		tree, err := gotmpl.ParseTree(text, "{{", "}}")
+		if err != nil {
+			return nil
+		}
+		violation := providesScope.check(tree)
+		if violation == nil {
+			return nil
+		}
+		return []constraint.Objection{s.Raise(
+			ErrProvidesSelfContainment(), violation.Ref.Path,
 		)}
 	},
 }

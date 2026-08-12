@@ -459,6 +459,33 @@ type GraphView interface {
 	// Keyed by (node, attachment); read from
 	// types.IRSpec.FeatureValuesMapping.
 	MergedAttachmentNames(node string) []string
+
+	// UsesInjectDeliverySockets are the dependency sockets through which a
+	// node's own dependency edges deliver one injection key under one
+	// mechanism, in the order the graph holds those edges — one entry per
+	// edge delivering the key, so a socket appears as often as an edge named
+	// for it delivers that key.
+	//
+	// It asks the delivery question from the consuming node's side rather than
+	// from an edge's, and the direction is part of the fact. A rule comparing
+	// what a component delivers to itself against what it delivers across a
+	// dependency edge is asked once per key the component delivers, and has to
+	// name the socket the second delivery came through. Keyed by the edge
+	// instead, that rule would enumerate mechanisms and keys inside its own
+	// predicate and intersect them there, which is the traversal the framework
+	// owns.
+	//
+	// The keys are the ones an edge DELIVERS and not the ones its author
+	// wrote, and the two differ. A delivery whose payload cannot be carried as
+	// one string per key contributes no key: it is absent here and it reaches
+	// no consumer, because the same per-mechanism map this fact reads is what
+	// inject hydration resolves against a target's provides. A rule refusing a
+	// collision needs exactly this side — a key that reaches no consumer
+	// collides with nothing, so reading the authored side would refuse a
+	// pairing the build never produces.
+	//
+	// Keyed by (node, mechanism, delivery-key); read from types.IREdge.Inject.
+	UsesInjectDeliverySockets(node string, mechanism string, key string) []string
 }
 
 // DescribedView exposes the facts complete at the described stage: every
@@ -563,6 +590,32 @@ type DescribedView interface {
 	//
 	// Keyed by node; read from wasm.ProviderContract.BoundaryAssembly.
 	ProviderBoundaryAssembly(node string) string
+
+	// AuthoredNodeProvides is the template text a node's Recipe declares for
+	// one provides key, as written and before anything is evaluated.
+	//
+	// It is a separate fact from the value that key resolved to rather than
+	// the same fact at an earlier moment, and the pair is what makes a rule
+	// over the text possible at all. A rule that admits or refuses what an
+	// author may write reads the text, because the resolved value cannot
+	// answer for it: a template such a rule would refuse is exactly one whose
+	// value is never produced.
+	//
+	// The fact is the text and not an analysis of it. A reference set
+	// collected from a template is a judgement about which references it
+	// makes, and the direction of that judgement decides which rules may read
+	// it — one that over-collects serves a rule asking what a template
+	// consumed, and would refuse authoring the template language permits.
+	// Handing over the text leaves the direction to the rule that needs it.
+	//
+	// Emptiness is one answer rather than two. The key is enumerated rather
+	// than looked up, so it exists whenever the fact is asked, and an entry
+	// whose text is empty leaves a rule over the text with nothing to read
+	// either way; a second result reporting presence would put a second
+	// condition on one question, and the two could then disagree.
+	//
+	// Keyed by (node, provides-key); read from types.RecipeSpec.Provides.
+	AuthoredNodeProvides(node string, key string) string
 }
 
 // HydratedView exposes the facts complete at the hydrated stage: per-node
