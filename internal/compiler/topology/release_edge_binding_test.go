@@ -89,11 +89,20 @@ func buildWith(t *testing.T, aggYAML, relYAML, modYAML string) error {
 	var rel *types.Release
 	var boundaryInfra map[string]*resolver.BoundaryInfra
 	if relYAML != "" {
-		rel = mustRelease(t, relYAML)
+		// Fold a root-level components surface into the synthesized `default`
+		// boundary before anything reads the document, which is what loading a
+		// Release does at birth, so every consumer here sees the same
+		// boundary-bearing shape one gets in a real build. The fold is shared
+		// rather than repeated per reader: handing the raw document to the build
+		// while the wiring call saw the folded one would make a fixture authored
+		// at root level look like a Release declaring no entries at all. A
+		// fixture that already declares boundaries is returned untouched.
+		normalized := types.NormalizeRelease(mustRelease(t, relYAML))
+		rel = normalized.Release()
 		// The Release edge pass reads each node's resolved boundary path, which
 		// production supplies from the same wiring call. Omitting it would make
 		// every fixture look like a Release whose entries reach no node.
-		boundaryInfra, _ = resolver.WireBoundaryInfra(types.NormalizeRelease(rel))
+		boundaryInfra, _ = resolver.WireBoundaryInfra(normalized)
 	}
 	var loader SubAggregateLoader
 	if modYAML != "" {
@@ -139,6 +148,12 @@ spec:
 // The passing half is what keeps the halt from being a ban on configuring edges
 // at all: a targetless entry is the supported way to configure an edge the
 // developer declared, and it must keep working.
+//
+// Both authoring positions are covered, because they are two documents rather
+// than one: a Release may name its components under a boundary it declares, or
+// at the root of the spec, and the second is folded into a synthesized boundary
+// before the graph is built. A rule proven only on the first position would be
+// proven only for the shape that needs no folding.
 func TestReleaseEdgeConfigMustReachAnEdge(t *testing.T) {
 	t.Parallel()
 
@@ -221,6 +236,40 @@ spec:
                 target: db
                 infra:
                   storage_class: fast
+`,
+			wantHalt: false,
+		},
+		{
+			name: "configures an alias the developer never declared, named at the root of the spec",
+			release: `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  components:
+    api:
+      uses:
+        databases:
+          spare:
+            infra:
+              storage_class: fast
+`,
+			wantHalt: true,
+		},
+		{
+			name: "configures the edge the developer declared, named at the root of the spec",
+			release: `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  components:
+    api:
+      uses:
+        databases:
+          main:
+            infra:
+              storage_class: fast
 `,
 			wantHalt: false,
 		},
