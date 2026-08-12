@@ -4,23 +4,46 @@
 package gotmpl
 
 import (
+	"maps"
 	"text/template"
 
 	sprig "github.com/Masterminds/sprig/v3"
 )
 
 // FuncMap returns the template-function set used by Aggrega's template
-// surfaces: Sprig v3's FuncMap augmented with Aggrega-specific
-// helpers. A fresh map is returned on each call so callers can add
-// per-site functions (e.g., the assertion evaluator's `fail` override)
-// without mutating other callers' maps.
+// surfaces: Sprig v3's FuncMap augmented with the Aggrega-specific
+// helpers [Helpers] returns. A fresh map is returned on each call so
+// callers can add per-site functions (e.g., the assertion evaluator's
+// `fail` override) without mutating other callers' maps.
+func FuncMap() template.FuncMap {
+	funcs := sprig.FuncMap()
+	// Iterating a map is safe here where it usually would not be: the loop only
+	// assigns distinct keys into another map, so the merged set is the same
+	// whatever order the keys arrive in and no iteration order can reach the
+	// rendered bytes.
+	maps.Copy(funcs, Helpers())
+	return funcs
+}
+
+// Helpers returns the Aggrega-specific template helpers on their own,
+// without the Sprig set [FuncMap] layers them over. It is the single
+// binding of each helper's authored name to its implementation, so a
+// surface that wants Aggrega's helpers without Sprig's — a surface
+// evaluating an authored coordinate rather than rendering an artifact —
+// gets the same behavior under the same name as the full set does.
+// A fresh map is returned on each call.
 //
 // Currently the only Aggrega-specific helper is [optional]; the helper
 // surface grows additively as catalog-authoring needs surface.
-func FuncMap() template.FuncMap {
-	funcs := sprig.FuncMap()
-	funcs["optional"] = optional
-	return funcs
+//
+// The helper functions themselves are unexported. Wiring one under a
+// name of your own choosing is therefore not possible from outside this
+// package, which is what keeps an authored name meaning one thing on
+// every surface that registers it.
+func Helpers() template.FuncMap {
+	return template.FuncMap{
+		"optional": optional,
+	}
 }
 
 // optional returns the value at key in m if the key is present, otherwise

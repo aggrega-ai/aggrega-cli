@@ -186,6 +186,93 @@ func TestDescendEvaluatesInfraTemplate(t *testing.T) {
 	}
 }
 
+// TestDescendOptionalPreservesValueType pins the type-preserving semantic of the
+// `optional` helper on the lock-time surface, where a source coordinate is
+// evaluated. The helper reports key presence and hands the value on with its type
+// intact; it does not coerce, so an authored number stays a number and an
+// authored zero stays zero rather than being read as absent.
+//
+// Every row here drives the real DescendRecipeSources path, so each asserts the
+// coordinate an author would actually get pinned. The rows with a non-string
+// fallback are the discriminating ones: an implementation that took its fallback
+// as a string could not accept them at all, and the template would fail to
+// evaluate rather than render a different answer. The rows with a string fallback
+// pin the behavior that must not move while the discriminating rows change.
+func TestDescendOptionalPreservesValueType(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		version string
+		infra   map[string]any
+		want    string
+	}{
+		{
+			name:    "absent key falls back to a number, which renders its digits",
+			version: "{{ optional .infra `chart_major` 25 }}.0.8",
+			infra:   map[string]any{},
+			want:    "25.0.8",
+		},
+		{
+			name:    "authored zero is present, so the fallback is not taken",
+			version: "1.{{ optional .infra `minor` 9 }}.0",
+			infra:   map[string]any{"minor": 0},
+			want:    "1.0.0",
+		},
+		{
+			name:    "authored number is handed on and renders its digits",
+			version: "{{ optional .infra `major` 1 }}.0.0",
+			infra:   map[string]any{"major": 25},
+			want:    "25.0.0",
+		},
+		{
+			name:    "authored string is handed on unchanged",
+			version: "{{ optional .infra `chart_version` `fallback` }}",
+			infra:   map[string]any{"chart_version": "25.0.8"},
+			want:    "25.0.8",
+		},
+		{
+			name:    "absent key falls back to a string",
+			version: "{{ optional .infra `chart_version` `9.9.9` }}",
+			infra:   map[string]any{},
+			want:    "9.9.9",
+		},
+		{
+			name:    "authored empty string is present, so the fallback is not taken",
+			version: "25.0.8{{ optional .infra `suffix` `-unset` }}",
+			infra:   map[string]any{"suffix": ""},
+			want:    "25.0.8",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			uri := "hub.aggrega.ai/recipe/helm/mariadb:1.0.0"
+			source := map[string]any{
+				"kind":    "helm-oci-chart",
+				"url":     "oci://hub.aggrega.ai/charts/mariadb",
+				"version": tc.version,
+			}
+			loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: makeRecipe(uri, source)}}
+			cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
+			perComp := map[string][]closure.ComponentSourceInfra{
+				uri: {{Component: "db", Infra: tc.infra}},
+			}
+
+			got, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+			if err != nil {
+				t.Fatalf("DescendRecipeSources: %v", err)
+			}
+			if len(got) != 1 {
+				t.Fatalf("resolved %d sources; want 1", len(got))
+			}
+			if got[0].PinnedVersion != tc.want {
+				t.Errorf("PinnedVersion = %q; want %q", got[0].PinnedVersion, tc.want)
+			}
+		})
+	}
+}
+
 func TestDescendEvaluatesLocalsOverInfra(t *testing.T) {
 	t.Parallel()
 	uri := "hub.aggrega.ai/recipe/helm/mariadb:1.0.0"

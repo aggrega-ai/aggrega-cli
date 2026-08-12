@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"text/template/parse"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -379,9 +380,13 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 	if !strings.Contains(input, "{{") {
 		return input, nil
 	}
-	tmpl, err := template.New(fieldPath).Option("missingkey=error").Funcs(template.FuncMap{
-		"optional": optionalFunc,
-	}).Parse(input)
+	// Aggrega's helpers come from the one place they are defined, so `optional`
+	// resolves a key here exactly as it does when the same recipe renders — same
+	// presence check, same value, same type. Take the set whole rather than
+	// rebuilding it here: a local implementation registered under an authored
+	// name Aggrega already defines is what makes two surfaces disagree about a
+	// non-string value, and they disagree silently.
+	tmpl, err := template.New(fieldPath).Option("missingkey=error").Funcs(gotmpl.Helpers()).Parse(input)
 	if err != nil {
 		return "", fmt.Errorf("resolve: parse template at %s: %w (also %w) (cause: %s)",
 			fieldPath, ErrSourceTemplateAtLockTime(), ErrSourceTemplateParse(), err)
@@ -514,21 +519,6 @@ func providesError(fieldPath string) error {
 			"reference (locals feed provides, never the reverse) — refactor to read only "+
 			"`.values` and `.infra` (and `.locals` over the same): %w (also %w)",
 		fieldPath, ErrSourceTemplateAtLockTime(), ErrSourceTemplateProvidesRef())
-}
-
-// optionalFunc implements `{{ optional .infra "key" "default" }}`
-// — returns the resolved value if the key exists, the default
-// otherwise. Mirrors the build-time optional helper so lock-time
-// and build-time evaluations behave identically against the same
-// substrate.
-func optionalFunc(scope map[string]any, key string, fallback string) string {
-	if v, ok := scope[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-		return fmt.Sprint(v)
-	}
-	return fallback
 }
 
 // resolveLocals evaluates each .locals entry against the current
