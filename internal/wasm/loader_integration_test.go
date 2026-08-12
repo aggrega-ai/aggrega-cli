@@ -356,10 +356,13 @@ func TestCrossLanguageFixtureParity_Mutator(t *testing.T) {
 // rather than through the Extism call/return ABI, and the Extism Plugin
 // wrapper exposes only the Extism kernel's memory, not the guest main
 // module's — so the byte-level values of that buffer are not readable
-// through the production loader path. The deterministic VALUES the
-// configuration produces (frozen wall time, zero entropy, discarded
-// stdio) are proven byte-for-byte against the same fixture through a
-// direct wazero instantiation in TestWasiProbeDeterministicValues.
+// through the production loader path. The VALUES the configuration
+// produces (frozen wall time, real entropy from the host source,
+// discarded stdio) are proven byte-for-byte against the same fixture
+// through a direct wazero instantiation in
+// TestWasiProbeDeterministicValues. Entropy is real by design: pinning
+// it would stabilise a guest runtime's internal hash seed and mask
+// guest nondeterminism rather than surfacing it.
 func TestPluginRoundTrip_WasiProbeRust(t *testing.T) {
 	plugin, cleanup := loadFixturePlugin(t, "wasi-probe-rust.wasm")
 	defer cleanup()
