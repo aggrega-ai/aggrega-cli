@@ -194,14 +194,17 @@ func selectCodec(engineFactory EngineFactory, providerName string, yamlIndent in
 	return newStockYAMLCodec(yamlIndent)
 }
 
-// runNodePipelineWithInvoker is the executor body shared by the production path
-// (real describe()-gated seams) and tests (canned seams). It runs the pre-walk
-// provider-compatibility check, builds the keyed document set, walks the steps
-// through invoke, and folds the result back — the one place enforcement, the
-// segmenter, the walk, and apply-back are wired together. The public
-// runNodePipeline is the only production caller; it differs solely in
-// constructing invoke + describe from a plugin-path lookup. Both seams must be
-// non-nil.
+// runNodePipelineWithInvoker is the executor body shared by every caller that
+// runs a pipeline: the per-node path, the post-assembly replay, and tests with
+// canned seams. It runs the pre-walk provider-compatibility check, builds the
+// keyed document set, walks the steps through invoke, and folds the result back
+// — the one place enforcement, the segmenter, the walk, and apply-back are wired
+// together.
+//
+// Two production callers reach it, and what differs between them is only where
+// the seams come from: runNodePipeline builds invoke and describe per call from
+// a plugin-path lookup, while the post-assembly replay builds them once and
+// reuses them across every record it replays. Both seams must be non-nil.
 func runNodePipelineWithInvoker(
 	ctx context.Context,
 	steps []types.PipelineStep,
