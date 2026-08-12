@@ -75,12 +75,13 @@ func TestAssembleStackMergeAndOutputs(t *testing.T) {
 		}
 	}
 
-	// Every provides entry became an Output.
+	// Every provides entry became an Output, named for the contributing node and
+	// the entry together so one node's entries cannot displace another's.
 	var outputs map[string]json.RawMessage
 	if err := json.Unmarshal(top["Outputs"], &outputs); err != nil {
 		t.Fatalf("Outputs not an object: %v", err)
 	}
-	for _, k := range []string{"bucket_arn", "bucket_ref", "queue_url"} {
+	for _, k := range []string{"DataBucketBucketArn", "WorkQueueBucketRef", "WorkQueueQueueUrl"} {
 		if _, ok := outputs[k]; !ok {
 			t.Fatalf("Outputs missing %q; got keys %v", k, keysOf(outputs))
 		}
@@ -122,35 +123,160 @@ func TestAssembleStackDeterministic(t *testing.T) {
 	}
 }
 
-// TestAssembleStackLogicalIDCollision asserts two fragments contributing the same
-// logical id do not clobber each other: the second is disambiguated by a
-// node-id-derived prefix.
-func TestAssembleStackLogicalIDCollision(t *testing.T) {
+// TestDeclaredNamesReportsTheResourceIDsTwoNodesShare asserts that two nodes
+// authoring one logical id each declare that same id, which is what the host
+// compares to refuse the pair. The declaration is the whole mechanism here: this
+// core reads the ids a Recipe authored and never rewrites one, so a name shared
+// by two nodes has to leave the guest as a claim on that name rather than as a
+// merged template quietly carrying one resource where two were declared.
+func TestDeclaredNamesReportsTheResourceIDsTwoNodesShare(t *testing.T) {
 	frag := []byte("Resources:\n  Thing:\n    Type: AWS::S3::Bucket\n")
+
+	alphaRes, _, err := DeclaredNames("alpha", frag)
+	if err != nil {
+		t.Fatalf("DeclaredNames(alpha): %v", err)
+	}
+	betaRes, _, err := DeclaredNames("beta", frag)
+	if err != nil {
+		t.Fatalf("DeclaredNames(beta): %v", err)
+	}
+	if len(alphaRes) != 1 || alphaRes[0] != "Thing" {
+		t.Fatalf("alpha declared %v, want the authored id [Thing] verbatim", alphaRes)
+	}
+	if len(betaRes) != 1 || betaRes[0] != "Thing" {
+		t.Fatalf("beta declared %v, want the authored id [Thing] verbatim", betaRes)
+	}
+}
+
+// TestDeclaredNamesScopesOutputsPerNode asserts that two nodes projecting one
+// entry name declare two distinct output ids, so the entry each node exports
+// reaches an output of its own. This is the half the declaration does not have to
+// refuse, because the projection has already kept the two apart.
+func TestDeclaredNamesScopesOutputsPerNode(t *testing.T) {
+	frag := []byte("Resources:\n  Thing:\n    Type: AWS::S3::Bucket\nprovides:\n  host: literal\n")
+
+	_, alphaOut, err := DeclaredNames("alpha", frag)
+	if err != nil {
+		t.Fatalf("DeclaredNames(alpha): %v", err)
+	}
+	_, betaOut, err := DeclaredNames("beta-two", frag)
+	if err != nil {
+		t.Fatalf("DeclaredNames(beta-two): %v", err)
+	}
+	if len(alphaOut) != 1 || alphaOut[0] != "AlphaHost" {
+		t.Fatalf("alpha declared outputs %v, want [AlphaHost]", alphaOut)
+	}
+	if len(betaOut) != 1 || betaOut[0] != "BetaTwoHost" {
+		t.Fatalf("beta-two declared outputs %v, want [BetaTwoHost]", betaOut)
+	}
+}
+
+// TestOutputLogicalID covers the shape of a projected output's name across the
+// separators an instance name and an entry name can carry, including the case
+// two names differing only in where their separators sit stay distinct.
+func TestOutputLogicalID(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		node  string
+		entry string
+		want  string
+	}{
+		{name: "plain", node: "db", entry: "host", want: "DbHost"},
+		{name: "hyphen in node", node: "payments-db", entry: "host", want: "PaymentsDbHost"},
+		{name: "underscore in node", node: "payments_db", entry: "host", want: "PaymentsDbHost"},
+		{name: "dot in node", node: "shop.payments", entry: "port", want: "ShopPaymentsPort"},
+		{name: "underscore in entry", node: "db", entry: "queue_url", want: "DbQueueUrl"},
+		{name: "digits kept", node: "db2-primary", entry: "host", want: "Db2PrimaryHost"},
+		{name: "authored capitals kept", node: "orders-DB", entry: "host", want: "OrdersDBHost"},
+		{name: "separator position is significant", node: "payments.d.b", entry: "host", want: "PaymentsDBHost"},
+		{name: "empty entry", node: "db", entry: "", want: "Db"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := OutputLogicalID(tc.node, tc.entry); got != tc.want {
+				t.Fatalf("OutputLogicalID(%q, %q) = %q, want %q", tc.node, tc.entry, got, tc.want)
+			}
+		})
+	}
+
+	// Every produced name is a legal logical id: letters and digits only.
+	for _, node := range []string{"payments-db", "shop.payments", "a_b-c.d", "db2"} {
+		got := OutputLogicalID(node, "queue_url")
+		for _, r := range got {
+			isAlnum := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+			if !isAlnum {
+				t.Fatalf("OutputLogicalID(%q, %q) = %q, which carries %q — a logical id admits letters and digits only", node, "queue_url", got, r)
+			}
+		}
+	}
+}
+
+// TestAssembleStackScopesAnExplicitOutputsBlock asserts an explicit Outputs
+// block is scoped by its contributing node exactly as a projected provides entry
+// is, so a fragment that publishes its own outputs cannot displace another
+// fragment's. A sourced template is the shape that carries one.
+func TestAssembleStackScopesAnExplicitOutputsBlock(t *testing.T) {
+	frag := []byte("Resources:\n  Thing:\n    Type: AWS::S3::Bucket\nOutputs:\n  BucketArn:\n    Value: literal\n")
+	other := []byte("Resources:\n  OtherThing:\n    Type: AWS::SQS::Queue\nOutputs:\n  BucketArn:\n    Value: other\n")
 	nodes := []NodeFragment{
 		{NodeID: "alpha", Files: [][]byte{frag}},
-		{NodeID: "beta", Files: [][]byte{frag}},
+		{NodeID: "beta", Files: [][]byte{other}},
 	}
 	out, err := AssembleStack(nodes)
 	if err != nil {
 		t.Fatalf("AssembleStack: %v", err)
 	}
+	t.Logf("assembled stack template:\n%s", out)
+
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(out, &top); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
+		t.Fatalf("assembled stack is not valid JSON: %v", err)
 	}
-	var resources map[string]json.RawMessage
-	if err := json.Unmarshal(top["Resources"], &resources); err != nil {
-		t.Fatalf("Resources not an object: %v", err)
+	var outputs map[string]json.RawMessage
+	if err := json.Unmarshal(top["Outputs"], &outputs); err != nil {
+		t.Fatalf("Outputs not an object: %v", err)
 	}
-	if len(resources) != 2 {
-		t.Fatalf("expected 2 distinct resources after collision disambiguation, got %d: %v", len(resources), keysOf(resources))
+	for _, want := range []string{"AlphaBucketArn", "BetaBucketArn"} {
+		if _, ok := outputs[want]; !ok {
+			t.Fatalf("Outputs missing %q; got keys %v", want, keysOf(outputs))
+		}
 	}
-	if _, ok := resources["Thing"]; !ok {
-		t.Fatalf("first contributor's logical id Thing should survive; got %v", keysOf(resources))
+	if _, ok := outputs["BucketArn"]; ok {
+		t.Fatalf("an explicit output landed unscoped under %q, where a second fragment's entry of the same name would displace it", "BucketArn")
 	}
-	if _, ok := resources["betaThing"]; !ok {
-		t.Fatalf("colliding logical id should be disambiguated to betaThing; got %v", keysOf(resources))
+}
+
+// TestDeclaredNamesSourced covers the sourced path's declaration: a directory
+// source's template files contribute their names and its vendored content does
+// not, and a single-file source's lone template is read whole.
+func TestDeclaredNamesSourced(t *testing.T) {
+	template := []byte("Resources:\n  DataBucket:\n    Type: AWS::S3::Bucket\nOutputs:\n  BucketArn:\n    Value: literal\n")
+	readme := []byte("this file is prose, not a template\n")
+
+	dirRes, dirOut, err := DeclaredNamesSourced("api", []SourcedFile{
+		{Path: "stack.yaml", Content: template},
+		{Path: "README.md", Content: readme},
+	}, true)
+	if err != nil {
+		t.Fatalf("DeclaredNamesSourced(directory): %v", err)
+	}
+	if len(dirRes) != 1 || dirRes[0] != "DataBucket" {
+		t.Fatalf("directory source declared resources %v, want [DataBucket]", dirRes)
+	}
+	if len(dirOut) != 1 || dirOut[0] != "ApiBucketArn" {
+		t.Fatalf("directory source declared outputs %v, want [ApiBucketArn]", dirOut)
+	}
+
+	fileRes, fileOut, err := DeclaredNamesSourced("api", []SourcedFile{
+		{Path: "whatever", Content: template},
+	}, false)
+	if err != nil {
+		t.Fatalf("DeclaredNamesSourced(single file): %v", err)
+	}
+	if len(fileRes) != 1 || fileRes[0] != "DataBucket" {
+		t.Fatalf("single-file source declared resources %v, want [DataBucket]", fileRes)
+	}
+	if len(fileOut) != 1 || fileOut[0] != "ApiBucketArn" {
+		t.Fatalf("single-file source declared outputs %v, want [ApiBucketArn]", fileOut)
 	}
 }
 

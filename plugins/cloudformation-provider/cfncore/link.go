@@ -53,7 +53,11 @@ var errLinkSentinelInterpolated = cerrors.Register("cloudformation-provider-cfnc
 // name — plus the producer stack name — in the published handle the consumer
 // resolves against. The Output itself already exists from the provides-to-Outputs
 // projection at assembly; the publish adds only the Export block that makes the
-// Output importable across stacks.
+// Output importable across stacks. It is addressed by the same node-and-entry
+// name the projection gave it ([OutputLogicalID]), which the consumed node's id
+// and the output key together determine — so the publish reaches the right
+// producer's output even where another node in the same stack exports the same
+// key.
 //
 // The export and stack names carry the consumed endpoint's deployment identity
 // as their leading scope segment, so two distinct deployments sharing an account
@@ -73,7 +77,7 @@ func LinkPublish(edge rendercore.LinkEdge) (rendercore.LinkPublishOutput, error)
 			Scope: frp.DocumentScopeOwn,
 			Key:   StackTemplateName,
 			Op:    "add",
-			Path:  "/Outputs/" + rfc6901Escape(outputKey) + "/Export",
+			Path:  "/Outputs/" + rfc6901Escape(OutputLogicalID(edge.Target.Node, outputKey)) + "/Export",
 			Value: map[string]any{"Name": exportName},
 		})
 	}
@@ -91,7 +95,8 @@ func LinkPublish(edge rendercore.LinkEdge) (rendercore.LinkPublishOutput, error)
 // placement annotations select the reference shape: only when both ends declare
 // a placement (account or region) and those placements differ is the value read
 // with Fn::GetStackOutput against the producer stack, output, region, and
-// assume-role — the producer (target) side supplies the region and assume-role;
+// assume-role — the producer (target) side supplies the region and assume-role,
+// and the output is named as the producer stack named it ([OutputLogicalID]);
 // otherwise the value is imported with Fn::ImportValue against the published
 // export name. A placement declared on only one end, or matching placements on
 // both, resolves to the same-placement import. Every reference field is a
@@ -133,7 +138,7 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 		if crossAccountOrRegion {
 			value = map[string]any{"Fn::GetStackOutput": map[string]any{
 				"StackName":  handle[handleStackNameKey],
-				"OutputName": outputKey,
+				"OutputName": OutputLogicalID(edge.Target.Node, outputKey),
 				"Region":     targetAnn.AWSRegion,
 				"RoleArn":    targetAnn.AWSAssumeRoleARN,
 			}}

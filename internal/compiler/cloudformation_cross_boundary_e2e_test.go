@@ -8,8 +8,9 @@
 //
 // The single-stack build is fully exercised: the fragment carries only a
 // Resources block plus a provides block, the provider stamps the stack envelope
-// and projects provides into Outputs, and an intra-stack consumer receives the
-// database host through the value pipe as a long-form Fn::GetAtt. The
+// and projects provides into Outputs under names scoped by the contributing
+// node, and an intra-stack consumer receives the database host through the value
+// pipe as a long-form Fn::GetAtt. The
 // two-boundary build (an intra-stack edge in one stack, a cross-stack edge into
 // another) is exercised end-to-end as well: the producer stack projects the
 // database host into an Output carrying an Export.Name, and the consumer stack
@@ -107,9 +108,10 @@ func cfnSameAccountDeclaredInput(t *testing.T) pipelinetest.Input {
 // workspace end-to-end through the real cloudformation guest and asserts, from
 // the emitted bytes, that the fragment-form Recipe assembled into a well-formed
 // stack: the envelope is stamped, the provides block projects into long-form
-// Outputs, merged fragments carry collision-safe logical ids, and an intra-stack
-// consumer's parameter value is the database's own !GetAtt-valued provides,
-// value-piped and normalized to a long-form Fn::GetAtt.
+// Outputs named for the contributing node and the entry, each node's resources
+// carry the logical ids its Recipe derived from its instance name, and an
+// intra-stack consumer's parameter value is the database's own !GetAtt-valued
+// provides, value-piped and normalized to a long-form Fn::GetAtt.
 func TestCloudFormationFragment_IntraStackAndProjection(t *testing.T) {
 	in := cfnSingleStackInput(t)
 
@@ -135,43 +137,44 @@ func TestCloudFormationFragment_IntraStackAndProjection(t *testing.T) {
 	// provides → Outputs projection: the fragment's provides block became stack
 	// Outputs, with the short-form intrinsics expanded to long form.
 	outputs := mustCfnMap(t, stack, "Outputs")
-	hostOut := mustCfnMap(t, outputs, "host")
+	hostOut := mustCfnMap(t, outputs, "DbHost")
 	hostVal, ok := hostOut["Value"].(map[string]any)
 	if !ok || hostVal["Fn::GetAtt"] == nil {
-		t.Fatalf("Outputs.host.Value is not an Fn::GetAtt intrinsic; got %#v", hostOut["Value"])
+		t.Fatalf("Outputs.DbHost.Value is not an Fn::GetAtt intrinsic; got %#v", hostOut["Value"])
 	}
-	for _, want := range []string{"port", "protocol"} {
+	for _, want := range []string{"DbPort", "DbProtocol"} {
 		if _, present := outputs[want]; !present {
-			t.Fatalf("Outputs missing projected provides key %q; got %v", want, mapKeys(outputs))
+			t.Fatalf("Outputs missing projected provides entry %q; got %v", want, mapKeys(outputs))
 		}
 	}
 
-	// Resources: the database and both consumers merged, with the colliding
-	// second consumer logical id disambiguated by a node-id-derived prefix.
+	// Resources: the database and both consumers merged, each under the logical id
+	// its Recipe derived from its own instance name — so the two consumers, which
+	// share a Recipe, still describe two resources.
 	resources := mustCfnMap(t, stack, "Resources")
-	if _, ok := resources["MariaDB"]; !ok {
-		t.Fatalf("Resources missing the database resource MariaDB; got %v", mapKeys(resources))
+	if _, ok := resources["Db"]; !ok {
+		t.Fatalf("Resources missing the database resource Db; got %v", mapKeys(resources))
 	}
-	if _, ok := resources["AppDbHostParameter"]; !ok {
-		t.Fatalf("Resources missing the first consumer resource AppDbHostParameter; got %v", mapKeys(resources))
+	if _, ok := resources["AppA"]; !ok {
+		t.Fatalf("Resources missing the first consumer resource AppA; got %v", mapKeys(resources))
 	}
-	if _, ok := resources["appbAppDbHostParameter"]; !ok {
-		t.Fatalf("colliding second consumer logical id was not disambiguated; got %v", mapKeys(resources))
+	if _, ok := resources["AppB"]; !ok {
+		t.Fatalf("Resources missing the second consumer resource AppB; got %v", mapKeys(resources))
 	}
 
 	// Intra-stack reference: the consumer parameter value is the database's own
 	// provides value, value-piped and normalized to a long-form Fn::GetAtt whose
 	// first element is the producer logical id. No Export/import is involved —
 	// the reference is same-stack.
-	appA := mustCfnMap(t, resources, "AppDbHostParameter")
+	appA := mustCfnMap(t, resources, "AppA")
 	appAProps := mustCfnMap(t, appA, "Properties")
 	getAtt, ok := appAProps["Value"].(map[string]any)
 	if !ok || getAtt["Fn::GetAtt"] == nil {
 		t.Fatalf("consumer parameter Value is not an Fn::GetAtt intrinsic; got %#v", appAProps["Value"])
 	}
 	gaArr, ok := getAtt["Fn::GetAtt"].([]any)
-	if !ok || len(gaArr) == 0 || gaArr[0] != "MariaDB" {
-		t.Fatalf("intra-stack Fn::GetAtt = %#v, want a reference to the MariaDB logical id", getAtt["Fn::GetAtt"])
+	if !ok || len(gaArr) == 0 || gaArr[0] != "Db" {
+		t.Fatalf("intra-stack Fn::GetAtt = %#v, want a reference to the Db logical id", getAtt["Fn::GetAtt"])
 	}
 	t.Logf("intra-stack consumer reference: Fn::GetAtt %v", gaArr)
 
@@ -220,18 +223,19 @@ func TestCloudFormationTwoBoundary_CrossStackWiring(t *testing.T) {
 		}
 	}
 
-	// Producer: Outputs.host carries BOTH the intra-stack Fn::GetAtt projection as
-	// its Value AND an Export.Name that the consumer stack can import.
+	// Producer: the database's host output carries BOTH the intra-stack Fn::GetAtt
+	// projection as its Value AND an Export.Name that the consumer stack can
+	// import. The output is named for the producing node and the entry together.
 	producerOutputs := mustCfnMap(t, producer, "Outputs")
-	hostOut := mustCfnMap(t, producerOutputs, "host")
+	hostOut := mustCfnMap(t, producerOutputs, "DbHost")
 	hostVal, ok := hostOut["Value"].(map[string]any)
 	if !ok || hostVal["Fn::GetAtt"] == nil {
-		t.Fatalf("producer Outputs.host.Value is not an Fn::GetAtt intrinsic; got %#v", hostOut["Value"])
+		t.Fatalf("producer Outputs.DbHost.Value is not an Fn::GetAtt intrinsic; got %#v", hostOut["Value"])
 	}
 	exportBlock := mustCfnMap(t, hostOut, "Export")
 	exportName, ok := exportBlock["Name"].(string)
 	if !ok || exportName == "" {
-		t.Fatalf("producer Outputs.host.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
+		t.Fatalf("producer Outputs.DbHost.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
 	}
 	for _, seg := range []string{"aggrega-", "db", "host"} {
 		if !strings.Contains(exportName, seg) {
@@ -250,15 +254,15 @@ func TestCloudFormationTwoBoundary_CrossStackWiring(t *testing.T) {
 	}
 	t.Logf("producer export name: %s", exportName)
 
-	// Consumer: AppDbHostParameter's Value is an Fn::ImportValue object whose
-	// imported name EQUALS the producer export name — the round-trip identity that
-	// wires the two stacks together.
+	// Consumer: the consuming application's parameter Value is an Fn::ImportValue
+	// object whose imported name EQUALS the producer export name — the round-trip
+	// identity that wires the two stacks together.
 	consumerResources := mustCfnMap(t, consumer, "Resources")
-	appDbHost := mustCfnMap(t, consumerResources, "AppDbHostParameter")
+	appDbHost := mustCfnMap(t, consumerResources, "AppB")
 	appProps := mustCfnMap(t, appDbHost, "Properties")
 	importVal, ok := appProps["Value"].(map[string]any)
 	if !ok || importVal["Fn::ImportValue"] == nil {
-		t.Fatalf("consumer AppDbHostParameter.Properties.Value is not an Fn::ImportValue intrinsic; got %#v", appProps["Value"])
+		t.Fatalf("consumer AppB.Properties.Value is not an Fn::ImportValue intrinsic; got %#v", appProps["Value"])
 	}
 	importName, ok := importVal["Fn::ImportValue"].(string)
 	if !ok {
@@ -321,28 +325,28 @@ func TestCloudFormationTwoBoundary_CrossAccountGetStackOutput(t *testing.T) {
 		}
 	}
 
-	// Consumer: AppDbHostParameter's Value is an Fn::GetStackOutput object — the
-	// cross-account read shape — and NOT an Fn::ImportValue import.
+	// Consumer: the consuming application's parameter Value is an Fn::GetStackOutput
+	// object — the cross-account read shape — and NOT an Fn::ImportValue import.
 	consumerResources := mustCfnMap(t, consumer, "Resources")
-	appDbHost := mustCfnMap(t, consumerResources, "AppDbHostParameter")
+	appDbHost := mustCfnMap(t, consumerResources, "AppB")
 	appProps := mustCfnMap(t, appDbHost, "Properties")
 	value, ok := appProps["Value"].(map[string]any)
 	if !ok {
-		t.Fatalf("consumer AppDbHostParameter.Properties.Value is not an object; got %#v", appProps["Value"])
+		t.Fatalf("consumer AppB.Properties.Value is not an object; got %#v", appProps["Value"])
 	}
 	if _, present := value["Fn::ImportValue"]; present {
 		t.Fatalf("cross-account consumer value carries an Fn::ImportValue import; want Fn::GetStackOutput. got %#v", value)
 	}
 	getStackOutput, ok := value["Fn::GetStackOutput"].(map[string]any)
 	if !ok {
-		t.Fatalf("consumer AppDbHostParameter.Properties.Value is not an Fn::GetStackOutput intrinsic; got %#v", appProps["Value"])
+		t.Fatalf("consumer AppB.Properties.Value is not an Fn::GetStackOutput intrinsic; got %#v", appProps["Value"])
 	}
 
 	// The read targets the injected provides key, in the producer's region, under
 	// the producer's assume-role — all carried from the producer's placement
 	// annotations, all deterministic pointer strings the runtime resolves.
-	if getStackOutput["OutputName"] != "host" {
-		t.Fatalf("Fn::GetStackOutput.OutputName = %#v, want \"host\"", getStackOutput["OutputName"])
+	if getStackOutput["OutputName"] != "DbHost" {
+		t.Fatalf("Fn::GetStackOutput.OutputName = %#v, want \"DbHost\"", getStackOutput["OutputName"])
 	}
 	if getStackOutput["Region"] != "eu-west-1" {
 		t.Fatalf("Fn::GetStackOutput.Region = %#v, want \"eu-west-1\"", getStackOutput["Region"])
@@ -356,14 +360,14 @@ func TestCloudFormationTwoBoundary_CrossAccountGetStackOutput(t *testing.T) {
 	}
 	t.Logf("cross-account read: Fn::GetStackOutput %#v", getStackOutput)
 
-	// Producer: Outputs.host STILL carries an Export.Name even on the
+	// Producer: the database's host output STILL carries an Export.Name even on the
 	// cross-account path — the publish adds the Export unconditionally.
 	producerOutputs := mustCfnMap(t, producer, "Outputs")
-	hostOut := mustCfnMap(t, producerOutputs, "host")
+	hostOut := mustCfnMap(t, producerOutputs, "DbHost")
 	exportBlock := mustCfnMap(t, hostOut, "Export")
 	exportName, ok := exportBlock["Name"].(string)
 	if !ok || exportName == "" {
-		t.Fatalf("producer Outputs.host.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
+		t.Fatalf("producer Outputs.DbHost.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
 	}
 	t.Logf("producer export name (present even on the cross-account path): %s", exportName)
 
@@ -432,33 +436,35 @@ func TestCloudFormationTwoBoundary_SameAccountDeclaredImportValue(t *testing.T) 
 		}
 	}
 
-	// Producer: Outputs.host carries an Export.Name the consumer stack can import.
+	// Producer: the database's host output carries an Export.Name the consumer
+	// stack can import.
 	producerOutputs := mustCfnMap(t, producer, "Outputs")
-	hostOut := mustCfnMap(t, producerOutputs, "host")
+	hostOut := mustCfnMap(t, producerOutputs, "DbHost")
 	exportBlock := mustCfnMap(t, hostOut, "Export")
 	exportName, ok := exportBlock["Name"].(string)
 	if !ok || exportName == "" {
-		t.Fatalf("producer Outputs.host.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
+		t.Fatalf("producer Outputs.DbHost.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
 	}
 	t.Logf("producer export name: %s", exportName)
 
-	// Consumer: AppDbHostParameter's Value is an Fn::ImportValue import — the
-	// same-account shape — and NOT an Fn::GetStackOutput cross-account read, even
-	// though the producer declares its placement. The imported name equals the
-	// producer's Export.Name: the round-trip identity that wires the two stacks.
+	// Consumer: the consuming application's parameter Value is an Fn::ImportValue
+	// import — the same-account shape — and NOT an Fn::GetStackOutput cross-account
+	// read, even though the producer declares its placement. The imported name
+	// equals the producer's Export.Name: the round-trip identity that wires the two
+	// stacks.
 	consumerResources := mustCfnMap(t, consumer, "Resources")
-	appDbHost := mustCfnMap(t, consumerResources, "AppDbHostParameter")
+	appDbHost := mustCfnMap(t, consumerResources, "AppB")
 	appProps := mustCfnMap(t, appDbHost, "Properties")
 	value, ok := appProps["Value"].(map[string]any)
 	if !ok {
-		t.Fatalf("consumer AppDbHostParameter.Properties.Value is not an object; got %#v", appProps["Value"])
+		t.Fatalf("consumer AppB.Properties.Value is not an object; got %#v", appProps["Value"])
 	}
 	if _, present := value["Fn::GetStackOutput"]; present {
 		t.Fatalf("same-account-declared consumer value carries an Fn::GetStackOutput read; want Fn::ImportValue. got %#v", value)
 	}
 	importName, ok := value["Fn::ImportValue"].(string)
 	if !ok {
-		t.Fatalf("consumer AppDbHostParameter.Properties.Value is not an Fn::ImportValue intrinsic; got %#v", appProps["Value"])
+		t.Fatalf("consumer AppB.Properties.Value is not an Fn::ImportValue intrinsic; got %#v", appProps["Value"])
 	}
 	if importName != exportName {
 		t.Fatalf("cross-stack round-trip identity broken: consumer imports %q but producer exports %q", importName, exportName)

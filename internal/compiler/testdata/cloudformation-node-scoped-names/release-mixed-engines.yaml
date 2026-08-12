@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-mixed-engines
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-mixed-engines.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack-a:
+      directory: ./dist/stack-a
+      components:
+        reporting-pg: {}
+        ledger-my: {}

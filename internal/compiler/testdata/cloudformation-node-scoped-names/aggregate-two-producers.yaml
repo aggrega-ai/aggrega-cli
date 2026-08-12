@@ -1,0 +1,52 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-two-producers
+  version: "1.0.0"
+  description: >
+    Two MariaDB databases of the same type and two applications, each reading
+    its own database. All four assemble into one CloudFormation stack, so each
+    consumer's injected host has to reference the database it names and the
+    stack outputs have to keep the two databases' connection identities apart.
+spec:
+  components:
+    orders-db:
+      type: core/datastore/mariadb
+      values:
+        database: orders
+        user: ordersuser
+      features:
+        root_password:
+          type: core/generated-secret
+    payments-db:
+      type: core/datastore/mariadb
+      values:
+        database: payments
+        user: paymentsuser
+      features:
+        root_password:
+          type: core/generated-secret
+    orders-app:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /orders-app/db-host
+      uses:
+        database:
+          primary:
+            target: orders-db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host
+    payments-app:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /payments-app/db-host
+      uses:
+        database:
+          primary:
+            target: payments-db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host

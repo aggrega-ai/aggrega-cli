@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-mixed-engines
+  version: "1.0.0"
+  description: >
+    A PostgreSQL database and a MySQL database in one CloudFormation stack. Two
+    engines, two Recipes, one template — each resource name and each stack output
+    has to carry the instance it belongs to, the same way it does for two
+    instances of one engine.
+spec:
+  components:
+    reporting-pg:
+      type: core/datastore/postgres
+      values:
+        database: reporting
+        user: reportinguser
+    ledger-my:
+      type: core/datastore/mysql
+      values:
+        database: ledger
+      features:
+        root_password:
+          type: core/generated-secret

@@ -66,8 +66,15 @@ func TestLinkPublishAddsExport(t *testing.T) {
 	if out.Patches[0].File != StackTemplateName {
 		t.Errorf("patch file = %q, want %q", out.Patches[0].File, StackTemplateName)
 	}
-	if op.Op != "add" || op.Path != "/Outputs/host/Export" {
-		t.Errorf("op = %q at %q, want add at /Outputs/host/Export", op.Op, op.Path)
+	// The Export lands on the output the producer node's own projection named, not
+	// on the bare injected key: another node in the producer's stack may export the
+	// same key, and the two are separate outputs.
+	wantPath := "/Outputs/OrdersDbHost/Export"
+	if got := "/Outputs/" + OutputLogicalID("orders-db", "host") + "/Export"; got != wantPath {
+		t.Fatalf("the producer output path derives as %q, want %q", got, wantPath)
+	}
+	if op.Op != "add" || op.Path != wantPath {
+		t.Errorf("op = %q at %q, want add at %q", op.Op, op.Path, wantPath)
 	}
 	val, ok := op.Value.(map[string]any)
 	if !ok || val["Name"] != wantExport {
@@ -147,8 +154,10 @@ func TestLinkResolveCrossAccountGetStackOutput(t *testing.T) {
 	if gso["StackName"] != StackName(testDeployment, "prod/data") {
 		t.Errorf("StackName = %v, want %q", gso["StackName"], StackName(testDeployment, "prod/data"))
 	}
-	if gso["OutputName"] != "host" {
-		t.Errorf("OutputName = %v, want %q", gso["OutputName"], "host")
+	// The cross-account read names the output as the producer stack named it —
+	// scoped by the producer node — rather than the bare injected key.
+	if want := OutputLogicalID("orders-db", "host"); gso["OutputName"] != want {
+		t.Errorf("OutputName = %v, want %q", gso["OutputName"], want)
 	}
 	if gso["Region"] != "eu-west-1" {
 		t.Errorf("Region = %v, want eu-west-1", gso["Region"])

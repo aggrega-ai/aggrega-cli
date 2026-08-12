@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-two-producers
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-two-producers.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack-a:
+      directory: ./dist/stack-a
+      components:
+        orders-db: {}
+        payments-db: {}
+        orders-app: {}
+        payments-app: {}

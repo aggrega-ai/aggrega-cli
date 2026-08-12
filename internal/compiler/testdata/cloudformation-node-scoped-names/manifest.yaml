@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: cloudformation-node-scoped-names-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/datastore/mariadb:1.0.0: cloudformation/mariadb-rds:1.0.0
+        core/datastore/mysql:1.0.0: cloudformation/mysql-rds:1.0.0
+        core/datastore/postgres:1.0.0: cloudformation/postgres-rds:1.0.0
+        example/compute/db-reader:1.0.0: cloudformation/db-reader:1.0.0
+    features:
+      type:
+        core/generated-secret:1.0.0: cloudformation/generated-secret:1.0.0

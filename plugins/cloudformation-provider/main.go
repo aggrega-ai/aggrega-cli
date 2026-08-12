@@ -32,11 +32,22 @@
 //
 // assemble_boundary folds every per-node fragment in the dispatch group into one
 // pure-JSON long-form CloudFormation stack template: the fragments' Resources
-// merge into one Resources map with collision-safe logical ids, and each node's
-// provides entries become stack Outputs. All CloudFormation domain logic —
-// short-form intrinsic expansion, resource merging, and the provides-to-Outputs
-// projection — lives in the cfncore package the guest calls, so the Wasm host
-// stays blind to CloudFormation semantics.
+// merge into one Resources map under the logical ids their Recipes authored, and
+// each node's provides entries become stack Outputs named for the contributing
+// node and the entry together. All CloudFormation domain logic — short-form
+// intrinsic expansion, resource merging, output naming, and the
+// provides-to-Outputs projection — lives in the cfncore package the guest calls,
+// so the Wasm host stays blind to CloudFormation semantics.
+//
+// A logical id is unique within one template while several nodes assemble into
+// one stack, so render_node returns the names each node's fragments will be
+// addressed by — its resource logical ids, and the output logical ids its
+// provides and Outputs entries project to — as the derived names it declares.
+// The host writes those bytes verbatim and reads nothing inside them, so the
+// declaration is how the guest asks it to confirm no two nodes claimed one name;
+// a duplicate halts the build naming the name and every node that claimed it.
+// The host compares the declared strings and learns nothing about what they mean,
+// which is what keeps CloudFormation's naming rules here in the guest.
 //
 // CloudFormation output is JSON, which carries no comment syntax the host's build
 // provenance could ride in without corrupting the document, so this guest emits
@@ -154,6 +165,7 @@ func renderNode() int32 {
 	}
 
 	var out rendercore.RenderNodeOutput
+	var resourceIDs, outputIDs []string
 	switch {
 	case in.WorkloadProjection != nil:
 		// CloudFormation does not synthesize workloads. A workload projection is
@@ -168,6 +180,13 @@ func renderNode() int32 {
 				pdk.SetError(err)
 				return 1
 			}
+			res, outs, err := cfncore.DeclaredNames(in.Node.ID, normalized)
+			if err != nil {
+				pdk.SetError(err)
+				return 1
+			}
+			resourceIDs = append(resourceIDs, res...)
+			outputIDs = append(outputIDs, outs...)
 			out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: normalized})
 		}
 	case in.SourceListing != nil:
@@ -187,12 +206,29 @@ func renderNode() int32 {
 			pdk.SetError(err)
 			return 1
 		}
+		resourceIDs, outputIDs, err = cfncore.DeclaredNamesSourced(in.Node.ID, normalized, in.SourceListing.RootIsDir)
+		if err != nil {
+			pdk.SetError(err)
+			return 1
+		}
 		out.Files = make([]rendercore.RenderedFile, 0, len(normalized))
 		for _, f := range normalized {
 			out.Files = append(out.Files, rendercore.RenderedFile{Path: f.Path, Content: f.Content})
 		}
 	}
 	// A payload with no projection yields an empty output.
+
+	// The names this node's output addresses its content by, declared per kind so
+	// the host can confirm no two nodes assembling into one stack claim the same
+	// one. A logical id is unique within a template, and the host writes the file
+	// bytes verbatim without reading them, so the declaration is how the guest
+	// asks for a check the host could not otherwise make.
+	if len(resourceIDs) > 0 {
+		out.DerivedKeys.Set(cfncore.KeySpaceResourceLogicalIDs, resourceIDs)
+	}
+	if len(outputIDs) > 0 {
+		out.DerivedKeys.Set(cfncore.KeySpaceOutputLogicalIDs, outputIDs)
+	}
 
 	encoded, err := out.MarshalJSON()
 	if err != nil {

@@ -7,17 +7,27 @@
 // intrinsics, structurally validates a sourced template, and merges a dispatch
 // group's per-node fragments into a single CloudFormation stack template. It
 // holds all the CloudFormation-specific intelligence — short-form intrinsic
-// expansion, per-fragment resource merging, logical-id collision
-// disambiguation, the provides-to-Outputs projection, and sourced-template
-// parse validation — so the Wasm host that orchestrates the guest stays blind
-// to CloudFormation semantics.
+// expansion, per-fragment resource merging, output-name scoping, the
+// provides-to-Outputs projection, and sourced-template parse validation — so
+// the Wasm host that orchestrates the guest stays blind to CloudFormation
+// semantics.
+//
+// A logical id is unique within one template, and several nodes assemble into
+// one stack, so every name a merged template addresses something by has to be
+// distinct across the nodes that contributed it. Two mechanisms carry that.
+// Output names are scoped by the contributing node, so a node's outputs cannot
+// displace another node's ([OutputLogicalID]). Resource names come from the
+// Recipe that authored the fragment, which this core reads and never rewrites;
+// [DeclaredNames] collects them, and the guest hands them to the host as the
+// names it derived, which is what turns a duplicate into a halt naming both
+// contributors instead of a resource quietly displaced during the merge.
 //
 // The core carries no build constraint so it compiles for both the wasip1 guest
 // and the host test binary: the guest's exports call into it, and its behavior
 // is exercised directly by host tests without a Wasm runtime. Output is
-// deterministic: every emitted object serializes with sorted keys, and logical-id
-// disambiguation walks fragment keys in sorted order, so identical input yields
-// byte-identical output across runs.
+// deterministic: every emitted object serializes with sorted keys, and every
+// walk over a fragment's keys takes them in sorted order, so identical input
+// yields byte-identical output across runs.
 package cfncore
 
 import (
@@ -45,12 +55,27 @@ const templateFormatVersion = "2010-09-09"
 
 // NodeFragment is one node's contribution to a dispatch group's assembled stack:
 // the node id and the serialized bytes of each per-node fragment the render pass
-// produced for it. The node id disambiguates a logical-id collision between two
-// nodes' fragments.
+// produced for it. The node id scopes the output names the fragment's provides
+// and Outputs entries land under, so two nodes contributing the same entry name
+// address separate outputs.
 type NodeFragment struct {
 	NodeID string
 	Files  [][]byte
 }
+
+// Key spaces the guest declares its derived names into. Each is a name this core
+// chose for one kind of name a CloudFormation template addresses something by;
+// the host compares names for equality within one space and reads no meaning
+// into either the space or the names, so these strings only ever have to be
+// distinct from each other and stable across runs.
+const (
+	// KeySpaceResourceLogicalIDs holds the logical ids of the resources the
+	// assembled stack carries.
+	KeySpaceResourceLogicalIDs = "resource-logical-ids"
+	// KeySpaceOutputLogicalIDs holds the logical ids of the outputs the
+	// assembled stack carries.
+	KeySpaceOutputLogicalIDs = "output-logical-ids"
+)
 
 // NormalizeFragment parses one CloudFormation fragment — a YAML or JSON object
 // carrying a Resources map and optionally provides/Outputs material — and
@@ -181,17 +206,22 @@ func isTemplateFile(path string) bool {
 
 // AssembleStack merges every node's fragments in dispatch-group order into one
 // CloudFormation stack template and returns its pure-JSON long-form bytes. Each
-// fragment's Resources fold into one Resources map; a logical id already present
-// from an earlier fragment is disambiguated by prefixing the colliding id with
-// the contributing node's sanitized id, so the merge never silently overwrites a
-// resource. Each fragment's provides entries become stack Outputs (a provides
-// value that is an intrinsic referencing a resource in the assembled stack rides
-// through as its long-form intrinsic — the intra-stack cross-reference), and any
-// explicit Outputs block merges in as well. The assembled template is validated
-// with the standard-library JSON decoder: it must be well-formed JSON carrying a
-// non-empty Resources object, or the assembly halts loudly. Cross-stack wiring is
-// not performed here; a provides value pointing outside the assembled stack is
-// piped through as whatever intrinsic the fragment authored.
+// fragment's Resources fold into one Resources map under the logical ids the
+// fragment authored. Each fragment's provides entries become stack Outputs (a
+// provides value that is an intrinsic referencing a resource in the assembled
+// stack rides through as its long-form intrinsic — the intra-stack
+// cross-reference), and any explicit Outputs block merges in as well; both are
+// named for the contributing node and the entry together ([OutputLogicalID]), so
+// two nodes exporting the same entry name reach separate outputs. The assembled
+// template is validated with the standard-library JSON decoder: it must be
+// well-formed JSON carrying a non-empty Resources object, or the assembly halts
+// loudly. Cross-stack wiring is not performed here; a provides value pointing
+// outside the assembled stack is piped through as whatever intrinsic the fragment
+// authored.
+//
+// Two nodes authoring one resource logical id never reach this merge: the guest
+// declares each fragment's names ([DeclaredNames]) and the host halts on a
+// duplicate before any assembly runs.
 func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	resources := map[string]any{}
 	outputs := map[string]any{}
@@ -209,10 +239,10 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 			if err := mergeResources(resources, m, node.NodeID); err != nil {
 				return nil, err
 			}
-			if err := mergeExplicitOutputs(outputs, m); err != nil {
+			if err := mergeExplicitOutputs(outputs, m, node.NodeID); err != nil {
 				return nil, err
 			}
-			if err := providesToOutputs(outputs, m); err != nil {
+			if err := providesToOutputs(outputs, m, node.NodeID); err != nil {
 				return nil, err
 			}
 		}
@@ -241,11 +271,18 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	return out, nil
 }
 
-// mergeResources folds one fragment's Resources into the assembled Resources map.
-// A logical id already present is renamed by prefixing the contributing node's
-// sanitized id, keeping the merge collision-safe. Keys are walked in sorted order
-// so the disambiguation is deterministic. A fragment with no Resources
-// contributes nothing.
+// mergeResources folds one fragment's Resources into the assembled Resources map
+// under the logical ids the fragment authored, which this core reads and never
+// rewrites. Keys are walked in sorted order so the merge is deterministic. A
+// fragment with no Resources contributes nothing.
+//
+// Two nodes authoring one logical id are refused before any fragment is merged:
+// the guest declares each fragment's logical ids ([DeclaredNames]) and the host
+// halts on a duplicate, naming the id and every node that authored it. Renaming
+// one of them here instead would move a resource to a name nothing in the
+// deployment asked for, and the renamed id can collide in turn — which is how a
+// declared resource comes to be absent from the emitted template with nothing
+// said about it.
 func mergeResources(dst, frag map[string]any, nodeID string) error {
 	raw, ok := frag["Resources"]
 	if !ok {
@@ -256,19 +293,16 @@ func mergeResources(dst, frag map[string]any, nodeID string) error {
 		return fmt.Errorf("cloudformation-provider: Resources in node %q is not a mapping", nodeID)
 	}
 	for _, id := range sortedKeys(rmap) {
-		logicalID := id
-		if _, exists := dst[logicalID]; exists {
-			logicalID = sanitizeLogicalID(nodeID) + id
-		}
-		dst[logicalID] = rmap[id]
+		dst[id] = rmap[id]
 	}
 	return nil
 }
 
 // mergeExplicitOutputs folds one fragment's explicit Outputs block into the
-// assembled Outputs map. Keys are walked in sorted order for deterministic
-// last-writer-wins on a collision across fragments.
-func mergeExplicitOutputs(dst, frag map[string]any) error {
+// assembled Outputs map, each entry scoped by the contributing node
+// ([OutputLogicalID]). Keys are walked in sorted order so the merge is
+// deterministic.
+func mergeExplicitOutputs(dst, frag map[string]any, nodeID string) error {
 	raw, ok := frag["Outputs"]
 	if !ok {
 		return nil
@@ -278,17 +312,18 @@ func mergeExplicitOutputs(dst, frag map[string]any) error {
 		return fmt.Errorf("cloudformation-provider: Outputs is not a mapping")
 	}
 	for _, k := range sortedKeys(omap) {
-		dst[k] = omap[k]
+		dst[OutputLogicalID(nodeID, k)] = omap[k]
 	}
 	return nil
 }
 
 // providesToOutputs projects a fragment's provides entries into stack Outputs.
-// Each provides key becomes an Output whose Value is the provides value; a value
+// Each provides key becomes an Output, named for the contributing node and the
+// key together ([OutputLogicalID]), whose Value is the provides value; a value
 // that is an intrinsic referencing a resource in the assembled stack rides
 // through as its long-form intrinsic. Keys are walked in sorted order for
 // deterministic output.
-func providesToOutputs(dst, frag map[string]any) error {
+func providesToOutputs(dst, frag map[string]any, nodeID string) error {
 	raw, ok := frag["provides"]
 	if !ok {
 		return nil
@@ -298,7 +333,7 @@ func providesToOutputs(dst, frag map[string]any) error {
 		return fmt.Errorf("cloudformation-provider: provides is not a mapping")
 	}
 	for _, k := range sortedKeys(pmap) {
-		dst[k] = map[string]any{"Value": pmap[k]}
+		dst[OutputLogicalID(nodeID, k)] = map[string]any{"Value": pmap[k]}
 	}
 	return nil
 }
@@ -502,23 +537,131 @@ func isCustomTag(tag string) bool {
 	return tag != "" && strings.HasPrefix(tag, "!") && !strings.HasPrefix(tag, "!!")
 }
 
-// sanitizeLogicalID strips a node id down to the alphanumeric characters a
-// CloudFormation logical id admits, so a disambiguating prefix is itself a valid
-// logical-id component.
-func sanitizeLogicalID(s string) string {
-	return strings.Map(func(r rune) rune {
+// OutputLogicalID names the stack Output one node's entry lands at: the node's
+// identity and the entry name, each read as words and joined without a separator
+// — node payments-db exporting host reaches PaymentsDbHost. A logical id admits
+// only letters and digits, so there is no separator character available to keep
+// the two apart; capitalising each word's first letter is what keeps the parts
+// legible in the emitted template without one.
+//
+// Scoping every output by its node, rather than only where two nodes happen to
+// collide, is what makes an output's meaning independent of who else assembles
+// into the stack: one node's connection identity cannot arrive under a name
+// another node also exports, and a name does not change when a second node is
+// added to the boundary.
+//
+// This is the guest's own naming of a node, and it is deliberately not the name
+// any Recipe chose for its resources: a Recipe authors whatever logical ids it
+// likes and this core reads them verbatim, so nothing here may depend on what a
+// Recipe wrote. The cross-stack publish and resolve reach an output through this
+// same function, which is what lets them address a producer's output from the
+// node and entry name alone.
+func OutputLogicalID(nodeID, entry string) string {
+	return capitalizedWords(nodeID) + capitalizedWords(entry)
+}
+
+// capitalizedWords reads a string as words separated by runs of anything a
+// CloudFormation logical id does not admit, capitalises each word's first
+// letter, and joins them. A word's remaining characters are left as authored, so
+// a name that already carries capitals keeps them and two inputs differing only
+// in where their separators sit stay distinguishable.
+func capitalizedWords(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	atWordStart := true
+	for _, r := range s {
 		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			return r
+		case r >= 'a' && r <= 'z':
+			if atWordStart {
+				r -= 'a' - 'A'
+			}
+			b.WriteRune(r)
+			atWordStart = false
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			atWordStart = false
 		default:
-			return -1
+			atWordStart = true
 		}
-	}, s)
+	}
+	return b.String()
+}
+
+// DeclaredNames reads one already-normalized fragment and returns the names the
+// assembled stack will address its content by: the logical ids of its resources,
+// and the logical ids of the outputs its provides and explicit Outputs entries
+// project to. The guest hands these to the host, which refuses a name two
+// contributors to one assembled stack both claim.
+//
+// Resource ids come back exactly as the fragment authored them, because that is
+// what the merge emits. Output ids come back already scoped by the node, because
+// that is what the merge emits for them. Both are returned in sorted order so a
+// declaration is a function of the fragment alone.
+//
+// A fragment that carries neither section declares nothing, which is a valid
+// answer rather than an error: a fragment contributing only vendored content has
+// no name for the host to check.
+func DeclaredNames(nodeID string, fragment []byte) (resourceIDs, outputIDs []string, err error) {
+	v, err := decodeToValue(fragment)
+	if err != nil {
+		return nil, nil, err
+	}
+	if v == nil {
+		return nil, nil, nil
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, nil, fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", nodeID)
+	}
+
+	if raw, present := m["Resources"]; present {
+		rmap, ok := raw.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("cloudformation-provider: Resources in node %q is not a mapping", nodeID)
+		}
+		resourceIDs = append(resourceIDs, sortedKeys(rmap)...)
+	}
+	for _, section := range []string{"Outputs", "provides"} {
+		raw, present := m[section]
+		if !present {
+			continue
+		}
+		omap, ok := raw.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("cloudformation-provider: %s in node %q is not a mapping", section, nodeID)
+		}
+		for _, k := range sortedKeys(omap) {
+			outputIDs = append(outputIDs, OutputLogicalID(nodeID, k))
+		}
+	}
+	sort.Strings(outputIDs)
+	return resourceIDs, outputIDs, nil
+}
+
+// DeclaredNamesSourced collects the declared names of a sourced source's packed
+// files, reading the same files DeclaredNames would and skipping the same
+// non-template content NormalizeSourced vendors verbatim — a directory source's
+// README or parameters file carries no name the assembled stack addresses
+// anything by. A single-file source's lone template is read whole. Names come
+// back in the packed order the caller supplied, each file's own names sorted.
+func DeclaredNamesSourced(nodeID string, files []SourcedFile, rootIsDir bool) (resourceIDs, outputIDs []string, err error) {
+	for _, f := range files {
+		if rootIsDir && !isTemplateFile(f.Path) {
+			continue
+		}
+		res, outs, err := DeclaredNames(nodeID, f.Content)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cloudformation-provider: read declared names from sourced template %q: %w", f.Path, err)
+		}
+		resourceIDs = append(resourceIDs, res...)
+		outputIDs = append(outputIDs, outs...)
+	}
+	return resourceIDs, outputIDs, nil
 }
 
 // sortedKeys returns a map's keys in lexical order so any iteration that must be
-// deterministic (logical-id disambiguation, Outputs merging) walks a stable
-// order.
+// deterministic (resource merging, Outputs merging, name declaration) walks a
+// stable order.
 func sortedKeys(m map[string]any) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
