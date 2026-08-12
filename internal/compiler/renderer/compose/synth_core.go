@@ -35,6 +35,7 @@ package compose
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
@@ -558,14 +559,18 @@ func translateContainer(
 	}
 
 	// Probes → healthcheck. Compose only supports a single healthcheck per
-	// service; Aggrega's three Workload probe slots collapse to one. Order
+	// service; the three Workload probe slots collapse to one. Order
 	// of preference: liveness > readiness > startup (most common compose
-	// signal is liveness equivalent).
+	// signal is liveness equivalent). A collapse that discards an authored slot
+	// raises a partial-support warning naming the discarded slots, so authored
+	// intent that reaches no part of the output is reported rather than lost
+	// silently.
 	if c.Health != nil {
-		hc, err := translateHealthcheck(c.Health, c.Ports)
+		hc, hdiags, err := translateHealthcheck(c.Health, c.Ports, containerPath+".health")
 		if err != nil {
 			return Service{}, nil, err
 		}
+		diags = append(diags, hdiags...)
 		if hc != nil {
 			svc.Healthcheck = hc
 		}
@@ -711,30 +716,98 @@ func volumeMountEntry(vm types.VolumeMount, spec types.VolumeSpec, nodeID string
 	}
 }
 
-// translateHealthcheck translates the Workload Health (3 probe slots) to a
+// translateHealthcheck translates the Workload health block (3 probe slots) to a
 // single compose Healthcheck. Order of preference: live > ready > startup.
 // Returns nil when no probe is set.
-func translateHealthcheck(h *types.HealthSpec, ports types.OrderedMap[int]) (*Healthcheck, error) {
-	probe := pickPrimaryProbe(h)
+//
+// A compose service carries one healthcheck, so an author who declares more than
+// one probe slot keeps only the preferred one and the rest reach no part of the
+// output. healthPath is the authored path to the health block, used solely to
+// locate the partial-support warning that reports the dropped slots by name; it
+// never affects the rendered bytes. Returns no diagnostic when nothing is
+// dropped, which is every health block declaring a single probe slot.
+func translateHealthcheck(h *types.HealthSpec, ports types.OrderedMap[int], healthPath string) (*Healthcheck, []renderctx.Diagnostic, error) {
+	probe, selected := pickPrimaryProbe(h)
 	if probe == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	return probeToHealthcheck(probe, ports)
+
+	hc, err := probeToHealthcheck(probe, ports)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var diags []renderctx.Diagnostic
+	if dropped := droppedProbeSlots(h, selected); len(dropped) > 0 {
+		diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName, healthPath,
+			fmt.Sprintf("a service carries a single healthcheck, so only the %s probe is translated and the %s dropped",
+				selected, describeDroppedSlots(dropped))))
+	}
+	return hc, diags, nil
 }
 
 // pickPrimaryProbe returns the live probe if set, else readiness, else startup,
-// else nil.
-func pickPrimaryProbe(h *types.HealthSpec) *types.ProbeSpec {
+// else nil, together with the authored name of the slot it selected ("" when no
+// slot is set). The name is returned rather than left for a caller to recover by
+// comparing the result against each field: this function is the one place the
+// preference order is expressed, so it is also the one place that can say which
+// slot the order chose.
+func pickPrimaryProbe(h *types.HealthSpec) (*types.ProbeSpec, string) {
 	if h.Live != nil {
-		return h.Live
+		return h.Live, "live"
 	}
 	if h.Ready != nil {
-		return h.Ready
+		return h.Ready, "ready"
 	}
 	if h.Startup != nil {
-		return h.Startup
+		return h.Startup, "startup"
 	}
-	return nil
+	return nil, ""
+}
+
+// droppedProbeSlots returns the authored names of every probe slot the health
+// block declares that the given selected slot is not — the slots whose authored
+// intent reaches no part of the rendered output.
+//
+// Slots are visited in the order the health block declares them (ready, live,
+// startup), which is fixed at compile time because they are named struct fields
+// rather than map entries. No map is on this path, so the reported order carries
+// no iteration freedom.
+func droppedProbeSlots(h *types.HealthSpec, selected string) []string {
+	slots := []struct {
+		name  string
+		probe *types.ProbeSpec
+	}{
+		{"ready", h.Ready},
+		{"live", h.Live},
+		{"startup", h.Startup},
+	}
+
+	var dropped []string
+	for _, s := range slots {
+		if s.probe != nil && s.name != selected {
+			dropped = append(dropped, s.name)
+		}
+	}
+	return dropped
+}
+
+// describeDroppedSlots renders a dropped-slot list as the tail of a sentence:
+// "ready probe is", "ready and startup probes are". Written for any length so a
+// further probe slot needs no change here.
+//
+// The empty list returns the empty string rather than indexing off the front of
+// the slice. Its caller only builds a message when at least one slot was dropped,
+// so this total behavior is what keeps that guard from being the only thing
+// standing between an empty list and a panic.
+func describeDroppedSlots(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0] + " probe is"
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1] + " probes are"
 }
 
 // probeToHealthcheck translates a single ProbeSpec to a compose Healthcheck.

@@ -11,24 +11,36 @@ import (
 
 // TestPickPrimaryProbe_EveryBranch pins the probe-selection precedence:
 // Live > Ready > Startup > nil. The function returns the first non-nil
-// probe in that order.
+// probe in that order, together with the authored name of the slot it came from.
 func TestPickPrimaryProbe_EveryBranch(t *testing.T) {
 	t.Parallel()
 	live := &types.ProbeSpec{HTTP: "/live"}
 	ready := &types.ProbeSpec{HTTP: "/ready"}
 	startup := &types.ProbeSpec{HTTP: "/startup"}
 
-	if got := pickPrimaryProbe(&types.HealthSpec{Live: live, Ready: ready, Startup: startup}); got != live {
-		t.Errorf("Live present: expected Live; got %+v", got)
+	tests := []struct {
+		scenario string
+		health   types.HealthSpec
+		want     *types.ProbeSpec
+		wantSlot string
+	}{
+		{"all three slots set: live wins", types.HealthSpec{Live: live, Ready: ready, Startup: startup}, live, "live"},
+		{"live absent, ready present: ready wins", types.HealthSpec{Ready: ready, Startup: startup}, ready, "ready"},
+		{"only startup set: startup wins", types.HealthSpec{Startup: startup}, startup, "startup"},
+		{"no slot set: no probe and no slot name", types.HealthSpec{}, nil, ""},
 	}
-	if got := pickPrimaryProbe(&types.HealthSpec{Ready: ready, Startup: startup}); got != ready {
-		t.Errorf("Live absent, Ready present: expected Ready; got %+v", got)
-	}
-	if got := pickPrimaryProbe(&types.HealthSpec{Startup: startup}); got != startup {
-		t.Errorf("only Startup: expected Startup; got %+v", got)
-	}
-	if got := pickPrimaryProbe(&types.HealthSpec{}); got != nil {
-		t.Errorf("empty HealthSpec: expected nil; got %+v", got)
+
+	for _, tc := range tests {
+		t.Run(tc.scenario, func(t *testing.T) {
+			t.Parallel()
+			got, gotSlot := pickPrimaryProbe(&tc.health)
+			if got != tc.want {
+				t.Errorf("probe: got %+v; want %+v", got, tc.want)
+			}
+			if gotSlot != tc.wantSlot {
+				t.Errorf("slot name: got %q; want %q", gotSlot, tc.wantSlot)
+			}
+		})
 	}
 }
 
