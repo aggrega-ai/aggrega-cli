@@ -1,0 +1,33 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cov-app-instance-slot
+  version: "1.0.0"
+spec:
+  subsystems:
+    svc:
+      components:
+        consumer:
+          type: cov/consumer
+          features:
+            # The same attachment as in the subsystem-scope fixture beside this
+            # one, moved down onto the component instance that receives it. Under
+            # `cov/consumer` the name `root_password` binds a declared slot whose
+            # empty inject allowlist reserves delivery to the Recipe, so this
+            # inject block is out of shape for the slot and the build halts.
+            # The two fixtures declare the same components, the same Component
+            # types and the same slot; where the attachment sits is what differs,
+            # which is what makes the pair a contrast rather than two unrelated
+            # cases.
+            root_password:
+              type: cov/secret-value
+              inject:
+                env:
+                  - in: PW
+                    from: value
+          uses:
+            databases:
+              main:
+                target: store
+        store:
+          type: cov/store
