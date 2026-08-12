@@ -340,6 +340,125 @@ type NormalizedView interface {
 	//
 	// Keyed by node; read from types.RequiredAttachmentTypes(annotations).
 	RequiredAttachmentMandates(componentType string) []types.RequiredAttachmentType
+
+	// DeclaredSocketNames are the dependency socket names a component type
+	// declares, in author order.
+	//
+	// It answers which sockets exist to be asked about, which a rule needs in
+	// hand before it can read any single socket's own facts — whether that
+	// socket must be populated, and what it constrains its target to. Neither
+	// of those names the set, so the set is a fact of its own rather than a
+	// shape of either.
+	//
+	// Author order is the fact rather than an incidental property of it: a
+	// rule reporting one finding per socket emits them in this order, so the
+	// order is what makes the report the same on every run.
+	//
+	// The set is what the type DECLARES and never what a deployment populates.
+	// A component's own dependency block may name a socket the type declares
+	// no entry for, so a rule reading this set as the permitted names would
+	// refuse authoring the product accepts; what it answers is which sockets
+	// carry a declaration to read.
+	//
+	// Keyed by node; read from types.ComponentSpec.UsesSchema.
+	DeclaredSocketNames(componentType string) []string
+
+	// AttachmentDeclaredSocketNames are the dependency socket names the
+	// Feature an attachment resolves to declares, in author order.
+	//
+	// It is a separate fact from the sockets the consuming component type
+	// declares, because the two are separate declaration surfaces: an edge
+	// drawn from an attachment's own dependency block participates in the
+	// attached Feature's socket declarations rather than in the component's.
+	// One fact spanning both would have to pick a surface, and would answer
+	// for the wrong one wherever the other applied.
+	//
+	// It is keyed per attachment as well as per node although the answer
+	// follows from the attachment's type alone. Nothing on the attachment
+	// surface can widen the set — an attachment carries a type, a
+	// description, and its own dependency, injection and configuration blocks,
+	// and no further key is accepted there — so the repetition across two
+	// attachments of one type is recomputation rather than storage. What makes
+	// the keying right is the finding: a rule refusing a socket name has to
+	// name the attachment that wrote it, which is what an author can act on,
+	// where the type alone would leave them looking for which attachment meant
+	// it.
+	//
+	// Keyed by (node, attachment); read from types.FeatureSpec.UsesSchema.
+	AttachmentDeclaredSocketNames(featureType string) []string
+
+	// DeclaredSlotNames are the attachment slot names a component type
+	// declares, in author order.
+	//
+	// A slot is a binding point and not a dependency socket, so this is a
+	// separate fact from the declared socket names even though both are name
+	// sets over one entity: they are separate authored surfaces with separate
+	// rules over them.
+	//
+	// Declaring a slot does not close the attachment surface. A deployment may
+	// attach a Feature under a name no slot declares, so a rule reading this
+	// set as the permitted attachment names would refuse a shape the product
+	// supports; what it answers is which names carry a slot declaration for a
+	// fill to be checked against.
+	//
+	// It is keyed per attachment as well as per node because a rule over it is
+	// asked of an attachment: the question is whether the name this attachment
+	// binds is one the type declares, and the answer has to name that
+	// attachment.
+	//
+	// Keyed by (node, attachment); read from
+	// types.ComponentSpec.FeaturesSchema.
+	DeclaredSlotNames(componentType string) []string
+
+	// ReleasePerEdgeTarget is the target a Release's per-edge entry names for
+	// one socket on one node, as authored — empty when the Release named
+	// none.
+	//
+	// It is a separate fact from the target the Aggregate authored, and the
+	// pair is what makes the population question answerable at all. Both
+	// documents can bind one socket: the component's own dependency block, and
+	// the Release's per-edge surface, which may wire a socket the architecture
+	// declared and nothing bound to a component that already exists. A rule
+	// reading either surface alone reports a socket as unpopulated that the
+	// build wires.
+	//
+	// The emptiness is reported rather than resolved, and here it carries the
+	// distinction the operator surface rests on: an entry naming a target
+	// creates the edge, while an entry naming none configures an edge some
+	// other document already drew and so binds nothing.
+	//
+	// The fact is placed where both documents are in view. It is keyed by an
+	// edge, whose identity is a node the other document declares, and a stage
+	// holding one authored document at a time cannot answer for a pair.
+	//
+	// Keyed by edge; read from types.ReleaseUsesEntry.Target.
+	ReleasePerEdgeTarget(node string, socket string) string
+
+	// ReleasePerEdgeInfra is the operator's configuration for one socket on
+	// one node as it was written, carried as an opaque ordered payload.
+	//
+	// It is the payload rather than a named fact about it, on the same
+	// reasoning the authored configuration pillars are: a rule whose predicate
+	// is "what was written here conforms to the contract the socket declares"
+	// has that content as its input, and the content has no other home to be
+	// read from.
+	//
+	// The developer's per-edge configuration is a different fact on a
+	// different surface rather than this one in another shape. The two are
+	// written on separate documents by separate hands, each is independently
+	// absent, and the socket declares a separate contract for each — so a
+	// rule may legitimately read either without the other.
+	//
+	// Author order is carried because these entries reach rendered output, and
+	// an unordered payload would put a byte-identical result at the mercy of
+	// map iteration.
+	//
+	// It is placed where both documents are in view, for the same reason the
+	// target the same entry names is: the edge it is keyed by is identified by
+	// a node the other document declares.
+	//
+	// Keyed by edge; read from types.ReleaseUsesEntry.Infra.
+	ReleasePerEdgeInfra(node string, socket string) types.OrderedMap[any]
 }
 
 // TopologyView exposes the facts complete at the topology stage: the
@@ -486,6 +605,32 @@ type GraphView interface {
 	//
 	// Keyed by (node, mechanism, delivery-key); read from types.IREdge.Inject.
 	UsesInjectDeliverySockets(node string, mechanism string, key string) []string
+
+	// PerEdgeInject is what one dependency edge delivers: per delivery
+	// mechanism, the key it delivers under and the provides key it reads, in
+	// author order.
+	//
+	// It asks the delivery question from the edge's side, where the fact
+	// naming the sockets that deliver a key asks it from the consuming node's.
+	// The direction is part of each fact rather than a shape either converts
+	// into: a rule refusing a key the target does not declare is asked once
+	// per edge and needs that edge's whole delivery block, while a rule
+	// refusing two deliveries of one key is asked once per key and needs the
+	// sockets that carried them.
+	//
+	// It is placed where every edge exists rather than where an author's own
+	// text does. An edge is drawn by a component's dependency block,
+	// contributed by an attachment, or wired by the operator surface, and a
+	// rule reading the first alone is silent for exactly the edges the other
+	// two produce — a rule that cannot see its subject and says nothing,
+	// which reads the same as one that saw it and approved.
+	//
+	// Author order is the fact: a rule reporting one finding per delivery
+	// emits them in this order, so the order is what makes the report the same
+	// on every run.
+	//
+	// Keyed by edge; read from types.IREdge.Inject.
+	PerEdgeInject(node string, socket string) types.OrderedMap[types.OrderedMap[string]]
 }
 
 // DescribedView exposes the facts complete at the described stage: every
