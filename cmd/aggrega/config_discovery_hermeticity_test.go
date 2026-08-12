@@ -30,6 +30,15 @@ import (
 // directory and the marker topology differ. No path escapes the test's temp
 // directories and no $HOME or current-directory state is consulted (every
 // resolve passes an explicit start directory).
+//
+// What this test owns, against the neighbouring test that plants an ancestor for
+// the same reason: here the marker is written by hand and carries nothing, so
+// what is pinned is that PRESENCE alone caps the upward walk, and that the walk
+// is otherwise unbounded. The neighbour instead declares its workspace through
+// the shared helper every test uses, and plants a value for each setting the
+// loader consumes — including the signing stance, which composes monotonically
+// and so cannot be shadowed by a nearer layer at all. Neither test subsumes the
+// other, so the overlap is deliberate rather than a duplicate to be folded away.
 func TestConfigDiscoveryIsHermeticAgainstAncestorConfig(t *testing.T) {
 	t.Parallel()
 
