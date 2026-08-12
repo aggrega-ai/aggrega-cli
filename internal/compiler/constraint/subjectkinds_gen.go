@@ -49,7 +49,7 @@ const (
 	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 1 declared fact.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
-	// SubjectNode is the subject kind node, keyed by 6 declared facts.
+	// SubjectNode is the subject kind node, keyed by 7 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 2 declared facts.
@@ -58,7 +58,7 @@ const (
 	// SubjectEdge is the subject kind edge, keyed by 6 declared facts.
 	SubjectEdge SubjectKind = "edge"
 
-	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 9 declared facts.
+	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 10 declared facts.
 	SubjectNodeAttachment SubjectKind = "(node, attachment)"
 
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 2 declared facts.
@@ -75,6 +75,9 @@ const (
 
 	// SubjectNodePillarLeaf is the subject kind (node, pillar, leaf), keyed by 1 declared fact.
 	SubjectNodePillarLeaf SubjectKind = "(node, pillar, leaf)"
+
+	// SubjectBoundaryAttachment is the subject kind (boundary, attachment), keyed by 1 declared fact.
+	SubjectBoundaryAttachment SubjectKind = "(boundary, attachment)"
 
 	// SubjectNodeParameter is the subject kind (node, parameter), keyed by 1 declared fact.
 	SubjectNodeParameter SubjectKind = "(node, parameter)"
@@ -115,6 +118,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeMechanism, Coordinates: []string{"node", "mechanism"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeMechanismDeliveryKey, Coordinates: []string{"node", "mechanism", "delivery-key"}, Traversal: TraversalPull},
 	{Kind: SubjectNodePillarLeaf, Coordinates: []string{"node", "pillar", "leaf"}, Traversal: TraversalPull},
+	{Kind: SubjectBoundaryAttachment, Coordinates: []string{"boundary", "attachment"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeParameter, Coordinates: []string{"node", "parameter"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentPillarLeaf, Coordinates: []string{"node", "attachment", "pillar", "leaf"}, Traversal: TraversalPull},
 	{Kind: SubjectNodePipelineStep, Coordinates: []string{"node", "pipeline-step"}, Traversal: TraversalPull},

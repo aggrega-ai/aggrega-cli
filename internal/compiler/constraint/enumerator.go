@@ -131,7 +131,9 @@ type AuthoredCoordinate struct {
 // flattened set, a sub-aggregate's nodes included.
 //
 // It is the root of every node-keyed traversal, so its order is the outermost
-// order in fourteen of the sixteen enumerated kinds.
+// order for most of the enumerated kinds. The share is deliberately not counted
+// here: it moves whenever a kind is declared, and a stale count beside the
+// interface would keep reading as a fact about the tree.
 type NodeEnumerator interface {
 	// Nodes returns every node, in a deterministic order the implementation
 	// declares.
@@ -297,4 +299,17 @@ type EmittedPathEnumerator interface {
 	// EmittedPaths returns the paths written for one provider within one
 	// boundary, in emission order.
 	EmittedPaths(boundary string, provider string) []string
+}
+
+// BoundaryAttachmentEnumerator supplies the Feature attachments declared on one
+// boundary itself.
+//
+// Those attachments are declared at the boundary rather than against a named
+// component, which is why the axis is keyed per boundary and not per node: one
+// of them reaches every component the boundary holds, so enumerating it per
+// component would present one authored attachment many times over.
+type BoundaryAttachmentEnumerator interface {
+	// BoundaryAttachments returns a boundary's own attachment names, in a
+	// deterministic order the implementation declares.
+	BoundaryAttachments(boundary string) []string
 }

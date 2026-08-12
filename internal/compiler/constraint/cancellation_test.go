@@ -74,14 +74,16 @@ func countingCheck[S Subject](visit func()) Check[traversalView, S] {
 	}
 }
 
-// cancellationShape is one of the three loop shapes the sixteen traversals are
-// built from, driven over the large fixture.
+// cancellationShape is one of the loop shapes every traversal is built from,
+// driven over the large fixture.
 //
-// Three rather than sixteen, deliberately: fourteen kinds share one node walk, so
-// driving all sixteen here would measure one loop fourteen times over and still
-// leave the other two loops proved once each. The shapes are enumerated by the
-// loop they own. That every one of the sixteen entry points honours the signal is
-// a separate property, established over the whole generated kind set by
+// One case per LOOP rather than one per entry point, deliberately: the kinds
+// reached within a node share one node walk and the kinds rooted at a boundary
+// share one boundary walk, so a case per entry point would measure a handful of
+// loops many times over and prove nothing extra. The shapes are enumerated by the
+// loop they own, which is why there are fewer of them than there are traversals
+// and why no count of either is written here. That every entry point honours the
+// signal is a separate property, established over the whole generated kind set by
 // [TestEveryPullTraversalHonoursTheCancellationSignal].
 type cancellationShape struct {
 	name  string
@@ -284,8 +286,7 @@ func TestAnUncancellableTraversalWalksTheWholeEnumeration(t *testing.T) {
 }
 
 // TestEveryPullTraversalHonoursTheCancellationSignal is the completeness half:
-// each of the sixteen entry points stops when the signal is already non-nil at its
-// first read.
+// every entry point stops when the signal is already non-nil at its first read.
 //
 // It rides the transcript table rather than a list of its own, because that table
 // is itself held against the generated kind set by
@@ -320,7 +321,7 @@ func TestEveryPullTraversalHonoursTheCancellationSignal(t *testing.T) {
 				t.Errorf("the traversal returned %v; want the signal's own error.\n"+
 					"INVARIANT: every enumerated kind's traversal reads the cancellation signal.\n"+
 					"CONSEQUENCE: one entry point that ignores it honours cancellation nowhere a caller "+
-					"can predict, and the caller cannot tell which of the sixteen it reached.", err)
+					"can predict, and the caller cannot tell which entry point it reached.", err)
 			}
 			if reads != 1 {
 				t.Errorf("the signal was read %d time(s) before the walk stopped; want 1", reads)

@@ -340,11 +340,12 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 // return it. It is the one place that mapping lives.
 //
 // It is keyed by coordinate name and deliberately NOT by kind. A coordinate name
-// is the vocabulary of the derived kind set itself — nineteen names across
-// nineteen kinds, each name meaning one thing wherever it appears — whereas a
-// per-kind table would be a hand-written second copy of a set the fact
-// declarations already derive, which is exactly the arrangement that reads as
-// current while lagging.
+// is the vocabulary of the derived kind set itself — fewer names than there are
+// kinds, each name meaning one thing wherever it appears — whereas a per-kind
+// table would be a hand-written second copy of a set the fact declarations already
+// derive, which is exactly the arrangement that reads as current while lagging.
+// Neither figure is written here: both move whenever a fact is declared, and a
+// count beside a derived set is the thing that goes stale.
 //
 // The mapping is a judgement rather than a transform, and the shipped names are
 // what prove no transform exists: a node yields NodeID, a socket yields
@@ -973,6 +974,13 @@ var subjectKindBindings = map[SubjectKind]struct {
 		iface: reflect.TypeOf((*NodeArtifactSubject)(nil)).Elem(),
 		make: func(f string) Subject {
 			return newNodeArtifactSubject(f, "web", "values-yaml", "spec", "artifacts", "values-yaml")
+		},
+	},
+	SubjectBoundaryAttachment: {
+		iface: reflect.TypeOf((*BoundaryAttachmentSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newBoundaryAttachmentSubject(f, "prod", "shared-db",
+				"spec", "boundaries", "prod", "features", "shared-db")
 		},
 	},
 }

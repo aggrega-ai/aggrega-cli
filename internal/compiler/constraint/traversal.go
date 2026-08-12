@@ -104,18 +104,20 @@ func documentSpecSegments(block string, tail ...string) []string {
 	return append(out, tail...)
 }
 
-// runOverNodes is the one place the node nesting lives. Fourteen of the sixteen
-// enumerated kinds are reached within a node, and the outer walk is identical
-// for all of them: node order outermost, the per-node subjects in the order
-// their own enumerator returned, everything raised accumulated in that order.
+// runOverNodes is the one place the node nesting lives. Most enumerated kinds
+// are reached within a node, and the outer walk is identical for all of them:
+// node order outermost, the per-node subjects in the order their own enumerator
+// returned, everything raised accumulated in that order.
 //
 // subjects yields the subjects of one node rather than running the check itself,
 // so a traversal contributes only how a kind's coordinates and provenance are
 // built and never how invocation works.
 //
-// The cancellation read is here for the same reason the nesting is: fourteen
-// kinds would otherwise each carry their own copy of it, and fourteen copies of
-// one rule are fourteen chances for one of them to drift.
+// The cancellation read is here for the same reason the nesting is: every kind
+// reached within a node would otherwise carry its own copy of it, and copies of
+// one rule are chances for one of them to drift. Neither the share of kinds nor
+// the number of copies avoided is counted here, because both move whenever a
+// kind is declared and a stale count reads as a fact about the tree.
 func runOverNodes[V any, S Subject](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -129,6 +131,35 @@ func runOverNodes[V any, S Subject](
 			return nil, err
 		}
 		for _, subject := range subjects(node) {
+			out = append(out, run(view, subject)...)
+		}
+	}
+	return out, nil
+}
+
+// runOverBoundaries is the one place the boundary nesting lives, and it is the
+// exact sibling of runOverNodes for the kinds rooted at a boundary rather than
+// at a node: boundary order outermost, the per-boundary subjects in the order
+// their own enumerators returned, everything raised accumulated in that order.
+//
+// It exists for the same reason runOverNodes does rather than because two
+// callers happen to share a loop. The cancellation contract — read the signal as
+// the first statement of the outermost loop body, and hand back no objections
+// when it turns — is one rule, and a second copy of it would agree on the day it
+// was written and be free to drift afterwards with nothing comparing them.
+func runOverBoundaries[V any, S Subject](
+	cancelled Cancellation,
+	boundaries BoundaryEnumerator,
+	view V,
+	run func(V, S) []Objection,
+	subjects func(AuthoredCoordinate) []S,
+) ([]Objection, error) {
+	var out []Objection
+	for _, boundary := range boundaries.Boundaries() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
+		for _, subject := range subjects(boundary) {
 			out = append(out, run(view, subject)...)
 		}
 	}
@@ -560,20 +591,47 @@ func RunOnBoundaryProviderPaths[V View](
 	view V,
 	check Check[V, BoundaryProviderPathSubject],
 ) ([]Objection, error) {
-	var out []Objection
-	for _, boundary := range boundaries.Boundaries() {
-		if err := cancelled.err(); err != nil {
-			return nil, err
-		}
-		segments := documentSpecSegments(authoredKeyBoundaries, boundary.Value)
-		for _, provider := range providers.Providers(boundary.Value) {
-			for _, path := range paths.EmittedPaths(boundary.Value, provider) {
-				subject := newBoundaryProviderPathSubject(
-					boundary.SourceFile, boundary.Value, provider, path, segments...,
-				)
-				out = append(out, check.Run(view, subject)...)
+	return runOverBoundaries(cancelled, boundaries, view, check.Run,
+		func(boundary AuthoredCoordinate) []BoundaryProviderPathSubject {
+			segments := documentSpecSegments(authoredKeyBoundaries, boundary.Value)
+			var out []BoundaryProviderPathSubject
+			for _, provider := range providers.Providers(boundary.Value) {
+				for _, path := range paths.EmittedPaths(boundary.Value, provider) {
+					out = append(out, newBoundaryProviderPathSubject(
+						boundary.SourceFile, boundary.Value, provider, path, segments...,
+					))
+				}
 			}
-		}
-	}
-	return out, nil
+			return out
+		})
+}
+
+// RunOnBoundaryAttachments invokes check once per Feature attachment declared on
+// a boundary itself, in boundary order and then attachment order.
+//
+// The locator is .spec.boundaries.<boundary>.features.<attachment>, which is the
+// site the operator wrote. It deliberately names the attachment rather than the
+// components the attachment reaches: those are the many places it takes effect,
+// and only one of them is a place anyone can edit.
+func RunOnBoundaryAttachments[V View](
+	cancelled Cancellation,
+	boundaries BoundaryEnumerator,
+	attachments BoundaryAttachmentEnumerator,
+	view V,
+	check Check[V, BoundaryAttachmentSubject],
+) ([]Objection, error) {
+	return runOverBoundaries(cancelled, boundaries, view, check.Run,
+		func(boundary AuthoredCoordinate) []BoundaryAttachmentSubject {
+			names := attachments.BoundaryAttachments(boundary.Value)
+			out := make([]BoundaryAttachmentSubject, 0, len(names))
+			for _, attachment := range names {
+				out = append(out, newBoundaryAttachmentSubject(
+					boundary.SourceFile, boundary.Value, attachment,
+					documentSpecSegments(
+						authoredKeyBoundaries, boundary.Value, authoredKeyFeatures, attachment,
+					)...,
+				))
+			}
+			return out
+		})
 }

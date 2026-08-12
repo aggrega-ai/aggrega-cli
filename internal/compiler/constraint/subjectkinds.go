@@ -695,9 +695,9 @@ func newNodePipelineStepSubject(sourceFile, node, step string, segments ...strin
 // BoundaryProviderPathSubject is the subject of a check invoked once per output
 // path written for one provider within one boundary.
 //
-// It is the one kind rooted at a boundary rather than at a document or a node,
-// because the emitted file set is keyed that way: collisions between paths are
-// only visible per provider within the boundary that holds them.
+// It is rooted at a boundary rather than at a document or a node because the
+// emitted file set is keyed that way: collisions between paths are only visible
+// per provider within the boundary that holds them.
 type BoundaryProviderPathSubject interface {
 	Subject
 
@@ -741,6 +741,54 @@ func newBoundaryProviderPathSubject(
 		boundary:   boundary,
 		provider:   provider,
 		path:       path,
+	}
+}
+
+// BoundaryAttachmentSubject is the subject of a check invoked once per Feature
+// attachment declared on a boundary itself.
+//
+// It is rooted at a boundary rather than at a node because that is where the
+// attachment is written. Such an attachment applies to every component the
+// boundary holds, so it is authored once and takes effect many times — and the
+// two ways of keying it are not equivalent. Keyed by the component it reaches,
+// a rule would be asked once per component, would name a component rather than
+// the site the operator wrote, and would be asked no times at all for a
+// boundary holding no components, which is silence a caller cannot tell from
+// approval. Keyed here it is asked exactly once per authored attachment.
+type BoundaryAttachmentSubject interface {
+	Subject
+
+	// BoundaryName is the boundary the attachment was declared on, as every
+	// keyed fact takes it.
+	BoundaryName() string
+
+	// AttachmentName is the attachment the check was invoked for: the name the
+	// operator wrote it under.
+	AttachmentName() string
+
+	boundaryAttachment()
+}
+
+type boundaryAttachmentSubject struct {
+	provenance
+	boundary   string
+	attachment string
+}
+
+func (boundaryAttachmentSubject) boundaryAttachment() {}
+
+func (s boundaryAttachmentSubject) BoundaryName() string { return s.boundary }
+
+func (s boundaryAttachmentSubject) AttachmentName() string { return s.attachment }
+
+func newBoundaryAttachmentSubject(
+	sourceFile, boundary, attachment string,
+	segments ...string,
+) BoundaryAttachmentSubject {
+	return boundaryAttachmentSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		boundary:   boundary,
+		attachment: attachment,
 	}
 }
 

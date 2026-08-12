@@ -120,6 +120,22 @@ var records = []recordDecl{
 			{Name: "DisplacedAnnotationSource", Type: "string", Doc: "DisplacedAnnotationSource names where the displaced annotation was declared."},
 		},
 	},
+	{
+		Name: "AttachmentDeclaration",
+		Doc: "AttachmentDeclaration is what one Feature attachment declares: the " +
+			"Feature type it attaches, and the socket names its own dependency " +
+			"block wires on that Feature.\n\nIt is one fact rather than two " +
+			"because neither half answers anything alone. A socket name is only " +
+			"checkable against the socket set of the Feature the attachment " +
+			"names, and the type says nothing about what was wired — so a rule " +
+			"asking whether an attachment wires only sockets its Feature " +
+			"declares needs both, and two accessors would each return a value " +
+			"with nothing to compare it against.",
+		Fields: []recordField{
+			{Name: "FeatureType", Type: "string", Doc: "FeatureType is the Feature the attachment names, empty when the author named none."},
+			{Name: "AuthoredSocketNames", Type: "[]string", Doc: "AuthoredSocketNames are the socket names the attachment's own dependency block declares, in author order."},
+		},
+	},
 }
 
 // facts declares every fact the framework exposes.
@@ -582,6 +598,103 @@ var facts = []factDecl{
 			"map iteration.\n\nIt is placed where both documents are in view, " +
 			"for the same reason the target the same entry names is: the edge it " +
 			"is keyed by is identified by a node the other document declares.",
+	},
+	{
+		Name:        "boundary-attachment-declaration",
+		Stage:       "normalized",
+		SourceField: "types.Boundary.Features",
+		Subject:     []string{"boundary", "attachment"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "(AttachmentDeclaration, bool)",
+		Doc: "BoundaryAttachmentDeclaration is what an attachment declared on a " +
+			"boundary itself states — the Feature it attaches and the sockets it " +
+			"wires on that Feature — reported absent when the boundary declares " +
+			"no attachment under that name.\n\nIt is keyed by the " +
+			"boundary rather than by a component, and that is the whole reason it " +
+			"is a fact of its own. An attachment written at a boundary applies to " +
+			"every component the boundary holds, so it is authored once and " +
+			"contributes many times; a fact keyed by a component would be asked " +
+			"once per component and never at all for a boundary holding none — " +
+			"which is silence indistinguishable from approval. Keyed here, it is " +
+			"asked exactly once per attachment the operator wrote, and a rule " +
+			"over it can name that site.\n\nThe absence is reported rather than " +
+			"resolved because an attachment naming no Feature type is something " +
+			"the operator surface accepts, so an empty type and no attachment at " +
+			"all are different answers that a zero value alone would merge.\n" +
+			"\nWhat the sockets are checked against is a separate fact on a " +
+			"separate document: the socket set the attached Feature declares. " +
+			"The two are written by different hands and either can be absent " +
+			"without the other, so a rule reads them together and neither " +
+			"carries the other.",
+	},
+	{
+		Name:        "release-attachment-type",
+		Stage:       "normalized",
+		SourceField: "types.BoundaryFeature.Type",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "ReleaseAttachmentType is the Feature type a Release declares for " +
+			"one attachment on one component, reported absent when the " +
+			"Release declares no attachment under that name for it.\n\nIt is " +
+			"a separate fact from the type the Aggregate declares for the same " +
+			"attachment name, and the pair is what makes the agreement question " +
+			"askable at all. Both documents may name one attachment — the " +
+			"application's own declaration carries its configuration, the " +
+			"Release's carries the physical sizing — and the two are merged " +
+			"into one attachment further down, which only means anything if they " +
+			"name the same Feature. A rule reading one surface alone cannot see " +
+			"a disagreement.\n\nThe absence is reported rather than resolved, " +
+			"and it carries a distinction the rule turns on: an attachment only " +
+			"the application declares is nothing to reconcile, an attachment " +
+			"only the Release declares is the supported way to add one, and " +
+			"an attachment naming no type states nothing to disagree with. All " +
+			"three are legitimate, so only a name declared on both sides with a " +
+			"type on both sides is a question.\n\nIt is a separate fact from " +
+			"the attachment a boundary itself declares, which is keyed by that " +
+			"boundary: this one is written against a named component and the " +
+			"other applies to every component in a scope, so they are asked a " +
+			"different number of times and a rule over either names a different " +
+			"authored site.",
+	},
+	{
+		Name:        "authored-component-schema-text",
+		Stage:       "normalized",
+		SourceField: "types.ComponentSpec.Schema",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "componentType", Type: "string"}},
+		Returns:     "[]byte",
+		Doc: "AuthoredComponentSchemaText is the contract document a component " +
+			"type declares over its free-form configuration, as authored, " +
+			"serialized to opaque bytes — empty when the type declares none.\n" +
+			"\nThe bytes are opaque by type, so nothing about the declared " +
+			"shape is legible from the fact beyond the document itself. That is " +
+			"what lets a rule whose predicate is \"what was written conforms to " +
+			"this contract\" receive the whole contract without receiving the " +
+			"entity that carries it, and it is why the fact is the authored " +
+			"document rather than a compiled form of it: compiling can fail for " +
+			"reasons that have nothing to do with the author's input, so a " +
+			"compiled result would make an absent fact mean two different " +
+			"things. A rule needing the compiled form compiles these bytes " +
+			"itself and reports its own failure.\n\nIt is the document as " +
+			"authored and not a copy of the file's bytes: serializing an " +
+			"authored node reproduces its content, not its formatting, so a " +
+			"rule reading this must not draw conclusions from layout.\n\nIt is " +
+			"one fact over the whole document rather than one per section. The " +
+			"sections are declared together in one authored node, a reader " +
+			"selects the one it wants from it, and splitting them would be " +
+			"three facts sharing one carrier that can only be absent or present " +
+			"together.\n\nA type that inherits its contract carries no separate " +
+			"authored document to read: inheritance copies the base's sections " +
+			"down as the base wrote them, so the authored node already holds " +
+			"every inherited constraint and there is no second, composed view " +
+			"to prefer over it.",
 	},
 
 	// ---------------------------------------------------------------- topology

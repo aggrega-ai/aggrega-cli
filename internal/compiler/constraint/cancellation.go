@@ -34,9 +34,9 @@ package constraint
 // A traversal reads the signal as the first statement of its outermost loop
 // body, so a walk stops within one outer iteration of the signal turning
 // non-nil. That bound is what it says and no more: for a node-rooted kind one
-// outer iteration is one node's subjects, and for [RunOnBoundaryProviderPaths]
-// it is one boundary's providers and paths. Inner loops carry no additional
-// read.
+// outer iteration is one node's subjects, and for a boundary-rooted kind it is
+// one boundary's — every provider and path within it, or every attachment
+// declared on it. Inner loops carry no additional read.
 //
 // # Cancellation is not a host power
 //
@@ -47,8 +47,8 @@ package constraint
 type Cancellation func() error
 
 // err reports the cancellation the caller signalled, and nil when no signal was
-// supplied. The nil case lives here rather than at each of the sixteen reads so
-// that an uncancellable walk is the default a caller gets for free.
+// supplied. The nil case lives here rather than at every read site so that an
+// uncancellable walk is the default a caller gets for free.
 func (c Cancellation) err() error {
 	if c == nil {
 		return nil

@@ -20,8 +20,9 @@ import (
 //
 // The shape: every traversal is exercised through the same table, and the table
 // is checked against the generated kind set rather than trusted — a hand-written
-// table of sixteen entries beside a generated set of sixteen kinds is exactly the
-// arrangement that reads as complete while missing one.
+// table sitting beside a generated set it is meant to mirror is exactly the
+// arrangement that reads as complete while missing one, and no count written here
+// would make the mirror true, because the count is the thing that goes stale.
 
 // traversalView is the view the tests declare their checks over. Its content is
 // irrelevant: what is under test is the traversal, and a check's access to facts
@@ -55,6 +56,7 @@ type traversalFixture struct {
 	attachLeaves      map[string][]string
 	providers         map[string][]string
 	emittedPaths      map[string][]string
+	boundaryAttach    map[string][]string
 
 	locals    map[string][]AuthoredCoordinate
 	provides  map[string][]AuthoredCoordinate
@@ -117,6 +119,10 @@ func (f traversalFixture) Providers(boundary string) []string {
 
 func (f traversalFixture) EmittedPaths(boundary, provider string) []string {
 	return f.emittedPaths[fixtureKey(boundary, provider)]
+}
+
+func (f traversalFixture) BoundaryAttachments(boundary string) []string {
+	return f.boundaryAttach[fixtureKey(boundary)]
 }
 
 // The two nodes the fixture carries, chosen so that every traversal is exercised
@@ -200,6 +206,12 @@ func newTraversalFixture() traversalFixture {
 			fixtureKey("prod", "helm"):      {"a.yaml", "b.yaml"},
 			fixtureKey("prod", "terraform"): {"main.tf.json"},
 		},
+		// Two on one boundary and none on the other, so a transcript shows the
+		// walk entering a boundary that declares none and yielding nothing there
+		// rather than stopping.
+		boundaryAttach: map[string][]string{
+			fixtureKey("prod"): {"shared-db", "audit"},
+		},
 
 		locals: map[string][]AuthoredCoordinate{
 			fixtureKey("web"):         {{Value: "fullname", SourceFile: "recipes/web.yaml"}},
@@ -234,9 +246,9 @@ func raisingCheck[S Subject]() Check[traversalView, S] {
 // invocation order.
 //
 // run takes the cancellation signal rather than closing over one, so the same
-// table drives both the uncancelled transcript and the assertion that every one
-// of the sixteen entry points honours a signal. A table that could only be driven
-// one way would leave the second property to a hand-picked subset of the kinds.
+// table drives both the uncancelled transcript and the assertion that every entry
+// point honours a signal. A table that could only be driven one way would leave
+// the second property to a hand-picked subset of the kinds.
 type traversalCase struct {
 	kind SubjectKind
 	run  func(Cancellation, traversalFixture, traversalView) ([]Objection, error)
@@ -414,12 +426,27 @@ func traversalCases() []traversalCase {
 				"recipes/web.yaml|.spec.artifacts.values-yaml",
 			},
 		},
+		{
+			// Both invocations land on the boundary that declares attachments, and
+			// each names its own attachment: unlike the provider-and-path kind
+			// above, every coordinate here is something the operator wrote, so the
+			// locators differ and this transcript can tell the two apart.
+			kind: SubjectBoundaryAttachment,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryAttachments(cancelled, f, f, v, raisingCheck[BoundaryAttachmentSubject]())
+			},
+			want: []string{
+				"release.yaml|.spec.boundaries.prod.features.shared-db",
+				"release.yaml|.spec.boundaries.prod.features.audit",
+			},
+		},
 	}
 }
 
 // TestEveryPullKindsTraversalIsExercised keeps the table above honest against the
-// generated kind set. Without it a table of fifteen entries beside a generated set
-// of sixteen kinds would report every case it contains as passing.
+// generated kind set. Without it a table one entry short of the generated set
+// would report every case it contains as passing, and the kind it omitted would be
+// the one nothing exercises.
 func TestEveryPullKindsTraversalIsExercised(t *testing.T) {
 	t.Parallel()
 
@@ -461,7 +488,7 @@ func TestEveryPullKindsTraversalIsExercised(t *testing.T) {
 }
 
 // TestATraversalInvokesOncePerInstanceInEnumeratorOrderWithFrameworkProvenance is
-// the behavioural assertion over all sixteen traversals at once: the number of
+// the behavioural assertion over every traversal at once: the number of
 // invocations, the order of them, and the provenance each carries.
 //
 // The three are checked together because they are one transcript. Checking the
@@ -887,14 +914,27 @@ func coordinateFlowCases() []coordinateFlowCase {
 			},
 			want: []string{"prod|helm|a.yaml", "prod|helm|b.yaml", "prod|terraform|main.tf.json"},
 		},
+		{
+			kind: SubjectBoundaryAttachment,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, BoundaryAttachmentSubject]) ([]Objection, error) {
+					return RunOnBoundaryAttachments(nil, f, f, traversalView{}, c)
+				}, func(s BoundaryAttachmentSubject) string {
+					return s.BoundaryName() + "|" + s.AttachmentName()
+				})
+			},
+			want: []string{"prod|shared-db", "prod|audit"},
+		},
 	}
 }
 
 // TestEveryKindsCoordinateReadbackIsExercised keeps the readback table honest
 // against the generated kind set, which is the guard the traversal table carries
-// and for the same reason: a hand-written table of nineteen entries beside a
-// generated set of nineteen kinds reads as complete while missing one, and the one
-// it misses is a kind whose coordinates are proved by nothing.
+// and for the same reason: a hand-written table sitting beside the generated set
+// it mirrors reads as complete while missing one, and the one it misses is a kind
+// whose coordinates are proved by nothing. No count written here would close that,
+// because a count beside a derived set is itself the thing that goes stale.
 func TestEveryKindsCoordinateReadbackIsExercised(t *testing.T) {
 	t.Parallel()
 
