@@ -41,7 +41,7 @@
 // so a check has nothing raw to re-derive a fact from.
 //
 // No such invocation site exists yet, so that gap is open today and this
-// package does not narrow it. What exists is the push-model entry, which takes
+// package does not narrow it. What exists is a push-model entry, which takes
 // a check's predicate function together with a view value the caller
 // constructs, so it bounds nothing about what a check can be handed — and the
 // view type parameter admits any type at all, including one a check declares

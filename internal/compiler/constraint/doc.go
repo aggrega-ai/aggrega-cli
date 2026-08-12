@@ -109,9 +109,18 @@
 // Most subject kinds are reached by the framework walking a collection. A
 // document is not: documents are validated one at a time as they are read,
 // and the catalog reads them lazily, so no point in the compilation holds a
-// materialised document set to walk. [RunOnDocument] is therefore the
-// push-model entry — the caller holding a document presents it, and the check
-// runs once, against that one document.
+// materialised document set to walk. So a kind rooted at a document is reached
+// by the push model — the caller holding a document presents it — and
+// [RunOnDocument] is the entry for the document itself, invoking the check once
+// against that one document.
+//
+// A kind keyed inside a presented document is push at its outer coordinate and
+// enumerating at its inner one, because the inner coordinate is a set once the
+// document is in hand. [RunOnDocumentParameters] is that shape: the caller
+// presents the document together with the parameter names its contract
+// declares, and the check is invoked once per name. That is also why a push
+// entry takes no [Cancellation]: the signal is read once per outermost
+// coordinate, and the loop over documents belongs to the caller.
 //
 // # Stopping a walk is the caller's to ask for
 //

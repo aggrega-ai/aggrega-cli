@@ -85,6 +85,120 @@ func TestRunOnDocumentReturnsNilWhenTheCheckRaisesNothing(t *testing.T) {
 	}
 }
 
+// TestRunOnDocumentParametersInvokesOncePerDeclaredParameter pins the invoked
+// count against the enumeration total, and does it that way round deliberately.
+//
+// A walk that yielded nothing would return no objections, and no objections is
+// exactly what a clean document returns — so asserting that nothing was raised
+// cannot tell an enforced rule from an unreachable one. The count is therefore
+// compared against the number of names presented, and the presented set is
+// checked for emptiness first: over an empty set every assertion below holds
+// vacuously, which is the shape that reads as a pass while proving nothing.
+//
+// The transcript is asserted alongside the count, because the two catch
+// different failures. A count alone passes a walk that visited the right number
+// of wrong instances; a transcript alone passes a walk that visited a subset in
+// the right order.
+func TestRunOnDocumentParametersInvokesOncePerDeclaredParameter(t *testing.T) {
+	t.Parallel()
+
+	const sourceFile = "catalog/aggregate.yaml"
+
+	// Author order rather than sorted order, so a walk that sorted what it was
+	// given is visible in the transcript instead of agreeing with it by accident.
+	declared := []string{"db_size", "replica_count", "az"}
+
+	if len(declared) == 0 {
+		t.Fatalf("the presented parameter set is empty, so every assertion here holds over nothing")
+	}
+
+	type view struct{}
+
+	var transcript []string
+
+	got := RunOnDocumentParameters(sourceFile, declared, view{},
+		Check[view, DocumentParameterSubject]{
+			Sentinel: errRuleBroken,
+			Severity: SeverityFatal,
+			Run: func(_ view, s DocumentParameterSubject) []Objection {
+				transcript = append(transcript, s.SourceFile()+"|"+s.Locator()+"|"+s.ParameterName())
+				return []Objection{s.Raise(errRuleBroken, s.ParameterName())}
+			},
+		})
+
+	if len(transcript) != len(declared) {
+		t.Fatalf("the check was invoked %d time(s) over %d declared parameter(s).\n"+
+			"INVARIANT: a check declaring the parameter kind of a presented document is invoked exactly "+
+			"once per parameter that document's contract declares.\n"+
+			"CONSEQUENCE: too few and the rule is unenforced over the parameters that were skipped, with "+
+			"nothing to distinguish that from a document nothing was wrong with; too many and one "+
+			"violation is reported several times.\ngot: %v", len(transcript), len(declared), transcript)
+	}
+
+	want := []string{
+		sourceFile + "|.spec.parameters.db_size|db_size",
+		sourceFile + "|.spec.parameters.replica_count|replica_count",
+		sourceFile + "|.spec.parameters.az|az",
+	}
+	for i := range want {
+		if transcript[i] != want[i] {
+			t.Errorf("invocation %d carried %q; want %q.\n"+
+				"INVARIANT: the order is the order the names were presented in, and the subject's file and "+
+				"locator are assembled by the framework.\n"+
+				"CONSEQUENCE: a check raises in the order it is invoked, so an order this entry imposed "+
+				"rather than preserved changes the order diagnostics appear in. A wrong locator points a "+
+				"reader at a key the file does not contain.", i, transcript[i], want[i])
+		}
+	}
+
+	// Every invocation's objection reaches the caller, so the returned count is
+	// the invoked count and not a subset of it.
+	if len(got) != len(declared) {
+		t.Fatalf("objections returned = %d; want %d, one per invocation", len(got), len(declared))
+	}
+	for i, o := range got {
+		if !errors.Is(o.Sentinel(), errRuleBroken) {
+			t.Errorf("objection %d sentinel = %v; want %v", i, o.Sentinel(), errRuleBroken)
+		}
+		if o.SourceFile() != sourceFile {
+			t.Errorf("objection %d source file = %q; want the presented document's path", i, o.SourceFile())
+		}
+		if d := o.Detail(); len(d) != 1 || d[0] != declared[i] {
+			t.Errorf("objection %d detail = %v; want [%s]", i, d, declared[i])
+		}
+	}
+}
+
+// TestRunOnDocumentParametersOverNoDeclaredParametersInvokesNothing is the other
+// half of the count assertion above, and it is what makes that one readable. It
+// establishes that an empty result means an empty contract rather than a walk
+// that never ran, so a zero count is attributable.
+func TestRunOnDocumentParametersOverNoDeclaredParametersInvokesNothing(t *testing.T) {
+	t.Parallel()
+
+	invocations := 0
+
+	got := RunOnDocumentParameters("catalog/aggregate.yaml", nil, struct{}{},
+		Check[struct{}, DocumentParameterSubject]{
+			Sentinel: errRuleBroken,
+			Severity: SeverityFatal,
+			Run: func(struct{}, DocumentParameterSubject) []Objection {
+				invocations++
+				return []Objection{}
+			},
+		})
+
+	if invocations != 0 {
+		t.Errorf("check invocations over a document declaring no parameter = %d; want 0.\n"+
+			"CONSEQUENCE: an invocation here would hand the check a subject naming a parameter the "+
+			"contract does not declare, and a rule would be raised about something that does not exist.",
+			invocations)
+	}
+	if got != nil {
+		t.Errorf("objections = %v; want nil", got)
+	}
+}
+
 // TestZeroObjectionIsNotARaisedObjection pins the acknowledged bound of the
 // unforgeable-currency property. The zero value of a Go struct is always
 // constructible, so an Objection can be brought into existence outside this

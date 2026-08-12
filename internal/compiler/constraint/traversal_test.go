@@ -541,13 +541,14 @@ func TestATraversalInvokesOncePerInstanceInEnumeratorOrderWithFrameworkProvenanc
 // # The two seams, named rather than blurred
 //
 // Most kinds are read through their real traversal — the exported entry a consumer
-// calls, driven by the enumerator fixture. Two are read through their constructor
-// instead: the parameter and assertion kinds of a presented document are
-// push-model and no push entry exists for either yet, so the constructor is the
-// nearest reachable seam. Each case records which seam it used and the census
-// reports the split, because a proof through a constructor establishes the wiring
-// from the constructor inward and nothing about a caller, and it must not be
-// counted as the same fact as a traversal-driven one.
+// calls, driven by the enumerator fixture. A push-model kind is read through its
+// push entry, which takes what it walks from the caller rather than from the
+// fixture. One kind is read through its constructor instead: the assertion kind of
+// a presented document has no entry point, so the constructor is the nearest
+// reachable seam. Each case records which seam it used and the census reports the
+// split, because a proof through a constructor establishes the wiring from the
+// constructor inward and nothing about a caller, and it must not be counted as the
+// same fact as a traversal-driven one.
 func TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues(t *testing.T) {
 	t.Parallel()
 
@@ -608,8 +609,10 @@ func coordinatesOf(t *testing.T, kind SubjectKind) []string {
 	return nil
 }
 
-// The two seams a coordinate readback can go through. A traversal is the real
-// path; a constructor is the fallback for a push kind with no entry point.
+// The two seams a coordinate readback can go through. The exported entry a
+// consumer calls is the real path, whether it walks an enumeration or takes what
+// it walks from the caller; a constructor is the fallback for a kind with no entry
+// point at all.
 const (
 	seamTraversal   = "traversal"
 	seamConstructor = "constructor"
@@ -665,19 +668,29 @@ func coordinateFlowCases() []coordinateFlowCase {
 			want: []string{documentFile},
 		},
 
-		// The document's parameter and assertion kinds. No push entry exists for
-		// either, so the readback goes through the constructor: it proves the
-		// coordinate reaches the accessor, and it cannot prove a caller supplies it
-		// because there is no caller to exercise.
+		// The document's parameter kind reads through its push entry, so the names
+		// come from the caller rather than from the enumerator fixture. Two are
+		// presented rather than one: a single-instance readback cannot tell a walk
+		// from an invocation that ignored what it was given.
 		{
 			kind: SubjectDocumentParameter,
-			seam: seamConstructor,
+			seam: seamTraversal,
 			read: func(_ traversalFixture) []string {
-				s := newDocumentParameterSubject(documentFile, "db_size", "spec", "parameters", "db_size")
-				return []string{s.SourceFile() + "|" + s.ParameterName()}
+				return readback(func(c Check[traversalView, DocumentParameterSubject]) ([]Objection, error) {
+					return RunOnDocumentParameters(
+						documentFile, []string{"db_size", "replica_count"}, traversalView{}, c,
+					), nil
+				}, func(s DocumentParameterSubject) string {
+					return s.SourceFile() + "|" + s.ParameterName()
+				})
 			},
-			want: []string{documentFile + "|db_size"},
+			want: []string{documentFile + "|db_size", documentFile + "|replica_count"},
 		},
+
+		// The document's assertion kind has no entry point, so the readback goes
+		// through the constructor: it proves the coordinate reaches the accessor, and
+		// it cannot prove a caller supplies it because there is no caller to
+		// exercise.
 		{
 			kind: SubjectDocumentAssertion,
 			seam: seamConstructor,
