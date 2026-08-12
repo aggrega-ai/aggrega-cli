@@ -124,12 +124,12 @@ type releaseSocketKey struct {
 // configures an edge that must already exist, so it cannot populate a socket
 // nothing else bound.
 //
-// The shared [collectReleaseEdgeEntries] walk supplies the entries, but the
-// target-presence test itself is a SECOND statement of the rule the graph-build
-// pass applies when it decides whether to draw an edge. The two agree by
-// construction rather than by sharing a predicate, so they have to change
-// together: were they to diverge, a socket omitted from this set is one the
-// required-socket rule rejects even though an edge does get drawn for it.
+// The shared [collectReleaseEdgeEntries] walk supplies the entries, and
+// [ReleaseEntryCreatesEdge] decides which of them create an edge — the same
+// predicate the graph-build pass asks when it decides whether to draw one, so
+// the two cannot diverge. Were the rule stated twice instead, a socket omitted
+// from this set would be one this rule rejects even though an edge does get
+// drawn for it.
 //
 // Node identity is the consuming node ID as the Release authored it, matched
 // against the resolver-visible instance name — the convention every guard that
@@ -153,7 +153,7 @@ func releaseBoundSockets(release *types.Release) map[releaseSocketKey]struct{} {
 	}
 	bound := map[releaseSocketKey]struct{}{}
 	for _, ref := range collectReleaseEdgeEntries(release) {
-		if ref.entry.Target == "" {
+		if !ReleaseEntryCreatesEdge(ref.entry) {
 			continue
 		}
 		bound[releaseSocketKey{node: ref.nodeID, socket: ref.socket}] = struct{}{}

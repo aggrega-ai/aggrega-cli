@@ -124,14 +124,20 @@ func TestGuardSelfInject_KeyCollision(t *testing.T) {
 }
 
 // TestGuardSelfInject_VerboseFormUsesInjectKeyCollision_OrderedMapShape pins
-// the unmarshaled shape the guard must handle: a verbose-form `uses:`
-// socket value arrives post-YAML-unmarshal as *types.OrderedMap[any], and
-// the InjectBlock's Env / File / Arg payloads nested inside that verbose
-// entry are also *types.OrderedMap[any]. A key-collection walk that
-// asserts plain map[string]any would silently skip the socket and miss
-// inject-key collisions in verbose-form uses. This test constructs the
-// unmarshaled shape directly and asserts that collision detection fires
-// on it.
+// that the guard's key-collection walk handles an ordered-mapping payload on
+// the inject block of a verbose-form `uses:` entry.
+//
+// That payload shape is defensive and no authored document reaches it. A
+// delivery mechanism is authored as an array of entries, so a mechanism
+// carrying a mapping is refused when the document is validated against its
+// schema, before any guard runs — and a mapping that did decode would arrive
+// as a plain string-keyed map rather than an ordered one. What this test holds
+// is that the walk recognises the shape rather than returning no keys for it:
+// a walk that skipped it would approve a component it never examined, which is
+// the failure a collision check exists to prevent.
+//
+// The payload is constructed here rather than parsed, so what the test proves
+// is a property of the walk and never of what parsing produces.
 func TestGuardSelfInject_VerboseFormUsesInjectKeyCollision_OrderedMapShape(t *testing.T) {
 	t.Parallel()
 	envMap := types.NewOrderedMap[any]()
@@ -317,9 +323,12 @@ func TestCollectInjectDeliveryKeys_VerboseArrayForm(t *testing.T) {
 	}
 }
 
-// orderedAny builds an ordered mapping payload of the shape an inject block
-// carries when its mechanism value is reached through an order-preserving
-// any-typed decode rather than a plain map decode.
+// orderedAny builds the ordered mapping payload the delivery-key walk accepts
+// defensively. No authored document produces it: a delivery mechanism is
+// authored as an array of entries, and a mapping-shaped one is refused against
+// the schema before any guard runs. The helper exists so that arm is exercised
+// rather than left unproven, and it walks in insertion order rather than
+// assuming one.
 func orderedAny(pairs ...string) *types.OrderedMap[any] {
 	m := types.NewOrderedMap[any]()
 	for i := 0; i+1 < len(pairs); i += 2 {
@@ -329,9 +338,10 @@ func orderedAny(pairs ...string) *types.OrderedMap[any] {
 }
 
 // TestGuardSelfInject_SelfInjectOrderedMapShape_KeyCollision pins that a
-// component-level inject block whose mechanism payload arrives in the
-// order-preserving mapping shape is still walked for delivery keys, so a
-// collision against the same key in uses-inject halts. A key-collection walk
+// component-level inject block whose mechanism payload is in the ordered
+// mapping shape the walk accepts defensively is still walked for delivery
+// keys, so a collision against the same key in uses-inject halts. A
+// key-collection walk
 // that recognises only the plain-map and array shapes returns no keys for this
 // payload, which makes the collision check approve a component it never
 // examined — the failure mode a collision check exists to prevent.

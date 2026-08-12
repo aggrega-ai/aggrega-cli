@@ -98,6 +98,24 @@ func ReleaseEdgeEntries(release *types.Release) []ReleaseEdgeEntry {
 	return out
 }
 
+// ReleaseEntryCreatesEdge reports whether a Release per-edge `uses` entry draws
+// a new edge, rather than configuring one that already exists.
+//
+// An entry naming a target creates an edge into a declared-but-unbound socket,
+// pointing at an existing component. A targetless entry carries per-edge `infra`
+// only and configures an edge some other authoring document already drew, so it
+// draws nothing itself.
+//
+// The rule has one home because two stages ask it from opposite sides and must
+// not disagree: the graph-build pass asks it to decide whether to draw the edge,
+// and the required-socket rule asks it to decide whether a socket counts as
+// bound. Were the two to answer differently, a socket the second omitted would
+// be reported as missing its required binding while the graph that gets rendered
+// wires it — a document rejected for a connection the build itself makes.
+func ReleaseEntryCreatesEdge(entry types.ReleaseUsesEntry) bool {
+	return entry.Target != ""
+}
+
 // collectReleaseEdgeEntries walks the Release boundary tree (outer to inner,
 // author order) and flattens every per-edge `uses` entry on every boundary
 // component into a deterministic slice. Shared by the Step-1 guards that need

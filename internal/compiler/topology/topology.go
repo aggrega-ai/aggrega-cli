@@ -570,8 +570,11 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					// whether it found an edge to configure is settled by the
 					// unbound-configuration sweep below, once every edge exists.
 					// Target existence is enforced by the origin-agnostic
-					// dangling-target sweep below, not here.
-					if entry.Target != "" {
+					// dangling-target sweep below, not here. Whether the entry
+					// creates an edge at all is the resolver's rule, asked
+					// through the one predicate the required-socket rule also
+					// asks, so neither stage can answer it differently.
+					if resolver.ReleaseEntryCreatesEdge(entry) {
 						edges = append(edges, NormalizedEdge{
 							Source:        nodeID,
 							Target:        entry.Target,

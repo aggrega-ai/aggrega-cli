@@ -257,12 +257,18 @@ var facts = []factDecl{
 		},
 		Returns: "types.OrderedMap[any]",
 		Doc: "AuthoredValuesPillar is one configuration pillar as the author " +
-			"wrote it, carried as an opaque ordered payload.\n\nThe " +
-			"payload is opaque by type: its entries are whatever the author " +
-			"wrote, so nothing about the authoring surface is readable from it " +
-			"beyond the keys and values themselves. That is what lets a " +
-			"conformance rule receive a whole pillar without receiving a " +
-			"document.",
+			"wrote it, carried as an opaque ordered payload.\n\nThe pillar is a " +
+			"fact like any other. A rule whose predicate is \"what the author " +
+			"wrote here conforms to this contract\" has the pillar's content as " +
+			"its input, and that content has no other home to be read from, so " +
+			"receiving a whole pillar is not a rule re-deriving something already " +
+			"declared elsewhere.\n\nWhat a reader has to be careful of is the " +
+			"stage it reads at. The entries are whatever the author wrote, and one " +
+			"of them may be a template expression whose resolved form is a fact of " +
+			"a later stage — so interpreting it here, where the text is still as " +
+			"authored, can yield an answer the renderer's would differ from. The " +
+			"care belongs to what a rule does with the payload rather than to the " +
+			"payload's type.",
 	},
 	{
 		Name:        "authored-attachment-block",

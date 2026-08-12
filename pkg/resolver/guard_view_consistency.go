@@ -24,10 +24,12 @@ import "fmt"
 //     set and the guard's catalog view — this returns an
 //     [ErrGuardEntityViewInconsistency] ResolverError for the caller to append.
 //
-// The five guards that previously skipped silently on a missing catalog entity
-// route their miss through this one helper, so the classification and diagnostic
-// are identical across them (and inherited unchanged when the lookup backing
-// changes underneath).
+// Every guard that would otherwise skip silently on a missing catalog entity
+// routes its miss through this one helper, so the classification and the
+// diagnostic are identical across them, and stay identical when the lookup
+// backing changes underneath. The callers are the statement of how many there
+// are; a number written here beside them would be a second copy that reads as
+// current while lagging the set it counts.
 func guardEntityViewInconsistency(entity, field, typeRef string) *ResolverError {
 	if isRelativePathRef(typeRef) {
 		return nil
