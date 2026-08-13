@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+#
+# Two of the three declared parameters are read by no reference in this
+# document, and they are authored in an order that is not their alphabetical
+# order: `zone` is declared before `alpha`. That is the point of the fixture —
+# it separates the order a contract declares from the order a sort would
+# produce, which a single unread declaration cannot do.
+#
+# The parameter names are placeholders for any typed parameter, not exemplary
+# authoring of those specific concepts.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: unread-params-multi
+  version: "1.0.0"
+spec:
+  parameters:
+    zone:
+      type: string
+      default: eu-west-1a
+    region:
+      type: string
+      default: eu-west-1
+    alpha:
+      type: string
+      default: "on"
+  components:
+    api:
+      type: core/server:1.0.0
+      values:
+        region: "{{ .parameters.region }}"

@@ -98,6 +98,21 @@ type ArtifactTemplateDelimiters struct {
 // reaching behind an accessor to the underlying document to compute a fact
 // the accessor does not name.
 //
+// A fact's value is immutable to a check. A check reads what an accessor
+// returns; it never writes through it. This is stated once here rather
+// than on each view, because one policy per view would be several
+// policies, and the accessors it binds are spread across every stage.
+// Where an accessor returns bytes, what comes back aliases the buffer the
+// compilation is already holding rather than a copy of it — so a write
+// through it changes what every later reader sees, and nothing reports
+// that it happened: no diagnostic, no failed build, just output produced
+// from input nobody authored. Values are handed over uncopied
+// deliberately, because no check needs to hold one past its own return and
+// a copy at the accessor would be paid on every read of every
+// byte-returning fact. A check that does need to hold bytes past its own
+// return is the condition that would force that copy, or a value type that
+// cannot be written through; that is the change to make when it arrives.
+//
 // Accessors take arguments rather than being bound to a subject, because
 // facts are keyed by tuples — per node and socket, per node and slot,
 // per attachment and pillar and leaf — and an argument-taking accessor

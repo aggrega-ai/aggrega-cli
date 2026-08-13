@@ -93,37 +93,170 @@ func TestDeclaredParameterReadObjectsOverARealAggregate(t *testing.T) {
 	}
 }
 
-// The framework's reading and the reading the resolve already produces must agree
+// handWrittenReading runs the hand-written function over the same fixture the
+// presentation is built from, through the same two loads the resolve performs:
+// the file's bytes, and the contract loaded from those bytes.
+//
+// It reads the document itself rather than taking the resolve's findings, which
+// is what keeps it an independent side — see the cross-check below for why that
+// matters.
+func handWrittenReading(t *testing.T, fixture, aggregateName string) []*ResolverError {
+	t.Helper()
+
+	aggregatePath := filepath.Join("testdata", fixture, "aggregate.yaml")
+	raw, err := os.ReadFile(aggregatePath)
+	if err != nil {
+		t.Fatalf("read aggregate: %v", err)
+	}
+	contract, err := LoadAggregateParameterContractFromBytes(raw, aggregatePath)
+	if err != nil {
+		t.Fatalf("load parameter contract: %v", err)
+	}
+	return LintUnreadParameters(raw, contract, aggregateName)
+}
+
+// The framework's reading and the hand-written reading beside it must agree
 // about the same document.
 //
-// This duplicates neither side's definition of a read: both reach one census, and
-// this compares their conclusions. It is kept as an independent cross-check rather
-// than folded into the assertion above, because a cross-check that shares a
-// definition with what it checks cannot see the two drift apart.
-func TestDeclaredParameterReadAgreesWithTheAdvisoryTheResolveProduces(t *testing.T) {
+// 🔴 It calls the hand-written function DIRECTLY, and that is the whole point of
+// the test rather than an incidental choice. The resolve now produces its
+// advisories THROUGH the framework, so a comparison against the resolve's own
+// findings would compare the framework with itself: it would pass forever while
+// proving nothing about coverage.
+//
+// The hand-written function is therefore a deliberate near-duplicate, kept as an
+// independent cross-check. It must not be folded into the declared check or
+// re-expressed in terms of it: a cross-check sharing an implementation with what
+// it checks cannot see the two drift apart. What the two legitimately share is
+// one definition of what counts as a read — both reach the same reference census
+// — and what is compared here are their conclusions.
+//
+// The two sides report in different ORDERS, and that follows from each side's own
+// contract rather than from an implementation slip: the hand-written function
+// sorts by parameter key, as its own documentation says, while the framework
+// invokes the check once per presented name and raises in that order, and the
+// names are presented in the order the contract declares them. Coverage is the
+// claim that matters, so the finding SET is asserted equal; each sequence is
+// asserted against its own written expectation as well, so the difference is
+// pinned rather than left to be rediscovered.
+func TestDeclaredParameterReadAgreesWithTheHandWrittenReading(t *testing.T) {
 	t.Parallel()
 
-	presented, aggregatePath, result := presentRealAggregate(t, "typed-params-pass")
+	for _, tc := range []struct {
+		fixture string
+		// authorOrder is the sequence the framework raises in: the order the
+		// contract declares the parameters.
+		authorOrder []string
+		// sortedOrder is the sequence the hand-written function reports in:
+		// sorted by parameter key.
+		sortedOrder []string
+		// ordersDiffer records whether this row is able to tell the two apart at
+		// all, and is asserted rather than trusted.
+		ordersDiffer bool
+	}{
+		{
+			fixture:     "typed-params-pass",
+			authorOrder: []string{".spec.parameters.env"},
+			sortedOrder: []string{".spec.parameters.env"},
+		},
+		{
+			// Two unread declarations, authored against their alphabetical order.
+			// With a single finding every ordering agrees, which is exactly why
+			// the row above cannot carry the ordering claim and this one can.
+			fixture:      "unread-params-multi",
+			authorOrder:  []string{".spec.parameters.zone", ".spec.parameters.alpha"},
+			sortedOrder:  []string{".spec.parameters.alpha", ".spec.parameters.zone"},
+			ordersDiffer: true,
+		},
+	} {
+		t.Run(tc.fixture, func(t *testing.T) {
+			t.Parallel()
 
-	objections := constraint.RunOnDocumentParameters(
-		aggregatePath,
-		presented.DeclaredParameterKeys(aggregatePath),
-		presented,
-		declaredParameterRead,
-	)
+			if tc.ordersDiffer && equalStrings(tc.authorOrder, tc.sortedOrder) {
+				t.Fatalf("this row's two expected sequences are identical (%v), so it cannot "+
+					"detect an ordering change at all", tc.authorOrder)
+			}
 
-	fromFramework := make([]string, 0, len(objections))
-	for _, o := range objections {
-		fromFramework = append(fromFramework, o.Locator())
+			presented, aggregatePath, result := presentRealAggregate(t, tc.fixture)
+
+			objections := constraint.RunOnDocumentParameters(
+				aggregatePath,
+				presented.DeclaredParameterKeys(aggregatePath),
+				presented,
+				declaredParameterRead,
+			)
+			fromFramework := make([]string, 0, len(objections))
+			for _, o := range objections {
+				fromFramework = append(fromFramework, o.Locator())
+			}
+			fromHandWritten := fieldsOf(
+				handWrittenReading(t, tc.fixture, result.Aggregate.Metadata.Name))
+
+			if len(fromHandWritten) == 0 {
+				t.Fatal("the hand-written reading found nothing, so the comparison below would " +
+					"pass over an empty set")
+			}
+
+			// Coverage: the two readings find the same parameters at the same
+			// locators. Compared as sets, because the sequences differ by contract
+			// and are asserted separately.
+			frameworkSet := sortedCopy(fromFramework)
+			handWrittenSet := sortedCopy(fromHandWritten)
+			if !equalStrings(frameworkSet, handWrittenSet) {
+				t.Errorf("the two readings disagree about WHICH parameters are unread:\n"+
+					"  framework:    %v\n  hand-written: %v", frameworkSet, handWrittenSet)
+			}
+
+			if !equalStrings(fromFramework, tc.authorOrder) {
+				t.Errorf("framework sequence = %v; want %v, the order the contract declares",
+					fromFramework, tc.authorOrder)
+			}
+			if !equalStrings(fromHandWritten, tc.sortedOrder) {
+				t.Errorf("hand-written sequence = %v; want %v, sorted by parameter key",
+					fromHandWritten, tc.sortedOrder)
+			}
+		})
 	}
-	fromResolve := fieldsOf(result.LintAdvisories)
+}
 
-	if len(fromResolve) == 0 {
-		t.Fatal("the resolve produced no advisory, so there is nothing to agree with and this " +
-			"comparison would pass over an empty set")
+// A resolve's advisories are what the declared check raised, which is what makes
+// the production path the framework's path rather than something that resembles
+// it.
+//
+// The expectations are written out rather than compared against a second run of
+// the framework, so the test says nothing that could be satisfied by the
+// framework agreeing with itself. Three things fail it: taking the check out of
+// the invocation, which empties the slice; changing the sequence away from the
+// order the contract declares; and re-typing the finding's message beside the
+// rule's identity instead of deriving it, which is what the message assertion
+// pins.
+func TestResolveAdvisoriesAreWhatTheDeclaredCheckRaised(t *testing.T) {
+	t.Parallel()
+
+	result, err := resolveForTest(t, ResolveConfig{
+		AggregatePath: filepath.Join("testdata", "unread-params-multi", "aggregate.yaml"),
+		ReleasePath:   filepath.Join("testdata", "unread-params-multi", "release.yaml"),
+		ManifestPath:  filepath.Join("testdata", "unread-params-multi", "manifest.yaml"),
+	})
+	if err != nil {
+		t.Fatalf("resolve failed: %v", err)
 	}
-	if !equalStrings(fromFramework, fromResolve) {
-		t.Errorf("locators disagree: framework %v, resolve %v", fromFramework, fromResolve)
+
+	want := []string{".spec.parameters.zone", ".spec.parameters.alpha"}
+	if got := fieldsOf(result.LintAdvisories); !equalStrings(got, want) {
+		t.Fatalf("resolve advisories = %v; want %v, the order the contract declares", got, want)
+	}
+	for _, a := range result.LintAdvisories {
+		if !errors.Is(a, ErrUnreadParameter()) {
+			t.Errorf("advisory does not carry the rule's identity: %v", a)
+		}
+		if want := ErrUnreadParameter().Error(); a.Message != want {
+			t.Errorf("advisory message = %q; want %q, the text the identity was registered with",
+				a.Message, want)
+		}
+		if !strings.Contains(a.Entity, "unread-params-multi") {
+			t.Errorf("Entity does not name the Aggregate: %q", a.Entity)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"go.yaml.in/yaml/v3"
@@ -268,11 +269,26 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 
 	// Advisory reading of the declared parameters against the references the
 	// Aggregate's own text makes. It runs here because this is the one point
-	// holding both halves it needs — the contract shallow-loaded above, and the
-	// raw text still carrying its reference expressions, which interpolation
-	// consumed on the way to the parsed aggregate. The aggregate is parsed by now
-	// only so the finding can name it.
-	advisories := LintUnreadParameters(in.AggregateRawBytes, contract, agg.Metadata.Name)
+	// holding both halves the presentation needs — the contract shallow-loaded
+	// above, and the raw text still carrying its reference expressions, which
+	// interpolation consumed on the way to the parsed aggregate. The aggregate is
+	// parsed by now only so the finding can name it.
+	//
+	// The declared names are read back off the presentation rather than from the
+	// contract value beside it: they are one of the facts the presentation states,
+	// so reading them anywhere else would be answering from a second source that
+	// happens to agree.
+	var presented constraint.DocumentView = newAggregateDocumentView(
+		in.AggregatePath, in.AggregateRawBytes, contract)
+	advisories := advisoriesFromObjections(
+		constraint.RunOnDocumentParameters(
+			in.AggregatePath,
+			presented.DeclaredParameterKeys(in.AggregatePath),
+			presented,
+			declaredParameterRead,
+		),
+		agg.Metadata.Name,
+	)
 
 	// Validate instance names
 	nameErrs := ValidateInstanceNames(na)

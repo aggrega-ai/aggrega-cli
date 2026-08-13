@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: unread-params-multi
+  environment: staging
+  version: "1.0.0"
+spec:
+  aggregate: unread-params-multi
+  manifest: unread-params-multi-manifest
+  parameters:
+    zone: eu-central-1b
+    region: eu-central-1
+    alpha: "off"
+  boundaries:
+    staging:
+      directory: ./output
+      components:
+        api:
+          infra:
+            replicas: 1

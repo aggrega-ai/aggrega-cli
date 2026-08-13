@@ -22,11 +22,17 @@ import (
 //
 // The rules are declared here and the hand-written functions beside this file
 // still run. That is what a reader comparing the two should expect rather than
-// read as duplication left behind: nothing yet implements a view over a real
-// compilation product, so a declaration has nothing to be invoked with. The
-// declaration is what makes the placement computable; the invocation arrives
-// with the change that supplies a view, and the hand-written form is removed by
-// the change that no longer needs it.
+// read as duplication left behind: a declaration is invoked where something
+// presents a view over the compilation products its stage names, and nothing
+// presents one at the stages these rules declare. The declaration is what makes
+// the placement computable; the invocation arrives with the change that supplies
+// the view these rules need, and the hand-written form is removed by the change
+// that no longer needs it.
+//
+// That is a statement about these declarations and not about the framework. A
+// view over an authored document is presented elsewhere, and a rule declared
+// there is invoked through it, so a reader must not read the paragraph above as
+// saying no view exists anywhere.
 //
 // What a declaration here does not carry is the traversal its hand-written
 // counterpart performs. A hand-written scan over assembled output walks every
