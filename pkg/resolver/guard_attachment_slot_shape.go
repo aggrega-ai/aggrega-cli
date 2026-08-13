@@ -171,6 +171,64 @@ func (s AttachmentSlotShape) Validate(
 	return attachmentShapeErrors(s.v, authored, entity, componentField)
 }
 
+// ValidateContributedFill checks one attachment contributed at a scope broader
+// than the component it lands on — a subsystem-wide fill reaching every component
+// beneath it — against the slot of the same name on THAT component, and returns a
+// single violation when the contributed delivery is out of shape for it.
+//
+// The subject is the pair, not the block. One contributed fill can be legal on
+// one component in the scope and out of shape on another, because what closes it
+// is the slot the receiving Component declares; so the question cannot be asked
+// of the authored block, which is well-formed and identical in both cases. It is
+// asked once per (component, contributed fill) pair, which is why the caller is
+// the site that holds a node's attachment set rather than the Aggregate walk.
+//
+// authoredLocator must name the scope the author declared the attachment at —
+// build it with [ScopeAttachmentFieldPath]. The diagnostic names the component
+// and the slot and points at that scope, and deliberately does NOT name the
+// delivery block: the block is legal on its own terms, so naming it would send
+// the author to correct authored content and invite them to damage it. What is
+// wrong is the scope the attachment sits at relative to the slot it reached, so
+// the message says to move it down instead.
+//
+// One violation per pair rather than one per offending mechanism. The author's
+// edit is a single move whatever the block carries, and a per-mechanism list
+// would enumerate parts of a block this diagnostic exists not to send them into.
+//
+// Returns nil when the shape is not compiled, when the contribution binds no
+// declared slot (a free attachment is unconstrained), or when the contributed
+// fill conforms.
+func (s AttachmentSlotShape) ValidateContributedFill(
+	instanceName string,
+	contribution types.FeatureInstance,
+	slotDeclared bool,
+	entity, component, authoredLocator string,
+) *ResolverError {
+	if s.v == nil || !slotDeclared {
+		return nil
+	}
+	// Reuse the compiled slot shape rather than re-deciding what a slot permits:
+	// the authored-block guard and this one must agree by construction, so the
+	// contribution is presented in exactly the shape that guard validates and the
+	// findings are used only as a yes/no. Their field paths are discarded on
+	// purpose — they lead into the delivery block.
+	one := types.OrderedMap[types.FeatureInstance]{}
+	one.Set(instanceName, contribution)
+	if len(attachmentShapeErrors(s.v, one, entity, "")) == 0 {
+		return nil
+	}
+	return &ResolverError{
+		Entity: entity,
+		Field:  authoredLocator,
+		Message: fmt.Sprintf(
+			"this attachment is declared at a scope that reaches component %q, whose attachment slot %q "+
+				"does not accept the delivery it carries: move the attachment down to the components that "+
+				"may receive it",
+			component, instanceName),
+		Err: ErrAttachmentSlotShape(),
+	}
+}
+
 // attachmentShapeErrors validates one authored attachment block and maps the
 // findings to ResolverErrors wrapping ErrAttachmentSlotShape.
 //

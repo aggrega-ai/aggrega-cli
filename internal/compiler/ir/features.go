@@ -28,6 +28,35 @@ type featureResult struct {
 	// its provenance, never the contest that produced them. Addressed by
 	// key only and never iterated, so it has no bearing on output order.
 	leafScope map[scopeKey]attachmentScope
+
+	// contributedFills records each fill this node received from a scope
+	// broader than the node — with the scope it was authored at — so a rule
+	// asked of the merged attachment can still name the edit that produced
+	// it. Merge-time bookkeeping like leafScope: none of it is emitted.
+	//
+	// It exists because the merged entry cannot answer the question. An
+	// entry's provenance maps are keyed by values and infra leaves and carry
+	// an authoring path only for the annotation-expansion route, so an
+	// explicitly authored delivery arriving from a broader scope leaves no
+	// trace of where it was written. Recorded in cascade order, which is
+	// outer scope before inner, so several offending scopes are reported in
+	// the order an author reads their own document.
+	contributedFills []contributedFill
+}
+
+// contributedFill is one fill a node received from a scope broader than
+// itself, paired with the locator of the scope that declared it.
+type contributedFill struct {
+	instance string
+	// authoredLocator names the authoring scope, never the node. It is what
+	// makes this record worth keeping: a diagnostic about the merged
+	// attachment has to point at an edit that exists in the document.
+	authoredLocator string
+	// contribution is the fill exactly as authored. The merged entry is not a
+	// substitute: the merge folds the contribution together with every other
+	// tier's, so a rule reading the merged entry could not tell which scope
+	// contributed the part it objects to.
+	contribution types.FeatureInstance
 }
 
 // newFeatureResult is the one construction site for a per-node result, so
@@ -37,6 +66,22 @@ func newFeatureResult() *featureResult {
 		Features:  types.OrderedMap[types.IRFeatureEntry]{},
 		leafScope: map[scopeKey]attachmentScope{},
 	}
+}
+
+// recordContributedFill notes a fill that arrived from a scope broader than the
+// node, so the post-cascade slot-shape rule can name the scope it was authored
+// at. Only fills carrying a delivery block are recorded, because a slot's shape
+// closes the delivery and permits every other pillar a fill may carry — so a
+// contribution with no delivery has nothing for that rule to object to.
+func (r *featureResult) recordContributedFill(instance, authoredLocator string, contribution types.FeatureInstance) {
+	if contribution.Inject == nil {
+		return
+	}
+	r.contributedFills = append(r.contributedFills, contributedFill{
+		instance:        instance,
+		authoredLocator: authoredLocator,
+		contribution:    contribution,
+	})
 }
 
 // scopeKey addresses one contested leaf: the attachment's instance name, the
@@ -320,6 +365,13 @@ func collectNodeFeatures(
 	if topoNode.SubsystemPath != "" {
 		subsystemFeatures := collectSubsystemFeatures(types.Normalize(resolveResult.Aggregate), topoNode.SubsystemPath)
 		for _, sf := range subsystemFeatures {
+			// Recorded before the merge, from the contribution as authored. Each
+			// level of the chain is recorded separately even where two levels
+			// declare the same instance name: the delivery merge adds and replaces
+			// per delivery key and removes no mechanism, so a mechanism any level
+			// contributed survives into the merged attachment, and every level that
+			// contributed an out-of-shape one is a separate edit to make.
+			result.recordContributedFill(sf.name, resolver.ScopeAttachmentFieldPath(sf.scopePath, sf.name), sf.feat)
 			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, catalogLookup, nodeID, explicitProvenance, scopeShared); err != nil {
 				return nil, err
 			}
@@ -397,7 +449,7 @@ func collectNodeFeatures(
 // schema.infra — there is NO provider union (the component-gate construction):
 // an attachment is an overlay and does not own a rendering provider, so its
 // schema.infra is its complete infra contract. Errors are returned unsorted;
-// joinAttachmentConformance canonicalises the combined set.
+// joinAttachmentViolations canonicalises the combined set.
 func validateNodeAttachments(
 	nodeID string,
 	feats types.OrderedMap[types.IRFeatureEntry],
@@ -418,12 +470,78 @@ func validateNodeAttachments(
 	return errs
 }
 
-// joinAttachmentConformance canonicalises the collected attachment-conformance
+// validateContributedFillSlots asks the slot-shape rule of every fill this node
+// received from a broader scope, against the slot set the NODE's Component
+// declares.
+//
+// This is the rule's post-cascade half, and the placement is the point. Which
+// slot closes a fill is a property of the component the fill reached, so one
+// subsystem-wide fill can be legal on one component in the scope and out of
+// shape on another — a question the authored block cannot answer, because the
+// block is identical and well-formed in both cases. It therefore runs where a
+// node's attachment set is complete, beside the conformance gate and for the
+// same reason: the subject is the effective merged attachment, never a
+// pre-merge fragment.
+//
+// The decision comes from the resolver's compiled slot shape — the same
+// validator the resolution-time guard over an authored block uses — so the two
+// routes cannot diverge on what a slot permits. What differs is only the
+// diagnostic: this one names the component and the slot and points at the scope
+// the attachment was authored at.
+//
+// Free attachments are skipped, because Binding carries the answer the merge
+// already computed: an instance name the node's Component declares no slot for
+// is unconstrained, and an unresolved Component leaves Binding empty rather than
+// claiming the slot set is known.
+func validateContributedFillSlots(
+	nodeID, entity string,
+	result *featureResult,
+	topoNode *topology.TopologyNode,
+	catalogLookup resolver.CatalogLookup,
+) []*resolver.ResolverError {
+	if len(result.contributedFills) == 0 || topoNode == nil || catalogLookup.Component == nil {
+		return nil
+	}
+	comp, found := catalogLookup.Component(topoNode.ComponentType)
+	if !found || comp.Spec.FeaturesSchema.Len() == 0 {
+		return nil
+	}
+	shape, ok := resolver.CompileAttachmentSlotShape(comp)
+	if !ok {
+		return nil
+	}
+
+	var errs []*resolver.ResolverError
+	for _, fill := range result.contributedFills {
+		// Binding is read rather than the slot map re-consulted: it is the
+		// post-cascade answer to "which declared slot does this attachment fill",
+		// and asking the map again here would be a second home for that lookup.
+		entry, merged := result.Features.Get(fill.instance)
+		if !merged || entry.Binding == "" || entry.Binding == types.AttachmentBindingFree {
+			continue
+		}
+		if verr := shape.ValidateContributedFill(
+			fill.instance, fill.contribution, true, entity, nodeID, fill.authoredLocator,
+		); verr != nil {
+			errs = append(errs, verr)
+		}
+	}
+	return errs
+}
+
+// joinAttachmentViolations canonicalises the collected per-node attachment
 // violations by (Entity, Field) — byte-identical across runs of the same input,
-// matching the Step-1 gate's ordering — and joins them into one error. The
-// joined error wraps every violation, so errors.Is(err, ErrSchemaConformance())
-// holds for the build halt.
-func joinAttachmentConformance(errs []*resolver.ResolverError) error {
+// matching the resolution-time gate's ordering — and joins them into one error.
+// The joined error wraps every violation, so errors.Is holds against whichever
+// sentinel each one carries.
+//
+// The set is joined rather than returned per rule so an author fixing a node's
+// attachments sees every finding in one build. Two rules feed it — pillar
+// conformance against each attachment's own Feature schema, and slot shape for a
+// fill contributed from a broader scope — and both are questions about the same
+// subject at the same moment, which is what makes one halt the honest shape for
+// them.
+func joinAttachmentViolations(errs []*resolver.ResolverError) error {
 	sort.SliceStable(errs, func(i, j int) bool {
 		if errs[i].Entity != errs[j].Entity {
 			return errs[i].Entity < errs[j].Entity
@@ -942,10 +1060,18 @@ func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], 
 	return out
 }
 
-// namedFeature pairs an instance name with a FeatureInstance for ordered collection.
+// namedFeature pairs an instance name with a FeatureInstance for ordered
+// collection, plus the dotted subsystem path of the level that declared it.
+//
+// scopePath is the declaring level, not the node's own path: a chain walk emits
+// an outer subsystem's attachments to every node beneath it, so the two differ
+// for any node deeper than the level that declared the attachment. Carried here
+// because it is only knowable inside the walk — by the time a contribution has
+// been folded, which level supplied it is gone.
 type namedFeature struct {
-	name string
-	feat types.FeatureInstance
+	name      string
+	scopePath string
+	feat      types.FeatureInstance
 }
 
 // namedBoundaryFeature pairs an instance name with a BoundaryFeature.
@@ -977,14 +1103,17 @@ func collectSubsystemFeatures(na types.NormalizedAggregate, subsystemPath string
 	var result []namedFeature
 	current := agg.Spec.Subsystems
 
+	var walked []string
 	for _, part := range parts {
 		sub, ok := current.Get(part)
 		if !ok {
 			break
 		}
+		walked = append(walked, part)
+		scopePath := strings.Join(walked, ".")
 		// Collect this subsystem's features (author order)
 		for fname, feat := range sub.Features.All() {
-			result = append(result, namedFeature{name: fname, feat: feat})
+			result = append(result, namedFeature{name: fname, scopePath: scopePath, feat: feat})
 		}
 		current = sub.Subsystems
 	}

@@ -131,12 +131,12 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	featureValuesMapping := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	featureOrder := make(FeatureOrder)
 
-	// Feature/Secret attachment schema-conformance gate (Step 3). The merged
-	// per-attachment values/infra only exist after the 5-Tier merge below, so
-	// this gate runs here rather than in the Step-1 RunGuards. compiledFeature
-	// memoises the compiled Feature schema per type (Secrets resolve through the
-	// same Feature lookup); attachmentConformanceErrs collects across all nodes
-	// for one joined halt.
+	// The per-node attachment gates. Both subjects only exist after the 5-Tier
+	// merge below — the merged per-attachment values/infra, and which declared
+	// slot each merged attachment fills — so these run here rather than with the
+	// guards over the authored document. compiledFeature memoises the compiled
+	// Feature schema per type (Secrets resolve through the same Feature lookup);
+	// attachmentErrs collects across all nodes for one joined halt.
 	featureSchemaCache := map[string]compactform.Schema{}
 	featureSchemaMiss := map[string]bool{}
 	compiledFeature := func(featureType string) (compactform.Schema, bool) {
@@ -154,7 +154,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		featureSchemaCache[featureType] = compiled
 		return compiled, true
 	}
-	var attachmentConformanceErrs []*resolver.ResolverError
+	var attachmentErrs []*resolver.ResolverError
 	var attachmentParams map[string]any
 	attachmentEntity := "Aggregate"
 	if res != nil {
@@ -262,13 +262,22 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		// Validate the merged attachment pillars against each attachment's
 		// declared Feature schema (collected across all nodes for one joined
 		// halt below).
-		attachmentConformanceErrs = append(attachmentConformanceErrs,
+		attachmentErrs = append(attachmentErrs,
 			validateNodeAttachments(nodeID, featResult.Features,
 				attachmentParams, attachmentEntity, compiledFeature)...)
+
+		// Ask the slot-shape rule of every fill this node received from a broader
+		// scope. It belongs here and not with the authored-document guards for the
+		// reason the line above belongs here: which slot closes a contributed fill
+		// is a property of the component it reached, so the pair of the two is the
+		// earliest subject that can see the defect.
+		attachmentErrs = append(attachmentErrs,
+			validateContributedFillSlots(nodeID, attachmentEntity, featResult,
+				topoNode, cfg.CatalogLookup)...)
 	}
 
-	if len(attachmentConformanceErrs) > 0 {
-		return nil, nil, joinAttachmentConformance(attachmentConformanceErrs)
+	if len(attachmentErrs) > 0 {
+		return nil, nil, joinAttachmentViolations(attachmentErrs)
 	}
 
 	// 2. Convert topology edges to IR edges. A socket's declared per-edge

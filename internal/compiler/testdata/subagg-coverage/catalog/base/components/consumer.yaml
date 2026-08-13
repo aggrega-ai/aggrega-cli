@@ -24,6 +24,13 @@ spec:
     # so any authored inject block on a fill of this slot is out of shape.
     root_password:
       inject: []
+    # The counterpart to the slot above: an allowlist naming a mechanism, so a
+    # fill delivering through env is in shape for it. Both slots exist so a fill
+    # arriving from a broader scope can be shown accepted here and rejected
+    # above, which is what separates reading the allowlist from rejecting every
+    # fill that reaches a declared slot.
+    api_token:
+      inject: ["env"]
   schema:
     provides:
       host: { type: string, required: true }

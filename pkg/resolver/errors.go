@@ -102,12 +102,27 @@ var errSchemaConformance = cerrors.Register("resolver/schema-conformance", cerro
 	Message: "authored pillar does not conform to its declared schema",
 })
 
-// ErrAttachmentSlotShape wraps an authored attachment that binds a
-// declared slot but does not match that slot's declared shape: a key the
-// slot does not permit, or an inject delivery mechanism outside the
-// slot's allowlist (including any mechanism at all on a Black-Box slot,
-// whose empty allowlist reserves delivery to the Recipe). Validated at
-// Step 1 against the shape the entity's featuresSchema projects.
+// ErrAttachmentSlotShape wraps an attachment that binds a declared slot
+// but does not match that slot's declared shape: a key the slot does not
+// permit, or an inject delivery mechanism outside the slot's allowlist
+// (including any mechanism at all on a Black-Box slot, whose empty
+// allowlist reserves delivery to the Recipe). In both cases the shape
+// checked is the one the host Component's featuresSchema projects.
+//
+// It reaches an attachment by either route it can arrive on, and the two
+// are checked at different points because the slot becomes known at
+// different points:
+//
+//   - Declared on the component instance itself — checked during
+//     resolution, against the authored block.
+//   - Contributed by a broader scope and cascaded onto the component —
+//     checked once the component's attachment set is complete, because
+//     which slot closes the fill is a property of the component it
+//     reached rather than of the scope it was written at. The same
+//     contributed fill can be legal on one component in the scope and
+//     out of shape on another; the diagnostic names the component and
+//     the slot, and locates the attachment at the scope it was authored
+//     at.
 //
 // It is a SHAPE sentinel only. Whether a slot declared `required: true`
 // ends up bound is a different question, asked of the attachment set a

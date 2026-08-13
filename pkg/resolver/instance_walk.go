@@ -49,10 +49,39 @@ type instancePair struct {
 // The key is the synthesized-provenance flag, not the path string: a subsystem a
 // user declares with the name "default" still renders the qualified path.
 func componentFieldPath(subsystemPath, name string, synthesized bool) string {
-	if subsystemPath == "" || synthesized {
-		return fmt.Sprintf(".spec.components[%q]", name)
+	if synthesized {
+		subsystemPath = ""
 	}
-	return fmt.Sprintf(".spec.subsystems.%s.components[%q]", strings.ReplaceAll(subsystemPath, ".", ".subsystems."), name)
+	return fmt.Sprintf("%s.components[%q]", scopeFieldPath(subsystemPath), name)
+}
+
+// scopeFieldPath renders the authoring field locator for one subsystem scope:
+// `.spec` at the top level, `.spec.subsystems.a` for a declared subsystem, and
+// `.spec.subsystems.a.subsystems.b` for a nested one.
+//
+// It is the one home for expanding a dotted subsystem chain into the authored
+// key path. Two locators need that expansion — a component instance's and a
+// subsystem-wide attachment's — and a second copy would be free to render the
+// same chain differently, which is exactly the divergence a reader could not
+// account for when comparing two diagnostics about the same document.
+func scopeFieldPath(subsystemPath string) string {
+	if subsystemPath == "" {
+		return ".spec"
+	}
+	return ".spec.subsystems." + strings.ReplaceAll(subsystemPath, ".", ".subsystems.")
+}
+
+// ScopeAttachmentFieldPath renders the authoring field locator for an attachment
+// declared subsystem-wide: `.spec.subsystems.a.features["name"]`, and
+// `.spec.features["name"]` at the top level.
+//
+// Exported because the rule that needs it runs where a node's attachment set is
+// complete rather than where the Aggregate is walked, and the locator it carries
+// must name the scope the author declared the attachment at. Rendering that path
+// at the consuming site would put a second spelling of the authored key path in
+// the tree.
+func ScopeAttachmentFieldPath(subsystemPath, attachment string) string {
+	return fmt.Sprintf("%s.features[%q]", scopeFieldPath(subsystemPath), attachment)
 }
 
 // collectComponentInstances projects [types.NormalizedAggregate.ComponentInstances]
