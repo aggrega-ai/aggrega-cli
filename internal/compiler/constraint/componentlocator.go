@@ -4,8 +4,7 @@
 package constraint
 
 // componentAuthoredSegments returns the locator segments naming where a
-// component instance was authored, or no segments at all when its authored site
-// is one the dotted form cannot express.
+// component instance was authored.
 //
 // The rule turns on provenance and never on the path string, and that is the
 // whole of it. Normalization folds an Aggregate's top-level components into a
@@ -14,9 +13,10 @@ package constraint
 // subsystem would point at a location the source file does not contain. Such a
 // component therefore names the site the author did write, under
 // .spec.components. A component in a subsystem the author actually declared
-// yields no segments: its authored site sits under .spec.subsystems, a shape
-// the dotted form cannot express, and an empty locator routes the consumer to
-// file-level positioning rather than to a key that is not there.
+// names that subsystem, level by level under the container's own key, and then
+// the component: the authored document spells a nested scope that way, and
+// joining the path in as one segment would name a key no file contains. Both
+// arms name a site the author wrote, and neither invents one.
 //
 // Because the discriminator is the synthesized flag, a subsystem the author
 // declares and happens to name the same as the synthesized one is not mistaken
@@ -28,15 +28,18 @@ package constraint
 // to a provenance rule: the identifier's qualification records how the node was
 // reached, which is a different question from what the author typed.
 //
-// Three hand-assembled locator builders elsewhere in the compiler implement
-// this same rule per violation class, and one of them is the shape above. They
-// are left in place until the checks that use them are written against this
-// framework, at which point they retire onto this one.
+// Three hand-assembled locator builders elsewhere in the compiler name a
+// component's site per violation class, and they name the top-level shape only:
+// a component in a subsystem the author declared gets no locator from them. So
+// they no longer agree with this rule, and the disagreement is carried
+// deliberately rather than overlooked — they are left in place until the checks
+// that use them are written against this framework, at which point they retire
+// onto this one and the disagreement retires with them.
 func componentAuthoredSegments(componentName, subsystemPath string, synthesizedSubsystem bool) []string {
 	if subsystemPath != "" && !synthesizedSubsystem {
-		return nil
+		return nestedScopeSegments(subsystemNesting, subsystemPath, authoredKeyComponents, componentName)
 	}
-	return []string{"spec", "components", componentName}
+	return []string{authoredKeySpec, authoredKeyComponents, componentName}
 }
 
 // newComponentNodeSubject is the node subject of a component instance, with the

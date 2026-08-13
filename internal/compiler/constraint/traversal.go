@@ -61,8 +61,10 @@ import "strings"
 
 // The authoring keys the locator dialect names. They are the keys the author
 // actually writes, so they are declared once here rather than spelled at each
-// use. The component block's own keys belong to the component-locator rule and
-// are assembled there.
+// use. Which keys a component's own site takes, and when, is the
+// component-locator rule's question and is decided there; the key itself is
+// declared here with the rest, because an author writes it on both of the
+// documents that declare components.
 const (
 	authoredKeySpec       = "spec"
 	authoredKeyUses       = "uses"
@@ -76,6 +78,7 @@ const (
 	authoredKeyArtifacts  = "artifacts"
 	authoredKeyBoundaries = "boundaries"
 	authoredKeySubsystems = "subsystems"
+	authoredKeyComponents = "components"
 )
 
 // scopeNesting describes one authoring axis whose scopes nest: the key the
@@ -105,12 +108,18 @@ var (
 // a component instance's block: the component's own segments followed by tail.
 //
 // It returns no segments when the component has none, and that propagation is
-// the point of the helper rather than a detail of it. A component in a subsystem
-// the author declared has an authored site the dotted form cannot express, so
-// anything authored inside it is equally inexpressible; emitting the tail alone
-// would name a path — ".uses.database" — that no file contains. An empty
-// locator routes a consumer to file-level positioning instead, which is the
-// mechanical form of not inventing a locator.
+// the point of the helper rather than a detail of it: an element authored inside
+// a block is named relative to that block, so without the block there is nothing
+// to name it relative to and emitting the tail alone would produce a path —
+// ".uses.database" — that no file contains. An empty locator routes a consumer to
+// file-level positioning instead, which is the mechanical form of not inventing
+// a locator.
+//
+// Both arms of the component rule name an authored site, so an empty base does
+// not arise from it as things stand. The guard is what keeps that from being a
+// property callers rely on: it belongs to the composition rather than to any one
+// producer, and a producer that could not name its component would otherwise
+// have its tail emitted rootless.
 func componentInnerSegments(node NodeInstance, tail ...string) []string {
 	base := componentAuthoredSegments(node.AuthoredName, node.SubsystemPath, node.SynthesizedSubsystem)
 	if len(base) == 0 {
@@ -246,7 +255,8 @@ func runOverAuthoredScopes[V any, S Subject](
 // A node's locator follows the component-instance provenance rule: a component
 // the author wrote at the top level of its document names .spec.components.<name>
 // even when normalization reached it through a synthesized subsystem, while a
-// component in a subsystem the author declared carries no locator at all.
+// component in a subsystem the author declared names that subsystem level by
+// level under the container's own key before naming the component.
 func RunOnNodes[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,

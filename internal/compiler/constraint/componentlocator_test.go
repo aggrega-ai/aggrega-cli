@@ -3,16 +3,22 @@
 
 package constraint
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestComponentLocatorTurnsOnProvenanceAndNotOnTheName is the pin on the whole
 // component-provenance rule, and the rows are the cases it exists for rather
 // than a sweep of inputs.
 //
-// The discriminating pair is the last two rows: the same subsystem path, and the
-// answer differs. A rule reading the path string cannot tell them apart, and
-// getting it wrong in one direction discards a real locator for every component
-// authored at the top level while getting it wrong in the other names a
+// The discriminating pair is the two rows carrying the subsystem path "default":
+// one string, and the answer differs because one container was synthesized and
+// the other was written by the author. They are named by their content rather
+// than by their position, so inserting a row cannot silently re-point the
+// sentence at a different pair. A rule reading the path string cannot tell them
+// apart, and getting it wrong in one direction discards a real locator for every
+// component authored at the top level while getting it wrong in the other names a
 // subsystem key the source file does not contain.
 func TestComponentLocatorTurnsOnProvenanceAndNotOnTheName(t *testing.T) {
 	t.Parallel()
@@ -39,16 +45,22 @@ func TestComponentLocatorTurnsOnProvenanceAndNotOnTheName(t *testing.T) {
 			want:                 ".spec.components.web",
 		},
 		{
-			name:          "an author-declared subsystem yields no locator, because its authored site is not expressible",
+			name:          "an author-declared subsystem contributes its own level, because the author wrote it",
 			componentName: "db",
 			subsystemPath: "data",
-			want:          "",
+			want:          ".spec.subsystems.data.components.db",
 		},
 		{
 			name:          "an author-declared subsystem named like the synthesized one is still author-declared",
 			componentName: "api",
 			subsystemPath: "default",
-			want:          "",
+			want:          ".spec.subsystems.default.components.api",
+		},
+		{
+			name:          "a declared subsystem that nests spells every level under the container's own key",
+			componentName: "ledger",
+			subsystemPath: "billing.payments",
+			want:          ".spec.subsystems.billing.subsystems.payments.components.ledger",
 		},
 		{
 			name:                 "a nested synthesized path is still synthesized",
@@ -76,12 +88,14 @@ func TestComponentLocatorTurnsOnProvenanceAndNotOnTheName(t *testing.T) {
 					tc.componentName, tc.subsystemPath, tc.synthesizedSubsystem, got, tc.want)
 			}
 			if got := subject.SourceFile(); got != sourceFile {
-				t.Errorf("source file = %q; want %q — an empty locator is still attributed to its file",
+				t.Errorf("source file = %q; want %q — the locator names a site within the file and "+
+					"never replaces the attribution to it",
 					got, sourceFile)
 			}
 			if got := subject.NodeID(); got != nodeID {
 				t.Errorf("node identifier = %q; want %q — the identifier the keyed facts take travels "+
-					"independently of the locator, so a kind with no locator at all still carries it",
+					"independently of the locator, so a locator that grew a subsystem level did not "+
+					"reach the identifier",
 					got, nodeID)
 			}
 		})
@@ -100,9 +114,21 @@ func TestComponentLocatorComposesThroughTheSharedLocatorAssembly(t *testing.T) {
 			"want %q", want)
 	}
 
-	if got := componentAuthoredSegments("db", "data", false); got != nil {
-		t.Errorf("segments for an author-declared subsystem = %v; want none, so the empty locator comes "+
-			"from having nothing authored to name rather than from a second empty-string convention", got)
+	declared := componentAuthoredSegments("db", "data", false)
+	if want := authoredLocator(declared...); newComponentNodeSubject("a.yaml", "data.db", "db", "data", false).Locator() != want {
+		t.Errorf("the author-declared arm's locator is not what the shared assembly makes of its "+
+			"segments; want %q — both arms go through one assembly or the dialect has two homes", want)
+	}
+
+	// The flattening defect, pinned at the arm that produces it rather than only
+	// at the helper underneath. A scope path arrives joined, and a segment still
+	// carrying the separator is a path spliced in whole — one key where the author
+	// wrote two, which no document contains.
+	for _, segment := range componentAuthoredSegments("ledger", "billing.payments", false) {
+		if strings.Contains(segment, subsystemNesting.separator) {
+			t.Errorf("segment %q carries the axis separator, so the scope path was named as one key "+
+				"instead of level by level under the container's own key", segment)
+		}
 	}
 }
 

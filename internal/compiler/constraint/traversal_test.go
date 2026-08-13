@@ -147,10 +147,11 @@ func (f traversalFixture) SubsystemAttachments(subsystem string) []string {
 // against both halves of the component-locator rule in one pass.
 //
 //   - webNode was authored at the top level of its document and reached through a
-//     synthesized container, so it has an authored site the dotted form names.
+//     synthesized container, which contributes no segment, so its locator names
+//     the top-level site.
 //   - apiNode sits in a container the author declared, whose authored site the
-//     dotted form cannot express, so it has no locator at all — and neither does
-//     anything authored inside it.
+//     locator spells level by level under the container's own key — and so does
+//     the site of anything authored inside it.
 var (
 	webNode = NodeInstance{
 		ID:                   "web",
@@ -321,7 +322,7 @@ func traversalCases() []traversalCase {
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web",
-				"billing/aggregate.yaml|",
+				"billing/aggregate.yaml|.spec.subsystems.billing.components.api",
 			},
 		},
 		{
@@ -332,7 +333,7 @@ func traversalCases() []traversalCase {
 			want: []string{
 				"aggregate.yaml|.spec.components.web.uses.zebra",
 				"aggregate.yaml|.spec.components.web.uses.alpha",
-				"billing/aggregate.yaml|",
+				"billing/aggregate.yaml|.spec.subsystems.billing.components.api.uses.db",
 			},
 		},
 		{
@@ -342,7 +343,7 @@ func traversalCases() []traversalCase {
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.uses.zebra",
-				"billing/aggregate.yaml|",
+				"billing/aggregate.yaml|.spec.subsystems.billing.components.api.uses.db",
 			},
 		},
 		{
@@ -404,10 +405,11 @@ func traversalCases() []traversalCase {
 			},
 		},
 		{
-			// The one node with no authored site still yields a locator here, and
-			// that is the point: a parameter is declared at its document's spec
-			// level rather than inside the component, so the component's
-			// inexpressible site does not reach it.
+			// The node in an author-declared container names its parameter at the
+			// document's spec level and not under .spec.subsystems, and that is the
+			// point: a parameter is declared at its document's spec level rather
+			// than inside the component, so the component's own site does not reach
+			// it however deeply that site nests.
 			kind: SubjectNodeParameter,
 			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
 				return RunOnNodeParameters(cancelled, f, f, v, raisingCheck[NodeParameterSubject]())
@@ -656,13 +658,12 @@ func TestATraversalInvokesOncePerInstanceInEnumeratorOrderWithFrameworkProvenanc
 //
 // It is a separate assertion from the provenance transcript above because the two
 // travel independently, and one of them can be empty while the other must not be.
-// A coordinate keys a fact accessor; a locator names an authored site. So a
-// subject whose authored site the dotted form cannot express still carries its
-// coordinates in full — which is why the node with no locator at all appears here
-// with its identifier intact. A check handed an empty identifier would read facts
-// for the wrong instance, or for no instance, and the provenance assertion cannot
-// see that: it passes on an empty locator, because for that node an empty locator
-// is the correct answer.
+// A coordinate keys a fact accessor; a locator names an authored site, and a
+// subject whose site is not a key at all still carries its coordinates in full —
+// the case [TestACoordinateIsCarriedWhereThereIsNoAuthoredSiteToName] pins. A
+// check handed an empty identifier would read facts for the wrong instance, or for
+// no instance, and the provenance assertion cannot see that: it passes on an empty
+// locator, because wherever an empty locator is produced it is the correct answer.
 // # Every kind, and why the coverage is asserted rather than assumed
 //
 // The completeness assertion over the declarations cannot call an accessor, so
@@ -724,6 +725,48 @@ func TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestACoordinateIsCarriedWhereThereIsNoAuthoredSiteToName pins that a subject's
+// coordinates and its locator travel independently: the coordinate is carried in
+// full even where there is no authored site for a locator to name.
+//
+// The property is pinned on the document kind because that kind's constructor
+// takes no locator segments at all, so an empty locator there is structural
+// rather than one rule's current answer. A pin resting on a rule moves whenever
+// that rule is re-decided, and this property then stops being exercised without
+// any assertion failing — an empty locator is what the provenance transcript
+// expects, so the transcript cannot tell a carried coordinate from a lost one.
+func TestACoordinateIsCarriedWhereThereIsNoAuthoredSiteToName(t *testing.T) {
+	t.Parallel()
+
+	const sourceFile = "billing/aggregate.yaml"
+
+	subject := newDocumentSubject(sourceFile)
+
+	if got := subject.Locator(); got != "" {
+		t.Errorf("the document subject's locator = %q; want empty.\n"+
+			"INVARIANT: a document is the whole file, so it holds no authored element for a locator "+
+			"to name.\n"+
+			"CONSEQUENCE: a locator here points a reader at a key rather than at the file the check "+
+			"is raising about.", got)
+	}
+	if got := subject.SourceFile(); got != sourceFile {
+		t.Errorf("the document subject's coordinate = %q; want %q.\n"+
+			"INVARIANT: a coordinate keys a fact accessor and a locator names an authored site, so an "+
+			"empty locator never implies an empty coordinate.\n"+
+			"CONSEQUENCE: a check handed an empty coordinate reads facts for no instance, and the "+
+			"provenance transcript cannot see it, because an empty locator is the correct answer "+
+			"there.", got, sourceFile)
+	}
+
+	// Through the raise as well as on the subject: the pair is what a consumer
+	// receives, and a coordinate carried on the subject but dropped at the raise
+	// would satisfy both assertions above.
+	if o := subject.Raise(errRuleBroken); o.SourceFile() != sourceFile || o.Locator() != "" {
+		t.Errorf("the raised objection carries file %q and locator %q; want %q and an empty locator",
+			o.SourceFile(), o.Locator(), sourceFile)
 	}
 }
 
