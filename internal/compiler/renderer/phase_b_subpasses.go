@@ -15,6 +15,7 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -811,7 +812,24 @@ func renderFeatureRecipeFiles(
 		return nil, err
 	}
 	if err := phaseB3(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
-		return nil, err
+		// The artifacts pass is the one crossing that hands the provider's own
+		// error back untouched, so the category is assigned here or nowhere: the
+		// callers of this function return its error unchanged by design. An
+		// artifacts fault is normally a catalog fault — the entry, its import or
+		// its template is what went wrong. A provider that rendered
+		// non-deterministically is the exception, and it carries the same
+		// translation category here that it carries on this function's source-
+		// render and workload-synthesis crossings. The condition fixes the
+		// category; the crossing it surfaced through does not. The component
+		// render path reads its own artifacts crossing the same way, and the two
+		// are deliberately separate expressions of that reading: each path names
+		// its own crossing in the message it adds, so neither depends on the
+		// other's wrapping.
+		category := cerrors.CatalogError
+		if errors.Is(err, ErrRenderNondeterministic()) {
+			category = cerrors.TranslationError
+		}
+		return nil, cerrors.Wrap(err, category, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe artifacts")
 	}
 	if err := phaseB4(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
 		return nil, err
