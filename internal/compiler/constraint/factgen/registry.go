@@ -1162,6 +1162,108 @@ var facts = []factDecl{
 			"byte-identical result at the mercy of map iteration.",
 	},
 	{
+		Name:        "compiled-socket-value-schema",
+		Stage:       "normalized",
+		SourceField: `resolver.CompileSocketPillarSchema(catalog, componentType, socket, "values")`,
+		Subject:     []string{"node", "socket"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "(map[string]any, bool)",
+		Doc: "CompiledSocketValueSchema is the contract a component type's " +
+			"dependency socket declares over the developer's configuration for " +
+			"one edge, resolved: the authored document with every shorthand " +
+			"expanded and every cross-document reference followed, and whether " +
+			"there was a contract that resolved at all.\n\nIt is the resolved " +
+			"form and not the authored text, and that is the whole reason it is " +
+			"a fact. Resolving happens once, at the point the catalog becomes " +
+			"reachable, and every reader downstream of that point reads the same " +
+			"result. A rule handed the authored text instead would have to " +
+			"resolve it again, which multiplies the work by the number of " +
+			"readers, hands each reader responsibility for supplying the " +
+			"referenced documents, and turns one failure that is reported once " +
+			"into several that each reader reports — or, worse, swallows.\n" +
+			"\nThe authored text is a separate fact and stays one. A rule asking " +
+			"what the socket declared reads that; a rule asking what the " +
+			"declared contract means reads this. Neither substitutes for the " +
+			"other, and a rule reading this one is asserting that the resolved " +
+			"meaning is its input.\n\nThe second result reports whether there is " +
+			"a resolved contract to read, and nothing finer. It does not " +
+			"separate a socket that declares no contract for this pillar, a " +
+			"socket the component type declares no entry for, a component type " +
+			"the catalog does not hold, and a contract that failed to resolve: " +
+			"all four arrive as the same negative. So a rule over this fact may " +
+			"ask whether there is a contract to evaluate at all and may ask " +
+			"nothing more, which places one obligation on whatever produces the " +
+			"fact — a condition needing its own report is settled where the " +
+			"resolving happens, once, rather than left for every rule reading a " +
+			"bare absence to infer.\n\nThe resolved document is keyed by the " +
+			"pillar rather than being the socket's field map directly. A socket " +
+			"declares its constraints as bare pillar content, and resolving " +
+			"wraps them under the pillar's name, so a rule selects the pillar " +
+			"from this document exactly as it would from a component type's own " +
+			"resolved contract.\n\nIt covers the developer's pillar alone. The " +
+			"operator's per-edge pillar is a separate authored field whose " +
+			"resolved form is its own fact, and the two are separately " +
+			"omittable — a socket may declare a contract for one and none for " +
+			"the other — so one fact spanning both could not report which of " +
+			"them resolved.\n\nThe resolved document holds no order. A rule " +
+			"selects from it by key, which iterates nothing; one that walked the " +
+			"whole document to build output would put a byte-identical result at " +
+			"the mercy of map iteration.",
+	},
+	{
+		Name:        "compiled-socket-infra-schema",
+		Stage:       "normalized",
+		SourceField: `resolver.CompileSocketPillarSchema(catalog, componentType, socket, "infra")`,
+		Subject:     []string{"node", "socket"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "(map[string]any, bool)",
+		Doc: "CompiledSocketInfraSchema is the contract a component type's " +
+			"dependency socket declares over the operator's configuration for " +
+			"one edge, resolved: the authored document with every shorthand " +
+			"expanded and every cross-document reference followed, and whether " +
+			"there was a contract that resolved at all.\n\nIt is the counterpart " +
+			"of the resolved contract over the developer's per-edge pillar, and a " +
+			"separate fact rather than the same one in another shape, for the " +
+			"reason the two authored contracts are separate: the pillars are " +
+			"written on different documents by different hands, and a socket may " +
+			"declare a contract for one and none for the other. One fact " +
+			"spanning both would report a single presence for two independently " +
+			"authored fields.\n\nIt is the resolved form and not the authored " +
+			"text, and that is the whole reason it is a fact. Resolving happens " +
+			"once, at the point the catalog becomes reachable, and every reader " +
+			"downstream of that point reads the same result. A rule handed the " +
+			"authored text instead would have to resolve it again, which " +
+			"multiplies the work by the number of readers, hands each reader " +
+			"responsibility for supplying the referenced documents, and turns " +
+			"one failure that is reported once into several that each reader " +
+			"reports — or, worse, swallows. The authored text stays a fact of " +
+			"its own: a rule asking what the socket declared reads that one, and " +
+			"neither substitutes for the other.\n\nThe second result reports " +
+			"whether there is a resolved contract to read, and nothing finer, " +
+			"exactly as it does for the developer's pillar. It does not separate " +
+			"a socket that declares no contract for this pillar, a socket the " +
+			"component type declares no entry for, a component type the catalog " +
+			"does not hold, and a contract that failed to resolve: all four " +
+			"arrive as the same negative. So a condition needing its own report " +
+			"is settled where the resolving happens, once, rather than left for " +
+			"every rule reading a bare absence to infer.\n\nThe resolved " +
+			"document is keyed by the pillar rather than being the socket's " +
+			"field map directly. A socket declares its constraints as bare " +
+			"pillar content, and resolving wraps them under the pillar's name, " +
+			"so a rule selects the pillar from this document exactly as it would " +
+			"from a component type's own resolved contract.\n\nThe resolved " +
+			"document holds no order. A rule selects from it by key, which " +
+			"iterates nothing; one that walked the whole document to build " +
+			"output would put a byte-identical result at the mercy of map " +
+			"iteration.",
+	},
+	{
 		Name:        "declared-provides-keys",
 		Stage:       "normalized",
 		SourceField: "resolver.ComponentProvidesKeys(component, libraries)",
