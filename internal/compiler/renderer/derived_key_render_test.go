@@ -34,6 +34,15 @@ const (
 type declaringEngine struct {
 	// declare maps a node id to the spaces and names that node declares.
 	declare map[string]map[string][]string
+	// crossings is how many separate declarations each node makes, each carrying
+	// the whole payload above. One is the default and models a node that declares
+	// at a single render crossing; more than one models a node that declares the
+	// same names again at a further crossing — a source render, a workload
+	// synthesis, an artifacts placement — which is what the host sees as one
+	// contributor restating itself. The host distinguishes the cases only by how
+	// many separate declarations arrive, so this is the faithful fixture for the
+	// distinction rather than an approximation of it.
+	crossings int
 }
 
 func (e *declaringEngine) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
@@ -47,7 +56,13 @@ func (e *declaringEngine) Render(_ context.Context, _ map[string]any, nodeCtx re
 			}
 		}
 		if declared.Len() > 0 {
-			nodeCtx.DerivedKeySink(declared)
+			crossings := e.crossings
+			if crossings < 1 {
+				crossings = 1
+			}
+			for i := 0; i < crossings; i++ {
+				nodeCtx.DerivedKeySink(declared)
+			}
 		}
 	}
 	return []renderer.RenderedFile{
@@ -113,7 +128,7 @@ func TestRenderAll_TwoGuestsDeclaringOneNameHalt(t *testing.T) {
 		`in key space "logical-ids"`,
 		`the name "paymentsapiQueue"`,
 		`component "alpha" and component "beta"`,
-		"change what one of them derives so each name is derived once within its space",
+		"change what is derived so each name is derived once within its space",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("diagnostic missing %q\ngot: %s", want, msg)
@@ -138,6 +153,116 @@ func TestRenderAll_TheSamePairWithoutTheCollisionRenders(t *testing.T) {
 	}
 	if len(res.Files) == 0 {
 		t.Fatal("expected rendered output")
+	}
+}
+
+// TestRenderAll_OneGuestDeclaringOneNameTwiceInOneDeclarationHalts is the
+// end-to-end proof for the second way the property fails. A single contributor's
+// single declaration carries one name twice in one key space, so its own
+// derivation is not injective and the merged output has room for only one of the
+// two — the same silent loss two contributors colliding would produce, with no
+// second contributor involved.
+func TestRenderAll_OneGuestDeclaringOneNameTwiceInOneDeclarationHalts(t *testing.T) {
+	t.Parallel()
+
+	engine := &declaringEngine{declare: map[string]map[string][]string{
+		"alpha": {"logical-ids": {e2eDerivedLogicalID, e2eDerivedLogicalID}},
+	}}
+	res, err := runDeclaringRender([]string{"alpha"}, engine)
+	if err == nil {
+		t.Fatalf("expected a halt, got %d files", len(res.Files))
+	}
+	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
+		t.Fatalf("expected ErrDerivedKeyCollision, got: %v", err)
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		`in key space "logical-ids"`,
+		`the name "paymentsapiQueue"`,
+		`component "alpha" (more than once)`,
+		"change what is derived so each name is derived once within its space",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("diagnostic missing %q\ngot: %s", want, msg)
+		}
+	}
+}
+
+// TestRenderAll_TheSameDeclarationWithoutTheRepeatRenders is that halt's negative
+// direction. The same single contributor declares two names in one space that
+// differ by one character, so nothing repeats and the build completes — which the
+// positive direction alone would not distinguish from a guard that refused any
+// contributor declaring more than one name.
+func TestRenderAll_TheSameDeclarationWithoutTheRepeatRenders(t *testing.T) {
+	t.Parallel()
+
+	engine := &declaringEngine{declare: map[string]map[string][]string{
+		"alpha": {"logical-ids": {e2eDerivedLogicalID, e2eDerivedLogicalIDNearMiss}},
+	}}
+	res, err := runDeclaringRender([]string{"alpha"}, engine)
+	if err != nil {
+		t.Fatalf("one declaration carrying two distinct names must render: %v", err)
+	}
+	if len(res.Files) == 0 {
+		t.Fatal("expected rendered output")
+	}
+}
+
+// TestRenderAll_OneGuestRestatingOneNameAcrossCrossingsRenders is the bound the
+// halt above must not break, proved through the whole pipeline. One contributor
+// declares the same name at two separate crossings: the name describes one
+// resource, the output carries it once, and the build completes. A check that
+// compared the accumulated names instead of each declaration as it arrived would
+// refuse this, which is why it is asserted end to end rather than at the unit
+// alone.
+func TestRenderAll_OneGuestRestatingOneNameAcrossCrossingsRenders(t *testing.T) {
+	t.Parallel()
+
+	engine := &declaringEngine{
+		declare:   map[string]map[string][]string{"alpha": {"logical-ids": {e2eDerivedLogicalID}}},
+		crossings: 3,
+	}
+	res, err := runDeclaringRender([]string{"alpha"}, engine)
+	if err != nil {
+		t.Fatalf("one contributor restating a name across crossings must render: %v", err)
+	}
+	if len(res.Files) == 0 {
+		t.Fatal("expected rendered output")
+	}
+}
+
+// TestRenderAll_RepeatDiagnosticIsStableAcrossRuns pins the halt's own
+// determinism. Two contributors each repeating a name inside their own
+// declaration produce two findings in one build, and identical input must report
+// them identically however the accumulating walks were ordered.
+func TestRenderAll_RepeatDiagnosticIsStableAcrossRuns(t *testing.T) {
+	t.Parallel()
+
+	engine := &declaringEngine{declare: map[string]map[string][]string{
+		"alpha": {"logical-ids": {e2eDerivedLogicalID, e2eDerivedLogicalID}},
+		"beta":  {"export-names": {e2eDerivedExportName, e2eDerivedExportName}},
+	}}
+	var first string
+	for i := 0; i < 40; i++ {
+		_, err := runDeclaringRender([]string{"alpha", "beta"}, engine)
+		if err == nil {
+			t.Fatalf("iteration %d: expected a halt", i)
+		}
+		if i == 0 {
+			first = err.Error()
+			continue
+		}
+		if err.Error() != first {
+			t.Fatalf("diagnostic changed between runs of identical input\nrun 0: %s\nrun %d: %s", first, i, err.Error())
+		}
+	}
+	for _, want := range []string{
+		`in key space "export-names" the name "aggrega-prod-api-orders-db-host" is derived by component "beta" (more than once)`,
+		`in key space "logical-ids" the name "paymentsapiQueue" is derived by component "alpha" (more than once)`,
+	} {
+		if !strings.Contains(first, want) {
+			t.Errorf("diagnostic missing %q\ngot: %s", want, first)
+		}
 	}
 }
 

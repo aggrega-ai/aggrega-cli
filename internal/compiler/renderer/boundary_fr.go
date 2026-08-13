@@ -96,6 +96,14 @@ type BoundaryFRState struct {
 	// silently skipping features.
 	DerivedKeys map[boundaryFRKey]types.OrderedMap[[]string]
 
+	// DerivedKeyRepeats carries, per the same key, the names one of that
+	// FeatureRecipe's declarations held more than once inside a single one of its
+	// key spaces. Kept beside DerivedKeys for the reason the per-node accumulator
+	// keeps its own: merging a declaration into the accumulated names is what
+	// makes a duplicate inside one declaration indistinguishable from a name
+	// restated at two crossings, so it is recorded as the declaration arrives.
+	DerivedKeyRepeats map[boundaryFRKey][]derivedKeyRepeat
+
 	// ConsumerEnvOverrides carries per-consumer environment overrides a
 	// boundary-scope FeatureRecipe's resource-gen emits, keyed
 	// consumer-nodeID -> {envVar: value}. The orchestrator applies each named
@@ -113,6 +121,7 @@ func NewBoundaryFRState() *BoundaryFRState {
 		Files:                map[boundaryFRKey][]EmittedFile{},
 		ValidatedFRs:         map[string]error{},
 		DerivedKeys:          map[boundaryFRKey]types.OrderedMap[[]string]{},
+		DerivedKeyRepeats:    map[boundaryFRKey][]derivedKeyRepeat{},
 		ConsumerEnvOverrides: map[string]map[string]string{},
 	}
 }
@@ -331,8 +340,9 @@ func dispatchBoundaryScopeFR(
 	// group, since the FR's output routes to the group at its own evaluated path.
 	frNodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
 		merged := boundaryFRState.DerivedKeys[key]
-		mergeDerivedKeys(&merged, declared)
+		repeated := mergeDerivedKeys(&merged, declared)
 		boundaryFRState.DerivedKeys[key] = merged
+		boundaryFRState.DerivedKeyRepeats[key] = append(boundaryFRState.DerivedKeyRepeats[key], repeated...)
 	}
 	// The boundary-scope FR's source resolves through the shared
 	// resolve+extract helper against the boundary's own infra — the SAME

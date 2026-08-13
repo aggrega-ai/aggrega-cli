@@ -73,7 +73,7 @@ func TestDerivedKeySet_DiagnosticInvariantUnderDeclarationOrder(t *testing.T) {
 		`in key space "export-names" the name "aggrega-prod-api-orders-db-host" is derived by component "five", component "four" and component "two"`,
 		`in key space "logical-ids" the name "paymentsapiQueue" is derived by component "one" and component "three"`,
 		`assembly path "boundaries/default" provider "collide"`,
-		"change what one of them derives so each name is derived once within its space",
+		"change what is derived so each name is derived once within its space",
 	} {
 		if !strings.Contains(want, fragment) {
 			t.Errorf("diagnostic missing %q\ngot: %s", fragment, want)
@@ -131,20 +131,191 @@ func TestDerivedKeySet_SameNameInDifferentSpacesDoesNotHalt(t *testing.T) {
 	}
 }
 
-// TestDerivedKeySet_OneContributorRepeatingItselfDoesNotHalt covers the shape a
-// single node produces legitimately. A node renders across more than one crossing
-// — a source render, a workload synthesis, an artifacts placement — and the same
-// name declared at two of them is one contributor describing one resource twice,
-// not two contributors meeting on one name. Reporting it would name the same
-// component on both sides of a collision with itself.
-func TestDerivedKeySet_OneContributorRepeatingItselfDoesNotHalt(t *testing.T) {
+// TestDerivedKeySet_OneContributorRestatingItselfAcrossCrossingsDoesNotHalt
+// covers the shape a single node produces legitimately, and it is the bound the
+// within-one-declaration check below must not break. A node renders across more
+// than one crossing — a source render, a workload synthesis, an artifacts
+// placement — and the same name declared at two of them is one contributor
+// describing one resource twice, not two contributors meeting on one name.
+// Reporting it would name the same component on both sides of a collision with
+// itself.
+//
+// Two separate put calls are exactly what that restatement looks like once the
+// declarations have accumulated: each crossing declared the name once, so no
+// declaration carried it twice and no repeat is recorded. That is the whole
+// difference from the case below, and it is why the distinction cannot be drawn
+// from the accumulated entries alone.
+func TestDerivedKeySet_OneContributorRestatingItselfAcrossCrossingsDoesNotHalt(t *testing.T) {
 	t.Parallel()
 
 	var set derivedKeySet
 	set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
 	set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
 	if err := set.resolve("boundaries/default", "collide"); err != nil {
-		t.Fatalf("one contributor declaring a name twice must not halt: %v", err)
+		t.Fatalf("one contributor restating a name across crossings must not halt: %v", err)
+	}
+}
+
+// TestMergeDerivedKeys_BothDirectionsWithinOneDeclaration is the near-miss pair
+// at the site that owns the distinction. One declaration carrying a name twice
+// inside one space is reported; the same declaration with one character of the
+// second name changed is not — so the recognition is string equality within a
+// space and nothing else.
+func TestMergeDerivedKeys_BothDirectionsWithinOneDeclaration(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the same name twice in one space is reported", func(t *testing.T) {
+		t.Parallel()
+		declared := types.OrderedMap[[]string]{}
+		declared.Set("logical-ids", []string{realDerivedLogicalID, realDerivedLogicalID})
+
+		var acc types.OrderedMap[[]string]
+		repeated := mergeDerivedKeys(&acc, declared)
+
+		want := []derivedKeyRepeat{{space: "logical-ids", key: realDerivedLogicalID}}
+		if !reflect.DeepEqual(repeated, want) {
+			t.Errorf("repeats = %v, want %v", repeated, want)
+		}
+	})
+
+	t.Run("one character changed is not reported", func(t *testing.T) {
+		t.Parallel()
+		declared := types.OrderedMap[[]string]{}
+		declared.Set("logical-ids", []string{realDerivedLogicalID, realDerivedLogicalIDNearMiss})
+
+		var acc types.OrderedMap[[]string]
+		if repeated := mergeDerivedKeys(&acc, declared); len(repeated) != 0 {
+			t.Errorf("a one-character difference must not be reported as a repeat: %v", repeated)
+		}
+	})
+
+	t.Run("the same name in two different spaces is not reported", func(t *testing.T) {
+		t.Parallel()
+		declared := types.OrderedMap[[]string]{}
+		declared.Set("logical-ids", []string{realDerivedLogicalID})
+		declared.Set("export-names", []string{realDerivedLogicalID})
+
+		var acc types.OrderedMap[[]string]
+		if repeated := mergeDerivedKeys(&acc, declared); len(repeated) != 0 {
+			t.Errorf("one name in two spaces must not be reported as a repeat: %v", repeated)
+		}
+	})
+
+	t.Run("a name declared three times is one repeat", func(t *testing.T) {
+		t.Parallel()
+		declared := types.OrderedMap[[]string]{}
+		declared.Set("logical-ids", []string{realDerivedLogicalID, realDerivedLogicalID, realDerivedLogicalID})
+
+		var acc types.OrderedMap[[]string]
+		if repeated := mergeDerivedKeys(&acc, declared); len(repeated) != 1 {
+			t.Errorf("a name declared three times must report one repeat, got %v", repeated)
+		}
+	})
+}
+
+// TestMergeDerivedKeys_RepeatReportIsAFunctionOfThePayload pins the ordering the
+// diagnostic ultimately rests on. The declaration is walked in the guest's own
+// order and each space's names in the order they were declared, so the same
+// payload reports the same repeats in the same sequence on every run.
+func TestMergeDerivedKeys_RepeatReportIsAFunctionOfThePayload(t *testing.T) {
+	t.Parallel()
+
+	declared := types.OrderedMap[[]string]{}
+	declared.Set("logical-ids", []string{realDerivedLogicalID, "aTopic", realDerivedLogicalID})
+	declared.Set("export-names", []string{realDerivedExportName, realDerivedExportName})
+
+	want := []derivedKeyRepeat{
+		{space: "logical-ids", key: realDerivedLogicalID},
+		{space: "export-names", key: realDerivedExportName},
+	}
+	for i := 0; i < 40; i++ {
+		var acc types.OrderedMap[[]string]
+		if got := mergeDerivedKeys(&acc, declared); !reflect.DeepEqual(got, want) {
+			t.Fatalf("run %d: repeats = %v, want %v", i, got, want)
+		}
+	}
+}
+
+// TestDerivedKeySet_RepeatWithinOneDeclarationHalts carries the repeat through
+// the accumulator to the halt. One contributor is named, and it is marked as
+// having derived the name more than once — which is what tells the author the
+// defect is inside that one contributor's own derivation rather than a meeting
+// between two of them.
+func TestDerivedKeySet_RepeatWithinOneDeclarationHalts(t *testing.T) {
+	t.Parallel()
+
+	declared := types.OrderedMap[[]string]{}
+	declared.Set("logical-ids", []string{realDerivedLogicalID, realDerivedLogicalID})
+
+	var acc types.OrderedMap[[]string]
+	repeated := mergeDerivedKeys(&acc, declared)
+
+	var set derivedKeySet
+	set.putAll(acc, repeated, `component "alpha"`)
+
+	err := set.resolve("boundaries/default", "collide")
+	if err == nil {
+		t.Fatal("expected a halt when one declaration carries a name twice")
+	}
+	if !errors.Is(err, ErrDerivedKeyCollision()) {
+		t.Fatalf("expected ErrDerivedKeyCollision, got: %v", err)
+	}
+	for _, fragment := range []string{
+		`in key space "logical-ids" the name "paymentsapiQueue" is derived by component "alpha" (more than once)`,
+		"change what is derived so each name is derived once within its space",
+	} {
+		if !strings.Contains(err.Error(), fragment) {
+			t.Errorf("diagnostic missing %q\ngot: %s", fragment, err.Error())
+		}
+	}
+}
+
+// TestDerivedKeySet_TheSameDeclarationWithoutTheRepeatDoesNotHalt is the other
+// direction, and it is the half that keeps the check from being satisfied by a
+// guard that refuses every declaration: the same contributor declaring two names
+// that differ by one character in one space renders.
+func TestDerivedKeySet_TheSameDeclarationWithoutTheRepeatDoesNotHalt(t *testing.T) {
+	t.Parallel()
+
+	declared := types.OrderedMap[[]string]{}
+	declared.Set("logical-ids", []string{realDerivedLogicalID, realDerivedLogicalIDNearMiss})
+
+	var acc types.OrderedMap[[]string]
+	repeated := mergeDerivedKeys(&acc, declared)
+
+	var set derivedKeySet
+	set.putAll(acc, repeated, `component "alpha"`)
+	if err := set.resolve("boundaries/default", "collide"); err != nil {
+		t.Fatalf("one declaration carrying two distinct names must not halt: %v", err)
+	}
+}
+
+// TestDerivedKeySet_ARepeatAndACollisionOnOneNameReportOnce covers the overlap of
+// the two halves. A name both repeated inside one contributor's declaration and
+// derived by a second contributor is one defect in one space, so it is reported
+// as one clause naming both contributors, with only the repeating one marked.
+func TestDerivedKeySet_ARepeatAndACollisionOnOneNameReportOnce(t *testing.T) {
+	t.Parallel()
+
+	var set derivedKeySet
+	set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
+	set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
+	set.put("logical-ids", realDerivedLogicalID, `component "beta"`)
+	set.repeats = append(set.repeats, derivedKeyDeclaration{
+		space: "logical-ids", key: realDerivedLogicalID, producer: `component "alpha"`,
+	})
+
+	err := set.resolve("boundaries/default", "collide")
+	if err == nil {
+		t.Fatal("expected a halt")
+	}
+	msg := err.Error()
+	want := `in key space "logical-ids" the name "paymentsapiQueue" is derived by component "alpha" (more than once) and component "beta"`
+	if !strings.Contains(msg, want) {
+		t.Errorf("diagnostic missing %q\ngot: %s", want, msg)
+	}
+	if strings.Count(msg, `the name "paymentsapiQueue"`) != 1 {
+		t.Errorf("one name in one space must be reported once, got: %s", msg)
 	}
 }
 

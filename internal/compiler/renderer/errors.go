@@ -262,14 +262,20 @@ var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-
 	Message: "assembled output collision: two contributors write the same output path",
 })
 
-// ErrDerivedKeyCollision fires when two contributors to one assembled output
-// declare the same derived name in the same key space. A provider guest derives
-// the names its output addresses resources by, and those names live inside the
-// file bytes the host writes verbatim — so the host cannot see them. The guest
-// declares them instead, and this sentinel is the halt when the declarations are
-// not injective within a space: the colliding contributors halt loudly rather
-// than one silently displacing the other in the merged output (a Loud Guardrail,
-// per the No Ghost Infrastructure invariant).
+// ErrDerivedKeyCollision fires when one derived name is declared more than once
+// in one key space of one assembled output — whether two contributors each
+// derived it, or one contributor's single declaration carried it twice. A
+// provider guest derives the names its output addresses resources by, and those
+// names live inside the file bytes the host writes verbatim — so the host cannot
+// see them. The guest declares them instead, and this sentinel is the halt when
+// the declarations are not injective within a space: the colliding contributors
+// halt loudly rather than one silently displacing the other in the merged output
+// (a Loud Guardrail, per the No Ghost Infrastructure invariant).
+//
+// One contributor restating a name across its several render crossings is not a
+// collision and does not fire this: the name describes one resource and the
+// output carries it once. What fires is one declaration carrying the name twice,
+// which is that contributor's own derivation failing to be injective.
 //
 // The check is blind to what a key means. It compares declared strings for
 // equality within one declared space, so it covers every key space any guest
@@ -286,7 +292,7 @@ var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-
 func ErrDerivedKeyCollision() error { return errDerivedKeyCollision }
 
 var errDerivedKeyCollision = cerrors.Register("compiler-renderer/derived-key-collision", cerrors.Meta{
-	Message: "derived name collision: two contributors derived the same name in one key space",
+	Message: "derived name collision: one name is derived more than once in one key space",
 })
 
 // ErrCircularImport is the $import-surface name for a mapping-library import

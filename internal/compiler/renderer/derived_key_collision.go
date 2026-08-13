@@ -21,9 +21,29 @@ type derivedKeyDeclaration struct {
 	producer string
 }
 
+// derivedKeyRepeat is one name a single declaration carried more than once
+// inside one of its own key spaces. It records only the space and the name: the
+// contributor is whoever made that declaration, and it is attached where the
+// declaration itself is recorded, so the two can never disagree about who
+// derived what.
+type derivedKeyRepeat struct {
+	space string
+	key   string
+}
+
 // derivedKeySet accumulates every derived name the contributors to one assembled
 // output declare, then answers a single question about them: within each
 // declared space, is the set of declared names injective?
+//
+// A name fails that question two ways, and both are the same defect — the name
+// is not unique in its space — so one halt covers both. Two contributors can
+// arrive at one name, which the accumulated declarations show directly. Or one
+// contributor's single declaration can carry one name twice in one space, which
+// the accumulated declarations cannot show: a contributor legitimately restates
+// a name across its several render crossings, and by the time the declarations
+// accumulate here the two cases are the same pair of entries. That case is
+// therefore recognised where it is still visible — at the moment one
+// declaration arrives, before it merges with the rest — and carried here.
 //
 // The direction is inverted from the collision guards that read output. A
 // provider guest derives the names its output addresses resources by, and it
@@ -56,6 +76,7 @@ type derivedKeyDeclaration struct {
 // the guest and out of the host.
 type derivedKeySet struct {
 	entries []derivedKeyDeclaration
+	repeats []derivedKeyDeclaration
 }
 
 // put records that producer declared key in space. Whether that declaration
@@ -64,23 +85,35 @@ func (s *derivedKeySet) put(space, key, producer string) {
 	s.entries = append(s.entries, derivedKeyDeclaration{space: space, key: key, producer: producer})
 }
 
-// putAll records every name a contributor declared across every space it
-// declared, reading the declaration in the guest's own order. Iterating the
-// ordered declaration rather than a plain map is what keeps the recorded order a
+// putAll records everything one contributor's rendering established: every name
+// it declared across every space it declared, and every name one of its
+// declarations carried more than once within a single space.
+//
+// The two travel together through one entry point rather than two, so a caller
+// cannot record what a contributor declared while dropping what it repeated. A
+// site that recorded only the declarations would compile, pass, and silently
+// stop checking half the property.
+//
+// The declaration is read in the guest's own order. Iterating the ordered
+// declaration rather than a plain map is what keeps the recorded order a
 // function of the input; resolve orders the diagnostic itself, so this ordering
 // affects nothing downstream, but it keeps the accumulator's own contents stable
 // for anything that later reads them.
-func (s *derivedKeySet) putAll(declared types.OrderedMap[[]string], producer string) {
+func (s *derivedKeySet) putAll(declared types.OrderedMap[[]string], repeated []derivedKeyRepeat, producer string) {
 	for space, keys := range declared.All() {
 		for _, key := range keys {
 			s.put(space, key, producer)
 		}
 	}
+	for _, r := range repeated {
+		s.repeats = append(s.repeats, derivedKeyDeclaration{space: r.space, key: r.key, producer: producer})
+	}
 }
 
 // mergeDerivedKeys folds one render crossing's declaration into a node's
 // accumulating set, appending each space's names to whatever that space already
-// carries rather than replacing them.
+// carries rather than replacing them, and reports any name that declaration
+// carried more than once within one of its own spaces.
 //
 // Merging rather than replacing is load-bearing: a node renders across more than
 // one crossing — a source render, a workload synthesis, an artifacts placement —
@@ -88,26 +121,63 @@ func (s *derivedKeySet) putAll(declared types.OrderedMap[[]string], producer str
 // crossing's names and silently drop the rest, which is exactly the kind of quiet
 // loss this whole check exists to refuse. Each space's names are copied into a
 // fresh slice so no accumulated space aliases a caller's backing array.
-func mergeDerivedKeys(into *types.OrderedMap[[]string], declared types.OrderedMap[[]string]) {
+//
+// The repeat report is produced here because here is the only place it can be.
+// One name declared twice inside one declaration and one name restated at two
+// separate crossings both end up as the same pair of entries in the accumulated
+// set, and only the first is a failure of injectivity — so the distinction has to
+// be drawn while a single crossing's declaration is still whole, which is
+// precisely the argument the merge below then destroys. The caller carries the
+// report to the group check rather than halting on it, which keeps every failure
+// of the same property reported together and in one order.
+//
+// Nothing here reads a name. A repeat is two equal strings in one space's list;
+// no format is recognised and no name's meaning is learned, exactly as in the
+// across-contributors comparison.
+func mergeDerivedKeys(into *types.OrderedMap[[]string], declared types.OrderedMap[[]string]) []derivedKeyRepeat {
+	var repeated []derivedKeyRepeat
 	for space, keys := range declared.All() {
+		seen := make(map[string]bool, len(keys))
+		reported := make(map[string]bool)
+		for _, key := range keys {
+			// Reported once however many times the name recurs: a name declared
+			// three times is one repeat, not two, and the diagnostic reads the
+			// same either way.
+			if seen[key] && !reported[key] {
+				repeated = append(repeated, derivedKeyRepeat{space: space, key: key})
+				reported[key] = true
+			}
+			seen[key] = true
+		}
 		existing, _ := into.Get(space)
 		merged := make([]string, 0, len(existing)+len(keys))
 		merged = append(merged, existing...)
 		merged = append(merged, keys...)
 		into.Set(space, merged)
 	}
+	return repeated
 }
 
 // resolve reports nothing when every declared space carries each of its names
 // once, and halts naming every collision otherwise.
 //
 // Every collision is reported rather than the first, so one build tells the
-// author the whole picture instead of one collision at a time.
+// author the whole picture instead of one collision at a time. A name collides
+// when more than one contributor derived it, or when one contributor's single
+// declaration carried it more than once.
+//
 // Producers are collected as a SET rather than a list, which is what makes one
 // contributor repeating a name across its several render crossings — a source
 // render, a workload synthesis, an artifacts placement — read as one declarer
-// rather than as a contributor colliding with itself. The set's size is then the
-// collision test directly.
+// rather than as a contributor colliding with itself. That restatement is
+// legitimate and stays legitimate: the set's size answers only the
+// across-contributors half. The within-one-declaration half is answered by the
+// repeats recorded alongside, because a set built here cannot tell a restatement
+// across crossings from a duplicate inside one of them.
+//
+// A contributor that repeated a name is named with the rest and marked, so a
+// name that both collides across contributors and repeats within one is reported
+// once with everything true about it rather than twice.
 //
 // The sets are plain maps and their names are sorted before they are reported.
 // Sorting is not decoration: it is what makes the message a total order derived
@@ -125,10 +195,27 @@ func (s *derivedKeySet) resolve(groupPath, provider string) error {
 		}
 		declarers[sk][e.producer] = true
 	}
+	repeaters := make(map[spaceKey]map[string]bool, len(s.repeats))
+	for _, e := range s.repeats {
+		sk := spaceKey{space: e.space, key: e.key}
+		if repeaters[sk] == nil {
+			repeaters[sk] = map[string]bool{}
+		}
+		repeaters[sk][e.producer] = true
+	}
 
 	var collided []spaceKey
 	for sk, producers := range declarers {
-		if len(producers) > 1 {
+		if len(producers) > 1 || len(repeaters[sk]) > 0 {
+			collided = append(collided, sk)
+		}
+	}
+	// A repeat whose declaration never reached the accumulator would otherwise go
+	// unreported. Both are recorded through one entry point so the case does not
+	// arise today; reading the union rather than assuming it keeps the report from
+	// depending on that.
+	for sk := range repeaters {
+		if _, declared := declarers[sk]; !declared {
 			collided = append(collided, sk)
 		}
 	}
@@ -148,11 +235,25 @@ func (s *derivedKeySet) resolve(groupPath, provider string) error {
 		for producer := range declarers[sk] {
 			names = append(names, producer)
 		}
+		for producer := range repeaters[sk] {
+			if !declarers[sk][producer] {
+				names = append(names, producer)
+			}
+		}
 		sort.Strings(names)
+		// Sorted first, marked second: the mark travels with the producer it
+		// describes and never influences where that producer sorts.
+		rendered := make([]string, 0, len(names))
+		for _, producer := range names {
+			if repeaters[sk][producer] {
+				producer += " (more than once)"
+			}
+			rendered = append(rendered, producer)
+		}
 		clauses = append(clauses, fmt.Sprintf("in key space %q the name %q is derived by %s",
-			sk.space, sk.key, joinWithAnd(names)))
+			sk.space, sk.key, joinWithAnd(rendered)))
 	}
-	inner := fmt.Errorf("%w: assembly path %q provider %q: %s; change what one of them derives so each name is derived once within its space",
+	inner := fmt.Errorf("%w: assembly path %q provider %q: %s; change what is derived so each name is derived once within its space",
 		ErrDerivedKeyCollision(), groupPath, provider, strings.Join(clauses, "; "))
 	// The location is left empty rather than set to the group path, the way the
 	// other group-scoped halts here do it: the message already names the assembly

@@ -110,6 +110,16 @@ type PhaseBState struct {
 	// nothing, which leaves the check inert for it.
 	DerivedKeys types.OrderedMap[[]string]
 
+	// DerivedKeyRepeats carries the names one of this node's declarations held
+	// more than once inside a single one of its key spaces. It travels beside
+	// DerivedKeys rather than inside it because the merge above is what makes it
+	// unrecoverable: once two crossings' names sit in one list, a name declared
+	// twice by one crossing and a name restated at two crossings are the same
+	// pair of entries, and only the first is a failure. Recorded as each
+	// declaration arrives, and moved into the node's dispatch group alongside the
+	// declarations themselves.
+	DerivedKeyRepeats []derivedKeyRepeat
+
 	// Trace is the per-node trace.Writer threaded from the orchestrator.
 	// nil-safe: a no-op writer when --trace is off, an async fs writer
 	// when --trace is on. Sub-passes call state.Trace.Write directly to

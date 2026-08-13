@@ -752,7 +752,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// lost, and losing a declaration is losing exactly the evidence the
 		// duplicate check reads.
 		nodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
-			mergeDerivedKeys(&state.DerivedKeys, declared)
+			state.DerivedKeyRepeats = append(state.DerivedKeyRepeats,
+				mergeDerivedKeys(&state.DerivedKeys, declared)...)
 		}
 		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID,
@@ -1037,7 +1038,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// collision reports, so both collision reports point at something the author
 		// can find in their own input. The check itself runs once per group, after
 		// every contributor has rendered.
-		dispatch[key].derivedKeys.putAll(state.DerivedKeys, nodeProducerLabel(nodeID))
+		dispatch[key].derivedKeys.putAll(state.DerivedKeys, state.DerivedKeyRepeats, nodeProducerLabel(nodeID))
 		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
 		dispatch[key].nodeComponent[nodeID] = node.Component
 		dispatch[key].engineByNode[nodeID] = engine
@@ -1254,7 +1255,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// alongside the file routing above: a contributor whose output is entirely
 		// pre-assembly fragments still derived the names it declared, and those
 		// names still meet the other contributors' names in the merged output.
-		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], nodeProducerLabel(syntheticNodeID))
+		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], boundaryFRState.DerivedKeyRepeats[key], nodeProducerLabel(syntheticNodeID))
 		// Record the boundary as a contributor for the dispatch group's
 		// diagnostic context.
 		alreadyContributing := false
