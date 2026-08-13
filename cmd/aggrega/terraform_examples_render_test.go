@@ -23,8 +23,8 @@ import (
 // They need no OCI registry or other integration-only dependency, so they run
 // in the default suite rather than under -tags=integration.
 
-// siblingCatalogRootForTF returns repo-root/aggrega-hub/aggrega-catalog from
-// cmd/aggrega, skipping when the sibling checkout is absent.
+// siblingCatalogRootForExamples returns repo-root/aggrega-hub/aggrega-catalog
+// from cmd/aggrega, skipping when the sibling checkout is absent.
 //
 // It also skips while the sibling catalog's Plugin entities still declare a
 // standalone plugin-artifact field: the entity schema now derives a plugin's
@@ -32,7 +32,7 @@ import (
 // schema-rejected on load and its provider never resolves. The catalog is
 // regenerated to the identity-derived shape out of band; the skip lifts
 // automatically once that regeneration lands, so no re-coupling edit is needed.
-func siblingCatalogRootForTF(t *testing.T) string {
+func siblingCatalogRootForExamples(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
 	if err != nil {
@@ -48,18 +48,18 @@ func siblingCatalogRootForTF(t *testing.T) string {
 	return dir
 }
 
-// terraformExampleCatalogStack returns the catalog search stack an example build
-// runs against: a seeded provider overlay ahead of the sibling catalog. The
-// sibling catalog declares the terraform provider under its own published
-// version, while capability resolution selects the version the binary embeds, so
-// without the overlay the lockfile walk would find no local entity at the
-// selected version and reach for a registry.
+// exampleCatalogStack returns the catalog search stack an example build runs
+// against: a seeded overlay for the provider identity the example renders
+// through, ahead of the sibling catalog. The sibling catalog declares each core
+// provider under its own published version, while capability resolution selects
+// the version the binary embeds, so without the overlay the lockfile walk would
+// find no local entity at the selected version and reach for a registry.
 //
 // The stack is built once per test and reused across runs that must be compared
 // byte for byte, so both runs read the same inputs.
-func terraformExampleCatalogStack(t *testing.T, catalogRoot string) []string {
+func exampleCatalogStack(t *testing.T, catalogRoot, providerURI string) []string {
 	t.Helper()
-	return []string{seedEmbeddedProviderOverlay(t, "provider/terraform"), catalogRoot}
+	return []string{seedEmbeddedProviderOverlay(t, providerURI), catalogRoot}
 }
 
 // hubPluginEntitiesCarryLegacyArtifactField reports whether any Plugin entity in
@@ -86,9 +86,9 @@ func hubPluginEntitiesCarryLegacyArtifactField(catalogRoot string) bool {
 	return false
 }
 
-// terraformExampleDir returns the worked-example directory for name, skipping
+// workedExampleDir returns the worked-example directory for name, skipping
 // when the sibling docs checkout is absent.
-func terraformExampleDir(t *testing.T, name string) string {
+func workedExampleDir(t *testing.T, name string) string {
 	t.Helper()
 	wd, err := os.Getwd()
 	if err != nil {
@@ -146,9 +146,9 @@ func copyExampleInputs(t *testing.T, src, dst string) {
 	}
 }
 
-// readTFDistTree reads every file under root/dist into a path->content map keyed
-// by dist-relative slash paths.
-func readTFDistTree(t *testing.T, root string) map[string][]byte {
+// readExampleDistTree reads every file under root/dist into a path->content map
+// keyed by dist-relative slash paths.
+func readExampleDistTree(t *testing.T, root string) map[string][]byte {
 	t.Helper()
 	distRoot := filepath.Join(root, "dist")
 	out := map[string][]byte{}
@@ -207,7 +207,7 @@ func buildExampleToDist(t *testing.T, src string, catalogStack []string) map[str
 	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard); err != nil {
 		t.Fatalf("build example %q: %v", src, err)
 	}
-	return readTFDistTree(t, ws)
+	return readExampleDistTree(t, ws)
 }
 
 // assertByteIdenticalTrees fails when two dist trees differ in file set or in
@@ -264,11 +264,11 @@ func distFile(t *testing.T, tree map[string][]byte, suffix string) []byte {
 // comment block, and carries the resolved HCL (operator sizing substituted,
 // RDS-managed credentials).
 func TestTerraformArtifactsExampleRenderDeterminism(t *testing.T) {
-	catalogRoot := siblingCatalogRootForTF(t)
-	src := terraformExampleDir(t, "terraform-rds")
+	catalogRoot := siblingCatalogRootForExamples(t)
+	src := workedExampleDir(t, "terraform-rds")
 
 	// One overlay for both runs, so the two builds see byte-identical inputs.
-	stack := terraformExampleCatalogStack(t, catalogRoot)
+	stack := exampleCatalogStack(t, catalogRoot, "provider/terraform")
 
 	run1 := buildExampleToDist(t, src, stack)
 	run2 := buildExampleToDist(t, src, stack)
@@ -298,11 +298,11 @@ func TestTerraformArtifactsExampleRenderDeterminism(t *testing.T) {
 // variables with a Terraform ${...} pointer passing through untouched, and the
 // standalone provenance comment file is emitted.
 func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
-	catalogRoot := siblingCatalogRootForTF(t)
-	src := terraformExampleDir(t, "terraform-rds-module")
+	catalogRoot := siblingCatalogRootForExamples(t)
+	src := workedExampleDir(t, "terraform-rds-module")
 
 	// One overlay for both runs, so the two builds see byte-identical inputs.
-	stack := terraformExampleCatalogStack(t, catalogRoot)
+	stack := exampleCatalogStack(t, catalogRoot, "provider/terraform")
 
 	run1 := buildExampleToDist(t, src, stack)
 	run2 := buildExampleToDist(t, src, stack)

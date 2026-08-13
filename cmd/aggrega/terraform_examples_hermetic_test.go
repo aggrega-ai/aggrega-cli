@@ -25,11 +25,11 @@ import (
 // source artifact, so there is nothing to fetch even under the default
 // auto-pull configuration.
 func TestTerraformExamplesHermeticOfflineBuild(t *testing.T) {
-	catalogRoot := siblingCatalogRootForTF(t)
+	catalogRoot := siblingCatalogRootForExamples(t)
 
 	for _, name := range []string{"terraform-rds", "terraform-rds-module"} {
 		t.Run(name, func(t *testing.T) {
-			src := terraformExampleDir(t, name)
+			src := workedExampleDir(t, name)
 			ws := t.TempDir()
 			copyExampleInputs(t, src, ws)
 			// Offline workspace: no registry dial on resolve, no network on build.
@@ -63,7 +63,7 @@ func TestTerraformExamplesHermeticOfflineBuild(t *testing.T) {
 				t.Fatalf("offline build %q (default terraform path must not network): %v", name, err)
 			}
 
-			tree := readTFDistTree(t, ws)
+			tree := readExampleDistTree(t, ws)
 			if _, ok := tree["infra/terraform/main.tf"]; !ok {
 				t.Errorf("offline build %q emitted no main.tf; dist keys: %v", name, sortedKeys(tree))
 			}
