@@ -116,13 +116,16 @@ type ReleaseUsesEntry struct {
 // type (for Ops-injected), infra (physical sizing), and uses (topology wiring).
 // Never values — values are the Developer's domain on the Aggregate.
 //
-// Uses on a boundary-wide attachment projects per-consumer: a boundary (or
-// subsystem) feature carrying a uses-edge to a shared target contributes that
-// edge from every component in the scope, so the "every component here depends
-// on shared target D" pattern is declared once at the scope rather than
-// repeated on each component. The edge carries the attachment as its origin
-// feature, so a consumer is injected the target's provides exactly as it would
-// be for a per-component feature uses-edge.
+// Uses wires a topology edge at whichever breadth the attachment was declared,
+// and the two breadths are one declaration rather than two features. Attached
+// boundary-wide it projects per-consumer: a boundary (or subsystem) feature
+// carrying a uses-edge to a shared target contributes that edge from every
+// component in the scope, so the "every component here depends on shared target
+// D" pattern is declared once at the scope rather than repeated on each
+// component. Attached to a single boundary component it contributes the same
+// edge from that one component. Either breadth stamps the attachment as the
+// edge's origin feature, so a consumer is injected the target's provides
+// exactly as it would be for a per-component feature uses-edge.
 // Schema: release-v1alpha1.schema.json#/$defs/boundary_component/properties/features
 type BoundaryFeature struct {
 	Type        string                      `json:"type,omitempty" yaml:"type,omitempty"`

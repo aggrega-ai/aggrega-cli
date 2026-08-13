@@ -1,0 +1,30 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: boundary-component-feature-uses-subagg-localname-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: boundary-component-feature-uses-subagg-app
+  manifest: boundary-component-feature-uses-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        # The counterpart of the graph-id spelling: the attachment's edge target
+        # is written with the name the component carries inside its own module.
+        # That name does not identify a component of the assembled graph, so the
+        # edge finds no target.
+        data.svc:
+          features:
+            shared_backend:
+              type: core/shared-backend
+              uses:
+                backend:
+                  primary:
+                    target: store
+                    inject:
+                      env:
+                        - in: DB_HOST
+                          from: host
+        data.store: {}

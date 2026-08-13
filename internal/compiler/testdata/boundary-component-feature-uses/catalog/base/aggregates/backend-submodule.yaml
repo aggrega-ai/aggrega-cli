@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: backend-submodule
+  version: "1.0.0"
+spec:
+  # A sub-module contributing two components. Neither declares any topology, so
+  # any edge between them in the built graph came from outside this document.
+  components:
+    svc:
+      type: core/api
+    store:
+      type: core/db

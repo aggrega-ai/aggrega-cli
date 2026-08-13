@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: boundary-component-feature-uses-subagg-routed-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: boundary-component-feature-uses-subagg-app
+  manifest: boundary-component-feature-uses-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      aggregates:
+        data:
+          components:
+            # Reached through the routing entry, so the component is keyed by the
+            # name it carries inside its own module. The attachment's edge target
+            # is not: it names a component of the assembled graph and is written
+            # with the graph id, so the two spellings differ in one entry.
+            svc:
+              features:
+                shared_backend:
+                  type: core/shared-backend
+                  uses:
+                    backend:
+                      primary:
+                        target: data.store
+                        inject:
+                          env:
+                            - in: DB_HOST
+                              from: host

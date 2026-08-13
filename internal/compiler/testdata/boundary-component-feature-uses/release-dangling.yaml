@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: boundary-component-feature-uses-dangling-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: boundary-component-feature-uses-app
+  manifest: boundary-component-feature-uses-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api:
+          # The attachment wires its edge to a component that does not exist. An
+          # edge only ever connects components already declared, so this halts
+          # instead of bringing the named component into being.
+          features:
+            shared_backend:
+              type: core/shared-backend
+              uses:
+                backend:
+                  primary:
+                    target: ghost-db
+                    inject:
+                      env:
+                        - in: DB_HOST
+                          from: host
+        db: {}

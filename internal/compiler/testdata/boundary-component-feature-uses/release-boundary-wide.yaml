@@ -1,0 +1,37 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: boundary-component-feature-uses-boundary-wide-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: boundary-component-feature-uses-app
+  manifest: boundary-component-feature-uses-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      boundaries:
+        tier:
+          directory: "{{ .parent_boundary.directory }}"
+          # The same attachment as the per-component case, declared for a whole
+          # boundary instead. It contributes its edge from every component the
+          # boundary holds — here just api — so the edge it draws is the one the
+          # per-component form draws, and comparing the two is what pins the two
+          # surfaces as one feature.
+          features:
+            shared_backend:
+              type: core/shared-backend
+              uses:
+                backend:
+                  primary:
+                    target: db
+                    inject:
+                      env:
+                        - in: DB_HOST
+                          from: host
+          components:
+            api: {}
+        data:
+          directory: "{{ .parent_boundary.directory }}"
+          components:
+            db: {}

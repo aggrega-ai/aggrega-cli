@@ -1,0 +1,30 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: boundary-component-feature-uses-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: boundary-component-feature-uses-app
+  manifest: boundary-component-feature-uses-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api:
+          # A feature attached to this one component from the Release, carrying a
+          # `uses` edge to the shared db. The edge is drawn from api to db, stamped
+          # with this attachment as its origin, and api is injected db's `host`
+          # provides as DB_HOST. Wiring only — no compute and no values.
+          features:
+            shared_backend:
+              type: core/shared-backend
+              uses:
+                backend:
+                  primary:
+                    target: db
+                    inject:
+                      env:
+                        - in: DB_HOST
+                          from: host
+        db: {}

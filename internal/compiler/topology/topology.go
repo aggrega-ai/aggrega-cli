@@ -501,8 +501,14 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			}
 			edges = append(edges, subEdges...)
 		}
+		// Release-side attachment uses. One reader serves both scopes a Release
+		// can attach at — the boundary's own features and a boundary component's —
+		// because the two are one feature declared at two breadths and must draw
+		// the same edge from the same declaration. Targets are graph ids as
+		// authored, not namespaced with the node's sub-module prefix; the reader's
+		// godoc carries why.
 		if cfg.ResolveResult.Release != nil {
-			for _, bf := range boundaryFeatureUses(cfg.ResolveResult.Release.Spec.Boundaries, node.BoundaryPath) {
+			for _, bf := range boundaryFeatureUses(cfg.ResolveResult.Release.Spec.Boundaries, node.BoundaryPath, nodeID) {
 				if bf.uses.Len() == 0 {
 					continue
 				}
@@ -1034,9 +1040,31 @@ type scopeFeatureUses struct {
 
 // boundaryFeatureUses walks the Release boundary chain named by
 // boundaryPath (the "/"-joined boundary-name chain stamped on each node)
-// from outer to inner, returning every boundary-wide feature attachment in
-// author order. Mirrors the IR feature cascade's boundary level.
-func boundaryFeatureUses(boundaries types.OrderedMap[types.Boundary], boundaryPath string) []scopeFeatureUses {
+// from outer to inner, returning every feature attachment that contributes a
+// uses-edge to nodeID, in author order. Mirrors the IR feature cascade's
+// Release-side levels.
+//
+// Both Release attachment scopes are collected here, and one walk serves them
+// because they are one feature declared at two breadths. A boundary's own
+// `features` contributes its edge from every component the boundary holds; a
+// boundary component's `features` contributes the same edge from that one
+// component. Neither may declare `values`, and neither creates compute: the
+// edge connects components that already exist, so a target naming no component
+// halts at the dangling-target sweep like any other edge.
+//
+// Per level the boundary's own attachments come before that level's
+// per-component ones, which is the breadth order the IR feature cascade reads
+// the same two scopes in. A component belongs to exactly one boundary — the
+// Release load rejects a name declared in more than one — so the per-component
+// lookup contributes at exactly one level of the chain.
+//
+// Targets are NOT namespaced with the consuming node's sub-module prefix, which
+// is what separates these two scopes from the Aggregate-side ones. A Release
+// names a component by the id it carries in the assembled graph
+// ([types.BoundaryComponents] keys on it), so a target authored beside that name
+// in the same document is already a graph id; prefixing it would compose the
+// module prefix twice and leave the edge pointing at nothing.
+func boundaryFeatureUses(boundaries types.OrderedMap[types.Boundary], boundaryPath, nodeID string) []scopeFeatureUses {
 	parts := splitScopePath(boundaryPath)
 	if len(parts) == 0 {
 		return nil
@@ -1050,6 +1078,12 @@ func boundaryFeatureUses(boundaries types.OrderedMap[types.Boundary], boundaryPa
 		}
 		for fname, feat := range boundary.Features.All() {
 			result = append(result, scopeFeatureUses{instanceName: fname, featureType: feat.Type, uses: feat.Uses})
+		}
+		components := types.BoundaryComponents(boundary)
+		if bc, ok := components.Get(nodeID); ok {
+			for fname, feat := range bc.Features.All() {
+				result = append(result, scopeFeatureUses{instanceName: fname, featureType: feat.Type, uses: feat.Uses})
+			}
 		}
 		current = boundary.Boundaries
 	}

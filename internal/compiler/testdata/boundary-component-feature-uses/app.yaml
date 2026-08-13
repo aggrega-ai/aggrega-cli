@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: boundary-component-feature-uses-app
+  version: "1.0.0"
+spec:
+  # The Aggregate declares the compute and NO topology at all: neither component
+  # carries a `uses` block, and no feature is attached here. Every edge in the
+  # built graph therefore originates in the Release's attachment, which is what
+  # makes the proof non-vacuous.
+  components:
+    api:
+      type: core/api
+    db:
+      type: core/db
