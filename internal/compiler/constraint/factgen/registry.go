@@ -384,6 +384,35 @@ var facts = []factDecl{
 			"declares, in author order.",
 	},
 	{
+		Name:        "authored-attachment-type",
+		Stage:       "normalized",
+		SourceField: "types.FeatureInstance.Type",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "AuthoredAttachmentType is the Feature type an application declares " +
+			"for one attachment on one component, reported absent when the " +
+			"application declares no attachment under that name for it.\n\nIt is " +
+			"a separate fact from the type a Release declares for the same " +
+			"attachment name, and the pair is what makes the agreement question " +
+			"askable at all. Both documents may name one attachment — this one " +
+			"carries the application's own configuration, the Release's carries " +
+			"the physical sizing — and the two are merged into one attachment " +
+			"further down, which only means anything if they name the same " +
+			"Feature. A rule reading one surface alone cannot see a " +
+			"disagreement.\n\nThe absence is reported rather than resolved, and " +
+			"it carries the same distinction its Release-side counterpart does: " +
+			"an attachment only one document declares is nothing to reconcile, " +
+			"and an attachment naming no type states nothing to disagree with.\n" +
+			"\nIt is also a separate fact from the sockets the same attachment " +
+			"wires, which is keyed per socket as well: the type names what is " +
+			"attached and the socket names are what that Feature is wired on, so " +
+			"they are asked a different number of times.",
+	},
+	{
 		Name:        "attachment-authored-uses-socket-names",
 		Stage:       "normalized",
 		SourceField: "types.FeatureInstance.Uses",
@@ -969,12 +998,16 @@ var facts = []factDecl{
 			"shape is legible from the fact beyond the document itself. That is " +
 			"what lets a rule whose predicate is \"what was written conforms to " +
 			"this contract\" receive the whole contract without receiving the " +
-			"entity that carries it, and it is why the fact is the authored " +
-			"document rather than a compiled form of it: compiling can fail for " +
-			"reasons that have nothing to do with the author's input, so a " +
-			"compiled result would make an absent fact mean two different " +
-			"things. A rule needing the compiled form compiles these bytes " +
-			"itself and reports its own failure.\n\nIt is the document as " +
+			"entity that carries it.\n\nIt answers what was WRITTEN, and the " +
+			"resolved form of the same contract is a separate fact that answers " +
+			"what it MEANS. A rule asking whether the author wrote something a " +
+			"reader would recognise reads this one; a rule interpreting the " +
+			"contract reads the resolved one, and does not resolve these bytes " +
+			"for itself. Resolving them per reader would multiply the work by the " +
+			"number of readers, hand each reader responsibility for supplying the " +
+			"documents a reference points at, and turn one failure reported once " +
+			"into several each reader reports separately or swallows.\n\nIt is " +
+			"the document as " +
 			"authored and not a copy of the file's bytes: serializing an " +
 			"authored node reproduces its content, not its formatting, so a " +
 			"rule reading this must not draw conclusions from layout.\n\nIt is " +
@@ -1005,12 +1038,14 @@ var facts = []factDecl{
 			"declared shape is legible from the fact beyond the document itself. " +
 			"That is what lets a rule whose predicate is \"what was written on " +
 			"this edge conforms to the contract its socket declares\" receive the " +
-			"whole contract without receiving the entity that carries it, and it " +
-			"is why the fact is the authored document rather than a compiled form " +
-			"of it: compiling can fail for reasons that have nothing to do with " +
-			"the author's input, so a compiled result would make an absent fact " +
-			"mean two different things. A rule needing the compiled form compiles " +
-			"these bytes itself and reports its own failure.\n\nEmptiness is one " +
+			"whole contract without receiving the entity that carries it.\n" +
+			"\nIt answers what was WRITTEN. A rule that interprets this contract " +
+			"rather than reading it needs the resolved form declared as its own " +
+			"fact, and does not resolve these bytes for itself: resolving them " +
+			"per reader would multiply the work by the number of readers, hand " +
+			"each reader responsibility for supplying the documents a reference " +
+			"points at, and turn one failure reported once into several each " +
+			"reader reports separately or swallows.\n\nEmptiness is one " +
 			"answer rather than two. A socket that declares no contract for this " +
 			"pillar and a socket the catalog declares no entry for both leave an " +
 			"edge's configuration for it unvalidated, and the question a rule " +
@@ -1041,16 +1076,77 @@ var facts = []factDecl{
 			"different hands, and a socket may declare a contract for one and " +
 			"none for the other. One fact spanning both would report a single " +
 			"presence for two independently authored fields.\n\nThe bytes are " +
-			"opaque by type, and they are the authored document rather than a " +
-			"compiled form of it: compiling can fail for reasons that have " +
-			"nothing to do with the author's input, so a compiled result would " +
-			"make an absent fact mean two different things. A rule needing the " +
-			"compiled form compiles these bytes itself and reports its own " +
-			"failure.\n\nEmptiness is one answer rather than two, exactly as it " +
+			"opaque by type, and they answer what was WRITTEN. A rule that " +
+			"interprets this contract rather than reading it needs the resolved " +
+			"form declared as its own fact, and does not resolve these bytes for " +
+			"itself: resolving them per reader would multiply the work by the " +
+			"number of readers, hand each reader responsibility for supplying the " +
+			"documents a reference points at, and turn one failure reported once " +
+			"into several each reader reports separately or swallows.\n" +
+			"\nEmptiness is one answer rather than two, exactly as it " +
 			"is for the developer's pillar: a socket declaring no contract and a " +
 			"socket the catalog declares no entry for both leave an edge's " +
 			"operator configuration unvalidated, and what a rule asks is whether " +
 			"there is a contract to evaluate at all.",
+	},
+	{
+		Name:        "compiled-component-schema",
+		Stage:       "normalized",
+		SourceField: "resolver.CompileComponentSchema(catalog, componentType)",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "componentType", Type: "string"}},
+		Returns:     "(map[string]any, bool)",
+		Doc: "CompiledComponentSchema is the contract a component type declares " +
+			"over its configuration, resolved: the authored document with every " +
+			"shorthand expanded and every cross-document reference followed, and " +
+			"whether there was a contract that resolved at all.\n\nIt is the " +
+			"resolved form and not the authored text, and that is the whole " +
+			"reason it is a fact. Resolving happens once, at the point the " +
+			"catalog becomes reachable, and every reader downstream of that point " +
+			"reads the same result. A rule handed the authored text instead would " +
+			"have to resolve it again, which multiplies the work by the number of " +
+			"readers, hands each reader responsibility for supplying the " +
+			"referenced documents, and turns one failure that is reported once " +
+			"into several that each reader reports — or, worse, swallows.\n\nThe " +
+			"authored text is a separate fact and stays one. A rule asking what " +
+			"was written reads that; a rule asking what the written contract " +
+			"means reads this. Neither substitutes for the other, and a rule " +
+			"reading this one is asserting that the resolved meaning is its " +
+			"input.\n\nThe second result distinguishes a type with no contract, " +
+			"and one whose contract could not be resolved, from a contract that " +
+			"resolved to nothing. A rule over this fact reads that outcome and " +
+			"never produces it, which places one obligation on whatever produces " +
+			"the fact: a contract that fails to resolve is reported where the " +
+			"resolving happens, once, rather than passed on to every rule as a " +
+			"bare absence.\n" +
+			"\nThe resolved document holds " +
+			"no order. A rule selects from it by key, which iterates nothing; one " +
+			"that walked the whole document to build output would put a " +
+			"byte-identical result at the mercy of map iteration.",
+	},
+	{
+		Name:        "declared-provides-keys",
+		Stage:       "normalized",
+		SourceField: "resolver.ComponentProvidesKeys(component, libraries)",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "componentType", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "DeclaredProvidesKeys are the names a component type's contract " +
+			"declares its realization will publish — the output half of that " +
+			"contract, resolved.\n\nIt is a separate fact from the resolved " +
+			"contract document rather than a reading of it. The names are " +
+			"resolved from the contract's output section alone, on its own, so a " +
+			"type whose configuration section cannot be resolved still has an " +
+			"answer here; one fact could not report that.\n\nIt is a set of " +
+			"names rather than a membership question because the rules over it " +
+			"ask both: whether one name is declared, and what the declared names " +
+			"are when a rule has to say what was expected instead.\n\nThe names " +
+			"come back sorted. A resolved contract holds no order, so there is no " +
+			"authoring order left to preserve and sorting is what makes the " +
+			"result the same on every run.\n\nIt covers a component type's " +
+			"contract. The same question about a Feature's contract is a separate " +
+			"declaration surface: the two are written on different documents, and " +
+			"a rule over either names a different authored site.",
 	},
 
 	// ---------------------------------------------------------------- topology

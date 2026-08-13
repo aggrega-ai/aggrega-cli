@@ -302,6 +302,31 @@ type NormalizedView interface {
 	// Keyed by (node, attachment); read from types.ComponentInstance.Features.
 	AuthoredAttachmentNames(node string) []string
 
+	// AuthoredAttachmentType is the Feature type an application declares for
+	// one attachment on one component, reported absent when the application
+	// declares no attachment under that name for it.
+	//
+	// It is a separate fact from the type a Release declares for the same
+	// attachment name, and the pair is what makes the agreement question
+	// askable at all. Both documents may name one attachment — this one
+	// carries the application's own configuration, the Release's carries the
+	// physical sizing — and the two are merged into one attachment further
+	// down, which only means anything if they name the same Feature. A rule
+	// reading one surface alone cannot see a disagreement.
+	//
+	// The absence is reported rather than resolved, and it carries the same
+	// distinction its Release-side counterpart does: an attachment only one
+	// document declares is nothing to reconcile, and an attachment naming no
+	// type states nothing to disagree with.
+	//
+	// It is also a separate fact from the sockets the same attachment wires,
+	// which is keyed per socket as well: the type names what is attached and
+	// the socket names are what that Feature is wired on, so they are asked a
+	// different number of times.
+	//
+	// Keyed by (node, attachment); read from types.FeatureInstance.Type.
+	AuthoredAttachmentType(node string, attachment string) (string, bool)
+
 	// AttachmentAuthoredUsesSocketNames are the socket names an attachment's
 	// own dependency block declares, in author order.
 	//
@@ -791,12 +816,16 @@ type NormalizedView interface {
 	// The bytes are opaque by type, so nothing about the declared shape is
 	// legible from the fact beyond the document itself. That is what lets a
 	// rule whose predicate is "what was written conforms to this contract"
-	// receive the whole contract without receiving the entity that carries it,
-	// and it is why the fact is the authored document rather than a compiled
-	// form of it: compiling can fail for reasons that have nothing to do with
-	// the author's input, so a compiled result would make an absent fact mean
-	// two different things. A rule needing the compiled form compiles these
-	// bytes itself and reports its own failure.
+	// receive the whole contract without receiving the entity that carries it.
+	//
+	// It answers what was WRITTEN, and the resolved form of the same contract
+	// is a separate fact that answers what it MEANS. A rule asking whether the
+	// author wrote something a reader would recognise reads this one; a rule
+	// interpreting the contract reads the resolved one, and does not resolve
+	// these bytes for itself. Resolving them per reader would multiply the
+	// work by the number of readers, hand each reader responsibility for
+	// supplying the documents a reference points at, and turn one failure
+	// reported once into several each reader reports separately or swallows.
 	//
 	// It is the document as authored and not a copy of the file's bytes:
 	// serializing an authored node reproduces its content, not its formatting,
@@ -824,12 +853,15 @@ type NormalizedView interface {
 	// legible from the fact beyond the document itself. That is what lets a
 	// rule whose predicate is "what was written on this edge conforms to the
 	// contract its socket declares" receive the whole contract without
-	// receiving the entity that carries it, and it is why the fact is the
-	// authored document rather than a compiled form of it: compiling can fail
-	// for reasons that have nothing to do with the author's input, so a
-	// compiled result would make an absent fact mean two different things. A
-	// rule needing the compiled form compiles these bytes itself and reports
-	// its own failure.
+	// receiving the entity that carries it.
+	//
+	// It answers what was WRITTEN. A rule that interprets this contract rather
+	// than reading it needs the resolved form declared as its own fact, and
+	// does not resolve these bytes for itself: resolving them per reader would
+	// multiply the work by the number of readers, hand each reader
+	// responsibility for supplying the documents a reference points at, and
+	// turn one failure reported once into several each reader reports
+	// separately or swallows.
 	//
 	// Emptiness is one answer rather than two. A socket that declares no
 	// contract for this pillar and a socket the catalog declares no entry for
@@ -859,11 +891,13 @@ type NormalizedView interface {
 	// both would report a single presence for two independently authored
 	// fields.
 	//
-	// The bytes are opaque by type, and they are the authored document rather
-	// than a compiled form of it: compiling can fail for reasons that have
-	// nothing to do with the author's input, so a compiled result would make
-	// an absent fact mean two different things. A rule needing the compiled
-	// form compiles these bytes itself and reports its own failure.
+	// The bytes are opaque by type, and they answer what was WRITTEN. A rule
+	// that interprets this contract rather than reading it needs the resolved
+	// form declared as its own fact, and does not resolve these bytes for
+	// itself: resolving them per reader would multiply the work by the number
+	// of readers, hand each reader responsibility for supplying the documents
+	// a reference points at, and turn one failure reported once into several
+	// each reader reports separately or swallows.
 	//
 	// Emptiness is one answer rather than two, exactly as it is for the
 	// developer's pillar: a socket declaring no contract and a socket the
@@ -873,6 +907,66 @@ type NormalizedView interface {
 	//
 	// Keyed by (node, socket); read from types.UsesSchemaEntry.InfraSchema.
 	SocketInfraSchemaText(componentType string, socket string) []byte
+
+	// CompiledComponentSchema is the contract a component type declares over
+	// its configuration, resolved: the authored document with every shorthand
+	// expanded and every cross-document reference followed, and whether there
+	// was a contract that resolved at all.
+	//
+	// It is the resolved form and not the authored text, and that is the whole
+	// reason it is a fact. Resolving happens once, at the point the catalog
+	// becomes reachable, and every reader downstream of that point reads the
+	// same result. A rule handed the authored text instead would have to
+	// resolve it again, which multiplies the work by the number of readers,
+	// hands each reader responsibility for supplying the referenced documents,
+	// and turns one failure that is reported once into several that each
+	// reader reports — or, worse, swallows.
+	//
+	// The authored text is a separate fact and stays one. A rule asking what
+	// was written reads that; a rule asking what the written contract means
+	// reads this. Neither substitutes for the other, and a rule reading this
+	// one is asserting that the resolved meaning is its input.
+	//
+	// The second result distinguishes a type with no contract, and one whose
+	// contract could not be resolved, from a contract that resolved to
+	// nothing. A rule over this fact reads that outcome and never produces it,
+	// which places one obligation on whatever produces the fact: a contract
+	// that fails to resolve is reported where the resolving happens, once,
+	// rather than passed on to every rule as a bare absence.
+	//
+	// The resolved document holds no order. A rule selects from it by key,
+	// which iterates nothing; one that walked the whole document to build
+	// output would put a byte-identical result at the mercy of map iteration.
+	//
+	// Keyed by node; read from resolver.CompileComponentSchema(catalog,
+	// componentType).
+	CompiledComponentSchema(componentType string) (map[string]any, bool)
+
+	// DeclaredProvidesKeys are the names a component type's contract declares
+	// its realization will publish — the output half of that contract,
+	// resolved.
+	//
+	// It is a separate fact from the resolved contract document rather than a
+	// reading of it. The names are resolved from the contract's output section
+	// alone, on its own, so a type whose configuration section cannot be
+	// resolved still has an answer here; one fact could not report that.
+	//
+	// It is a set of names rather than a membership question because the rules
+	// over it ask both: whether one name is declared, and what the declared
+	// names are when a rule has to say what was expected instead.
+	//
+	// The names come back sorted. A resolved contract holds no order, so there
+	// is no authoring order left to preserve and sorting is what makes the
+	// result the same on every run.
+	//
+	// It covers a component type's contract. The same question about a
+	// Feature's contract is a separate declaration surface: the two are
+	// written on different documents, and a rule over either names a different
+	// authored site.
+	//
+	// Keyed by node; read from resolver.ComponentProvidesKeys(component,
+	// libraries).
+	DeclaredProvidesKeys(componentType string) []string
 }
 
 // TopologyView exposes the facts complete at the topology stage: the
