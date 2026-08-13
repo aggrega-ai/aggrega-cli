@@ -685,6 +685,86 @@ type NormalizedView interface {
 	// types.ComponentSpec.FeaturesSchema.
 	DeclaredSlotNames(componentType string) []string
 
+	// CatalogComponentPresent reports whether the catalog this build resolves
+	// against holds a Component entry for a component type.
+	//
+	// It is the question every rule over what a component type declares has to
+	// settle first, and no other fact settles it. A name set the type declares
+	// comes back empty both for a type that declares nothing and for a type no
+	// catalog entry was found for; a resolved contract comes back absent for
+	// either of those and for a contract that failed to resolve. So a rule
+	// taking one of those emptinesses for an answer about the catalog reports
+	// on a type it never found.
+	//
+	// False is not on its own a finding, and a rule that halts on it alone
+	// refuses authoring the product accepts. A type addressed as a local path
+	// has no catalog entry to find, so what a false answer MEANS depends on
+	// how the reference addresses its entity — which is a separate fact,
+	// because the two are independent: one is a property of the reference as
+	// authored and the other of what the catalog holds.
+	//
+	// It answers presence in the catalog and nothing about whether there is a
+	// catalog to consult. A build that resolves against none has no entry set
+	// to ask about, which is a condition settled where the view is produced
+	// rather than reported once per node.
+	//
+	// Keyed by node; read from
+	// resolver.CatalogLookup.Component(componentType).
+	CatalogComponentPresent(componentType string) bool
+
+	// CatalogFeaturePresent reports whether the catalog this build resolves
+	// against holds a Feature entry for the type an attachment names.
+	//
+	// It is a separate fact from whether a Component entry is held, because
+	// the two are separate catalog kinds reached through separate lookups. One
+	// fact spanning both would have to pick a kind, and would answer for the
+	// wrong one wherever the other applied.
+	//
+	// It is keyed per attachment as well as per node although the answer
+	// follows from the attachment's type alone, for the reason the sockets
+	// that type declares are: nothing on the attachment surface can change the
+	// answer, so the repetition across two attachments of one type is
+	// recomputation rather than storage, and a rule over it is asked of an
+	// attachment.
+	//
+	// It is what the socket set the attached Feature declares cannot answer.
+	// That set comes back empty both for a Feature declaring no socket and for
+	// a type no catalog entry was found for, so a rule that turns on the
+	// difference settles this one first.
+	//
+	// It answers presence in the catalog and nothing about whether there is a
+	// catalog to consult, which is settled where the view is produced.
+	//
+	// Keyed by (node, attachment); read from
+	// resolver.CatalogLookup.Feature(featureType).
+	CatalogFeaturePresent(featureType string) bool
+
+	// ComponentTypeIsLocalPath reports whether a component type reference
+	// addresses a file beside the authoring document rather than an entity a
+	// catalog holds — the explicit relative-path prefix entity resolution
+	// treats as a local path.
+	//
+	// It is that discriminator and not a test over the reference's content.
+	// The prefix is what separates a local path from an identity, and a rule
+	// inspecting the string for anything else would put a second,
+	// differently-behaving version of the rule beside the one resolution
+	// applies.
+	//
+	// It is what makes a missing catalog entry readable. A type addressed as a
+	// local path has no entry to find, so its absence is the expected outcome
+	// and a rule correctly passes over it; a type addressed as an identity
+	// that no entry was found for is a divergence between what the build
+	// resolved and what a rule can see, which is a finding. A rule reading
+	// presence without this fact cannot tell those apart, and reports
+	// whichever one it assumed.
+	//
+	// It is a property of the reference as authored and says nothing about
+	// whether the file it addresses exists. Whether an entry was found is the
+	// separate fact that answers that, and the two are asked together.
+	//
+	// Keyed by node; read from resolver.IsRelativePathRef(componentType).
+	ComponentTypeIsLocalPath(componentType string) bool
+
 	// ReleasePerEdgeTarget is the target a Release's per-edge entry names for
 	// one socket on one node, as authored — empty when the Release named
 	// none.

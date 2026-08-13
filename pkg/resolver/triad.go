@@ -107,6 +107,18 @@ func isRelativePathRef(ref string) bool {
 	return strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "../")
 }
 
+// IsRelativePathRef reports whether ref is an explicit relative-path file
+// reference, for callers outside this package: the same discriminator entity
+// resolution applies when it decides that a reference addresses a file beside
+// the authoring document rather than an entity a catalog holds.
+//
+// It is the exported entry to one predicate rather than a second statement of
+// the prefix rule. A consumer that spelled the prefixes out for itself would
+// carry a copy of the rule that agrees until one of them is edited, and the
+// disagreement would be invisible: the two would simply route a reference to
+// different tiers.
+func IsRelativePathRef(ref string) bool { return isRelativePathRef(ref) }
+
 // ResolveAggregate resolves a Release's spec.aggregate reference to an Aggregate.
 //
 // A `./` or `../` reference is an explicit local file, loaded relative to

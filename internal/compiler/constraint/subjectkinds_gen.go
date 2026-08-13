@@ -49,7 +49,7 @@ const (
 	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 1 declared fact.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
-	// SubjectNode is the subject kind node, keyed by 15 declared facts.
+	// SubjectNode is the subject kind node, keyed by 17 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 8 declared facts.
@@ -58,7 +58,7 @@ const (
 	// SubjectEdge is the subject kind edge, keyed by 8 declared facts.
 	SubjectEdge SubjectKind = "edge"
 
-	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 12 declared facts.
+	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 13 declared facts.
 	SubjectNodeAttachment SubjectKind = "(node, attachment)"
 
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 3 declared facts.
