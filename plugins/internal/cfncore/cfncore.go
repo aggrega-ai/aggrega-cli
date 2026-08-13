@@ -14,18 +14,34 @@
 //
 // A logical id is unique within one template, and several nodes assemble into
 // one stack, so every name a merged template addresses something by has to be
-// distinct across the nodes that contributed it. Three mechanisms carry that.
+// distinct across the nodes that contributed it. Four mechanisms carry that, and
+// each closes a case the others structurally cannot see.
+//
 // Output names are scoped by the contributing node, so a node's outputs cannot
-// displace another node's ([OutputLogicalID]). Resource names come from the
-// Recipe that authored the fragment, which this core reads and never rewrites;
-// [DeclaredNames] collects them across everything the node contributes, and the
-// guest hands them to the host as the names it derived, which is what turns a
-// duplicate across contributors into a halt naming both instead of a resource
-// quietly displaced during the merge. And the merge refuses a name the assembled
-// stack already carries with different content, which is what a declaration
-// cannot do: one contributor claiming a name twice across its own fragments is
-// recorded in that node's declaration as a repeated name, and refusing it is the
-// merge's to do, since there is no second contributor to name.
+// displace another node's ([OutputLogicalID]). Because building such a name drops
+// every separator and capitalises each word, the derivation is not injective on
+// its own, so each name is built through a ledger that records the authored entry
+// behind it and refuses a name two different authored entries reached
+// ([outputNameLedger]). That check sits where the names are built because that is
+// the last point at which the authored entries are still in hand: everything
+// downstream holds the built name only, and so could refuse a collision without
+// being able to say which two entries produced it.
+//
+// Resource names come from the Recipe that authored the fragment, which this core
+// reads and never rewrites; [DeclaredNames] collects them across everything the
+// node contributes, and the guest hands them to the host as the names it derived,
+// which is what turns a duplicate across contributors into a halt naming both
+// instead of a resource quietly displaced during the merge. And the merge refuses
+// a name the assembled stack already carries with different content, which is
+// what a declaration cannot do: one contributor claiming a name twice across its
+// own fragments is recorded in that node's declaration as a repeated name, and
+// refusing it is the merge's to do, since there is no second contributor to name.
+//
+// Underneath all of them, converting a parsed fragment to a value tree refuses a
+// mapping key written twice ([ErrDuplicateMappingKey]). No name is built there
+// and no contributor is compared: it is the case where a fragment already carries
+// two bodies for one key it wrote itself, which every mechanism above would
+// otherwise be handed as a single entry.
 //
 // The core carries no build constraint so it compiles for both the wasip1 guest
 // and the host test binary: the guest's exports call into it, and its behavior
@@ -45,9 +61,36 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/awslabs/goformation/v7/intrinsics"
 	"go.yaml.in/yaml/v3"
 )
+
+// ErrOutputNameCollision is the loud failure raised when two different entries
+// an author wrote arrive at one stack Output name. An Output name admits only
+// letters and digits, so it is built by dropping every separator and
+// capitalising each word — a transformation that can carry two entries
+// differing only in punctuation or in a letter's case to one name. The build
+// halts rather than emit one Output where two entries were written, and the halt
+// names every entry behind the name so the author can see which of the things
+// they wrote met.
+func ErrOutputNameCollision() error { return errOutputNameCollision }
+
+var errOutputNameCollision = cerrors.Register("cloudformation-provider-cfncore/output-name-collision", cerrors.Meta{
+	Message: "cloudformation-provider: two entries an author wrote reach one stack Output name",
+})
+
+// ErrDuplicateMappingKey is the loud failure raised when a CloudFormation
+// fragment writes one mapping key twice. A mapping holds one value per key, so
+// converting such a mapping keeps whichever body came last and discards the
+// other — and where the mapping is a Resources or Outputs block, the discarded
+// body is a resource or an output that was written and would not be there. The
+// build halts naming the key and both places it was written.
+func ErrDuplicateMappingKey() error { return errDuplicateMappingKey }
+
+var errDuplicateMappingKey = cerrors.Register("cloudformation-provider-cfncore/duplicate-mapping-key", cerrors.Meta{
+	Message: "cloudformation-provider: one mapping key is written more than once",
+})
 
 // StackTemplateName is the file name the assembled CloudFormation stack template
 // lands at within a dispatch group's output. A dispatch group folds its per-node
@@ -230,9 +273,24 @@ func isTemplateFile(path string) bool {
 // before any assembly runs. What still reaches it is one contributor authoring a
 // name twice across its own fragments, which the merge refuses itself — see
 // [insertEntry].
+//
+// Every fragment is read before anything is inserted, and that ordering is the
+// point rather than a convenience. The stack is the scope its Output names have
+// to be distinct in, so whether the derivation was injective is not answerable
+// until every fragment has been read ([outputNameLedger]); and the answer has to
+// come before the insert, because the insert holds only the built name and could
+// therefore refuse a collision without being able to say which two authored
+// entries produced it.
 func AssembleStack(nodes []NodeFragment) ([]byte, error) {
-	resources := map[string]any{}
-	outputs := map[string]any{}
+	// One entry run per fragment, in the order the fragments were supplied, so
+	// the insert below walks them in exactly the order a single pass would have.
+	type fragmentEntrySet struct {
+		nodeID    string
+		resources []stackEntry
+		outputs   []stackEntry
+	}
+	var mint outputNameLedger
+	sets := make([]fragmentEntrySet, 0, len(nodes))
 
 	for _, node := range nodes {
 		for _, raw := range node.Files {
@@ -244,19 +302,29 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 			if !ok {
 				return nil, fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", node.NodeID)
 			}
-			res, outs, err := fragmentEntries(node.NodeID, m)
+			res, outs, err := fragmentEntries(node.NodeID, m, &mint)
 			if err != nil {
 				return nil, err
 			}
-			for _, e := range res {
-				if err := insertEntry(resources, KeySpaceResourceLogicalIDs, node.NodeID, e); err != nil {
-					return nil, err
-				}
+			sets = append(sets, fragmentEntrySet{nodeID: node.NodeID, resources: res, outputs: outs})
+		}
+	}
+
+	if err := mint.err(); err != nil {
+		return nil, err
+	}
+
+	resources := map[string]any{}
+	outputs := map[string]any{}
+	for _, set := range sets {
+		for _, e := range set.resources {
+			if err := insertEntry(resources, KeySpaceResourceLogicalIDs, set.nodeID, e); err != nil {
+				return nil, err
 			}
-			for _, e := range outs {
-				if err := insertEntry(outputs, KeySpaceOutputLogicalIDs, node.NodeID, e); err != nil {
-					return nil, err
-				}
+		}
+		for _, e := range set.outputs {
+			if err := insertEntry(outputs, KeySpaceOutputLogicalIDs, set.nodeID, e); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -318,7 +386,16 @@ type stackEntry struct {
 // Each section's keys are walked in sorted order, and the explicit Outputs
 // entries precede the projected provides entries, so the returned entries are a
 // function of the fragment and the node id alone.
-func fragmentEntries(nodeID string, frag map[string]any) (resources, outputs []stackEntry, err error) {
+//
+// Every output name is built through the caller's ledger rather than by calling
+// [OutputLogicalID] directly, so the authored entry behind each name is recorded
+// as the name is built. The caller owns the ledger because the caller owns the
+// scope the names have to be distinct in, and it asks the ledger for its verdict
+// once that scope is complete — a fragment cannot answer for a scope wider than
+// itself. Resource ids are not built from anything: they are the fragment's own
+// keys, read verbatim, so two distinct authored ids stay distinct and there is
+// nothing for a ledger to record.
+func fragmentEntries(nodeID string, frag map[string]any, mint *outputNameLedger) (resources, outputs []stackEntry, err error) {
 	if raw, present := frag["Resources"]; present {
 		rmap, ok := raw.(map[string]any)
 		if !ok {
@@ -334,7 +411,8 @@ func fragmentEntries(nodeID string, frag map[string]any) (resources, outputs []s
 			return nil, nil, fmt.Errorf("cloudformation-provider: Outputs in node %q is not a mapping", nodeID)
 		}
 		for _, k := range sortedKeys(omap) {
-			outputs = append(outputs, stackEntry{key: OutputLogicalID(nodeID, k), value: omap[k]})
+			name := mint.mint(authoredOutputEntry{component: nodeID, section: sectionExplicitOutputs, entry: k})
+			outputs = append(outputs, stackEntry{key: name, value: omap[k]})
 		}
 	}
 	if raw, present := frag["provides"]; present {
@@ -343,7 +421,8 @@ func fragmentEntries(nodeID string, frag map[string]any) (resources, outputs []s
 			return nil, nil, fmt.Errorf("cloudformation-provider: provides in node %q is not a mapping", nodeID)
 		}
 		for _, k := range sortedKeys(pmap) {
-			outputs = append(outputs, stackEntry{key: OutputLogicalID(nodeID, k), value: map[string]any{"Value": pmap[k]}})
+			name := mint.mint(authoredOutputEntry{component: nodeID, section: sectionProvides, entry: k})
+			outputs = append(outputs, stackEntry{key: name, value: map[string]any{"Value": pmap[k]}})
 		}
 	}
 	return collapseEntries(resources), collapseEntries(outputs), nil
@@ -418,6 +497,18 @@ func sameBody(a, b any) bool {
 // Collecting many distinct names from many fragments is the ordinary case and is
 // untouched: a fragment's every name lands, and several fragments per node is
 // the design — a dispatch group folds all of them into one template.
+//
+// This is the only check that reads the BODIES, and that is what it catches that
+// nothing above it can. Every other check for this class compares names: the
+// output-name ledger asks whether two different authored entries reached one
+// name, and the declaration the guest hands the host carries names alone. So a
+// name arriving twice over two different bodies is a loss only this sees at the
+// point the loss would happen — the write into the assembled map. It also holds
+// without any of them: the declaration is an optional part of what a provider
+// reports, so a caller assembling a boundary without having read one gets this
+// refusal and nothing else. Ordinary input never reaches it today, and it is kept
+// for what it covers when something upstream is narrowed rather than for what it
+// stops now.
 func insertEntry(dst map[string]any, space, nodeID string, e stackEntry) error {
 	if existing, taken := dst[e.key]; taken && !sameBody(existing, e.value) {
 		return fmt.Errorf("cloudformation-provider: in key space %q node %q contributes the name %q, which the assembled stack already carries with different content; change what one of them is named so each name addresses one thing", space, nodeID, e.key)
@@ -511,10 +602,30 @@ func nodeToValue(n *yaml.Node) (any, error) {
 // mappingToValue converts a YAML mapping node to a map[string]any, recursing into
 // each value. Long-form intrinsic objects (a mapping whose sole key is "Ref" or
 // "Fn::*") are ordinary mappings and pass through unchanged.
+//
+// A key written twice in one mapping is refused ([ErrDuplicateMappingKey]). This
+// is the point at which such a repeat becomes a loss and the only point at which
+// it is still cheap to describe: the parsed node tree carries a mapping's content
+// as a flat run of key/value pairs, so both bodies are present and intact right
+// here, while the map being built holds one value per key and the second write
+// would displace the first. Where the mapping is a Resources or Outputs block
+// that displacement is a resource or an output that was written and would be
+// absent from the stack, with nothing said about it — so the refusal is what
+// keeps a written-down resource from disappearing. Both lines are reported
+// because a key written twice is usually two edits that were meant to be
+// different keys, and the author has to find both to tell which.
 func mappingToValue(n *yaml.Node) (map[string]any, error) {
 	out := make(map[string]any, len(n.Content)/2)
+	// The line each key was first written at, so a repeat can name where the two
+	// sit. Read only by key, never walked, so it introduces no order.
+	firstLine := make(map[string]int, len(n.Content)/2)
 	for i := 0; i+1 < len(n.Content); i += 2 {
-		key := n.Content[i].Value
+		keyNode := n.Content[i]
+		key := keyNode.Value
+		if earlier, taken := firstLine[key]; taken {
+			return nil, fmt.Errorf("%w: the key %q is written at line %d and again at line %d; a mapping holds one value per key, so one of the two bodies would be dropped — remove one, or rename one so each key is written once", ErrDuplicateMappingKey(), key, earlier, keyNode.Line)
+		}
+		firstLine[key] = keyNode.Line
 		v, err := nodeToValue(n.Content[i+1])
 		if err != nil {
 			return nil, err
@@ -648,6 +759,146 @@ func OutputLogicalID(nodeID, entry string) string {
 	return capitalizedWords(nodeID) + capitalizedWords(entry)
 }
 
+// Fragment sections an author reaches the stack's Output names through. Each is
+// the key the author writes, so a diagnostic naming one names something the
+// author can search their own files for.
+const (
+	sectionExplicitOutputs = "Outputs"
+	sectionProvides        = "provides"
+)
+
+// authoredOutputEntry is one entry an author wrote that a stack Output name is
+// built from: the component whose fragment carried it, the fragment section it
+// was written in, and the entry name exactly as authored.
+//
+// The authored strings are what it carries, not the name they produce. Building
+// the name loses them — that is what makes the derivation lossy in the first
+// place — so anything that has to describe a collision has to be holding these.
+type authoredOutputEntry struct {
+	component string
+	section   string
+	entry     string
+}
+
+// outputNameLedger builds stack Output names and records which authored entries
+// each one came from, over one scope that shares a set of names.
+//
+// An Output name admits only letters and digits, so building one drops every
+// separator and capitalises each word ([OutputLogicalID]). A transformation from
+// a richer alphabet into a poorer one is not injective unless something makes it
+// so, and this one is not: two entries differing only in punctuation reach one
+// name (`db-host` and `db_host` both reach `DbHost`), the two halves are joined
+// with no separator between them so the split between component and entry is not
+// recoverable either (component `payments-db` with entry `host` and component
+// `payments` with entry `db-host` both reach `PaymentsDbHost`), and a word's
+// first letter is capitalised either way so `host` and `Host` reach one name too.
+//
+// The ledger is what makes the collision detectable at all, and it sits here
+// rather than downstream because of what each layer holds. Building one name is a
+// function of one entry and cannot see a second. Downstream, the built name is
+// all there is: the authored entry is gone, so a refusal there can name the
+// collision but not the two things the author would have to edit. Recording the
+// authored entry as the name is built is what keeps both in hand.
+//
+// The scope is the caller's to choose, because the scope a name has to be unique
+// in is a property of what assembles together rather than of the derivation: one
+// component's fragments share names with each other, and every component
+// assembling into one stack shares them with the rest.
+type outputNameLedger struct {
+	sources map[string][]authoredOutputEntry
+}
+
+// mint builds the stack Output name for one authored entry and records the entry
+// behind it.
+//
+// One authored entry reaching here more than once records one source, not two.
+// That is deliberate and it is the line between the two properties this file
+// checks: an entry restated — the same entry name written in a fragment's
+// Outputs block and in its provides block, or restated across two of a
+// component's fragments — is one thing the author named, and whether the
+// restatements agree about its body is the merge's question ([insertEntry]).
+// Whether two *different* things the author named collapsed into one name is this
+// ledger's, and only a repeat of the derived name from a different authored entry
+// answers yes to it.
+func (l *outputNameLedger) mint(e authoredOutputEntry) string {
+	name := OutputLogicalID(e.component, e.entry)
+	if l.sources == nil {
+		l.sources = make(map[string][]authoredOutputEntry)
+	}
+	for _, recorded := range l.sources[name] {
+		if recorded.component == e.component && recorded.entry == e.entry {
+			return name
+		}
+	}
+	l.sources[name] = append(l.sources[name], e)
+	return name
+}
+
+// err reports every stack Output name that more than one authored entry reached,
+// and nothing when the names the scope built are distinct.
+//
+// Every collision is reported rather than the first, so one build tells the
+// author the whole picture instead of one collision per attempt.
+//
+// The message is sorted twice over — collisions by the name they landed on, and
+// each collision's entries by component, section, and entry — so it is a total
+// order over the authored strings alone. The map underneath is walked, and a Go
+// map's iteration order is randomised per run, so without the sorts identical
+// input would halt with the clauses in a different order on different runs. That
+// would be a diagnostic that is not a function of its input, which the same
+// reasoning that keeps emitted output byte-identical rules out.
+func (l *outputNameLedger) err() error {
+	collided := make([]string, 0, len(l.sources))
+	for name, sources := range l.sources {
+		if len(sources) > 1 {
+			collided = append(collided, name)
+		}
+	}
+	if len(collided) == 0 {
+		return nil
+	}
+	sort.Strings(collided)
+
+	clauses := make([]string, 0, len(collided))
+	for _, name := range collided {
+		sources := make([]authoredOutputEntry, len(l.sources[name]))
+		copy(sources, l.sources[name])
+		sort.Slice(sources, func(i, j int) bool {
+			if sources[i].component != sources[j].component {
+				return sources[i].component < sources[j].component
+			}
+			if sources[i].section != sources[j].section {
+				return sources[i].section < sources[j].section
+			}
+			return sources[i].entry < sources[j].entry
+		})
+		phrases := make([]string, 0, len(sources))
+		for _, s := range sources {
+			phrases = append(phrases, fmt.Sprintf("the %s entry %q of component %q", s.section, s.entry, s.component))
+		}
+		clauses = append(clauses, fmt.Sprintf("%s reach the Output name %q", joinPhrases(phrases), name))
+	}
+	return fmt.Errorf("%w: %s; an Output name admits only letters and digits, so building one drops every separator and capitalises each word — rename an entry, or a component, so no two of them differ only by a separator or by a letter's case", ErrOutputNameCollision(), strings.Join(clauses, "; "))
+}
+
+// joinPhrases joins already-ordered phrases into one English list.
+//
+// It is local rather than shared because the equivalent helper beside the
+// compiler's own collision report is unexported there and this core compiles for
+// the WebAssembly guest as well as the host, so there is no package either side
+// could reach the other through. The two are read together only by eye, which is
+// tolerable for a list separator and would not be for anything carrying meaning.
+func joinPhrases(phrases []string) string {
+	switch len(phrases) {
+	case 0:
+		return ""
+	case 1:
+		return phrases[0]
+	default:
+		return strings.Join(phrases[:len(phrases)-1], ", ") + " and " + phrases[len(phrases)-1]
+	}
+}
+
 // capitalizedWords reads a string as words separated by runs of anything a
 // CloudFormation logical id does not admit, capitalises each word's first
 // letter, and joins them. A word's remaining characters are left as authored, so
@@ -688,9 +939,17 @@ func capitalizedWords(s string) string {
 // This is the one place the node-scope fold happens, and both the fragment path
 // and the sourced path reach it, so the two cannot come to disagree about which
 // repeats a node's declaration keeps.
+//
+// It carries the node's own output-name ledger, so a node whose entries reach one
+// Output name is refused while its fragments are being read — before the stack is
+// assembled, and before any other node's content is involved. The node is a
+// narrower scope than the stack, so this catches strictly less than the assembly
+// does; what it buys is the earlier halt, and it is the only place the sourced
+// path is reached at all.
 type nodeDeclaration struct {
 	resources []stackEntry
 	outputs   []stackEntry
+	mint      outputNameLedger
 }
 
 // addFragment reads one already-normalized fragment and gathers what the
@@ -713,7 +972,7 @@ func (d *nodeDeclaration) addFragment(nodeID string, fragment []byte) error {
 	if !ok {
 		return fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", nodeID)
 	}
-	resources, outputs, err := fragmentEntries(nodeID, m)
+	resources, outputs, err := fragmentEntries(nodeID, m, &d.mint)
 	if err != nil {
 		return err
 	}
@@ -721,6 +980,22 @@ func (d *nodeDeclaration) addFragment(nodeID string, fragment []byte) error {
 	d.resources = append(d.resources, resources...)
 	d.outputs = append(d.outputs, outputs...)
 	return nil
+}
+
+// result reports the names the node declares, or the collision that means it
+// declares nothing coherent.
+//
+// The ledger's verdict and the projection are read through one function so no
+// caller can take the names while skipping the check. Two call sites reading the
+// two halves themselves would each be one line, and one of them would eventually
+// be written with only the half its author was thinking about — which would
+// compile, pass, and silently stop checking for that path.
+func (d *nodeDeclaration) result() (resourceIDs, outputIDs []string, err error) {
+	if err := d.mint.err(); err != nil {
+		return nil, nil, err
+	}
+	resourceIDs, outputIDs = d.names()
+	return resourceIDs, outputIDs, nil
 }
 
 // names projects the gathered entries to the names the node declares per key
@@ -789,8 +1064,7 @@ func DeclaredNames(nodeID string, fragments [][]byte) (resourceIDs, outputIDs []
 			return nil, nil, err
 		}
 	}
-	resourceIDs, outputIDs = d.names()
-	return resourceIDs, outputIDs, nil
+	return d.result()
 }
 
 // DeclaredNamesSourced returns the names a sourced source's packed files declare
@@ -813,8 +1087,7 @@ func DeclaredNamesSourced(nodeID string, files []SourcedFile, rootIsDir bool) (r
 			return nil, nil, fmt.Errorf("cloudformation-provider: read declared names from sourced template %q: %w", f.Path, err)
 		}
 	}
-	resourceIDs, outputIDs = d.names()
-	return resourceIDs, outputIDs, nil
+	return d.result()
 }
 
 // sortedKeys returns a map's keys in lexical order so any iteration that must be

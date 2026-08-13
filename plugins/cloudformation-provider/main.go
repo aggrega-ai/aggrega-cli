@@ -55,6 +55,17 @@
 // The host compares the declared strings and learns nothing about what they mean,
 // which is what keeps CloudFormation's naming rules here in the guest.
 //
+// Two refusals happen before any declaration is handed over, and they are here
+// rather than in the host for the same reason. An output name is built from the
+// node and the entry name by dropping every separator and capitalising each word,
+// which can carry two different authored entries to one name; render_node refuses
+// that while it still holds both entries, so the halt names what the author wrote
+// rather than only the name they landed on. And a fragment writing one mapping key
+// twice is refused as the fragment is read, since converting it would keep one of
+// the two bodies and drop the other — a resource or output the author wrote that
+// the stack would then not carry. Both live in the cfncore package with the rest
+// of CloudFormation's naming rules.
+//
 // CloudFormation output is JSON, which carries no comment syntax the host's build
 // provenance could ride in without corrupting the document, so this guest emits
 // no provenance comment; provenance for CloudFormation output is carried out of

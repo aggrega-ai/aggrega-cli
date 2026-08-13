@@ -6,6 +6,7 @@ package cfncore
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"sort"
 	"strings"
@@ -470,6 +471,14 @@ func keysOf(m map[string]json.RawMessage) []string {
 // claim is refused before assembly runs — the guest declares each fragment's
 // names and the host halts on the duplicate — so the case that actually reaches
 // this merge is the one a per-contributor declaration cannot see.
+//
+// Every row also asserts the halt is NOT the Output-name collision, and that is
+// what keeps the rows covering their subject. Each of them restates ONE entry name
+// with two bodies, which the collision check admits by design — it answers whether
+// two DIFFERENT authored entries collapsed into one name, and one entry restated is
+// not that. A row that only checked something failed would keep passing if the
+// earlier check ever began rejecting it, at which point it would have stopped
+// exercising the merge at all.
 func TestAssembleStackRefusesANameAlreadyCarryingDifferentContent(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -520,6 +529,9 @@ func TestAssembleStackRefusesANameAlreadyCarryingDifferentContent(t *testing.T) 
 			_, err := AssembleStack([]NodeFragment{{NodeID: "api", Files: tc.files}})
 			if err == nil {
 				t.Fatal("expected a loud halt for a name carrying two different bodies; got nil error — a declared entry would have been displaced silently")
+			}
+			if errors.Is(err, ErrOutputNameCollision()) {
+				t.Fatalf("the merge's refusal was preempted by the Output-name collision check, which this row does not exercise: %v", err)
 			}
 			msg := err.Error()
 			t.Logf("halt: %s", msg)
