@@ -123,6 +123,63 @@ func TestUnsupportedField_PerAuthoredField(t *testing.T) {
 	}
 }
 
+// TestUnsupportedField_ReplicasWarnsOnAnAuthoredDefaultValue proves the warning
+// reports that replicas was authored, not that its value differs from the default.
+// Replicas defaults to 1, so an explicit `replicas: 1` asks for exactly the
+// deployment an omitted field already describes — yet only the authored one warns,
+// because the author wrote a field the compose target cannot honor and can choose
+// to remove.
+//
+// The pairing is what pins it. The authored row alone would pass equally against a
+// warning that compared the value with the default, and the omitted row alone
+// proves only that silence is reachable. Together they fix presence as the property
+// that decides, which is what the field's published description states.
+func TestUnsupportedField_ReplicasWarnsOnAnAuthoredDefaultValue(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		replicas *int
+		want     int
+	}{
+		{"omitted", nil, 0},
+		{"authored default value", ptrInt(1), 1},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			w := baseDegradeWorkload()
+			w.Replicas = tc.replicas
+
+			_, diags, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+			if err != nil {
+				t.Fatalf("synth: %v", err)
+			}
+			var got []renderctx.Diagnostic
+			for _, d := range diags {
+				if d.SourceRef == "replicas" {
+					got = append(got, d)
+				}
+			}
+			if len(got) != tc.want {
+				t.Fatalf("got %d replicas diagnostics, want %d (all: %+v)", len(got), tc.want, diags)
+			}
+			for _, d := range got {
+				if d.Severity != "warning" {
+					t.Errorf("severity = %q, want warning", d.Severity)
+				}
+				if d.Code != rendercore.UnsupportedFieldCode {
+					t.Errorf("code = %q, want %q", d.Code, rendercore.UnsupportedFieldCode)
+				}
+				if !strings.Contains(d.Message, "replicas") {
+					t.Errorf("message %q does not name the field", d.Message)
+				}
+			}
+		})
+	}
+}
+
 // TestUnsupportedField_OutOfBand proves a diagnostic-producing field does not change
 // the rendered fragment bytes — the Invariant-8 out-of-band guarantee.
 func TestUnsupportedField_OutOfBand(t *testing.T) {
