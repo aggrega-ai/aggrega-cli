@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/plugins/helm-provider/helmcore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 )

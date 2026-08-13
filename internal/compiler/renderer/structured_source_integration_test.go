@@ -126,7 +126,7 @@ func TestRenderAll_BuildsStructuredComposeSource(t *testing.T) {
 // minimalHelmChartContents returns a minimal valid Helm chart's
 // file content keyed by relative path. Sufficient input for
 // helm.template to render a Deployment without error. Mirrors the
-// shape of internal/compiler/renderer/helm/testdata/minimal-chart.
+// shape of plugins/internal/helmcore/testdata/minimal-chart.
 func minimalHelmChartContents() map[string]string {
 	return map[string]string{
 		"Chart.yaml":                "apiVersion: v2\nname: minimal\nversion: 0.1.0\n",

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/plugins/helm-provider/helmcore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 )
 
 // subchartMarker is the data value only the condition-gated subchart's

@@ -38,7 +38,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/plugins/helmchart-provider/helmchartcore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmchartcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 )

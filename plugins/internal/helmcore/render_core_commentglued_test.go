@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/plugins/helm-provider/helmcore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 )
 
 // TestHelmEngine_Sourced_CommentGluedSeparator pins the comment-glued separator

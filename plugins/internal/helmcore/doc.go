@@ -6,8 +6,12 @@
 // consumers such as ArgoCD and Flux.
 //
 // The core carries no build tag, so it compiles for the host and for the wasip1
-// guest alike. It sits beside the guest that consumes it because it is guest
-// code: the host drives the render without linking any of it.
+// guest alike. It is guest code all the same — the host drives the render
+// without linking any of it — and it sits under an internal segment of the
+// plugin tree, which is what makes that a property of the layout rather than a
+// habit: Go admits an internal package only from the subtree that contains it,
+// so any provider guest may import this core and nothing outside the plugin
+// tree can.
 //
 // # The two input kinds
 //
@@ -21,5 +25,5 @@
 //
 // This is not the helm-chart provider, which emits a chart scaffold rather than
 // rendered manifests; that translation lives in
-// plugins/helmchart-provider/helmchartcore.
+// plugins/internal/helmchartcore.
 package helmcore

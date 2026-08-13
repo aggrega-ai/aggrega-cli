@@ -80,7 +80,7 @@ import (
 	"errors"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/plugins/cloudformation-provider/cfncore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfncore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 )

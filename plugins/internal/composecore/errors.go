@@ -7,8 +7,9 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
 // ErrEmptySource is emitted when a Recipe has `source: ""` (empty string).
 // Nil/absent source = sourceless (synthesized) mode; non-empty string = sourced.
-// Empty string is never valid. Mirrors helm/errors.go ErrEmptySource for
-// consistency across providers.
+// Empty string is never valid. Mirrors helmcore's ErrEmptySource for
+// consistency across providers; the two are deliberately separate declarations
+// so neither provider's handling of an empty source depends on the other's.
 func ErrEmptySource() error { return errEmptySource }
 
 var errEmptySource = cerrors.Register("compiler-renderer-compose/empty-source", cerrors.Meta{

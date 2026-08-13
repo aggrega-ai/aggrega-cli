@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/plugins/helm-provider/helmcore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 )
 
 // TestHelmEngine_Sourced_NullDocDroppedNotNamed pins the null-document skip: a

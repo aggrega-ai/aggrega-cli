@@ -22,17 +22,23 @@ import (
 // without rebuilding the host, and it is a claim about the dependency graph
 // rather than about how any file is written.
 //
-// Nothing in the language holds the host to it. A guest core is ordinary Go in
-// the same module, so a host package may import one and the result compiles,
-// links and passes every test. The binary silently grows a format-specific
-// translation layer, the drop-in property quietly stops holding, and no gate
-// says so. This guard reads the host binary's own dependency closure and refuses
-// that edge.
+// The language holds the host to part of it and not all of it, and the
+// difference is what this guard covers. Each provider's translation core sits
+// under the plugin tree's internal segment, so a host package importing one does
+// not compile — that half is enforced by the compiler and needs no test. The
+// shared cores that sit outside that segment are ordinary Go in the same module:
+// a host package may import one and the result compiles, links and passes every
+// test. The binary silently grows code that belongs to the guests, the drop-in
+// property quietly stops holding, and nothing else says so. This guard reads the
+// host binary's own dependency closure and refuses that edge.
 //
 // # Two edges, because there are two ways back in
 //
-// A guest core reached directly is the obvious one: the host imports a package
-// under plugins/, which is where every guest and its translation core lives.
+// A package under plugins/ reached directly is the obvious one: plugins/ is
+// where every guest, every shared core and every provider's translation core
+// lives, and the guard refuses the whole tree rather than the part the compiler
+// does not already reject. Refusing all of it costs nothing and keeps the guard
+// correct if a core is ever moved back out of the internal segment.
 //
 // A per-format package re-created inside the render orchestration tree is the
 // other, and it is the one that looks innocent. The render tree is host code by
@@ -100,8 +106,8 @@ func TestHostClosureCarriesNoProviderGuestCode(t *testing.T) {
 	if len(perFormat) > 0 {
 		t.Errorf("the host binary links %d format-specific package(s) inside the render orchestration "+
 			"tree, so the render path is no longer format-blind: %s\nREMEDY: a provider's translation "+
-			"belongs beside its guest under plugins/<format>-provider/, not under the render "+
-			"orchestration tree.",
+			"belongs in the plugin tree's internal segment, which the host cannot import, not under "+
+			"the render orchestration tree.",
 			len(perFormat), strings.Join(perFormat, ", "))
 	}
 }
@@ -123,7 +129,7 @@ func TestHostClosureGuardDetectsBothEdges(t *testing.T) {
 
 	fires := []string{
 		modulePath + "/cmd/aggrega",
-		modulePath + "/plugins/helm-provider/helmcore",
+		modulePath + "/plugins/internal/helmcore",
 		modulePath + "/internal/compiler/renderer",
 		modulePath + "/internal/compiler/renderer/terraform",
 	}

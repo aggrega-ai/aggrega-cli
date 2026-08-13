@@ -31,7 +31,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/plugins/helm-provider/helmcore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 	"helm.sh/helm/v3/pkg/chart/loader"

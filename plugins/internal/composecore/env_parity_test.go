@@ -8,8 +8,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/plugins/compose-provider/composecore"
-	"github.com/aggrega-ai/aggrega-cli/plugins/helm-provider/helmcore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composecore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -32,6 +32,12 @@ import (
 // no production path, so it is invisible to the host binary's dependency
 // closure. Do not "fix" the layering here: deleting or rerouting this import
 // removes the only test that compares the two.
+//
+// This import is also why the provider cores share one internal segment of the
+// plugin tree instead of each sitting under the guest that consumes it. Go
+// admits an internal package only from the subtree that contains it, so a
+// per-guest segment would put this import outside the subtree it reaches into
+// and the cross-check would stop compiling.
 func TestEnvOrderParity_ComposeMatchesHelm(t *testing.T) {
 	t.Parallel()
 

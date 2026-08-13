@@ -8,9 +8,12 @@
 //
 // The core carries no build tag, so it compiles for the host and for the wasip1
 // guest alike, and it therefore imports no host-only capability — no filesystem,
-// no network. It sits beside the guest that consumes it because it is guest
-// code: the host drives the render without linking any of it. Every entry point
-// takes exactly the inputs its translation
+// no network. It is guest code all the same — the host drives the render without
+// linking any of it — and it sits under an internal segment of the plugin tree,
+// which is what makes that a property of the layout rather than a habit: Go
+// admits an internal package only from the subtree that contains it, so any
+// provider guest may import this core and nothing outside the plugin tree can.
+// Every entry point takes exactly the inputs its translation
 // consumes: AssembleBoundaryCore takes the per-node fragments, the per-node
 // annotations, the uses edges, the boundary-path fallback and the YAML indent;
 // RenderSourcedCore takes the base compose bytes rather than a path. That is
