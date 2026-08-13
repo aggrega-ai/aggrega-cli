@@ -20,7 +20,7 @@ type Workload struct {
 	Port int `json:"port,omitempty" yaml:"port,omitempty"`
 	// Schedule Cron schedule for form: scheduled — a standard 5-field crontab expression (for example '0 0 * * *') or one of the macros @hourly, @daily, @weekly, @monthly, @yearly. Required when form is scheduled and only meaningful then; the target Engine pipes it verbatim into the scheduled resource's schedule field.
 	Schedule string `json:"schedule,omitempty" yaml:"schedule,omitempty"`
-	// Replicas Number of replicas. Default 1. Compose ignores values > 1 unless the target compose spec supports scaling.
+	// Replicas Number of replicas. Default 1. On a compose target the value reaches no part of the output, and a warning reports it whenever it is authored — including an explicit `1`.
 	Replicas *int `json:"replicas,omitempty" yaml:"replicas,omitempty"`
 	// InitContainers Ordered list of containers that run to completion before the main containers start.
 	InitContainers []ContainerSpec `json:"initContainers,omitempty" yaml:"initContainers,omitempty"`
@@ -28,9 +28,9 @@ type Workload struct {
 	Containers OrderedMap[ContainerSpec] `json:"containers,omitempty,omitzero" yaml:"containers,omitempty"`
 	// Volumes Ordered map of volume name → volume spec. Each volume spec declares exactly one of: ephemeral, configmap, secret, persistent, persistentTemplate.
 	Volumes OrderedMap[VolumeSpec] `json:"volumes,omitempty,omitzero" yaml:"volumes,omitempty"`
-	// Services Ordered map of service name → service spec. Each becomes a separate K8s Service (helm) or port-publishing rule on the compose service (compose). Service names are suffixed by aggrega instance_id for K8s resource-name uniqueness.
+	// Services Ordered map of service name → service spec. On helm each entry becomes a separate K8s Service. On compose there is no separate service primitive, so entries do not map one to one: an entry whose type is NodePort or LoadBalancer publishes its ports on the workload's own compose service, an entry whose type is ClusterIP or Headless publishes nothing, and every published port is collected into that one service's port list with the host port matching the container port. Service names are suffixed by aggrega instance_id for K8s resource-name uniqueness.
 	Services OrderedMap[ServiceSpec] `json:"services,omitempty,omitzero" yaml:"services,omitempty"`
-	// Scheduling K8s-native scheduling constraints. Translated directly for helm; ignored (with warning) for compose except where compose has analogs.
+	// Scheduling K8s-native scheduling constraints. Translated directly for helm. On a compose target these constraints reach no part of the output, and a warning reports the block when it is authored.
 	Scheduling         *Scheduling         `json:"scheduling,omitempty" yaml:"scheduling,omitempty"`
 	PodSecurityContext *PodSecurityContext `json:"podSecurityContext,omitempty" yaml:"podSecurityContext,omitempty"`
 	// ServiceAccount Name of the ServiceAccount this workload runs under. Actual RBAC (ServiceAccount/Role/RoleBinding resources) should be emitted via Features or artifacts, not via this field.
