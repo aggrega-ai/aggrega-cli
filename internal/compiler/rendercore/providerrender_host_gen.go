@@ -53,7 +53,7 @@ type IRNodeProjection struct {
 	Uses types.OrderedMap[[]string] `json:"uses,omitempty" yaml:"uses,omitempty" cbor:"uses,omitempty"`
 	// BoundaryPath The node's boundary path, stamped as the aggrega.ai/boundary-path annotation on every emitted manifest that carries a metadata block.
 	BoundaryPath string `json:"boundary_path,omitempty" yaml:"boundary_path,omitempty" cbor:"boundary_path,omitempty"`
-	// SyncWave The node's deployment wave, stamped as the aggrega.ai/sync-wave and argocd.argoproj.io/sync-wave annotations when non-zero. This is the per-node render-input carrier of the wave, distinct from the boundary context's sync wave that feeds the assemble export.
+	// SyncWave The deployment wave this node inherited from its containing boundary (default 0; negative permitted). Renderers that support ordering translate it into a target-native form; a target with no ordering concept carries it as a label and orders nothing.
 	SyncWave int `json:"sync_wave,omitempty" yaml:"sync_wave,omitempty" cbor:"sync_wave,omitempty"`
 	// RecipeName The bound Recipe's name, paired with recipe_version to form the aggrega.ai/recipe-uri annotation; when either half is empty the annotation is not stamped.
 	RecipeName string `json:"recipe_name,omitempty" yaml:"recipe_name,omitempty" cbor:"recipe_name,omitempty"`
