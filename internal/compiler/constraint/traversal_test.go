@@ -176,8 +176,15 @@ func newTraversalFixture() traversalFixture {
 			{Node: webNode, Socket: "zebra"},
 			{Node: apiNode, Socket: "db"},
 		},
+		// One nested scope and one top-level scope, reverse-alphabetical so a sort
+		// would be visible — the exact shape the subsystem set below takes, because
+		// the two axes are twins on separate authoring documents. The nested one is
+		// what proves the locator names every level of the nesting rather than
+		// joining the path in as one segment: a boundary path is one slash-joined
+		// string and the authored Release spells each level under the container's key
+		// again.
 		boundaries: []AuthoredCoordinate{
-			{Value: "prod", SourceFile: "release.yaml"},
+			{Value: "prod/edge", SourceFile: "release.yaml"},
 			{Value: "dev", SourceFile: "release.yaml"},
 		},
 		// One nested scope and one top-level scope, reverse-alphabetical so a sort
@@ -226,18 +233,18 @@ func newTraversalFixture() traversalFixture {
 			fixtureKey("web", "tls", "app"): {"issuer"},
 		},
 		providers: map[string][]string{
-			fixtureKey("prod"): {"helm", "terraform"},
-			fixtureKey("dev"):  {"helm"},
+			fixtureKey("prod/edge"): {"helm", "terraform"},
+			fixtureKey("dev"):       {"helm"},
 		},
 		emittedPaths: map[string][]string{
-			fixtureKey("prod", "helm"):      {"a.yaml", "b.yaml"},
-			fixtureKey("prod", "terraform"): {"main.tf.json"},
+			fixtureKey("prod/edge", "helm"):      {"a.yaml", "b.yaml"},
+			fixtureKey("prod/edge", "terraform"): {"main.tf.json"},
 		},
 		// Two on one boundary and none on the other, so a transcript shows the
 		// walk entering a boundary that declares none and yielding nothing there
 		// rather than stopping.
 		boundaryAttach: map[string][]string{
-			fixtureKey("prod"): {"shared-db", "audit"},
+			fixtureKey("prod/edge"): {"shared-db", "audit"},
 		},
 		// Two on the nested scope and none on the other, so a transcript shows the
 		// walk entering a scope that declares none and yielding nothing there rather
@@ -274,7 +281,7 @@ func newTraversalFixture() traversalFixture {
 		// carries none, so a transcript shows the walk entering an attachment that
 		// declares no pipeline and yielding nothing there rather than stopping.
 		boundaryAttachPipeline: map[string][]AuthoredCoordinate{
-			fixtureKey("prod", "shared-db"): {{Value: "annotate", SourceFile: "featurerecipes/shared-db.yaml"}},
+			fixtureKey("prod/edge", "shared-db"): {{Value: "annotate", SourceFile: "featurerecipes/shared-db.yaml"}},
 		},
 	}
 }
@@ -492,9 +499,9 @@ func traversalCases() []traversalCase {
 				return RunOnBoundaryProviderPaths(cancelled, f, f, f, v, raisingCheck[BoundaryProviderPathSubject]())
 			},
 			want: []string{
-				"release.yaml|.spec.boundaries.prod",
-				"release.yaml|.spec.boundaries.prod",
-				"release.yaml|.spec.boundaries.prod",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge",
 			},
 		},
 		{
@@ -510,22 +517,26 @@ func traversalCases() []traversalCase {
 			// Both invocations land on the boundary that declares attachments, and
 			// each names its own attachment: unlike the provider-and-path kind
 			// above, every coordinate here is something the operator wrote, so the
-			// locators differ and this transcript can tell the two apart.
+			// locators differ and this transcript can tell the two apart. The
+			// boundary is two levels deep, so each level appears under the
+			// container's key — the same shape the subsystem twin below takes, on
+			// the other authoring document.
 			kind: SubjectBoundaryAttachment,
 			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
 				return RunOnBoundaryAttachments(cancelled, f, f, v, raisingCheck[BoundaryAttachmentSubject]())
 			},
 			want: []string{
-				"release.yaml|.spec.boundaries.prod.features.shared-db",
-				"release.yaml|.spec.boundaries.prod.features.audit",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.features.shared-db",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.features.audit",
 			},
 		},
 		{
-			// The twin of the case above on the other authoring document, and the one
-			// whose locator carries the nesting: both invocations land on the scope that declares
-			// attachments, whose path is two levels deep, so each level appears under
-			// the container's key. The scope declaring none yields nothing and the
-			// walk carries on.
+			// The twin of the case above on the other authoring document: both
+			// invocations land on the scope that declares attachments, whose path is
+			// two levels deep, so each level appears under the container's key. The
+			// two axes are joined with different separators and are named through one
+			// rule, so the pair of transcripts is what shows the rule serving both.
+			// The scope declaring none yields nothing and the walk carries on.
 			kind: SubjectSubsystemAttachment,
 			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
 				return RunOnSubsystemAttachments(cancelled, f, f, v, raisingCheck[SubsystemAttachmentSubject]())
@@ -986,10 +997,10 @@ func coordinateFlowCases() []coordinateFlowCase {
 				return readback(func(c Check[traversalView, BoundaryAttachmentPipelineStepSubject]) ([]Objection, error) {
 					return RunOnBoundaryAttachmentPipelineSteps(nil, f, f, f, traversalView{}, c)
 				}, func(s BoundaryAttachmentPipelineStepSubject) string {
-					return s.BoundaryName() + "|" + s.AttachmentName() + "|" + s.StepID()
+					return s.BoundaryPath() + "|" + s.AttachmentName() + "|" + s.StepID()
 				})
 			},
-			want: []string{"prod|shared-db|annotate"},
+			want: []string{"prod/edge|shared-db|annotate"},
 		},
 		{
 			kind: SubjectNodeArtifact,
@@ -1027,6 +1038,12 @@ func coordinateFlowCases() []coordinateFlowCase {
 		// all three of its invocations carry one identical locator, so nothing in that
 		// transcript distinguishes them and a traversal that discarded the path would
 		// read as correct there.
+		//
+		// The boundary coordinate arrives whole here, as the path the enumerator
+		// handed over, and the locator names the same scope spelled level by level.
+		// Those are two correct spellings of one scope rather than a discrepancy: the
+		// coordinate is what a keyed fact takes, and the locator is what the authored
+		// document contains.
 		{
 			kind: SubjectBoundaryProviderPath,
 			seam: seamTraversal,
@@ -1034,10 +1051,10 @@ func coordinateFlowCases() []coordinateFlowCase {
 				return readback(func(c Check[traversalView, BoundaryProviderPathSubject]) ([]Objection, error) {
 					return RunOnBoundaryProviderPaths(nil, f, f, f, traversalView{}, c)
 				}, func(s BoundaryProviderPathSubject) string {
-					return s.BoundaryName() + "|" + s.ProviderName() + "|" + s.EmittedPath()
+					return s.BoundaryPath() + "|" + s.ProviderName() + "|" + s.EmittedPath()
 				})
 			},
-			want: []string{"prod|helm|a.yaml", "prod|helm|b.yaml", "prod|terraform|main.tf.json"},
+			want: []string{"prod/edge|helm|a.yaml", "prod/edge|helm|b.yaml", "prod/edge|terraform|main.tf.json"},
 		},
 		{
 			kind: SubjectBoundaryAttachment,
@@ -1046,16 +1063,18 @@ func coordinateFlowCases() []coordinateFlowCase {
 				return readback(func(c Check[traversalView, BoundaryAttachmentSubject]) ([]Objection, error) {
 					return RunOnBoundaryAttachments(nil, f, f, traversalView{}, c)
 				}, func(s BoundaryAttachmentSubject) string {
-					return s.BoundaryName() + "|" + s.AttachmentName()
+					return s.BoundaryPath() + "|" + s.AttachmentName()
 				})
 			},
-			want: []string{"prod|shared-db", "prod|audit"},
+			want: []string{"prod/edge|shared-db", "prod/edge|audit"},
 		},
 
-		// The scope coordinate arrives as the path the enumerator handed over rather
+		// A scope coordinate arrives as the path the enumerator handed over rather
 		// than as the innermost name, which is what a fact keyed by it takes: two
 		// scopes at different depths may carry one name, so a check reading a bare
-		// name would key facts that cannot tell them apart.
+		// name would key facts that cannot tell them apart. It holds for both
+		// authoring documents' scope axes, which is why the boundary rows above read
+		// back a path too.
 		{
 			kind: SubjectSubsystemAttachment,
 			seam: seamTraversal,

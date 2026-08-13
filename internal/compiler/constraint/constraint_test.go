@@ -291,52 +291,100 @@ func TestAuthoredLocatorDialectAndTheEmptyRule(t *testing.T) {
 }
 
 // TestNestedScopeSegmentsRepeatTheContainerKeyPerLevel pins the segment rule for a
-// scope that nests, which the traversal transcript exercises for one shape only.
+// scope that nests, which the traversal transcript exercises for one shape per
+// axis only.
 //
-// A scope's path is one dotted string and the authored document does not spell it
-// that way: each level sits under the container's own key again. The nested row is
-// the case the rule exists for — joining the path in as a single segment would
+// A scope's path is one joined string and the authored document does not spell it
+// that way: each level sits under the container's own key again. The nested rows
+// are the case the rule exists for — joining the path in as a single segment would
 // produce a key no file contains — and the empty row is the arm the traversal
 // cannot reach, because a scope with no path is not something any enumerator over
 // a normalized document hands over. It is asserted here rather than left as an
 // unexercised defensive branch.
+//
+// # Why both axes are in one table
+//
+// The two authoring documents each declare a nesting scope, and they are joined
+// with different separators: a subsystem path with a dot, a boundary path with a
+// slash. One rule serves both, so both belong in the table that pins it — a table
+// covering one axis would pass unchanged if the other axis's separator were wrong,
+// because splitting on a separator a path does not contain yields the whole path
+// as a single level and never an error.
 func TestNestedScopeSegmentsRepeatTheContainerKeyPerLevel(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		name      string
+		nesting   scopeNesting
 		scopePath string
 		tail      []string
 		want      string
 	}{
 		{
 			name:      "one level names the scope once",
+			nesting:   subsystemNesting,
 			scopePath: "billing",
 			tail:      []string{"features", "tls"},
 			want:      ".spec.subsystems.billing.features.tls",
 		},
 		{
 			name:      "two levels repeat the container key between them",
+			nesting:   subsystemNesting,
 			scopePath: "billing.payments",
 			tail:      []string{"features", "tls"},
 			want:      ".spec.subsystems.billing.subsystems.payments.features.tls",
 		},
 		{
 			name:      "three levels keep repeating it",
+			nesting:   subsystemNesting,
 			scopePath: "a.b.c",
 			tail:      []string{"features", "tls"},
 			want:      ".spec.subsystems.a.subsystems.b.subsystems.c.features.tls",
 		},
 		{
 			name:      "no tail names the scope alone",
+			nesting:   subsystemNesting,
 			scopePath: "billing.payments",
 			tail:      nil,
 			want:      ".spec.subsystems.billing.subsystems.payments",
 		},
 		{
 			name:      "no path invents no locator",
+			nesting:   subsystemNesting,
 			scopePath: "",
 			tail:      []string{"features", "tls"},
+			want:      "",
+		},
+		{
+			name:      "a boundary at one level names the scope once",
+			nesting:   boundaryNesting,
+			scopePath: "prod",
+			tail:      []string{"features", "shared-db"},
+			want:      ".spec.boundaries.prod.features.shared-db",
+		},
+		{
+			// The row the slash separator exists for. A boundary path is joined with
+			// a slash, so splitting it on a dot would leave "prod/edge" as one level
+			// and render .spec.boundaries.prod/edge — a key the Release does not have,
+			// and one that reads as a plausible locator.
+			name:      "a nested boundary repeats the container key between its levels",
+			nesting:   boundaryNesting,
+			scopePath: "prod/edge",
+			tail:      []string{"features", "shared-db"},
+			want:      ".spec.boundaries.prod.boundaries.edge.features.shared-db",
+		},
+		{
+			name:      "a boundary three levels deep keeps repeating it",
+			nesting:   boundaryNesting,
+			scopePath: "prod/edge/eu",
+			tail:      nil,
+			want:      ".spec.boundaries.prod.boundaries.edge.boundaries.eu",
+		},
+		{
+			name:      "a boundary with no path invents no locator",
+			nesting:   boundaryNesting,
+			scopePath: "",
+			tail:      []string{"features", "shared-db"},
 			want:      "",
 		},
 	}
@@ -345,15 +393,45 @@ func TestNestedScopeSegmentsRepeatTheContainerKeyPerLevel(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			segments := nestedScopeSegments(authoredKeySubsystems, tc.scopePath, tc.tail...)
+			segments := nestedScopeSegments(tc.nesting, tc.scopePath, tc.tail...)
 			if got := authoredLocator(segments...); got != tc.want {
-				t.Errorf("the segments for scope path %q with tail %q render as %q; want %q.\n"+
+				t.Errorf("the segments for %s scope path %q with tail %q render as %q; want %q.\n"+
 					"INVARIANT: a locator names the authored site, and a nesting scope's site spells every "+
 					"level under the container's own key.\n"+
 					"CONSEQUENCE: a locator that joins the path in as one segment points a reader at a key the "+
 					"file does not contain, and one invented for a scope with no path points at nothing at all.",
-					tc.scopePath, tc.tail, got, tc.want)
+					tc.nesting.containerKey, tc.scopePath, tc.tail, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestEachNestingAxisIsSpelledWithItsOwnSeparator pins the pairing rather than the
+// two values, because the pairing is what a call site could get wrong and what
+// nothing else would catch.
+//
+// Splitting a path on a separator it does not contain does not fail: it yields the
+// whole path as one level, so a boundary spelled with the subsystem separator
+// renders a single flattened segment and reads as a locator. The two axes are
+// therefore asserted to disagree, and each is asserted to split the path its own
+// document's compiler joins.
+func TestEachNestingAxisIsSpelledWithItsOwnSeparator(t *testing.T) {
+	t.Parallel()
+
+	if boundaryNesting.separator == subsystemNesting.separator {
+		t.Fatalf("both nesting axes split on %q; a shared separator makes one of the two documents' "+
+			"paths render as a single flattened segment",
+			boundaryNesting.separator)
+	}
+	if boundaryNesting.containerKey == subsystemNesting.containerKey {
+		t.Fatalf("both nesting axes write levels under %q; the container key is the authored key of one "+
+			"document's scope block and the two documents do not share it",
+			boundaryNesting.containerKey)
+	}
+	if got, want := boundaryNesting.containerKey, authoredKeyBoundaries; got != want {
+		t.Errorf("the boundary axis writes levels under %q; want %q", got, want)
+	}
+	if got, want := subsystemNesting.containerKey, authoredKeySubsystems; got != want {
+		t.Errorf("the subsystem axis writes levels under %q; want %q", got, want)
 	}
 }

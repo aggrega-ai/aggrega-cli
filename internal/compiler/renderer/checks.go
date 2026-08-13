@@ -87,7 +87,7 @@ var CrossBoundaryLinkPlaceholderResolved = constraint.Check[
 		v constraint.RenderedView,
 		s constraint.BoundaryProviderPathSubject,
 	) []constraint.Objection {
-		content := v.AssembledFileContent(s.BoundaryName(), s.ProviderName(), s.EmittedPath())
+		content := v.AssembledFileContent(s.BoundaryPath(), s.ProviderName(), s.EmittedPath())
 		if !bytes.Contains(content, []byte(rendercore.CrossBoundaryLinkSentinelPrefix)) {
 			return nil
 		}
@@ -454,13 +454,13 @@ var BoundaryAttachmentPipelineStepProviderCompatible = constraint.Check[
 		s constraint.BoundaryAttachmentPipelineStepSubject,
 	) []constraint.Objection {
 		if v.BoundaryAttachmentStepExportScope(
-			s.BoundaryName(), s.AttachmentName(), s.StepID(),
+			s.BoundaryPath(), s.AttachmentName(), s.StepID(),
 		) == types.ScopeHost {
 			return nil
 		}
-		provider := v.BoundaryAttachmentRenderingProvider(s.BoundaryName(), s.AttachmentName())
+		provider := v.BoundaryAttachmentRenderingProvider(s.BoundaryPath(), s.AttachmentName())
 		declared := v.BoundaryAttachmentStepPluginCompatibleCapabilities(
-			s.BoundaryName(), s.AttachmentName(), s.StepID(),
+			s.BoundaryPath(), s.AttachmentName(), s.StepID(),
 		)
 		if providerCompatible(provider, declared) {
 			return nil

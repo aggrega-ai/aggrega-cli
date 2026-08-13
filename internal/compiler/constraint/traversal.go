@@ -53,7 +53,8 @@ import "strings"
 //     directly, whatever subsystem the node was reached through.
 //   - A coordinate authored inside a nesting scope names every level of that
 //     nesting, with the container's own key repeated between the levels — see
-//     nestedScopeSegments.
+//     nestedScopeSegments. Both authoring documents declare such a scope, so both
+//     go through that shape.
 //   - A coordinate that is not authored at all — a provider, an emitted output
 //     path — contributes no segment, and the coordinate it sits within is what
 //     the locator names.
@@ -75,6 +76,29 @@ const (
 	authoredKeyArtifacts  = "artifacts"
 	authoredKeyBoundaries = "boundaries"
 	authoredKeySubsystems = "subsystems"
+)
+
+// scopeNesting describes one authoring axis whose scopes nest: the key the
+// author writes each level under, and the separator the compiler joins that
+// axis's path with.
+//
+// The two travel together because they are two facts about one axis, and a call
+// site free to pair them itself could name one axis's key alongside the other's
+// separator. That mistake does not fail: splitting a path on a separator it does
+// not contain yields the whole path as one level, so the locator would carry a
+// single flattened segment — the exact shape nestedScopeSegments exists to
+// avoid, arrived at through the helper meant to prevent it.
+type scopeNesting struct {
+	containerKey string
+	separator    string
+}
+
+// The two nesting axes, one per authoring document. Each separator is the one
+// the compiler composes that axis's path with, so a value handed to a traversal
+// splits back into the levels the author wrote.
+var (
+	boundaryNesting  = scopeNesting{containerKey: authoredKeyBoundaries, separator: "/"}
+	subsystemNesting = scopeNesting{containerKey: authoredKeySubsystems, separator: "."}
 )
 
 // componentInnerSegments returns the segments naming an element authored inside
@@ -116,28 +140,34 @@ func documentSpecSegments(block string, tail ...string) []string {
 // scope that nests: the spec, then the container's key and one path part for
 // every level of the nesting, then tail.
 //
-// A nesting scope's path is one dotted string — "a.b" for the scope named b
-// inside the scope named a — and the authored document does not spell it that
-// way: each level sits under the container's own key again, so the site of the
-// element inside a.b is .spec.<container>.a.<container>.b.<tail>. Joining the
-// path in as a single segment would name .spec.<container>.a.b.<tail>, a key no
+// A nesting scope's path is one joined string — "a.b" for the subsystem named b
+// inside the subsystem named a, "a/b" for the boundary named b inside the
+// boundary named a — and neither authoring document spells it that way: each
+// level sits under the container's own key again, so the site of the element
+// inside that scope is .spec.<container>.a.<container>.b.<tail>. Joining the
+// path in as a single segment would name .spec.<container>.a.b.<tail> — worse,
+// .spec.<container>.a/b.<tail> on the axis whose separator is a slash — a key no
 // file contains, so the container's key is repeated between the levels here.
 //
+// It serves both authoring documents, which is why the axis arrives as a value
+// rather than as a hard-coded key and separator. The two axes nest identically
+// and differ only in what they are spelled with, so one rule covers both and a
+// second copy of it could not drift from this one.
+//
 // scopePath is the coordinate value the enumerator handed over, and an empty one
-// yields no segments at all — the mechanical form of not inventing a locator, the
-// same answer componentInnerSegments gives for a component with no expressible
-// site. A scope with no path is a scope this rule cannot name, and an empty
-// locator routes a consumer to file-level positioning instead of to a key that is
-// not there.
-func nestedScopeSegments(containerKey, scopePath string, tail ...string) []string {
+// yields no segments at all — the mechanical form of not inventing a locator. A
+// scope with no path is a scope this rule cannot name, and an empty locator
+// routes a consumer to file-level positioning instead of to a key that is not
+// there.
+func nestedScopeSegments(nesting scopeNesting, scopePath string, tail ...string) []string {
 	if scopePath == "" {
 		return nil
 	}
-	levels := strings.Split(scopePath, ".")
+	levels := strings.Split(scopePath, nesting.separator)
 	out := make([]string, 0, 1+2*len(levels)+len(tail))
 	out = append(out, authoredKeySpec)
 	for _, level := range levels {
-		out = append(out, containerKey, level)
+		out = append(out, nesting.containerKey, level)
 	}
 	return append(out, tail...)
 }
@@ -638,6 +668,14 @@ func RunOnNodeAttachmentPipelineSteps[V View](
 // FeatureRecipe, which is the document an author edits to change it, and that
 // document is neither the Release the attachment was declared in nor any
 // component's Recipe.
+//
+// So the boundary contributes no locator segment here, and that is the point
+// rather than an omission. It is the one boundary-rooted kind whose locator names
+// a different document from the one the boundary is written in, which is why it
+// carries no counterpart to the nesting the other two express: a boundary key
+// spliced onto a FeatureRecipe-rooted locator would name a path that document
+// does not have. The boundary remains a coordinate, because that is what tells
+// this pipeline from another boundary's when a fact is keyed.
 func RunOnBoundaryAttachmentPipelineSteps[V View](
 	cancelled Cancellation,
 	boundaries BoundaryEnumerator,
@@ -690,14 +728,14 @@ func RunOnNodeArtifacts[V View](
 // provider within one boundary, in boundary order, then provider order, then
 // emission order.
 //
-// The locator names the boundary alone — .spec.boundaries.<boundary> — and that
-// is the whole of what is authored here. A provider is selected rather than
-// written at this site, and an emitted path is output rather than authoring, so
-// neither contributes a segment. Both are still coordinates the subject carries,
-// which is what lets a check raising about a particular path name it in its
-// detail: coordinate state and locator segments answer different questions, and
-// this kind is where the same value is legitimate as one and refused as the
-// other.
+// The locator names the boundary alone — .spec.boundaries.<boundary>, with the
+// container's key repeated for each level of a nested boundary — and that is the
+// whole of what is authored here. A provider is selected rather than written at
+// this site, and an emitted path is output rather than authoring, so neither
+// contributes a segment. Both are still coordinates the subject carries, which is
+// what lets a check raising about a particular path name it in its detail:
+// coordinate state and locator segments answer different questions, and this kind
+// is where the same value is legitimate as one and refused as the other.
 func RunOnBoundaryProviderPaths[V View](
 	cancelled Cancellation,
 	boundaries BoundaryEnumerator,
@@ -708,7 +746,7 @@ func RunOnBoundaryProviderPaths[V View](
 ) ([]Objection, error) {
 	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
 		func(boundary AuthoredCoordinate) []BoundaryProviderPathSubject {
-			segments := documentSpecSegments(authoredKeyBoundaries, boundary.Value)
+			segments := nestedScopeSegments(boundaryNesting, boundary.Value)
 			var out []BoundaryProviderPathSubject
 			for _, provider := range providers.Providers(boundary.Value) {
 				for _, path := range paths.EmittedPaths(boundary.Value, provider) {
@@ -724,8 +762,9 @@ func RunOnBoundaryProviderPaths[V View](
 // RunOnBoundaryAttachments invokes check once per Feature attachment declared on
 // a boundary itself, in boundary order and then attachment order.
 //
-// The locator is .spec.boundaries.<boundary>.features.<attachment>, which is the
-// site the operator wrote. It deliberately names the attachment rather than the
+// The locator is .spec.boundaries.<boundary>.features.<attachment>, with the
+// container's key repeated for each level of a nested boundary, which is the site
+// the operator wrote. It deliberately names the attachment rather than the
 // components the attachment reaches: those are the many places it takes effect,
 // and only one of them is a place anyone can edit.
 func RunOnBoundaryAttachments[V View](
@@ -742,8 +781,8 @@ func RunOnBoundaryAttachments[V View](
 			for _, attachment := range names {
 				out = append(out, newBoundaryAttachmentSubject(
 					boundary.SourceFile, boundary.Value, attachment,
-					documentSpecSegments(
-						authoredKeyBoundaries, boundary.Value, authoredKeyFeatures, attachment,
+					nestedScopeSegments(
+						boundaryNesting, boundary.Value, authoredKeyFeatures, attachment,
 					)...,
 				))
 			}
@@ -784,7 +823,7 @@ func RunOnSubsystemAttachments[V View](
 				out = append(out, newSubsystemAttachmentSubject(
 					subsystem.SourceFile, subsystem.Value, attachment,
 					nestedScopeSegments(
-						authoredKeySubsystems, subsystem.Value, authoredKeyFeatures, attachment,
+						subsystemNesting, subsystem.Value, authoredKeyFeatures, attachment,
 					)...,
 				))
 			}

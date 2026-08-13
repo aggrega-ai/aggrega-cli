@@ -45,8 +45,8 @@ package constraint
 // a real dependency from the point where a check's placement is worked out.
 //
 // The accessor name is the coordinate's name plus a suffix naming what the value
-// is — an identifier, a name, a key — rather than the bare coordinate, so a
-// signature reads as the thing it returns. The suffix is a judgement and not a
+// is — an identifier, a name, a key, a path — rather than the bare coordinate, so
+// a signature reads as the thing it returns. The suffix is a judgement and not a
 // transform: an emitted path is not named for its coordinate at all, and four
 // coordinates are written with a hyphen and could not be Go identifiers even
 // spelled mechanically. So the choice is made once per coordinate *name* — never
@@ -813,9 +813,11 @@ func newNodeAttachmentPipelineStepSubject(
 type BoundaryProviderPathSubject interface {
 	Subject
 
-	// BoundaryName is the boundary the emitted set was written within, as every
-	// keyed fact takes it.
-	BoundaryName() string
+	// BoundaryPath is the boundary the emitted set was written within, as every
+	// keyed fact takes it. It is the scope's path from the document's own scope
+	// set rather than a bare name, because boundaries nest and two scopes at
+	// different depths may carry one name.
+	BoundaryPath() string
 
 	// ProviderName is the provider within that boundary the path was written for.
 	ProviderName() string
@@ -838,7 +840,7 @@ type boundaryProviderPathSubject struct {
 
 func (boundaryProviderPathSubject) boundaryProviderPath() {}
 
-func (s boundaryProviderPathSubject) BoundaryName() string { return s.boundary }
+func (s boundaryProviderPathSubject) BoundaryPath() string { return s.boundary }
 
 func (s boundaryProviderPathSubject) ProviderName() string { return s.provider }
 
@@ -870,9 +872,11 @@ func newBoundaryProviderPathSubject(
 type BoundaryAttachmentSubject interface {
 	Subject
 
-	// BoundaryName is the boundary the attachment was declared on, as every
-	// keyed fact takes it.
-	BoundaryName() string
+	// BoundaryPath is the boundary the attachment was declared on, as every
+	// keyed fact takes it. It is the scope's path from the document's own scope
+	// set rather than a bare name, because boundaries nest and two scopes at
+	// different depths may carry one name.
+	BoundaryPath() string
 
 	// AttachmentName is the attachment the check was invoked for: the name the
 	// operator wrote it under.
@@ -889,7 +893,7 @@ type boundaryAttachmentSubject struct {
 
 func (boundaryAttachmentSubject) boundaryAttachment() {}
 
-func (s boundaryAttachmentSubject) BoundaryName() string { return s.boundary }
+func (s boundaryAttachmentSubject) BoundaryPath() string { return s.boundary }
 
 func (s boundaryAttachmentSubject) AttachmentName() string { return s.attachment }
 
@@ -920,9 +924,11 @@ func newBoundaryAttachmentSubject(
 type BoundaryAttachmentPipelineStepSubject interface {
 	Subject
 
-	// BoundaryName is the boundary the attachment was declared on, as every
-	// keyed fact takes it.
-	BoundaryName() string
+	// BoundaryPath is the boundary the attachment was declared on, as every
+	// keyed fact takes it. It is the scope's path from the document's own scope
+	// set rather than a bare name, because boundaries nest and two scopes at
+	// different depths may carry one name.
+	BoundaryPath() string
 
 	// AttachmentName is the attachment whose FeatureRecipe declares the
 	// pipeline: the name the operator wrote it under.
@@ -945,7 +951,7 @@ type boundaryAttachmentPipelineStepSubject struct {
 
 func (boundaryAttachmentPipelineStepSubject) boundaryAttachmentPipelineStep() {}
 
-func (s boundaryAttachmentPipelineStepSubject) BoundaryName() string { return s.boundary }
+func (s boundaryAttachmentPipelineStepSubject) BoundaryPath() string { return s.boundary }
 
 func (s boundaryAttachmentPipelineStepSubject) AttachmentName() string { return s.attachment }
 
