@@ -4,6 +4,8 @@
 package main
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -463,5 +465,172 @@ func TestTheAttachmentSlotPairingReportsWhatItIsGiven(t *testing.T) {
 			t.Errorf("the pairing did not name %q; it is not firing, so an empty finding over the "+
 				"real declaration would mean nothing.\ngot: %+v", tc.want, got)
 		})
+	}
+}
+
+// TestInvocationReadClassifiesWhatItIsGiven exercises the syntactic half of the
+// invocation read against sources written here, so each classification is shown to
+// fire rather than inferred from a clean result over the real tree.
+//
+// Every question the read answers over the real tree is a search for something
+// that may legitimately be absent, and the tree currently answers "nothing is
+// invoked". A read that classified nothing would produce exactly that answer, so
+// the rows below are the needles: each one MUST be found, and a row finding
+// nothing fails.
+func TestInvocationReadClassifiesWhatItIsGiven(t *testing.T) {
+	t.Parallel()
+
+	entries := map[string]bool{"RunOnNodes": true, "RunOnEdges": true}
+
+	// The rows assert what the syntactic reads return, which is deliberately
+	// blind to whether a call is a production invocation: the framework-versus-
+	// production split is made by the caller, from the directory the file sits
+	// in, and is asserted over the real tree below. A row therefore lists the
+	// calls found, not the calls that would count.
+	for _, tc := range []struct {
+		name string
+		src  string
+
+		wantChecks []declaredCheck
+		wantSites  []invocationSite
+	}{
+		{
+			name: "a qualified declaration is read with its view and subject",
+			src: `package p
+import "x/constraint"
+var Rule = constraint.Check[constraint.NormalizedView, constraint.NodeSubject]{}
+`,
+			wantChecks: []declaredCheck{{
+				Name: "Rule", Package: "d", View: "NormalizedView", Subject: "NodeSubject",
+			}},
+		},
+		{
+			name: "the framework's own unqualified declaration is read too",
+			src: `package constraint
+var Rule = Check[GraphView, EdgeSubject]{}
+`,
+			wantChecks: []declaredCheck{{
+				Name: "Rule", Package: "d", View: "GraphView", Subject: "EdgeSubject",
+			}},
+		},
+		{
+			name: "a composite literal that is not a check is ignored",
+			src: `package p
+type other[A any, B any] struct{}
+var NotARule = other[int, string]{}
+`,
+		},
+		{
+			name: "a qualified call naming its check is attributed",
+			src: `package p
+import "x/constraint"
+func run() { _, _ = constraint.RunOnNodes(nil, nil, nil, Rule) }
+`,
+			wantSites: []invocationSite{{Entry: "RunOnNodes", File: "d/f.go", Check: "Rule"}},
+		},
+		{
+			name: "a call naming a check from another package is attributed to the check's own name",
+			src: `package p
+import "x/constraint"
+func run() { _, _ = constraint.RunOnEdges(nil, nil, nil, analyzer.Rule) }
+`,
+			wantSites: []invocationSite{{Entry: "RunOnEdges", File: "d/f.go", Check: "Rule"}},
+		},
+		{
+			name: "a call whose check arrives through a parameter is a site with no check attributed",
+			src: `package p
+import "x/constraint"
+func run(c any) { _, _ = constraint.RunOnNodes(nil, nil, nil, checksFor(c)) }
+`,
+			wantSites: []invocationSite{{Entry: "RunOnNodes", File: "d/f.go", Check: ""}},
+		},
+		{
+			name: "an unqualified call is seen, which is how an in-framework call is seen at all",
+			src: `package constraint
+func run() { _, _ = RunOnNodes(nil, nil, nil, Rule) }
+`,
+			wantSites: []invocationSite{{Entry: "RunOnNodes", File: "d/f.go", Check: "Rule"}},
+		},
+		{
+			name: "a call to something else entirely is not a site",
+			src: `package p
+func run() { _ = doSomething(nil) }
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "d/f.go", tc.src, 0)
+			if err != nil {
+				t.Fatalf("parse the fixture: %v", err)
+			}
+
+			gotChecks := declaredChecksIn("d", file)
+			if !reflect.DeepEqual(gotChecks, tc.wantChecks) {
+				t.Errorf("declared checks:\n got %+v\nwant %+v", gotChecks, tc.wantChecks)
+			}
+
+			gotSites := traversalCallSites(fset, "", file, entries)
+			if !reflect.DeepEqual(gotSites, tc.wantSites) {
+				t.Errorf("production sites:\n got %+v\nwant %+v", gotSites, tc.wantSites)
+			}
+
+			if got := countTraversalCalls(file, entries); got != len(tc.wantSites) {
+				t.Errorf("traversal calls counted = %d, want %d; the count and the site list read the "+
+					"same calls, so they cannot disagree", got, len(tc.wantSites))
+			}
+		})
+	}
+}
+
+// TestInvocationReadReachesTheTree asserts the read over the real tree is a
+// measurement rather than an empty instrument, and that what it attributes is
+// internally consistent.
+//
+// The read's own refusals cover the three vacuity shapes — no file parsed, no
+// traversal entry found, no check declared — so a nil error here is already the
+// assertion that the corpus was reached. What this adds is the two consistency
+// properties a clean-but-wrong read would violate: a check the placement chain
+// cannot place, and a site attributed to a name no declaration carries.
+func TestInvocationReadReachesTheTree(t *testing.T) {
+	t.Parallel()
+
+	state, err := readInvocationState()
+	if err != nil {
+		t.Fatalf("the invocation read did not complete, so the placement table cannot state which "+
+			"checks are invoked: %v", err)
+	}
+
+	c, err := deriveChain()
+	if err != nil {
+		t.Fatalf("derive the stage chain: %v", err)
+	}
+	placeable := map[string]bool{}
+	for _, s := range c.order {
+		placeable[viewName(s.Name)] = true
+	}
+
+	declared := map[string]bool{}
+	for _, ck := range state.Checks {
+		declared[ck.Name] = true
+		if !placeable[ck.View] {
+			t.Errorf("check %q in %s declares view %q, which the stage chain does not order, so the "+
+				"placement table can print no stage for it", ck.Name, ck.Package, ck.View)
+		}
+	}
+
+	for _, site := range state.Sites {
+		if site.Check != "" && !declared[site.Check] {
+			t.Errorf("the site in %s names %q, which is not a declared check; the read has attributed "+
+				"an invocation to something it cannot place", site.File, site.Check)
+		}
+	}
+
+	if state.InvokedCount()+state.DeclaredOnly() != len(state.Checks) {
+		t.Errorf("the invoked and declared-only counts (%d + %d) do not partition the %d declared "+
+			"checks, so the table's totals would not add up",
+			state.InvokedCount(), state.DeclaredOnly(), len(state.Checks))
 	}
 }

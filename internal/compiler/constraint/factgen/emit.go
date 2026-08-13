@@ -282,9 +282,17 @@ func emitPlacementTable(c chain, kinds []kind, shares []tupleShare) ([]byte, err
 	b.WriteString("`aggrega-cli/internal/compiler/constraint/factgen/registry.go`. This table is\n")
 	b.WriteString("authoritative for placement: a check's stage is the stage of the view it\n")
 	b.WriteString("declares, and a view's stage is fixed by which facts land on it.\n\n")
+	b.WriteString("**Placement is not enforcement, and no table below says a rule is enforced.**\n")
+	b.WriteString("A check's stage is where it would be invoked; whether anything invokes it is a\n")
+	b.WriteString("separate question, answered for each declared check in the next section. Read\n")
+	b.WriteString("that section before reading a stage row as a guard.\n\n")
 	b.WriteString("The measured census this registry was declared from keeps the read-site\n")
 	b.WriteString("counts and the near-duplicate reasoning a generated table cannot carry. For\n")
 	b.WriteString("placement, this table supersedes it.\n\n")
+
+	if err := writeInvocationSection(&b, c); err != nil {
+		return nil, err
+	}
 
 	b.WriteString("## The view stages\n\n")
 	b.WriteString("Stages nest by interface embedding, so their order is a compile-time fact. The\n")

@@ -8,15 +8,22 @@
 // Nothing here reads a hand-maintained document. The registry is Go source, the
 // derivations below are computed from it, and every generated artifact is a
 // projection of it — so a placement change is a one-line registry edit whose
-// consequences appear as a diff in committed output.
+// consequences appear as a diff in committed output. One derivation reads the
+// module's own source instead of the registry, and says so where it lives: which
+// declared checks anything actually invokes is not a question the registry can
+// answer.
 //
 // Usage, from this directory:
 //
 //	go run . <output-file>
 //
-// The output file's base name selects the target. Every target is also declared
-// as a go:generate directive in generate.go, so `go generate ./...` over this
-// package regenerates all of them.
+// The output file's base name selects the target. Only the targets committed
+// inside this module are named by a generate directive in generate.go; the ones
+// committed above it are produced by passing their path, because a directive
+// naming a path outside the module would fail outright in a standalone checkout
+// of this repository. So `go generate` over this package regenerates SOME of the
+// targets, and a clean working tree afterwards says nothing about the rest —
+// their drift is gated by the workspace build, which has every tree present.
 package main
 
 // hostPower names one power the host offers, which a stage's fact production
