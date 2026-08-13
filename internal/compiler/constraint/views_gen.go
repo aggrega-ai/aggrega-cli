@@ -185,6 +185,31 @@ type NormalizedView interface {
 	// Keyed by (node, socket); read from types.UsesSchemaEntry.Required.
 	SocketRequired(componentType string, socket string) bool
 
+	// SocketInjectMechanismNames are the delivery mechanisms a dependency
+	// socket allows a connection wired into it to dictate, in author order.
+	//
+	// The names are an allowlist and nothing more: they constrain which
+	// mechanisms a consumer may dictate delivery through, never what any of
+	// them carries. The shape of one delivery entry is the entity contract's
+	// to state, and restating it here would give one rule two homes.
+	//
+	// Empty is a declaration rather than an absence, and a rule reading this
+	// fact must not take it for "unconstrained" — it is the most constrained
+	// answer a socket can give. A socket naming no mechanism permits no
+	// dictation at all, so a connection dictating any delivery for it is
+	// refused. An omitted allowlist and an explicitly empty one are
+	// deliberately the same answer, because reading them apart would give an
+	// empty list a meaning no authoring surface documents.
+	//
+	// Whether the socket carries a declaration at all is a different question,
+	// and this fact does not answer it: a socket the catalog declares no entry
+	// for reads the same as one declaring no mechanism. A rule that turns on
+	// the difference reads the declared socket set first, which is the fact
+	// that answers which sockets exist to be asked about.
+	//
+	// Keyed by (node, socket); read from types.UsesSchemaEntry.Inject.
+	SocketInjectMechanismNames(componentType string, socket string) []string
+
 	// PerEdgeTarget is the target an edge names, as authored — empty when
 	// the author named none.
 	//
@@ -196,6 +221,80 @@ type NormalizedView interface {
 	//
 	// Keyed by edge; read from types.VerboseUsesEntry.Target.
 	PerEdgeTarget(node string, socket string) string
+
+	// PerEdgeValues is the developer's configuration for one connection on one
+	// socket as it was written, carried as an opaque ordered payload.
+	//
+	// It is the payload rather than a named fact about it, on the same
+	// reasoning the configuration pillars are: a rule whose predicate is "what
+	// was written here conforms to the contract the socket declares" has that
+	// content as its input, and the content has no other home to be read from.
+	//
+	// Empty is the author writing nothing, and it is NOT a case with nothing
+	// to check. Once a socket declares a contract for this pillar, every
+	// connection on that socket is measured against it, and a connection that
+	// wrote nothing is the maximal violation of a key the contract declares
+	// required rather than an exemption from it. What is opt-in is the
+	// socket's contract, never the connection's content.
+	//
+	// The operator's per-connection configuration is a different fact on a
+	// different surface rather than this one in another shape. The two are
+	// written on separate documents by separate hands, each is independently
+	// absent, and the socket declares a separate contract for each.
+	//
+	// Author order is carried because these entries reach rendered output, and
+	// an unordered payload would put a byte-identical result at the mercy of
+	// map iteration.
+	//
+	// Keyed by edge; read from types.VerboseUsesEntry.Values.
+	PerEdgeValues(node string, socket string) types.OrderedMap[any]
+
+	// AuthoredPerEdgeInject is the delivery a connection dictates as it was
+	// written, keyed by mechanism name in author order, each entry carrying
+	// that mechanism's payload as authored.
+	//
+	// A mechanism counts as dictated when its key is PRESENT, whatever its
+	// payload turns out to hold. That is the property a rule over this fact
+	// depends on: the conversions further down the build drop a payload they
+	// cannot express as one string per delivery key, so a rule reading
+	// mechanism names off a converted structure would miss a dictation whose
+	// payload was dropped and read the connection as dictating nothing.
+	//
+	// The payload is carried rather than decomposed because the shape of one
+	// delivery entry is the entity contract's to state. A rule needing the
+	// keys a mechanism delivers, or the provides key an entry references,
+	// reads them out of this payload with the same reading the authoring
+	// surface documents.
+	//
+	// An omitted delivery block and an empty one are one answer: the
+	// connection dictates nothing, which is what a socket declaring no
+	// allowlist requires of it.
+	//
+	// What the dictated mechanisms are measured against is a separate fact on
+	// a separate document — the allowlist the socket declares — so a rule
+	// reads the two together and neither carries the other.
+	//
+	// Keyed by edge; read from types.VerboseUsesEntry.Inject.
+	AuthoredPerEdgeInject(node string, socket string) types.OrderedMap[any]
+
+	// CompactSocketTargets are the target names a socket lists in the short
+	// authoring form, in author order.
+	//
+	// The short form names targets directly and gives each connection the
+	// target's own name as its alias; the long form names an alias per
+	// connection and carries the target inside it. Exactly one of the two is
+	// populated for any socket the author wrote a value for, so this fact
+	// reads empty for a socket authored in the long form and for a socket with
+	// no value at all — the connections of a long-form socket are read
+	// through the facts keyed per connection instead.
+	//
+	// A name in this list is what the author typed and is not resolved against
+	// anything here. An entry may be the empty string, which names no target
+	// and populates nothing, so a rule asking whether a socket was populated
+	// cannot read the list's length as its answer.
+	//
+	// Keyed by (node, socket); read from types.UsesSocketValue.Compact.
+	CompactSocketTargets(node string, socket string) []string
 
 	// AuthoredAttachmentNames are the attachment names an instance declares,
 	// in author order.
@@ -236,6 +335,31 @@ type NormalizedView interface {
 	// Keyed by (node, mechanism, delivery-key); read from
 	// types.ComponentInstance.Inject.
 	AuthoredInjectDeliveryKeys(node string, mechanism string) []string
+
+	// AuthoredInjectProvidesReference is the published key one delivery entry
+	// of an instance's injection block reads from, and whether that entry
+	// reads a published key at all.
+	//
+	// The second answer is the fact's point rather than a convenience. An
+	// entry may carry a literal value instead of a reference, and an entry
+	// carrying a literal is nothing to resolve — so a rule checking that
+	// every reference names a key the producing component publishes must be
+	// able to tell a literal from a reference to the empty key. A single
+	// string would merge the two, and the rule would report the entry that
+	// referenced nothing rather than the one that referenced wrongly.
+	//
+	// The key is what the author typed and is not resolved here. Whether it is
+	// published is a separate fact on the producing component's own surface,
+	// so a rule reads the two together and neither carries the other.
+	//
+	// This is the instance's own injection block. A reference written on a
+	// connection is the same question on a different surface, read out of that
+	// connection's own authored delivery payload, and the two are
+	// independently absent.
+	//
+	// Keyed by (node, mechanism, delivery-key); read from
+	// types.ComponentInstance.Inject.
+	AuthoredInjectProvidesReference(node string, mechanism string, deliveryKey string) (string, bool)
 
 	// AuthoredValuesPillar is one configuration pillar as the author wrote it,
 	// carried as an opaque ordered payload.
@@ -432,6 +556,27 @@ type NormalizedView interface {
 	// Keyed by node; read from types.ComponentSpec.UsesSchema.
 	DeclaredSocketNames(componentType string) []string
 
+	// DeclaredInjectMechanismNames are the delivery mechanisms a component
+	// type allows an instance of it to dictate for its own configuration, in
+	// author order.
+	//
+	// Empty is a declaration rather than an absence, and a rule reading this
+	// fact must not take it for "unconstrained" — it is the most constrained
+	// answer a component type can give. A type naming no mechanism states that
+	// its Recipe wires its material internally rather than delivering it to
+	// the workload, so an instance dictating any delivery of its own is
+	// refused outright, before any single mechanism is compared against
+	// anything.
+	//
+	// It governs the type's own configuration. The allowlist a dependency
+	// socket declares is the same question on a different surface — what a
+	// connection into that socket may dictate — and the two are declared
+	// separately and are independently absent, so a rule over either names a
+	// different authored site.
+	//
+	// Keyed by node; read from types.ComponentSpec.Inject.
+	DeclaredInjectMechanismNames(componentType string) []string
+
 	// AttachmentDeclaredSocketNames are the dependency socket names the
 	// Feature an attachment resolves to declares, in author order.
 	//
@@ -529,6 +674,39 @@ type NormalizedView interface {
 	// Keyed by edge; read from types.ReleaseUsesEntry.Infra.
 	ReleasePerEdgeInfra(node string, socket string) types.OrderedMap[any]
 
+	// ReleaseComponentInfra is the operator's physical-sizing configuration
+	// for one component as it was written, carried as an opaque ordered
+	// payload.
+	//
+	// It is the payload rather than a named fact about it, on the same
+	// reasoning the configuration pillars are: a rule whose predicate is "what
+	// was written here conforms to the contract the component type declares"
+	// has that content as its input, and the content has no other home to be
+	// read from.
+	//
+	// It is keyed by the component the operator named, which is the identity
+	// the operator writes it against. The scope it was written inside
+	// contributes the component's placement and its inherited metadata and
+	// contributes nothing to this payload, so the scope is not part of this
+	// fact's key.
+	//
+	// Empty is the operator writing nothing, and a rule reading it as such has
+	// nothing to measure: the contract for this pillar is opt-in on the
+	// component type's side, and a component whose operator wrote no sizing
+	// has no sizing to check.
+	//
+	// The developer's configuration for the same component is a different fact
+	// on a different surface. The two are written on separate documents by
+	// separate hands, the component type declares a separate contract for
+	// each, and each is independently absent.
+	//
+	// Author order is carried because these entries reach rendered output, and
+	// an unordered payload would put a byte-identical result at the mercy of
+	// map iteration.
+	//
+	// Keyed by node; read from types.BoundaryComponent.Infra.
+	ReleaseComponentInfra(node string) types.OrderedMap[any]
+
 	// BoundaryAttachmentDeclaration is what an attachment declared on a
 	// boundary itself states — the Feature it attaches and the sockets it
 	// wires on that Feature — reported absent when the boundary declares no
@@ -583,6 +761,28 @@ type NormalizedView interface {
 	//
 	// Keyed by (node, attachment); read from types.BoundaryFeature.Type.
 	ReleaseAttachmentType(node string, attachment string) (string, bool)
+
+	// ReleaseAttachmentAuthoredUsesSocketNames are the socket names an
+	// attachment the Release declares for one component wires on the Feature
+	// it attaches, in author order.
+	//
+	// These name sockets on the attached Feature, a separate declaration
+	// surface from the component's own sockets, which is why the fact is keyed
+	// per attachment as well as per node.
+	//
+	// It is a separate fact from the sockets the application's own attachment
+	// of the same name wires. Both documents may declare an attachment under
+	// one name and each wires what it wires, so a rule reading one surface
+	// alone would measure the other's sockets against nothing.
+	//
+	// It is also a separate fact from the sockets an attachment written at a
+	// scope wires, which is keyed by that scope: this one is written against a
+	// named component, so the two are asked a different number of times and a
+	// rule over either names a different authored site.
+	//
+	// Keyed by (node, attachment, socket); read from
+	// types.BoundaryFeature.Uses.
+	ReleaseAttachmentAuthoredUsesSocketNames(node string, attachment string) []string
 
 	// AuthoredComponentSchemaText is the contract document a component type
 	// declares over its free-form configuration, as authored, serialized to

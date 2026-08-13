@@ -243,6 +243,10 @@ func TestTupleSharesAreReported(t *testing.T) {
 // must account for: one attachment slot as an entity declares it.
 const authoredSlotCarrier = "types.AttachmentSlot"
 
+// authoredSocketCarrier is the second declaration held in lockstep: one
+// dependency socket as an entity declares it.
+const authoredSocketCarrier = "types.UsesSchemaEntry"
+
 // attachmentSlotFieldsWithoutFacts records, per authored field of the slot
 // declaration, why no fact reads it. An entry is a claim that no rule over the
 // slot's shape has an input there, and the pairing below refuses one that has
@@ -253,6 +257,36 @@ var attachmentSlotFieldsWithoutFacts = map[string]string{
 		"validation surface projected from a slot is built from the slot's other " +
 		"fields and consults this one nowhere, so a rule over the slot's shape has " +
 		"no input here and a fact carrying it would be read by nothing",
+}
+
+// authoredCarriersHeldInLockstep are the declarations whose every authored field
+// must be accounted for — by a fact that reads it, or by a recorded reason why
+// no rule has an input there.
+//
+// It is a list rather than one entry because the failure it prevents is a
+// property of the class rather than of any one declaration: an authored field no
+// fact reads is invisible to every rule over that declaration's shape, whichever
+// declaration it sits on. A carrier absent from this list is unguarded, so
+// adding one here is how the guarantee widens.
+var authoredCarriersHeldInLockstep = []struct {
+	carrier string
+	decl    reflect.Type
+	// without records, per authored field, why no fact reads it. Empty means
+	// every authored field the declaration carries is read by some fact, which
+	// is an assertion rather than an omission: the pairing refuses a reason that
+	// has gone stale, so an entry added later has to earn its place.
+	without map[string]string
+}{
+	{
+		carrier: authoredSlotCarrier,
+		decl:    reflect.TypeOf(types.AttachmentSlot{}),
+		without: attachmentSlotFieldsWithoutFacts,
+	},
+	{
+		carrier: authoredSocketCarrier,
+		decl:    reflect.TypeOf(types.UsesSchemaEntry{}),
+		without: nil,
+	},
 }
 
 // slotFieldFindings is what the pairing reports over one declaration: authored
@@ -328,48 +362,61 @@ func pairAuthoredFieldsWithFacts(
 	return out
 }
 
-// TestEveryAuthoredAttachmentSlotFieldHasAFact holds the slot declaration and
+// TestEveryAuthoredCarrierFieldHasAFact holds each registered declaration and
 // the facts over it in lockstep, in both directions.
 //
 // The failure it prevents is silent, which is why it is a test rather than a
-// convention. A rule over a slot's shape reads facts; an authored field no fact
-// reads is simply never looked at, so the rule still runs, still passes, and
+// convention. A rule over a declaration's shape reads facts; an authored field no
+// fact reads is simply never looked at, so the rule still runs, still passes, and
 // reports nothing about that field. Nothing goes red, so nothing prompts anyone
 // to look — and a census someone has to remember to re-run is not enforcement.
 //
-// Both directions are asserted. An authored field with neither a fact nor a
-// recorded reason fails, and so does a fact naming a field the declaration does
-// not carry, which is what a rename leaves behind.
-func TestEveryAuthoredAttachmentSlotFieldHasAFact(t *testing.T) {
+// Both directions are asserted per carrier. An authored field with neither a fact
+// nor a recorded reason fails, and so does a fact naming a field the declaration
+// does not carry, which is what a rename leaves behind.
+//
+// The carrier set is asserted non-empty for the same reason each carrier's field
+// set is: a loop over no rows passes every assertion inside it.
+func TestEveryAuthoredCarrierFieldHasAFact(t *testing.T) {
 	t.Parallel()
 
-	slot := reflect.TypeOf(types.AttachmentSlot{})
-	found := pairAuthoredFieldsWithFacts(slot, authoredSlotCarrier, facts, attachmentSlotFieldsWithoutFacts)
+	if len(authoredCarriersHeldInLockstep) == 0 {
+		t.Fatal("no carrier is held in lockstep, so this test checks nothing")
+	}
 
-	// A declaration reporting no authored fields would satisfy every assertion
-	// below while checking nothing, so the population is asserted before the
-	// findings are read.
-	empty := pairAuthoredFieldsWithFacts(slot, authoredSlotCarrier, nil, nil)
-	if len(empty.unexplained) == 0 {
-		t.Fatalf("%s reports no authored fields at all, so this pairing checks nothing",
-			authoredSlotCarrier)
-	}
-	t.Logf("%s carries %d authored field(s)", authoredSlotCarrier, len(empty.unexplained))
+	for _, c := range authoredCarriersHeldInLockstep {
+		t.Run(c.carrier, func(t *testing.T) {
+			t.Parallel()
 
-	if len(found.unexplained) > 0 {
-		t.Errorf("%s declares %d authored field(s) that no fact reads and no recorded reason "+
-			"covers: %v\neach is either a field a rule over the slot's shape cannot see, which "+
-			"wants a fact, or one no rule has a use for, which wants its reason recorded beside "+
-			"the others", authoredSlotCarrier, len(found.unexplained), found.unexplained)
-	}
-	if len(found.dangling) > 0 {
-		t.Errorf("%d fact(s) read a field %s does not carry as an authored field: %v\n"+
-			"a fact naming a field that was renamed or removed reads nothing",
-			len(found.dangling), authoredSlotCarrier, found.dangling)
-	}
-	if len(found.stale) > 0 {
-		t.Errorf("%d recorded reason(s) no longer hold: %v\nremove each entry",
-			len(found.stale), found.stale)
+			found := pairAuthoredFieldsWithFacts(c.decl, c.carrier, facts, c.without)
+
+			// A declaration reporting no authored fields would satisfy every
+			// assertion below while checking nothing, so the population is
+			// asserted before the findings are read.
+			empty := pairAuthoredFieldsWithFacts(c.decl, c.carrier, nil, nil)
+			if len(empty.unexplained) == 0 {
+				t.Fatalf("%s reports no authored fields at all, so this pairing checks nothing",
+					c.carrier)
+			}
+			t.Logf("%s carries %d authored field(s)", c.carrier, len(empty.unexplained))
+
+			if len(found.unexplained) > 0 {
+				t.Errorf("%s declares %d authored field(s) that no fact reads and no recorded "+
+					"reason covers: %v\neach is either a field a rule over this declaration's "+
+					"shape cannot see, which wants a fact, or one no rule has a use for, which "+
+					"wants its reason recorded beside the others",
+					c.carrier, len(found.unexplained), found.unexplained)
+			}
+			if len(found.dangling) > 0 {
+				t.Errorf("%d fact(s) read a field %s does not carry as an authored field: %v\n"+
+					"a fact naming a field that was renamed or removed reads nothing",
+					len(found.dangling), c.carrier, found.dangling)
+			}
+			if len(found.stale) > 0 {
+				t.Errorf("%d recorded reason(s) no longer hold over %s: %v\nremove each entry",
+					len(found.stale), c.carrier, found.stale)
+			}
+		})
 	}
 }
 
