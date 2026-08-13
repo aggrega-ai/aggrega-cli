@@ -155,6 +155,24 @@ type BoundaryEnumerator interface {
 	Boundaries() []AuthoredCoordinate
 }
 
+// SubsystemEnumerator supplies the subsystem set: every scope the application's
+// author declared, at every depth.
+//
+// Each value is the scope's path from the document's own scope set rather than a
+// bare name, because subsystems nest and two scopes at different depths may carry
+// one name. An implementation handing back bare names would present two distinct
+// scopes under one key.
+//
+// It is the sibling of [BoundaryEnumerator] on the other authoring document and
+// not a generalisation of it: the two scopes are declared in separate documents,
+// so one enumerator covering both would hand the framework scopes from two
+// documents under one axis.
+type SubsystemEnumerator interface {
+	// Subsystems returns every subsystem, in a deterministic order the
+	// implementation declares.
+	Subsystems() []AuthoredCoordinate
+}
+
 // NodeSocketEnumerator supplies the dependency sockets of one node.
 type NodeSocketEnumerator interface {
 	// NodeSockets returns the socket names declared for a node, in a
@@ -361,4 +379,18 @@ type BoundaryAttachmentEnumerator interface {
 	// BoundaryAttachments returns a boundary's own attachment names, in a
 	// deterministic order the implementation declares.
 	BoundaryAttachments(boundary string) []string
+}
+
+// SubsystemAttachmentEnumerator supplies the Feature attachments declared on one
+// subsystem itself.
+//
+// The axis is keyed per subsystem and not per node for the reason the boundary's
+// own attachment axis is: such an attachment is declared at the scope rather than
+// against a named component, and it reaches every component that scope holds, so
+// enumerating it per component would present one authored attachment many times
+// over and would present it not at all for a scope holding none.
+type SubsystemAttachmentEnumerator interface {
+	// SubsystemAttachments returns a subsystem's own attachment names, in a
+	// deterministic order the implementation declares.
+	SubsystemAttachments(subsystem string) []string
 }

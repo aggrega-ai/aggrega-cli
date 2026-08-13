@@ -273,6 +273,61 @@ func newNodeAttachmentSubject(sourceFile, node, attachment string, segments ...s
 	}
 }
 
+// SubsystemAttachmentSubject is the subject of a check invoked once per Feature
+// attachment declared on a subsystem itself.
+//
+// It is rooted at a subsystem rather than at a node because that is where the
+// attachment is written. Such an attachment applies to every component the
+// subsystem holds, so it is authored once and takes effect many times — and the
+// two ways of keying it are not equivalent. Keyed by the component it reaches, a
+// rule would be asked once per component, would name a component rather than the
+// site the author wrote, and would be asked no times at all for a subsystem
+// holding no components, which is silence a caller cannot tell from approval.
+// Keyed here it is asked exactly once per authored attachment.
+//
+// It is the twin of the kind rooted at a boundary: the same shape of authored
+// scope holding the same shape of attachment, on the other authoring document.
+// Neither is reached by the other's traversal, because the two scopes are declared
+// in separate documents by separate hands.
+type SubsystemAttachmentSubject interface {
+	Subject
+
+	// SubsystemPath is the subsystem the attachment was declared on, as every
+	// keyed fact takes it. It is the scope's path from the document's own scope
+	// set rather than a bare name, because subsystems nest and two scopes at
+	// different depths may carry one name.
+	SubsystemPath() string
+
+	// AttachmentName is the attachment the check was invoked for: the name the
+	// author wrote it under.
+	AttachmentName() string
+
+	subsystemAttachment()
+}
+
+type subsystemAttachmentSubject struct {
+	provenance
+	subsystem  string
+	attachment string
+}
+
+func (subsystemAttachmentSubject) subsystemAttachment() {}
+
+func (s subsystemAttachmentSubject) SubsystemPath() string { return s.subsystem }
+
+func (s subsystemAttachmentSubject) AttachmentName() string { return s.attachment }
+
+func newSubsystemAttachmentSubject(
+	sourceFile, subsystem, attachment string,
+	segments ...string,
+) SubsystemAttachmentSubject {
+	return subsystemAttachmentSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		subsystem:  subsystem,
+		attachment: attachment,
+	}
+}
+
 // NodeAttachmentSocketSubject is the subject of a check invoked once per socket
 // an attachment's own dependency block declares.
 //

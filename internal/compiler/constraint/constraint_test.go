@@ -289,3 +289,71 @@ func TestAuthoredLocatorDialectAndTheEmptyRule(t *testing.T) {
 		})
 	}
 }
+
+// TestNestedScopeSegmentsRepeatTheContainerKeyPerLevel pins the segment rule for a
+// scope that nests, which the traversal transcript exercises for one shape only.
+//
+// A scope's path is one dotted string and the authored document does not spell it
+// that way: each level sits under the container's own key again. The nested row is
+// the case the rule exists for — joining the path in as a single segment would
+// produce a key no file contains — and the empty row is the arm the traversal
+// cannot reach, because a scope with no path is not something any enumerator over
+// a normalized document hands over. It is asserted here rather than left as an
+// unexercised defensive branch.
+func TestNestedScopeSegmentsRepeatTheContainerKeyPerLevel(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		scopePath string
+		tail      []string
+		want      string
+	}{
+		{
+			name:      "one level names the scope once",
+			scopePath: "billing",
+			tail:      []string{"features", "tls"},
+			want:      ".spec.subsystems.billing.features.tls",
+		},
+		{
+			name:      "two levels repeat the container key between them",
+			scopePath: "billing.payments",
+			tail:      []string{"features", "tls"},
+			want:      ".spec.subsystems.billing.subsystems.payments.features.tls",
+		},
+		{
+			name:      "three levels keep repeating it",
+			scopePath: "a.b.c",
+			tail:      []string{"features", "tls"},
+			want:      ".spec.subsystems.a.subsystems.b.subsystems.c.features.tls",
+		},
+		{
+			name:      "no tail names the scope alone",
+			scopePath: "billing.payments",
+			tail:      nil,
+			want:      ".spec.subsystems.billing.subsystems.payments",
+		},
+		{
+			name:      "no path invents no locator",
+			scopePath: "",
+			tail:      []string{"features", "tls"},
+			want:      "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			segments := nestedScopeSegments(authoredKeySubsystems, tc.scopePath, tc.tail...)
+			if got := authoredLocator(segments...); got != tc.want {
+				t.Errorf("the segments for scope path %q with tail %q render as %q; want %q.\n"+
+					"INVARIANT: a locator names the authored site, and a nesting scope's site spells every "+
+					"level under the container's own key.\n"+
+					"CONSEQUENCE: a locator that joins the path in as one segment points a reader at a key the "+
+					"file does not contain, and one invented for a scope with no path points at nothing at all.",
+					tc.scopePath, tc.tail, got, tc.want)
+			}
+		})
+	}
+}

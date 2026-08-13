@@ -42,6 +42,7 @@ type traversalFixture struct {
 	nodes      []NodeInstance
 	edges      []EdgeInstance
 	boundaries []AuthoredCoordinate
+	subsystems []AuthoredCoordinate
 
 	sockets           map[string][]string
 	attachments       map[string][]string
@@ -57,6 +58,7 @@ type traversalFixture struct {
 	providers         map[string][]string
 	emittedPaths      map[string][]string
 	boundaryAttach    map[string][]string
+	subsystemAttach   map[string][]string
 
 	locals    map[string][]AuthoredCoordinate
 	provides  map[string][]AuthoredCoordinate
@@ -72,6 +74,7 @@ func fixtureKey(parts ...string) string { return strings.Join(parts, "\x00") }
 func (f traversalFixture) Nodes() []NodeInstance            { return f.nodes }
 func (f traversalFixture) Edges() []EdgeInstance            { return f.edges }
 func (f traversalFixture) Boundaries() []AuthoredCoordinate { return f.boundaries }
+func (f traversalFixture) Subsystems() []AuthoredCoordinate { return f.subsystems }
 
 func (f traversalFixture) NodeSockets(node string) []string { return f.sockets[fixtureKey(node)] }
 func (f traversalFixture) Attachments(node string) []string { return f.attachments[fixtureKey(node)] }
@@ -136,6 +139,10 @@ func (f traversalFixture) BoundaryAttachments(boundary string) []string {
 	return f.boundaryAttach[fixtureKey(boundary)]
 }
 
+func (f traversalFixture) SubsystemAttachments(subsystem string) []string {
+	return f.subsystemAttach[fixtureKey(subsystem)]
+}
+
 // The two nodes the fixture carries, chosen so that every traversal is exercised
 // against both halves of the component-locator rule in one pass.
 //
@@ -172,6 +179,15 @@ func newTraversalFixture() traversalFixture {
 		boundaries: []AuthoredCoordinate{
 			{Value: "prod", SourceFile: "release.yaml"},
 			{Value: "dev", SourceFile: "release.yaml"},
+		},
+		// One nested scope and one top-level scope, reverse-alphabetical so a sort
+		// would be visible. The nested one is what proves the locator names every
+		// level of the nesting rather than joining the path in as one segment: a
+		// scope path is one dotted string and the authored document spells each
+		// level under the container's key again.
+		subsystems: []AuthoredCoordinate{
+			{Value: "web", SourceFile: "aggregate.yaml"},
+			{Value: "billing.payments", SourceFile: "billing/aggregate.yaml"},
 		},
 
 		sockets: map[string][]string{
@@ -222,6 +238,12 @@ func newTraversalFixture() traversalFixture {
 		// rather than stopping.
 		boundaryAttach: map[string][]string{
 			fixtureKey("prod"): {"shared-db", "audit"},
+		},
+		// Two on the nested scope and none on the other, so a transcript shows the
+		// walk entering a scope that declares none and yielding nothing there rather
+		// than stopping.
+		subsystemAttach: map[string][]string{
+			fixtureKey("billing.payments"): {"tls", "audit"},
 		},
 
 		locals: map[string][]AuthoredCoordinate{
@@ -496,6 +518,21 @@ func traversalCases() []traversalCase {
 			want: []string{
 				"release.yaml|.spec.boundaries.prod.features.shared-db",
 				"release.yaml|.spec.boundaries.prod.features.audit",
+			},
+		},
+		{
+			// The twin of the case above on the other authoring document, and the one
+			// whose locator carries the nesting: both invocations land on the scope that declares
+			// attachments, whose path is two levels deep, so each level appears under
+			// the container's key. The scope declaring none yields nothing and the
+			// walk carries on.
+			kind: SubjectSubsystemAttachment,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnSubsystemAttachments(cancelled, f, f, v, raisingCheck[SubsystemAttachmentSubject]())
+			},
+			want: []string{
+				"billing/aggregate.yaml|.spec.subsystems.billing.subsystems.payments.features.tls",
+				"billing/aggregate.yaml|.spec.subsystems.billing.subsystems.payments.features.audit",
 			},
 		},
 	}
@@ -1014,6 +1051,23 @@ func coordinateFlowCases() []coordinateFlowCase {
 			},
 			want: []string{"prod|shared-db", "prod|audit"},
 		},
+
+		// The scope coordinate arrives as the path the enumerator handed over rather
+		// than as the innermost name, which is what a fact keyed by it takes: two
+		// scopes at different depths may carry one name, so a check reading a bare
+		// name would key facts that cannot tell them apart.
+		{
+			kind: SubjectSubsystemAttachment,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, SubsystemAttachmentSubject]) ([]Objection, error) {
+					return RunOnSubsystemAttachments(nil, f, f, traversalView{}, c)
+				}, func(s SubsystemAttachmentSubject) string {
+					return s.SubsystemPath() + "|" + s.AttachmentName()
+				})
+			},
+			want: []string{"billing.payments|tls", "billing.payments|audit"},
+		},
 	}
 }
 
@@ -1095,6 +1149,102 @@ func TestATraversalOverNoInstancesInvokesNothing(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAScopeHoldingNoComponentsStillHasItsAttachmentsChecked is the assertion the
+// scope-rooted keying exists for, and it is stated as a comparison rather than as a
+// count because the count alone proves nothing.
+//
+// An attachment declared on a scope applies to every component that scope holds.
+// Keyed by the component it reaches, a rule over it is asked once per component —
+// so for a scope holding none it is asked no times at all, the rule reports
+// nothing, and the build reads that silence as approval. Keyed by the scope, it is
+// asked once per attachment the author wrote, whatever the scope contains.
+//
+// # Why both halves are run over one fixture
+//
+// The scope-keyed count is only meaningful beside the component-keyed count over
+// the same authored shape. A non-zero scope-keyed count on its own says the
+// traversal walks something; it does not show that the alternative keying would
+// have walked nothing, which is the whole reason the coordinate exists. So the same
+// fixture — attachments declared on a scope, and no components anywhere — is walked
+// both ways and the two counts are asserted against each other.
+//
+// The component-keyed half is a fixture-level demonstration and not a claim about
+// any shipped check: it shows what a subject set keyed after the projection to
+// components yields for this shape, which is nothing.
+func TestAScopeHoldingNoComponentsStillHasItsAttachmentsChecked(t *testing.T) {
+	t.Parallel()
+
+	// A scope declaring two attachments and holding no components: no nodes at all,
+	// so nothing keyed by a component has anything to be asked about.
+	scopeWithNoComponents := traversalFixture{
+		subsystems: []AuthoredCoordinate{
+			{Value: "billing.payments", SourceFile: "billing/aggregate.yaml"},
+		},
+		subsystemAttach: map[string][]string{
+			fixtureKey("billing.payments"): {"tls", "audit"},
+		},
+	}
+	const authoredAttachments = 2
+
+	if len(scopeWithNoComponents.Nodes()) != 0 {
+		t.Fatalf("the fixture reports %d node(s); this assertion is about a scope holding none, so a "+
+			"non-empty node set would make both counts below say something else",
+			len(scopeWithNoComponents.Nodes()))
+	}
+
+	scopeKeyed := readback(func(c Check[traversalView, SubsystemAttachmentSubject]) ([]Objection, error) {
+		return RunOnSubsystemAttachments(nil, scopeWithNoComponents, scopeWithNoComponents, traversalView{}, c)
+	}, func(s SubsystemAttachmentSubject) string {
+		return s.SubsystemPath() + "|" + s.AttachmentName() + "|" + s.Locator()
+	})
+
+	componentKeyed := readback(func(c Check[traversalView, NodeAttachmentSubject]) ([]Objection, error) {
+		return RunOnNodeAttachments(nil, scopeWithNoComponents, scopeWithNoComponents, traversalView{}, c)
+	}, func(s NodeAttachmentSubject) string {
+		return s.NodeID() + "|" + s.AttachmentName()
+	})
+
+	if len(scopeKeyed) != authoredAttachments {
+		t.Errorf("the scope-keyed traversal invoked the check %d time(s) over a scope declaring %d "+
+			"attachment(s) and holding no components; want %d.\n"+
+			"INVARIANT: an attachment authored on a scope is checked once per attachment the author wrote, "+
+			"whatever that scope holds.\n"+
+			"CONSEQUENCE: a count of zero here is the failure the coordinate exists to prevent — the rule "+
+			"never runs, raises nothing, and the absence of a diagnostic is indistinguishable from the "+
+			"input satisfying the rule.\ngot: %v",
+			len(scopeKeyed), authoredAttachments, authoredAttachments, scopeKeyed)
+	}
+
+	if len(componentKeyed) != 0 {
+		t.Errorf("the component-keyed traversal invoked the check %d time(s) over a shape with no "+
+			"components; want none — the comparison below rests on this half being the empty one.\ngot: %v",
+			len(componentKeyed), componentKeyed)
+	}
+
+	if len(scopeKeyed) == len(componentKeyed) {
+		t.Errorf("both keyings invoked the check %d time(s), so this fixture does not separate them and a "+
+			"pass here would certify nothing about where the attachment is keyed", len(scopeKeyed))
+	}
+
+	// The locator half of the same property: naming the scope is what makes the
+	// diagnostic actionable, and a subject carrying the right count with an empty
+	// locator would satisfy every count above while pointing a reader nowhere.
+	for i, got := range scopeKeyed {
+		if strings.Contains(got, "|.spec.subsystems.billing.subsystems.payments.features.") {
+			continue
+		}
+		t.Errorf("invocation %d read %q, which does not name the authored scope and attachment.\n"+
+			"INVARIANT: a subject carries a locator back to the site the author wrote.\n"+
+			"CONSEQUENCE: a rule over a scope-wide attachment can only be acted on where it was written. A "+
+			"locator naming a component names one of the many places the attachment takes effect, and none "+
+			"of those is a place anyone can edit.", i, got)
+	}
+
+	t.Logf("scope-keyed invocation count: %d over a scope declaring %d attachment(s) and holding no "+
+		"components; the same shape keyed per component yields %d",
+		len(scopeKeyed), authoredAttachments, len(componentKeyed))
 }
 
 // TestNoTraversalNamesAMap is the determinism guard at the source level.

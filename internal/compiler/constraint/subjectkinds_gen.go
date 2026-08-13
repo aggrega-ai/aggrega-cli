@@ -64,6 +64,9 @@ const (
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 3 declared facts.
 	SubjectNodeAttachmentSocket SubjectKind = "(node, attachment, socket)"
 
+	// SubjectSubsystemAttachment is the subject kind (subsystem, attachment), keyed by 1 declared fact.
+	SubjectSubsystemAttachment SubjectKind = "(subsystem, attachment)"
+
 	// SubjectNodeSlot is the subject kind (node, slot), keyed by 4 declared facts.
 	SubjectNodeSlot SubjectKind = "(node, slot)"
 
@@ -120,6 +123,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectEdge, Coordinates: []string{"edge"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachment, Coordinates: []string{"node", "attachment"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentSocket, Coordinates: []string{"node", "attachment", "socket"}, Traversal: TraversalPull},
+	{Kind: SubjectSubsystemAttachment, Coordinates: []string{"subsystem", "attachment"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeSlot, Coordinates: []string{"node", "slot"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeMechanism, Coordinates: []string{"node", "mechanism"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeMechanismDeliveryKey, Coordinates: []string{"node", "mechanism", "delivery-key"}, Traversal: TraversalPull},

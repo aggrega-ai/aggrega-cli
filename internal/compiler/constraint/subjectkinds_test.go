@@ -104,7 +104,7 @@ func TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal(
 			case 1:
 			case 0:
 				t.Errorf("the derived subject kind %s has no traversal. Declare one taking a "+
-					"Check[V, C, %s]: it enumerates the kind's coordinates, assembles each instance's "+
+					"Check[V, %s]: it enumerates the kind's coordinates, assembles each instance's "+
 					"provenance, and invokes the check once per instance.\n"+
 					"INVARIANT: the framework owns traversal, so every kind it enumerates has exactly one "+
 					"traversal and a check never writes the loop.\n"+
@@ -353,6 +353,13 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 // coordinate at all. Four coordinates are written with a hyphen and could not be
 // Go identifiers however they were spelled mechanically.
 //
+// The suffix names what the value is, so a coordinate whose value is a path says
+// so: a subsystem yields SubsystemPath, because that scope nests and its identity
+// is the path through the nesting rather than one authored key. A Name suffix
+// there would assert a single key and be false for every nested scope, and an
+// accessor whose name misdescribes its value teaches the check that reads it to
+// use it wrongly.
+//
 // Two entries are not one-to-one, and both are named rows here rather than
 // special cases buried in the assertion:
 //
@@ -380,6 +387,7 @@ var coordinateAccessors = map[string][]string{
 	"provides-key":  {"ProvidesKey"},
 	"pipeline-step": {"StepID"},
 	"boundary":      {"BoundaryName"},
+	"subsystem":     {"SubsystemPath"},
 	"provider":      {"ProviderName"},
 	"path":          {"EmittedPath"},
 	"artifact":      {"ArtifactName"},
@@ -995,6 +1003,13 @@ var subjectKindBindings = map[SubjectKind]struct {
 		make: func(f string) Subject {
 			return newBoundaryAttachmentSubject(f, "prod", "shared-db",
 				"spec", "boundaries", "prod", "features", "shared-db")
+		},
+	},
+	SubjectSubsystemAttachment: {
+		iface: reflect.TypeOf((*SubsystemAttachmentSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newSubsystemAttachmentSubject(f, "billing.payments", "tls",
+				"spec", "subsystems", "billing", "subsystems", "payments", "features", "tls")
 		},
 	},
 }

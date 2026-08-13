@@ -338,6 +338,42 @@ type NormalizedView interface {
 	// types.FeatureInstance.Uses.
 	AttachmentAuthoredUsesSocketNames(node string, attachment string) []string
 
+	// SubsystemAttachmentDeclaration is what an attachment declared on a
+	// subsystem itself states — the Feature it attaches and the sockets it
+	// wires on that Feature — reported absent when the subsystem declares no
+	// attachment under that name.
+	//
+	// It is keyed by the subsystem rather than by a component, and that is the
+	// whole reason it is a fact of its own. An attachment written at a
+	// subsystem applies to every component that scope holds, so it is authored
+	// once and contributes many times; a fact keyed by a component would be
+	// asked once per component and never at all for a subsystem holding none
+	// — which is silence indistinguishable from approval. Keyed here, it is
+	// asked exactly once per attachment the author wrote, and a rule over it
+	// can name that site.
+	//
+	// The subsystem is identified by its path from the document's own scope
+	// set rather than by a bare name, because subsystems nest and a name alone
+	// does not identify one: two scopes at different depths may carry the same
+	// name, and a key that could not tell them apart would answer for
+	// whichever was asked last.
+	//
+	// The absence is reported rather than resolved because an attachment
+	// naming no Feature type is something the authoring surface accepts, so an
+	// empty type and no attachment at all are different answers that a zero
+	// value alone would merge.
+	//
+	// It is a separate fact from the attachment a boundary declares, which is
+	// keyed by that boundary: the two are written on separate documents by
+	// separate hands, either can be absent without the other, and a rule over
+	// either names a different authored site.
+	//
+	// What the sockets are checked against is a separate fact on a separate
+	// document: the socket set the attached Feature declares.
+	//
+	// Keyed by (subsystem, attachment); read from types.Subsystem.Features.
+	SubsystemAttachmentDeclaration(subsystem string, attachment string) (AttachmentDeclaration, bool)
+
 	// SlotRequired reports whether an attachment slot declared on a component
 	// type must be filled.
 	//

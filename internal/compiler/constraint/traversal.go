@@ -3,6 +3,8 @@
 
 package constraint
 
+import "strings"
+
 // One traversal per enumerated subject kind.
 //
 // A check declares what it is invoked once per and never writes the loop. These
@@ -39,14 +41,19 @@ package constraint
 //
 // # Provenance
 //
-// A subject's locator is assembled here and never by a check. Three shapes
-// cover every kind:
+// A subject's locator is assembled here and never by a check. The shapes below
+// cover every kind, and they are left uncounted here on purpose: a number beside
+// the list is a second statement of the list's own length, and it is the number
+// that goes stale when a shape is added.
 //
 //   - A coordinate authored inside a component instance's block nests under the
 //     component's own segments. Its locator is empty when the component's is —
 //     see componentInnerSegments.
 //   - A coordinate authored at a document's spec level names that block
 //     directly, whatever subsystem the node was reached through.
+//   - A coordinate authored inside a nesting scope names every level of that
+//     nesting, with the container's own key repeated between the levels — see
+//     nestedScopeSegments.
 //   - A coordinate that is not authored at all — a provider, an emitted output
 //     path — contributes no segment, and the coordinate it sits within is what
 //     the locator names.
@@ -67,6 +74,7 @@ const (
 	authoredKeyPipeline   = "pipeline"
 	authoredKeyArtifacts  = "artifacts"
 	authoredKeyBoundaries = "boundaries"
+	authoredKeySubsystems = "subsystems"
 )
 
 // componentInnerSegments returns the segments naming an element authored inside
@@ -104,6 +112,36 @@ func documentSpecSegments(block string, tail ...string) []string {
 	return append(out, tail...)
 }
 
+// nestedScopeSegments returns the segments naming an element authored inside a
+// scope that nests: the spec, then the container's key and one path part for
+// every level of the nesting, then tail.
+//
+// A nesting scope's path is one dotted string — "a.b" for the scope named b
+// inside the scope named a — and the authored document does not spell it that
+// way: each level sits under the container's own key again, so the site of the
+// element inside a.b is .spec.<container>.a.<container>.b.<tail>. Joining the
+// path in as a single segment would name .spec.<container>.a.b.<tail>, a key no
+// file contains, so the container's key is repeated between the levels here.
+//
+// scopePath is the coordinate value the enumerator handed over, and an empty one
+// yields no segments at all — the mechanical form of not inventing a locator, the
+// same answer componentInnerSegments gives for a component with no expressible
+// site. A scope with no path is a scope this rule cannot name, and an empty
+// locator routes a consumer to file-level positioning instead of to a key that is
+// not there.
+func nestedScopeSegments(containerKey, scopePath string, tail ...string) []string {
+	if scopePath == "" {
+		return nil
+	}
+	levels := strings.Split(scopePath, ".")
+	out := make([]string, 0, 1+2*len(levels)+len(tail))
+	out = append(out, authoredKeySpec)
+	for _, level := range levels {
+		out = append(out, containerKey, level)
+	}
+	return append(out, tail...)
+}
+
 // runOverNodes is the one place the node nesting lives. Most enumerated kinds
 // are reached within a node, and the outer walk is identical for all of them:
 // node order outermost, the per-node subjects in the order their own enumerator
@@ -137,29 +175,36 @@ func runOverNodes[V any, S Subject](
 	return out, nil
 }
 
-// runOverBoundaries is the one place the boundary nesting lives, and it is the
-// exact sibling of runOverNodes for the kinds rooted at a boundary rather than
-// at a node: boundary order outermost, the per-boundary subjects in the order
+// runOverAuthoredScopes is the one place the authored-scope nesting lives, and it
+// is the exact sibling of runOverNodes for the kinds rooted at a scope rather
+// than at a node: scope order outermost, the per-scope subjects in the order
 // their own enumerators returned, everything raised accumulated in that order.
 //
-// It exists for the same reason runOverNodes does rather than because two
+// It exists for the same reason runOverNodes does rather than because several
 // callers happen to share a loop. The cancellation contract — read the signal as
 // the first statement of the outermost loop body, and hand back no objections
 // when it turns — is one rule, and a second copy of it would agree on the day it
 // was written and be free to drift afterwards with nothing comparing them.
-func runOverBoundaries[V any, S Subject](
+//
+// It takes the enumerated scopes rather than an enumerator, which is what lets
+// one loop serve both authoring documents. A boundary and a subsystem are
+// separate axes with separate enumerators, because each enumerator names the axis
+// it supplies and one covering both would hand the framework scopes from two
+// documents under a single key — but the walk over either is the same walk, and it
+// is written once here.
+func runOverAuthoredScopes[V any, S Subject](
 	cancelled Cancellation,
-	boundaries BoundaryEnumerator,
+	scopes []AuthoredCoordinate,
 	view V,
 	run func(V, S) []Objection,
 	subjects func(AuthoredCoordinate) []S,
 ) ([]Objection, error) {
 	var out []Objection
-	for _, boundary := range boundaries.Boundaries() {
+	for _, scope := range scopes {
 		if err := cancelled.err(); err != nil {
 			return nil, err
 		}
-		for _, subject := range subjects(boundary) {
+		for _, subject := range subjects(scope) {
 			out = append(out, run(view, subject)...)
 		}
 	}
@@ -601,7 +646,7 @@ func RunOnBoundaryAttachmentPipelineSteps[V View](
 	view V,
 	check Check[V, BoundaryAttachmentPipelineStepSubject],
 ) ([]Objection, error) {
-	return runOverBoundaries(cancelled, boundaries, view, check.Run,
+	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
 		func(boundary AuthoredCoordinate) []BoundaryAttachmentPipelineStepSubject {
 			var out []BoundaryAttachmentPipelineStepSubject
 			for _, attachment := range attachments.BoundaryAttachments(boundary.Value) {
@@ -661,7 +706,7 @@ func RunOnBoundaryProviderPaths[V View](
 	view V,
 	check Check[V, BoundaryProviderPathSubject],
 ) ([]Objection, error) {
-	return runOverBoundaries(cancelled, boundaries, view, check.Run,
+	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
 		func(boundary AuthoredCoordinate) []BoundaryProviderPathSubject {
 			segments := documentSpecSegments(authoredKeyBoundaries, boundary.Value)
 			var out []BoundaryProviderPathSubject
@@ -690,7 +735,7 @@ func RunOnBoundaryAttachments[V View](
 	view V,
 	check Check[V, BoundaryAttachmentSubject],
 ) ([]Objection, error) {
-	return runOverBoundaries(cancelled, boundaries, view, check.Run,
+	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
 		func(boundary AuthoredCoordinate) []BoundaryAttachmentSubject {
 			names := attachments.BoundaryAttachments(boundary.Value)
 			out := make([]BoundaryAttachmentSubject, 0, len(names))
@@ -699,6 +744,47 @@ func RunOnBoundaryAttachments[V View](
 					boundary.SourceFile, boundary.Value, attachment,
 					documentSpecSegments(
 						authoredKeyBoundaries, boundary.Value, authoredKeyFeatures, attachment,
+					)...,
+				))
+			}
+			return out
+		})
+}
+
+// RunOnSubsystemAttachments invokes check once per Feature attachment declared on
+// a subsystem itself, in subsystem order and then attachment order.
+//
+// The locator is .spec.subsystems.<subsystem>.features.<attachment>, with the
+// container's key repeated for each level of a nested scope, which is the site the
+// author wrote. It deliberately names the attachment rather than the components
+// the attachment reaches: those are the many places it takes effect, and only one
+// of them is a place anyone can edit. Keying it after that projection would drop
+// the scope from the locator and would ask nothing at all of a scope holding no
+// components.
+//
+// Unlike a component instance, a scope reached here always has an expressible
+// authored site, so this traversal carries no counterpart to the component
+// locator's synthesized-container rule. Normalization synthesizes a scope to hold
+// an application's top-level components and gives it no attachment surface of its
+// own, and the authoring surface declares attachments on a component or on a scope
+// and nowhere else — so every attachment this traversal reaches was written inside
+// a scope the author named.
+func RunOnSubsystemAttachments[V View](
+	cancelled Cancellation,
+	subsystems SubsystemEnumerator,
+	attachments SubsystemAttachmentEnumerator,
+	view V,
+	check Check[V, SubsystemAttachmentSubject],
+) ([]Objection, error) {
+	return runOverAuthoredScopes(cancelled, subsystems.Subsystems(), view, check.Run,
+		func(subsystem AuthoredCoordinate) []SubsystemAttachmentSubject {
+			names := attachments.SubsystemAttachments(subsystem.Value)
+			out := make([]SubsystemAttachmentSubject, 0, len(names))
+			for _, attachment := range names {
+				out = append(out, newSubsystemAttachmentSubject(
+					subsystem.SourceFile, subsystem.Value, attachment,
+					nestedScopeSegments(
+						authoredKeySubsystems, subsystem.Value, authoredKeyFeatures, attachment,
 					)...,
 				))
 			}
