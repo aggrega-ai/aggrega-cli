@@ -30,8 +30,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/plugins/helm-provider/helmcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 	"helm.sh/helm/v3/pkg/chart/loader"
@@ -204,8 +204,8 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 	values := rendercore.OrderedMapToPlain(&in.Node.Values)
 	nodeCtx := nodeCtxFromInput(in)
 
-	rendered, err := helm.RenderLoadedChart(context.Background(), ch, values, nodeCtx,
-		helm.NewHermeticValuesValidator(aggrega.FetchExternalInput))
+	rendered, err := helmcore.RenderLoadedChart(context.Background(), ch, values, nodeCtx,
+		helmcore.NewHermeticValuesValidator(aggrega.FetchExternalInput))
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
@@ -232,7 +232,7 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 
 	nodeCtx := nodeCtxFromInput(in)
 
-	emitted, err := helm.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, in.WorkloadProjection.AttachmentProvides, nodeCtx)
+	emitted, err := helmcore.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, in.WorkloadProjection.AttachmentProvides, nodeCtx)
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
@@ -309,7 +309,7 @@ func sortedKeys(m map[string][]byte) []string {
 // as a tree, so the packed projection carries every chart file keyed by its
 // chart-root-relative path — the same file set the host formerly packed.
 func packChartSource(listing *rendercore.SourceListing) (*aggrega.SourceProjection, error) {
-	rel, err := helm.ResolveChartRootRel(listing)
+	rel, err := helmcore.ResolveChartRootRel(listing)
 	if err != nil {
 		return nil, fmt.Errorf("helm: locate chart root in %q: %w", listing.Root, err)
 	}

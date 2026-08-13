@@ -240,7 +240,7 @@ var inlineCheckResidue = []inlineResidueEntry{
 		vehicle:     "ErrRenderedFileCollision",
 		vehicleKind: vehicleSentinel,
 		host:        "RenderLoadedChart",
-		file:        "internal/compiler/renderer/helm/render_core.go",
+		file:        "plugins/helm-provider/helmcore/render_core.go",
 		disposition: dispositionPermanentProposed,
 		reason: "A duplicate test with a byte-equality escape, whose predicate reads Helm rendered-document " +
 			"identity — the resource kind and name pair the output key derives from. A declared fact naming " +
@@ -274,7 +274,7 @@ var inlineCheckResidue = []inlineResidueEntry{
 		vehicle:     "ErrStatefulSetNoHeadlessService",
 		vehicleKind: vehicleSentinel,
 		host:        "statefulSetGoverningService",
-		file:        "internal/compiler/renderer/helm/synth_core.go",
+		file:        "plugins/helm-provider/helmcore/synth_core.go",
 		disposition: dispositionPermanentProposed,
 		reason: "A cardinality test over the headless services declared on the synthesized workload, " +
 			"cleanly self-contained — but the predicate reads Kubernetes Service shape, so the same " +
@@ -285,7 +285,7 @@ var inlineCheckResidue = []inlineResidueEntry{
 		vehicle:     "ErrStatefulSetAmbiguousHeadlessService",
 		vehicleKind: vehicleSentinel,
 		host:        "statefulSetGoverningService",
-		file:        "internal/compiler/renderer/helm/synth_core.go",
+		file:        "plugins/helm-provider/helmcore/synth_core.go",
 		disposition: dispositionPermanentProposed,
 		reason: "The ambiguous arm of the same cardinality test in the same host, recorded as its own entry " +
 			"so that lifting one arm and leaving the other is representable.",

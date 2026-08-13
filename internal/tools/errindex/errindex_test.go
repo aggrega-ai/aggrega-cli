@@ -4,6 +4,7 @@
 package main
 
 import (
+	"go/build/constraint"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +76,114 @@ func TestScan_ReadsDeclarationsRegistrationsAndReExports(t *testing.T) {
 		if strings.HasSuffix(handle, ".NotAnIdentity") {
 			t.Errorf("%s was extracted; a registered condition published under a name that is not "+
 				"an identity must not be", handle)
+		}
+	}
+}
+
+func TestScan_SkipsGuestEntryPointsAndKeepsTheCoresBesideThem(t *testing.T) {
+	t.Parallel()
+	// The fixture puts all four cases under one root, because the property is a
+	// distinction between files in the same tree and a fixture holding only one
+	// side of it would pass under a predicate that answered by directory.
+	got := scanFixture(t, "testdata/guestsplit", "example.test/guestsplit")
+
+	for _, tc := range []struct {
+		handle string
+		want   bool
+		why    string
+	}{
+		{
+			handle: "plugins/thing-provider/thingcore.ErrCoreShared",
+			want:   true,
+			why:    "a core under the plugin tree carries no constraint and declares a condition a caller matches",
+		},
+		{
+			handle: "pkg/portable.ErrNonUnixFallback",
+			want:   true,
+			why:    "a constraint a tag-free build satisfies restricts the file to nothing",
+		},
+		{
+			handle: "plugins/thing-provider.ErrGuestEntryOnly",
+			want:   false,
+			why:    "a guest entry point is constrained to the guest target and enters no host binary",
+		},
+		{
+			handle: "plugins/thing-provider/thingcore.ErrSuffixConstrained",
+			want:   false,
+			why:    "a file name restricting the build to the guest target constrains as firmly as the comment does",
+		},
+	} {
+		if _, ok := got[tc.handle]; ok != tc.want {
+			t.Errorf("%s extracted = %v, want %v: %s", tc.handle, ok, tc.want, tc.why)
+		}
+	}
+
+	// Both assertions above read as "nothing is wrong" over an empty result, so
+	// the population is pinned: two of the four declarations survive and no
+	// other identity appears.
+	if len(got) != 2 {
+		t.Errorf("extracted %d identities, want 2: %v", len(got), got)
+	}
+}
+
+func TestRequiresGuestTag_DecidesNecessityRatherThanOneAssignment(t *testing.T) {
+	t.Parallel()
+	// Each row is a constraint shape the module carries or plausibly will. The
+	// two marked below are the reason this is decided by satisfiability: a
+	// predicate evaluating the expression once, with every non-guest tag held
+	// true, answers both of them wrongly and in opposite directions.
+	for _, tc := range []struct {
+		line string
+		want bool
+	}{
+		{line: "//go:build wasip1", want: true},
+		{line: "//go:build wasm", want: true},
+		{line: "//go:build wasip1 && light", want: true},
+		{line: "//go:build !wasip1", want: false},
+		{line: "//go:build !wasip1 && !light", want: false},
+		{line: "//go:build !wasip1 && light", want: false},
+		{line: "//go:build unix", want: false},
+		{line: "//go:build clidocs", want: false},
+		{line: "//go:build !clidocs", want: false},
+		// Held true by the one-assignment reading, which reports a host file as
+		// guest-only because `!unix` is false exactly when `unix` is held true.
+		{line: "//go:build !unix", want: false},
+		// Held false by the one-assignment reading for the mirror-image reason:
+		// the file does build for a target that is not a guest.
+		{line: "//go:build linux || wasip1", want: false},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			t.Parallel()
+			expr, err := constraint.Parse(tc.line)
+			if err != nil {
+				t.Fatalf("parse %q: %v", tc.line, err)
+			}
+			got, err := requiresGuestTag(expr)
+			if err != nil {
+				t.Fatalf("requiresGuestTag(%q): %v", tc.line, err)
+			}
+			if got != tc.want {
+				t.Errorf("requiresGuestTag(%q) = %v, want %v", tc.line, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTargetSuffix_ReadsOnlyASuffixTheToolchainReads(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ path, want string }{
+		{path: "a/b/source_resolution_wasip1.go", want: "wasip1"},
+		{path: "a/b/shape_wasm.go", want: "wasm"},
+		// No underscore, so the toolchain reads no suffix and neither does this:
+		// a file called wasm.go is restricted by nothing.
+		{path: "a/b/wasm.go", want: ""},
+		{path: "a/b/errors.go", want: ""},
+		// A segment that is no build target reads as itself and matches nothing
+		// in the guest-tag set, which is what keeps an ordinary name inert.
+		{path: "a/b/render_core.go", want: "core"},
+	} {
+		if got := targetSuffix(tc.path); got != tc.want {
+			t.Errorf("targetSuffix(%q) = %q, want %q", tc.path, got, tc.want)
 		}
 	}
 }

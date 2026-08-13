@@ -39,8 +39,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/plugins/compose-provider/composecore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 )
@@ -173,7 +173,7 @@ func boundaryEnvOverrides() int32 {
 		return 1
 	}
 
-	overrides, err := compose.ComputeBridgeConsumerEnvOverrides(in.InternalUsesEdges, in.Infra)
+	overrides, err := composecore.ComputeBridgeConsumerEnvOverrides(in.InternalUsesEdges, in.Infra)
 	if err != nil {
 		pdk.SetError(errors.New(errorChainMessage(err)))
 		return 1
@@ -215,7 +215,7 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 		edges = append(edges, rendercore.IREdgeInfo{Source: e.Source, Target: e.Target})
 	}
 
-	files, err := compose.AssembleBoundaryCore(intermediatesByNode, nodeAnnotations, edges, in.BoundaryPath, in.Context.YAMLIndent)
+	files, err := composecore.AssembleBoundaryCore(intermediatesByNode, nodeAnnotations, edges, in.BoundaryPath, in.Context.YAMLIndent)
 	if err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
@@ -272,7 +272,7 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 	values := rendercore.OrderedMapToPlain(&in.Node.Values)
 	nodeCtx := nodeCtxFromInput(in)
 
-	rendered, err := compose.RenderSourcedCore(base.Content, base.Path, values, nodeCtx)
+	rendered, err := composecore.RenderSourcedCore(base.Content, base.Path, values, nodeCtx)
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
@@ -289,7 +289,7 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 // the compose package (shared by the guest here), so the guest only wires the
 // resolved selection into a pack request.
 func packComposeSource(listing *rendercore.SourceListing) (*aggrega.SourceProjection, error) {
-	rel, err := compose.ResolveSourceSelection(listing)
+	rel, err := composecore.ResolveSourceSelection(listing)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +339,7 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 
 	nodeCtx := nodeCtxFromInput(in)
 
-	emitted, diags, err := compose.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, nodeCtx)
+	emitted, diags, err := composecore.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, nodeCtx)
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}

@@ -50,8 +50,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/terraform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/plugins/terraform-provider/terraformcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 	"github.com/hashicorp/hcl/v2"
@@ -153,7 +153,7 @@ func renderNode() int32 {
 		// core uses, so both terraform emission paths carry identical provenance.
 		nodeCtx := nodeCtxFromInput(in)
 		out.Files = append(out.Files, rendercore.RenderedFile{
-			Path:    terraform.ProvenanceFileName,
+			Path:    terraformcore.ProvenanceFileName,
 			Content: rendercore.FormatTerraformProvenanceComment(nodeCtx, rendercore.ProvenanceRecipeURIFromNodeCtx(nodeCtx)),
 		})
 		if in.Node.Values.Len() > 0 {
@@ -171,7 +171,7 @@ func renderNode() int32 {
 		// labels/annotations are intentionally unused here — terraform config is
 		// not Kubernetes YAML, so provenance rides via the shared HCL-comment
 		// formatter over nodeCtx rather than metadata splicing.
-		out.Files = terraform.PlaceArtifacts(*in.ArtifactsProjection, nodeCtxFromInput(in))
+		out.Files = terraformcore.PlaceArtifacts(*in.ArtifactsProjection, nodeCtxFromInput(in))
 	}
 	// A payload with no projection yields an empty output.
 

@@ -38,7 +38,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart"
+	"github.com/aggrega-ai/aggrega-cli/plugins/helmchart-provider/helmchartcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 )
@@ -159,7 +159,7 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
-	rendered := helmchart.RenderSourcedChartCore(proj)
+	rendered := helmchartcore.RenderSourcedChartCore(proj)
 
 	out := rendercore.RenderNodeOutput{Files: make([]rendercore.RenderedFile, 0, len(rendered))}
 	for _, path := range sortedKeys(rendered) {
@@ -238,10 +238,10 @@ func assembleBoundary() int32 {
 // the indentation width. helm-chart nests each contributor's per-node files under
 // a per-node sub-directory, so NestPerNode is true.
 func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
-	subs := make([]helmchart.CoreSubChart, 0, len(in.SubCharts))
+	subs := make([]helmchartcore.CoreSubChart, 0, len(in.SubCharts))
 	for i := range in.SubCharts {
 		sc := in.SubCharts[i]
-		subs = append(subs, helmchart.CoreSubChart{
+		subs = append(subs, helmchartcore.CoreSubChart{
 			InstanceID: sc.InstanceID,
 			Version:    sc.Version,
 			Values:     rendercore.OrderedMapToPlain(&sc.Values),
@@ -249,7 +249,7 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 		})
 	}
 
-	files, err := helmchart.AssembleUmbrellaCore(in.BoundaryPath, in.AggregateName, subs, in.ChartName, in.Context.YAMLIndent)
+	files, err := helmchartcore.AssembleUmbrellaCore(in.BoundaryPath, in.AggregateName, subs, in.ChartName, in.Context.YAMLIndent)
 	if err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
@@ -285,7 +285,7 @@ func carve() int32 {
 		return 1
 	}
 
-	units, err := helmchart.NewHelmChartCodec(in.YamlIndent).Segment(in.Name, in.Body)
+	units, err := helmchartcore.NewHelmChartCodec(in.YamlIndent).Segment(in.Name, in.Body)
 	if err != nil {
 		pdk.SetError(errors.New(errorChainMessage(err)))
 		return 1
@@ -308,7 +308,7 @@ func reassemble() int32 {
 		return 1
 	}
 
-	body, _, err := helmchart.NewHelmChartCodec(in.YamlIndent).Reassemble(in.Name, in.Body, in.Segs, in.Patched)
+	body, _, err := helmchartcore.NewHelmChartCodec(in.YamlIndent).Reassemble(in.Name, in.Body, in.Segs, in.Patched)
 	if err != nil {
 		pdk.SetError(errors.New(errorChainMessage(err)))
 		return 1
@@ -362,7 +362,7 @@ func sortedKeys(m map[string][]byte) []string {
 // single-sourced in the helmchart package (shared by the guest here); the whole
 // tree is then vendored recursively.
 func packSourcedChart(listing *rendercore.SourceListing) (*rendercore.SourceProjection, error) {
-	if err := helmchart.ValidateSourcedChartListing(listing); err != nil {
+	if err := helmchartcore.ValidateSourcedChartListing(listing); err != nil {
 		return nil, err
 	}
 	packed, err := aggrega.PackSource("tree", "")

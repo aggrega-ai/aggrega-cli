@@ -62,8 +62,8 @@ var defaultPackages = []string{
 	"internal/compiler/analyzer",
 	"internal/compiler/topology",
 	"internal/compiler/renderer",
-	"internal/compiler/renderer/helm",
-	"internal/compiler/renderer/helmchart",
+	"plugins/helm-provider/helmcore",
+	"plugins/helmchart-provider/helmchartcore",
 	"pkg/types",
 }
 

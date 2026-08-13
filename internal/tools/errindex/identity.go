@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"go/ast"
+	"go/build/constraint"
 	"go/parser"
 	"go/token"
 	"os"
@@ -47,15 +48,156 @@ type Identity struct {
 func (id Identity) Handle() string { return id.Pkg + "." + id.Name }
 
 // skipDirs are directory names whose contents declare nothing the matching
-// surface contains: version-control and dependency trees, the deliberately
-// malformed fixtures under testdata, and the plugin tree, which compiles to
-// WebAssembly guests that share no identity with the host binary.
+// surface contains: version-control and dependency trees, and the deliberately
+// malformed fixtures under testdata.
+//
+// The plugin tree is deliberately not among them. What shares no identity with
+// the host binary is a guest's entry point, which is constrained to the
+// WebAssembly guest target and compiled into nothing else; the translation core
+// beside it carries no constraint at all and builds for the host and the guest
+// alike, so the conditions it declares are the very ones a caller matches. That
+// line runs between files rather than around a directory, so it is read per file
+// by [guestEntryPoint] and not written down here as a path.
 var skipDirs = map[string]bool{
 	".git":         true,
 	"vendor":       true,
 	"node_modules": true,
 	"testdata":     true,
-	"plugins":      true,
+}
+
+// wasmGuestTags are the build tags only a WebAssembly guest target satisfies:
+// the operating system a guest is built for, and the architecture it is built
+// as.
+//
+// This set is the whole of what separates a guest's entry point from the core
+// beside it, so it is declared once and consulted by both axes a build
+// constraint can be written on — the //go:build expression and the file name.
+var wasmGuestTags = map[string]bool{
+	"wasip1": true,
+	"wasm":   true,
+}
+
+// maxConstraintTags bounds the enumeration in [requiresGuestTag]. A build
+// constraint names a handful of tags at most; the bound exists so that an
+// expression naming an implausible number of them is refused by name, rather
+// than silently taking a fallback in whichever direction happens to be
+// convenient.
+const maxConstraintTags = 16
+
+// guestEntryPoint reports whether a file's build constraints can be satisfied
+// only by a WebAssembly guest target.
+//
+// That is the property the matching surface turns on, and it is read from each
+// file rather than from where the file sits. A guest's entry point is
+// constrained to the guest target, so it enters no host binary and publishes
+// nothing a caller can match; a shared core carries no constraint, builds for
+// host and guest alike, and declares the conditions a caller reaches through an
+// ordinary import. Deciding this by directory would restate the same split as a
+// list of paths, and a guest added later would sit outside the list while
+// looking exactly like one inside it.
+//
+// Both axes are read. The expression is decided by satisfiability with the guest
+// tags held false; the file name is decided by its final underscore-separated
+// segment, which is where a target suffix restricting the file to a guest
+// appears.
+func guestEntryPoint(path string, file *ast.File) (bool, error) {
+	if wasmGuestTags[targetSuffix(path)] {
+		return true, nil
+	}
+	expr, err := buildConstraint(file)
+	if err != nil || expr == nil {
+		return false, err
+	}
+	return requiresGuestTag(expr)
+}
+
+// targetSuffix returns the build-target suffix a file name carries, which Go
+// reads from the final underscore-separated segment of the name.
+//
+// A name with no underscore carries no suffix at all: the constrained form is
+// name_target.go, so a file called wasm.go is restricted by nothing and its
+// declarations belong to every build.
+func targetSuffix(path string) string {
+	base := strings.TrimSuffix(filepath.Base(path), ".go")
+	i := strings.LastIndex(base, "_")
+	if i < 0 {
+		return ""
+	}
+	return base[i+1:]
+}
+
+// buildConstraint returns the //go:build expression the file carries, or nil
+// when it carries none. Only a comment above the package clause is read, which
+// is where the toolchain requires the constraint to sit.
+func buildConstraint(file *ast.File) (constraint.Expr, error) {
+	for _, group := range file.Comments {
+		if group.Pos() > file.Package {
+			break
+		}
+		for _, c := range group.List {
+			if !constraint.IsGoBuild(c.Text) {
+				continue
+			}
+			return constraint.Parse(c.Text)
+		}
+	}
+	return nil, nil
+}
+
+// requiresGuestTag reports whether expr is unsatisfiable unless one of
+// [wasmGuestTags] holds.
+//
+// It decides that by enumerating the assignments of the tags expr actually
+// names, with the guest tags held false: when no such assignment satisfies expr,
+// no build lacking a guest target can include the file. Enumerating is what
+// makes the answer exact. A structural recursion over the expression would have
+// to treat each operand as independent, and a tag appearing on both sides of an
+// operator — unix && !unix — is then read as satisfiable when it is not.
+//
+// Holding the guest tags false rather than testing one reference target is what
+// keeps the result a function of the tree alone. A file excluded from the target
+// that happens to be running the scan is a different property, and reading that
+// one would make the identity set differ between the machines it is generated
+// on.
+func requiresGuestTag(expr constraint.Expr) (bool, error) {
+	var free []string
+	seen := map[string]bool{}
+	var collect func(constraint.Expr)
+	collect = func(e constraint.Expr) {
+		switch v := e.(type) {
+		case *constraint.TagExpr:
+			if wasmGuestTags[v.Tag] || seen[v.Tag] {
+				return
+			}
+			seen[v.Tag] = true
+			free = append(free, v.Tag)
+		case *constraint.NotExpr:
+			collect(v.X)
+		case *constraint.AndExpr:
+			collect(v.X)
+			collect(v.Y)
+		case *constraint.OrExpr:
+			collect(v.X)
+			collect(v.Y)
+		}
+	}
+	collect(expr)
+	if len(free) > maxConstraintTags {
+		return false, fmt.Errorf("the build constraint %q names %d tags, more than the %d this scan enumerates",
+			expr.String(), len(free), maxConstraintTags)
+	}
+	for mask := 0; mask < 1<<len(free); mask++ {
+		on := make(map[string]bool, len(free))
+		for i, tag := range free {
+			if mask&(1<<i) != 0 {
+				on[tag] = true
+			}
+		}
+		if expr.Eval(func(tag string) bool { return on[tag] }) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // registered is what one registration declares: the code the identity is
@@ -133,9 +275,19 @@ func scan(root, modulePath string) ([]Identity, error) {
 		}
 
 		fset := token.NewFileSet()
-		file, perr := parser.ParseFile(fset, path, nil, 0)
+		// Comments are retained because a build constraint is one, and the
+		// constraint is what separates a guest's entry point from the core beside
+		// it.
+		file, perr := parser.ParseFile(fset, path, nil, parser.ParseComments)
 		if perr != nil {
 			return fmt.Errorf("parse %s: %w", path, perr)
+		}
+		guest, gerr := guestEntryPoint(path, file)
+		if gerr != nil {
+			return fmt.Errorf("%s: %w", path, gerr)
+		}
+		if guest {
+			return nil
 		}
 
 		imports := importMap(file, modulePath)
@@ -150,9 +302,9 @@ func scan(root, modulePath string) ([]Identity, error) {
 				}
 				h := pkgDir + "." + name
 				// Two declarations of one handle are unreachable in a package
-				// Go compiles, but the scan parses every file whatever its build
-				// constraints, so two files excluded from each other by a build
-				// tag reach here together.
+				// Go compiles, but the scan reads files that exclude one another
+				// — a unix file and its !unix counterpart — so both reach here
+				// together.
 				if seen[h] {
 					return fmt.Errorf("%s: %s declared twice", path, h)
 				}

@@ -31,9 +31,9 @@ github.com/aggrega-ai/aggrega-cli/internal/compiler/topology  90
 github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema    90
 github.com/aggrega-ai/aggrega-cli/pkg/types                   90
 github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer  90
-github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose  90
-github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm     90
-github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helmchart  90
+github.com/aggrega-ai/aggrega-cli/plugins/compose-provider/composecore  90
+github.com/aggrega-ai/aggrega-cli/plugins/helm-provider/helmcore  90
+github.com/aggrega-ai/aggrega-cli/plugins/helmchart-provider/helmchartcore  90
 github.com/aggrega-ai/aggrega-cli/pkg/catalog                 90
 github.com/aggrega-ai/aggrega-cli/pkg/compactform             90
 github.com/aggrega-ai/aggrega-cli/pkg/errors                  90
