@@ -14,13 +14,18 @@
 //
 // A logical id is unique within one template, and several nodes assemble into
 // one stack, so every name a merged template addresses something by has to be
-// distinct across the nodes that contributed it. Two mechanisms carry that.
+// distinct across the nodes that contributed it. Three mechanisms carry that.
 // Output names are scoped by the contributing node, so a node's outputs cannot
 // displace another node's ([OutputLogicalID]). Resource names come from the
 // Recipe that authored the fragment, which this core reads and never rewrites;
-// [DeclaredNames] collects them, and the guest hands them to the host as the
-// names it derived, which is what turns a duplicate into a halt naming both
-// contributors instead of a resource quietly displaced during the merge.
+// [DeclaredNames] collects them across everything the node contributes, and the
+// guest hands them to the host as the names it derived, which is what turns a
+// duplicate across contributors into a halt naming both instead of a resource
+// quietly displaced during the merge. And the merge refuses a name the assembled
+// stack already carries with different content, which is what a declaration
+// cannot do: one contributor claiming a name twice across its own fragments is
+// recorded in that node's declaration as a repeated name, and refusing it is the
+// merge's to do, since there is no second contributor to name.
 //
 // The core carries no build constraint so it compiles for both the wasip1 guest
 // and the host test binary: the guest's exports call into it, and its behavior
@@ -33,6 +38,7 @@ package cfncore
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -220,8 +226,10 @@ func isTemplateFile(path string) bool {
 // authored.
 //
 // Two nodes authoring one resource logical id never reach this merge: the guest
-// declares each fragment's names ([DeclaredNames]) and the host halts on a
-// duplicate before any assembly runs.
+// declares each node's names ([DeclaredNames]) and the host halts on a duplicate
+// before any assembly runs. What still reaches it is one contributor authoring a
+// name twice across its own fragments, which the merge refuses itself — see
+// [insertEntry].
 func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	resources := map[string]any{}
 	outputs := map[string]any{}
@@ -236,14 +244,19 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 			if !ok {
 				return nil, fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", node.NodeID)
 			}
-			if err := mergeResources(resources, m, node.NodeID); err != nil {
+			res, outs, err := fragmentEntries(node.NodeID, m)
+			if err != nil {
 				return nil, err
 			}
-			if err := mergeExplicitOutputs(outputs, m, node.NodeID); err != nil {
-				return nil, err
+			for _, e := range res {
+				if err := insertEntry(resources, KeySpaceResourceLogicalIDs, node.NodeID, e); err != nil {
+					return nil, err
+				}
 			}
-			if err := providesToOutputs(outputs, m, node.NodeID); err != nil {
-				return nil, err
+			for _, e := range outs {
+				if err := insertEntry(outputs, KeySpaceOutputLogicalIDs, node.NodeID, e); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -271,70 +284,145 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	return out, nil
 }
 
-// mergeResources folds one fragment's Resources into the assembled Resources map
-// under the logical ids the fragment authored, which this core reads and never
-// rewrites. Keys are walked in sorted order so the merge is deterministic. A
-// fragment with no Resources contributes nothing.
+// stackEntry is one name the assembled stack addresses a fragment's content by,
+// paired with the content that lands under it.
+type stackEntry struct {
+	key   string
+	value any
+}
+
+// fragmentEntries reads one decoded fragment and returns what the assembled
+// stack carries for it, per key space: its resources under the logical ids the
+// fragment authored, which this core reads and never rewrites, and its outputs —
+// an explicit Outputs block's entries, then the entries its provides keys
+// project to — each named for the contributing node and the entry together
+// ([OutputLogicalID]). A provides value that is an intrinsic referencing a
+// resource in the assembled stack rides through as its long-form intrinsic. A
+// fragment carrying none of the three sections yields nothing, which is a valid
+// answer rather than an error.
 //
-// Two nodes authoring one logical id are refused before any fragment is merged:
-// the guest declares each fragment's logical ids ([DeclaredNames]) and the host
-// halts on a duplicate, naming the id and every node that authored it. Renaming
-// one of them here instead would move a resource to a name nothing in the
-// deployment asked for, and the renamed id can collide in turn — which is how a
-// declared resource comes to be absent from the emitted template with nothing
-// said about it.
-func mergeResources(dst, frag map[string]any, nodeID string) error {
-	raw, ok := frag["Resources"]
-	if !ok {
-		return nil
+// This is the single derivation of which names a fragment claims. The merge
+// inserts these entries and [DeclaredNames] gathers them across a node's
+// fragments and reports their keys, so the set a node declares to the host is by
+// construction the set the merge writes. Two walks kept in step by eye could
+// drift instead, and the host would then be checking one derivation for
+// duplicates while the merge wrote another — a divergence nothing would fail on,
+// because no comparison between the two exists to fail.
+//
+// A fragment reaches one key space through more than one section, so it can name
+// one key twice: an explicit Outputs block and the projected provides entries
+// both land in the outputs space. Those repeats are folded here, on the terms the
+// merge writes them ([collapseEntries]), which is what keeps the set exact rather
+// than merely overlapping.
+//
+// Each section's keys are walked in sorted order, and the explicit Outputs
+// entries precede the projected provides entries, so the returned entries are a
+// function of the fragment and the node id alone.
+func fragmentEntries(nodeID string, frag map[string]any) (resources, outputs []stackEntry, err error) {
+	if raw, present := frag["Resources"]; present {
+		rmap, ok := raw.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("cloudformation-provider: Resources in node %q is not a mapping", nodeID)
+		}
+		for _, id := range sortedKeys(rmap) {
+			resources = append(resources, stackEntry{key: id, value: rmap[id]})
+		}
 	}
-	rmap, ok := raw.(map[string]any)
-	if !ok {
-		return fmt.Errorf("cloudformation-provider: Resources in node %q is not a mapping", nodeID)
+	if raw, present := frag["Outputs"]; present {
+		omap, ok := raw.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("cloudformation-provider: Outputs in node %q is not a mapping", nodeID)
+		}
+		for _, k := range sortedKeys(omap) {
+			outputs = append(outputs, stackEntry{key: OutputLogicalID(nodeID, k), value: omap[k]})
+		}
 	}
-	for _, id := range sortedKeys(rmap) {
-		dst[id] = rmap[id]
+	if raw, present := frag["provides"]; present {
+		pmap, ok := raw.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("cloudformation-provider: provides in node %q is not a mapping", nodeID)
+		}
+		for _, k := range sortedKeys(pmap) {
+			outputs = append(outputs, stackEntry{key: OutputLogicalID(nodeID, k), value: map[string]any{"Value": pmap[k]}})
+		}
 	}
-	return nil
+	return collapseEntries(resources), collapseEntries(outputs), nil
 }
 
-// mergeExplicitOutputs folds one fragment's explicit Outputs block into the
-// assembled Outputs map, each entry scoped by the contributing node
-// ([OutputLogicalID]). Keys are walked in sorted order so the merge is
-// deterministic.
-func mergeExplicitOutputs(dst, frag map[string]any, nodeID string) error {
-	raw, ok := frag["Outputs"]
-	if !ok {
-		return nil
+// collapseEntries folds a name stated more than once with the same body into one
+// entry, keeping each surviving entry where it first appeared, and keeps a repeat
+// whose body differs from one already recorded under that name.
+//
+// The merge holds one value per name, so a name restated with the same body
+// reaches the assembled stack once. Folding it here is what makes the names a
+// contributor claims exactly the names the stack carries for it, rather than
+// merely a superset: a reader of the names alone counts what it is given, and a
+// repeat that the stack does not carry reads as a collision that never happened.
+//
+// A repeat whose bodies differ is kept, and that is the whole reason the fold is
+// scoped by body rather than by name. The merge refuses such a contributor
+// ([insertEntry]) because one of the two bodies would be lost; the repeated name
+// is what makes that loss visible to anyone holding the names without the bodies.
+//
+// Applied at both the scopes a name can repeat at — within one fragment, where
+// two sections reach one key space, and across the fragments of one node, which
+// is the scope a declaration speaks for — and to every key space rather than to
+// the one that can repeat today, so the guarantee rests on the fold rather than
+// on how many sections or fragments happen to feed a space.
+func collapseEntries(in []stackEntry) []stackEntry {
+	if len(in) < 2 {
+		return in
 	}
-	omap, ok := raw.(map[string]any)
-	if !ok {
-		return fmt.Errorf("cloudformation-provider: Outputs is not a mapping")
+	out := make([]stackEntry, 0, len(in))
+	kept := make(map[string][]any, len(in))
+next:
+	for _, e := range in {
+		for _, body := range kept[e.key] {
+			if sameBody(body, e.value) {
+				continue next
+			}
+		}
+		kept[e.key] = append(kept[e.key], e.value)
+		out = append(out, e)
 	}
-	for _, k := range sortedKeys(omap) {
-		dst[OutputLogicalID(nodeID, k)] = omap[k]
-	}
-	return nil
+	return out
 }
 
-// providesToOutputs projects a fragment's provides entries into stack Outputs.
-// Each provides key becomes an Output, named for the contributing node and the
-// key together ([OutputLogicalID]), whose Value is the provides value; a value
-// that is an intrinsic referencing a resource in the assembled stack rides
-// through as its long-form intrinsic. Keys are walked in sorted order for
-// deterministic output.
-func providesToOutputs(dst, frag map[string]any, nodeID string) error {
-	raw, ok := frag["provides"]
-	if !ok {
-		return nil
+// sameBody reports whether two bodies landing under one name are the same thing,
+// so restating that name displaces nothing.
+//
+// One predicate answers that question for both the fold above and the merge's
+// refusal, so what a fragment declares and what the assembled stack carries
+// cannot come to disagree about which repeats are lossy. Two copies would agree
+// today and drift the moment either side's notion of identical content moved.
+func sameBody(a, b any) bool {
+	return reflect.DeepEqual(a, b)
+}
+
+// insertEntry lands one entry in an assembled key space, refusing a name the
+// space already carries with different content.
+//
+// A name in one of these spaces addresses exactly one thing — a logical id names
+// one resource, an output name one output — so the space holds one value per
+// name. Writing a second, different value under a name already taken is not a
+// merge: it displaces what was there, and the displaced resource leaves the
+// stack with nothing said about it, so a deployment that declared it gets a
+// template that does not carry it. Refusing is what turns that into something
+// the author can see and fix.
+//
+// Restating a name with content identical to what the space already carries
+// displaces nothing, so it proceeds. Both bodies are decoded and in hand here,
+// which is what lets the refusal be scoped to the case that actually loses
+// something rather than to every repeat of a name.
+//
+// Collecting many distinct names from many fragments is the ordinary case and is
+// untouched: a fragment's every name lands, and several fragments per node is
+// the design — a dispatch group folds all of them into one template.
+func insertEntry(dst map[string]any, space, nodeID string, e stackEntry) error {
+	if existing, taken := dst[e.key]; taken && !sameBody(existing, e.value) {
+		return fmt.Errorf("cloudformation-provider: in key space %q node %q contributes the name %q, which the assembled stack already carries with different content; change what one of them is named so each name addresses one thing", space, nodeID, e.key)
 	}
-	pmap, ok := raw.(map[string]any)
-	if !ok {
-		return fmt.Errorf("cloudformation-provider: provides is not a mapping")
-	}
-	for _, k := range sortedKeys(pmap) {
-		dst[OutputLogicalID(nodeID, k)] = map[string]any{"Value": pmap[k]}
-	}
+	dst[e.key] = e.value
 	return nil
 }
 
@@ -587,75 +675,145 @@ func capitalizedWords(s string) string {
 	return b.String()
 }
 
-// DeclaredNames reads one already-normalized fragment and returns the names the
-// assembled stack will address its content by: the logical ids of its resources,
-// and the logical ids of the outputs its provides and explicit Outputs entries
-// project to. The guest hands these to the host, which refuses a name two
-// contributors to one assembled stack both claim.
+// nodeDeclaration gathers what one node's fragments claim, across every fragment
+// the node contributes, and projects it to the names the node declares.
 //
-// Resource ids come back exactly as the fragment authored them, because that is
-// what the merge emits. Output ids come back already scoped by the node, because
-// that is what the merge emits for them. Both are returned in sorted order so a
-// declaration is a function of the fragment alone.
+// The scope is the node because that is the scope the declaration is read at: a
+// node hands over one set of names per key space, however many fragments it
+// contributed. Gathering entries and folding once at the end is what makes the
+// declared set the set the node's assembled content carries; gathering names
+// instead, and joining them per fragment, cannot — a name two fragments restate
+// with one body reaches the assembled stack once and would be declared twice.
 //
-// A fragment that carries neither section declares nothing, which is a valid
-// answer rather than an error: a fragment contributing only vendored content has
-// no name for the host to check.
-func DeclaredNames(nodeID string, fragment []byte) (resourceIDs, outputIDs []string, err error) {
+// This is the one place the node-scope fold happens, and both the fragment path
+// and the sourced path reach it, so the two cannot come to disagree about which
+// repeats a node's declaration keeps.
+type nodeDeclaration struct {
+	resources []stackEntry
+	outputs   []stackEntry
+}
+
+// addFragment reads one already-normalized fragment and gathers what the
+// assembled stack will carry for it. A fragment carrying none of the sections a
+// stack is addressed through adds nothing, which is a valid answer rather than an
+// error: a fragment contributing only vendored content has no name to declare.
+//
+// Each fragment's outputs are ordered by name as they are gathered, and fragments
+// are gathered in the order the caller supplied, so what the node declares is a
+// function of its fragments and their order alone.
+func (d *nodeDeclaration) addFragment(nodeID string, fragment []byte) error {
 	v, err := decodeToValue(fragment)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	if v == nil {
-		return nil, nil, nil
+		return nil
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, nil, fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", nodeID)
+		return fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", nodeID)
 	}
+	resources, outputs, err := fragmentEntries(nodeID, m)
+	if err != nil {
+		return err
+	}
+	sort.SliceStable(outputs, func(i, j int) bool { return outputs[i].key < outputs[j].key })
+	d.resources = append(d.resources, resources...)
+	d.outputs = append(d.outputs, outputs...)
+	return nil
+}
 
-	if raw, present := m["Resources"]; present {
-		rmap, ok := raw.(map[string]any)
-		if !ok {
-			return nil, nil, fmt.Errorf("cloudformation-provider: Resources in node %q is not a mapping", nodeID)
-		}
-		resourceIDs = append(resourceIDs, sortedKeys(rmap)...)
+// names projects the gathered entries to the names the node declares per key
+// space, folding a name restated with the same body ([collapseEntries]) and
+// keeping a repeat whose bodies differ.
+//
+// The fold is by body and never by name, and that distinction is the whole of
+// what the declaration is worth. A repeat the assembled stack carries once is
+// noise to a reader holding names without bodies — it reads as a collision that
+// never happened. A repeat whose bodies differ is a body about to be lost, and
+// the repeated name is the only trace of it such a reader can act on, so folding
+// by name would erase exactly the case the declaration exists to surface.
+func (d *nodeDeclaration) names() (resourceIDs, outputIDs []string) {
+	return entryKeys(collapseEntries(d.resources)), entryKeys(collapseEntries(d.outputs))
+}
+
+// entryKeys reads the names off a run of entries, in the order they stand.
+func entryKeys(entries []stackEntry) []string {
+	if len(entries) == 0 {
+		return nil
 	}
-	for _, section := range []string{"Outputs", "provides"} {
-		raw, present := m[section]
-		if !present {
-			continue
-		}
-		omap, ok := raw.(map[string]any)
-		if !ok {
-			return nil, nil, fmt.Errorf("cloudformation-provider: %s in node %q is not a mapping", section, nodeID)
-		}
-		for _, k := range sortedKeys(omap) {
-			outputIDs = append(outputIDs, OutputLogicalID(nodeID, k))
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.key)
+	}
+	return out
+}
+
+// DeclaredNames reads a node's already-normalized fragments and returns the names
+// the assembled stack will address that node's content by: the logical ids of its
+// resources, and the logical ids of the outputs its provides and explicit Outputs
+// entries project to. The guest hands these to the host, which refuses a name two
+// contributors to one assembled stack both claim.
+//
+// Resource ids come back exactly as the fragments authored them, because that is
+// what the merge emits. Output ids come back already scoped by the node, because
+// that is what the merge emits for them. Each fragment's names come back ordered
+// by name, and the fragments in the order the caller supplied, so a declaration
+// is a function of the node's fragments alone.
+//
+// The whole node is read at once because the whole node is what the declaration
+// speaks for. Taking one fragment at a time would leave the caller to join the
+// answers, and a join cannot see across fragments: two fragments restating one
+// name with the same body reach the assembled stack once, so a joined declaration
+// would offer a name the stack does not carry.
+//
+// The names are the keys of the entries [fragmentEntries] produces, which is the
+// same derivation the merge inserts — so what is declared here cannot drift from
+// what the assembled stack ends up addressing its content by. For a node that
+// assembles, these are exactly the names the stack carries for it: no more and no
+// fewer.
+//
+// Two differences from the merge's own walk, both deliberate. Order: a
+// declaration orders each fragment's names by name, while the merge takes each
+// section in turn. And multiplicity, for a node the merge refuses: two claims on
+// one name with different bodies declare that name twice, because one of the two
+// bodies would be lost, and the repetition is the only trace of that a reader
+// holding the names without the bodies can act on.
+//
+// A node whose fragments carry none of those sections declares nothing, which is
+// a valid answer rather than an error.
+func DeclaredNames(nodeID string, fragments [][]byte) (resourceIDs, outputIDs []string, err error) {
+	var d nodeDeclaration
+	for _, fragment := range fragments {
+		if err := d.addFragment(nodeID, fragment); err != nil {
+			return nil, nil, err
 		}
 	}
-	sort.Strings(outputIDs)
+	resourceIDs, outputIDs = d.names()
 	return resourceIDs, outputIDs, nil
 }
 
-// DeclaredNamesSourced collects the declared names of a sourced source's packed
-// files, reading the same files DeclaredNames would and skipping the same
+// DeclaredNamesSourced returns the names a sourced source's packed files declare
+// for one node, reading the same files DeclaredNames would and skipping the same
 // non-template content NormalizeSourced vendors verbatim — a directory source's
 // README or parameters file carries no name the assembled stack addresses
-// anything by. A single-file source's lone template is read whole. Names come
-// back in the packed order the caller supplied, each file's own names sorted.
+// anything by. A single-file source's lone template is read whole.
+//
+// A source's files are the node's fragments, so they are gathered and folded as
+// one declaration exactly as a fragment set is: two of a directory source's
+// template files restating one name with the same body reach the assembled stack
+// once, and the node declares it once.
 func DeclaredNamesSourced(nodeID string, files []SourcedFile, rootIsDir bool) (resourceIDs, outputIDs []string, err error) {
+	var d nodeDeclaration
 	for _, f := range files {
 		if rootIsDir && !isTemplateFile(f.Path) {
 			continue
 		}
-		res, outs, err := DeclaredNames(nodeID, f.Content)
-		if err != nil {
+		if err := d.addFragment(nodeID, f.Content); err != nil {
 			return nil, nil, fmt.Errorf("cloudformation-provider: read declared names from sourced template %q: %w", f.Path, err)
 		}
-		resourceIDs = append(resourceIDs, res...)
-		outputIDs = append(outputIDs, outs...)
 	}
+	resourceIDs, outputIDs = d.names()
 	return resourceIDs, outputIDs, nil
 }
 

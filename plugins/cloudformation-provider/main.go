@@ -43,6 +43,12 @@
 // one stack, so render_node returns the names each node's fragments will be
 // addressed by — its resource logical ids, and the output logical ids its
 // provides and Outputs entries project to — as the derived names it declares.
+// For a node that assembles, those are exactly the names the assembled stack
+// carries for it: the node's fragments are read as one set, so a name two of
+// them restate with the same body is declared once, the way the stack carries
+// it. Two fragments claiming one name with different bodies keep the name
+// declared twice, because one of the two bodies would be lost and the merge
+// refuses the node.
 // The host writes those bytes verbatim and reads nothing inside them, so the
 // declaration is how the guest asks it to confirm no two nodes claimed one name;
 // a duplicate halts the build naming the name and every node that claimed it.
@@ -174,21 +180,27 @@ func renderNode() int32 {
 		pdk.SetError(errors.New("cloudformation-provider: render_node received a workload projection; the cloudformation provider does not synthesize workloads"))
 		return 1
 	case in.ArtifactsProjection != nil:
+		// Every fragment is normalized first and the whole set is declared at
+		// once. The declaration speaks for the node, and what the assembled stack
+		// carries for a node is a property of all its fragments together: two of
+		// them restating one name with the same body reach the stack once, which
+		// only a reader holding every fragment can see.
+		fragments := make([][]byte, 0, len(in.ArtifactsProjection.Entries))
 		for _, ent := range in.ArtifactsProjection.Entries {
 			normalized, err := cfncore.NormalizeFragment(ent.Content)
 			if err != nil {
 				pdk.SetError(err)
 				return 1
 			}
-			res, outs, err := cfncore.DeclaredNames(in.Node.ID, normalized)
-			if err != nil {
-				pdk.SetError(err)
-				return 1
-			}
-			resourceIDs = append(resourceIDs, res...)
-			outputIDs = append(outputIDs, outs...)
+			fragments = append(fragments, normalized)
 			out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: normalized})
 		}
+		declaredRes, declaredOut, err := cfncore.DeclaredNames(in.Node.ID, fragments)
+		if err != nil {
+			pdk.SetError(err)
+			return 1
+		}
+		resourceIDs, outputIDs = declaredRes, declaredOut
 	case in.SourceListing != nil:
 		// Sourced path: normalize the acquired CloudFormation template to pure-JSON
 		// long-form intrinsics. The host has read no content; the guest asks it to
