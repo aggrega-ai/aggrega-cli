@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"bytes"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
@@ -189,6 +190,102 @@ var ProvidesTemplateSelfContained = constraint.Check[
 		return []constraint.Objection{s.Raise(
 			ErrProvidesSelfContainment(), violation.Ref.Path,
 		)}
+	},
+}
+
+// The two pillar roots an artifact template may only read when its Recipe
+// supplies them. They are declared once and read by both forms of the rule —
+// the value below and the hand-written pre-check that still runs — because the
+// roots ARE the rule's subject: a copy in each site would agree today and would
+// be the thing that silently diverges if a pillar were ever renamed, since a
+// stale spelling matches nothing and the check goes quiet rather than failing.
+const (
+	pillarRefWorkload = ".workload"
+	pillarRefSource   = ".source"
+)
+
+// pillarRefMatches reports whether a template reference names a pillar root or
+// reaches into it. One helper rather than the same two-part test written at each
+// arm of each form: what counts as reading a pillar is one decision, and the
+// exact-or-descendant shape of it is the part a re-implementation gets subtly
+// wrong (a prefix test alone would match a sibling root whose name merely starts
+// with the pillar's).
+func pillarRefMatches(ref, pillar string) bool {
+	return ref == pillar || strings.HasPrefix(ref, pillar+".")
+}
+
+// ArtifactPillarDeclared reports each reference an artifact template makes to a
+// configuration pillar the node's Recipe does not carry.
+//
+// Two pillars are readable from an artifact template only when the Recipe
+// supplies them. A Recipe declaring no workload body reaches artifact evaluation
+// with no workload to read, and one carrying no source reaches it with no source
+// to read — so a template naming either would render an empty value rather than
+// fail. The rule refuses the reference instead, which turns a silently empty
+// artifact into a halt naming the expression to fix.
+//
+// The source arm reads whether a source survived resolution rather than whether
+// one was authored, and the two differ: a source template evaluating to an empty
+// string leaves the Recipe with no source just as an absent source does. One
+// condition covers both, so an author is told the same thing whichever way the
+// source went missing.
+//
+// It reads four facts and holds no traversal over subjects, because it is
+// invoked once per artifact a node projects. The delimiter pair is one of the
+// four and is what makes the reference set correct rather than approximate: a
+// provider whose own target syntax uses the usual pair declares an alternate
+// one, and read with the wrong pair a template's downstream syntax would surface
+// as references it does not make. The pair completes before the text does, which
+// is why the rule sits at the stage that holds the text and reads the pair
+// through the stage containment.
+//
+// Two deliberate differences from the hand-written form beside this file, so a
+// reader comparing them does not read either as drift. This value reports EVERY
+// offending reference in one template rather than the first, because an author
+// naming two absent pillars is better told about both than about whichever the
+// parser reached first. And a template that does not parse is not this rule's
+// finding: evaluation reports the parse error against the same entry, so
+// refusing it here as well would report one authoring fault twice — the
+// hand-written form reports it because it is the path that runs, and the entry
+// would otherwise reach evaluation with no diagnostic at all.
+//
+// Its detail names the offending expression, and only that. The locator names
+// the artifact entry inside the Recipe's own file — which is the position the
+// author edits — so the expression is what inside that entry has to change. The
+// node is a coordinate the subject carries and the locator does not, and it is
+// deliberately left out of the detail: the fault is in the Recipe's text rather
+// than in any one node that binds it, so naming a node would point an author at
+// an instance when the edit is in the entry every instance shares.
+var ArtifactPillarDeclared = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeArtifactSubject,
+]{
+	Sentinel: ErrArtifactPillarNotDeclared(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeArtifactSubject,
+	) []constraint.Objection {
+		delims := v.ProviderArtifactTemplateDelimiters(s.NodeID())
+		refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(
+			v.ArtifactTemplateText(s.NodeID(), s.ArtifactName()), delims.Left, delims.Right,
+		)
+		if err != nil {
+			return nil
+		}
+		workloadDeclared := v.ParsedNodeWorkloadPresent(s.NodeID())
+		sourceDeclared := v.ResolvedNodeSourceDeclared(s.NodeID())
+		var out []constraint.Objection
+		for _, ref := range refs {
+			switch {
+			case !workloadDeclared && pillarRefMatches(ref, pillarRefWorkload):
+			case !sourceDeclared && pillarRefMatches(ref, pillarRefSource):
+			default:
+				continue
+			}
+			out = append(out, s.Raise(ErrArtifactPillarNotDeclared(), ref))
+		}
+		return out
 	},
 }
 

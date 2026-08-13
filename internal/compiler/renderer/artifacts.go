@@ -231,11 +231,11 @@ func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, 
 	}
 
 	for _, ref := range refs {
-		if !workloadDeclared && (ref == ".workload" || strings.HasPrefix(ref, ".workload.")) {
+		if !workloadDeclared && pillarRefMatches(ref, pillarRefWorkload) {
 			return cerrors.Wrap(ErrArtifactPillarNotDeclared(), cerrors.CatalogError, cerrors.SourceLocation{File: filename},
 				fmt.Sprintf("artifact %q template references %q but Recipe declares no workload:", filename, ref))
 		}
-		if !sourceDeclared && (ref == ".source" || strings.HasPrefix(ref, ".source.")) {
+		if !sourceDeclared && pillarRefMatches(ref, pillarRefSource) {
 			return cerrors.Wrap(ErrArtifactPillarNotDeclared(), cerrors.CatalogError, cerrors.SourceLocation{File: filename},
 				fmt.Sprintf("artifact %q template references %q but Recipe declares no source:", filename, ref))
 		}

@@ -49,7 +49,7 @@ const (
 	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 1 declared fact.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
-	// SubjectNode is the subject kind node, keyed by 8 declared facts.
+	// SubjectNode is the subject kind node, keyed by 11 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 4 declared facts.
@@ -100,11 +100,11 @@ const (
 	// SubjectNodeLocalsKey is the subject kind (node, locals-key), keyed by 1 declared fact.
 	SubjectNodeLocalsKey SubjectKind = "(node, locals-key)"
 
+	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 3 declared facts.
+	SubjectNodeArtifact SubjectKind = "(node, artifact)"
+
 	// SubjectBoundaryProviderPath is the subject kind (boundary, provider, path), keyed by 2 declared facts.
 	SubjectBoundaryProviderPath SubjectKind = "(boundary, provider, path)"
-
-	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 2 declared facts.
-	SubjectNodeArtifact SubjectKind = "(node, artifact)"
 )
 
 // SubjectKinds is every derived subject kind, in the order the first fact
@@ -132,8 +132,8 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectBoundaryAttachmentPipelineStep, Coordinates: []string{"boundary", "attachment", "pipeline-step"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeProvidesKey, Coordinates: []string{"node", "provides-key"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeLocalsKey, Coordinates: []string{"node", "locals-key"}, Traversal: TraversalPull},
-	{Kind: SubjectBoundaryProviderPath, Coordinates: []string{"boundary", "provider", "path"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifact, Coordinates: []string{"node", "artifact"}, Traversal: TraversalPull},
+	{Kind: SubjectBoundaryProviderPath, Coordinates: []string{"boundary", "provider", "path"}, Traversal: TraversalPull},
 }
 
 // SubjectKindInfo is one derived subject kind together with what a

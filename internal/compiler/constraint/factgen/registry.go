@@ -82,12 +82,22 @@ var stages = []stageDecl{
 	{
 		Name:    "hydrated",
 		Extends: "described",
-		Holds: "per-node resolved locals and provides — state that exists before " +
-			"any artifact bytes",
-		// Locals and provides are evaluated as templates in the host, over
-		// values the graph already carries, so the resolved state is computed
-		// rather than reached for.
-		HostPowers: noHostPowers,
+		Holds: "per-node resolved locals and provides, and the mid-render products " +
+			"standing beside them — the resolved source, the parsed workload, and " +
+			"each artifact entry's template text before it is evaluated — all of it " +
+			"state that exists before any artifact bytes",
+		// The powers named here are the ones this production genuinely exercises,
+		// and the filesystem read is the one a reader is most likely to think
+		// wrong. An artifact entry and a workload body may each be authored as an
+		// import rather than inline, and resolving either to the text it stands
+		// for reads that file from the workspace — so a declaration of none here
+		// would be a false assertion rather than an absent one, which is worse,
+		// because a stage naming no powers is read as asserting it needs none.
+		// Do not restore an empty declaration on the grounds that mid-render
+		// state ought to be computed rather than reached for: locals and provides
+		// alone are computed, as templates over values the graph already carries,
+		// and they are no longer all this stage holds.
+		HostPowers: []hostPower{powerFilesystem},
 	},
 	{
 		Name:    "rendered",
@@ -134,6 +144,20 @@ var records = []recordDecl{
 		Fields: []recordField{
 			{Name: "FeatureType", Type: "string", Doc: "FeatureType is the Feature the attachment names, empty when the author named none."},
 			{Name: "AuthoredSocketNames", Type: "[]string", Doc: "AuthoredSocketNames are the socket names the attachment's own dependency block declares, in author order."},
+		},
+	},
+	{
+		Name: "ArtifactTemplateDelimiters",
+		Doc: "ArtifactTemplateDelimiters is the delimiter pair an artifact " +
+			"template is read with: the opening delimiter and the closing " +
+			"one.\n\nIt is one fact rather than two because neither half " +
+			"answers anything alone. Reading a template needs both delimiters " +
+			"together, so a rule holding one of them could not read a template " +
+			"at all, and two accessors would each hand back a value with " +
+			"nothing to do.",
+		Fields: []recordField{
+			{Name: "Left", Type: "string", Doc: "Left is the opening delimiter."},
+			{Name: "Right", Type: "string", Doc: "Right is the closing delimiter."},
 		},
 	},
 }
@@ -1320,6 +1344,29 @@ var facts = []factDecl{
 			"second result reporting presence would put a second condition on one " +
 			"question, and the two could then disagree.",
 	},
+	{
+		Name:        "provider-artifact-template-delimiters",
+		Stage:       "described",
+		SourceField: "wasm.ProviderContract.ArtifactDelimiters",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "ArtifactTemplateDelimiters",
+		Doc: "ProviderArtifactTemplateDelimiters is the delimiter pair the " +
+			"provider rendering a node's documents declares its artifact " +
+			"entries are read with, so that a target syntax colliding with the " +
+			"usual pair is left untouched.\n\nA provider declaring no pair is " +
+			"answered with the usual pair rather than with an absence, and that " +
+			"is the fact rather than a convenience. What a rule needs is the " +
+			"pair an entry will actually be read with; a rule handed an absence " +
+			"would have to supply the fallback itself, so every rule would " +
+			"carry its own copy of a decision the production has already " +
+			"made.\n\nIt is a provider's own self-report, so it is complete " +
+			"once every plugin a node resolves to has described itself and " +
+			"before any step runs. That is earlier than the artifact text the " +
+			"pair is applied to, and the two are deliberately separate facts at " +
+			"separate stages: the pair is a property of the provider, the text a " +
+			"property of the Recipe, and a rule over an entry reads both.",
+	},
 
 	// ---------------------------------------------------------------- hydrated
 
@@ -1376,6 +1423,80 @@ var facts = []factDecl{
 			"template language permits.\n\nThe paths come back sorted. A " +
 			"template has no single reading order to preserve, so sorting " +
 			"is what makes the result the same on every run.",
+	},
+	{
+		Name:        "resolved-node-source-declared",
+		Stage:       "hydrated",
+		SourceField: "types.RecipeSpec.Source",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "bool",
+		Doc: "ResolvedNodeSourceDeclared reports whether a node's Recipe carries " +
+			"a source once source resolution has run.\n\nThe value read is the " +
+			"RESOLVED source and not the text the author wrote. Source " +
+			"resolution replaces the Recipe with a local copy whose source " +
+			"holds the evaluated result, and that copy is what everything " +
+			"downstream reads — so a source template evaluating to an empty " +
+			"string is reported the same as an absent source. That is one " +
+			"condition rather than two, which is what lets a rule about a " +
+			"template reading the source pillar name a single cause instead of " +
+			"distinguishing two states an author cannot tell apart from the " +
+			"outcome.\n\nIt is a yes-or-no answer rather than the source value, " +
+			"and that follows from what a source may be rather than from a " +
+			"narrowing for convenience. A source is either a location string or " +
+			"an open structured object whose keys the provider defines, so " +
+			"handing the value over would hand a rule a structure to walk into " +
+			"— and what it would find there is provider-defined content the " +
+			"framework declares no fact for.",
+	},
+	{
+		Name:        "parsed-node-workload-present",
+		Stage:       "hydrated",
+		SourceField: "renderer.PhaseBState.ParsedWorkload",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "bool",
+		Doc: "ParsedNodeWorkloadPresent reports whether a node's render state " +
+			"carries a workload.\n\nA Recipe declaring no workload body reaches " +
+			"artifact evaluation with none, because workload synthesis had " +
+			"nothing to parse. So this is what separates a node whose templates " +
+			"may read the workload pillar from one whose reference to it has " +
+			"nothing to resolve against.\n\nIt is a yes-or-no answer rather " +
+			"than the workload itself, on the same reading the resolved source " +
+			"carries: the workload is a structured document, and a rule handed " +
+			"it could walk into content the framework declares no fact for.",
+	},
+	{
+		Name:        "artifact-template-text",
+		Stage:       "hydrated",
+		SourceField: "types.RecipeSpec.Artifacts",
+		Subject:     []string{"node", "artifact"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "artifact", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "ArtifactTemplateText is the template text standing at one of a " +
+			"node's artifacts, as it is before anything evaluates " +
+			"it.\n\nIt is a separate fact from the bytes that artifact " +
+			"projected to, and the pair is two questions rather than one " +
+			"question under two names. THIS ONE answers what the entry says, " +
+			"which a rule admitting or refusing authoring has to read, because " +
+			"a template such a rule refuses is exactly one whose bytes are " +
+			"never produced. THE OTHER answers what evaluating it produced, " +
+			"which is unanswerable until evaluation has run.\n\nThat " +
+			"distinction is worth stating here because nothing else states it. " +
+			"The two read the same authoring block at the same coordinates and " +
+			"differ in nothing but the stage and whether evaluation has " +
+			"happened — and the report of facts sharing a carrier pairs them by " +
+			"stage, carrier and subject together, so it does not pair these two " +
+			"and never will. A reader who suspects duplication has this " +
+			"paragraph and nothing else to settle it with.\n\nThe text is the " +
+			"entry's content whichever form the entry took: written inline, " +
+			"supplied by an imported file, or supplied by an entry of a library " +
+			"bundle. A rule asking what an artifact template may reference asks " +
+			"the same question of all three, so one fact over the three is what " +
+			"keeps such a rule from having to know which form it was handed.",
 	},
 
 	// ---------------------------------------------------------------- rendered

@@ -64,6 +64,21 @@ type AttachmentDeclaration struct {
 	AuthoredSocketNames []string
 }
 
+// ArtifactTemplateDelimiters is the delimiter pair an artifact template is
+// read with: the opening delimiter and the closing one.
+//
+// It is one fact rather than two because neither half answers anything
+// alone. Reading a template needs both delimiters together, so a rule
+// holding one of them could not read a template at all, and two accessors
+// would each hand back a value with nothing to do.
+type ArtifactTemplateDelimiters struct {
+	// Left is the opening delimiter.
+	Left string
+
+	// Right is the closing delimiter.
+	Right string
+}
+
 // View is the base every stage's view embeds. It declares no fact of its
 // own; it carries the contract every view shares.
 //
@@ -1109,11 +1124,35 @@ type DescribedView interface {
 	//
 	// Keyed by (node, provides-key); read from types.RecipeSpec.Provides.
 	AuthoredNodeProvides(node string, key string) string
+
+	// ProviderArtifactTemplateDelimiters is the delimiter pair the provider
+	// rendering a node's documents declares its artifact entries are read
+	// with, so that a target syntax colliding with the usual pair is left
+	// untouched.
+	//
+	// A provider declaring no pair is answered with the usual pair rather than
+	// with an absence, and that is the fact rather than a convenience. What a
+	// rule needs is the pair an entry will actually be read with; a rule
+	// handed an absence would have to supply the fallback itself, so every
+	// rule would carry its own copy of a decision the production has already
+	// made.
+	//
+	// It is a provider's own self-report, so it is complete once every plugin
+	// a node resolves to has described itself and before any step runs. That
+	// is earlier than the artifact text the pair is applied to, and the two
+	// are deliberately separate facts at separate stages: the pair is a
+	// property of the provider, the text a property of the Recipe, and a rule
+	// over an entry reads both.
+	//
+	// Keyed by node; read from wasm.ProviderContract.ArtifactDelimiters.
+	ProviderArtifactTemplateDelimiters(node string) ArtifactTemplateDelimiters
 }
 
 // HydratedView exposes the facts complete at the hydrated stage: per-node
-// resolved locals and provides — state that exists before any artifact
-// bytes.
+// resolved locals and provides, and the mid-render products standing
+// beside them — the resolved source, the parsed workload, and each
+// artifact entry's template text before it is evaluated — all of it
+// state that exists before any artifact bytes.
 //
 // It embeds DescribedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
@@ -1163,6 +1202,71 @@ type HydratedView interface {
 	// Keyed by node; read from
 	// gotmpl.CollectTemplateFieldAccesses(valuesMapping.Inline).
 	ValuesMappingTemplateRefs(node string) ([]string, bool)
+
+	// ResolvedNodeSourceDeclared reports whether a node's Recipe carries a
+	// source once source resolution has run.
+	//
+	// The value read is the RESOLVED source and not the text the author wrote.
+	// Source resolution replaces the Recipe with a local copy whose source
+	// holds the evaluated result, and that copy is what everything downstream
+	// reads — so a source template evaluating to an empty string is reported
+	// the same as an absent source. That is one condition rather than two,
+	// which is what lets a rule about a template reading the source pillar
+	// name a single cause instead of distinguishing two states an author
+	// cannot tell apart from the outcome.
+	//
+	// It is a yes-or-no answer rather than the source value, and that follows
+	// from what a source may be rather than from a narrowing for convenience.
+	// A source is either a location string or an open structured object whose
+	// keys the provider defines, so handing the value over would hand a rule a
+	// structure to walk into — and what it would find there is
+	// provider-defined content the framework declares no fact for.
+	//
+	// Keyed by node; read from types.RecipeSpec.Source.
+	ResolvedNodeSourceDeclared(node string) bool
+
+	// ParsedNodeWorkloadPresent reports whether a node's render state carries
+	// a workload.
+	//
+	// A Recipe declaring no workload body reaches artifact evaluation with
+	// none, because workload synthesis had nothing to parse. So this is what
+	// separates a node whose templates may read the workload pillar from one
+	// whose reference to it has nothing to resolve against.
+	//
+	// It is a yes-or-no answer rather than the workload itself, on the same
+	// reading the resolved source carries: the workload is a structured
+	// document, and a rule handed it could walk into content the framework
+	// declares no fact for.
+	//
+	// Keyed by node; read from renderer.PhaseBState.ParsedWorkload.
+	ParsedNodeWorkloadPresent(node string) bool
+
+	// ArtifactTemplateText is the template text standing at one of a node's
+	// artifacts, as it is before anything evaluates it.
+	//
+	// It is a separate fact from the bytes that artifact projected to, and the
+	// pair is two questions rather than one question under two names. THIS ONE
+	// answers what the entry says, which a rule admitting or refusing
+	// authoring has to read, because a template such a rule refuses is exactly
+	// one whose bytes are never produced. THE OTHER answers what evaluating it
+	// produced, which is unanswerable until evaluation has run.
+	//
+	// That distinction is worth stating here because nothing else states it.
+	// The two read the same authoring block at the same coordinates and differ
+	// in nothing but the stage and whether evaluation has happened — and the
+	// report of facts sharing a carrier pairs them by stage, carrier and
+	// subject together, so it does not pair these two and never will. A reader
+	// who suspects duplication has this paragraph and nothing else to settle
+	// it with.
+	//
+	// The text is the entry's content whichever form the entry took: written
+	// inline, supplied by an imported file, or supplied by an entry of a
+	// library bundle. A rule asking what an artifact template may reference
+	// asks the same question of all three, so one fact over the three is what
+	// keeps such a rule from having to know which form it was handed.
+	//
+	// Keyed by (node, artifact); read from types.RecipeSpec.Artifacts.
+	ArtifactTemplateText(node string, artifact string) string
 }
 
 // RenderedView exposes the facts complete at the rendered stage: artifact
