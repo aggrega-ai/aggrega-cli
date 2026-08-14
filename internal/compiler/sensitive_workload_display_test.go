@@ -221,7 +221,7 @@ func TestWorkloadDisplay_ReRenderKeepsTheEmittedDocumentsShape(t *testing.T) {
 	emitted := displayBuild(t, true)
 
 	for _, slot := range []string{
-		"boundaries/display/shape/09b-phaseB6-boundary-fr.yaml",
+		"boundaries/display/shape/09b-feature-rendering-boundary.yaml",
 		"boundaries/display/shape/10-engine-synthesis/shape.compose-fragment.yaml",
 	} {
 		shownLeaves := workloadLeaves(t, traceEntry(t, shown, slot))
@@ -281,7 +281,7 @@ func TestWorkloadDisplay_ContentBranchingTemplateDiverges(t *testing.T) {
 	shown := displayBuild(t, false)
 	emitted := displayBuild(t, true)
 
-	const slot = "boundaries/display/branch/09b-phaseB6-boundary-fr.yaml"
+	const slot = "boundaries/display/branch/09b-feature-rendering-boundary.yaml"
 	shownLeaves := workloadLeaves(t, traceEntry(t, shown, slot))
 	emittedLeaves := workloadLeaves(t, traceEntry(t, emitted, slot))
 

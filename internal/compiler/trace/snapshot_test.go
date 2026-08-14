@@ -30,41 +30,42 @@ func makeCtx() *types.TemplateContext {
 }
 
 // TestPillarSnapshot_PhaseB0_AbsentWorkload validates the per-pass mapping
-// honesty contract: a Phase B.0 snapshot must NOT contain .workload because
-// .workload is not yet populated at Phase B.0. Earlier framework-rendered
-// error messages would surface .workload = nil at B.0 because the field
-// existed on the context regardless of pass; the snapshot helper drops the
-// field at passes where the compiler had no visibility into it.
+// honesty contract: a source-resolution snapshot must NOT contain .workload
+// because .workload is not yet populated there. Earlier framework-rendered
+// error messages would surface .workload = nil at source resolution because
+// the field existed on the context regardless of pass; the snapshot helper
+// drops the field at passes where the compiler had no visibility into it.
 func TestPillarSnapshot_PhaseB0_AbsentWorkload(t *testing.T) {
 	t.Parallel()
 	snap := PillarSnapshot(makeCtx(), PassPhaseB0, redact.Keys{})
 	if _, present := snap["workload"]; present {
-		t.Errorf("Phase B.0 snapshot must NOT contain .workload; got: %v", snap)
+		t.Errorf("source-resolution snapshot must NOT contain .workload; got: %v", snap)
 	}
-	// .source IS present at Phase B.0 (resolved during the source-eval pass).
+	// .source IS present at source resolution (that pass is what resolves it).
 	if _, present := snap["source"]; !present {
-		t.Errorf("Phase B.0 snapshot must contain .source; got: %v", snap)
+		t.Errorf("source-resolution snapshot must contain .source; got: %v", snap)
 	}
 	// Baseline pillars present.
 	if _, present := snap["values"]; !present {
-		t.Errorf("Phase B.0 snapshot must contain .values; got: %v", snap)
+		t.Errorf("source-resolution snapshot must contain .values; got: %v", snap)
 	}
 }
 
 // TestPillarSnapshot_PhaseB3_PresentWorkload validates the mirror
-// condition: at Phase B.3 (artifacts evaluation), .workload is populated
-// (set during Phase B.2) and surfaces in the snapshot.
+// condition: at artifact evaluation, .workload is populated (workload
+// synthesis set it) and surfaces in the snapshot.
 func TestPillarSnapshot_PhaseB3_PresentWorkload(t *testing.T) {
 	t.Parallel()
 	snap := PillarSnapshot(makeCtx(), PassPhaseB3, redact.Keys{})
 	if _, present := snap["workload"]; !present {
-		t.Errorf("Phase B.3 snapshot must contain .workload; got keys: %v", keysOf(snap))
+		t.Errorf("artifact-evaluation snapshot must contain .workload; got keys: %v", keysOf(snap))
 	}
 }
 
-// TestPillarSnapshot_PhaseB6_BoundaryShape validates the Phase B.6 boundary-
-// scope branch: when ctx.Boundary is non-nil, the snapshot drops .context.*
-// (which is meaningless at boundary scope) and surfaces .boundary.* instead.
+// TestPillarSnapshot_PhaseB6_BoundaryShape validates feature rendering's
+// boundary-scope branch: when ctx.Boundary is non-nil, the snapshot drops
+// .context.* (which is meaningless at boundary scope) and surfaces
+// .boundary.* instead.
 func TestPillarSnapshot_PhaseB6_BoundaryShape(t *testing.T) {
 	t.Parallel()
 	ctx := makeCtx()
@@ -74,24 +75,25 @@ func TestPillarSnapshot_PhaseB6_BoundaryShape(t *testing.T) {
 	}
 	snap := PillarSnapshot(ctx, PassPhaseB6, redact.Keys{})
 	if _, present := snap["boundary"]; !present {
-		t.Errorf("Phase B.6 boundary-scope snapshot must contain .boundary; got keys: %v", keysOf(snap))
+		t.Errorf("feature-rendering boundary-scope snapshot must contain .boundary; got keys: %v", keysOf(snap))
 	}
 	// .context.instance_id must NOT appear (boundary scope drops it).
 	if _, present := snap["context.instance_id"]; present {
-		t.Errorf("Phase B.6 boundary-scope snapshot must NOT contain .context.instance_id; got keys: %v", keysOf(snap))
+		t.Errorf("feature-rendering boundary-scope snapshot must NOT contain .context.instance_id; got keys: %v", keysOf(snap))
 	}
 }
 
-// TestPillarSnapshot_PhaseProvides_Baseline validates Pass 1 emits the
-// baseline pillars only — values, infra, context.instance_id, metadata —
-// without inject (Pass 2 hydrates), without locals (B.0), without
-// source (B.0), without workload (B.2).
+// TestPillarSnapshot_PhaseProvides_Baseline validates provides evaluation
+// emits the baseline pillars only — values, infra, context.instance_id,
+// metadata — without inject (inject hydration populates it), without locals
+// or source (source resolution does), without workload (workload synthesis
+// does).
 func TestPillarSnapshot_PhaseProvides_Baseline(t *testing.T) {
 	t.Parallel()
 	snap := PillarSnapshot(makeCtx(), PassProvides, redact.Keys{})
 	for _, key := range []string{"context.inject", "context.uses", "locals", "source", "workload"} {
 		if _, present := snap[key]; present {
-			t.Errorf("Pass 1 snapshot must NOT contain %q; got keys: %v", key, keysOf(snap))
+			t.Errorf("provides-evaluation snapshot must NOT contain %q; got keys: %v", key, keysOf(snap))
 		}
 	}
 }

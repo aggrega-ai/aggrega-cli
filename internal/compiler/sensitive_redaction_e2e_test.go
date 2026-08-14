@@ -45,11 +45,11 @@ const (
 // identifiable by key, so these are the slots the redaction fully covers.
 var pillarProjectionSlots = []string{
 	"01-pillars-initial.yaml",
-	"02-pass1-provides.yaml",
-	"03-pass2-inject.yaml",
-	"04-phaseA-inject.yaml",
-	"06-phaseB-locals.yaml",
-	"08-phaseB-workload.yaml",
+	"02-provides-evaluation.yaml",
+	"03-inject-hydration.yaml",
+	"04-inject-mapping.yaml",
+	"06-source-locals.yaml",
+	"08-workload-synthesis.yaml",
 }
 
 func sensitiveRedactionBuild(t *testing.T) *pipeline.Result {
@@ -162,12 +162,12 @@ func TestSensitiveRedaction_TraceWithholdsTaintedDeliveryKey(t *testing.T) {
 	t.Parallel()
 	result := sensitiveRedactionBuild(t)
 
-	// The pipe is populated from Pass 2 onward; slots 01/02 predate it.
+	// The pipe is populated from inject hydration onward; slots 01/02 predate it.
 	for _, slot := range []string{
-		"03-pass2-inject.yaml",
-		"04-phaseA-inject.yaml",
-		"06-phaseB-locals.yaml",
-		"08-phaseB-workload.yaml",
+		"03-inject-hydration.yaml",
+		"04-inject-mapping.yaml",
+		"06-source-locals.yaml",
+		"08-workload-synthesis.yaml",
 	} {
 		body := traceSlot(t, result, slot)
 
@@ -203,15 +203,15 @@ const (
 // verbatim by design, so a whole-body plaintext check applies only to the first
 // two — the per-entry assertions below run on all four.
 var derivedLocalsSlots = []string{
-	"06-phaseB-locals.yaml",
-	"08-phaseB-workload.yaml",
-	"09b-phaseB6-boundary-fr.yaml",
+	"06-source-locals.yaml",
+	"08-workload-synthesis.yaml",
+	"09b-feature-rendering-boundary.yaml",
 	"10-engine-synthesis/app.compose-fragment.yaml",
 }
 
 var derivedPillarOnlySlots = []string{
-	"06-phaseB-locals.yaml",
-	"08-phaseB-workload.yaml",
+	"06-source-locals.yaml",
+	"08-workload-synthesis.yaml",
 }
 
 func derivedRedactionBuild(t *testing.T) *pipeline.Result {
@@ -330,7 +330,7 @@ func TestSensitiveRedaction_DerivedArtifactCarriesPlaintext(t *testing.T) {
 // .workload document. Enumerated rather than sampled: a clause that withheld the
 // projection at one pass and not another would leave every other slot passing.
 var workloadProjectionSlots = []string{
-	"09b-phaseB6-boundary-fr.yaml",
+	"09b-feature-rendering-boundary.yaml",
 	"10-engine-synthesis/app.compose-fragment.yaml",
 }
 

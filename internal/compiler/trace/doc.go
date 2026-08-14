@@ -11,16 +11,16 @@
 // collision risk against an Aggrega-managed dot-dir.
 //
 // The Pass enumeration names every snapshot slot the layout produces:
-// Pass 1 (provides) through Phase B.6 (FeatureRecipe Resource Generation),
-// plus PassEmission (post-render emission log) and PassLabels (provenance
-// label injection log).
+// provides evaluation through feature rendering (FeatureRecipe Resource
+// Generation), plus PassEmission (post-render emission log) and PassLabels
+// (provenance label injection log).
 //
 // PillarSnapshot returns the projection of a TemplateContext appropriate
 // for a given Pass — only the pillars populated by that pass appear; later
 // pillars are absent (not nil), matching the compiler's actual visibility
-// at the failing point. This makes error messages honest: a Phase B.0
+// at the failing point. This makes error messages honest: a source-resolution
 // failure does not show an empty .workload, because .workload is not
-// populated yet at Phase B.0.
+// populated until workload synthesis has run.
 //
 // # Writers
 //

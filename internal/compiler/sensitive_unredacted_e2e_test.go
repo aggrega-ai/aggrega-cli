@@ -139,7 +139,7 @@ func TestTraceUnredacted_OffIsTheWithholdingControl(t *testing.T) {
 
 	// The substituted re-render is the mode's other half, and it must be present
 	// with the mode off for the positive test's claim about it to mean anything.
-	for _, slot := range []string{"09b-phaseB6-boundary-fr.yaml", "10-engine-synthesis/app.compose-fragment.yaml"} {
+	for _, slot := range []string{"09b-feature-rendering-boundary.yaml", "10-engine-synthesis/app.compose-fragment.yaml"} {
 		body := derivedTraceSlot(t, result, slot)
 		if !strings.Contains(body, redact.SubstitutedProjection()) {
 			t.Errorf("%s must show its rendered workload as an announced re-render with the mode off\n--- slot ---\n%s", slot, body)

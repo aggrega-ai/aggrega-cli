@@ -25,7 +25,7 @@ var modeSlots = []struct {
 	fileSuffix string
 	wantRel    string
 }{
-	{"default yaml slot", PassPhaseB0Locals, "", "boundaries/cluster/app/06-phaseB-locals.yaml"},
+	{"default yaml slot", PassPhaseB0Locals, "", "boundaries/cluster/app/06-source-locals.yaml"},
 	{"log slot", PassEmission, "", "boundaries/cluster/app/11-engine-emission.log"},
 	{"per-file slot", PassPhaseB4, "app.compose-fragment.yaml", "boundaries/cluster/app/10-engine-synthesis/app.compose-fragment.yaml"},
 }

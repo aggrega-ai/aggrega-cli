@@ -55,18 +55,18 @@ import (
 //
 // The mapping table:
 //
-//   - Pass 1 (provides): values, infra, context (basic identity), metadata.
-//   - Pass 2 (inject): above + context.inject (partial — uses-edge inject
+//   - provides evaluation: values, infra, context (basic identity), metadata.
+//   - inject hydration: above + context.inject (partial — uses-edge inject
 //     resolved into per-consumer slots).
-//   - Phase A: above + context.inject (hydrated — including FR injectMapping
-//     rewrites).
-//   - Phase B.0: above + locals + source.
-//   - Phase B.1: above (locals + source) — valuesMapping output is in-flight,
-//     not yet on the context as values.
-//   - Phase B.2: above; .workload in progress.
-//   - Phase B.3-B.5: above + workload.
-//   - Phase B.6: for component-scope FRs, same as Phase B.3 plus the
-//     FR-scoped values/infra/locals overlay; for boundary-scope FRs,
+//   - inject mapping: above + context.inject (hydrated — including FR
+//     injectMapping rewrites).
+//   - source resolution: above + locals + source.
+//   - values mapping: above (locals + source) — valuesMapping output is
+//     in-flight, not yet on the context as values.
+//   - workload synthesis: above; .workload in progress.
+//   - artifact evaluation and provider render: above + workload.
+//   - feature rendering: for component-scope FRs, same as artifact evaluation
+//     plus the FR-scoped values/infra/locals overlay; for boundary-scope FRs,
 //     drop .context.* and surface .boundary.* (path, components,
 //     internal/cross-boundary uses-edges, labels, annotations,
 //     feature_attachments) plus the FR-attached BoundaryFeature's
@@ -93,35 +93,37 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 		out["metadata"] = ctx.Metadata
 	}
 
-	// Pass 1 (provides) is the baseline — return early.
+	// Provides evaluation is the baseline — return early.
 	if pass == PassProvides || pass == PassPillarsInitial {
 		return out
 	}
 
-	// Pass 2 onward: the inject pipe is populated.
+	// Inject hydration onward: the inject pipe is populated.
 	if pass == PassInject || isPhaseAOrLater(pass) {
 		if ctx.Context.Inject.Env.Len() > 0 || ctx.Context.Inject.File.Len() > 0 || ctx.Context.Inject.Arg.Len() > 0 {
 			out["context.inject"] = keys.InjectPipe(ctx.Context.Inject)
 		}
 	}
 
-	// Phase A and later: uses edges visible.
+	// Inject mapping and later: uses edges visible.
 	if isPhaseAOrLater(pass) && ctx.Context.Uses.Len() > 0 {
 		out["context.uses"] = redact.Uses(ctx.Context.Uses, keys.UsesProvides)
 	}
 
-	// Phase B.0+: locals are populated.
+	// Source resolution onward: locals are populated.
 	if isPhaseB0OrLater(pass) && ctx.Locals.Len() > 0 {
 		out["locals"] = redact.Locals(ctx.Locals, keys.Locals)
 	}
 
-	// Phase B.0+: .source is populated (after Recipe.Spec.Source template eval).
+	// Source resolution onward: .source is populated (after Recipe.Spec.Source
+	// template eval).
 	if isPhaseB0OrLater(pass) && ctx.Source != nil {
 		out["source"] = redact.Source(ctx.Source, keys.Source)
 	}
 
-	// Phase B.3-B.5+: .workload is populated. Phase B.2 has it in progress;
-	// not surfaced until B.3 to avoid showing an in-flight state.
+	// Artifact evaluation onward: .workload is populated. Workload synthesis
+	// has it in progress; it is not surfaced until artifact evaluation, to
+	// avoid showing an in-flight state.
 	if isPhaseB3OrLater(pass) && ctx.Workload != nil {
 		out["workload"] = ctx.Workload
 		switch keys.Workload {
@@ -140,8 +142,9 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 		}
 	}
 
-	// Phase B.6 boundary-scope branch: drop .context.*, surface .boundary.*.
-	// The component-scope branch matches Phase B.3 (handled above).
+	// Feature rendering's boundary-scope branch: drop .context.*, surface
+	// .boundary.*. The component-scope branch matches artifact evaluation
+	// (handled above).
 	if pass == PassPhaseB6 && ctx.Boundary != nil {
 		// Boundary-scope: drop the per-component .context.* and surface
 		// .boundary.*.
@@ -154,7 +157,8 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 	return out
 }
 
-// isPhaseAOrLater reports whether the given pass is at or after Phase A.
+// isPhaseAOrLater reports whether the given pass is at or after inject
+// mapping.
 func isPhaseAOrLater(p Pass) bool {
 	switch p {
 	case PassPhaseA, PassPhaseB0, PassPhaseB0Locals, PassPhaseB1, PassPhaseB2,
@@ -164,7 +168,8 @@ func isPhaseAOrLater(p Pass) bool {
 	return false
 }
 
-// isPhaseB0OrLater reports whether the given pass is at or after Phase B.0.
+// isPhaseB0OrLater reports whether the given pass is at or after source
+// resolution.
 func isPhaseB0OrLater(p Pass) bool {
 	switch p {
 	case PassPhaseB0, PassPhaseB0Locals, PassPhaseB1, PassPhaseB2,
@@ -174,7 +179,8 @@ func isPhaseB0OrLater(p Pass) bool {
 	return false
 }
 
-// isPhaseB3OrLater reports whether the given pass is at or after Phase B.3.
+// isPhaseB3OrLater reports whether the given pass is at or after artifact
+// evaluation.
 func isPhaseB3OrLater(p Pass) bool {
 	switch p {
 	case PassPhaseB3, PassPhaseB4, PassPhaseB6, PassEmission, PassLabels:

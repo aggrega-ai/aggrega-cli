@@ -62,8 +62,8 @@ func joinErrorChain(err error) string {
 //     declared on its boundary) emits `argocd.argoproj.io/sync-wave: "1"`
 //     on rendered K8s resources.
 //  7. FilenameCollision — a fixture variant whose artifacts entry names a
-//     filename matching a chart-rendered filename halts at Phase B.5 with
-//     the documented collision error.
+//     filename matching a chart-rendered filename halts at feature rendering
+//     with the documented collision error.
 //  8. WorkloadSecrets — a fixture variant whose Workload references the
 //     blackbox slot root_password fails Recipe load with the documented
 //     ErrWorkloadFeaturesSchema.
@@ -384,8 +384,8 @@ func testSentinelFRTemplateInvalidField(t *testing.T) {
 // assertAlwaysPresentTraceSlots discovers each node-leaf in the in-memory
 // trace map (recursively across nested boundaries, so the compose+bridge
 // variant is handled) and asserts the seven slots that fire regardless of the
-// node's Recipe shape: pre-loop captures (01-04), Phase B.0 locals (06),
-// per-node emission log (11), and provenance summary (12).
+// node's Recipe shape: pre-loop captures (01-04), the locals source resolution
+// publishes (06), per-node emission log (11), and provenance summary (12).
 //
 // Node-leaf detection: a node emits 12-labels-injected.log directly under its
 // node directory, so each key ending in /12-labels-injected.log anchors one
@@ -409,10 +409,10 @@ func assertAlwaysPresentTraceSlots(t *testing.T, tr map[string][]byte) {
 	for _, prefix := range prefixes {
 		for _, slot := range []string{
 			"01-pillars-initial.yaml",
-			"02-pass1-provides.yaml",
-			"03-pass2-inject.yaml",
-			"04-phaseA-inject.yaml",
-			"06-phaseB-locals.yaml",
+			"02-provides-evaluation.yaml",
+			"03-inject-hydration.yaml",
+			"04-inject-mapping.yaml",
+			"06-source-locals.yaml",
 			"11-engine-emission.log",
 			"12-labels-injected.log",
 		} {
@@ -529,7 +529,7 @@ func assertByteIdenticalAcrossIterations(t *testing.T, results []*fullstackAppRe
 	}
 }
 
-// testFilenameCollision exercises Phase B.5's cross-origin filename
+// testFilenameCollision exercises feature rendering's cross-origin filename
 // collision detection. The helm-sourced-with-artifacts-collision variant
 // pairs the same chart as helm-sourced-with-artifacts (charts/api/templates/
 // deployment.yaml renders to the identity-derived name

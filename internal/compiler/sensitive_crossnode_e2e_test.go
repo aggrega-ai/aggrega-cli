@@ -41,10 +41,10 @@ const (
 // The uses map is visible from the first pass that carries the topology onward, so
 // each of these slots is a place the cross-node values could have printed.
 var crossNodeUsesSlots = []string{
-	"04-phaseA-inject.yaml",
-	"06-phaseB-locals.yaml",
-	"08-phaseB-workload.yaml",
-	"09b-phaseB6-boundary-fr.yaml",
+	"04-inject-mapping.yaml",
+	"06-source-locals.yaml",
+	"08-workload-synthesis.yaml",
+	"09b-feature-rendering-boundary.yaml",
 	"10-engine-synthesis/app.compose-fragment.yaml",
 }
 
@@ -52,7 +52,7 @@ var crossNodeUsesSlots = []string{
 // .workload document. Enumerated rather than sampled: a clause that withheld the
 // projection at one pass and not another would leave every other slot passing.
 var crossNodeWorkloadSlots = []string{
-	"09b-phaseB6-boundary-fr.yaml",
+	"09b-feature-rendering-boundary.yaml",
 	"10-engine-synthesis/app.compose-fragment.yaml",
 }
 
@@ -222,7 +222,7 @@ func TestSensitiveRedaction_UndeclaredNodesDisplayNothingWithheld(t *testing.T) 
 	// Each target's own rendered workload is still shown in full, so the control is
 	// asserting presence rather than merely absence.
 	for _, nodeID := range []string{"store", "plain"} {
-		body := crossNodeSlot(t, result, nodeID, "09b-phaseB6-boundary-fr.yaml")
+		body := crossNodeSlot(t, result, nodeID, "09b-feature-rendering-boundary.yaml")
 		if !strings.Contains(body, "containers:") {
 			t.Errorf("%s must still show its rendered workload document\n--- slot ---\n%s", nodeID, body)
 		}
@@ -262,9 +262,9 @@ func TestSensitiveRedaction_CrossNodeArtifactCarriesPlaintext(t *testing.T) {
 
 // crossNodeInjectSlots are the consumer's trace slots that project the delivery
 // pipe. The pipe is populated from the delivery pass onward, and both of the passes
-// that carry it before Phase B are enumerated: a marking applied at one and not the
-// other would leave the other printing in the clear.
-var crossNodeInjectSlots = []string{"03-pass2-inject.yaml", "04-phaseA-inject.yaml"}
+// that carry it before base rendering are enumerated: a marking applied at one and
+// not the other would leave the other printing in the clear.
+var crossNodeInjectSlots = []string{"03-inject-hydration.yaml", "04-inject-mapping.yaml"}
 
 // TestSensitiveRedaction_TraceWithholdsUsesEdgeDeliveredValue is the delivery-pipe
 // half of the cross-node withholding, and it covers the second of the two wirings
@@ -303,7 +303,7 @@ func TestSensitiveRedaction_TraceWithholdsUsesEdgeDeliveredValue(t *testing.T) {
 	}
 	// The published projection in the same slot is still withheld, so closing the
 	// delivery gap did not move the withholding from one surface to the other.
-	usesBody := crossNodeSlot(t, result, "app", "04-phaseA-inject.yaml")
+	usesBody := crossNodeSlot(t, result, "app", "04-inject-mapping.yaml")
 	if !strings.Contains(usesBody, "zzTargetSecret: "+redact.Placeholder()) {
 		t.Errorf("the published provides value must still be withheld\n--- slot ---\n%s", usesBody)
 	}

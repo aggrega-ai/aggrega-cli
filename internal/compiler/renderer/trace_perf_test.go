@@ -106,8 +106,9 @@ func TestTrace_NonBlockingContract_50Nodes(t *testing.T) {
 
 	// Stub RecipeLookup: same workload-mode helm Recipe for every node.
 	// No source:, no valuesMapping:, no artifacts:. Slot coverage:
-	// pre-loop (01-03), Phase A (04), B0 locals (06), B2 workload (08),
-	// B4 synthesis (10), Emission (11), Labels (12) — 9 events per node.
+	// pre-loop (01-03), inject mapping (04), source-resolution locals (06),
+	// workload synthesis (08), provider render (10), emission (11), labels
+	// (12) — 9 events per node.
 	sharedRecipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "perf-bench-recipe", Version: "1.0.0"},
 		Spec: types.RecipeSpec{
@@ -169,11 +170,11 @@ containers:
 	// Slots present for sourceless+workload helm:
 	expectedFiles := []string{
 		"01-pillars-initial.yaml",
-		"02-pass1-provides.yaml",
-		"03-pass2-inject.yaml",
-		"04-phaseA-inject.yaml",
-		"06-phaseB-locals.yaml",
-		"08-phaseB-workload.yaml",
+		"02-provides-evaluation.yaml",
+		"03-inject-hydration.yaml",
+		"04-inject-mapping.yaml",
+		"06-source-locals.yaml",
+		"08-workload-synthesis.yaml",
 		"11-engine-emission.log",
 		"12-labels-injected.log",
 	}

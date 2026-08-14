@@ -117,10 +117,10 @@ func TestWriter_Fs_WritesUnderRoot(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	// Phase A — .yaml extension.
-	yamlPath := filepath.Join(root, "boundaries", "default", "api", "04-phaseA-inject.yaml")
+	// Inject mapping — .yaml extension.
+	yamlPath := filepath.Join(root, "boundaries", "default", "api", "04-inject-mapping.yaml")
 	if _, err := os.Stat(yamlPath); err != nil {
-		t.Errorf("expected %q to exist after Phase A write: %v", yamlPath, err)
+		t.Errorf("expected %q to exist after the inject-mapping write: %v", yamlPath, err)
 	}
 	// Emission — .log extension.
 	logPath := filepath.Join(root, "boundaries", "default", "api", "11-engine-emission.log")
@@ -246,8 +246,8 @@ func TestWriter_Close_SurfacesConsumerError(t *testing.T) {
 }
 
 // TestIsPhaseAOrLater_DiscriminatesPasses pins the false-branch coverage
-// of the phase discriminator. Passes before Phase A return false; Phase
-// A and later return true.
+// of the stage discriminator. Passes before inject mapping return false;
+// inject mapping and later return true.
 func TestIsPhaseAOrLater_DiscriminatesPasses(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -268,8 +268,9 @@ func TestIsPhaseAOrLater_DiscriminatesPasses(t *testing.T) {
 }
 
 // TestIsPhaseB0OrLater_DiscriminatesPasses pins the false-branch
-// coverage of the Phase-B0-and-later discriminator. Phase A returns
-// false (predates Phase B0); Phase B0 and later return true.
+// coverage of the source-resolution-and-later discriminator. Inject
+// mapping returns false (it precedes source resolution); source
+// resolution and later return true.
 func TestIsPhaseB0OrLater_DiscriminatesPasses(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

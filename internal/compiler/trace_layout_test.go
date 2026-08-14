@@ -11,25 +11,26 @@ import (
 
 // TestTrace_FullLayout_OnHelmSourcedWithArtifacts exercises the full per-node
 // trace layout against a fixture whose Recipes carry source: + valuesMapping:
-// + artifacts: (plus the always-present pre-loop captures and Phase A flow).
-// Asserts the documented layout entries land for each node. Trace is collected
-// in-memory through the build-faithful harness (Input.IncludeTrace) and keyed
-// by the same relative path the on-disk trace writer would use.
+// + artifacts: (plus the always-present pre-loop captures and the inject
+// mapping flow). Asserts the documented layout entries land for each node.
+// Trace is collected in-memory through the build-faithful harness
+// (Input.IncludeTrace) and keyed by the same relative path the on-disk trace
+// writer would use.
 //
 // Slots present per the helm-sourced-with-artifacts shape:
 //   - 01-pillars-initial.yaml (pre-loop)
-//   - 02-pass1-provides.yaml (pre-loop)
-//   - 03-pass2-inject.yaml (pre-loop)
-//   - 04-phaseA-inject.yaml (Phase A)
-//   - 05-phaseB-source.yaml (B.0 source)
-//   - 06-phaseB-locals.yaml (B.0 locals)
-//   - 07-phaseB-valuesMapping.yaml (B.1)
-//   - 09-phaseB-artifacts/<filename>.yaml (B.3 per-artifact)
-//   - 11-engine-emission.log (post-B.6 per-node emission log)
+//   - 02-provides-evaluation.yaml (pre-loop)
+//   - 03-inject-hydration.yaml (pre-loop)
+//   - 04-inject-mapping.yaml
+//   - 05-source-resolution.yaml (the source template)
+//   - 06-source-locals.yaml (the locals source resolution publishes first)
+//   - 07-values-mapping.yaml
+//   - 09-artifact-evaluation/<filename>.yaml (per-artifact)
+//   - 11-engine-emission.log (per-node emission log, after feature rendering)
 //   - 12-labels-injected.log (provenance-label summary)
 //
 // Slots absent for this fixture (no workload-mode Recipes):
-//   - 08-phaseB-workload.yaml
+//   - 08-workload-synthesis.yaml
 //   - 10-engine-synthesis/<filename>.yaml
 func TestTrace_FullLayout_OnHelmSourcedWithArtifacts(t *testing.T) {
 	t.Parallel()
@@ -45,27 +46,27 @@ func TestTrace_FullLayout_OnHelmSourcedWithArtifacts(t *testing.T) {
 	for _, nodeID := range []string{"frontend", "backend", "data.main-db"} {
 		prefix := traceNodePrefix(t, res.Trace, nodeID)
 		assertTraceSlotPresent(t, res.Trace, prefix, "01-pillars-initial.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "02-pass1-provides.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "03-pass2-inject.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "04-phaseA-inject.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "05-phaseB-source.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "06-phaseB-locals.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "07-phaseB-valuesMapping.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "02-provides-evaluation.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "03-inject-hydration.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "04-inject-mapping.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "05-source-resolution.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "06-source-locals.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "07-values-mapping.yaml")
 		assertTraceSlotPresent(t, res.Trace, prefix, "11-engine-emission.log")
 		assertTraceSlotPresent(t, res.Trace, prefix, "12-labels-injected.log")
 		// workload-mode and synthesis-per-file slots absent for sourced shape:
-		assertTraceSlotAbsent(t, res.Trace, prefix, "08-phaseB-workload.yaml")
+		assertTraceSlotAbsent(t, res.Trace, prefix, "08-workload-synthesis.yaml")
 		assertTraceSlotDirAbsent(t, res.Trace, prefix, "10-engine-synthesis")
 	}
 
 	// Per-artifact granularity at slot 09: each component's Recipe has
 	// one artifacts entry; assert at least one file under
-	// <node>/09-phaseB-artifacts/.
+	// <node>/09-artifact-evaluation/.
 	for _, nodeID := range []string{"frontend", "backend", "data.main-db"} {
 		prefix := traceNodePrefix(t, res.Trace, nodeID)
-		entries := traceSlotDirEntries(res.Trace, prefix, "09-phaseB-artifacts")
+		entries := traceSlotDirEntries(res.Trace, prefix, "09-artifact-evaluation")
 		if len(entries) == 0 {
-			t.Errorf("node %s: 09-phaseB-artifacts is empty; expected per-artifact entries", nodeID)
+			t.Errorf("node %s: 09-artifact-evaluation is empty; expected per-artifact entries", nodeID)
 		}
 	}
 }
@@ -74,8 +75,8 @@ func TestTrace_FullLayout_OnHelmSourcedWithArtifacts(t *testing.T) {
 // negative-presence assertions for slots that should be absent when the
 // Recipe is workload-only. Slots 05 (source) and 07 (valuesMapping) are absent
 // for helm-synthesized; slot 08 (workload) and 10 (per-synthesised-file) ARE
-// present. Pre-loop (01/02/03/04), 06 (locals — phaseB0 always emits), 11, 12
-// always present.
+// present. Pre-loop (01/02/03/04), 06 (locals — source resolution always emits
+// it), 11, 12 always present.
 func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
 	t.Parallel()
 	res := runFullstackAppVariant(t, variantFixture{
@@ -90,15 +91,15 @@ func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
 		prefix := traceNodePrefix(t, res.Trace, nodeID)
 		// Always-present slots:
 		assertTraceSlotPresent(t, res.Trace, prefix, "01-pillars-initial.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "02-pass1-provides.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "03-pass2-inject.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "04-phaseA-inject.yaml")
-		assertTraceSlotPresent(t, res.Trace, prefix, "08-phaseB-workload.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "02-provides-evaluation.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "03-inject-hydration.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "04-inject-mapping.yaml")
+		assertTraceSlotPresent(t, res.Trace, prefix, "08-workload-synthesis.yaml")
 		assertTraceSlotPresent(t, res.Trace, prefix, "11-engine-emission.log")
 		assertTraceSlotPresent(t, res.Trace, prefix, "12-labels-injected.log")
 		// Absent slots for sourceless + no-valuesMapping:
-		assertTraceSlotAbsent(t, res.Trace, prefix, "05-phaseB-source.yaml")
-		assertTraceSlotAbsent(t, res.Trace, prefix, "07-phaseB-valuesMapping.yaml")
+		assertTraceSlotAbsent(t, res.Trace, prefix, "05-source-resolution.yaml")
+		assertTraceSlotAbsent(t, res.Trace, prefix, "07-values-mapping.yaml")
 		// Slot 10 (per-synthesised-file): present because Recipe has workload:.
 		// Each component synthesises >= 1 file via WorkloadSynthesizer.
 		entries := traceSlotDirEntries(res.Trace, prefix, "10-engine-synthesis")
@@ -110,8 +111,9 @@ func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
 
 // TestTrace_ComposeWithArtifacts_LayoutPresent asserts the trace wiring works
 // for the compose engine (not just helm). The variant uses placeholder workload
-// + artifacts; asserts pre-loop slots, B.0/B.2 slots, slot 09 (per-artifact),
-// slot 10 (per-synthesised-file), and slot 11 (emission) all land for compose.
+// + artifacts; asserts pre-loop slots, the source-resolution and
+// workload-synthesis slots, slot 09 (per-artifact), slot 10
+// (per-synthesised-file), and slot 11 (emission) all land for compose.
 func TestTrace_ComposeWithArtifacts_LayoutPresent(t *testing.T) {
 	t.Parallel()
 	res := runFullstackAppVariant(t, variantFixture{
@@ -125,14 +127,14 @@ func TestTrace_ComposeWithArtifacts_LayoutPresent(t *testing.T) {
 
 	prefix := traceNodePrefix(t, res.Trace, "overlays")
 	assertTraceSlotPresent(t, res.Trace, prefix, "01-pillars-initial.yaml")
-	assertTraceSlotPresent(t, res.Trace, prefix, "02-pass1-provides.yaml")
-	assertTraceSlotPresent(t, res.Trace, prefix, "03-pass2-inject.yaml")
-	assertTraceSlotPresent(t, res.Trace, prefix, "08-phaseB-workload.yaml")
+	assertTraceSlotPresent(t, res.Trace, prefix, "02-provides-evaluation.yaml")
+	assertTraceSlotPresent(t, res.Trace, prefix, "03-inject-hydration.yaml")
+	assertTraceSlotPresent(t, res.Trace, prefix, "08-workload-synthesis.yaml")
 	assertTraceSlotPresent(t, res.Trace, prefix, "11-engine-emission.log")
 	assertTraceSlotPresent(t, res.Trace, prefix, "12-labels-injected.log")
 	// Slots 09 and 10: ComposeArtifacts has both placeholder workload AND
 	// artifacts, so both per-file slot directories should appear.
-	for _, slotDir := range []string{"09-phaseB-artifacts", "10-engine-synthesis"} {
+	for _, slotDir := range []string{"09-artifact-evaluation", "10-engine-synthesis"} {
 		if len(traceSlotDirEntries(res.Trace, prefix, slotDir)) == 0 {
 			t.Errorf("%s is empty; expected per-file entries", slotDir)
 		}
