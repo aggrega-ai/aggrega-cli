@@ -114,13 +114,22 @@ type CatalogLookup struct {
 // is a question about the authored document and belongs at its authoring site.
 //
 // The required uses-socket rule (5) is the deliberate contrast, not an
-// inconsistency: it has no cascade to wait for. Exactly two surfaces can
-// populate a socket declared in a Component's usesSchema — that component's own
-// `uses` block and the Release's per-edge `uses` — and both are authored
-// documents already in scope here, so this is the earliest stage at which the
-// rule's inputs are complete. A Feature attachment's `uses` names sockets on
-// the FEATURE, a separate socket set, so no attachment can satisfy a
-// Component's socket and no merged set has to be approximated.
+// inconsistency: it has no cascade to wait for. For the instances this pass
+// walks, two surfaces can populate a socket declared in a Component's
+// usesSchema — that component's own `uses` block and the Release's per-edge
+// `uses` — and both are authored documents already in scope here, so this is
+// the earliest stage at which the rule can be asked of them. A Feature
+// attachment's `uses` names sockets on the FEATURE, a separate socket set, so
+// no attachment can satisfy a Component's socket and no merged set has to be
+// approximated.
+//
+// That pair is complete for these instances and for these only. A component a
+// sub-aggregate contributes carries its own `uses` block in that
+// sub-aggregate's document, which is read only once the composition is
+// flattened, so this pass cannot see it and does not walk it. The same rule is
+// asked of such a component after flattening instead, against the resolved edge
+// set. See [ValidateRequiredSockets] for the two evidence sets and the one rule
+// over them.
 //
 // All violations are collected; no guard short-circuits the others. Within a
 // guard, errors sort by (Entity, Field) for byte-identical output across

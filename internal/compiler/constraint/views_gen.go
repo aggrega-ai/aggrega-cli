@@ -1371,8 +1371,9 @@ type NormalizedView interface {
 }
 
 // TopologyView exposes the facts complete at the topology stage: the
-// flattened node set, including sub-aggregate nodes, with the prune set
-// and per-node resolved parameters.
+// flattened node set, including sub-aggregate nodes, with the prune set,
+// per-node resolved parameters, and the connection set every origin has
+// contributed to.
 //
 // It embeds NormalizedView, so every fact complete earlier is readable
 // here and the containment is a compile-time fact rather than a documented
@@ -1393,6 +1394,62 @@ type TopologyView interface {
 	// Keyed by (node, parameter); read from
 	// topology.TopologyNode.ResolvedParameters.
 	ResolvedParameter(node string, name string) (any, bool)
+
+	// ResolvedUsesSocketConnections are the connections a node ends up with
+	// once every origin that draws one has contributed, one entry per socket
+	// carrying at least one, in the order they were drawn, each holding that
+	// socket's connection count.
+	//
+	// It is the third answer to whether a socket is populated, and the only
+	// one that reaches a component the authoring documents never name. A
+	// component a sub-aggregate contributes keeps its own dependency block in
+	// that sub-aggregate's document, which is read only when the composition
+	// is flattened — so the facts over the two authoring documents cannot
+	// see it, and a rule reading them alone reports every socket of such a
+	// component as carrying nothing. This reads the drawn connections instead,
+	// which is one answer spanning every origin: what a component's own
+	// dependency block wrote, wherever that block was authored, and what the
+	// deployment's edge surface created — the latter decided by the same
+	// rule that decides whether such an entry draws a connection at all, so
+	// this fact and the authored one cannot disagree about it.
+	//
+	// What it counts and what it deliberately does NOT is a third counting
+	// rule, distinct from both authored counts, and a reader unifying the
+	// three makes at least one of them wrong. A connection an attachment
+	// contributed is not counted. Those socket names are declared on the
+	// Feature the attachment names — a separate socket set on a separate
+	// entity — so an attachment can never satisfy a component's own socket,
+	// and counting one would report a socket as populated that nothing bound.
+	// Neither authored count states that exclusion, because neither reads a
+	// surface an attachment contributes to; it belongs here and only here,
+	// because this is the one fact reading connections after every origin has
+	// been folded together.
+	//
+	// It is keyed per socket because that is where the question is asked, and
+	// read per node because a socket carrying nothing has no connection to be
+	// keyed by. A rule over a socket that must carry a connection is asked
+	// about every socket the component type declares, including the ones
+	// nothing bound — which are the ones it exists to catch.
+	//
+	// The count is the fact rather than a yes-or-no answer, for the reason it
+	// is on the two authored surfaces: it answers HOW MANY, which is what a
+	// rule over a socket admitting a single connection needs. One thing those
+	// counts hold apart collapses here, and a reader must not read that
+	// collapse back into them. On an authored surface a socket can be present
+	// carrying zero, because naming a socket and populating it are separate
+	// acts there. Here only a drawn connection puts a socket in this map, so
+	// absence is the only shape emptiness takes and a zero count never
+	// appears.
+	//
+	// It does not replace the facts over the two authoring documents, and they
+	// do not replace it. They are complete earlier, so a rule asked before the
+	// composition is flattened can read them and cannot read this; and they
+	// separate a socket named-and-left-empty from one never named, which this
+	// cannot. A rule asking what an author wrote reads those; a rule asking
+	// what the build drew reads this.
+	//
+	// Keyed by (node, socket); read from topology.TopologyResult.Edges.
+	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
 }
 
 // GraphView exposes the facts complete at the graph stage: the finalised

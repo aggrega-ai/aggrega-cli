@@ -22,12 +22,20 @@ import (
 // gets rendered, so reading the Aggregate alone would reject a document the
 // operator edge surface expressly permits.
 //
-// No other surface can populate one of these sockets. A Feature attachment's
-// `uses` sockets are the FEATURE's declared sockets, a separate socket set on a
-// separate catalog entity, and a Feature-contributed edge is deliberately kept
-// out of the consuming Component's apparent edge set — so an attachment cannot
-// satisfy a Component's socket, and the rule's inputs are complete once both
-// documents are parsed.
+// No other surface can populate one of these sockets for an instance this walk
+// can see. A Feature attachment's `uses` sockets are the FEATURE's declared
+// sockets, a separate socket set on a separate catalog entity, and a
+// Feature-contributed edge is deliberately kept out of the consuming
+// Component's apparent edge set — so an attachment cannot satisfy a Component's
+// socket.
+//
+// The two documents are complete for the instances walked here, and for those
+// only. A component a sub-aggregate contributes carries its own `uses` block in
+// that sub-aggregate's document, which is read only once the composition is
+// flattened, so its population cannot be read from these two documents at all —
+// which is why the same rule is asked of it there instead, against the resolved
+// edge set. See [ValidateRequiredSockets] for the two evidence sets and the one
+// rule over them.
 func guardRequiredUsesSockets(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
