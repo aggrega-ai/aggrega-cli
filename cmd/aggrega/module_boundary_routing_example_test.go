@@ -88,9 +88,12 @@ func parseRenderedResource(t *testing.T, path string, raw []byte) renderedResour
 // module-boundary-routing example through two independent builds and asserts the
 // rendered tree is byte-identical across them, that every component both modules
 // contribute is placed under the boundary its module was routed into, that each
-// placed component inherits that boundary's namespace annotation, and that the
+// placed component inherits that boundary's namespace annotation, that the
 // per-component infra and Feature attachment the routing entry declares reach the
-// one component it names.
+// one component it names, and that the resource the attached Feature emits
+// carries that same namespace — a resource emitted inside a scope belongs to that
+// scope whoever emitted it, so a Feature's artifact must not be left to land
+// wherever the applying tool defaults to.
 func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 	catalogRoot := siblingCatalogRootForExamples(t)
 	src := workedExampleDir(t, "module-boundary-routing")
@@ -158,7 +161,7 @@ func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 	// The routing entry configures one component of the module it routes, by the
 	// local name that component carries inside the module. Its sizing must reach
 	// that component's workload and no other.
-	query := resourceOfKind(t, run1, "Deployment", "metrics.query")
+	query, _ := resourceOfKind(t, run1, "Deployment", "metrics.query")
 	for _, want := range []string{"cpu: 500m", "memory: 1Gi"} {
 		if !bytes.Contains(query, []byte(want)) {
 			t.Errorf("the routed component's workload is missing the sizing the routing entry declares (%q):\n%s", want, query)
@@ -167,18 +170,36 @@ func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 
 	// The Feature the routing entry attaches to that same component renders its
 	// own artifact, under the routing boundary, carrying the operator's settings.
-	monitor := resourceOfKind(t, run1, "ServiceMonitor", "metrics.query")
+	monitor, monitorPath := resourceOfKind(t, run1, "ServiceMonitor", "metrics.query")
 	for _, want := range []string{"port: http", "interval: 30s", "path: /metrics"} {
 		if !bytes.Contains(monitor, []byte(want)) {
 			t.Errorf("the attached Feature's artifact is missing the setting the routing entry declares (%q):\n%s", want, monitor)
 		}
 	}
+
+	// A resource the Feature emits carries the boundary's namespace, exactly as
+	// the component's own resources do. This is asserted positively, and about
+	// this example's own ServiceMonitor rather than about kinds in general: a
+	// resource that carries no namespace lands in whatever namespace the applying
+	// tool selects, which need not be the boundary's, so a Feature's resource
+	// would be applied outside the boundary whose component it describes while
+	// that component's workload lands inside it. The per-resource check earlier in
+	// this test only constrains a namespace that is present, and the per-component
+	// check is satisfied by this component's Deployment, so without this assertion
+	// the Feature's artifact could silently stop carrying one.
+	monitorRes := parseRenderedResource(t, monitorPath, monitor)
+	if want, got := moduleRoutingPlacement["metrics.query"], monitorRes.Metadata.Namespace; got != want {
+		t.Errorf("%s: the attached Feature's artifact carries namespace %q; the component it describes is routed into boundary %q, whose namespace it must share:\n%s", monitorPath, got, want, monitor)
+	}
 }
 
 // resourceOfKind returns the single emitted resource of the given kind belonging
-// to the given component, failing when there is none or more than one — either
-// makes an assertion over "the" resource meaningless.
-func resourceOfKind(t *testing.T, tree map[string][]byte, kind, componentID string) []byte {
+// to the given component, with the path it was emitted at, failing when there is
+// none or more than one — either makes an assertion over "the" resource
+// meaningless. The path is returned so an assertion over the resource can name
+// the file it read, and so a caller decoding it routes through the same
+// parseRenderedResource every other assertion here uses.
+func resourceOfKind(t *testing.T, tree map[string][]byte, kind, componentID string) ([]byte, string) {
 	t.Helper()
 	var hits []string
 	for _, path := range sortedKeys(tree) {
@@ -192,11 +213,11 @@ func resourceOfKind(t *testing.T, tree map[string][]byte, kind, componentID stri
 	}
 	switch len(hits) {
 	case 1:
-		return tree[hits[0]]
+		return tree[hits[0]], hits[0]
 	case 0:
 		t.Fatalf("no emitted %s belongs to component %q; emitted paths: %v", kind, componentID, sortedKeys(tree))
 	default:
 		t.Fatalf("%d emitted %s resources belong to component %q, want exactly one: %v", len(hits), kind, componentID, hits)
 	}
-	return nil
+	return nil, ""
 }
