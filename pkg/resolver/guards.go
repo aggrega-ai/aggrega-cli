@@ -94,13 +94,13 @@ type CatalogLookup struct {
 //     a per-component attachment's, a subsystem-wide attachment's, a Release
 //     boundary-wide attachment's, and a Release boundary-component
 //     attachment's.
-//  2. Self-inject validation — allowlist membership and delivery-key collision.
-//  3. Inject key validation — inject from-keys must reference target's provides.
-//  4. Release feature merge — type agreement on dual-declared features.
-//  5. Required uses-socket population — usesSchema.required enforcement, read
+//  2. Release uses-socket validation — Release per-edge sockets exist in usesSchema.
+//  3. Self-inject validation — allowlist membership and delivery-key collision.
+//  4. Inject key validation — inject from-keys must reference target's provides.
+//  5. Release feature merge — type agreement on dual-declared features.
+//  6. Required uses-socket population — usesSchema.required enforcement, read
 //     across the Aggregate's and the Release's edge surfaces together.
-//  6. Schema conformance — authored values/infra pillars match the declared schema.
-//  7. Release uses-socket validation — Release per-edge sockets exist in usesSchema.
+//  7. Schema conformance — authored values/infra pillars match the declared schema.
 //  8. Per-edge conformance — per-edge values/infra match the socket's per-edge schema.
 //  9. Attachment slot shape — an attachment binding a declared slot matches the
 //     shape that slot projects.
