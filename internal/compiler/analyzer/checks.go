@@ -84,7 +84,7 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.EdgeSubject) []constraint.Objection {
 		var labelConstraint string
-		if origin := v.PerEdgeOriginFeatureType(s.NodeID(), s.SocketName()); origin != "" {
+		if origin := v.PerEdgeOriginFeatureType(s.NodeID(), s.SocketName(), s.AliasName()); origin != "" {
 			labelConstraint = v.AttachmentSocketSelector(origin, s.SocketName())
 		} else {
 			componentType, instanced := v.InstanceComponentType(s.NodeID())
@@ -96,7 +96,7 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 		if labelConstraint == "" {
 			return nil
 		}
-		target := v.PerEdgeResolvedTarget(s.NodeID(), s.SocketName())
+		target := v.PerEdgeResolvedTarget(s.NodeID(), s.SocketName(), s.AliasName())
 		if _, instanced := v.InstanceComponentType(target); !instanced {
 			return nil
 		}

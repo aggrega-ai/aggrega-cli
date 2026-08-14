@@ -173,9 +173,17 @@ func newTraversalFixture() traversalFixture {
 	return traversalFixture{
 		// Reverse-alphabetical, so a node sort would be visible.
 		nodes: []NodeInstance{webNode, apiNode},
+		// Two connections on one socket, then one authored in the short form. The
+		// pair on "zebra" is what the alias in the edge's identity is for: without
+		// it the two would key one fact between them, and a walk keyed on the node
+		// and the socket alone would visit them once. The short-form entry carries
+		// an alias no key in the file spells, which is the case the locator rule
+		// discriminates — its coordinate arrives in full while its locator stops at
+		// the socket.
 		edges: []EdgeInstance{
-			{Node: webNode, Socket: "zebra"},
-			{Node: apiNode, Socket: "db"},
+			{Node: webNode, Socket: "zebra", Alias: "primary"},
+			{Node: webNode, Socket: "zebra", Alias: "replica"},
+			{Node: apiNode, Socket: "db", Alias: "store", SynthesizedAlias: true},
 		},
 		// One nested scope and one top-level scope, reverse-alphabetical so a sort
 		// would be visible — the exact shape the subsystem set below takes, because
@@ -337,12 +345,17 @@ func traversalCases() []traversalCase {
 			},
 		},
 		{
+			// The two long-form connections name their own alias, because the author
+			// wrote it as a key. The short-form one stops at the socket: its alias is
+			// the target's own name, which appears in the file as an array element and
+			// not as a key, so naming it would produce a path no file contains.
 			kind: SubjectEdge,
 			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
 				return RunOnEdges(cancelled, f, v, raisingCheck[EdgeSubject]())
 			},
 			want: []string{
-				"aggregate.yaml|.spec.components.web.uses.zebra",
+				"aggregate.yaml|.spec.components.web.uses.zebra.primary",
+				"aggregate.yaml|.spec.components.web.uses.zebra.replica",
 				"billing/aggregate.yaml|.spec.subsystems.billing.components.api.uses.db",
 			},
 		},
@@ -1071,9 +1084,14 @@ func coordinateFlowCases() []coordinateFlowCase {
 			read: func(f traversalFixture) []string {
 				return readback(func(c Check[traversalView, EdgeSubject]) ([]Objection, error) {
 					return RunOnEdges(nil, f, traversalView{}, c)
-				}, func(s EdgeSubject) string { return s.NodeID() + "|" + s.SocketName() })
+				}, func(s EdgeSubject) string {
+					return s.NodeID() + "|" + s.SocketName() + "|" + s.AliasName()
+				})
 			},
-			want: []string{"web|zebra", "billing.api|db"},
+			// The third entry's alias contributes no locator segment and still arrives
+			// here in full, which is the property the provenance transcript cannot see:
+			// there its locator is the correct answer either way.
+			want: []string{"web|zebra|primary", "web|zebra|replica", "billing.api|db|store"},
 		},
 
 		// The kind whose innermost coordinate contributes no locator segment, which is

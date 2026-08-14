@@ -51,7 +51,7 @@ func largeCancellationFixture(n int) traversalFixture {
 			SynthesizedSubsystem: true,
 		}
 		f.nodes = append(f.nodes, node)
-		f.edges = append(f.edges, EdgeInstance{Node: node, Socket: "db"})
+		f.edges = append(f.edges, EdgeInstance{Node: node, Socket: "db", Alias: "primary"})
 		f.boundaries = append(f.boundaries, AuthoredCoordinate{Value: name, SourceFile: "release.yaml"})
 		f.providers[fixtureKey(name)] = []string{"helm"}
 		f.emittedPaths[fixtureKey(name, "helm")] = []string{"a.yaml"}

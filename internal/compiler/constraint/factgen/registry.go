@@ -277,13 +277,14 @@ var facts = []factDecl{
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
 		},
 		Returns: "string",
-		Doc: "PerEdgeTarget is the target an edge names, as authored — empty " +
-			"when the author named none.\n\nThe emptiness is reported " +
+		Doc: "PerEdgeTarget is the target one connection names, as authored — " +
+			"empty when the author named none.\n\nThe emptiness is reported " +
 			"rather than resolved. Two rules in the tree read the same empty " +
 			"target and mean different things by it, one taking it as naming " +
-			"the socket's own alias and the other as declining to create an " +
+			"the connection's own alias and the other as declining to create an " +
 			"edge; a fact that silently applied either rule would make one of " +
 			"them wrong somewhere else.",
 	},
@@ -295,6 +296,7 @@ var facts = []factDecl{
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
 		},
 		Returns: "types.OrderedMap[any]",
 		Doc: "PerEdgeValues is the developer's configuration for one connection " +
@@ -326,6 +328,7 @@ var facts = []factDecl{
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
 		},
 		Returns: "types.OrderedMap[any]",
 		Doc: "AuthoredPerEdgeInject is the delivery a connection dictates as it " +
@@ -931,10 +934,11 @@ var facts = []factDecl{
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
 		},
 		Returns: "string",
 		Doc: "ReleasePerEdgeTarget is the target a Release's per-edge entry names " +
-			"for one socket on one node, as authored — empty when the Release " +
+			"for one connection, as authored — empty when the Release " +
 			"named none.\n\nIt is a separate fact from the target the Aggregate " +
 			"authored, and the pair is what makes the population question " +
 			"answerable at all. Both documents can bind one socket: the " +
@@ -947,9 +951,9 @@ var facts = []factDecl{
 			"naming a target creates the edge, while an entry naming none " +
 			"configures an edge some other document already drew and so binds " +
 			"nothing.\n\nThe fact is placed where both documents are in view. It " +
-			"is keyed by an edge, whose identity is a node the other document " +
-			"declares, and a stage holding one authored document at a time " +
-			"cannot answer for a pair.",
+			"is keyed by an edge, one element of whose identity is a node the " +
+			"other document declares, and a stage holding one authored document " +
+			"at a time cannot answer for a pair.",
 	},
 	{
 		Name:        "release-per-edge-infra",
@@ -959,10 +963,11 @@ var facts = []factDecl{
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
 		},
 		Returns: "types.OrderedMap[any]",
-		Doc: "ReleasePerEdgeInfra is the operator's configuration for one socket " +
-			"on one node as it was written, carried as an opaque ordered " +
+		Doc: "ReleasePerEdgeInfra is the operator's configuration for one " +
+			"connection as it was written, carried as an opaque ordered " +
 			"payload.\n\nIt is the payload rather than a named fact about it, on " +
 			"the same reasoning the authored configuration pillars are: a rule " +
 			"whose predicate is \"what was written here conforms to the contract " +
@@ -977,7 +982,8 @@ var facts = []factDecl{
 			"unordered payload would put a byte-identical result at the mercy of " +
 			"map iteration.\n\nIt is placed where both documents are in view, " +
 			"for the same reason the target the same entry names is: the edge it " +
-			"is keyed by is identified by a node the other document declares.",
+			"is keyed by is identified in part by a node the other document " +
+			"declares.",
 	},
 	{
 		Name:        "release-component-infra",
@@ -1430,6 +1436,7 @@ var facts = []factDecl{
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
 		},
 		Returns: "string",
 		Doc: "PerEdgeOriginFeatureType is the Feature type an edge originated " +
@@ -1451,12 +1458,13 @@ var facts = []factDecl{
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
 		},
 		Returns: "string",
 		Doc: "PerEdgeResolvedTarget is the node an edge resolves to.\n\nIt " +
 			"is a separate fact from the target as authored rather than the same " +
 			"fact at a later moment. An authored target may be empty and mean " +
-			"the socket's own alias, so the resolved form is the only one a rule " +
+			"the connection's own alias, so the resolved form is the only one a rule " +
 			"about the node at the far end of an edge can read; reading the " +
 			"authored form for that question would make the rule wrong for " +
 			"exactly those edges whose target the author left implicit.",
@@ -1541,6 +1549,7 @@ var facts = []factDecl{
 		Params: []paramDecl{
 			{Name: "node", Type: "string"},
 			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
 		},
 		Returns: "types.OrderedMap[types.OrderedMap[string]]",
 		Doc: "PerEdgeInject is what one dependency edge delivers: per delivery " +

@@ -244,10 +244,10 @@ func TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal(
 //
 // The right-hand side is the accessor count and deliberately NOT the coordinate
 // count the generated set carries, because a coordinate need not map to one
-// scalar: the edge kind carries a single coordinate whose identity is a node and a
-// socket taken together, and it exposes an accessor for each half of that pair. A
-// criterion equating the two counts would fail that kind, whose shape the package
-// argues for where the kind is declared.
+// scalar: the edge kind carries a single coordinate whose identity is a node, a
+// socket and an alias taken together, and it exposes an accessor for each element
+// of that triple. A criterion equating the two counts would fail that kind, whose
+// shape the package argues for where the kind is declared.
 //
 // # What it cannot see
 //
@@ -365,10 +365,13 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 // Two entries are not one-to-one, and both are named rows here rather than
 // special cases buried in the assertion:
 //
-//   - edge maps to the pair NodeID and SocketName. An edge's identity is the node
-//     and the socket taken together, which is what a fact keyed by an edge takes
-//     as its key, and the edge itself names no scalar a check could use. So one
-//     coordinate legitimately carries two accessors.
+//   - edge maps to the triple NodeID, SocketName and AliasName. An edge's identity
+//     is the node, the socket and the alias taken together, which is what a fact
+//     keyed by an edge takes as its key, and the edge itself names no scalar a
+//     check could use. The alias is in the identity because one socket carries many
+//     connections, each with its own target and configuration, so a key without it
+//     would answer for two connections at once. So one coordinate legitimately
+//     carries three accessors.
 //   - document maps to SourceFile, which the subject contract already supplies. A
 //     document is the whole file, so the coordinate and the provenance are the
 //     same string, and the kind owes no accessor of its own for it.
@@ -378,7 +381,7 @@ var coordinateAccessors = map[string][]string{
 	"assertion":     {"AssertionName"},
 	"node":          {"NodeID"},
 	"socket":        {"SocketName"},
-	"edge":          {"NodeID", "SocketName"},
+	"edge":          {"NodeID", "SocketName", "AliasName"},
 	"attachment":    {"AttachmentName"},
 	"slot":          {"SlotName"},
 	"mechanism":     {"MechanismName"},
@@ -901,7 +904,8 @@ var subjectKindBindings = map[SubjectKind]struct {
 	SubjectEdge: {
 		iface: reflect.TypeOf((*EdgeSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newEdgeSubject(f, "web", "databases", "spec", "components", "web", "uses", "databases")
+			return newEdgeSubject(f, "web", "databases", "primary",
+				"spec", "components", "web", "uses", "databases", "primary")
 		},
 	},
 	SubjectNodeAttachment: {

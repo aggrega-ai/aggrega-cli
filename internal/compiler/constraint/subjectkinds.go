@@ -198,13 +198,18 @@ func newNodeSocketSubject(sourceFile, node, socket string, segments ...string) N
 	}
 }
 
-// EdgeSubject is the subject of a check invoked once per edge: one wiring of a
-// consumer's socket to a target.
+// EdgeSubject is the subject of a check invoked once per connection: one wiring
+// of a consumer's socket to a target.
 //
-// Its single coordinate is the edge, whose identity is the node and the socket
-// taken together, so it carries an accessor for each half of that pair rather
-// than one naming the edge — the pair is what the fact keyed by an edge takes as
-// its key, and the edge itself names no scalar a check could use.
+// Its single coordinate is the edge, whose identity is the node, the socket and
+// the alias taken together, so it carries an accessor for each element of that
+// triple rather than one naming the edge — the triple is what the fact keyed by
+// an edge takes as its key, and the edge itself names no scalar a check could
+// use.
+//
+// The alias is in the identity because one socket carries many connections. A
+// check invoked once per socket would be invoked once for what the author wrote
+// twice, and could name only the socket in what it raised.
 type EdgeSubject interface {
 	Subject
 
@@ -215,6 +220,12 @@ type EdgeSubject interface {
 	// SocketName is the dependency socket the edge wires.
 	SocketName() string
 
+	// AliasName names the connection within its socket. It is carried whether or
+	// not the author wrote it as a key, because a coordinate keys a fact and a
+	// locator names an authored site — so an alias no key spells is still the
+	// value every fact keyed by this edge takes.
+	AliasName() string
+
 	edge()
 }
 
@@ -222,6 +233,7 @@ type edgeSubject struct {
 	provenance
 	node   string
 	socket string
+	alias  string
 }
 
 func (edgeSubject) edge() {}
@@ -230,11 +242,14 @@ func (s edgeSubject) NodeID() string { return s.node }
 
 func (s edgeSubject) SocketName() string { return s.socket }
 
-func newEdgeSubject(sourceFile, node, socket string, segments ...string) EdgeSubject {
+func (s edgeSubject) AliasName() string { return s.alias }
+
+func newEdgeSubject(sourceFile, node, socket, alias string, segments ...string) EdgeSubject {
 	return edgeSubject{
 		provenance: newProvenance(sourceFile, segments...),
 		node:       node,
 		socket:     socket,
+		alias:      alias,
 	}
 }
 

@@ -41,6 +41,13 @@ func authoredDocuments() map[string]string {
 		// A components-only Aggregate. Its single component is the one normalization
 		// folds into a synthesized container, which is why the fixture's web node
 		// carries a synthesized subsystem path and still names the top-level site.
+		//
+		// Both authoring forms of a dependency socket appear, because a socket's value
+		// is either an alias-keyed mapping of connections or a sequence of target
+		// names, and a locator over a connection names a key in only one of them. The
+		// "zebra" socket carries two connections, which is the shape a per-connection
+		// locator has to descend into; "alpha" carries the sequence form, where the
+		// alias is the target's own name and appears in no key.
 		"aggregate.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -55,14 +62,18 @@ spec:
       type: core/service:1.0.0
       uses:
         zebra:
-          target: cache
+          primary:
+            target: cache
+          replica:
+            target: cache-follower
         alpha:
-          target: queue
+          - queue
       features:
         tls:
           uses:
             issuer:
-              target: ca
+              ca:
+                target: ca
           values:
             app:
               issuer: internal
@@ -97,7 +108,7 @@ spec:
           type: core/service:1.0.0
           uses:
             db:
-              target: store
+              - store
       subsystems:
         payments:
           features:

@@ -295,15 +295,23 @@ func RunOnNodeSockets[V View](
 	})
 }
 
-// RunOnEdges invokes check once per edge, in the order edges returns them.
+// RunOnEdges invokes check once per connection, in the order edges returns them.
 //
-// The edge set is walked flat rather than per node, because the derived kind
-// carries one coordinate and the fact keyed by it takes the node and the socket
-// together: one order over the whole set, promised by one enumerator.
+// The edge set is walked flat rather than per node or per socket, because the
+// derived kind carries one coordinate and the fact keyed by it takes the node,
+// the socket and the alias together: one order over the whole set, promised by
+// one enumerator.
 //
-// An edge's locator is .spec.components.<name>.uses.<socket> — the same
-// authored entry a socket names, because an edge is the wiring the author wrote
-// there.
+// An edge's locator follows the authoring form the alias came from, and the two
+// forms name different depths because they are different text. The long form
+// writes an alias per connection as a key, so the locator names it:
+// .spec.components.<name>.uses.<socket>.<alias>. The short form lists targets as
+// array elements and the alias is the target's own name, which no key in the file
+// spells — so the alias contributes no segment and the locator stays
+// .spec.components.<name>.uses.<socket>, which is what the author wrote. The
+// coordinate is carried in full either way: a locator names an authored site and
+// a coordinate keys a fact, so a segment the file does not contain is dropped
+// while the alias itself still reaches the check.
 func RunOnEdges[V View](
 	cancelled Cancellation,
 	edges EdgeEnumerator,
@@ -315,9 +323,13 @@ func RunOnEdges[V View](
 		if err := cancelled.err(); err != nil {
 			return nil, err
 		}
+		aliasSegment := edge.Alias
+		if edge.SynthesizedAlias {
+			aliasSegment = ""
+		}
 		subject := newEdgeSubject(
-			edge.Node.SourceFile, edge.Node.ID, edge.Socket,
-			componentInnerSegments(edge.Node, authoredKeyUses, edge.Socket)...,
+			edge.Node.SourceFile, edge.Node.ID, edge.Socket, edge.Alias,
+			componentInnerSegments(edge.Node, authoredKeyUses, edge.Socket, aliasSegment)...,
 		)
 		out = append(out, check.Run(view, subject)...)
 	}

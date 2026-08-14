@@ -90,13 +90,20 @@ type NodeInstance struct {
 	SynthesizedSubsystem bool
 }
 
-// EdgeInstance is one edge: which node's which socket.
+// EdgeInstance is one connection: which node's which socket, under which alias.
 //
-// The pair is the edge's identity rather than a nesting. The derived kind
-// carries one coordinate, and the fact keyed by it takes the node and the
-// socket together as its key — so an edge is enumerated as one instance, and
-// the enumerator promises one order over the whole edge set rather than an
-// order per node.
+// The triple is the edge's identity rather than a nesting. The derived kind
+// carries one coordinate, and the fact keyed by it takes the node, the socket
+// and the alias together as its key — so an edge is enumerated as one instance,
+// and the enumerator promises one order over the whole edge set rather than an
+// order per node or per socket.
+//
+// The alias is part of the identity because a socket carries many connections,
+// each with its own target and its own configuration. Were the identity the node
+// and the socket alone, two connections on one socket would key one fact between
+// them: a rule would be invoked once for what the author wrote twice, would read
+// one connection's content for both, and could name only the socket in what it
+// raised.
 //
 // The node arrives whole rather than as an identifier because an edge's
 // authored site sits inside its consumer's block, so building the edge's
@@ -107,6 +114,20 @@ type EdgeInstance struct {
 
 	// Socket is the dependency socket the edge wires.
 	Socket string
+
+	// Alias names the connection within its socket. It is what every keyed fact
+	// takes as the third element of the edge's key, and it is carried whether or
+	// not the author wrote it as a key.
+	Alias string
+
+	// SynthesizedAlias reports whether that alias was derived by normalization
+	// rather than written by the author as a key. The short authoring form lists
+	// targets directly and gives each connection the target's own name as its
+	// alias, so no key in the file spells it; the long form names an alias per
+	// connection. It discriminates the two cases the locator rule turns on, so an
+	// alias the author declares and happens to name the same as a derived one is
+	// not mistaken for it.
+	SynthesizedAlias bool
 }
 
 // AuthoredCoordinate is one enumerated coordinate value together with the
@@ -140,8 +161,8 @@ type NodeEnumerator interface {
 	Nodes() []NodeInstance
 }
 
-// EdgeEnumerator supplies the edge set: every wiring of a consumer's socket to
-// a target.
+// EdgeEnumerator supplies the edge set: every connection wiring a consumer's
+// socket to a target, one instance per connection rather than one per socket.
 type EdgeEnumerator interface {
 	// Edges returns every edge, in a deterministic order the implementation
 	// declares.

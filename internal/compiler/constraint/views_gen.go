@@ -225,17 +225,17 @@ type NormalizedView interface {
 	// Keyed by (node, socket); read from types.UsesSchemaEntry.Inject.
 	SocketInjectMechanismNames(componentType string, socket string) []string
 
-	// PerEdgeTarget is the target an edge names, as authored — empty when
-	// the author named none.
+	// PerEdgeTarget is the target one connection names, as authored — empty
+	// when the author named none.
 	//
 	// The emptiness is reported rather than resolved. Two rules in the tree
 	// read the same empty target and mean different things by it, one taking
-	// it as naming the socket's own alias and the other as declining to create
-	// an edge; a fact that silently applied either rule would make one of them
-	// wrong somewhere else.
+	// it as naming the connection's own alias and the other as declining to
+	// create an edge; a fact that silently applied either rule would make one
+	// of them wrong somewhere else.
 	//
 	// Keyed by edge; read from types.VerboseUsesEntry.Target.
-	PerEdgeTarget(node string, socket string) string
+	PerEdgeTarget(node string, socket string, alias string) string
 
 	// PerEdgeValues is the developer's configuration for one connection on one
 	// socket as it was written, carried as an opaque ordered payload.
@@ -262,7 +262,7 @@ type NormalizedView interface {
 	// map iteration.
 	//
 	// Keyed by edge; read from types.VerboseUsesEntry.Values.
-	PerEdgeValues(node string, socket string) types.OrderedMap[any]
+	PerEdgeValues(node string, socket string, alias string) types.OrderedMap[any]
 
 	// AuthoredPerEdgeInject is the delivery a connection dictates as it was
 	// written, keyed by mechanism name in author order, each entry carrying
@@ -290,7 +290,7 @@ type NormalizedView interface {
 	// reads the two together and neither carries the other.
 	//
 	// Keyed by edge; read from types.VerboseUsesEntry.Inject.
-	AuthoredPerEdgeInject(node string, socket string) types.OrderedMap[any]
+	AuthoredPerEdgeInject(node string, socket string, alias string) types.OrderedMap[any]
 
 	// CompactSocketTargets are the target names a socket lists in the short
 	// authoring form, in author order.
@@ -781,8 +781,7 @@ type NormalizedView interface {
 	ComponentTypeIsLocalPath(componentType string) bool
 
 	// ReleasePerEdgeTarget is the target a Release's per-edge entry names for
-	// one socket on one node, as authored — empty when the Release named
-	// none.
+	// one connection, as authored — empty when the Release named none.
 	//
 	// It is a separate fact from the target the Aggregate authored, and the
 	// pair is what makes the population question answerable at all. Both
@@ -798,14 +797,15 @@ type NormalizedView interface {
 	// other document already drew and so binds nothing.
 	//
 	// The fact is placed where both documents are in view. It is keyed by an
-	// edge, whose identity is a node the other document declares, and a stage
-	// holding one authored document at a time cannot answer for a pair.
+	// edge, one element of whose identity is a node the other document
+	// declares, and a stage holding one authored document at a time cannot
+	// answer for a pair.
 	//
 	// Keyed by edge; read from types.ReleaseUsesEntry.Target.
-	ReleasePerEdgeTarget(node string, socket string) string
+	ReleasePerEdgeTarget(node string, socket string, alias string) string
 
-	// ReleasePerEdgeInfra is the operator's configuration for one socket on
-	// one node as it was written, carried as an opaque ordered payload.
+	// ReleasePerEdgeInfra is the operator's configuration for one connection
+	// as it was written, carried as an opaque ordered payload.
 	//
 	// It is the payload rather than a named fact about it, on the same
 	// reasoning the authored configuration pillars are: a rule whose predicate
@@ -824,11 +824,11 @@ type NormalizedView interface {
 	// map iteration.
 	//
 	// It is placed where both documents are in view, for the same reason the
-	// target the same entry names is: the edge it is keyed by is identified by
-	// a node the other document declares.
+	// target the same entry names is: the edge it is keyed by is identified in
+	// part by a node the other document declares.
 	//
 	// Keyed by edge; read from types.ReleaseUsesEntry.Infra.
-	ReleasePerEdgeInfra(node string, socket string) types.OrderedMap[any]
+	ReleasePerEdgeInfra(node string, socket string, alias string) types.OrderedMap[any]
 
 	// ReleaseComponentInfra is the operator's physical-sizing configuration
 	// for one component as it was written, carried as an opaque ordered
@@ -1273,19 +1273,19 @@ type GraphView interface {
 	// would hand half of its readers the wrong string.
 	//
 	// Keyed by edge; read from types.IREdge.OriginFeature.
-	PerEdgeOriginFeatureType(node string, socket string) string
+	PerEdgeOriginFeatureType(node string, socket string, alias string) string
 
 	// PerEdgeResolvedTarget is the node an edge resolves to.
 	//
 	// It is a separate fact from the target as authored rather than the same
 	// fact at a later moment. An authored target may be empty and mean the
-	// socket's own alias, so the resolved form is the only one a rule about
-	// the node at the far end of an edge can read; reading the authored form
-	// for that question would make the rule wrong for exactly those edges
+	// connection's own alias, so the resolved form is the only one a rule
+	// about the node at the far end of an edge can read; reading the authored
+	// form for that question would make the rule wrong for exactly those edges
 	// whose target the author left implicit.
 	//
 	// Keyed by edge; read from types.IREdge.Target.
-	PerEdgeResolvedTarget(node string, socket string) string
+	PerEdgeResolvedTarget(node string, socket string, alias string) string
 
 	// AttachmentResolvedType is the Feature type an attachment resolves to,
 	// empty when it resolved to no catalog entity.
@@ -1370,7 +1370,7 @@ type GraphView interface {
 	// on every run.
 	//
 	// Keyed by edge; read from types.IREdge.Inject.
-	PerEdgeInject(node string, socket string) types.OrderedMap[types.OrderedMap[string]]
+	PerEdgeInject(node string, socket string, alias string) types.OrderedMap[types.OrderedMap[string]]
 }
 
 // DescribedView exposes the facts complete at the described stage: every
