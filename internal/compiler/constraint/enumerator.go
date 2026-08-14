@@ -194,10 +194,25 @@ type SubsystemEnumerator interface {
 	Subsystems() []AuthoredCoordinate
 }
 
-// NodeSocketEnumerator supplies the dependency sockets of one node.
+// NodeSocketEnumerator supplies the dependency sockets of one node: the set the
+// node's component type DECLARES, never the set the node populates.
+//
+// Which of the two the axis means is the axis's contract rather than a detail of
+// it, because the two sets genuinely differ and a rule needs whichever it needs.
+// A rule over a socket that must carry a connection has to be asked about a
+// socket the node wrote nothing for — that is the case it exists to catch — so
+// an axis enumerating what the node populated would never present that rule its
+// own subject. The set a node actually authored is a fact on the view instead,
+// and a rule comparing the two reads the fact against this enumeration.
+//
+// A socket the node authored that its type declares no entry for is therefore
+// absent from this axis. Such a socket is authoring the product accepts, so its
+// absence here is the axis holding its meaning rather than a gap: a rule over
+// such a socket reads the authored set, which reaches every socket the node
+// wrote whether or not the type declares one.
 type NodeSocketEnumerator interface {
-	// NodeSockets returns the socket names declared for a node, in a
-	// deterministic order the implementation declares.
+	// NodeSockets returns the socket names a node's component type declares, in
+	// a deterministic order the implementation declares.
 	NodeSockets(node string) []string
 }
 

@@ -311,6 +311,50 @@ type NormalizedView interface {
 	// Keyed by (node, socket); read from types.UsesSocketValue.Compact.
 	CompactSocketTargets(node string, socket string) []string
 
+	// AuthoredUsesSocketConnections are the connections an instance's own
+	// dependency block carries, one entry per socket the instance wrote, in
+	// author order, each holding that socket's connection count.
+	//
+	// It is what answers whether a socket is populated. A rule over a socket
+	// that must carry a connection is asked about every socket the component
+	// type declares, including the ones the instance wrote nothing for —
+	// which are the ones it exists to catch — so the answer has to be in
+	// hand for a socket that has no connection to read anything from. A fact
+	// keyed per connection cannot answer there: keying one takes an alias, and
+	// only an existing connection supplies an alias.
+	//
+	// The count is the fact rather than a yes-or-no answer, and that is what
+	// holds the two emptinesses apart. A socket absent from this map is one
+	// the instance named nowhere; a socket present with a count of zero is one
+	// it named and left carrying nothing. Neither is populated, so a rule that
+	// refuses an unpopulated socket treats them alike — but a rule telling
+	// an author what to change names a different correction for each, and an
+	// answer narrowed to yes-or-no would have collapsed them before either
+	// rule could ask. The count also answers HOW MANY, which is what a rule
+	// over a socket admitting a single connection needs and nothing else
+	// supplies. A reader narrowing this result to a boolean removes both of
+	// those and can restore neither.
+	//
+	// What counts as one connection follows the authoring form, and the two
+	// forms differ in a way a rule must not smooth over. The short form lists
+	// targets, so the target IS the connection and an empty entry names
+	// nothing and counts nothing. The long form names a connection per alias
+	// and carries the target inside it, so an entry counts whether or not it
+	// names a target: a connection whose target is absent is still a
+	// connection the author wrote, and a rule that read the target and took
+	// emptiness for absence would refuse a socket that IS populated.
+	//
+	// It reads the instance's own dependency block and no other surface. An
+	// attachment's block declares sockets on the Feature it attaches, and a
+	// deployment's own edge surface wires sockets from a separate document;
+	// each is a separate fact because each is separately authored and
+	// independently absent. A rule asking whether a socket is populated across
+	// every surface that can populate one reads them together, and none of
+	// them carries another.
+	//
+	// Keyed by (node, socket); read from types.ComponentInstance.Uses.
+	AuthoredUsesSocketConnections(node string) types.OrderedMap[int]
+
 	// AuthoredAttachmentNames are the attachment names an instance declares,
 	// in author order.
 	//

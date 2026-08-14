@@ -28,8 +28,14 @@ var inRepoTargets = map[string][]string{
 // cannot be drift-gated from here. Naming them is what lets the gate below
 // account for every registered target: a new target that is neither read here nor
 // named here fails the coverage check rather than being silently skipped.
+//
+// A splice target is accounted for here on the same footing as a whole-file one.
+// What puts a target in this set is where its committed copy lives, not how much
+// of the file the generator owns, and both kinds of target are registered in
+// their own map — so the coverage gate below walks both.
 var externalTargets = map[string]bool{
 	"constraint-placement-table.md": true,
+	"constraint-framework.md":       true,
 }
 
 // TestRegenClean is the regeneration-drift gate for every target committed inside
@@ -74,9 +80,33 @@ func TestRegenClean(t *testing.T) {
 // and no test would say so. Every registered target must be accounted for as
 // either read in-repo or gated by the workspace build, and the two sets must not
 // overlap or claim a target that is not registered.
+//
+// Targets are registered in two maps, and both are walked. A whole-file target
+// and a spliced region are registered separately because the generator writes
+// them by different paths, so a gate walking one map alone would account for one
+// kind and silently skip the other — which is the same hole one map away.
 func TestRegenGateCoversEveryTarget(t *testing.T) {
 	t.Parallel()
+
+	// registered is every base name either map registers, so an addition to
+	// either one is covered by the accounting below without a second list here.
+	registered := map[string]bool{}
 	for base := range targets {
+		registered[base] = true
+	}
+	for base := range spliceTargets {
+		registered[base] = true
+	}
+
+	// Calibration: the walk must actually reach both kinds, or a coverage
+	// verdict over it means nothing. A map that silently came back empty would
+	// account for every target it saw and report a clean gate.
+	if len(targets) == 0 || len(spliceTargets) == 0 {
+		t.Fatalf("the target registries are not both populated (%d whole-file, %d splice), so this "+
+			"gate is not a working instrument", len(targets), len(spliceTargets))
+	}
+
+	for base := range registered {
 		_, inRepo := inRepoTargets[base]
 		if !inRepo && !externalTargets[base] {
 			t.Errorf("target %q is registered but neither drift-gated in-repo nor named as "+
@@ -87,12 +117,12 @@ func TestRegenGateCoversEveryTarget(t *testing.T) {
 		}
 	}
 	for base := range inRepoTargets {
-		if _, ok := targets[base]; !ok {
+		if !registered[base] {
 			t.Errorf("%q has a committed in-repo path but is not a registered target", base)
 		}
 	}
 	for base := range externalTargets {
-		if _, ok := targets[base]; !ok {
+		if !registered[base] {
 			t.Errorf("%q is named as externally gated but is not a registered target", base)
 		}
 	}
