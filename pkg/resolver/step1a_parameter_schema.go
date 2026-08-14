@@ -105,8 +105,9 @@ func loadParameterContractValidator() (jsonvalidator.Validator, error) {
 // validateParameterContractEnvelope runs the second-line-of-defense
 // envelope validation on the shallow-loaded `spec.parameters` block.
 // Primary enforcement is JSON Schema validation at workspace-load layer;
-// this is the additional check applied at Step 1a's shallow-load path
-// for paths that may not have gone through full envelope validation.
+// this is the additional check applied at parameter-contract validation's
+// shallow-load path for paths that may not have gone through full envelope
+// validation.
 //
 // The contract argument is the OrderedMap returned from
 // LoadAggregateParameterContract's shallow unmarshal. Conversion to a

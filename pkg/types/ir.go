@@ -176,7 +176,7 @@ type IRNode struct {
 	ReleaseAnnotations   OrderedMap[string] `json:"release_annotations,omitempty,omitzero"`
 	AggregateAnnotations OrderedMap[string] `json:"aggregate_annotations,omitempty,omitzero"`
 
-	SelfInject *InjectBlock `json:"self_inject,omitempty"` // Component-level self-inject data for Pass 2a resolution
+	SelfInject *InjectBlock `json:"self_inject,omitempty"` // Component-level self-inject data for self-inject resolution
 
 	// SourceFile is the workspace-relative path of the Aggregate file
 	// where this node was authored. Root-tier nodes carry the root

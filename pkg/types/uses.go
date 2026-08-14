@@ -56,7 +56,7 @@ type VerboseUsesEntry struct {
 	// Values carries per-connection developer config for this edge,
 	// validated against the valueSchema the CONSUMING component — the one
 	// whose uses block carries this entry — declares on the socket, by the
-	// Step-1 conformance gate, and projected into the consuming node's
+	// conformance gate at resolution, and projected into the consuming node's
 	// render context at .uses.<alias>.values (the uses map is alias-keyed).
 	// Empty when omitted: this is the authored bag verbatim, and the
 	// socket's declared defaults are merged in when the graph is built.

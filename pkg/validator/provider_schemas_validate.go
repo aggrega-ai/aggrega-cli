@@ -23,8 +23,8 @@ import (
 // workloadSchema, passes without inspection — the block is optional and
 // non-synthesizing provider plugins omit the schema.
 //
-// The function is invoked from pkg/catalog/catalog.go's Pass 2 once per
-// loaded Plugin. Errors collect across plugins into the aggregate
+// The function is invoked from pkg/catalog/catalog.go's pillar validation once
+// per loaded Plugin. Errors collect across plugins into the aggregate
 // CatalogError that LoadAll returns, matching the collect-and-emit-all
 // policy the Feature/Component validator pass uses. The body-compilation
 // contract lives in validateProviderSchemaField.

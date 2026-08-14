@@ -11,8 +11,8 @@
 // WorkloadJSONSchema.
 //
 // Validation flow: yaml.Unmarshal decodes into typed Go fields; the consumer
-// (Phase B.2) calls validator.ValidateWorkload to validate the parsed value
-// against the embedded JSON Schema via the pkg/validator/jsonschema adapter.
+// (workload synthesis) calls validator.ValidateWorkload to validate the parsed
+// value against the embedded JSON Schema via the pkg/validator/jsonschema adapter.
 // Closed-disjunction discriminators (Volume's five variants, Probe's three
 // shapes, Lifecycle hook's two forms, ContainerSecret's env/file split) are
 // not enforced at the Go type level — pointer fields can all be set

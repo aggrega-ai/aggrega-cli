@@ -14,7 +14,7 @@ import (
 // in sorted order. A compiled schema without that pillar yields an empty map.
 //
 // This is the single source of truth for schema-default extraction: both the
-// IR default-materialisation pass and the Step-1 schema-conformance gate read
+// IR default-materialisation pass and the schema-conformance gate at resolution read
 // defaults through here, so build-time and validate-time interpret an authored
 // schema identically.
 func PillarDefaults(compiled Schema, pillar string) types.OrderedMap[any] {

@@ -56,9 +56,10 @@ const InheritedSchemaMarker = "inherited"
 // rather than post-extends-resolution: an error in a base entity surfaces
 // at the base file, not at every derived entity's merged view.
 //
-// The function is called from pkg/catalog/catalog.go's Pass 2 after Pass 1
+// The function is called from pkg/catalog/catalog.go's pillar validation after
+// the indexing walk
 // has hydrated every entity and the SchemaLibraries map is fully populated.
-// Calling it per file during Pass 1 is unsafe — cross-document $ref targets
+// Calling it per file during the indexing walk is unsafe — cross-document $ref targets
 // would be unresolvable when a Feature precedes its SchemaLibrary in
 // filesystem walk order.
 func ValidateSchemaPillars(

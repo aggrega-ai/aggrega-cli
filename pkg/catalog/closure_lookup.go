@@ -24,17 +24,17 @@ import (
 )
 
 // ValidateClosureScopedPillars validates ONLY the catalog Components and Features
-// the closure reaches — the closure-scoped counterpart to the whole-catalog
-// Pass-2 (validateSchemaPillarsPass). It intersects cl.Entities (by
+// the closure reaches — the closure-scoped counterpart to whole-catalog pillar
+// validation (validateSchemaPillarsPass). It intersects cl.Entities (by
 // version-stripped name) with the loaded Components / Features and delegates to
 // ValidateClosurePillars against the catalog's SchemaLibraries (local + bridged).
 //
 // A closure entity whose schema `$ref` names a library absent from the catalog —
 // a broken library skipped at tolerant load, or a genuinely missing one — fails
 // here: the hard in-closure library reject. An out-of-closure entity is never in
-// cl.Entities, so a broken one is never validated and never build-fatal. Pass-2
-// runs over the entities as loaded (pre-extends), exactly as the whole-catalog
-// pass does.
+// cl.Entities, so a broken one is never validated and never build-fatal. Pillar
+// validation runs over the entities as loaded (pre-extends), exactly as the
+// whole-catalog pass does.
 func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
 	comps := map[string]types.Component{}
 	compSrc := map[string]string{}

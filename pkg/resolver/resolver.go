@@ -14,7 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// ResolveConfig configures the Step 1 resolver pipeline. All three paths are
+// ResolveConfig configures the resolution pipeline. All three paths are
 // required; relative paths resolve against the working directory of the
 // caller. The typical caller (cmd/aggrega/build.go) discovers AggregatePath
 // and ManifestPath from a pre-loaded Release.
@@ -24,7 +24,7 @@ type ResolveConfig struct {
 	ManifestPath  string // path to Manifest YAML file
 }
 
-// ResolveInputs configures the Step 1 resolver pipeline against caller-
+// ResolveInputs configures the resolution pipeline against caller-
 // supplied in-memory inputs. Use this entry point (through ResolveAndUse) when
 // the Release and Manifest have already been parsed and the raw Aggregate YAML
 // is held as a byte slice — the long-running daemon (which holds parse caches)
@@ -44,7 +44,7 @@ type ResolveInputs struct {
 	ReleasePath       string // source-location label only; no I/O
 }
 
-// ResolveResult carries the artifacts produced by Step 1. The result is
+// ResolveResult carries the artifacts produced by resolution. The result is
 // passed by pointer through topology, IR, and renderer; mutations after
 // Resolve returns are not expected.
 //
@@ -140,7 +140,7 @@ type ResolveResult struct {
 }
 
 // ResolveAndUse is the single exported producer of a ResolveResult. It runs
-// Step 1 against caller-supplied in-memory inputs and invokes use with the
+// resolution against caller-supplied in-memory inputs and invokes use with the
 // resolved artifacts, then purges the merged parameter map in a defer it owns,
 // before returning. Parameters are reachable ONLY inside use's scope: a caller
 // cannot obtain a live ResolveResult — and therefore cannot leak secret
@@ -170,7 +170,7 @@ func ResolveAndUse(ctx context.Context, in ResolveInputs, use func(*ResolveResul
 	return use(result)
 }
 
-// resolveFromInputs executes the Step 1 pipeline against caller-supplied
+// resolveFromInputs executes the resolution pipeline against caller-supplied
 // in-memory inputs. It is unexported by design: the only way to obtain a
 // ResolveResult is through ResolveAndUse, which scopes the result to a
 // callback and owns the parameter purge. Keeping the value-returning producer
@@ -220,8 +220,8 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	// Merge parameters
 	params := MergeParameters(release.Spec.Parameters, externalParams)
 
-	// Step 1a: validate merged parameter map against the Aggregate's
-	// typed contract before interpolation. Shallow-parse the contract
+	// Parameter-contract validation: validate the merged parameter map against
+	// the Aggregate's typed contract before interpolation. Shallow-parse the contract
 	// from raw bytes; no I/O against in.AggregatePath.
 	contract, err := LoadAggregateParameterContractFromBytes(in.AggregateRawBytes, in.AggregatePath)
 	if err != nil {

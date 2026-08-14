@@ -118,20 +118,21 @@ func artifactNeedsNoPin(resolutionPath string, declaredType plugintype.Type) boo
 	return resolutionPath == ResolutionPathEmbedded && declaredType == plugintype.Provider
 }
 
-// DescendRecipePluginEntities is Phase A of the two-pass pipeline-plugin descent:
+// DescendRecipePluginEntities is the entity descent of the two-pass
+// pipeline-plugin descent:
 // it discovers every Plugin ENTITY a closure's Recipes / FeatureRecipes
 // reference through their spec.pipeline[].plugin URIs (plus any workspace-socket
 // plugin entity ComputeClosure already pinned on the entity axis) and pins each
 // registry-resolved entity onto the catalog-entity axis (c.Entities) through the
 // same ResolveCatalogEntity path the provider axis uses. It does NOT load any
-// entity body and does NOT resolve any .wasm artifact — that is Phase B
-// (DescendRecipePluginArtifacts).
+// entity body and does NOT resolve any .wasm artifact — that is the artifact
+// descent (DescendRecipePluginArtifacts).
 //
 // It also discovers the provider-rendering Plugin ENTITY each Recipe /
 // FeatureRecipe binds through spec.capability. When a providerResolver is supplied,
 // each non-empty spec.capability binding resolves to its serving Plugin identity,
 // and that Plugin entity is pinned on the same catalog-entity axis and descended
-// to its .wasm artifact in Phase B exactly like a pipeline plugin — so the
+// to its .wasm artifact in the artifact descent exactly like a pipeline plugin — so the
 // provider a build renders through is pinned to a resolved version and content
 // digest at lock time. A provider Plugin that is also referenced as a pipeline
 // plugin dedupes by URI (its referenced-from sites merge; it is not recorded
@@ -142,7 +143,7 @@ func artifactNeedsNoPin(resolutionPath string, declaredType plugintype.Type) boo
 // The split exists because a freshly-pulled plugin entity is pinned here but is
 // not yet visible to the entity-front the artifact-load phase reads: the caller
 // must re-fold the lazy index from the now-augmented closure between the two
-// phases so Phase B's LoadPlugin resolves the just-pinned entity. A
+// phases so the artifact descent's LoadPlugin resolves the just-pinned entity. A
 // single-pass descent loads the body against a pin set that predates the
 // entity's own pin and misses it.
 //
@@ -235,22 +236,27 @@ func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup,
 	return nil
 }
 
-// DescendRecipePluginArtifacts is Phase B of the two-pass pipeline-plugin descent:
-// it rediscovers the Plugin entities Phase A pinned (by walking c.Entities for
+// DescendRecipePluginArtifacts is the artifact descent of the two-pass
+// pipeline-plugin descent:
+// it rediscovers the Plugin entities the entity descent pinned (by walking
+// c.Entities for
 // KindHint==pluginKindHint), loads each entity body to derive its .wasm artifact
 // reference from its identity, resolves that reference through ResolvePlugin, and pins
 // the artifact onto the plugin axis (c.Plugins). It runs AFTER the caller has
-// re-folded the lazy index from the Phase-A-augmented closure, so LoadPlugin
-// resolves a just-pinned plugin entity that Phase A discovered.
+// re-folded the lazy index from the entity-descent-augmented closure, so LoadPlugin
+// resolves a just-pinned plugin entity that the entity descent discovered.
 //
-// Rediscovery is from c.Entities rather than from a re-walk of the recipes: Phase A
+// Rediscovery is from c.Entities rather than from a re-walk of the recipes: the
+// entity descent
 // already pinned every registry-resolved plugin entity (recipe-referenced and
 // workspace-socket) with KindHint==pluginKindHint, so the entity axis is the
-// authoritative set of artifacts to descend, and an entity Phase A declined to pin
+// authoritative set of artifacts to descend, and an entity the entity descent
+// declined to pin
 // because it was already present on the machine is correctly absent (its artifact is
 // not lockfile-pinned either).
 //
-// The artifact is referenced from its Plugin entity. NotFound-skip mirrors Phase A.
+// The artifact is referenced from its Plugin entity. NotFound-skip mirrors the
+// entity descent.
 // The registry-only rule does NOT: the artifact axis resolves every core plugin the
 // binary carries from the binary, not just the providers the entity axis does, so
 // which of those is pinned depends on the entity's declared plugin type —
@@ -269,7 +275,7 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 		pluginIndex[e.URI] = i
 	}
 
-	// Rediscover the plugin entities Phase A pinned. Collect first (sorted) so the
+	// Rediscover the plugin entities the entity descent pinned. Collect first (sorted) so the
 	// artifact-descent order is deterministic and independent of c.Entities order.
 	var entityURIs []string
 	for _, ent := range c.Entities {

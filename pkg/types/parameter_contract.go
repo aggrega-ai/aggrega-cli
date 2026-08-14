@@ -10,8 +10,9 @@ import (
 )
 
 // ParameterContract carries the typed-contract shape for one Aggregate
-// parameter declaration. Step 1a (pkg/resolver) verifies Release-supplied
-// parameter values against this shape before parameter interpolation.
+// parameter declaration. Parameter-contract validation (pkg/resolver) verifies
+// Release-supplied parameter values against this shape before parameter
+// interpolation.
 //
 // Aggregate.Spec.Parameters carries raw decoded entries in an
 // OrderedMap[any] — each entry must be a YAML map authoring the

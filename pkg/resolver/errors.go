@@ -93,7 +93,7 @@ var errInvalidInjectKey = cerrors.Register("resolver/invalid-inject-key", cerror
 // values or infra pillar that does not conform to the catalog
 // Component's declared schema for that pillar (wrong type, out of
 // range, missing required-non-defaulted field, or a property the
-// schema forbids). Validated at Step 1, default-aware: a field the
+// schema forbids). Validated during resolution, default-aware: a field the
 // schema supplies a default for is not "missing". Distinct from
 // monotonic-narrowing, which stays signal-only.
 func ErrSchemaConformance() error { return errSchemaConformance }
@@ -242,7 +242,10 @@ var errMissingRequiredSocket = cerrors.Register("resolver/missing-required-socke
 
 // ErrParameterMissing wraps a parameter declared required: true in the
 // Aggregate's typed contract that neither the Aggregate's default nor
-// the Release fulfillment supplies. Surfaced at Step 1a.
+// the Release fulfillment supplies. Surfaced by parameter-contract
+// validation, which checks every supplied parameter against the declared
+// typed contract before interpolation — so a missing required parameter
+// halts the build instead of interpolating an empty value.
 func ErrParameterMissing() error { return errParameterMissing }
 
 var errParameterMissing = cerrors.Register("resolver/parameter-missing", cerrors.Meta{
@@ -253,7 +256,8 @@ var errParameterMissing = cerrors.Register("resolver/parameter-missing", cerrors
 // Aggregate's typed contract — type mismatch, enum / pattern / range
 // violation, validate-predicate failure, or a Release key with no
 // corresponding Aggregate declaration (closed-contract policy).
-// Surfaced at Step 1a.
+// Surfaced by parameter-contract validation, which runs after the Release
+// parameter load and before parameter interpolation.
 func ErrParameterContractViolation() error { return errParameterContractViolation }
 
 var errParameterContractViolation = cerrors.Register("resolver/parameter-contract-violation", cerrors.Meta{

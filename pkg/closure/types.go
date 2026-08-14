@@ -231,8 +231,9 @@ type ResolvedSource struct {
 }
 
 // ErrSourceTemplateAtLockTime wraps every lock-time source-template
-// evaluation failure: .provides references (forbidden — Phase 1 of
-// Step 5 Render has not run at lock time), ambiguous kind
+// evaluation failure: .provides references (forbidden — provides
+// evaluation has not run at lock time, so no component has produced a
+// value to reference yet), ambiguous kind
 // classification (scalar source URL without recognised scheme + no
 // explicit kind), missing .infra/.locals keys, template parse
 // errors, and any other condition that surfaces during

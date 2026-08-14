@@ -18,9 +18,10 @@ import (
 //
 // It runs the same primitives the lock-time descent orchestrates, in the same
 // order: transitive sub-aggregate descent, then the two-pass pipeline-plugin
-// descent. Phase A (DescendRecipePluginEntities) pins each plugin ENTITY on the
-// catalog-entity axis; the caller then re-folds the loader's pin set from the
-// now-augmented closure via refold so the just-pinned entities are visible; Phase B
+// descent. The entity descent (DescendRecipePluginEntities) pins each plugin
+// ENTITY on the catalog-entity axis; the caller then re-folds the loader's pin
+// set from the now-augmented closure via refold so the just-pinned entities are
+// visible; the artifact descent
 // (DescendRecipePluginArtifacts) loads each entity to pin its .wasm ARTIFACT on the
 // plugin axis. The refold is caller-supplied because re-deriving a loader's pin set
 // is a catalog-side operation this package does not reach; a nil refold reuses the

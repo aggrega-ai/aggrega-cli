@@ -12,8 +12,8 @@ import (
 // per-clause results from matchRequirement against the supplied labels.
 // Comma-separated requirements combine with AND logic per the Kubernetes
 // label-selector convention; an empty selector parses to zero requirements
-// and the function returns (true, nil) — the "no constraint" case Step 4's
-// usesSchema-selector validator (analyzer/selector.go) relies on to skip
+// and the function returns (true, nil) — the "no constraint" case static
+// analysis's usesSchema-selector validator (analyzer/selector.go) relies on to skip
 // edges whose source socket declares no selector.
 //
 // The Parse/match split (this function = orchestration; parse.go = syntax;

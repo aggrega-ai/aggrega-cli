@@ -132,7 +132,7 @@ func checkContainerAttachments(
 // delivery-mechanism allowlist. The two are distinct rules over the same input.
 //
 // attachmentProvides maps slot name → the slot's resolved provides bag, resolved by
-// the orchestrator before Phase B. A slot absent from the map (no provides) or
+// the orchestrator before base rendering. A slot absent from the map (no provides) or
 // present but missing a key fails the same way. recipePath / recipeName /
 // recipeVersion thread into the error for operator-facing context.
 func ValidateWorkloadResourceReferences(

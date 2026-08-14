@@ -51,9 +51,10 @@ type Catalog struct {
 	Plugins            map[string]types.Plugin           // keyed by identity (metadata.name:version)
 
 	// componentSources / featureSources / pluginSources
-	// track the file path each entity was loaded from. Populated by Pass 1
-	// (indexFile) and consumed by Pass 2 (the schema validation pass at the
-	// end of LoadAll) so the validator's error messages name the offending
+	// track the file path each entity was loaded from. Populated by the
+	// indexing walk (indexFile) and consumed by pillar validation (the schema
+	// validation that runs at the end of LoadAll) so the validator's error
+	// messages name the offending
 	// file. Unexported because the bookkeeping is internal to LoadAll;
 	// downstream callers identify entities by metadata.name, not by source
 	// path.
@@ -62,8 +63,8 @@ type Catalog struct {
 	pluginSources    map[string]string
 
 	// aggregateSources records the absolute filesystem path each Aggregate
-	// entity was loaded from. Populated by Pass 1 (indexFile) and exposed
-	// by AggregateSourceFile (and the SubAggregateLoader callback) after
+	// entity was loaded from. Populated by the indexing walk (indexFile) and
+	// exposed by AggregateSourceFile (and the SubAggregateLoader callback) after
 	// normalization against workspaceRoot — see RelativeToWorkspace.
 	aggregateSources map[string]string
 
@@ -194,17 +195,18 @@ type Catalog struct {
 // directory so co-located charts stay resolvable when the consuming code
 // is run from a different working directory.
 //
-// Two-pass load model. Pass 1 walks dirs and hydrates every entity into the
-// typed maps via indexFile. Pass 2 runs at the end of LoadAll once Pass 1
-// has populated the full SchemaLibraries map, and validates each Component
-// and Feature's spec.schema body against the canonical pillar contract via
-// validator.ValidateSchemaPillars. Splitting the work lets cross-document
-// $ref expansion succeed regardless of filesystem walk order: a Feature
-// authored before its SchemaLibrary in walk order still validates because
-// the library is in the map by the time Pass 2 runs. Pass 1 errors are
-// fail-fast (a YAML parse failure aborts the walk); Pass 2 errors are
-// collected across entities and surfaced as a single aggregate CatalogError
-// so authors fix all schema failures in one editing pass.
+// Two-pass load model. The indexing walk traverses dirs and hydrates every
+// entity into the typed maps via indexFile. Pillar validation runs at the end
+// of LoadAll once the indexing walk has populated the full SchemaLibraries
+// map, and validates each Component and Feature's spec.schema body against the
+// canonical pillar contract via validator.ValidateSchemaPillars. Splitting the
+// work lets cross-document $ref expansion succeed regardless of filesystem
+// walk order: a Feature authored before its SchemaLibrary in walk order still
+// validates because the library is in the map by the time pillar validation
+// runs. Indexing-walk errors are fail-fast (a YAML parse failure aborts the
+// walk); pillar-validation errors are collected across entities and surfaced
+// as a single aggregate CatalogError so authors fix all schema failures in one
+// editing pass.
 func LoadAll(workspaceRoot string, dirs ...string) (*Catalog, error) {
 	return LoadAllWithCacheDir(workspaceRoot, "", dirs...)
 }
@@ -270,16 +272,17 @@ func sortedMapKeys[T any](m map[string]T) []string {
 	return keys
 }
 
-// LoadPassOne runs only Pass 1 of the catalog load — the filesystem walk +
-// per-file indexing, content-cache directory skipped — WITHOUT Pass-2 pillar
-// validation. Pass 1 alone is sufficient for the closure walk (which scans raw
-// `$ref` values, not expanded pillars); cross-document `$ref` expansion is the
-// closure-scoped Pass-2's job, against the resolved closure's library set.
+// LoadPassOne runs only the indexing walk of the catalog load — the filesystem
+// walk + per-file indexing, content-cache directory skipped — WITHOUT pillar
+// validation. The indexing walk alone is sufficient for the closure walk (which
+// scans raw `$ref` values, not expanded pillars); cross-document `$ref`
+// expansion is closure-scoped pillar validation's job, against the resolved
+// closure's library set.
 func LoadPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, error) {
 	return loadAllPassOne(workspaceRoot, cacheDir, dirs...)
 }
 
-// SkippedEntity records a catalog file the TOLERANT Pass-1 walk
+// SkippedEntity records a catalog file the TOLERANT indexing walk
 // (LoadPassOneTolerant) could not index — a parse failure, a load-time shape
 // violation, a duplicate identity. Kind and Name are best-effort from a header
 // re-parse (empty when the YAML is malformed enough to lose even the header);
@@ -310,10 +313,11 @@ type ShadowedEntity struct {
 	ShadowedPath string
 }
 
-// loadAllPassOne runs Pass 1 only — the filesystem walk + per-file indexing with
-// the content-addressed cache directory skipped — and returns the catalog BEFORE
-// Pass-2 pillar validation (validateSchemaPillarsPass). LoadAllWithCacheDir runs
-// Pass 2 immediately after. cacheDir "" disables the cache skip.
+// loadAllPassOne runs the indexing walk only — the filesystem walk + per-file
+// indexing with the content-addressed cache directory skipped — and returns the
+// catalog BEFORE pillar validation (validateSchemaPillarsPass).
+// LoadAllWithCacheDir runs pillar validation immediately after. cacheDir ""
+// disables the cache skip.
 //
 // Fail-fast: a per-file read / parse / index error aborts the whole walk. The
 // tolerant counterpart (LoadPassOneTolerant) skips-and-records instead, for the
@@ -324,14 +328,15 @@ func loadAllPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, e
 	return c, err
 }
 
-// LoadPassOneTolerant runs Pass 1 like LoadPassOne but SKIPS a file that fails to
-// read, parse, or index — recording it in the returned []SkippedEntity — rather
-// than aborting the walk. The catalog returned holds every parseable entity; a
-// broken file is simply absent. This is the closure-scoped build / pull load:
-// combined with closure-scoped Pass-2, a broken entity OUTSIDE the Release's
-// closure never fails the build, while an in-closure break still fails loudly
-// (it is either absent — surfaced by the closure walk, with the skip replayed —
-// or present-but-schema-invalid, surfaced by closure-scoped Pass-2).
+// LoadPassOneTolerant runs the indexing walk like LoadPassOne but SKIPS a file
+// that fails to read, parse, or index — recording it in the returned
+// []SkippedEntity — rather than aborting the walk. The catalog returned holds
+// every parseable entity; a broken file is simply absent. This is the
+// closure-scoped build / pull load: combined with closure-scoped pillar
+// validation, a broken entity OUTSIDE the Release's closure never fails the
+// build, while an in-closure break still fails loudly (it is either absent —
+// surfaced by the closure walk, with the skip replayed — or
+// present-but-schema-invalid, surfaced by closure-scoped pillar validation).
 //
 // The skip is per-file and post-`indexFile`: `indexFile` mutates the catalog
 // only after a successful parse, so a skipped file leaves no partial state.
@@ -339,7 +344,7 @@ func LoadPassOneTolerant(workspaceRoot, cacheDir string, dirs ...string) (*Catal
 	return loadAllPassOneImpl(workspaceRoot, cacheDir, true, dirs...)
 }
 
-// loadAllPassOneImpl is the shared Pass-1 walk. When tolerant is false it is
+// loadAllPassOneImpl is the shared indexing walk. When tolerant is false it is
 // fail-fast (the historical loadAllPassOne behavior, byte-identical); when true a
 // per-file read/parse/index failure is recorded and skipped. The returned skip
 // slice is nil in the fail-fast mode.
@@ -373,7 +378,7 @@ func loadAllPassOneImpl(workspaceRoot, cacheDir string, tolerant bool, dirs ...s
 	return acc, skipped, nil
 }
 
-// newPassOneCatalog allocates a catalog with every Pass-1 index map ready. Both
+// newPassOneCatalog allocates a catalog with every indexing-walk index map ready. Both
 // the accumulated result and each per-directory sub-index are built through it
 // so they share one initialisation.
 func newPassOneCatalog(workspaceRoot string) *Catalog {
@@ -536,7 +541,7 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 	// hashes them for the lockfile pin) while the typed map and the source
 	// side-table key on the coordinate identity (coordinate:version) — the same
 	// split the Recipe / Library kinds use for their typed maps. The source
-	// side-table feeds the Pass-2 spec.provider.workloadSchema compile gate so its
+	// side-table feeds the pillar-validation spec.provider.workloadSchema compile gate so its
 	// error messages name the offending file.
 	mergeKind(acc, "Plugin", acc.Plugins, perDir.Plugins, perDir, perDirRoot, winnerDir, func(k string) {
 		acc.pluginSources[k] = perDir.pluginSources[k]
@@ -620,7 +625,7 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 	return se
 }
 
-// validateSchemaPillarsPass is Pass 2 of LoadAll: walks every Component,
+// validateSchemaPillarsPass is the pillar-validation pass of LoadAll: walks every Component,
 // Feature, and Plugin in sorted order, runs the corresponding
 // load-time validator against each entity's schema-bearing fields with
 // the now-fully-populated SchemaLibraries map for cross-document $ref
@@ -863,11 +868,12 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 
 	switch header.Kind {
 	case "Component":
-		// Pass 1 parse + the static per-entity x-aggrega-* discouragement scan run
-		// through the shared per-entity resolve (parseComponentEntity) so the eager
-		// and lazy backings cannot drift. The pillar-shape + body validation runs at
-		// Pass 2 via validateSchemaPillarsPass (it needs the complete SchemaLibraries
-		// map for cross-document $ref expansion, so it cannot run per-file here).
+		// The indexing-walk parse + the static per-entity x-aggrega-* discouragement
+		// scan run through the shared per-entity resolve (parseComponentEntity) so the
+		// eager and lazy backings cannot drift. The pillar-shape + body validation runs
+		// at pillar validation via validateSchemaPillarsPass (it needs the complete
+		// SchemaLibraries map for cross-document $ref expansion, so it cannot run
+		// per-file here).
 		e, err := parseComponentEntity(data, path)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Component")

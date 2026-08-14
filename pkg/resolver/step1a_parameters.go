@@ -69,7 +69,8 @@ func LoadAggregateParameterContractFromBytes(data []byte, sourcePath string) (ty
 	// Second-line-of-defense: envelope-validate the shallow-loaded contract
 	// against the canonical aggregate-v1alpha1 sub-schema. Catches malformed
 	// contracts (wrong type for min:, invalid enum shape, etc.) at workspace
-	// load rather than as contract-violation failures at Step 1a validation.
+	// load rather than as contract-violation failures at parameter-contract
+	// validation.
 	if envErr := validateParameterContractEnvelope(shell.Spec.Parameters, sourcePath); envErr != nil {
 		return types.OrderedMap[any]{}, envErr
 	}
@@ -206,10 +207,10 @@ func applyNestedDefaults(properties types.OrderedMap[any], sub map[string]any) m
 }
 
 // ValidateParametersAgainstContract checks every Release-supplied parameter
-// value against the Aggregate's typed parameter contract. Runs at Step 1a —
-// after Release parameter load (inline OR $import:), before parameter
-// interpolation. Returns ResolverError entries with file:line provenance
-// for each failure.
+// value against the Aggregate's typed parameter contract. This is
+// parameter-contract validation — it runs after the Release parameter load
+// (inline OR $import:) and before parameter interpolation. Returns
+// ResolverError entries with file:line provenance for each failure.
 //
 // Closed-contract policy: every Release-supplied key must have a
 // corresponding Aggregate declaration. Undeclared Release keys produce

@@ -26,7 +26,7 @@ import (
 // render time by the central input-kind gate (a synthesised FeatureRecipe
 // bound to a provider with no workload-synthesis capability halts loudly
 // there), not at load. Cross-input-kind filename collision is enforced at
-// emission time by Phase B.5.
+// emission time by feature rendering.
 
 // ErrFeatureRecipeRule1: valuesMapping requires source.
 func ErrFeatureRecipeRule1() error { return errFeatureRecipeRule1 }
@@ -38,7 +38,7 @@ var errFeatureRecipeRule1 = cerrors.Register("validator/feature-recipe-rule-1", 
 // ErrFeatureRecipeEvalProviderConstraint: the eval provider executes
 // formatting in-memory and has no rendering surface; declaring
 // source/valuesMapping/workload/artifacts on an eval FeatureRecipe is
-// rejected. injectMapping remains allowed (it is a Phase-A delivery
+// rejected. injectMapping remains allowed (it is an inject-mapping delivery
 // transform, not a rendering surface).
 func ErrFeatureRecipeEvalProviderConstraint() error { return errFeatureRecipeEvalProviderConstraint }
 

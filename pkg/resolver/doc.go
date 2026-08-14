@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package resolver implements Step 1 of the compile pipeline: turn the
+// Package resolver implements resolution, the first stage of the compile
+// pipeline: turn the
 // authored YAML triple (Aggregate / Release / Manifest) into a resolved
 // in-memory artifact that downstream phases (topology, IR, renderer, analyzer)
 // consume as their input.
@@ -39,7 +40,7 @@
 //  9. Wire per-component boundary infra from Release boundaries.
 //  10. Actively zero-and-nil the parameter map before returning.
 //
-// Step 10 removes parameter values from memory before the result is returned
-// so secret-bearing or environment-specific values do not linger past the
-// interpolation step.
+// The closing parameter-map purge removes parameter values from memory before
+// the result is returned so secret-bearing or environment-specific values do
+// not linger past the interpolation step.
 package resolver

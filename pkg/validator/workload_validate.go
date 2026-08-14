@@ -18,7 +18,7 @@ import (
 // *WorkloadValidationError with one finding per violation.
 //
 // pkg/types is a validator-free leaf package; this validator is the
-// explicit load-time entry point invoked by Phase B.2 (and any other
+// explicit load-time entry point invoked by workload synthesis (and any other
 // consumer that constructs a Workload programmatically and wants to
 // verify its shape before handing it to a synthesizer).
 //

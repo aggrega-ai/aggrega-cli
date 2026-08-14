@@ -118,7 +118,7 @@ func ReleaseEntryCreatesEdge(entry types.ReleaseUsesEntry) bool {
 
 // collectReleaseEdgeEntries walks the Release boundary tree (outer to inner,
 // author order) and flattens every per-edge `uses` entry on every boundary
-// component into a deterministic slice. Shared by the Step-1 guards that need
+// component into a deterministic slice. Shared by the resolution guards that need
 // the Release edge surface — undeclared-socket validation and per-edge infra
 // conformance — so both agree on which entries exist and in what order.
 // [ReleaseEdgeEntries] projects the same walk for consumers outside this package.

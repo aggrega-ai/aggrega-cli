@@ -1707,11 +1707,11 @@ func (l *LazyLookup) SkippedEntities() []SkippedEntity {
 	return out
 }
 
-// ValidateClosureScopedPillars runs closure-scoped Pass-2 over the LAZY backing:
-// it resolves each closure Component/Feature through the cascade and validates its
-// schema pillars against the lazily-walked SchemaLibrary set — the daemon's
-// early-warning gate, replacing the whole-catalog Pass-2 the eager
-// resolveRecipeCatalog load used to provide. A broken out-of-closure entity is
+// ValidateClosureScopedPillars runs closure-scoped pillar validation over the
+// LAZY backing: it resolves each closure Component/Feature through the cascade
+// and validates its schema pillars against the lazily-walked SchemaLibrary set —
+// the daemon's early-warning gate, replacing the whole-catalog pillar validation
+// the eager resolveRecipeCatalog load used to provide. A broken out-of-closure entity is
 // never resolved here, so it is never validated; an in-closure pillar error (a
 // schema-invalid Component/Feature, or a $ref to a skipped/missing library) is
 // surfaced. Sources come from the per-kind index (file paths) for error
@@ -1815,7 +1815,7 @@ func cachedLibraryRemedy(names []string) string {
 // ClosureLintWarnings returns the schema-pillar-overlap advisories for every
 // Component and Feature the closure reaches — the non-fatal, warning-level
 // sibling of ValidateClosureScopedPillars's pillar validation, over the same
-// closure-entity set. The whole-catalog Pass-2 ran the overlap lint beside the
+// closure-entity set. Whole-catalog pillar validation ran the overlap lint beside the
 // pillar validation in one loop; when build resolution moved to a closure-scoped
 // view the validation came across but the overlap lint did not, so the build
 // surfaced no overlap advisories. This restores them, closure-scoped: a

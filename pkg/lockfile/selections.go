@@ -41,8 +41,9 @@ func ProviderBindings(lf *Lockfile) map[string]string {
 // host filesystem, so a post-pull change to either does not move build output.
 //
 // Each attachment's role is reconstructed verbatim from the pin so it dispatches
-// at the runner (and facet) it was authored for: label-transform to the Step-2
-// label runner, annotation-transform to the Step-1 annotation runner. The role
+// at the runner (and facet) it was authored for: label-transform to the
+// topology-construction label runner, annotation-transform to the resolution
+// annotation runner. The role
 // is required on every pinned attachment — the schema-validating load rejects a
 // role-less entry — so reconstruction reads the authored role rather than
 // inferring one.

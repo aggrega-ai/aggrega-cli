@@ -129,7 +129,7 @@ func importConsumer(uri, importTarget string) []TemplateConsumer {
 // transitively to a fixpoint, merging the result into cl.SchemaLibraries.
 //
 // Scanning is CLOSURE-SCOPED: only the Components and Features the Release reaches
-// (cl.Entities) are scanned for $ref:s, matching the closure-scoped Pass-2 gate —
+// (cl.Entities) are scanned for $ref:s, matching the closure-scoped pillar-validation gate —
 // so a library referenced only by an out-of-closure entity is neither pinned nor
 // resolution-fatal, and an out-of-closure entity with a dangling $ref never fails
 // the build/pull. Transitive descent into a discovered library's own $ref:s is

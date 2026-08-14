@@ -2,7 +2,7 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Package selector implements Kubernetes-style label matching for Aggrega's
-// cross-node type-safety check (Step 4 static analyzer's `usesSchema` selector
+// cross-node type-safety check (static analysis's `usesSchema` selector
 // evaluation against edge destinations) and Feature attachment targeting
 // (`appliesTo` / `appliesToAnyOf` against node labels).
 // The same engine serves both: changing label-matching semantics here affects

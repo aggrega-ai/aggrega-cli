@@ -65,15 +65,17 @@ const (
 	// so a bound injected annotation expands into a Feature attachment. It is a
 	// transform role and shapes output bytes.
 	RoleAnnotationTransform Role = "annotation-transform"
-	// RoleLabelTransform auto-tags topology-graph node labels at Step 2: the
+	// RoleLabelTransform auto-tags topology-graph node labels at topology
+	// construction: the
 	// plugin returns JSON Patch documents the host applies to a labels-only
 	// projection of the graph. It is a transform role and shapes output bytes.
 	RoleLabelTransform Role = "label-transform"
-	// RoleIRVerdict renders an accept/reject verdict over the IR graph at Step 4;
+	// RoleIRVerdict renders an accept/reject verdict over the IR graph at static
+	// analysis;
 	// a rejected rule halts the build. It is a verdict role and shapes no output.
 	RoleIRVerdict Role = "ir-verdict"
 	// RoleRenderVerdict renders an accept/reject verdict over the rendered
-	// artifacts at Step 5; a rejected rule halts the build. It is a verdict role
+	// artifacts at rendering; a rejected rule halts the build. It is a verdict role
 	// and shapes no output.
 	RoleRenderVerdict Role = "render-verdict"
 )

@@ -13,16 +13,18 @@ import (
 )
 
 // TemplateContext is the runtime view assembled by the Go compiler and injected into
-// Recipe and FeatureRecipe Go templates during Step 5. This is NOT persisted to disk;
+// Recipe and FeatureRecipe Go templates during rendering. This is NOT persisted to disk;
 // it exists only in compiler memory during rendering.
 // Schema: template-context-v1alpha1.schema.json
 //
-// Phase B sub-pass field availability:
-//   - .source — populated at Phase B.0 from Recipe.Spec.Source after Go-template
-//     evaluation. nil before B.0; nil for Recipes that don't declare source.
-//   - .workload — populated at Phase B.2 after Workload yaml.Unmarshal +
+// Field availability within base rendering:
+//   - .source — populated at source resolution from Recipe.Spec.Source after
+//     Go-template evaluation. nil before source resolution; nil for Recipes that
+//     don't declare source.
+//   - .workload — populated at workload synthesis after Workload yaml.Unmarshal +
 //     validator.ValidateWorkload + validator.ValidateWorkloadAttachments
-//     succeed. nil before B.2; nil for Recipes that don't declare workload:.
+//     succeed. nil before workload synthesis; nil for Recipes that don't declare
+//     workload:.
 type TemplateContext struct {
 	Context  ContextBlock       `json:"context" yaml:"context"`
 	Values   OrderedMap[any]    `json:"values" yaml:"values"`
@@ -39,8 +41,8 @@ type TemplateContext struct {
 	Inject         *InjectPipe                    `json:"inject,omitempty" yaml:"inject,omitempty"`         // the attachment's own authored delivery pipe
 	InjectRaw      any                            `json:"inject_raw,omitempty" yaml:"inject_raw,omitempty"` // immutable Developer intent; null if omitted
 	Steps          OrderedMap[StepOutput]         `json:"steps,omitempty,omitzero" yaml:"steps,omitempty"`
-	Source         any                            `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (Phase B.0+); nil for sourceless Recipes
-	Workload       *Workload                      `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (Phase B.2+); nil for non-synthesized Recipes
+	Source         any                            `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (from source resolution onward); nil for sourceless Recipes
+	Workload       *Workload                      `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (from workload synthesis onward); nil for non-synthesized Recipes
 	Boundary       *BoundaryContext               `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
 }
 
@@ -402,7 +404,7 @@ type StepOutput struct {
 // evaluating a FeatureRecipe with spec.executionScope: boundary. It replaces
 // the per-component .context block: an FR with executionScope: boundary
 // receives .boundary.* in templates instead of .context.*. Population happens
-// at Phase B.6's boundary-scope dispatch branch; component-scope FRs leave the
+// at feature rendering's boundary-scope dispatch branch; component-scope FRs leave the
 // pointer nil. Schema: template-context-v1alpha1.schema.json#/properties/boundary
 type BoundaryContext struct {
 	Path                           string                    `json:"path" yaml:"path"`

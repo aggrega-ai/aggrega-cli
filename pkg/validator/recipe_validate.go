@@ -22,7 +22,7 @@ import (
 // render time by the central input-kind gate (a synthesised Recipe bound to a
 // provider that does not implement workload synthesis halts loudly there).
 // Rule 7 (cross-input-kind filename collision) is enforced at emission time by
-// Phase B.5.
+// feature rendering.
 //
 // The eval-provider carve-out is two-sided:
 //

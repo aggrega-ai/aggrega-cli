@@ -524,7 +524,7 @@ func providesError(fieldPath string) error {
 // resolveLocals evaluates each .locals entry against the current
 // {Values, Infra} substrate and writes the resolved value back into
 // ctx.Locals. Locals are evaluated in OrderedMap iteration order,
-// mirroring Phase B's preamble semantics. Later .locals entries may
+// mirroring base rendering's locals preamble. Later .locals entries may
 // reference earlier .locals via `.locals.<earlier_key>`; the
 // closure's same-pass-as-source semantics align with build-time
 // expectations.

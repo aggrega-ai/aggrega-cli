@@ -84,7 +84,7 @@ type CatalogLookup struct {
 	ParserPlugin func(format string) (types.Plugin, error)
 }
 
-// RunGuards executes the catalog-aware semantic checks of Step 1 against the
+// RunGuards executes the catalog-aware semantic checks of resolution against the
 // resolved Aggregate and Release. Each guard returns an internally-sorted
 // slice; RunGuards appends them in call order without re-sorting, so the
 // returned violations are grouped by guard:

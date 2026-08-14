@@ -319,9 +319,9 @@ func CompileSocketPillarSchema(catalog CatalogLookup, compType, socket, pillar s
 // ValidatePillarConformance validates a resolved or authored pillar instance
 // (values or infra) against the named pillar of an already-compiled
 // Component-or-Feature schema, closed. It is the shared schema-conformance
-// entry point: the Step-1 component values gate and the Step-3 Feature/Secret
-// attachment gate both route through it, so an authored schema is interpreted
-// identically wherever the value originates.
+// entry point: the component values gate at resolution and the Feature/Secret
+// attachment gate at graph finalization both route through it, so an authored
+// schema is interpreted identically wherever the value originates.
 //
 // The pillar sub-schema is extracted from compiled; schema-declared defaults for
 // that pillar are merged into the instance (default-aware) before validation;

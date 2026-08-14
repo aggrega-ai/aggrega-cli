@@ -352,7 +352,8 @@ type MutatorAttachment struct {
 	Plugin string `yaml:"plugin"`
 	// Role is the transform role this attachment is bound to, fixing which runner
 	// (and therefore which facet) reconstruction dispatches it at (label-transform
-	// to the Step-2 label runner, annotation-transform to the Step-1 annotation
+	// to the topology-construction label runner, annotation-transform to the
+	// resolution annotation
 	// runner). It is recorded verbatim from the authored attachment and is
 	// required: reconstruction dispatches at the exact role the attachment was
 	// authored for rather than inferring one, and the schema-validating load

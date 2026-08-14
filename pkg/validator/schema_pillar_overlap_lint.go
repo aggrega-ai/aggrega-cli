@@ -33,13 +33,13 @@ import (
 // recursion at that branch and produce no warning.
 //
 // Returns the list of warning strings in deterministic order. The
-// caller (catalog Pass 2) aggregates them into the catalog's
+// caller (catalog pillar validation) aggregates them into the catalog's
 // lint-warnings surface.
 func ValidateSchemaPillarOverlap(entityKind, entityName, filePath string, schema yaml.Node) []string {
 	compiled, err := compactform.Compile(&schema)
 	if err != nil {
 		// Compile errors surface as schema-validation errors elsewhere
-		// in Pass 2; the overlap lint stays silent on uncompilable
+		// in pillar validation; the overlap lint stays silent on uncompilable
 		// schemas to avoid double-reporting the same authoring
 		// problem.
 		return nil
