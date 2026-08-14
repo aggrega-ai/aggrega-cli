@@ -710,7 +710,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 
 // guardSubAggregateNodes runs the resolver's conformance validators over the
 // flattened sub-aggregate components (nodes with a non-empty SourceAggregate)
-// and their edges. Root and subsystem components are guarded at Step 1; this
+// and their edges. Root and subsystem components are guarded during resolution; this
 // closes the coverage gap for components that exist only after sub-aggregate
 // flattening. Each sub-aggregate node carries its own resolved parameter map
 // (ResolvedParameters), so conformance is fully parameter-aware: conditional
@@ -759,7 +759,7 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 	var errs []*resolver.ResolverError
 	for nodeID, node := range flat.Nodes.All() {
 		if node.SourceAggregate == "" {
-			continue // root / subsystem components are guarded at Step 1
+			continue // root / subsystem components are guarded during resolution
 		}
 
 		// A sub-aggregate node whose type resolved as a catalog reference but is

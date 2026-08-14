@@ -340,9 +340,19 @@ type NormalizedView interface {
 	// targets, so the target IS the connection and an empty entry names
 	// nothing and counts nothing. The long form names a connection per alias
 	// and carries the target inside it, so an entry counts whether or not it
-	// names a target: a connection whose target is absent is still a
-	// connection the author wrote, and a rule that read the target and took
-	// emptiness for absence would refuse a socket that IS populated.
+	// names a target: an omitted target falls back to the entry's own alias,
+	// so the connection is drawn either way, and a rule that read the target
+	// and took emptiness for absence would refuse a socket that IS populated.
+	//
+	// That rule is this surface's and does not carry to the deployment's edge
+	// surface, whose own connection count is a separate fact with the same
+	// shape and the opposite rule — so a reader unifying the two makes one
+	// of them wrong. There an entry counts only when it names a target,
+	// because an omitted target falls back to nothing: on that surface the
+	// alias identifies which existing connection the entry configures rather
+	// than supplying a target for a new one, so an entry naming no target
+	// draws nothing. One authored shape, two meanings, because the alias is
+	// doing a different job on each surface.
 	//
 	// It reads the instance's own dependency block and no other surface. An
 	// attachment's block declares sockets on the Feature it attaches, and a
@@ -873,6 +883,59 @@ type NormalizedView interface {
 	//
 	// Keyed by edge; read from types.ReleaseUsesEntry.Infra.
 	ReleasePerEdgeInfra(node string, socket string, alias string) types.OrderedMap[any]
+
+	// ReleaseAuthoredUsesSocketConnections are the connections a Release's own
+	// edge surface creates on one component, one entry per socket the Release
+	// wrote for it, in author order, each holding that socket's
+	// created-connection count.
+	//
+	// It is the operator-side half of the population question. Both documents
+	// can bind one socket — the component's own dependency block, and this
+	// surface, which may wire a socket the architecture declared and nothing
+	// bound to a component that already exists — so a rule reading the
+	// component's block alone reports a socket as unpopulated that the build
+	// wires, and refuses a document this surface expressly permits.
+	//
+	// It is keyed per socket because that is where the question is asked. A
+	// rule over a socket that must carry a connection is asked about every
+	// socket the component type declares, including the ones neither document
+	// wrote anything for — which are the ones it exists to catch — so the
+	// answer has to be in hand for a socket that has no connection to read
+	// anything from. The facts keyed per connection on this same surface
+	// cannot answer there: keying one takes an alias, and only an existing
+	// connection supplies an alias.
+	//
+	// The count is the fact rather than a yes-or-no answer, and it holds two
+	// emptinesses apart. A socket absent from this map is one the Release
+	// named nowhere on that component; a socket present with a count of zero
+	// is one it named and wrote entries under, none of which creates a
+	// connection — the operator configuring connections that some other
+	// document has to have drawn. Neither populates the socket, so a rule
+	// refusing an unpopulated socket treats them alike, while a rule telling
+	// an author what to change names a different correction for each.
+	//
+	// What counts as one connection here is the opposite of what counts on the
+	// component's own dependency block, and the two facts have the same shape,
+	// so a reader unifying them makes one of them wrong. Here an entry counts
+	// only when it names a target: naming one draws the connection, while an
+	// entry naming none carries per-edge configuration for a connection some
+	// other document already drew and so draws nothing itself. On the
+	// component's block an entry counts whether or not it names a target,
+	// because an omitted target there falls back to the entry's own alias and
+	// the connection is drawn regardless. The alias is doing a different job
+	// on each surface — supplying the absent target on one, identifying
+	// which existing connection to configure on the other — which is why one
+	// authored shape means opposite things and why the two counts are
+	// separately defined.
+	//
+	// It reads this surface and no other. The component's own dependency block
+	// and an attachment's block are separate facts because each is separately
+	// authored and independently absent. A rule asking whether a socket is
+	// populated across every surface that can populate one reads them
+	// together, and none of them carries another.
+	//
+	// Keyed by (node, socket); read from types.BoundaryComponent.Uses.
+	ReleaseAuthoredUsesSocketConnections(node string) types.OrderedMap[int]
 
 	// ReleaseComponentInfra is the operator's physical-sizing configuration
 	// for one component as it was written, carried as an opaque ordered
