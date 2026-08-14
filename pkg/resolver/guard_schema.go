@@ -235,10 +235,26 @@ type EdgeValues struct {
 	Values types.OrderedMap[any]
 }
 
+// CompactItemNamesTarget reports whether one item of a socket's compact `uses`
+// list names a target. An item the author left blank names none.
+//
+// This is the home of that rule, so a reader deciding what a compact list
+// contributes asks it rather than testing the item against the empty string in
+// place. A blank item is a list entry the author opened and wrote nothing in: it
+// identifies no connection, so it populates no socket and it carries no per-edge
+// configuration. Those two readings have to agree. A reader that counts a blank
+// item as a connection while another reads it as nothing reports against an
+// edge the rest of the build agrees does not exist, and locates it by an empty
+// alias — which tells the author about a connection instead of about the list
+// entry they left empty.
+func CompactItemNamesTarget(item string) bool {
+	return item != ""
+}
+
 // EdgeValuesOf projects one socket's authored `uses` value into one entry per
 // edge, in author order, whichever form the author used: a compact list yields
-// an entry per target with the target as its alias, and a verbose map yields an
-// entry per alias.
+// an entry per target it names, with the target as its alias, and a verbose map
+// yields an entry per alias.
 //
 // An edge that authors no per-edge values yields an entry carrying an empty
 // block rather than being omitted. That is the whole point of the projection: a
@@ -246,6 +262,13 @@ type EdgeValues struct {
 // nothing is the maximal violation of such a key rather than a case with nothing
 // to check. Omitting it would enforce a required key against every edge that
 // authors something and against no edge that authors nothing.
+//
+// A compact item that names no target is the one case with genuinely nothing to
+// check, and it is distinct from the empty edge above: there is no edge to
+// measure a contract against, so the item yields no entry. [CompactItemNamesTarget]
+// carries that rule, and a reader that re-derives per-edge judgement from a
+// socket's authored entries reaches it through the same call — a second
+// emptiness test in another reader is how the two answers drift apart.
 //
 // Both authoring forms are projected here so a socket contract is enforced the
 // same way whichever the author chose. A compact edge can never satisfy a
@@ -255,6 +278,9 @@ func EdgeValuesOf(sv types.UsesSocketValue) []EdgeValues {
 	if len(sv.Compact) > 0 {
 		out := make([]EdgeValues, 0, len(sv.Compact))
 		for _, target := range sv.Compact {
+			if !CompactItemNamesTarget(target) {
+				continue
+			}
 			out = append(out, EdgeValues{Alias: target})
 		}
 		return out

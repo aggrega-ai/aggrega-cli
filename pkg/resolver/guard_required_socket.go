@@ -172,15 +172,18 @@ func releaseBoundSockets(release *types.Release) map[releaseSocketKey]struct{} {
 // socketIsPopulated returns true when the Aggregate's uses block has at
 // least one entry for the given socket. Accepts both the compact list
 // form (`socket: [target1, target2]`) and the verbose alias-keyed map
-// form (`socket: {alias: {target: ..., ...}}`). Empty strings in the
-// compact list and empty maps in the verbose form count as not-populated.
+// form (`socket: {alias: {target: ..., ...}}`). A compact item counts only
+// when it names a target — [CompactItemNamesTarget] carries that rule and is
+// asked here rather than restated, so this reader and the per-edge projection
+// cannot drift apart — and a verbose form with no aliases counts as
+// not-populated.
 func socketIsPopulated(uses types.OrderedMap[types.UsesSocketValue], socket string) bool {
 	val, ok := uses.Get(socket)
 	if !ok {
 		return false
 	}
 	for _, s := range val.Compact {
-		if s != "" {
+		if CompactItemNamesTarget(s) {
 			return true
 		}
 	}
