@@ -436,7 +436,70 @@ var facts = []factDecl{
 			"from a separate document; each is a separate fact because each is " +
 			"separately authored and independently absent. A rule asking whether a " +
 			"socket is populated across every surface that can populate one reads " +
-			"them together, and none of them carries another.",
+			"them together, and none of them carries another.\n\nIt counts " +
+			"connections and never entries. Which aliases the block wrote an " +
+			"entry under is the separate fact declared beside it, and the two " +
+			"answer differently for the same authored document.",
+	},
+	{
+		Name:        "authored-uses-socket-entry-aliases",
+		Stage:       "normalized",
+		SourceField: "types.ComponentInstance.Uses",
+		Subject:     []string{"node", "socket"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "AuthoredUsesSocketEntryAliases are the aliases an instance's own " +
+			"dependency block wrote an entry under on one socket, in author " +
+			"order.\n\nIt reports authorship and nothing else, and an entry " +
+			"appears here whether or not it carries any content. That rule is " +
+			"stated once and holds for every per-edge surface, which is the whole " +
+			"difference between this fact and the connection count declared " +
+			"beside it: the count asks which entries draw a connection, a " +
+			"question each surface answers by its own opposite rule, while this " +
+			"asks which entries the author wrote at all, which every surface " +
+			"answers the same way. So the length of this list is not a connection " +
+			"count, and the count is not a record of what was written. An empty " +
+			"result says the block wrote no entry under that socket, and does " +
+			"not separate a socket it named and left empty from one it named " +
+			"nowhere — the count holds that distinction deliberately and is " +
+			"where it is read.\n\n" +
+			"Authorship is reported positively rather than inferred, and that is " +
+			"why the fact exists. Every fact keyed per connection on this surface " +
+			"reads its zero value twice over — once for an alias the block wrote " +
+			"nothing at, and once for an entry the block wrote and left empty — " +
+			"so a rule reading content cannot tell those apart, and they need " +
+			"opposite treatment: an entry that writes nothing is the maximal " +
+			"violation of a key the socket's contract declares required, while a " +
+			"connection this block never wrote is not this surface's to judge. " +
+			"Inferring authorship from what no other surface claims is the " +
+			"alternative and it is weaker: it is only ever as complete as the set " +
+			"of surfaces that can draw a connection, and a connection a Feature " +
+			"contributes is reported at a later stage than this one, so a rule " +
+			"here cannot see it at all.\n\nIt is keyed per socket and hands back " +
+			"the set rather than answering per connection, because the entries an " +
+			"author wrote and the connections a build draws are not the same set. " +
+			"A connection may be drawn by a surface that wrote nothing here, and " +
+			"an entry may name no connection at all. A fact keyed per connection " +
+			"is unreadable in the second case: keying one takes an alias, and " +
+			"only an existing connection supplies one. The set also enumerates, " +
+			"so a rule over one socket visits exactly the entries the author " +
+			"wrote. A reader narrowing this to a per-connection answer, or to a " +
+			"count, removes both of those and can restore neither.\n\nBoth " +
+			"authoring forms are read, because the contract the socket declares " +
+			"is the same one whichever the author chose. The long form names an " +
+			"alias per connection, and the alias is the key the author wrote; the " +
+			"short form lists targets and gives each connection the target's own " +
+			"name as its alias, so a short-form socket's entries appear here " +
+			"under those names. A short-form item may be the empty string, which " +
+			"names no target and populates nothing, and it appears here as an " +
+			"empty alias because the author wrote an entry there.\n\nIt reads " +
+			"the instance's own dependency block and no other surface. A " +
+			"deployment's own edge surface is a separate fact with the same shape " +
+			"and the same authorship rule, because it is separately authored and " +
+			"independently absent, and neither carries the other.",
 	},
 	{
 		Name:        "authored-attachment-names",
@@ -1098,7 +1161,70 @@ var facts = []factDecl{
 			"because each is separately authored and independently absent. A " +
 			"rule asking whether a socket is populated across every surface that " +
 			"can populate one reads them together, and none of them carries " +
-			"another.",
+			"another.\n\nIt counts connections and never entries. Which aliases " +
+			"the Release wrote an entry under is the separate fact declared " +
+			"beside it, and on this surface the two answer differently for most " +
+			"of what an operator writes: an entry carrying configuration alone " +
+			"appears there and counts nothing here.",
+	},
+	{
+		Name:        "release-authored-uses-socket-entry-aliases",
+		Stage:       "normalized",
+		SourceField: "types.BoundaryComponent.Uses",
+		Subject:     []string{"node", "socket"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "ReleaseAuthoredUsesSocketEntryAliases are the aliases a Release's " +
+			"own edge surface wrote an entry under on one component's socket, in " +
+			"author order.\n\nIt reports authorship and nothing else, and an " +
+			"entry appears here whether or not it carries any content. That rule " +
+			"is stated once and holds for every per-edge surface, which is the " +
+			"whole difference between this fact and the connection count declared " +
+			"beside it: the count asks which entries draw a connection, a " +
+			"question each surface answers by its own opposite rule, while this " +
+			"asks which entries the author wrote at all, which every surface " +
+			"answers the same way. The gap is widest here, because an entry on " +
+			"this surface commonly names no target at all: it configures a " +
+			"connection another document drew, so it draws nothing and counts " +
+			"nothing, and it is still an entry the operator wrote. An empty " +
+			"result says the Release wrote no entry under that socket, and does " +
+			"not separate a socket it named and left empty from one it named " +
+			"nowhere — the count holds that distinction deliberately and is " +
+			"where it is read.\n\n" +
+			"Authorship is reported positively rather than inferred, and that is " +
+			"why the fact exists. Both fields of an entry on this surface are " +
+			"optional, so an entry with neither set is a document this surface " +
+			"accepts and carries no content whatever. Every fact keyed per " +
+			"connection here reads its zero value for it, and reads the same zero " +
+			"value for an alias the Release wrote nothing at — so a rule reading " +
+			"content cannot tell those apart, and they need opposite treatment: " +
+			"an entry that writes nothing is the maximal violation of a key the " +
+			"socket's contract declares required, while a connection this " +
+			"surface never wrote is not its to answer for. Inferring authorship " +
+			"from what no other surface claims is the alternative and it is " +
+			"weaker: it is only ever as complete as the set of surfaces that can " +
+			"draw a connection, and a connection a Feature contributes is " +
+			"reported at a later stage than this one, so a rule here cannot see " +
+			"it at all.\n\nIt is keyed per socket and hands back the set rather " +
+			"than answering per connection, because the entries an author wrote " +
+			"and the connections a build draws are not the same set, and on this " +
+			"surface they routinely differ. An entry naming no target may sit at " +
+			"an alias nothing drew, which is an operator configuring a connection " +
+			"they expect another document to supply; a fact keyed per connection " +
+			"is unreadable there, since keying one takes an alias and only an " +
+			"existing connection supplies one. The set also enumerates, so a rule " +
+			"over one socket visits exactly the entries the operator wrote. A " +
+			"reader narrowing this to a per-connection answer, or to a count, " +
+			"removes both of those and can restore neither.\n\nThis surface has " +
+			"one authoring form, an alias per entry, so every alias here is a key " +
+			"the operator wrote.\n\nIt reads the Release's own edge surface and " +
+			"no other. The component's own dependency block is a separate fact " +
+			"with the same shape and the same authorship rule, because it is " +
+			"separately authored and independently absent, and neither carries " +
+			"the other.",
 	},
 	{
 		Name:        "release-component-infra",
