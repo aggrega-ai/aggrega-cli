@@ -638,10 +638,9 @@ func pullRun(cfg pullConfig) error {
 	aggBytes := aggRes.Bytes
 	pullLookup := lazyView.AsCatalogLookup()
 	// ResolveAndFlatten scopes the resolved view + parameter map to this
-	// callback; resolver.ResolveAndUse purges the parameters after it returns,
-	// so the entire source-descent runs while parameters are live and cannot
-	// leak them. The descent reads BoundaryInfra and the materialised IR
-	// pillars, never the raw parameter map.
+	// callback, so the entire source-descent runs while parameters are live
+	// and nothing here can hold them past it. The descent reads BoundaryInfra
+	// and the materialised IR pillars, never the raw parameter map.
 	if err := pipeline.ResolveAndFlatten(
 		context.Background(),
 		pipeline.Inputs{

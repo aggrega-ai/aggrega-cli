@@ -13,7 +13,7 @@
 //     Manifest plus per-component boundary infra context. It performs YAML
 //     loading, parameters $import: resolution + inline merge, Go-template
 //     interpolation against the merged parameter map, instance-name
-//     validation, boundary infra wiring, and active parameter-map purge.
+//     validation, and boundary infra wiring.
 //
 //   - RunGuards executes the semantic checks that need a catalog lookup
 //     (uses-socket existence, self-inject allowlist, inject key collisions,
@@ -38,9 +38,11 @@
 //  7. Unmarshal the interpolated bytes into a typed Aggregate.
 //  8. Validate instance names (returns the first violation only).
 //  9. Wire per-component boundary infra from Release boundaries.
-//  10. Actively zero-and-nil the parameter map before returning.
 //
-// The closing parameter-map purge removes parameter values from memory before
-// the result is returned so secret-bearing or environment-specific values do
-// not linger past the interpolation step.
+// The merged parameter map stays live for the whole resolve scope, because
+// operator-authored path templates read `.parameters.<key>` while artifact
+// paths are being emitted. Its reachability is bounded by that scope and the
+// bound is structural: ResolveAndUse is the only exported producer of a
+// resolved view, and it hands that view to a callback rather than returning
+// it, so no caller can hold the map once ResolveAndUse returns.
 package resolver

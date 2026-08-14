@@ -16,12 +16,10 @@ import (
 )
 
 // resolveForTest adapts the continuation-based Resolve to the value-returning
-// shape the integration assertions use. Resolve scopes the ResolveResult to a
-// callback and purges the parameter map after it returns; this helper captures
-// the result and snapshots the live parameter map inside the callback, then
-// reattaches the snapshot so post-call assertions on resolved parameter values
-// keep working. It is a test-only affordance — production callers do their
-// parameter-dependent work inside the callback, where the map is live.
+// shape the integration assertions use: it captures the ResolveResult the
+// callback receives so assertions can run after the call returns. It is a
+// test-only affordance — production callers do their work inside the callback,
+// which is the only place a resolved view is reachable.
 func resolveForTest(t *testing.T, cfg ResolveConfig) (*ResolveResult, error) {
 	t.Helper()
 	release, err := LoadRelease(cfg.ReleasePath)
@@ -42,7 +40,6 @@ func resolveForTest(t *testing.T, cfg ResolveConfig) (*ResolveResult, error) {
 		}
 	}
 	var captured *ResolveResult
-	var paramSnapshot map[string]any
 	err = ResolveAndUse(context.Background(), ResolveInputs{
 		Release:           release,
 		Manifest:          manifest,
@@ -51,15 +48,8 @@ func resolveForTest(t *testing.T, cfg ResolveConfig) (*ResolveResult, error) {
 		ReleasePath:       cfg.ReleasePath,
 	}, func(rr *ResolveResult) error {
 		captured = rr
-		paramSnapshot = make(map[string]any, len(rr.Parameters))
-		for k, v := range rr.Parameters {
-			paramSnapshot[k] = v
-		}
 		return nil
 	})
-	if captured != nil {
-		captured.Parameters = paramSnapshot
-	}
 	return captured, err
 }
 
@@ -284,9 +274,9 @@ spec:
 }
 
 func TestResolve_ParameterLifecycle(t *testing.T) {
-	// After Resolve completes, the internal parameter map should have been purged.
-	// We verify indirectly: the result should not contain raw parameter values
-	// in the Aggregate (they should be interpolated, not template expressions).
+	// Parameter references in the Aggregate are consumed by interpolation: the
+	// resolved Aggregate carries the substituted values, not the template
+	// expressions that referenced them.
 	cfg := ResolveConfig{
 		AggregatePath: filepath.Join("testdata", "parameter-merge-and-fallback", "aggregate.yaml"),
 		ReleasePath:   filepath.Join("testdata", "parameter-merge-and-fallback", "release.yaml"),

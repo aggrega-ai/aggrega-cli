@@ -295,11 +295,11 @@ type Tier4Result struct {
 }
 
 // stepsOneToFourOutput bundles the outputs runStepsOneToFour produces inside
-// the resolve scope. The parameter-map purge is owned by resolver.ResolveAndUse
-// (which runStepsOneToFour routes through) and fires after the consumer's
+// the resolve scope. The scope is owned by resolver.ResolveAndUse (which
+// runStepsOneToFour routes through) and closes only after the consumer's
 // continuation — RunPipeline's render or RunTier4Pipeline's extraction —
-// returns, so the outputs are valid for the whole continuation and no caller
-// holds a purge defer.
+// returns, so the outputs, the merged parameter map among them, are valid for
+// the whole continuation.
 type stepsOneToFourOutput struct {
 	ResolveResult *resolver.ResolveResult
 	Topology      *topology.TopologyResult
@@ -322,8 +322,8 @@ type stepsOneToFourOutput struct {
 // (resolve, topology, IR finalisation, analyse, and Component / Feature
 // assertion evaluation) and invokes use with the phase outputs while still
 // inside the resolve scope. It routes through ResolveAndFlatten →
-// resolver.ResolveAndUse, so the parameter purge is guaranteed by construction
-// and use runs while the parameter map is live. Used by both RunTier4Pipeline
+// resolver.ResolveAndUse, so use runs while the parameter map is live and the
+// resolved view cannot outlive the scope. Used by both RunTier4Pipeline
 // (which renders nothing) and RunPipeline (which renders from the same outputs).
 //
 // Every check whose inputs are complete before render lives here rather than on
@@ -463,9 +463,9 @@ func dropCatalogViewInconsistencies(errs []*resolver.ResolverError) []*resolver.
 // guard suite operates on the resolved (post-parameter-interpolation) aggregate,
 // so templated `{{ .parameters.* }}` values are validated as resolved.
 //
-// The continuation runs inside resolver.ResolveAndUse's scope, so the parameter
-// purge is guaranteed by construction. A resolve, annotation, or guard failure
-// returns the error without invoking use; the purge still fires.
+// The continuation runs inside resolver.ResolveAndUse's scope, so the resolved
+// view is live throughout it and reachable nowhere else. A resolve, annotation,
+// or guard failure returns the error without invoking use.
 func ResolveAndValidate(
 	ctx context.Context,
 	inputs Inputs,
@@ -563,8 +563,8 @@ func ResolveAndValidate(
 // catalog RecipeLookup at both sites.
 //
 // The continuation runs inside resolver.ResolveAndUse's scope (threaded through
-// ResolveAndValidate), so the parameter purge is guaranteed by construction; a
-// resolve, guard, or topology failure returns the error without invoking use.
+// ResolveAndValidate), so the resolved view is live throughout it; a resolve,
+// guard, or topology failure returns the error without invoking use.
 func ResolveAndFlatten(
 	ctx context.Context,
 	inputs Inputs,
@@ -638,9 +638,9 @@ func RunTier4Pipeline(
 	out := &Tier4Result{}
 	var assertionErr error
 	err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
-		// Capture the phase outputs inside the resolve scope; the parameter
-		// purge is owned by resolver.ResolveAndUse and fires after this returns.
-		// Tier-4 runs no further work in the scope — analyzer errors ride on
+		// Capture the phase outputs inside the resolve scope, which
+		// resolver.ResolveAndUse closes once this returns. Tier-4 runs no
+		// further work in the scope — analyzer errors ride on
 		// Analysis.Errors, consumed below.
 		out.IRGraph = stepsOut.IRGraph
 		out.Analysis = stepsOut.Analysis
@@ -700,9 +700,9 @@ func RunTier4Pipeline(
 // The parameter map merged from Release.spec.parameters flows through to
 // the renderer (for orchestrator-time path-template evaluation). RunPipeline
 // runs inside resolver.ResolveAndUse's scope (via runStepsOneToFour →
-// ResolveAndFlatten), which owns the active-purge: the render completes inside
-// the callback and the deferred PurgeParameters fires after it returns, so
-// RunPipeline holds no purge defer of its own.
+// ResolveAndFlatten), which owns that scope: the render completes inside the
+// callback, so the map is live for every render phase and reachable from no
+// caller once RunPipeline returns.
 //
 // buildPluginResolver constructs the hermetic build-time plugin-resolution
 // cascade from the pipeline inputs: the catalog's co-located artifact
@@ -906,10 +906,9 @@ func RunPipeline(
 
 		// Step 5: Render. Trace writer selection: in-memory collection when
 		// IncludeTrace is true (caller surfaces or writes the map); no-op
-		// otherwise. The trace close and the resolver's parameter purge both
-		// run as this continuation unwinds — trace first (deferred here), purge
-		// after (owned by resolver.ResolveAndUse), so render reads live
-		// parameters exactly as before.
+		// otherwise. The trace close runs as this continuation unwinds
+		// (deferred here) and the resolve scope closes after it, so render
+		// reads live parameters throughout.
 		// The capture mode is constructed once and handed to both the writer that
 		// stamps the header and the renderer that empties the withheld-key set, so
 		// the announcement and the withholding cannot disagree.

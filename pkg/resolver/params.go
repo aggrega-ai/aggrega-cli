@@ -125,23 +125,6 @@ func orderedMapToPlain(m types.OrderedMap[any]) map[string]any {
 	return m.TemplateAlphabeticalMapDeep()
 }
 
-// PurgeParameters actively zeroes every value, deletes every key, and nils
-// the map pointer. The function runs as the last step of Resolve. Removes
-// parameter values from memory before the result is returned so secret-bearing
-// values do not linger past the interpolation step.
-//
-// The function is a no-op on a nil pointer or nil map.
-func PurgeParameters(params *map[string]any) {
-	if params == nil || *params == nil {
-		return
-	}
-	for k := range *params {
-		(*params)[k] = nil
-		delete(*params, k)
-	}
-	*params = nil
-}
-
 // deepMerge recursively merges child into base. Maps recurse; scalars/arrays replace.
 //
 // Both parameters are plain map[string]any by contract, and the recursion depends

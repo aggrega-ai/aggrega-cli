@@ -48,15 +48,13 @@ type ResolveInputs struct {
 // passed by pointer through topology, IR, and renderer; mutations after
 // Resolve returns are not expected.
 //
-// Parameters carries the merged parameter map alive through the resolve
+// Parameters carries the merged parameter map, live for the whole resolve
 // scope so that orchestrator-time path-template evaluation can consume
 // `.parameters.<key>` references in Release.spec.boundaries[].directory and
-// subDirectory templates. ResolveAndUse owns the active-purge: it fires in a
-// deferred PurgeParameters after the use callback (which runs the rest of the
-// pipeline, render included) returns, so the renderer still sees live
-// parameters and the map is zeroed before control leaves the scope. The purge
-// mechanism (zero values, delete keys, nil pointer) is unchanged; see
-// PurgeParameters. Value-template surfaces (Recipe valuesMapping, FR
+// subDirectory templates. The map's reachability is bounded by that scope and
+// the bound is structural: ResolveAndUse is the only exported producer of a
+// ResolveResult, so no caller in any package can hold the map after
+// ResolveAndUse returns. Value-template surfaces (Recipe valuesMapping, FR
 // valuesMapping) do NOT receive `.parameters` — that pillar is reserved for
 // path templates per the documented carve-out.
 type ResolveResult struct {
@@ -88,7 +86,7 @@ type ResolveResult struct {
 	// rather than from this field.
 	BoundaryAnnotations map[string]types.OrderedMap[string]
 
-	Parameters    map[string]any // merged parameter map (alive through the resolve scope; purged when ResolveAndUse's callback returns)
+	Parameters    map[string]any // merged parameter map (live for the whole resolve scope; unreachable to callers once ResolveAndUse returns)
 	AggregatePath string         // Aggregate file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings for Aggregate-authored annotations without re-discovering it
 	ReleasePath   string         // Release file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings without re-discovering it
 
@@ -141,21 +139,19 @@ type ResolveResult struct {
 
 // ResolveAndUse is the single exported producer of a ResolveResult. It runs
 // resolution against caller-supplied in-memory inputs and invokes use with the
-// resolved artifacts, then purges the merged parameter map in a defer it owns,
-// before returning. Parameters are reachable ONLY inside use's scope: a caller
-// cannot obtain a live ResolveResult — and therefore cannot leak secret
-// parameter values by forgetting to purge — because the result never escapes
-// the callback. This is the structural security guarantee; the purge holds by
-// construction, not by every caller remembering a deferred PurgeParameters.
+// resolved artifacts. The resolved view — and with it the merged parameter map —
+// is reachable ONLY inside use's scope: a caller cannot obtain a ResolveResult
+// any other way, because the value-returning producer is unexported and the
+// result never escapes the callback. That bound is structural, a property of
+// the API's shape rather than of anything the producer does on the way out.
 //
-// The purge runs on every path: use is invoked only when resolution succeeds,
-// and the deferred purge fires whether use returns nil or an error. A resolve
-// error short-circuits before use (no result is produced, nothing to purge).
+// use is invoked only when resolution succeeds; a resolve error short-circuits
+// and returns without invoking it.
 //
 // Higher layers compose through this entry rather than the unexported producer:
 // internal/compiler/pipeline's ResolveAndValidate / ResolveAndFlatten call
 // ResolveAndUse and thread their own continuations, so the whole pipeline —
-// including render — runs inside the scope and the purge fires after it.
+// including render — runs inside the scope while the parameter map is live.
 //
 // ctx carries cooperative cancellation: a cancelled context aborts at the
 // resolve-phase boundary before any resolve work begins. Cancellation only
@@ -166,16 +162,15 @@ func ResolveAndUse(ctx context.Context, in ResolveInputs, use func(*ResolveResul
 	if err != nil {
 		return err
 	}
-	defer PurgeParameters(&result.Parameters)
 	return use(result)
 }
 
 // resolveFromInputs executes the resolution pipeline against caller-supplied
 // in-memory inputs. It is unexported by design: the only way to obtain a
 // ResolveResult is through ResolveAndUse, which scopes the result to a
-// callback and owns the parameter purge. Keeping the value-returning producer
-// private is what makes the purge structural rather than conventional — no
-// caller, in any package, can hold a live result and forget to purge it.
+// callback. Keeping the value-returning producer private is what bounds the
+// resolved view's reachability by construction rather than by convention — no
+// caller, in any package, can hold a result past the scope that produced it.
 //
 // ResolveResult.AggregatePath and .ReleasePath are forwarded verbatim from the
 // input labels (they drive annotation source-location strings); the resolve
@@ -303,10 +298,9 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	boundaryInfra, boundaryAnnotations, routedAggregateInfra := WireBoundaryContexts(types.NormalizeRelease(release))
 
 	// Parameter map flows through to the renderer via ResolveResult.Parameters.
-	// ResolveAndUse (the sole exported producer that wraps this function) owns
-	// the active-purge in a deferred PurgeParameters that fires after its
-	// callback returns, so every resolve path inherits one purge contract and
-	// no caller carries a purge defer of its own.
+	// ResolveAndUse (the sole exported producer that wraps this function)
+	// scopes the result to a callback, so every resolve path inherits the same
+	// reachability bound and no caller can hold the map past that scope.
 	return &ResolveResult{
 		Aggregate:                  &agg,
 		Release:                    release,

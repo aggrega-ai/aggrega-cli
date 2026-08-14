@@ -454,8 +454,8 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 
 	// Resolve through the same shared funnel build/lint/pull use
 	// (pipeline.ResolveAndFlatten → resolver.ResolveAndUse), so inspect's resolve
-	// path cannot drift from the compiler's and the parameter purge is covered by
-	// the producer-owned defer — inspect holds no purge defer of its own. The
+	// path cannot drift from the compiler's and the resolved view is scoped by
+	// the same producer rather than held here. The
 	// scoped callback builds the IR and prints while parameters are live. The
 	// AggregatePath / ReleasePath labels carry the source locations the
 	// annotation-expansion brackets read; they are the same strings inspect

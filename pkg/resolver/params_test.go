@@ -132,17 +132,6 @@ func TestMergeParameters_ReleaseOverridesExternal(t *testing.T) {
 	}
 }
 
-func TestPurgeParameters(t *testing.T) {
-	params := map[string]any{
-		"secret_key":  "s3cr3t",
-		"db_password": "p@ss",
-	}
-	PurgeParameters(&params)
-	if params != nil {
-		t.Errorf("expected nil after purge, got %v", params)
-	}
-}
-
 // TestOrderedMapToPlain_NestedOrderedMapShapes_RecursivelyUnwraps pins
 // orderedMapToPlain's delegation to TemplateAlphabeticalMapDeep. The fixture
 // shape mirrors what round-trip-fidelity JSON/YAML unmarshal produces for a
