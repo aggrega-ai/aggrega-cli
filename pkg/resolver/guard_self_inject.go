@@ -11,7 +11,7 @@ import (
 )
 
 // guardSelfInject validates component-level self-inject declarations
-// against three rules:
+// against four rules:
 //
 //  1. The catalog component's spec.inject allowlist must be non-empty.
 //     A component type with empty spec.inject is a Black-Box (Packaged
@@ -25,9 +25,14 @@ import (
 //  3. No delivery-key collision between component-level self-inject and
 //     uses-level inject within the same mechanism — the same key cannot
 //     be claimed by both delivery sources.
+//  4. No delivery-key collision across mechanisms within the self-inject
+//     block itself — the same key declared on two mechanisms is a
+//     contradiction, because delivery cannot come from two sources at
+//     once. Symmetric to rule 3, which compares the two delivery
+//     sources rather than two mechanisms of one source.
 //
 // Emits ErrSelfInjectForbidden for rule-1 and rule-2 violations and
-// ErrInjectKeyCollision for rule-3 violations. Errors sort by
+// ErrInjectKeyCollision for rule-3 and rule-4 violations. Errors sort by
 // (Entity, Field) for byte-identical output. Returns nil when agg is
 // nil or catalog.Component is nil. Components whose Inject field is nil
 // are skipped (no self-inject to validate); component types not in the
