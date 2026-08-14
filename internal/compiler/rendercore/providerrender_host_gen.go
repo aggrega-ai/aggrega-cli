@@ -75,7 +75,7 @@ type NodeProvenance struct {
 	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty" cbor:"aggregate_name,omitempty"`
 	// Environment The environment name, stamped as the aggrega.ai/environment label when non-empty.
 	Environment string `json:"environment,omitempty" yaml:"environment,omitempty" cbor:"environment,omitempty"`
-	// ProviderName The bare provider engine kind, stamped as the aggrega.ai/provider label when non-empty.
+	// ProviderName The bare provider kind, stamped as the aggrega.ai/provider label when non-empty.
 	ProviderName string `json:"provider_name,omitempty" yaml:"provider_name,omitempty" cbor:"provider_name,omitempty"`
 	// ProviderVersion The resolved provider-rendering plugin version, stamped as the aggrega.ai/provider-version label when non-empty.
 	ProviderVersion string `json:"provider_version,omitempty" yaml:"provider_version,omitempty" cbor:"provider_version,omitempty"`
@@ -349,7 +349,7 @@ type LinkEndpoint struct {
 	Node string `json:"node" yaml:"node" cbor:"node"`
 	// Boundary The endpoint's boundary path — the dispatch group its rendered output assembles into.
 	Boundary string `json:"boundary" yaml:"boundary" cbor:"boundary"`
-	// Provider The provider that rendered the endpoint (the provider engine name). Both endpoints of a wired link name the same provider; the host does not route a link whose endpoints name different providers.
+	// Provider The provider that rendered the endpoint (the bare provider name). Both endpoints of a wired link name the same provider; the host does not route a link whose endpoints name different providers.
 	Provider string `json:"provider" yaml:"provider" cbor:"provider"`
 	// Deployment The deployment identity the endpoint's rendered output belongs to — the scope its assembled artifacts are named within. The host assembles it from the build's deployment identity and passes it verbatim; it infers no meaning from the value. A provider reads it to scope a cross-reference name to the deployment. An absent value is the empty string, which a provider treats as an unscoped name.
 	Deployment string `json:"deployment,omitempty" yaml:"deployment,omitempty" cbor:"deployment,omitempty"`

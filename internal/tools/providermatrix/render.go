@@ -48,8 +48,8 @@ func renderRegion(providers []provider) (string, error) {
 	// The scope note is generated rather than curated because it describes what
 	// the rows above cover, and a hand-written scope claim beside a generated
 	// list is the drift this region exists to remove.
-	b.WriteString("\n*This grid covers the provider engines distributed with the compiler. ")
-	b.WriteString("A provider supplied as a plugin declares the input kinds it accepts in the ")
+	b.WriteString("\n*This grid covers the providers distributed with the compiler. ")
+	b.WriteString("A provider supplied separately declares the input kinds it accepts in the ")
 	b.WriteString("same way, and the compiler reads that declaration by the same route — it is ")
 	b.WriteString("not listed here, because a published page cannot enumerate providers it has ")
 	b.WriteString("never seen.*")
