@@ -1476,6 +1476,63 @@ var facts = []factDecl{
 			"declaration surface: the two are written on different documents, and " +
 			"a rule over either names a different authored site.",
 	},
+	{
+		Name:        "resolved-parameter-context",
+		Stage:       "normalized",
+		SourceField: "resolver.ApplyParameterDefaults(contract, params)",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "map[string]any",
+		Doc: "ResolvedParameterContext is what a document's declared parameter " +
+			"contract resolved to, as one map: each slot that resolved to a " +
+			"value, under the name the contract declares it by.\n\nThree " +
+			"contributions are folded into it, and naming them is most of the " +
+			"reason it is a fact. The parameters the Release wrote inline; the " +
+			"parameters the Release imported from a file; and the contract's " +
+			"own declared defaults, filled into each slot it defaults that the " +
+			"Release left unsupplied. A rule handed the three separately would " +
+			"fold them again, and a rule handed only the first two would answer " +
+			"differently from the compiler for every slot whose value came from " +
+			"a default — silently, because a defaulted slot and a supplied one " +
+			"are indistinguishable once folded.\n\nIts keys are a subset of the " +
+			"declared slots, and which subset it is matters to every rule " +
+			"reading a name it expected. The contract is closed: a parameter " +
+			"supplied against no declaration halts before this fact is " +
+			"complete, so every key here names a declared slot. The converse " +
+			"does not hold. A slot the contract marks required has always " +
+			"resolved, to a supplied value or to its default, but an optional " +
+			"slot that was neither supplied nor given a default is simply " +
+			"absent. So a missing name means optional-and-unsupplied, and never " +
+			"a failure this fact did not report.\n\nIt is the resolved " +
+			"fulfilment and not the declaration. Which parameters a document " +
+			"declares is a separate fact and stays one: a rule asking what " +
+			"exists reads that, a rule asking what it resolved to reads this, " +
+			"and neither substitutes for the other.\n\nIt comes back whole " +
+			"rather than one name at a time, and the shape of the rules over it " +
+			"is why. A conditional constraint's predicate may ask for one named " +
+			"parameter or for the whole set, and the predicate is evaluated by " +
+			"the validator rather than by the rule — so the rule hands the " +
+			"entire context across and could not assemble one from per-name " +
+			"lookups.\n\nThe map holds no order and never acquires one. A rule " +
+			"selects from it by key, which iterates nothing; one that walked it " +
+			"to build output would put a byte-identical result at the mercy of " +
+			"map iteration.\n\nIt is always present. An empty map means no slot " +
+			"resolved to a value — because the contract declares none, or " +
+			"because every slot it declares is optional and went unsupplied — " +
+			"and never that there was no answer, so a rule reading it has no " +
+			"absent case to distinguish and needs no second result to report " +
+			"one.\n\nTwo of its properties bind whatever reads it, and neither " +
+			"is visible in the map itself. Its values may have reached it from " +
+			"a file rather than from either authoring document, so it is not " +
+			"reconstructible from the authored text alone. And its values may " +
+			"be secret-bearing, which is a property of what an author puts in a " +
+			"parameter rather than something the contract can mark: so a rule " +
+			"neither copies it, nor anything selected from it, into a " +
+			"diagnostic, and holds it no longer than the invocation it was " +
+			"handed to.\n\nA flattened sub-aggregate node fulfils its own " +
+			"contract, and that fulfilment is a separate declaration keyed by " +
+			"the node rather than by a document.",
+	},
 
 	// ---------------------------------------------------------------- topology
 

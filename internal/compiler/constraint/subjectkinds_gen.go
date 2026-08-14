@@ -40,7 +40,7 @@ const (
 )
 
 const (
-	// SubjectDocument is the subject kind document, keyed by 1 declared fact.
+	// SubjectDocument is the subject kind document, keyed by 2 declared facts.
 	SubjectDocument SubjectKind = "document"
 
 	// SubjectDocumentParameter is the subject kind (document, parameter), keyed by 1 declared fact.
