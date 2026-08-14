@@ -16,19 +16,29 @@ package main
 // the generator emitted when someone last invoked it by path, and reads as
 // current. So a new Rust target is added here in the same edit that registers it.
 //
+// Every codec target committed inside this module is driven from here as well.
+// No directive anywhere else names one, so a target left out of this set is
+// refreshed by no batch command at all: `go generate ./internal/tools/typegen/...`
+// exits zero without touching it, and the file keeps whatever the generator
+// emitted when someone last invoked it by path. So a new in-module target is
+// added here in the same edit that registers it.
+//
 //go:generate go run . ../../../../aggrega-abi/rust/src/cbor_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/cbor_gen.ts
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/frp_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/frp_gen.rs
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/describe_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/describe_gen.rs
+//go:generate go run . ../../wasm/describe_host_gen.go
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/parse_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/parse_gen.rs
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/import_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/import_gen.rs
 //go:generate go run . ../../../../aggrega-abi/rust/src/cli_gen.rs
 //go:generate go run . ../../../../aggrega-abi/rust/src/linter_gen.rs
+//go:generate go run . ../../../pkg/validator/linter_host_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/mutator_gen.rs
+//go:generate go run . ../../compiler/topology/wasm_types_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/policy_gen.rs
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/hostfunc_error_enums_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/hostfunc_error_enums_gen.rs
