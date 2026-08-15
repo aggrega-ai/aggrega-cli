@@ -3038,3 +3038,878 @@ func TestAnInjectionBlockEnumeratesTheMechanismsItNamesAsFieldsFirst(t *testing.
 		})
 	}
 }
+
+// ------------------------------------------------------------------ the rules
+// about a payload measured against the contract declared over it
+
+// The types the conformance rows author against: one declaring a contract over
+// each of its two configuration pillars and over each of the two pillars a
+// connection into its dependency socket may carry, and one whose catalog entry
+// declares no contract at all. The type the catalog holds no entry for is the one
+// the socket rows already name, reused so the two families cannot drift about
+// which identity is absent.
+const (
+	conformanceContractedType = "core/contracted:1.0.0"
+	conformanceBareType       = "core/uncontracted:1.0.0"
+	conformanceSocket         = "store"
+)
+
+// conformanceSchemaNode reads a contract fixture into the node shape a catalog
+// entity carries a contract in.
+//
+// The document wrapper is unwrapped because that is the shape reading a real
+// entity produces: a contract is the value of a key in the entity's own document
+// and never a document of its own, and the socket-contract compile wraps the node
+// it is handed as a mapping value — which a document node cannot be.
+func conformanceSchemaNode(t *testing.T, body string) yaml.Node {
+	t.Helper()
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+		t.Fatalf("the contract fixture does not parse: %v", err)
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 {
+		t.Fatalf("the contract fixture is not one document carrying one node")
+	}
+	return *doc.Content[0]
+}
+
+// conformanceRuleCatalog holds entries for the two types above and for nothing
+// else.
+//
+// Every contract declares one REQUIRED key, and that is what makes the one place
+// the two component rules differ measurable rather than merely documented: a
+// payload written and left empty violates a required key, so on one input the
+// rule that measures an empty payload reports and the rule that ends before it
+// stays silent.
+func conformanceRuleCatalog(t *testing.T) CatalogLookup {
+	t.Helper()
+
+	contracted := types.Component{}
+	contracted.Metadata.Name = "core/contracted"
+	contracted.Spec.Schema = conformanceSchemaNode(t, `values:
+  replicas: { type: integer, minimum: 1, required: true }
+infra:
+  size: { type: string, required: true }
+`)
+	socket := types.UsesSchemaEntry{}
+	socket.ValueSchema = conformanceSchemaNode(t,
+		"pool: { type: integer, minimum: 1, required: true }\n")
+	socket.InfraSchema = conformanceSchemaNode(t,
+		"tier: { type: string, required: true }\n")
+	sockets := types.OrderedMap[types.UsesSchemaEntry]{}
+	sockets.Set(conformanceSocket, socket)
+	contracted.Spec.UsesSchema = sockets
+
+	bare := types.Component{}
+	bare.Metadata.Name = "core/uncontracted"
+
+	return CatalogLookup{Component: func(uri string) (types.Component, bool) {
+		switch uri {
+		case conformanceContractedType:
+			return contracted, true
+		case conformanceBareType:
+			return bare, true
+		}
+		return types.Component{}, false
+	}}
+}
+
+// conformancePayload assembles one pillar's payload in the order written.
+func conformancePayload(pairs ...any) types.OrderedMap[any] {
+	out := types.OrderedMap[any]{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		out.Set(pairs[i].(string), pairs[i+1])
+	}
+	return out
+}
+
+// conformanceConnection is one connection a component's own dependency block
+// carries: the alias naming it, the component it points at, and the
+// configuration written on it.
+type conformanceConnection struct {
+	alias  string
+	target string
+	values types.OrderedMap[any]
+}
+
+// conformanceComponent is one component of a conformance row: the type it
+// declares, the configuration its own document wrote, and the connections its
+// dependency block carries — either as aliases, or as the short form listing
+// targets, never both, because a socket is written in one form or the other.
+type conformanceComponent struct {
+	name        string
+	typ         string
+	values      types.OrderedMap[any]
+	connections []conformanceConnection
+	compact     []string
+}
+
+// conformanceAggregate builds the components a row declares, in the order given.
+func conformanceAggregate(components ...conformanceComponent) *types.Aggregate {
+	comps := types.OrderedMap[types.ComponentInstance]{}
+	for _, c := range components {
+		inst := types.ComponentInstance{Type: c.typ, Values: c.values}
+		switch {
+		case len(c.compact) > 0:
+			inst.Uses.Set(conformanceSocket, types.UsesSocketValue{Compact: c.compact})
+		case len(c.connections) > 0:
+			socket := types.UsesSocketValue{}
+			for _, conn := range c.connections {
+				socket.Verbose.Set(conn.alias, types.VerboseUsesEntry{
+					Target: conn.target,
+					Values: conn.values,
+				})
+			}
+			inst.Uses.Set(conformanceSocket, socket)
+		}
+		comps.Set(c.name, inst)
+	}
+	return &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "conformance"},
+		Spec:     types.AggregateSpec{Components: comps},
+	}
+}
+
+// wiredBoundaryContexts is the per-component boundary context the guard is handed
+// in production, produced from the deployment document by the walk that produces
+// it there.
+//
+// The rows build it this way rather than assembling the map directly, and the
+// reason is the measurement rather than tidiness: the sizing the component rule
+// reads is derived by the presentation from the deployment document, while the
+// guard reads it from this pre-computed map, and the two are separate walks of
+// one tree. Assembling the map by hand would compare the presentation's walk
+// against a fixture instead of against the walk it has to agree with.
+func wiredBoundaryContexts(release *types.Release) map[string]*BoundaryInfra {
+	perComponent, _ := WireBoundaryInfra(types.NormalizeRelease(release))
+	return perComponent
+}
+
+// declaredConformancePaths returns, per objection, the site the rule named joined
+// with the path inside the payload the violation landed on — the whole dotted
+// path of the offending leaf, which is what the hand-written reading spells
+// directly in its own locator.
+//
+// 🔴 The join is the measurement rather than a convenience. These rules position
+// at the SITE carrying the payload — the component, or the connection — and hand
+// the path within that payload to the objection's detail, while the hand-written
+// reading writes the whole path into its locator. So the leaf is not lost, it is
+// carried on a different field, and a comparison over the locator alone would read
+// that relocation as a coverage difference. Each side's raw sequence is asserted
+// verbatim beside this, so the join cannot hide a difference between them.
+func declaredConformancePaths(objections []constraint.Objection) []string {
+	out := make([]string, 0, len(objections))
+	for _, o := range objections {
+		detail := o.Detail()
+		if len(detail) == 0 {
+			out = append(out, o.Locator())
+			continue
+		}
+		out = append(out, o.Locator()+"."+detail[0])
+	}
+	return out
+}
+
+// conformanceViolations returns the locators of the hand-written findings
+// carrying the conformance identity, in the order reported.
+//
+// Both guards beside these rules also reach the classifier for a type resolved as
+// a catalog identity nobody found, which is a different rule's identity and was
+// cross-checked separately. A row comparing a conformance rule therefore has to
+// say which identity it means, or that rule's findings would be counted as this
+// rule's coverage.
+func conformanceViolations(findings []*ResolverError) []string {
+	return findingsCarrying(findings, ErrSchemaConformance())
+}
+
+func TestTheComponentConfigurationConformanceRuleAgreesWithItsHandWrittenReading(t *testing.T) {
+	t.Parallel()
+
+	catalog := conformanceRuleCatalog(t)
+
+	for _, tc := range []struct {
+		name       string
+		components []conformanceComponent
+		// declared is the locator sequence the declared rule raises — the SITE
+		// carrying the payload, one entry per violation.
+		declared []string
+		// declaredPaths is the same sequence with each objection's payload path
+		// joined on, which is the shape the hand-written reading spells.
+		declaredPaths []string
+		// handWritten is the sequence the hand-written reading reports under this
+		// rule's identity, spelled the way that reading spells an authored key.
+		handWritten []string
+		// agree records whether the two cover the same leaves once the two
+		// spellings are reduced to one. It is asserted rather than trusted.
+		agree bool
+	}{
+		{
+			// One component of each skipping kind sits beside the one fault, so
+			// every skip is exercised by its absence from both expectations rather
+			// than by a row reporting nothing at all.
+			name: "a configuration violating the contract is reported by both; a type declaring no contract and a type the catalog holds no entry for are reported by neither",
+			components: []conformanceComponent{
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", "many")},
+				{name: "api", typ: conformanceBareType,
+					values: conformancePayload("anything", 1)},
+				{name: "ghost", typ: socketAbsentComponent,
+					values: conformancePayload("replicas", "many")},
+			},
+			declared:      []string{".spec.components.web"},
+			declaredPaths: []string{".spec.components.web.values.replicas"},
+			handWritten:   []string{`.spec.components["web"].values.replicas`},
+			agree:         true,
+		},
+		{
+			// The empty payload is the row that separates this rule from its
+			// sizing counterpart: an empty configuration is measured here, and
+			// the counterpart ends before measuring the same emptiness.
+			name: "a component that wrote no configuration at all is measured against a key the contract declares required",
+			components: []conformanceComponent{
+				{name: "web", typ: conformanceContractedType},
+			},
+			declared:      []string{".spec.components.web"},
+			declaredPaths: []string{".spec.components.web.values.replicas"},
+			handWritten:   []string{`.spec.components["web"].values.replicas`},
+			agree:         true,
+		},
+		{
+			// Two reports, authored against their alphabetical order. With a
+			// single finding every ordering agrees, which is why the rows above
+			// cannot carry the ordering claim and this one can.
+			name: "several reports come back in instance-name order on both sides",
+			components: []conformanceComponent{
+				{name: "zeta", typ: conformanceContractedType,
+					values: conformancePayload("replicas", "many")},
+				{name: "alpha", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 0)},
+			},
+			declared: []string{".spec.components.alpha", ".spec.components.zeta"},
+			declaredPaths: []string{
+				".spec.components.alpha.values.replicas",
+				".spec.components.zeta.values.replicas",
+			},
+			handWritten: []string{
+				`.spec.components["alpha"].values.replicas`,
+				`.spec.components["zeta"].values.replicas`,
+			},
+			agree: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if len(tc.declared) == 0 && len(tc.handWritten) == 0 {
+				t.Fatal("this row expects nothing from either reading, so it cannot tell them " +
+					"apart and would pass however either one behaved")
+			}
+			if tc.agree && len(tc.handWritten) == 0 {
+				t.Fatal("an agreement row with no hand-written finding would compare two empty " +
+					"sets and report agreement without either reading having read anything")
+			}
+
+			na := normalized(t, conformanceAggregate(tc.components...))
+			view := newNormalizedView(na, nil, catalog, nil)
+
+			objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+				nil, newCoordinateSet(view), view, componentValuesConformToTheType)
+			if err != nil {
+				t.Fatalf("the node walk returned an error: %v", err)
+			}
+			fromDeclared := locatorsOf(objections)
+			fromHandWritten := conformanceViolations(
+				guardSchemaConformance(na, catalog, nil, nil, view))
+
+			if !equalStrings(fromDeclared, tc.declared) {
+				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
+			}
+			if got := declaredConformancePaths(objections); !equalStrings(got, tc.declaredPaths) {
+				t.Errorf("declared payload paths = %v; want %v", got, tc.declaredPaths)
+			}
+			if !equalStrings(fromHandWritten, tc.handWritten) {
+				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
+			}
+
+			declaredSet := sortedCopy(declaredConformancePaths(objections))
+			handWrittenSet := dottedCopy(fromHandWritten)
+			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
+				t.Errorf("the two readings cover the same leaves = %t; want %t:\n"+
+					"  declared:     %v\n  hand-written: %v",
+					got, tc.agree, declaredSet, handWrittenSet)
+			}
+		})
+	}
+}
+
+// The rule about the physical sizing a deployment wrote for a component.
+//
+// 🔴 The fact-availability question this family exists to settle is measured
+// here. The hand-written guard takes the per-component boundary context as a
+// PARAMETER; the presentation the declared rule reads takes no such parameter and
+// derives the same sizing from the deployment document itself. Two walks of one
+// tree, and nothing structural holds them together — so each row hands the guard
+// the map the production walk produces and the presentation the document that
+// produced it, and one row authors the component at DEPTH so a walk that stops at
+// the outer scope would be visible rather than merely possible.
+func TestTheComponentSizingConformanceRuleAgreesWithItsHandWrittenReading(t *testing.T) {
+	t.Parallel()
+
+	catalog := conformanceRuleCatalog(t)
+
+	for _, tc := range []struct {
+		name       string
+		components []conformanceComponent
+		// deployed is the boundary block of the deployment document.
+		deployed      string
+		declared      []string
+		declaredPaths []string
+		handWritten   []string
+		agree         bool
+	}{
+		{
+			name: "sizing violating the contract is reported by both; a component the deployment wrote no sizing for is reported by neither",
+			components: []conformanceComponent{
+				{name: "api", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+			},
+			deployed: `    prod:
+      directory: ./output
+      components:
+        web:
+          infra:
+            size: 3
+        api: {}
+`,
+			declared:      []string{".spec.components.web"},
+			declaredPaths: []string{".spec.components.web.infra.size"},
+			handWritten:   []string{`.spec.components["web"].infra.size`},
+			agree:         true,
+		},
+		{
+			// The component sits inside a boundary nested in another, which is the
+			// shape a walk that descends only one level would miss. Both readings
+			// have to reach it or the row's single finding goes missing on one side.
+			name: "sizing written on a component at depth in the boundary tree is reported by both",
+			components: []conformanceComponent{
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+			},
+			deployed: `    prod:
+      directory: ./output
+      boundaries:
+        inner:
+          components:
+            web:
+              infra:
+                size: 3
+`,
+			declared:      []string{".spec.components.web"},
+			declaredPaths: []string{".spec.components.web.infra.size"},
+			handWritten:   []string{`.spec.components["web"].infra.size`},
+			agree:         true,
+		},
+		{
+			// The counterpart of the empty-payload row on the configuration rule:
+			// there, written-and-empty is measured against a required key; here the
+			// same absence ends the rule. The positive control beside it is the
+			// component that does violate, so the row cannot pass over nothing.
+			name: "a component the deployment wrote an empty sizing block for is reported by neither, while its sibling that wrote a violating one is reported by both",
+			components: []conformanceComponent{
+				{name: "api", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+			},
+			deployed: `    prod:
+      directory: ./output
+      components:
+        web:
+          infra:
+            size: 3
+        api:
+          infra: {}
+`,
+			declared:      []string{".spec.components.web"},
+			declaredPaths: []string{".spec.components.web.infra.size"},
+			handWritten:   []string{`.spec.components["web"].infra.size`},
+			agree:         true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if len(tc.declared) == 0 && len(tc.handWritten) == 0 {
+				t.Fatal("this row expects nothing from either reading, so it cannot tell them " +
+					"apart and would pass however either one behaved")
+			}
+			if tc.agree && len(tc.handWritten) == 0 {
+				t.Fatal("an agreement row with no hand-written finding would compare two empty " +
+					"sets and report agreement without either reading having read anything")
+			}
+
+			na := normalized(t, conformanceAggregate(tc.components...))
+			release := loadRelease(t, releaseDocument(tc.deployed))
+			view := newNormalizedView(na, release, catalog, nil)
+
+			objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+				nil, newCoordinateSet(view), view, componentInfraConformsToTheType)
+			if err != nil {
+				t.Fatalf("the node walk returned an error: %v", err)
+			}
+			fromDeclared := locatorsOf(objections)
+			fromHandWritten := conformanceViolations(guardSchemaConformance(
+				na, catalog, wiredBoundaryContexts(release), nil, view))
+
+			if !equalStrings(fromDeclared, tc.declared) {
+				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
+			}
+			if got := declaredConformancePaths(objections); !equalStrings(got, tc.declaredPaths) {
+				t.Errorf("declared payload paths = %v; want %v", got, tc.declaredPaths)
+			}
+			if !equalStrings(fromHandWritten, tc.handWritten) {
+				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
+			}
+
+			declaredSet := sortedCopy(declaredConformancePaths(objections))
+			handWrittenSet := dottedCopy(fromHandWritten)
+			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
+				t.Errorf("the two readings cover the same leaves = %t; want %t:\n"+
+					"  declared:     %v\n  hand-written: %v",
+					got, tc.agree, declaredSet, handWrittenSet)
+			}
+		})
+	}
+}
+
+// TestTheDeploymentSizingFactAndTheWiredBoundaryContextCarryOneAnswer measures
+// the two derivations of one fact directly, rather than inferring their agreement
+// from the rows above agreeing.
+//
+// 🔴 It is here because the guard takes the sizing as a parameter and the
+// presentation does not, which reads like a fact the declared rule cannot see. It
+// is not one: both read the same key off the same deployment document, by two
+// separate walks of the boundary tree. Two walks with no shared symbol is the
+// shape that agrees until the day one of them changes, and nothing compiles
+// wrongly when it does — so the agreement is asserted here, over a document
+// carrying a component at each depth the tree has.
+func TestTheDeploymentSizingFactAndTheWiredBoundaryContextCarryOneAnswer(t *testing.T) {
+	t.Parallel()
+
+	release := loadRelease(t, releaseDocument(`    prod:
+      directory: ./output
+      components:
+        web:
+          infra:
+            size: outer
+      boundaries:
+        inner:
+          components:
+            api:
+              infra:
+                size: nested
+        deeper:
+          boundaries:
+            deepest:
+              components:
+                worker:
+                  infra:
+                    size: deepest
+`))
+	wired := wiredBoundaryContexts(release)
+	if len(wired) != 3 {
+		t.Fatalf("the wired contexts name %d components; want 3 — the document authors one "+
+			"at each depth and a walk reaching fewer would make every comparison below "+
+			"vacuous", len(wired))
+	}
+
+	view := newNormalizedView(
+		normalized(t, conformanceAggregate(
+			conformanceComponent{name: "api", typ: conformanceContractedType},
+			conformanceComponent{name: "web", typ: conformanceContractedType},
+			conformanceComponent{name: "worker", typ: conformanceContractedType},
+		)),
+		release, conformanceRuleCatalog(t), nil)
+
+	for node, bi := range wired {
+		fromPresentation := view.ReleaseComponentInfra(node)
+		if !equalStrings(fromPresentation.Keys(), bi.Infra.Keys()) {
+			t.Errorf("component %q: the presentation names sizing keys %v; the wired context "+
+				"names %v", node, fromPresentation.Keys(), bi.Infra.Keys())
+			continue
+		}
+		for key, want := range bi.Infra.All() {
+			got, ok := fromPresentation.Get(key)
+			if !ok || got != want {
+				t.Errorf("component %q sizing key %q: the presentation reads %v (present %t); "+
+					"the wired context reads %v", node, key, got, ok, want)
+			}
+		}
+	}
+}
+
+func TestTheConnectionConfigurationConformanceRuleAgreesWithItsHandWrittenReading(t *testing.T) {
+	t.Parallel()
+
+	catalog := conformanceRuleCatalog(t)
+
+	for _, tc := range []struct {
+		name          string
+		components    []conformanceComponent
+		declared      []string
+		declaredPaths []string
+		handWritten   []string
+		agree         bool
+	}{
+		{
+			name: "configuration violating the socket's contract is reported by both; a type declaring no contract on the socket and a type the catalog holds no entry for are reported by neither",
+			components: []conformanceComponent{
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1),
+					connections: []conformanceConnection{
+						{alias: "primary", target: "db",
+							values: conformancePayload("pool", "many")},
+					}},
+				{name: "api", typ: conformanceBareType,
+					connections: []conformanceConnection{
+						{alias: "primary", target: "db",
+							values: conformancePayload("pool", "many")},
+					}},
+				{name: "ghost", typ: socketAbsentComponent,
+					connections: []conformanceConnection{
+						{alias: "primary", target: "db",
+							values: conformancePayload("pool", "many")},
+					}},
+			},
+			declared:      []string{".spec.components.web.uses.store.primary"},
+			declaredPaths: []string{".spec.components.web.uses.store.primary.values.pool"},
+			handWritten:   []string{`.spec.components["web"].uses["store"]["primary"].values.pool`},
+			agree:         true,
+		},
+		{
+			// A connection that wrote nothing is the maximal violation of a key
+			// the socket's contract declares required, not an exemption from it.
+			name: "a connection that wrote no configuration is measured against a key the socket's contract declares required",
+			components: []conformanceComponent{
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1),
+					connections: []conformanceConnection{
+						{alias: "primary", target: "db"},
+					}},
+			},
+			declared:      []string{".spec.components.web.uses.store.primary"},
+			declaredPaths: []string{".spec.components.web.uses.store.primary.values.pool"},
+			handWritten:   []string{`.spec.components["web"].uses["store"]["primary"].values.pool`},
+			agree:         true,
+		},
+		{
+			// 🔴 The short authoring form. It lists targets and gives each
+			// connection the target's own name as its alias, so no key in the file
+			// spells that alias — and the two readings differ on whether to name
+			// one. Measured rather than reconciled.
+			name: "a connection written in the short form is reported by both, and the two readings differ on whether the locator names an alias the file does not contain",
+			components: []conformanceComponent{
+				{name: "web", typ: conformanceContractedType,
+					values:  conformancePayload("replicas", 1),
+					compact: []string{"db"}},
+			},
+			declared:      []string{".spec.components.web.uses.store"},
+			declaredPaths: []string{".spec.components.web.uses.store.values.pool"},
+			handWritten:   []string{`.spec.components["web"].uses["store"]["db"].values.pool`},
+			agree:         false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if len(tc.declared) == 0 && len(tc.handWritten) == 0 {
+				t.Fatal("this row expects nothing from either reading, so it cannot tell them " +
+					"apart and would pass however either one behaved")
+			}
+			if tc.agree && len(tc.handWritten) == 0 {
+				t.Fatal("an agreement row with no hand-written finding would compare two empty " +
+					"sets and report agreement without either reading having read anything")
+			}
+
+			na := normalized(t, conformanceAggregate(tc.components...))
+			view := newNormalizedView(na, nil, catalog, nil)
+
+			objections, err := constraint.RunOnEdges[constraint.NormalizedView](
+				nil, newCoordinateSet(view), view, connectionValuesConformToTheSocket)
+			if err != nil {
+				t.Fatalf("the connection walk returned an error: %v", err)
+			}
+			fromDeclared := locatorsOf(objections)
+			fromHandWritten := conformanceViolations(
+				guardEdgeConformance(na, nil, catalog, nil, view))
+
+			if !equalStrings(fromDeclared, tc.declared) {
+				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
+			}
+			if got := declaredConformancePaths(objections); !equalStrings(got, tc.declaredPaths) {
+				t.Errorf("declared payload paths = %v; want %v", got, tc.declaredPaths)
+			}
+			if !equalStrings(fromHandWritten, tc.handWritten) {
+				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
+			}
+
+			declaredSet := sortedCopy(declaredConformancePaths(objections))
+			handWrittenSet := dottedCopy(fromHandWritten)
+			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
+				t.Errorf("the two readings cover the same leaves = %t; want %t:\n"+
+					"  declared:     %v\n  hand-written: %v",
+					got, tc.agree, declaredSet, handWrittenSet)
+			}
+		})
+	}
+}
+
+// connectionSizingSite reduces a locator to the part naming the connection and
+// the leaf within its payload, dropping whichever document's addressing prefix
+// the locator carries.
+//
+// 🔴 It exists because the two readings of this one rule name DIFFERENT
+// DOCUMENTS. The declared rule positions every connection in the application's
+// own dependency block, because that is the axis it is invoked over; the
+// hand-written reading positions the deployment's entry where the operator wrote
+// it, in the boundary tree. That is neither a spelling difference nor a depth
+// difference, and reducing both to the connection is the only way coverage can be
+// compared at all. Each side's full locator is asserted verbatim beside the
+// comparison, so the reduction cannot hide which document was named.
+func connectionSizingSite(t *testing.T, dotted string) string {
+	const marker = ".components."
+	at := strings.LastIndex(dotted, marker)
+	if at < 0 {
+		t.Fatalf("the locator %q names no component, so it cannot be reduced to a "+
+			"connection and the comparison below would be over a shape neither reading "+
+			"produces", dotted)
+	}
+	return dotted[at:]
+}
+
+// connectionSizingSites returns the connection each locator names, sorted.
+func connectionSizingSites(t *testing.T, locators []string) []string {
+	t.Helper()
+	out := make([]string, 0, len(locators))
+	for _, l := range locators {
+		out = append(out, connectionSizingSite(t, dottedFieldPath(l)))
+	}
+	return sortedCopy(out)
+}
+
+func TestTheConnectionSizingConformanceRuleAgreesWithItsHandWrittenReading(t *testing.T) {
+	t.Parallel()
+
+	catalog := conformanceRuleCatalog(t)
+
+	for _, tc := range []struct {
+		name          string
+		components    []conformanceComponent
+		deployed      string
+		declared      []string
+		declaredPaths []string
+		handWritten   []string
+		agree         bool
+	}{
+		{
+			// The deployment configures a connection the application declared,
+			// which is the ordinary shape: the operator supplies sizing for an
+			// edge the developer's architecture already draws.
+			name: "sizing violating the socket's contract on a connection the application declared is reported by both",
+			components: []conformanceComponent{
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1),
+					connections: []conformanceConnection{
+						{alias: "primary", target: "db",
+							values: conformancePayload("pool", 1)},
+					}},
+			},
+			deployed: `    prod:
+      directory: ./output
+      components:
+        web:
+          uses:
+            store:
+              primary:
+                infra:
+                  tier: 7
+`,
+			declared:      []string{".spec.components.web.uses.store.primary"},
+			declaredPaths: []string{".spec.components.web.uses.store.primary.infra.tier"},
+			handWritten: []string{
+				`.spec.boundaries["prod"].components["web"].uses["store"]["primary"].infra.tier`},
+			agree: true,
+		},
+		{
+			// The deployment wires a connection the application did not declare,
+			// which the edge surface permits within a declared socket. The declared
+			// reading still positions it in the application's dependency block —
+			// where the file contains no such key at all.
+			name: "sizing on a connection only the deployment wired is reported by both, positioned in the application's block by one reading and in the deployment's by the other",
+			components: []conformanceComponent{
+				{name: "db", typ: conformanceBareType},
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+			},
+			deployed: `    prod:
+      directory: ./output
+      components:
+        web:
+          uses:
+            store:
+              primary:
+                target: db
+                infra:
+                  tier: 7
+`,
+			declared:      []string{".spec.components.web.uses.store.primary"},
+			declaredPaths: []string{".spec.components.web.uses.store.primary.infra.tier"},
+			handWritten: []string{
+				`.spec.boundaries["prod"].components["web"].uses["store"]["primary"].infra.tier`},
+			agree: true,
+		},
+		{
+			// A connection the deployment wrote an entry for but no sizing on is
+			// the maximal violation of a key the socket's contract declares
+			// required, on the same terms as its configuration counterpart.
+			name: "a connection the deployment wrote no sizing on is measured against a key the socket's contract declares required",
+			components: []conformanceComponent{
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1),
+					connections: []conformanceConnection{
+						{alias: "primary", target: "db",
+							values: conformancePayload("pool", 1)},
+					}},
+			},
+			deployed: `    prod:
+      directory: ./output
+      components:
+        web:
+          uses:
+            store:
+              primary: {}
+`,
+			declared:      []string{".spec.components.web.uses.store.primary"},
+			declaredPaths: []string{".spec.components.web.uses.store.primary.infra.tier"},
+			handWritten: []string{
+				`.spec.boundaries["prod"].components["web"].uses["store"]["primary"].infra.tier`},
+			agree: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if len(tc.declared) == 0 && len(tc.handWritten) == 0 {
+				t.Fatal("this row expects nothing from either reading, so it cannot tell them " +
+					"apart and would pass however either one behaved")
+			}
+			if tc.agree && len(tc.handWritten) == 0 {
+				t.Fatal("an agreement row with no hand-written finding would compare two empty " +
+					"sets and report agreement without either reading having read anything")
+			}
+
+			na := normalized(t, conformanceAggregate(tc.components...))
+			release := loadRelease(t, releaseDocument(tc.deployed))
+			view := newNormalizedView(na, release, catalog, nil)
+
+			objections, err := constraint.RunOnEdges[constraint.NormalizedView](
+				nil, newCoordinateSet(view), view, connectionInfraConformsToTheSocket)
+			if err != nil {
+				t.Fatalf("the connection walk returned an error: %v", err)
+			}
+			fromDeclared := locatorsOf(objections)
+			fromHandWritten := conformanceViolations(
+				guardEdgeConformance(na, release, catalog, nil, view))
+
+			if !equalStrings(fromDeclared, tc.declared) {
+				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
+			}
+			if got := declaredConformancePaths(objections); !equalStrings(got, tc.declaredPaths) {
+				t.Errorf("declared payload paths = %v; want %v", got, tc.declaredPaths)
+			}
+			if !equalStrings(fromHandWritten, tc.handWritten) {
+				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
+			}
+
+			declaredSet := connectionSizingSites(t, declaredConformancePaths(objections))
+			handWrittenSet := connectionSizingSites(t, fromHandWritten)
+			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
+				t.Errorf("the two readings cover the same connections = %t; want %t:\n"+
+					"  declared:     %v\n  hand-written: %v",
+					got, tc.agree, declaredSet, handWrittenSet)
+			}
+		})
+	}
+}
+
+// TestTheConformanceReadingsReportOneDocumentAtOneMultiplicity measures the four
+// rules together against the whole of the two guards beside them, on one document
+// carrying a fault on every surface at once.
+//
+// The per-rule tests above each partition to one rule. This one does not: it is
+// the number the family contributes as a whole, which is what a reader comparing
+// the two enforcement paths needs and what no per-rule row can state.
+func TestTheConformanceReadingsReportOneDocumentAtOneMultiplicity(t *testing.T) {
+	t.Parallel()
+
+	catalog := conformanceRuleCatalog(t)
+	agg := conformanceAggregate(conformanceComponent{
+		name: "web", typ: conformanceContractedType,
+		values: conformancePayload("replicas", "many"),
+		connections: []conformanceConnection{
+			{alias: "primary", target: "db", values: conformancePayload("pool", "many")},
+		},
+	})
+	na := normalized(t, agg)
+	release := loadRelease(t, releaseDocument(`    prod:
+      directory: ./output
+      components:
+        web:
+          infra:
+            size: 3
+          uses:
+            store:
+              primary:
+                infra:
+                  tier: 7
+`))
+	view := newNormalizedView(na, release, catalog, nil)
+	coordinates := newCoordinateSet(view)
+
+	var declared int
+	for _, check := range []constraint.Check[constraint.NormalizedView, constraint.NodeSubject]{
+		componentValuesConformToTheType,
+		componentInfraConformsToTheType,
+	} {
+		objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+			nil, coordinates, view, check)
+		if err != nil {
+			t.Fatalf("the node walk returned an error: %v", err)
+		}
+		declared += len(objections)
+	}
+	for _, check := range []constraint.Check[constraint.NormalizedView, constraint.EdgeSubject]{
+		connectionValuesConformToTheSocket,
+		connectionInfraConformsToTheSocket,
+	} {
+		objections, err := constraint.RunOnEdges[constraint.NormalizedView](
+			nil, coordinates, view, check)
+		if err != nil {
+			t.Fatalf("the connection walk returned an error: %v", err)
+		}
+		declared += len(objections)
+	}
+
+	handWritten := len(conformanceViolations(guardSchemaConformance(
+		na, catalog, wiredBoundaryContexts(release), nil, view))) +
+		len(conformanceViolations(guardEdgeConformance(na, release, catalog, nil, view)))
+
+	const want = 4
+	if declared != want || handWritten != want {
+		t.Errorf("one document faulting on all four surfaces yields %d findings from the "+
+			"declared rules and %d from the hand-written readings; want %d from each",
+			declared, handWritten, want)
+	}
+}
