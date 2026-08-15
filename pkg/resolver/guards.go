@@ -113,7 +113,7 @@ type CatalogLookup struct {
 // Aggregate. What IS checked here is the shape of what the author wrote, which
 // is a question about the authored document and belongs at its authoring site.
 //
-// The required uses-socket rule (5) is the deliberate contrast, not an
+// The required uses-socket rule (6) is the deliberate contrast, not an
 // inconsistency: it has no cascade to wait for. For the instances this pass
 // walks, two surfaces can populate a socket declared in a Component's
 // usesSchema — that component's own `uses` block and the Release's per-edge
