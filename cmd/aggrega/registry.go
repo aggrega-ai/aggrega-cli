@@ -254,7 +254,7 @@ func writeRegistryListJSON(w io.Writer, entries []registryListEntry) error {
 			Trust:     registryTrustOf(e.cfg),
 		})
 	}
-	return writeStructured(w, "registry list", structuredIndented, registryListDoc{Registries: docs})
+	return writeStructured(w, "registry list", registryListDoc{Registries: docs})
 }
 
 // registryTrustOf projects a registry's configured trust posture onto the

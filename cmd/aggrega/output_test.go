@@ -68,13 +68,22 @@ func seamFixture() seamPayload {
 	return seamPayload{Name: "helm", Nest: []int{1, 2}, Angle: "a<b>c&d"}
 }
 
-// TestWriteStructuredIndented pins the indented shape: two-space indentation and
-// exactly one trailing newline, byte-identical to marshalling indented by hand.
-func TestWriteStructuredIndented(t *testing.T) {
+// TestWriteStructuredMatchesIndentedMarshal pins the seam's output against
+// marshalling indented by hand: the seam adds exactly one trailing newline and
+// nothing else. Asserting the equivalence rather than a literal keeps the
+// guarantee meaningful as a payload changes — what must hold is that routing a
+// surface through this seam does not alter its bytes.
+//
+// This is deliberately not the only shape assertion. It compares against the same
+// encoder the implementation calls, so it moves with that encoder and cannot see a
+// change that moves both; TestWriteStructuredEmitsIndentedMarks asserts the marks
+// literally and is blind in the opposite direction. The pair is an intentional
+// cross-check: collapsing either into the other removes the angle it covers.
+func TestWriteStructuredMatchesIndentedMarshal(t *testing.T) {
 	t.Parallel()
 
 	var got bytes.Buffer
-	if err := writeStructured(&got, "search", structuredIndented, seamFixture()); err != nil {
+	if err := writeStructured(&got, "search", seamFixture()); err != nil {
 		t.Fatalf("writeStructured: %v", err)
 	}
 
@@ -85,38 +94,54 @@ func TestWriteStructuredIndented(t *testing.T) {
 	if got.String() != string(want)+"\n" {
 		t.Errorf("indented shape drifted:\n got %q\nwant %q", got.String(), string(want)+"\n")
 	}
+	// Keeps the equivalence above from passing vacuously: if the reference call
+	// stopped indenting, both sides would move together and still match.
 	if !strings.Contains(got.String(), "\n  \"name\"") {
 		t.Errorf("expected two-space indentation; got %q", got.String())
 	}
 }
 
-// TestWriteStructuredCompactMatchesStreamingEncoder pins the compact shape
-// against encoding/json's streaming encoder, which is the byte shape the
-// consumers of the compact surface already depend on. Asserting the equivalence
-// rather than a literal keeps the guarantee meaningful as a payload changes: what
-// must hold is that routing a surface through this seam does not alter its bytes.
-func TestWriteStructuredCompactMatchesStreamingEncoder(t *testing.T) {
+// TestWriteStructuredEmitsIndentedMarks pins the shape by its literal marks: a
+// space after a key's colon, two-space indentation deepening by two per level,
+// more than one line, and exactly one trailing newline. It also asserts the
+// unspaced spelling is absent, so a change that re-flowed a surface back onto a
+// single line fails here rather than reaching a consumer.
+//
+// Asserting the marks directly, rather than against an encoder, is what makes this
+// independent of TestWriteStructuredMatchesIndentedMarshal: that test compares the
+// seam against the same encoder the seam calls, so a change moving both would
+// satisfy it. The separation is deliberate — one test covering both angles would
+// have to share the encoder, and would lose this one.
+func TestWriteStructuredEmitsIndentedMarks(t *testing.T) {
 	t.Parallel()
 
-	var got bytes.Buffer
-	if err := writeStructured(&got, "version", structuredCompact, seamFixture()); err != nil {
+	var buf bytes.Buffer
+	if err := writeStructured(&buf, "version", seamFixture()); err != nil {
 		t.Fatalf("writeStructured: %v", err)
 	}
+	got := buf.String()
 
-	var want bytes.Buffer
-	if err := json.NewEncoder(&want).Encode(seamFixture()); err != nil {
-		t.Fatalf("Encode: %v", err)
+	for _, tc := range []struct {
+		name string
+		want string
+	}{
+		{"a space follows a key's colon", `"name": "helm"`},
+		{"a top-level key is indented two spaces", "\n  \"name\": "},
+		{"a nested element is indented four spaces", "\n    1,"},
+	} {
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("%s: expected %q in the payload; got %q", tc.name, tc.want, got)
+		}
 	}
 
-	if got.String() != want.String() {
-		t.Errorf("compact shape is not byte-identical to the streaming encoder:\n got %q\nwant %q",
-			got.String(), want.String())
+	if strings.Contains(got, `"name":"helm"`) {
+		t.Errorf("expected no unspaced key/value form; got %q", got)
 	}
-	if n := strings.Count(got.String(), "\n"); n != 1 {
-		t.Errorf("expected exactly one newline, got %d in %q", n, got.String())
+	if n := strings.Count(got, "\n"); n < 2 {
+		t.Errorf("expected the payload to span several lines; got %d newline(s) in %q", n, got)
 	}
-	if strings.Contains(got.String(), `": `) {
-		t.Errorf("expected no space after a key's colon; got %q", got.String())
+	if !strings.HasSuffix(got, "}\n") || strings.HasSuffix(got, "}\n\n") {
+		t.Errorf("expected the payload to end with a brace and exactly one newline; got %q", got)
 	}
 }
 
@@ -127,7 +152,7 @@ func TestWriteStructuredWrapsMarshalFailure(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	err := writeStructured(&buf, "plugin list", structuredIndented, map[string]any{"ch": make(chan int)})
+	err := writeStructured(&buf, "plugin list", map[string]any{"ch": make(chan int)})
 	if err == nil {
 		t.Fatal("expected a marshal error for an unmarshalable payload")
 	}

@@ -498,7 +498,7 @@ func writePluginListJSON(w io.Writer, embeddedEntries, configuredEntries []plugi
 		Embedded:   pluginEntriesToDocs(embeddedEntries),
 		Configured: pluginEntriesToDocs(configuredEntries),
 	}
-	return writeStructured(w, "plugin list", structuredIndented, doc)
+	return writeStructured(w, "plugin list", doc)
 }
 
 // pluginEntriesToDocs maps a group's entries to their JSON detail form,

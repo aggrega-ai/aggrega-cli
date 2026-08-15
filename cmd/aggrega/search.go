@@ -268,5 +268,5 @@ func writeSearchJSON(out io.Writer, indexes []loadedIndex, records []IndexRecord
 	if records == nil {
 		records = []IndexRecord{}
 	}
-	return writeStructured(out, "search", structuredIndented, searchJSON{Updated: updated, Records: records})
+	return writeStructured(out, "search", searchJSON{Updated: updated, Records: records})
 }

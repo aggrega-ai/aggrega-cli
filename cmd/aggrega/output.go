@@ -10,52 +10,27 @@ import (
 	"strings"
 )
 
-// structuredFormat is the byte shape a structured payload is emitted in.
-//
-// The shape is an explicit argument of every writeStructured call rather than a
-// package-wide default, because the CLI's structured surfaces do not all agree on
-// it and the disagreement is part of each surface's contract. Indented output is
-// the norm: it is readable and diffable, and a consumer that does not want the
-// whitespace can strip it. Compact output is the contract wherever a consumer
-// reads the payload with line-oriented tools whose patterns match only the
-// unspaced "key":"value" form; re-indenting such a surface breaks that consumer
-// while the payload stays valid JSON, so nothing in the Go build or test run
-// would notice. Naming the shape at each call site is what makes that contract
-// visible where it is depended on and hard to change by accident.
-type structuredFormat int
-
-const (
-	// structuredIndented emits two-space-indented JSON. It is the zero value, so
-	// a surface that expresses no preference gets the readable form.
-	structuredIndented structuredFormat = iota
-	// structuredCompact emits single-line JSON.
-	structuredCompact
-)
-
-// writeStructured writes payload to w as JSON in the requested byte shape,
-// followed by exactly one newline, and is the single path a command's structured
-// output takes. cmdName is the command's invocation path without the binary name
+// writeStructured writes payload to w as two-space-indented JSON followed by
+// exactly one newline, and is the single path a command's structured output
+// takes. cmdName is the command's invocation path without the binary name
 // ("plugin list", "version", "search"); it prefixes a marshal failure so the
 // diagnostic names the surface that produced it.
 //
-// Both shapes emit one JSON document and one trailing newline and nothing else,
-// so a consumer reading the stream sees one document per invocation. The compact
-// shape is byte-identical to what encoding/json's streaming encoder produces for
-// the same value, which is what lets a surface move onto this seam without its
-// bytes changing.
-func writeStructured(w io.Writer, cmdName string, shape structuredFormat, payload any) error {
-	var (
-		data []byte
-		err  error
-	)
-	switch shape {
-	case structuredCompact:
-		data, err = json.Marshal(payload)
-	case structuredIndented:
-		data, err = json.MarshalIndent(payload, "", "  ")
-	default:
-		data, err = json.MarshalIndent(payload, "", "  ")
-	}
+// Every structured surface emits this one byte shape, and the shape is not a
+// per-command choice: a reader who has learned what one command's --output json
+// looks like has learned what all of them look like, and a diff of two runs shows
+// the field that changed rather than a single re-flowed line. Indented output is
+// also what a person reads without a formatter, while a consumer that wants the
+// whitespace gone strips it — which costs the consumer one filter and costs the
+// reader nothing.
+//
+// The call emits one JSON document and one trailing newline and nothing else, so
+// a consumer reading the stream sees one document per invocation. A consumer that
+// matches on the emitted text rather than parsing it should strip whitespace
+// before matching: the field names and the values are the contract, and the
+// surrounding layout is not something to depend on.
+func writeStructured(w io.Writer, cmdName string, payload any) error {
+	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return fmt.Errorf("aggrega %s: marshal output: %w", cmdName, err)
 	}

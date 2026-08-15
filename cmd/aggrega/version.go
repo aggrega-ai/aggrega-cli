@@ -57,9 +57,8 @@ By default the output is a single human-readable line followed by a
 one-line pointer to the plugins compiled into the binary. With
 -o json, the output is a structured JSON object suitable for
 programmatic consumption (the VS Code extension uses this form to
-read the binary's version at activation time), emitted on a single
-line so a line-oriented consumer can read a field without a JSON
-parser.
+read the binary's version at activation time), in the same indented
+shape every aggrega command's JSON output uses.
 
 With --verbose, the output replaces the pointer line with a table of
 the embedded plugins — type, name, served capabilities, and commit —
@@ -92,13 +91,13 @@ build.`,
 // version_test.go and re-pinned on the extension side by
 // version-check.test.ts.
 //
-// The payload is emitted compact — one line, no space after a colon —
-// and that byte shape is part of the contract, not a formatting
-// preference: build and release pipelines read a single field out of it
-// with line-oriented pattern matching rather than a JSON parser, and an
-// indented rendering would still be valid JSON while matching none of
-// those patterns. version_test.go pins the shape so it cannot be
-// changed silently.
+// The payload is emitted in the indented shape every structured surface
+// shares, followed by one newline, so a consumer reading the stream sees
+// one document per invocation. What consumers depend on is the field
+// set and the field names, not the surrounding layout: a consumer that
+// matches on the emitted text rather than parsing it strips whitespace
+// first. version_test.go pins the emitted shape as well as the field
+// set, so neither can move without a test saying so.
 //
 // abiVersion reports the plugin ABI version this binary speaks — the
 // single version its host and its embedded guests agree on. It is a
@@ -144,7 +143,7 @@ func runVersion(w io.Writer, asJSON, verbose bool) error {
 		if verbose {
 			info.EmbeddedPlugins = embeddedSummariesToJSON(summaries)
 		}
-		return writeStructured(w, "version", structuredCompact, info)
+		return writeStructured(w, "version", info)
 	}
 	if _, err := io.WriteString(w, formatVersionLine(info)); err != nil {
 		return err

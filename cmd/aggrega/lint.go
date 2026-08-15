@@ -116,7 +116,7 @@ under either format.`,
 				if !structured || !collect.Reached() {
 					return runErr
 				}
-				if werr := writeStructured(cmd.OutOrStdout(), "lint", structuredIndented, collect.Report()); werr != nil {
+				if werr := writeStructured(cmd.OutOrStdout(), "lint", collect.Report()); werr != nil {
 					return werr
 				}
 				return runErr

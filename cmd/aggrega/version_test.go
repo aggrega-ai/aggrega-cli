@@ -380,18 +380,18 @@ func TestVersionJSONIsValidJSON(t *testing.T) {
 	}
 }
 
-// TestVersionJSONIsCompact pins the byte shape of the structured version output,
-// which is a contract rather than a formatting preference: build and release
-// pipelines read a single field out of it with line-oriented pattern matching
-// instead of a JSON parser, and every such pattern matches only the unspaced
-// "key":"value" form. An indented rendering would still be valid JSON, would
-// still satisfy every other test in this file, and would match none of those
-// patterns — so the shape is asserted here directly, in the same form the
-// consumers match on.
+// TestVersionJSONIsIndented pins the byte shape of the structured version output
+// through the real command path, which is the part the shared writer's own tests
+// cannot cover: they prove the writer emits the indented shape, and this proves
+// this command still routes through it. A change that re-rendered this payload on
+// its way out, or bypassed the shared writer for this surface alone, would still
+// produce valid JSON, would still satisfy every other test in this file, and would
+// move a user-visible surface with nothing else in the Go build or test run
+// noticing. That silence is the reason the shape is asserted literally here.
 //
 // The verbose form is asserted too, because it is the larger payload and is
-// therefore where a pretty-printer would most plausibly be introduced.
-func TestVersionJSONIsCompact(t *testing.T) {
+// therefore where a divergent rendering would most plausibly be introduced.
+func TestVersionJSONIsIndented(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		verbose bool
@@ -403,20 +403,26 @@ func TestVersionJSONIsCompact(t *testing.T) {
 			}
 			out := buf.String()
 
-			if n := strings.Count(out, "\n"); n != 1 {
-				t.Errorf("expected exactly one newline (the trailing one), got %d in:\n%q", n, out)
+			if n := strings.Count(out, "\n"); n < 2 {
+				t.Errorf("expected the payload to span several lines; got %d newline(s) in:\n%q", n, out)
 			}
-			if !strings.HasSuffix(out, "}\n") {
-				t.Errorf("expected the payload to end with a brace then one newline; got %q", out)
+			if !strings.HasSuffix(out, "}\n") || strings.HasSuffix(out, "}\n\n") {
+				t.Errorf("expected the payload to end with a brace and exactly one newline; got %q", out)
 			}
-			if strings.Contains(out, "  ") {
-				t.Errorf("expected no indentation run in the payload; got %q", out)
+			if !strings.Contains(out, "\n  \"") {
+				t.Errorf("expected two-space indentation in the payload; got %q", out)
 			}
 
-			// The exact substrings the release and tooling pipelines match on.
-			for _, want := range []string{`"version":"`, `"abiVersion":"`} {
+			// Both directions: the indented spelling present, and the unspaced
+			// spelling absent so a reversion fails here rather than silently.
+			for _, want := range []string{`"version": "`, `"abiVersion": "`} {
 				if !strings.Contains(out, want) {
-					t.Errorf("expected the unspaced form %s in the payload; got %q", want, out)
+					t.Errorf("expected the indented form %s in the payload; got %q", want, out)
+				}
+			}
+			for _, unwanted := range []string{`"version":"`, `"abiVersion":"`} {
+				if strings.Contains(out, unwanted) {
+					t.Errorf("expected no unspaced form %s in the payload; got %q", unwanted, out)
 				}
 			}
 		})
