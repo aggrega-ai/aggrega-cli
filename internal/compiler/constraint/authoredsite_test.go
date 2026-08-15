@@ -48,6 +48,11 @@ func authoredDocuments() map[string]string {
 		// "zebra" socket carries two connections, which is the shape a per-connection
 		// locator has to descend into; "alpha" carries the sequence form, where the
 		// alias is the target's own name and appears in no key.
+		//
+		// It also imports one module. A module is written as an entry under
+		// `aggregates` naming a type and nothing about the module's contents, so the
+		// site a locator over that module names is this one key — the whole of what
+		// this document says about it.
 		"aggregate.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -57,6 +62,9 @@ spec:
   parameters:
     db_size:
       type: string
+  aggregates:
+    data:
+      type: modules/data-layer:1.0.0
   components:
     web:
       type: core/service:1.0.0
@@ -91,6 +99,15 @@ spec:
 		// A subsystems Aggregate. The scope the fixture enumerates as
 		// "billing.payments" is written as two nested blocks, each under the
 		// container's own key, which is the shape the locator has to name.
+		//
+		// This document is also the one that imports the module the fixture
+		// enumerates as "billing.ledger", and the contrast with the scope above is
+		// what the pair is here to show. A nested SCOPE spells both its levels in
+		// this one file; a nested MODULE spells only its own level here, because
+		// the outer level was spelled in the document that imported this one. So
+		// the module's key is a bare `ledger` and a locator naming
+		// ".spec.aggregates.billing.aggregates.ledger" would resolve in no file at
+		// all.
 		"billing/aggregate.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -100,6 +117,9 @@ spec:
   parameters:
     region:
       type: string
+  aggregates:
+    ledger:
+      type: modules/ledger:1.0.0
   subsystems:
     web: {}
     billing:

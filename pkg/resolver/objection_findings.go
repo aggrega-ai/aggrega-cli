@@ -7,7 +7,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
-// findingsFromObjections renders what a check raised into the finding shape this
+// FindingsFromObjections renders what a check raised into the finding shape this
 // package's callers already read.
 //
 // A check hands back the sentinel naming the rule and the provenance of what it
@@ -36,7 +36,13 @@ import (
 // the check was invoked in.
 //
 // Returns nil when nothing was raised.
-func findingsFromObjections(
+//
+// It is exported because a check placed at a later stage of the compilation is
+// invoked from the package that holds that stage's product, and a second
+// conversion written there would be free to render the same objection
+// differently. One conversion is what makes "every rule reporting this way
+// reports identically" a property rather than an intention.
+func FindingsFromObjections(
 	objections []constraint.Objection,
 	entity string,
 ) []*ResolverError {

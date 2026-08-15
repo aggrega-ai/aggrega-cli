@@ -178,3 +178,27 @@ func ErrMutatorPatchRejected() error { return errMutatorPatchRejected }
 var errMutatorPatchRejected = cerrors.Register("compiler-topology/mutator-patch-rejected", cerrors.Meta{
 	Message: "mutator patch rejected",
 })
+
+// ErrUnplacedSubModule fires when a Release places none of a sub-module's
+// components in any boundary. A boundary holds components two ways and both
+// count: naming a component under `components`, under the dotted id it carries
+// once the composition is flattened, and routing the whole sub-module in under
+// `aggregates`, which places every component that module contains. A sub-module
+// reaching neither has its components rendered outside every boundary the
+// deployment declared, so their output location, sync wave, annotations and
+// per-component infrastructure all come from nowhere.
+//
+// It halts rather than warning because the alternative is a silent one: the
+// build succeeds, the artifacts are emitted, and nothing says the operator's
+// boundary configuration was never applied to them (Invariant 4). It is the
+// under-placement counterpart of the over-placement rejection a Release load
+// already makes, and the two together are what make the placement rule complete.
+//
+// A sub-module contributing no components does not fire it: there is nothing to
+// place. Neither does one a false `active` toggle removed, which was never
+// composed.
+func ErrUnplacedSubModule() error { return errUnplacedSubModule }
+
+var errUnplacedSubModule = cerrors.Register("compiler-topology/unplaced-sub-module", cerrors.Meta{
+	Message: "sub-module placed in no boundary: route it into a boundary under `aggregates`, or name its components there under `components`",
+})

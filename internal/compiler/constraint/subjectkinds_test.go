@@ -354,13 +354,14 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 // Go identifiers however they were spelled mechanically.
 //
 // The suffix names what the value is, so a coordinate whose value is a path says
-// so: a subsystem yields SubsystemPath and a boundary yields BoundaryPath,
-// because both scopes nest and the identity of each is the path through the
-// nesting rather than one authored key. The two are the authoring documents'
-// scope axes and neither is the exception. A Name suffix on either would assert a
-// single key and be false for every nested scope, and an
-// accessor whose name misdescribes its value teaches the check that reads it to
-// use it wrongly.
+// so: a subsystem yields SubsystemPath, a boundary yields BoundaryPath and a
+// module yields ModulePath, because each of those scopes nests and the identity
+// of each is the path through the nesting rather than one authored key. No such
+// axis is the exception, and the rows are the statement of which they are — a
+// count of them here would be a second copy of the table below. A Name suffix on
+// any of them would assert a single key and be false for every nested scope, and
+// an accessor whose name misdescribes its value teaches the check that reads it
+// to use it wrongly.
 //
 // Two entries are not one-to-one, and both are named rows here rather than
 // special cases buried in the assertion:
@@ -393,6 +394,7 @@ var coordinateAccessors = map[string][]string{
 	"pipeline-step": {"StepID"},
 	"boundary":      {"BoundaryPath"},
 	"subsystem":     {"SubsystemPath"},
+	"module":        {"ModulePath"},
 	"provider":      {"ProviderName"},
 	"path":          {"EmittedPath"},
 	"artifact":      {"ArtifactName"},
@@ -1016,6 +1018,15 @@ var subjectKindBindings = map[SubjectKind]struct {
 		make: func(f string) Subject {
 			return newSubsystemAttachmentSubject(f, "billing.payments", "tls",
 				"spec", "subsystems", "billing", "subsystems", "payments", "features", "tls")
+		},
+	},
+	SubjectModule: {
+		iface: reflect.TypeOf((*ModuleSubject)(nil)).Elem(),
+		// The nested case, whose segments show the rule that separates this axis
+		// from the two scope axes above: a module's levels live one per document,
+		// so the locator names only the level the declaring file spells.
+		make: func(f string) Subject {
+			return newModuleSubject(f, "data.inner", "spec", "aggregates", "inner")
 		},
 	},
 }

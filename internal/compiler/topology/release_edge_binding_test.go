@@ -88,6 +88,7 @@ func buildWith(t *testing.T, aggYAML, relYAML, modYAML string) error {
 	agg := mustAggregate(t, aggYAML)
 	var rel *types.Release
 	var boundaryInfra map[string]*resolver.BoundaryInfra
+	var routedInfra map[string]*resolver.BoundaryInfra
 	if relYAML != "" {
 		// Fold a root-level components surface into the synthesized `default`
 		// boundary before anything reads the document, which is what loading a
@@ -102,7 +103,12 @@ func buildWith(t *testing.T, aggYAML, relYAML, modYAML string) error {
 		// The Release edge pass reads each node's resolved boundary path, which
 		// production supplies from the same wiring call. Omitting it would make
 		// every fixture look like a Release whose entries reach no node.
-		boundaryInfra, _ = resolver.WireBoundaryInfra(normalized)
+		//
+		// The routed-module contexts are taken as well as the per-component ones,
+		// because a boundary places a component either way: a fixture routing a
+		// whole module places nothing without them, so a rule reading placement
+		// would judge every routed fixture as if the Release had been silent.
+		boundaryInfra, _, routedInfra = resolver.WireBoundaryContexts(normalized)
 	}
 	var loader SubAggregateLoader
 	if modYAML != "" {
@@ -113,9 +119,10 @@ func buildWith(t *testing.T, aggYAML, relYAML, modYAML string) error {
 	}
 	_, err := Build(BuildConfig{
 		ResolveResult: &resolver.ResolveResult{
-			Aggregate:     agg,
-			Release:       rel,
-			BoundaryInfra: boundaryInfra,
+			Aggregate:            agg,
+			Release:              rel,
+			BoundaryInfra:        boundaryInfra,
+			RoutedAggregateInfra: routedInfra,
 		},
 		CatalogLookup:    bindingCatalog(t),
 		LoadSubAggregate: loader,

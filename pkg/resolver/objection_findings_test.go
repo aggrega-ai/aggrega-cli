@@ -59,7 +59,7 @@ func TestAConvertedFindingStaysMatchableByItsSentinel(t *testing.T) {
 			"conversion as correct without converting anything.")
 	}
 
-	findings := findingsFromObjections(objections, "Aggregate conversion")
+	findings := FindingsFromObjections(objections, "Aggregate conversion")
 	if len(findings) != len(objections) {
 		t.Fatalf("the conversion produced %d findings from %d objections.\n"+
 			"INVARIANT: one finding per objection, none dropped.\n"+
@@ -136,7 +136,7 @@ func TestTheConversionAttributesFindingsToTheDocumentItIsGiven(t *testing.T) {
 	}
 
 	for _, entity := range []string{"Aggregate attribution", "Release prod"} {
-		for _, f := range findingsFromObjections(objections, entity) {
+		for _, f := range FindingsFromObjections(objections, entity) {
 			if f.Entity != entity {
 				t.Errorf("a finding was attributed to %q; want %q.\n"+
 					"INVARIANT: the conversion names the document the caller gave it.\n"+

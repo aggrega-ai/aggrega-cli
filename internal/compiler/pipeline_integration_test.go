@@ -119,19 +119,43 @@ func integrationCatalog() resolver.CatalogLookup {
 	}
 }
 
+// buildResolveResult stands in for a resolve over the fixture Aggregate,
+// deploying it into one boundary.
+//
+// The boundary routes every sub-module the Aggregate imports, with an empty
+// routing body — the primary shape a Release places a module with, which places
+// every component that module contributes without restating any of them. It is
+// derived from the Aggregate rather than written per fixture because a fixture
+// that imports a module and deploys it nowhere is a Release the product refuses:
+// such a module's components render outside every declared boundary, so the shape
+// is one no real deployment can have and one no test should assert against.
+//
+// The boundary context is wired by the resolver's own walk rather than
+// hand-assigned. A hand-built map would be a second derivation of what a resolve
+// computes, and the two would agree only for as long as nobody changed either —
+// so the fixture would model a deployment the product cannot produce.
 func buildResolveResult(agg *types.Aggregate) *resolver.ResolveResult {
+	local := types.Boundary{Directory: "./output"}
+	if agg != nil {
+		for module := range agg.Spec.Aggregates.All() {
+			local.Aggregates.Set(module, types.AggregateRouting{})
+		}
+	}
 	boundaries := types.OrderedMap[types.Boundary]{}
-	boundaries.Set("local", types.Boundary{Directory: "./output"})
-	return &resolver.ResolveResult{
-		Aggregate: agg,
-		Release: &types.Release{
-			Metadata: types.ReleaseMetadata{Name: "test-release", Version: "1.0.0", Environment: "local"},
-			Spec: types.ReleaseSpec{
-				Boundaries: boundaries,
-			},
+	boundaries.Set("local", local)
+	release := &types.Release{
+		Metadata: types.ReleaseMetadata{Name: "test-release", Version: "1.0.0", Environment: "local"},
+		Spec: types.ReleaseSpec{
+			Boundaries: boundaries,
 		},
-		Manifest:      &types.Manifest{Metadata: types.ManifestMetadata{Version: "1.0.0"}},
-		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+	}
+	boundaryInfra, _, routedInfra := resolver.WireBoundaryContexts(types.NormalizeRelease(release))
+	return &resolver.ResolveResult{
+		Aggregate:            agg,
+		Release:              release,
+		Manifest:             &types.Manifest{Metadata: types.ManifestMetadata{Version: "1.0.0"}},
+		BoundaryInfra:        boundaryInfra,
+		RoutedAggregateInfra: routedInfra,
 	}
 }
 

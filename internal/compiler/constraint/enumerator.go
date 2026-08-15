@@ -194,6 +194,32 @@ type SubsystemEnumerator interface {
 	Subsystems() []AuthoredCoordinate
 }
 
+// ModuleEnumerator supplies the sub-module set: every module the composition
+// brought in, at every depth.
+//
+// Each value is the module's dotted prefix rather than a bare name, because
+// modules nest and two modules at different depths may carry one name. The
+// prefix is also the identity the module's own components carry in the flattened
+// set, which is what lets a rule keyed here read a fact about what the module
+// contributed.
+//
+// The coordinate carries the file that DECLARES the module, which is the
+// importing document rather than the module's own: a module is written as an
+// entry in its parent, so that is the site a rule about the module can name. It
+// is therefore an axis whose file genuinely differs from its outer coordinate's,
+// which is the case [AuthoredCoordinate] exists for.
+//
+// A module the composition did not bring in is absent, and the two ways that
+// happens are both deliberate. A module a false activation toggle removed was
+// never composed, so nothing it declares reached the build and no rule over the
+// build has anything to say about it. A module nothing loaded contributed
+// nothing for the same reason.
+type ModuleEnumerator interface {
+	// Modules returns every sub-module the composition brought in, in a
+	// deterministic order the implementation declares.
+	Modules() []AuthoredCoordinate
+}
+
 // NodeSocketEnumerator supplies the dependency sockets of one node: the set the
 // node's component type DECLARES, never the set the node populates.
 //

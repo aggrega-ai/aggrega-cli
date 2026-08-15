@@ -1019,3 +1019,50 @@ func newNodeArtifactSubject(sourceFile, node, artifact string, segments ...strin
 		artifact:   artifact,
 	}
 }
+
+// ModuleSubject is the subject of a check invoked once per sub-module the
+// composition brought in: one entry of an Aggregate's `aggregates` block, at
+// every depth.
+//
+// It is rooted at the module rather than at the components the module
+// contributes, and the two keyings are not equivalent. Keyed by the component,
+// a rule over what the deployment did with a module would be asked once per
+// component, would report one authoring fault as many, and would name a
+// component where the author's remedy is a single entry — and it would be asked
+// no times at all for a module contributing nothing, which is silence a caller
+// cannot tell from approval. Keyed here it is asked exactly once per module the
+// composition brought in, whatever that module holds.
+//
+// Its provenance is the document that DECLARES the module, which is the parent's
+// document rather than the module's own: the root Aggregate for a module the
+// application imports directly, and the importing module's document for one
+// nested inside it. That is where the entry a rule would send an author to fix
+// actually sits.
+type ModuleSubject interface {
+	Subject
+
+	// ModulePath is the module the check was invoked for, as every keyed fact
+	// takes it: the dotted prefix the module's components carry in the
+	// flattened set. It is the path through the nesting rather than one
+	// authored key, because modules nest and two modules at different depths
+	// may carry one name.
+	ModulePath() string
+
+	module()
+}
+
+type moduleSubject struct {
+	provenance
+	modulePath string
+}
+
+func (moduleSubject) module() {}
+
+func (s moduleSubject) ModulePath() string { return s.modulePath }
+
+func newModuleSubject(sourceFile, module string, segments ...string) ModuleSubject {
+	return moduleSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		modulePath: module,
+	}
+}

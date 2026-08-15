@@ -49,7 +49,7 @@ const (
 	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 1 declared fact.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
-	// SubjectNode is the subject kind node, keyed by 19 declared facts.
+	// SubjectNode is the subject kind node, keyed by 20 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 13 declared facts.
@@ -84,6 +84,9 @@ const (
 
 	// SubjectNodeParameter is the subject kind (node, parameter), keyed by 1 declared fact.
 	SubjectNodeParameter SubjectKind = "(node, parameter)"
+
+	// SubjectModule is the subject kind module, keyed by 1 declared fact.
+	SubjectModule SubjectKind = "module"
 
 	// SubjectNodeAttachmentPillarLeaf is the subject kind (node, attachment, pillar, leaf), keyed by 1 declared fact.
 	SubjectNodeAttachmentPillarLeaf SubjectKind = "(node, attachment, pillar, leaf)"
@@ -130,6 +133,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodePillarLeaf, Coordinates: []string{"node", "pillar", "leaf"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachment, Coordinates: []string{"boundary", "attachment"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeParameter, Coordinates: []string{"node", "parameter"}, Traversal: TraversalPull},
+	{Kind: SubjectModule, Coordinates: []string{"module"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentPillarLeaf, Coordinates: []string{"node", "attachment", "pillar", "leaf"}, Traversal: TraversalPull},
 	{Kind: SubjectNodePipelineStep, Coordinates: []string{"node", "pipeline-step"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentPipelineStep, Coordinates: []string{"node", "attachment", "pipeline-step"}, Traversal: TraversalPull},

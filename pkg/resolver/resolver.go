@@ -275,7 +275,7 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	// happens to agree.
 	var presented constraint.DocumentView = newAggregateDocumentView(
 		in.AggregatePath, in.AggregateRawBytes, contract)
-	advisories := findingsFromObjections(
+	advisories := FindingsFromObjections(
 		constraint.RunOnDocumentParameters(
 			in.AggregatePath,
 			presented.DeclaredParameterKeys(in.AggregatePath),

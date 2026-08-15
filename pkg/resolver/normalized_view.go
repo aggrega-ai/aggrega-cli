@@ -199,6 +199,28 @@ func newNormalizedView(
 	return v
 }
 
+// NormalizedView presents the two authoring documents, normalized and
+// parameter-interpolated with the catalog reachable, as the named facts complete
+// at that point in the compilation.
+//
+// It is the exported way to obtain that presentation, and it exists because a
+// later stage's presentation contains this one: the facts complete here stay
+// complete, so the value holding a later stage's product satisfies the earlier
+// contract by delegating to this rather than by re-projecting the same documents.
+// Re-projecting would give one fact two producers, and two producers of one fact
+// are free to disagree about it with nothing comparing them.
+//
+// The contracts the documents declare are resolved once, when this value is
+// built, exactly as they are for the guarded resolve that produced the documents.
+func NewNormalizedView(
+	na types.NormalizedAggregate,
+	release *types.Release,
+	catalog CatalogLookup,
+	parameters map[string]any,
+) constraint.NormalizedView {
+	return newNormalizedView(na, release, catalog, parameters)
+}
+
 // collectSubsystemFeatures records each declared scope's attachment block under
 // the scope path the enumerator names it by, descending into nested scopes, and
 // appends that path to order in the order the document declares it.

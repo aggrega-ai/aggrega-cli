@@ -43,6 +43,7 @@ type traversalFixture struct {
 	edges      []EdgeInstance
 	boundaries []AuthoredCoordinate
 	subsystems []AuthoredCoordinate
+	modules    []AuthoredCoordinate
 
 	sockets           map[string][]string
 	attachments       map[string][]string
@@ -75,6 +76,7 @@ func (f traversalFixture) Nodes() []NodeInstance            { return f.nodes }
 func (f traversalFixture) Edges() []EdgeInstance            { return f.edges }
 func (f traversalFixture) Boundaries() []AuthoredCoordinate { return f.boundaries }
 func (f traversalFixture) Subsystems() []AuthoredCoordinate { return f.subsystems }
+func (f traversalFixture) Modules() []AuthoredCoordinate    { return f.modules }
 
 func (f traversalFixture) NodeSockets(node string) []string { return f.sockets[fixtureKey(node)] }
 func (f traversalFixture) Attachments(node string) []string { return f.attachments[fixtureKey(node)] }
@@ -204,6 +206,16 @@ func newTraversalFixture() traversalFixture {
 		subsystems: []AuthoredCoordinate{
 			{Value: "web", SourceFile: "aggregate.yaml"},
 			{Value: "billing.payments", SourceFile: "billing/aggregate.yaml"},
+		},
+		// One nested module and one top-level module, reverse-alphabetical so a
+		// sort would be visible. The nested one carries the file that DECLARES it,
+		// which is the importing module's own document rather than the root's, and
+		// that pairing is what proves the composition axis is not a third copy of
+		// the two scope axes above: its levels sit one per document, so its
+		// locator names the level that document spells and no other.
+		modules: []AuthoredCoordinate{
+			{Value: "data", SourceFile: "aggregate.yaml"},
+			{Value: "billing.ledger", SourceFile: "billing/aggregate.yaml"},
 		},
 
 		sockets: map[string][]string{
@@ -559,6 +571,25 @@ func traversalCases() []traversalCase {
 			want: []string{
 				"billing/aggregate.yaml|.spec.subsystems.billing.subsystems.payments.features.tls",
 				"billing/aggregate.yaml|.spec.subsystems.billing.subsystems.payments.features.audit",
+			},
+		},
+		{
+			// The composition axis, and the contrast with the two scope cases
+			// above is the whole point of the transcript. A scope's every level
+			// appears under the container's key, because the levels are keys in
+			// one document; a module's do not, because they are keys in one
+			// document per level — so the nested module locates at
+			// .spec.aggregates.ledger in the document that imported it, never at
+			// .spec.aggregates.billing.aggregates.ledger, which is a path no file
+			// contains. Each invocation carries the declaring file, which for the
+			// nested module is the importing module's own.
+			kind: SubjectModule,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnModules(cancelled, f, v, raisingCheck[ModuleSubject]())
+			},
+			want: []string{
+				"aggregate.yaml|.spec.aggregates.data",
+				"billing/aggregate.yaml|.spec.aggregates.ledger",
 			},
 		},
 	}
@@ -1147,6 +1178,26 @@ func coordinateFlowCases() []coordinateFlowCase {
 				})
 			},
 			want: []string{"billing.payments|tls", "billing.payments|audit"},
+		},
+
+		// The composition axis reads back its coordinate whole, for the reason the
+		// scope axes do: a module's identity is the dotted prefix its components
+		// carry, two modules at different depths may carry one name, and a check
+		// reading a bare name would key facts that cannot tell them apart. It is
+		// the coordinate rather than the locator that carries the whole path here,
+		// and the two differ on this axis more than on any other — the locator
+		// names only the level the declaring document spells.
+		{
+			kind: SubjectModule,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, ModuleSubject]) ([]Objection, error) {
+					return RunOnModules(nil, f, traversalView{}, c)
+				}, func(s ModuleSubject) string {
+					return s.ModulePath()
+				})
+			},
+			want: []string{"data", "billing.ledger"},
 		},
 	}
 }

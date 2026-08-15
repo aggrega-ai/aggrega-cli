@@ -79,6 +79,7 @@ const (
 	authoredKeyBoundaries = "boundaries"
 	authoredKeySubsystems = "subsystems"
 	authoredKeyComponents = "components"
+	authoredKeyAggregates = "aggregates"
 )
 
 // scopeNesting describes one authoring axis whose scopes nest: the key the
@@ -96,12 +97,22 @@ type scopeNesting struct {
 	separator    string
 }
 
-// The two nesting axes, one per authoring document. Each separator is the one
-// the compiler composes that axis's path with, so a value handed to a traversal
-// splits back into the levels the author wrote.
+// The nesting axes. Each separator is the one the compiler composes that axis's
+// path with, so a value handed to a traversal splits back into the levels the
+// author wrote.
+//
+// The first two are the two authoring documents' own scopes, and both are
+// assembled by nestedScopeSegments. The third is the composition axis, and it is
+// paired here for the reason the type exists — so no call site pairs one axis's
+// key with another's separator — while being assembled differently, by
+// moduleAuthoredSegments. The difference is not a variant of one rule: a scope of
+// the first two nests inside ONE document, so every level of its path is a key in
+// that one file, whereas a module's levels are spread across one document per
+// level and only the last of them is a key in the file the locator names.
 var (
 	boundaryNesting  = scopeNesting{containerKey: authoredKeyBoundaries, separator: "/"}
 	subsystemNesting = scopeNesting{containerKey: authoredKeySubsystems, separator: "."}
+	moduleNesting    = scopeNesting{containerKey: authoredKeyAggregates, separator: "."}
 )
 
 // componentInnerSegments returns the segments naming an element authored inside
@@ -810,6 +821,53 @@ func RunOnBoundaryAttachments[V View](
 			}
 			return out
 		})
+}
+
+// RunOnModules invokes check once per sub-module the composition brought in, in
+// the order modules returns them.
+//
+// The locator is .spec.aggregates.<name> in the document that DECLARES the
+// module, under the LOCAL name written there — the last segment of the dotted
+// prefix, because a nested module is an entry in its importing module's own
+// document and that document spells it with the one name it has inside that
+// scope. Spelling it with the dotted prefix would name a key no file contains.
+//
+// It is not the nested-scope shape the two authoring documents' own scopes take,
+// and the difference is the reason it does not go through that helper: a
+// subsystem and a boundary nest INSIDE one document, so every level of the path
+// is a key in that one file, while a module's levels are spread across one
+// document per level. Repeating the container key here would name
+// .spec.aggregates.data.aggregates.inner in a file that contains only the inner
+// half.
+func RunOnModules[V View](
+	cancelled Cancellation,
+	modules ModuleEnumerator,
+	view V,
+	check Check[V, ModuleSubject],
+) ([]Objection, error) {
+	return runOverAuthoredScopes(cancelled, modules.Modules(), view, check.Run,
+		func(module AuthoredCoordinate) []ModuleSubject {
+			return []ModuleSubject{newModuleSubject(
+				module.SourceFile, module.Value,
+				moduleAuthoredSegments(module.Value)...,
+			)}
+		})
+}
+
+// moduleAuthoredSegments returns the segments naming where a sub-module was
+// declared: the `aggregates` entry in its importing document, under the local
+// name that document wrote.
+//
+// An empty path yields no segments, the mechanical form of not inventing a
+// locator: a module with no path is one this rule cannot name, and an empty
+// locator routes a consumer to file-level positioning rather than to a key that
+// is not there.
+func moduleAuthoredSegments(modulePath string) []string {
+	if modulePath == "" {
+		return nil
+	}
+	levels := strings.Split(modulePath, moduleNesting.separator)
+	return documentSpecSegments(moduleNesting.containerKey, levels[len(levels)-1])
 }
 
 // RunOnSubsystemAttachments invokes check once per Feature attachment declared on

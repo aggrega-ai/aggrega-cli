@@ -1732,6 +1732,59 @@ type TopologyView interface {
 	//
 	// Keyed by (node, socket); read from topology.TopologyResult.Edges.
 	ResolvedUsesSocketConnections(node string) types.OrderedMap[int]
+
+	// NodeBoundaryPlacement is the boundary a node was placed in, and whether
+	// anything placed it at all.
+	//
+	// A deployment places a component two ways and this answers for both,
+	// which is what makes it a reading of placement rather than of one
+	// spelling. A boundary names a component under the id it carries in the
+	// flattened set — for a component a module contributes, that is its
+	// qualified dotted id — and a boundary routes a whole module in at once,
+	// which places every component that module contains without naming any of
+	// them. The two are reconciled before this fact is produced, so a rule
+	// reading it cannot be written against one axis and quietly ignore the
+	// other.
+	//
+	// The second result is what a rule over placement turns on, and it is not
+	// a convenience. A component nothing placed is emitted outside every
+	// boundary the deployment declared, which is a defect the build otherwise
+	// reports nowhere; distinguishing it from a component placed in a boundary
+	// whose own path happens to be empty is what lets the rule name the first
+	// and pass the second.
+	//
+	// The path is the boundary's own nesting path rather than one authored
+	// key, because boundaries nest and two boundaries at different depths may
+	// carry one name.
+	//
+	// Keyed by node; read from topology.TopologyNode.BoundaryPath.
+	NodeBoundaryPlacement(node string) (string, bool)
+
+	// ModuleContributedNodes are the nodes a sub-module contributed to the
+	// flattened set, in the order the composition contributed them, including
+	// the nodes contributed by the modules nested inside it.
+	//
+	// It reads the module each node came from rather than a module's own
+	// component list, and the difference is what makes it answerable at all: a
+	// module's components are declared in that module's own document, and the
+	// identity a rule needs is the one each component carries after
+	// flattening. Reading the composition from the side it landed on gives
+	// both at once.
+	//
+	// The nested modules are included because a module's placement covers
+	// everything it contains: routing a module into a boundary places the
+	// components of every module nested inside it too, so a rule asking
+	// whether anything placed a module's components has to be asked over the
+	// same set that a placement would cover.
+	//
+	// An empty result is a real answer and not an absence. A module
+	// contributing no node has nothing that could be emitted outside a
+	// boundary, so a rule over placement passes it rather than reporting it,
+	// and a module a false activation toggle removed contributes nothing here
+	// because it was never composed.
+	//
+	// Keyed by module; read from topology.TopologyNode.SourceAggregate.
+	ModuleContributedNodes(module string) []string
 }
 
 // GraphView exposes the facts complete at the graph stage: the finalised

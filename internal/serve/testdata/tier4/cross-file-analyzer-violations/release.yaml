@@ -12,4 +12,9 @@ spec:
       directory: ./dist/main
       components:
         root-target: {}
+      # The module is placed by routing it, which puts every component it
+      # contributes in this boundary. Naming `sub` under `components` would name
+      # a component id nothing carries: the module contributes `sub.sub-target`,
+      # and the module's own name is not a component.
+      aggregates:
         sub: {}

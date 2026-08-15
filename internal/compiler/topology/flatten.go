@@ -43,6 +43,37 @@ type flattenResult struct {
 	// order is the order in which flattening encountered each pruned node, which
 	// is author order at every level.
 	Pruned types.OrderedMap[bool]
+	// Modules is every sub-module the composition brought in, in author order
+	// with an importing module before the modules nested inside it.
+	//
+	// It records the module itself rather than only the nodes it contributed,
+	// because a rule about what was done with a module has to be askable of a
+	// module that contributed nothing — a module absent from the record is a
+	// module such a rule is never asked about, which is silence a caller cannot
+	// tell from approval.
+	//
+	// A module a false `active` toggle removed is absent: nothing it declares was
+	// loaded, so no rule over the composed build has anything to say about it.
+	Modules []ModuleDeclaration
+}
+
+// ModuleDeclaration is one sub-module the composition brought in: the dotted
+// prefix its components carry in the flattened set, and the document that
+// declared it.
+//
+// The declaring document is the IMPORTING one — the root Aggregate for a module
+// the application imports directly, the importing module's own document for one
+// nested inside it — because that is where the `aggregates` entry a diagnostic
+// would point an author at actually sits. The module's own document declares its
+// contents and never its import.
+type ModuleDeclaration struct {
+	// Path is the module's dotted prefix, which is also the prefix every node it
+	// contributes carries.
+	Path string
+	// DeclaredIn is the Aggregate file holding the `aggregates` entry that
+	// imported the module. Empty when the caller supplied no path for that
+	// document, exactly as [TopologyNode.SourceFile] is.
+	DeclaredIn string
 }
 
 // evalActive interprets a component's or module's resolved `active` toggle.
@@ -180,6 +211,16 @@ func flattenAggregate(
 				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("%v", ErrSubAggregateLoad()))
 			}
 
+			// Recorded once the module has loaded and before its own tree is
+			// walked, so the order is the importing module before the modules
+			// nested inside it — the same outer-before-inner order the Release's
+			// routed-module report uses, so the two read against each other
+			// without either being re-sorted.
+			result.Modules = append(result.Modules, ModuleDeclaration{
+				Path:       childPrefix,
+				DeclaredIn: sourceFile,
+			})
+
 			childVisited := copyVisited(visited)
 			childVisited[subAgg.Type] = true
 
@@ -203,6 +244,7 @@ func flattenAggregate(
 			for id, feats := range childResult.FeatureAttachments {
 				result.FeatureAttachments[id] = append(result.FeatureAttachments[id], feats...)
 			}
+			result.Modules = append(result.Modules, childResult.Modules...)
 			// Walk the child's own encounter order rather than a plain-map range,
 			// so the merged set's order stays derived from authoring rather than
 			// from Go's map iteration.

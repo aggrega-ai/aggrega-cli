@@ -703,6 +703,24 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 				Violations: subErrs,
 			}
 		}
+
+		// The placement rule, asked of every sub-module the composition brought
+		// in. It is expressed as a declared check rather than as a guard written
+		// here, so where it runs follows from the facts it reads instead of from
+		// this call site: the facts are complete at this stage and nowhere
+		// earlier, because a module's node set exists only once the composition
+		// is flattened and a node's placement is written after that.
+		placementErrs, err := guardSubModulePlacement(ctx.Err, cfg, newStageView(cfg, flat, edges))
+		if err != nil {
+			return nil, err
+		}
+		if len(placementErrs) > 0 {
+			return result, &resolver.MultiResolverError{
+				Entity:     "sub-module placement",
+				Summary:    fmt.Sprintf("%d sub-module placement violation(s)", len(placementErrs)),
+				Violations: placementErrs,
+			}
+		}
 	}
 
 	return result, nil
