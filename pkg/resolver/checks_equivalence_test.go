@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -2133,6 +2135,905 @@ func TestTheConnectionDeliveryReferenceRuleAgreesWithItsHandWrittenReading(t *te
 				t.Errorf("the two readings cover the same delivery entries = %t; want %t:\n"+
 					"  declared:     %v\n  hand-written: %v",
 					got, tc.agree, declaredSet, handWrittenSet)
+			}
+		})
+	}
+}
+
+// ------------------------------------------------------------------ the rules
+// about a component's own injection block: what its type permits it to dictate,
+// and what its connections already claim
+
+// The types the self-delivery rows author against: one component type permitting
+// two mechanisms, one permitting a single mechanism whose name sorts against the
+// order a block enumerates its mechanisms in, and one permitting none at all —
+// the empty allowlist being the most constrained answer rather than an absent
+// one, so every mechanism dictated on that type is refused. The type the catalog
+// holds no entry for is the one the socket rows already name, reused so the two
+// families cannot drift about which identity is absent.
+const (
+	selfDeliveryOpenType     = "core/open-delivery:1.0.0"
+	selfDeliveryFileOnlyType = "core/file-delivery:1.0.0"
+	selfDeliveryClosedType   = "core/closed-delivery:1.0.0"
+)
+
+// selfDeliveryRuleCatalog holds entries for the three types above and for
+// nothing else.
+func selfDeliveryRuleCatalog() CatalogLookup {
+	open := types.Component{}
+	open.Metadata.Name = "core/open-delivery"
+	open.Spec.Inject = []string{"env", "arg"}
+
+	fileOnly := types.Component{}
+	fileOnly.Metadata.Name = "core/file-delivery"
+	fileOnly.Spec.Inject = []string{"file"}
+
+	closed := types.Component{}
+	closed.Metadata.Name = "core/closed-delivery"
+
+	return CatalogLookup{Component: func(uri string) (types.Component, bool) {
+		switch uri {
+		case selfDeliveryOpenType:
+			return open, true
+		case selfDeliveryFileOnlyType:
+			return fileOnly, true
+		case selfDeliveryClosedType:
+			return closed, true
+		}
+		return types.Component{}, false
+	}}
+}
+
+// mechanismDelivery is what one mechanism of an injection block delivers: the
+// mechanism the author named, and the keys under it in the order written.
+type mechanismDelivery struct {
+	name string
+	keys []string
+}
+
+// writtenBlock assembles an injection block the author wrote, whatever it
+// carries — including one written and left empty, which is a different document
+// from one not written at all and the two require opposite verdicts.
+//
+// The array authoring form is used throughout because it is the one shape
+// carrying the author's own order, so a row written against it can tell an answer
+// preserving that order from an answer that sorted it. Every entry carries a
+// literal rather than a reference, so no row here also states a fault the rule
+// about a delivery entry reading an unpublished key would report.
+func writtenBlock(mechanisms ...mechanismDelivery) *types.InjectBlock {
+	out := &types.InjectBlock{}
+	for _, m := range mechanisms {
+		entries := make([]any, 0, len(m.keys))
+		for _, k := range m.keys {
+			entries = append(entries, map[string]any{"in": k, "value": "a literal"})
+		}
+		switch m.name {
+		case "env":
+			out.Env = entries
+		case "file":
+			out.File = entries
+		case "arg":
+			out.Arg = entries
+		default:
+			out.Additional.Set(m.name, entries)
+		}
+	}
+	return out
+}
+
+// selfDeliveryComponent is one component of a self-delivery row: the type it
+// declares, the injection block it wrote (none where it wrote none), and the
+// connections its own dependency block carries under one socket.
+type selfDeliveryComponent struct {
+	name        string
+	typ         string
+	block       *types.InjectBlock
+	socket      string
+	connections []namedConnection
+}
+
+// selfDeliveryAggregate builds the components a row declares, in the order given.
+func selfDeliveryAggregate(components ...selfDeliveryComponent) *types.Aggregate {
+	comps := types.OrderedMap[types.ComponentInstance]{}
+	for _, c := range components {
+		inst := types.ComponentInstance{Type: c.typ, Inject: c.block}
+		if len(c.connections) > 0 {
+			socket := types.UsesSocketValue{}
+			for _, conn := range c.connections {
+				socket.Verbose.Set(conn.alias, types.VerboseUsesEntry{
+					Target: conn.target,
+					Inject: injectBlockOf(conn.block),
+				})
+			}
+			inst.Uses.Set(c.socket, socket)
+		}
+		comps.Set(c.name, inst)
+	}
+	return &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "self-delivery"},
+		Spec:     types.AggregateSpec{Components: comps},
+	}
+}
+
+// findingsCarrying returns the locators of the hand-written findings carrying one
+// rule's identity, in the order reported.
+//
+// The hand-written function beside these rules carries FOUR of them behind TWO
+// identities, and reaches a fifth rule's identity besides — the one about a type
+// resolved as a catalog identity nobody found. A row comparing one rule therefore
+// has to say which identity it means, or another rule's findings are counted as
+// this rule's coverage. Where two rules share one identity, what separates them
+// is the row's own allowlist state, which is stated at each test.
+func findingsCarrying(findings []*ResolverError, sentinel error) []string {
+	out := make([]string, 0, len(findings))
+	for _, f := range findings {
+		if errors.Is(f, sentinel) {
+			out = append(out, f.Field)
+		}
+	}
+	return out
+}
+
+// selfDeliveryBlockSite drops the injection-block segment from a locator that
+// carries one, leaving the component the locator names.
+//
+// It is the coverage key for the block rule, where the two readings name
+// DIFFERENT DEPTHS of one authored site for one fault: the declared rule names
+// the component, the hand-written reading names the injection block written on
+// it. Each side's full locator is asserted verbatim beside the comparison, so the
+// truncation cannot hide a difference in what is reported; it only stops a depth
+// difference being read as a coverage one.
+func selfDeliveryBlockSite(dotted string) string {
+	return strings.TrimSuffix(dotted, ".inject")
+}
+
+// selfDeliveryBlockSites returns the component each locator names, sorted.
+func selfDeliveryBlockSites(locators []string) []string {
+	out := make([]string, 0, len(locators))
+	for _, l := range locators {
+		out = append(out, selfDeliveryBlockSite(dottedFieldPath(l)))
+	}
+	return sortedCopy(out)
+}
+
+// The rule about an injection block written on a component type that permits no
+// delivery at all.
+//
+// 🔴 The two readings name DIFFERENT DEPTHS of one authored site: the declared
+// rule names the component, the hand-written reading names the injection block
+// written on it. That is a locator difference rather than a coverage one, so the
+// comparison runs over the component while each side's full locator is asserted
+// verbatim beside it.
+//
+// What separates this rule from the mechanism rule beside it — the two share one
+// identity on the hand-written side — is the row's allowlist state: the
+// hand-written function reaches the mechanism rule only for a type whose
+// allowlist is non-empty, which is exactly the state in which this rule is
+// silent. The state in which they overlap is measured in its own test below.
+//
+// Order is not a difference for this pair. Both readings walk the component
+// instances through one projection, which orders them by instance name, and the
+// hand-written function's own sort is by locator, which agrees with it here.
+func TestTheSelfDeliveryBlockPermittedRuleAgreesWithItsHandWrittenReading(t *testing.T) {
+	t.Parallel()
+
+	catalog := selfDeliveryRuleCatalog()
+
+	for _, tc := range []struct {
+		name       string
+		components []selfDeliveryComponent
+		// declared is the sequence the declared rule raises, one locator per
+		// component it reports, in the order the node walk reaches them.
+		declared []string
+		// handWritten is the sequence the hand-written reading reports under this
+		// rule's identity, spelled the way that reading spells an authored key.
+		handWritten []string
+		// agree records whether the two cover the same components. It is asserted
+		// rather than trusted, so a row cannot change class in silence.
+		agree bool
+	}{
+		{
+			// One component of each skipping kind sits beside the one fault, so
+			// every skip is exercised by its absence from both expectations rather
+			// than by a row that reports nothing at all. The reported component
+			// wrote its block and left it EMPTY, which is the document the rule
+			// exists to refuse and the one a rule reading mechanisms would accept.
+			name: "a block written on a type permitting nothing is reported; a block on a type permitting delivery, a type permitting nothing with no block, and a type the catalog holds no entry for are not",
+			components: []selfDeliveryComponent{
+				{name: "web", typ: selfDeliveryClosedType, block: writtenBlock()},
+				{name: "api", typ: selfDeliveryOpenType, block: writtenBlock(
+					mechanismDelivery{name: "env", keys: []string{"PORT"}})},
+				{name: "cache", typ: selfDeliveryClosedType},
+				{name: "ghost", typ: socketAbsentComponent, block: writtenBlock()},
+			},
+			declared:    []string{".spec.components.web"},
+			handWritten: []string{`.spec.components["web"].inject`},
+			agree:       true,
+		},
+		{
+			// Two reports, authored against their alphabetical order. With a single
+			// finding every ordering agrees, which is why the row above cannot carry
+			// the ordering claim and this one can.
+			name: "several reports come back in instance-name order on both sides",
+			components: []selfDeliveryComponent{
+				{name: "zeta", typ: selfDeliveryClosedType, block: writtenBlock()},
+				{name: "alpha", typ: selfDeliveryClosedType, block: writtenBlock()},
+			},
+			declared: []string{".spec.components.alpha", ".spec.components.zeta"},
+			handWritten: []string{
+				`.spec.components["alpha"].inject`,
+				`.spec.components["zeta"].inject`,
+			},
+			agree: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if len(tc.declared) == 0 && len(tc.handWritten) == 0 {
+				t.Fatal("this row expects nothing from either reading, so it cannot tell them " +
+					"apart and would pass however either one behaved")
+			}
+			if tc.agree && len(tc.handWritten) == 0 {
+				t.Fatal("an agreement row with no hand-written finding would compare two empty " +
+					"sets and report agreement without either reading having read anything")
+			}
+
+			na := normalized(t, selfDeliveryAggregate(tc.components...))
+			view := newNormalizedView(na, nil, catalog, nil)
+
+			objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+				nil, newCoordinateSet(view), view, selfInjectBlockAllowed)
+			if err != nil {
+				t.Fatalf("the node walk returned an error: %v", err)
+			}
+			fromDeclared := locatorsOf(objections)
+			fromHandWritten := findingsCarrying(
+				guardSelfInject(na, catalog), ErrSelfInjectForbidden())
+
+			if !equalStrings(fromDeclared, tc.declared) {
+				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
+			}
+			if !equalStrings(fromHandWritten, tc.handWritten) {
+				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
+			}
+
+			declaredSet := selfDeliveryBlockSites(fromDeclared)
+			handWrittenSet := selfDeliveryBlockSites(fromHandWritten)
+			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
+				t.Errorf("the two readings cover the same components = %t; want %t:\n"+
+					"  declared:     %v\n  hand-written: %v",
+					got, tc.agree, declaredSet, handWrittenSet)
+			}
+		})
+	}
+}
+
+// The rule about a delivery mechanism an injection block dictates that the
+// component's type does not permit.
+//
+// The two readings spell one locator identically once the bracketed component key
+// is rewritten, so the locator itself is the coverage key.
+//
+// What they do not share is ORDER, and the difference is measurable rather than
+// theoretical: the declared rule is invoked once per mechanism in the order the
+// block enumerates them — the mechanisms named as fields first, in that fixed
+// order, then the ones named beside them in author order — while the hand-written
+// function sorts its findings by locator before returning. A row whose refused
+// mechanisms are enumerated against their alphabetical order is what tells the two
+// apart.
+//
+// 🔴 The fourth row is a measured DISAGREEMENT and is the shape a reader needs: on
+// a type permitting nothing, the hand-written reading reports the BLOCK once and
+// stops, while this rule reports every MECHANISM the block dictates. The two
+// findings carry one identity, so a consumer counting by identity sees one
+// diagnostic become several.
+func TestTheSelfDeliveryMechanismPermittedRuleAgreesWithItsHandWrittenReading(t *testing.T) {
+	t.Parallel()
+
+	catalog := selfDeliveryRuleCatalog()
+
+	for _, tc := range []struct {
+		name        string
+		components  []selfDeliveryComponent
+		declared    []string
+		handWritten []string
+		agree       bool
+	}{
+		{
+			// The permitted mechanism sits beside the one fault, so the accept path
+			// is exercised by what the expectations do not contain.
+			name: "a mechanism outside the allowlist is reported; a permitted one is not",
+			components: []selfDeliveryComponent{
+				{name: "web", typ: selfDeliveryOpenType, block: writtenBlock(
+					mechanismDelivery{name: "env", keys: []string{"PORT"}},
+					mechanismDelivery{name: "file", keys: []string{"CONF"}})},
+			},
+			declared:    []string{".spec.components.web.inject.file"},
+			handWritten: []string{`.spec.components["web"].inject.file`},
+			agree:       true,
+		},
+		{
+			// A mechanism the product does not name among its own is dictated the
+			// same way and refused the same way, and it is enumerated after the
+			// three that are named as fields.
+			name: "a mechanism the product does not name among its own is reported alongside a field-named one",
+			components: []selfDeliveryComponent{
+				{name: "web", typ: selfDeliveryOpenType, block: writtenBlock(
+					mechanismDelivery{name: "arg", keys: []string{"FLAG"}},
+					mechanismDelivery{name: "file", keys: []string{"CONF"}},
+					mechanismDelivery{name: "secret_store", keys: []string{"PW"}})},
+			},
+			declared: []string{
+				".spec.components.web.inject.file",
+				".spec.components.web.inject.secret_store",
+			},
+			handWritten: []string{
+				`.spec.components["web"].inject.file`,
+				`.spec.components["web"].inject.secret_store`,
+			},
+			agree: true,
+		},
+		{
+			// The ordering row. Both mechanisms are refused, and the block
+			// enumerates them in the order it names its own fields — which is the
+			// reverse of the order the hand-written sort produces.
+			name: "two refused mechanisms come back in the block's own enumeration order and in locator order respectively",
+			components: []selfDeliveryComponent{
+				{name: "web", typ: selfDeliveryFileOnlyType, block: writtenBlock(
+					mechanismDelivery{name: "env", keys: []string{"PORT"}},
+					mechanismDelivery{name: "arg", keys: []string{"FLAG"}})},
+			},
+			declared: []string{
+				".spec.components.web.inject.env",
+				".spec.components.web.inject.arg",
+			},
+			handWritten: []string{
+				`.spec.components["web"].inject.arg`,
+				`.spec.components["web"].inject.env`,
+			},
+			agree: true,
+		},
+		{
+			// 🔴 The disagreement. The hand-written reading refuses the block for
+			// having been written at all and stops there, so it never asks about the
+			// mechanisms; this rule asks about each of them and refuses each against
+			// an allowlist admitting none. The hand-written locator below is the
+			// other rule's, which is precisely the point: one identity, one finding,
+			// where this rule raises three.
+			name: "a type permitting nothing draws one finding about the block and one objection per mechanism",
+			components: []selfDeliveryComponent{
+				{name: "web", typ: selfDeliveryClosedType, block: writtenBlock(
+					mechanismDelivery{name: "env", keys: []string{"PORT"}},
+					mechanismDelivery{name: "arg", keys: []string{"FLAG"}},
+					mechanismDelivery{name: "secret_store", keys: []string{"PW"}})},
+			},
+			declared: []string{
+				".spec.components.web.inject.env",
+				".spec.components.web.inject.arg",
+				".spec.components.web.inject.secret_store",
+			},
+			handWritten: []string{`.spec.components["web"].inject`},
+			agree:       false,
+		},
+		{
+			// A type the catalog holds no entry for ends this rule, exactly as it
+			// ends the block rule. The hand-written reading raises a different rule's
+			// identity there, which this row's identity filter excludes — so the
+			// component reported below is the control that keeps the silence
+			// attributable.
+			name: "a type the catalog holds no entry for is reported by neither, beside a component both report",
+			components: []selfDeliveryComponent{
+				{name: "ghost", typ: socketAbsentComponent, block: writtenBlock(
+					mechanismDelivery{name: "file", keys: []string{"CONF"}})},
+				{name: "web", typ: selfDeliveryOpenType, block: writtenBlock(
+					mechanismDelivery{name: "file", keys: []string{"CONF"}})},
+			},
+			declared:    []string{".spec.components.web.inject.file"},
+			handWritten: []string{`.spec.components["web"].inject.file`},
+			agree:       true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if len(tc.declared) == 0 && len(tc.handWritten) == 0 {
+				t.Fatal("this row expects nothing from either reading, so it cannot tell them apart")
+			}
+			if tc.agree && len(tc.handWritten) == 0 {
+				t.Fatal("an agreement row with no hand-written finding would compare two empty sets")
+			}
+
+			na := normalized(t, selfDeliveryAggregate(tc.components...))
+			view := newNormalizedView(na, nil, catalog, nil)
+			coordinates := newCoordinateSet(view)
+
+			objections, err := constraint.RunOnNodeMechanisms[constraint.NormalizedView](
+				nil, coordinates, coordinates, view, selfInjectMechanismAllowed)
+			if err != nil {
+				t.Fatalf("the mechanism walk returned an error: %v", err)
+			}
+			fromDeclared := locatorsOf(objections)
+			fromHandWritten := findingsCarrying(
+				guardSelfInject(na, catalog), ErrSelfInjectForbidden())
+
+			if !equalStrings(fromDeclared, tc.declared) {
+				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
+			}
+			if !equalStrings(fromHandWritten, tc.handWritten) {
+				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
+			}
+
+			declaredSet := sortedCopy(fromDeclared)
+			handWrittenSet := dottedCopy(fromHandWritten)
+			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
+				t.Errorf("the two readings cover the same mechanisms = %t; want %t:\n"+
+					"  declared:     %v\n  hand-written: %v",
+					got, tc.agree, declaredSet, handWrittenSet)
+			}
+		})
+	}
+}
+
+// The rule about a delivery key a component claims both in its own injection
+// block and on one of its connections.
+//
+// The two readings spell one locator identically once the bracketed keys are
+// rewritten, so the locator is the coverage key. They differ in ORDER — the
+// declared rule raises per key in the order the block enumerates its mechanisms
+// and then its keys, the hand-written function sorts its findings by locator —
+// and they differ in COVERAGE on the two inputs the last two rows measure.
+//
+// No row here claims one key under two mechanisms, so the rule beside this one,
+// which shares its identity, cannot contribute to any sequence below.
+func TestTheSelfDeliveryKeyAgainstAConnectionRuleAgreesWithItsHandWrittenReading(t *testing.T) {
+	t.Parallel()
+
+	catalog := selfDeliveryRuleCatalog()
+	claimed := func(keys ...string) deliveryBlock {
+		entries := make([]any, 0, len(keys))
+		for _, k := range keys {
+			entries = append(entries, verboseDelivery(k, ""))
+		}
+		return deliveryBlock{env: entries}
+	}
+
+	for _, tc := range []struct {
+		name        string
+		components  []selfDeliveryComponent
+		declared    []string
+		handWritten []string
+		agree       bool
+	}{
+		{
+			// The key only the block claims and the key only the connection claims
+			// sit beside the one contradiction, so both skips are exercised by their
+			// absence from the expectations.
+			name: "a key claimed by both the block and a connection is reported; a key claimed by only one of them is not",
+			components: []selfDeliveryComponent{{
+				name: "web", typ: selfDeliveryOpenType, socket: "db",
+				block: writtenBlock(mechanismDelivery{
+					name: "env", keys: []string{"OWN", "SHARED"}}),
+				connections: []namedConnection{
+					{alias: "primary", target: "cache", block: claimed("SHARED", "THEIRS")},
+				},
+			}},
+			declared:    []string{".spec.components.web.inject.env.SHARED"},
+			handWritten: []string{`.spec.components["web"].inject.env["SHARED"]`},
+			agree:       true,
+		},
+		{
+			// Two connections claiming one key is ONE contradiction on both sides:
+			// the correction is to the pair rather than to a connection, so neither
+			// reading multiplies the report by the connections that participate.
+			name: "two connections claiming one key draw one report from each reading",
+			components: []selfDeliveryComponent{{
+				name: "web", typ: selfDeliveryOpenType, socket: "db",
+				block: writtenBlock(mechanismDelivery{name: "env", keys: []string{"SHARED"}}),
+				connections: []namedConnection{
+					{alias: "primary", target: "cache", block: claimed("SHARED")},
+					{alias: "spare", target: "cache", block: claimed("SHARED")},
+				},
+			}},
+			declared:    []string{".spec.components.web.inject.env.SHARED"},
+			handWritten: []string{`.spec.components["web"].inject.env["SHARED"]`},
+			agree:       true,
+		},
+		{
+			// The ordering row: two contradictions on one mechanism, authored against
+			// their alphabetical order.
+			name: "several reports come back in the block's key order and in locator order respectively",
+			components: []selfDeliveryComponent{{
+				name: "web", typ: selfDeliveryOpenType, socket: "db",
+				block: writtenBlock(mechanismDelivery{name: "env", keys: []string{"ZED", "ALPHA"}}),
+				connections: []namedConnection{
+					{alias: "primary", target: "cache", block: claimed("ZED", "ALPHA")},
+				},
+			}},
+			declared: []string{
+				".spec.components.web.inject.env.ZED",
+				".spec.components.web.inject.env.ALPHA",
+			},
+			handWritten: []string{
+				`.spec.components["web"].inject.env["ALPHA"]`,
+				`.spec.components["web"].inject.env["ZED"]`,
+			},
+			agree: true,
+		},
+		{
+			// 🔴 A measured coverage difference. The hand-written reading refuses the
+			// block for having been written on a type permitting nothing and stops
+			// there, so it never asks about the keys; this rule carries no condition
+			// on what the type permits and reports the contradiction. The
+			// hand-written sequence below is empty UNDER THIS IDENTITY — the finding
+			// that reading does produce carries the other identity, which is what
+			// makes the difference invisible to a consumer matching on this one.
+			name: "a contradiction on a type permitting nothing is reported by the declared rule and by neither hand-written collision arm",
+			components: []selfDeliveryComponent{{
+				name: "web", typ: selfDeliveryClosedType, socket: "db",
+				block: writtenBlock(mechanismDelivery{name: "env", keys: []string{"SHARED"}}),
+				connections: []namedConnection{
+					{alias: "primary", target: "cache", block: claimed("SHARED")},
+				},
+			}},
+			declared:    []string{".spec.components.web.inject.env.SHARED"},
+			handWritten: nil,
+			agree:       false,
+		},
+		{
+			// 🔴 The same difference on the other input that ends the hand-written
+			// walk early: a component type the catalog holds no entry for.
+			name: "a contradiction on a type the catalog holds no entry for is reported by the declared rule alone",
+			components: []selfDeliveryComponent{{
+				name: "web", typ: socketAbsentComponent, socket: "db",
+				block: writtenBlock(mechanismDelivery{name: "env", keys: []string{"SHARED"}}),
+				connections: []namedConnection{
+					{alias: "primary", target: "cache", block: claimed("SHARED")},
+				},
+			}},
+			declared:    []string{".spec.components.web.inject.env.SHARED"},
+			handWritten: nil,
+			agree:       false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if len(tc.declared) == 0 && len(tc.handWritten) == 0 {
+				t.Fatal("this row expects nothing from either reading, so it cannot tell them apart")
+			}
+			if tc.agree && len(tc.handWritten) == 0 {
+				t.Fatal("an agreement row with no hand-written finding would compare two empty sets")
+			}
+
+			na := normalized(t, selfDeliveryAggregate(tc.components...))
+			view := newNormalizedView(na, nil, catalog, nil)
+			coordinates := newCoordinateSet(view)
+
+			objections, err := constraint.RunOnNodeMechanismDeliveryKeys[constraint.NormalizedView](
+				nil, coordinates, coordinates, coordinates, view, selfInjectKeyNotAlsoOnAConnection)
+			if err != nil {
+				t.Fatalf("the delivery-key walk returned an error: %v", err)
+			}
+			fromDeclared := locatorsOf(objections)
+			fromHandWritten := findingsCarrying(
+				guardSelfInject(na, catalog), ErrInjectKeyCollision())
+
+			if !equalStrings(fromDeclared, tc.declared) {
+				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
+			}
+			if !equalStrings(fromHandWritten, tc.handWritten) {
+				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
+			}
+
+			declaredSet := sortedCopy(fromDeclared)
+			handWrittenSet := dottedCopy(fromHandWritten)
+			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
+				t.Errorf("the two readings cover the same delivery keys = %t; want %t:\n"+
+					"  declared:     %v\n  hand-written: %v",
+					got, tc.agree, declaredSet, handWrittenSet)
+			}
+		})
+	}
+}
+
+// The rule about a delivery key an injection block claims under more than one
+// mechanism.
+//
+// One report per participating mechanism is the claim on both sides, so an author
+// correcting the contradiction sees every site that states it. The two readings
+// spell one locator identically once the bracketed keys are rewritten, and they
+// differ in ORDER and — on the two inputs the last rows measure — in COVERAGE.
+//
+// No component here writes a dependency block, so the rule beside this one, which
+// shares its identity, cannot contribute to any sequence below.
+func TestTheSelfDeliveryKeyAcrossMechanismsRuleAgreesWithItsHandWrittenReading(t *testing.T) {
+	t.Parallel()
+
+	catalog := selfDeliveryRuleCatalog()
+
+	for _, tc := range []struct {
+		name        string
+		components  []selfDeliveryComponent
+		declared    []string
+		handWritten []string
+		agree       bool
+	}{
+		{
+			// The key claimed under one mechanism only sits beside the one
+			// contradiction, so the skip is exercised by its absence from both
+			// expectations. Both participating mechanisms are reported, which is what
+			// makes the multiplicity claim measured rather than assumed.
+			name: "a key claimed under two mechanisms is reported once per mechanism; a key claimed under one is not reported",
+			components: []selfDeliveryComponent{{
+				name: "web", typ: selfDeliveryOpenType,
+				block: writtenBlock(
+					mechanismDelivery{name: "env", keys: []string{"SHARED", "OWN"}},
+					mechanismDelivery{name: "arg", keys: []string{"SHARED"}}),
+			}},
+			declared: []string{
+				".spec.components.web.inject.env.SHARED",
+				".spec.components.web.inject.arg.SHARED",
+			},
+			handWritten: []string{
+				`.spec.components["web"].inject.arg["SHARED"]`,
+				`.spec.components["web"].inject.env["SHARED"]`,
+			},
+			agree: true,
+		},
+		{
+			// Three mechanisms claiming one key is three reports, not one and not
+			// three-choose-two: the report is per site that states the contradiction.
+			name: "three mechanisms claiming one key draw three reports from each reading",
+			components: []selfDeliveryComponent{{
+				name: "web", typ: selfDeliveryOpenType,
+				block: writtenBlock(
+					mechanismDelivery{name: "env", keys: []string{"SHARED"}},
+					mechanismDelivery{name: "arg", keys: []string{"SHARED"}},
+					mechanismDelivery{name: "secret_store", keys: []string{"SHARED"}}),
+			}},
+			declared: []string{
+				".spec.components.web.inject.env.SHARED",
+				".spec.components.web.inject.arg.SHARED",
+				".spec.components.web.inject.secret_store.SHARED",
+			},
+			handWritten: []string{
+				`.spec.components["web"].inject.arg["SHARED"]`,
+				`.spec.components["web"].inject.env["SHARED"]`,
+				`.spec.components["web"].inject.secret_store["SHARED"]`,
+			},
+			agree: true,
+		},
+		{
+			// 🔴 The same coverage difference the rule beside this one shows, on the
+			// same two inputs, and for the same reason: the hand-written reading
+			// stops at the block, this rule carries no condition on what the type
+			// permits.
+			name: "a contradiction on a type permitting nothing is reported by the declared rule alone",
+			components: []selfDeliveryComponent{{
+				name: "web", typ: selfDeliveryClosedType,
+				block: writtenBlock(
+					mechanismDelivery{name: "env", keys: []string{"SHARED"}},
+					mechanismDelivery{name: "arg", keys: []string{"SHARED"}}),
+			}},
+			declared: []string{
+				".spec.components.web.inject.env.SHARED",
+				".spec.components.web.inject.arg.SHARED",
+			},
+			handWritten: nil,
+			agree:       false,
+		},
+		{
+			name: "a contradiction on a type the catalog holds no entry for is reported by the declared rule alone",
+			components: []selfDeliveryComponent{{
+				name: "web", typ: socketAbsentComponent,
+				block: writtenBlock(
+					mechanismDelivery{name: "env", keys: []string{"SHARED"}},
+					mechanismDelivery{name: "arg", keys: []string{"SHARED"}}),
+			}},
+			declared: []string{
+				".spec.components.web.inject.env.SHARED",
+				".spec.components.web.inject.arg.SHARED",
+			},
+			handWritten: nil,
+			agree:       false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if len(tc.declared) == 0 && len(tc.handWritten) == 0 {
+				t.Fatal("this row expects nothing from either reading, so it cannot tell them apart")
+			}
+			if tc.agree && len(tc.handWritten) == 0 {
+				t.Fatal("an agreement row with no hand-written finding would compare two empty sets")
+			}
+
+			na := normalized(t, selfDeliveryAggregate(tc.components...))
+			view := newNormalizedView(na, nil, catalog, nil)
+			coordinates := newCoordinateSet(view)
+
+			objections, err := constraint.RunOnNodeMechanismDeliveryKeys[constraint.NormalizedView](
+				nil, coordinates, coordinates, coordinates, view, selfInjectKeyNotOnTwoMechanisms)
+			if err != nil {
+				t.Fatalf("the delivery-key walk returned an error: %v", err)
+			}
+			fromDeclared := locatorsOf(objections)
+			fromHandWritten := findingsCarrying(
+				guardSelfInject(na, catalog), ErrInjectKeyCollision())
+
+			if !equalStrings(fromDeclared, tc.declared) {
+				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
+			}
+			if !equalStrings(fromHandWritten, tc.handWritten) {
+				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
+			}
+
+			declaredSet := sortedCopy(fromDeclared)
+			handWrittenSet := dottedCopy(fromHandWritten)
+			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
+				t.Errorf("the two readings cover the same delivery keys = %t; want %t:\n"+
+					"  declared:     %v\n  hand-written: %v",
+					got, tc.agree, declaredSet, handWrittenSet)
+			}
+		})
+	}
+}
+
+// How many diagnostics one document draws from the four self-delivery rules, read
+// from each reading in turn.
+//
+// It is written as a count rather than as locators alone because the count is the
+// thing that changes for a user, and because no single cross-check above can state
+// it: each of those holds ONE declared rule beside the hand-written function,
+// while a build asks all four at once. The document below is the worst case on
+// purpose — a component type permitting nothing, a block dictating three
+// mechanisms, one key claimed under two of them and one of those also claimed by a
+// connection — so every rule in the family has something to say about it.
+func TestTheSelfDeliveryReadingsReportOneDocumentAtDifferentMultiplicity(t *testing.T) {
+	t.Parallel()
+
+	catalog := selfDeliveryRuleCatalog()
+	na := normalized(t, selfDeliveryAggregate(selfDeliveryComponent{
+		name: "web", typ: selfDeliveryClosedType, socket: "db",
+		block: writtenBlock(
+			mechanismDelivery{name: "env", keys: []string{"SHARED"}},
+			mechanismDelivery{name: "arg", keys: []string{"SHARED"}},
+			mechanismDelivery{name: "secret_store", keys: []string{"PW"}}),
+		connections: []namedConnection{
+			{alias: "primary", target: "cache", block: deliveryBlock{
+				env: []any{verboseDelivery("SHARED", "")}}},
+		},
+	}))
+	view := newNormalizedView(na, nil, catalog, nil)
+	coordinates := newCoordinateSet(view)
+
+	// The hand-written reading refuses the block once and stops, so nothing it
+	// reports names a mechanism or a key.
+	handWritten := guardSelfInject(na, catalog)
+	if want := []string{`.spec.components["web"].inject`}; !equalStrings(fieldsOf(handWritten), want) {
+		t.Fatalf("hand-written findings = %v; want %v — one finding, about the block",
+			fieldsOf(handWritten), want)
+	}
+
+	nodes, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, coordinates, view, selfInjectBlockAllowed)
+	if err != nil {
+		t.Fatalf("the node walk returned an error: %v", err)
+	}
+	mechanisms, err := constraint.RunOnNodeMechanisms[constraint.NormalizedView](
+		nil, coordinates, coordinates, view, selfInjectMechanismAllowed)
+	if err != nil {
+		t.Fatalf("the mechanism walk returned an error: %v", err)
+	}
+	againstConnection, err := constraint.RunOnNodeMechanismDeliveryKeys[constraint.NormalizedView](
+		nil, coordinates, coordinates, coordinates, view, selfInjectKeyNotAlsoOnAConnection)
+	if err != nil {
+		t.Fatalf("the delivery-key walk returned an error: %v", err)
+	}
+	acrossMechanisms, err := constraint.RunOnNodeMechanismDeliveryKeys[constraint.NormalizedView](
+		nil, coordinates, coordinates, coordinates, view, selfInjectKeyNotOnTwoMechanisms)
+	if err != nil {
+		t.Fatalf("the second delivery-key walk returned an error: %v", err)
+	}
+
+	for _, got := range []struct {
+		rule       string
+		locators   []string
+		wantRaised []string
+	}{
+		{"the block rule", locatorsOf(nodes), []string{".spec.components.web"}},
+		{"the mechanism rule", locatorsOf(mechanisms), []string{
+			".spec.components.web.inject.env",
+			".spec.components.web.inject.arg",
+			".spec.components.web.inject.secret_store",
+		}},
+		{"the rule against a connection", locatorsOf(againstConnection), []string{
+			".spec.components.web.inject.env.SHARED",
+		}},
+		{"the rule across mechanisms", locatorsOf(acrossMechanisms), []string{
+			".spec.components.web.inject.env.SHARED",
+			".spec.components.web.inject.arg.SHARED",
+		}},
+	} {
+		if !equalStrings(got.locators, got.wantRaised) {
+			t.Errorf("%s raised %v; want %v", got.rule, got.locators, got.wantRaised)
+		}
+	}
+
+	declared := len(nodes) + len(mechanisms) + len(againstConnection) + len(acrossMechanisms)
+	if declared != 7 {
+		t.Errorf("the four declared rules raised %d objections; want 7", declared)
+	}
+	if len(handWritten) != 1 {
+		t.Errorf("the hand-written reading produced %d findings; want 1", len(handWritten))
+	}
+}
+
+// The order an injection block enumerates its mechanisms in, read from a real
+// authoring document rather than from a hand-built value.
+//
+// It matters to the rules above because two of them are invoked once per
+// mechanism, so this order IS the order their diagnostics come back in. A
+// hand-built block cannot establish it: assigning the fields in Go fixes the
+// order by construction, and the question is what the AUTHOR's own order does to
+// it. So the block below is unmarshalled from the text an author writes.
+//
+// The order is by shape, not by authored position: the three mechanisms the block
+// names as its own fields come first, in the order it names them, and the
+// mechanisms named beside those follow in the order the author wrote them. Every
+// row authors its mechanisms against that order, so no row can pass by accident
+// of having written them in it.
+func TestAnInjectionBlockEnumeratesTheMechanismsItNamesAsFieldsFirst(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		document string
+		want     []string
+	}{
+		{
+			name:     "a field-named mechanism written second is enumerated first",
+			document: "arg:\n  FLAG: x\nenv:\n  PORT: \"1\"\n",
+			want:     []string{"env", "arg"},
+		},
+		{
+			// Each row below pairs mechanisms from a DIFFERENT position of the
+			// block's own field order, so no single reordering of those fields can
+			// leave the whole table passing. A table whose rows all omit one field
+			// cannot see that field move, and reports the omission as agreement.
+			name:     "the first two field-named mechanisms hold their relative order against the author's",
+			document: "file:\n  CONF: c\nenv:\n  PORT: \"1\"\n",
+			want:     []string{"env", "file"},
+		},
+		{
+			name:     "a mechanism named beside the fields is enumerated after them however early it is written",
+			document: "secret_store:\n  PW: y\nenv:\n  PORT: \"1\"\n",
+			want:     []string{"env", "secret_store"},
+		},
+		{
+			name:     "the two orderings compose: every field in the block's own order, then the rest in the author's",
+			document: "vault:\n  T: t\narg:\n  FLAG: x\nfile:\n  CONF: c\nsecret_store:\n  PW: y\nenv:\n  PORT: \"1\"\n",
+			want:     []string{"env", "file", "arg", "vault", "secret_store"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var block types.InjectBlock
+			if err := yaml.Unmarshal([]byte(tc.document), &block); err != nil {
+				t.Fatalf("reading the document: %v", err)
+			}
+			// Without this the row would pass over a block that decoded only part of
+			// the document, which is what an unmarshalling bypassing the block's own
+			// reader produces: the mechanisms named beside the fields vanish and the
+			// remaining order still looks correct.
+			if got := len(InjectMechanismNames(&block)); got != len(tc.want) {
+				t.Fatalf("the document yielded %d mechanisms (%v); want %d — the block was not "+
+					"read as the author wrote it", got, InjectMechanismNames(&block), len(tc.want))
+			}
+			if got := InjectMechanismNames(&block); !equalStrings(got, tc.want) {
+				t.Errorf("mechanism enumeration = %v; want %v", got, tc.want)
 			}
 		})
 	}
