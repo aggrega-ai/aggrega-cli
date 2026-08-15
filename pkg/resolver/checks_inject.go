@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package resolver
+
+import (
+	"slices"
+	"sort"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+)
+
+// The rules over what a delivery entry reads from, expressed as constraint
+// declarations. See checks.go for what a declaration here is.
+//
+// One rule over two surfaces, declared twice because the two resolve their
+// reference against different components: an entry in a component's own
+// injection block reads from that component's own published contract, while an
+// entry on a connection reads from the contract of the component the connection
+// points at. The surfaces are separately authored and independently absent, so
+// neither declaration can stand in for the other.
+
+// selfInjectReferenceIsPublished reports each delivery entry in a component's
+// own injection block that reads from a key the component's type does not
+// publish.
+//
+// An entry may carry a literal instead of a reference, and a literal is nothing
+// to resolve — which is why the rule reads whether the entry references a
+// published key at all before reading which one. A single answer would merge a
+// literal with a reference to the empty key and report the entry that referenced
+// nothing rather than the one that referenced wrongly.
+//
+// A component type the catalog holds no entry for ends the rule: the published
+// set reads empty for it exactly as it does for a type publishing nothing, so
+// refusing every reference against it would report the wrong thing. What that
+// absence means is a separate rule's question.
+//
+// The detail is the key the entry reads from, the component type it was resolved
+// against, and then the keys that type publishes, sorted — the alternatives an
+// author picks from.
+var selfInjectReferenceIsPublished = constraint.Check[
+	constraint.NormalizedView,
+	constraint.NodeMechanismDeliveryKeySubject,
+]{
+	Sentinel: ErrInvalidInjectKey(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.NormalizedView,
+		s constraint.NodeMechanismDeliveryKeySubject,
+	) []constraint.Objection {
+		reference, isReference := v.AuthoredInjectProvidesReference(
+			s.NodeID(), s.MechanismName(), s.DeliveryKey())
+		if !isReference {
+			return nil
+		}
+		componentType, present := v.InstanceComponentType(s.NodeID())
+		if !present || !v.CatalogComponentPresent(componentType) {
+			return nil
+		}
+		published := v.DeclaredProvidesKeys(componentType)
+		if slices.Contains(published, reference) {
+			return nil
+		}
+		return []constraint.Objection{s.Raise(ErrInvalidInjectKey(),
+			append([]string{reference, componentType}, published...)...)}
+	},
+}
+
+// connectionInjectReferenceIsPublished reports each delivery entry on one
+// connection that reads from a key the component the connection points at does
+// not publish.
+//
+// The component it resolves against is the one the connection names, falling
+// back to the connection's own alias when the entry names no target — which is
+// the same fallback that draws the edge, so the rule resolves against the
+// component the build wires rather than against a second reading of the same
+// authoring.
+//
+// A target naming no component the application declares ends the rule. Such a
+// component exists only once the composition is flattened, so there is no
+// published contract here to measure the reference against.
+//
+// Delivery entries are read out of the connection's own authored payload, and
+// the entries of one mechanism are reported in key order. Only one of the shapes
+// an author may write that payload in carries an order of its own, so reporting
+// in the order the payload yields would make the emitted set depend on which
+// shape was written.
+//
+// The detail is the mechanism, the delivery key, the key the entry reads from,
+// the component type it was resolved against, and then the keys that type
+// publishes, sorted.
+var connectionInjectReferenceIsPublished = constraint.Check[
+	constraint.NormalizedView,
+	constraint.EdgeSubject,
+]{
+	Sentinel: ErrInvalidInjectKey(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.NormalizedView,
+		s constraint.EdgeSubject,
+	) []constraint.Objection {
+		dictated := v.AuthoredPerEdgeInject(s.NodeID(), s.SocketName(), s.AliasName())
+		if dictated.Len() == 0 {
+			return nil
+		}
+		target := v.PerEdgeTarget(s.NodeID(), s.SocketName(), s.AliasName())
+		if target == "" {
+			target = s.AliasName()
+		}
+		targetType, present := v.InstanceComponentType(target)
+		if !present || !v.CatalogComponentPresent(targetType) {
+			return nil
+		}
+		published := v.DeclaredProvidesKeys(targetType)
+
+		var out []constraint.Objection
+		for mechanism, payload := range dictated.All() {
+			references := connectionProvidesReferences(payload)
+			for _, entry := range references {
+				if slices.Contains(published, entry.providesKey) {
+					continue
+				}
+				out = append(out, s.Raise(ErrInvalidInjectKey(),
+					append([]string{mechanism, entry.deliveryKey, entry.providesKey, targetType},
+						published...)...))
+			}
+		}
+		return out
+	},
+}
+
+// connectionProvidesReferences is the published-key references one mechanism's
+// authored delivery payload carries, in delivery-key order.
+//
+// It reads the payload through the same decoder the component's own injection
+// block is read with, in the mode that treats a bare string value as a reference
+// — which is what a connection's delivery entry is, where the same shape in a
+// component's own block is a literal.
+//
+// The ordering is this reader's own and not the payload's. Of the shapes an
+// author may write a delivery payload in, only one carries an order, so a reader
+// yielding entries in payload order would emit a different sequence for two
+// documents that say the same thing.
+func connectionProvidesReferences(payload any) []fromEntry {
+	entries := decodeFromEntries(payload, false)
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].deliveryKey < entries[j].deliveryKey
+	})
+	return entries
+}

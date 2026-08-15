@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package resolver
+
+import (
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+)
+
+// componentTypeResolvesToACatalogEntry reports each component whose type was
+// resolved as a catalog identity and which the catalog this build consults holds
+// no entry for.
+//
+// It is a rule in its own right rather than a condition inside the rules that
+// meet it, and expressing it once is what lets every other rule over what a
+// component type declares simply end when the entry is absent. Each of those
+// reads a name set or a resolved contract that comes back empty for a type
+// nobody found exactly as it does for a type declaring nothing, so a rule
+// carrying its own classification would be stating this one a second time and
+// the copies would answer differently the moment either moved.
+//
+// Two conditions make the finding, and reading one without the other reports the
+// wrong thing in a way nothing catches. Absence alone is not a fault: a type
+// addressed as a path beside the authoring document has no catalog entry to find,
+// so its absence is the expected outcome. Absence of a type addressed as an
+// identity is a divergence between what the build resolved and what the rules can
+// see, because a genuinely unresolvable reference halts before any of this is
+// asked. The two facts are independent — one is a property of the reference as
+// authored, the other of what the catalog holds — which is why both are read
+// here and neither is inferred from the other.
+//
+// It is keyed by the component rather than by the type, so one absent entry is
+// reported once per component that names it. The component is the site an author
+// can act on; the type alone would leave them looking for which component meant
+// it, and a type several components name would be reported once for all of them.
+//
+// The detail is the type as the component declared it.
+var componentTypeResolvesToACatalogEntry = constraint.Check[
+	constraint.NormalizedView,
+	constraint.NodeSubject,
+]{
+	Sentinel: ErrGuardEntityViewInconsistency(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.NormalizedView,
+		s constraint.NodeSubject,
+	) []constraint.Objection {
+		componentType, present := v.InstanceComponentType(s.NodeID())
+		if !present {
+			return nil
+		}
+		if v.CatalogComponentPresent(componentType) {
+			return nil
+		}
+		if v.ComponentTypeIsLocalPath(componentType) {
+			return nil
+		}
+		return []constraint.Objection{
+			s.Raise(ErrGuardEntityViewInconsistency(), componentType),
+		}
+	},
+}

@@ -431,20 +431,28 @@ func validatePillarConformance(
 	entity, fieldPrefix, schemaLabel string,
 	skipPredicates bool,
 ) []*ResolverError {
-	pillarSchema, ok := pillarSubSchema(compiled, pillar)
-	if !ok {
-		return nil // no such pillar declared → nothing to validate
+	findings := pillarConformanceFindings(compiled, pillar, instance, parameters, skipPredicates)
+	errs := make([]*ResolverError, 0, len(findings))
+	for _, f := range findings {
+		field := fieldPrefix
+		if f.path != "" {
+			field = fieldPrefix + "." + f.path
+		}
+		msg := f.reason
+		if f.keyword != "" {
+			msg = fmt.Sprintf("%s (%s)", msg, f.keyword)
+		}
+		errs = append(errs, &ResolverError{
+			Entity:  entity,
+			Field:   field,
+			Message: fmt.Sprintf("%s pillar does not conform to %s: %s", pillar, schemaLabel, msg),
+			Err:     ErrSchemaConformance(),
+		})
 	}
-
-	effective := compactform.MergeSchemaDefaults(instance, compactform.PillarDefaults(compiled, pillar))
-	normalised, err := normalisePillarInstance(effective)
-	if err != nil {
-		return nil // a non-marshalable instance is not a conformance violation
+	if len(errs) == 0 {
+		return nil
 	}
-
-	return pillarConformanceErrors(
-		pillar, pillarSchema, compiled, normalised, parameters,
-		entity, fieldPrefix, schemaLabel, skipPredicates)
+	return errs
 }
 
 // validateValuesConformance validates a component instance's authored values
@@ -478,31 +486,62 @@ func validateInfraConformance(
 		entity, componentField, "the Component schema")
 }
 
-// pillarConformanceErrors validates a normalised pillar instance against the
-// pillar's sub-schema and maps the resulting findings to ResolverErrors wrapping
-// ErrSchemaConformance. The pillar instance is wrapped one level deep
-// ({<pillar>: instance} against {properties: {<pillar>: schema}}) so the
-// findings' field paths lead with the pillar name (values.x / infra.x), and the
-// compiled schema's root definitional context ($defs / definitions) is carried
-// onto the wrapper so a single-document $ref/allOf inside the pillar schema
-// resolves. schemaLabel names the contract in the error message (e.g. "the
-// Component schema"). Returns nil when the wrapper does not compile or the
-// instance conforms.
+// pillarFinding is one way a pillar instance fails the contract declared over
+// it: the path the failure landed on, which leads with the pillar name, the
+// constraint keyword that failed, and why — with the reason withheld when the
+// leaf is one the contract declares sensitive.
+//
+// It is the conformance answer before anything is done with it. Two callers
+// need that answer in two shapes — one builds the finding shape a resolve
+// reports across, the other raises it as an objection carrying provenance
+// supplied to it — and both read this, so neither can hold a different idea of
+// what conforms.
+type pillarFinding struct {
+	path    string
+	keyword string
+	reason  string
+}
+
+// pillarConformanceFindings validates a pillar instance against the named
+// pillar of an already-compiled schema, closed and default-aware, and returns
+// one finding per independent violation.
+//
+// The pillar instance is wrapped one level deep ({<pillar>: instance} against
+// {properties: {<pillar>: schema}}) so the findings' paths lead with the pillar
+// name (values.x / infra.x), and the compiled schema's root definitional
+// context ($defs / definitions) is carried onto the wrapper so a
+// single-document $ref/allOf inside the pillar schema resolves. Only the
+// leaf-most findings are kept — the validator reports a failure at every level
+// along a path — so one violation yields one finding while independent
+// violations stay distinct.
 //
 // This is the one site holding both a finding's value-bearing text and the
 // schema that says whether the leaf it failed on is sensitive; downstream every
 // consumer sees an opaque string with that fact already gone. So the
 // substitution happens here, and the authored declarations are read through
 // their single home rather than recomputed.
-func pillarConformanceErrors(
-	pillar string,
-	pillarSchema map[string]any,
+//
+// Returns nil when the schema declares no such pillar, when the instance does
+// not marshal, when the wrapper does not compile, or when the instance
+// conforms.
+func pillarConformanceFindings(
 	compiled compactform.Schema,
-	instance any,
+	pillar string,
+	instance types.OrderedMap[any],
 	parameters map[string]any,
-	entity, componentField, schemaLabel string,
 	skipPredicates bool,
-) []*ResolverError {
+) []pillarFinding {
+	pillarSchema, ok := pillarSubSchema(compiled, pillar)
+	if !ok {
+		return nil // no such pillar declared → nothing to validate
+	}
+
+	effective := compactform.MergeSchemaDefaults(instance, compactform.PillarDefaults(compiled, pillar))
+	normalised, err := normalisePillarInstance(effective)
+	if err != nil {
+		return nil // a non-marshalable instance is not a conformance violation
+	}
+
 	wrapper := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{pillar: pillarSchema},
@@ -516,7 +555,7 @@ func pillarConformanceErrors(
 	if defs, present := compiled["definitions"]; present {
 		wrapper["definitions"] = defs
 	}
-	wrapped := map[string]any{pillar: instance}
+	wrapped := map[string]any{pillar: normalised}
 
 	v, err := newPillarValidator(wrapper)
 	if err != nil {
@@ -531,33 +570,21 @@ func pillarConformanceErrors(
 	// The validator emits a finding at every level along a failure path (the
 	// failing leaf plus each ancestor object). Keep only the leaf-most findings
 	// — drop any whose FieldPath is a strict segment-wise prefix of another's —
-	// so one violation maps to one error while independent violations stay
+	// so one violation maps to one finding while independent violations stay
 	// distinct.
 	leaves := leafmostFindings(rpt.Findings)
 
 	declared := DeclaredSensitiveLeaves(compiled)
 
-	errs := make([]*ResolverError, 0, len(leaves))
+	out := make([]pillarFinding, 0, len(leaves))
 	for _, f := range leaves {
-		field := componentField
-		if f.FieldPath != "" {
-			field = componentField + "." + f.FieldPath
-		}
-		msg := f.Message
+		reason := f.Message
 		if findingOnSensitiveLeaf(declared, pillar, f.FieldPath) {
-			msg = redact.Placeholder()
+			reason = redact.Placeholder()
 		}
-		if f.Keyword != "" {
-			msg = fmt.Sprintf("%s (%s)", msg, f.Keyword)
-		}
-		errs = append(errs, &ResolverError{
-			Entity:  entity,
-			Field:   field,
-			Message: fmt.Sprintf("%s pillar does not conform to %s: %s", pillar, schemaLabel, msg),
-			Err:     ErrSchemaConformance(),
-		})
+		out = append(out, pillarFinding{path: f.FieldPath, keyword: f.Keyword, reason: reason})
 	}
-	return errs
+	return out
 }
 
 // findingOnSensitiveLeaf reports whether a validator finding landed on a leaf
