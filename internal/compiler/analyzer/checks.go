@@ -25,6 +25,17 @@ import (
 // originating Feature type, the presence mandates a component type declares,
 // and the node's merged attachment set after the whole attachment cascade.
 //
+// Where a rule here needs the component type of a node, it reads the type the
+// node carries in the flattened set rather than the type an instance declares
+// in the application's own list. The two answer differently for a component a
+// sub-aggregate contributes: that component is declared in the sub-aggregate's
+// own document, so a rule reading the application's instance list alone finds
+// no instance of that name and then declines to judge it. The flattened set is
+// read uniformly and deliberately without a fallback — a node the application
+// declared directly and a node a composition contributed carry their type the
+// same way there, so one read serves both and there is no second path that
+// could drift from the first.
+//
 // Two functions beside this file are deliberately absent from it. One
 // enumerates the graph's acyclic paths and one assembles the payload handed to
 // the policy socket; both compute material the build carries forward rather
@@ -73,9 +84,9 @@ import (
 // It evaluates the constraint against the labels of the node the edge resolves
 // to — the resolved target and not the authored one, because an author may
 // leave a target implicit and the rule is about the node at the far end either
-// way. A target naming no instance ends the rule: an absent node carries no
-// label set, and treating its emptiness as one would turn an internal
-// inconsistency into an authoring diagnostic.
+// way. A target naming no node ends the rule: an absent node carries no label
+// set, and treating its emptiness as one would turn an internal inconsistency
+// into an authoring diagnostic.
 var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 	constraint.GraphView,
 	constraint.EdgeSubject,
@@ -87,8 +98,8 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 		if origin := v.PerEdgeOriginFeatureType(s.NodeID(), s.SocketName(), s.AliasName()); origin != "" {
 			labelConstraint = v.AttachmentSocketSelector(origin, s.SocketName())
 		} else {
-			componentType, instanced := v.InstanceComponentType(s.NodeID())
-			if !instanced {
+			componentType, present := v.FlattenedNodeComponentType(s.NodeID())
+			if !present {
 				return nil
 			}
 			labelConstraint = v.SocketSelector(componentType, s.SocketName())
@@ -97,7 +108,7 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 			return nil
 		}
 		target := v.PerEdgeResolvedTarget(s.NodeID(), s.SocketName(), s.AliasName())
-		if _, instanced := v.InstanceComponentType(target); !instanced {
+		if _, present := v.FlattenedNodeComponentType(target); !present {
 			return nil
 		}
 		match, err := selector.MatchString(labelConstraint, v.NodeLabels(target))
@@ -175,8 +186,8 @@ var SlotFillSatisfiesSlotSelector = constraint.Check[
 	Sentinel: ErrSlotSelectorUnsatisfied(),
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeSlotSubject) []constraint.Objection {
-		componentType, instanced := v.InstanceComponentType(s.NodeID())
-		if !instanced {
+		componentType, present := v.FlattenedNodeComponentType(s.NodeID())
+		if !present {
 			return nil
 		}
 		labelConstraint := v.SlotSelector(componentType, s.SlotName())
@@ -233,8 +244,8 @@ var RequiredAttachmentTypeAttached = constraint.Check[
 	Sentinel: resolver.ErrMissingRequiredFeature(),
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeSubject) []constraint.Objection {
-		componentType, instanced := v.InstanceComponentType(s.NodeID())
-		if !instanced {
+		componentType, present := v.FlattenedNodeComponentType(s.NodeID())
+		if !present {
 			return nil
 		}
 		mandates := v.RequiredAttachmentMandates(componentType)
@@ -270,21 +281,23 @@ var RequiredAttachmentTypeAttached = constraint.Check[
 // the identity a caller matches on. The remediations differ too: correct the
 // catalog entity, versus attach the Feature.
 //
-// The whole of its predicate is the mandate set a component type declares,
-// which is complete as soon as the catalog is reachable — so it reads the facts
-// of an earlier point in the compilation than its sibling, whose satisfying set
-// needs the whole attachment cascade folded. A rule declaring an earlier view
-// is still readable at every later point, so this places the rule no later than
-// it has to be rather than moving where it may run.
+// Its predicate is the mandate set a component type declares, which is complete
+// as soon as the catalog is reachable, asked for the type the node carries once
+// the composition is flattened. So it reads the facts of an earlier point in
+// the compilation than its sibling, whose satisfying set additionally needs the
+// whole attachment cascade folded, and of no earlier a point than the flattened
+// node set it reads a type from. A rule declaring an earlier view is still
+// readable at every later point, so this places the rule no later than it has
+// to be rather than moving where it may run.
 var AttachmentRequirementWellFormed = constraint.Check[
-	constraint.NormalizedView,
+	constraint.TopologyView,
 	constraint.NodeSubject,
 ]{
 	Sentinel: ErrMalformedAttachmentRequirement(),
 	Severity: constraint.SeverityFatal,
-	Run: func(v constraint.NormalizedView, s constraint.NodeSubject) []constraint.Objection {
-		componentType, instanced := v.InstanceComponentType(s.NodeID())
-		if !instanced {
+	Run: func(v constraint.TopologyView, s constraint.NodeSubject) []constraint.Objection {
+		componentType, present := v.FlattenedNodeComponentType(s.NodeID())
+		if !present {
 			return nil
 		}
 		var out []constraint.Objection
@@ -327,8 +340,8 @@ var RequiredAttachmentSlotBound = constraint.Check[
 	Sentinel: ErrRequiredSlotUnfilled(),
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeSlotSubject) []constraint.Objection {
-		componentType, instanced := v.InstanceComponentType(s.NodeID())
-		if !instanced {
+		componentType, present := v.FlattenedNodeComponentType(s.NodeID())
+		if !present {
 			return nil
 		}
 		if !v.SlotRequired(componentType, s.SlotName()) {

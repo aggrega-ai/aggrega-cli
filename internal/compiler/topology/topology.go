@@ -779,14 +779,14 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 			continue
 		}
 
-		// Component-own uses. A socket the catalog did not declare is accepted here
-		// exactly as it is for a root component: the flattened sub-aggregate surface
-		// must not be stricter than the surface it was flattened from, or a module
-		// would lose a capability merely by being composed.
-		if node.Uses.Len() > 0 {
-			errs = append(errs, resolver.ValidateUsesAgainstSchema(
-				entity, fmt.Sprintf(".%s.uses", nodeID), node.Uses, node.ComponentType, catalog)...)
-		}
+		// Component-own uses carries no socket rule to ask here, and its absence is
+		// deliberate rather than an omission. A socket the catalog did not declare
+		// is accepted on this surface exactly as it is for a root component — the
+		// flattened sub-aggregate surface must not be stricter than the surface it
+		// was flattened from, or a module would lose a capability merely by being
+		// composed — so there is no name to reject. The one rule the surface does
+		// carry is the catalog-view classification, and that is asked above for
+		// every node rather than only for the ones declaring a uses block.
 
 		// Required-socket population, read from the resolved edge set. A socket the
 		// module leaves unbound and no Release wires is a missing required socket
