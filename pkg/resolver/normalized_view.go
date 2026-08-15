@@ -522,7 +522,8 @@ func (v *normalizedView) AuthoredInjectMechanismNames(node string) []string {
 }
 
 // AuthoredInjectDeliveryKeys returns the keys an instance delivers through one
-// mechanism, in author order.
+// mechanism, in author order where the authored shape carries one and
+// alphabetically where it does not.
 func (v *normalizedView) AuthoredInjectDeliveryKeys(node string, mechanism string) []string {
 	return injectDeliveryKeys(v.instances[node].Inject, mechanism)
 }
@@ -1086,12 +1087,14 @@ func injectMechanismPayload(inject *types.InjectBlock, mechanism string) any {
 }
 
 // injectDeliveryKeys returns the keys one mechanism's authored payload delivers,
-// in author order where the authored shape carries one.
+// in the order the author wrote them where the authored shape carries an order,
+// and alphabetically where it does not.
 //
 // The payload shapes are recognised by the one collector that knows them, so a
-// shape that collector walks is a shape this walks. The keys are deliberately
-// not sorted here: the fact promises author order, and the shape that carries an
-// order is the one that would lose it.
+// shape that collector walks is a shape this walks — and the order each shape
+// yields is settled there too. Sorting again here would be wrong rather than
+// redundant: it would flatten the author order the ordered shapes carry, which
+// is the order this reading exists to report.
 func injectDeliveryKeys(inject *types.InjectBlock, mechanism string) []string {
 	collected := map[string][]string{}
 	appendInjectDeliveryKeys(collected, mechanism, injectMechanismPayload(inject, mechanism))

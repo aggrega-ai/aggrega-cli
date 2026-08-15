@@ -1690,10 +1690,10 @@ func verboseDelivery(deliveryKey, reference string) map[string]any {
 }
 
 // deliveryBlock is what one injection block delivers, per mechanism. The array
-// authoring form is used throughout because it is the one shape that carries an
-// order of its own — a mapping form would leave the enumerated delivery keys in
-// whatever order the runtime yielded them, and an ordering claim over that would
-// be measuring the runtime.
+// authoring form is used throughout because it is the one shape carrying the
+// author's own order — a mapping form carries none and is read back
+// alphabetically, so a row written against one could not tell an answer that
+// preserved the author's order from an answer that sorted it.
 type deliveryBlock struct {
 	env []any
 	arg []any

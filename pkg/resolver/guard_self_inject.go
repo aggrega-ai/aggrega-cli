@@ -223,10 +223,17 @@ func injectMechanismPayloads(inject *types.InjectBlock) types.OrderedMap[any] {
 // indistinguishable, from the outside, from a check that examined it and found
 // nothing wrong.
 //
-// The recognised shapes are the ordered mapping form (which preserves author
-// order), the two plain-map forms, and the array form whose elements carry the
-// delivery key under `in`. An unrecognised shape contributes nothing. Does not
-// mutate the payload.
+// The recognised shapes are the ordered mapping form, the two plain-map forms,
+// and the array form whose elements carry the delivery key under `in`. An
+// unrecognised shape contributes nothing. Does not mutate the payload.
+//
+// Order follows the shape, because only some shapes carry one. The ordered
+// mapping form and the array form contribute their keys in the order the author
+// wrote them. A plain map carries no author order to preserve — ranging one
+// yields a sequence that varies between reads of the very same payload — so
+// those two arms contribute their keys alphabetically. That is what makes a walk
+// over the collected keys repeatable whatever shape the payload arrived in,
+// which the keys reaching a diagnostic sequence depend on.
 func appendInjectDeliveryKeys(result map[string][]string, mech string, raw any) {
 	if raw == nil {
 		return
@@ -240,13 +247,9 @@ func appendInjectDeliveryKeys(result map[string][]string, mech string, raw any) 
 			result[mech] = append(result[mech], k)
 		}
 	case map[string]any:
-		for k := range v {
-			result[mech] = append(result[mech], k)
-		}
+		result[mech] = append(result[mech], sortedKeysOf(v)...)
 	case map[string]string:
-		for k := range v {
-			result[mech] = append(result[mech], k)
-		}
+		result[mech] = append(result[mech], sortedKeysOf(v)...)
 	case []any:
 		for _, entry := range v {
 			in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry)
