@@ -322,8 +322,12 @@ jobs:
           set -euo pipefail
 
           VERSION_JSON="$(aggrega-cli/aggrega version -o json)"
-          HOST_ABI="$(printf '%s' "$VERSION_JSON" | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
-          BIN_VERSION="$(printf '%s' "$VERSION_JSON" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          # Whitespace is stripped before the match so the extraction is insensitive to
+          # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+          # only where the extracted value contains no whitespace, which holds for the
+          # version and ABI version strings read here.
+          HOST_ABI="$(printf '%s' "$VERSION_JSON" | tr -d '[:space:]' | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          BIN_VERSION="$(printf '%s' "$VERSION_JSON" | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$HOST_ABI" ] || { echo "ABI gate: binary reported no abiVersion" >&2; exit 1; }
 
           DESC_DIR="aggrega-cli/internal/wasm/embedded/plugins"
@@ -439,7 +443,11 @@ jobs:
           # public Sigstore. The identity token is read from SIGSTORE_ID_TOKEN
           # (minted above). The image tag equals the binary's reported version
           # (v-less), matching the tag the build script pushed.
-          BIN_VERSION="$(aggrega-cli/aggrega version -o json | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          # Whitespace is stripped before the match so the extraction is insensitive to
+          # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+          # only where the extracted value contains no whitespace, which holds for the
+          # version and ABI version strings read here.
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/aggrega sign "$REGISTRY/tools/aggrega:$BIN_VERSION" \
             --fulcio-url "$FULCIO_URL" --rekor-url "$REKOR_URL"
@@ -507,7 +515,11 @@ jobs:
             TAG="$REF_NAME"
           fi
 
-          BIN_VERSION="$(aggrega-cli/aggrega version -o json | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          # Whitespace is stripped before the match so the extraction is insensitive to
+          # the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+          # only where the extracted value contains no whitespace, which holds for the
+          # version and ABI version strings read here.
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
 
           RELEASE_DIR="$RUNNER_TEMP/release"

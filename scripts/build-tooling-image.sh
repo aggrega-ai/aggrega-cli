@@ -101,9 +101,13 @@ fi
 
 # Read the version and ABI version straight from the binary so the image labels
 # and the binary's own `aggrega version -o json` output cannot diverge.
+# Whitespace is stripped before the match so the extraction is insensitive to
+# the pretty-printer, and it needs no jq. Stripping the whole payload is safe
+# only where the extracted value contains no whitespace, which holds for the
+# version and ABI version strings read here.
 VERSION_JSON="$("$BINARY" version -o json 2>/dev/null)" || die "could not read version from $BINARY"
-BIN_VERSION="$(printf '%s' "$VERSION_JSON" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
-BIN_ABI="$(printf '%s' "$VERSION_JSON" | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
+BIN_VERSION="$(printf '%s' "$VERSION_JSON" | tr -d '[:space:]' | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+BIN_ABI="$(printf '%s' "$VERSION_JSON" | tr -d '[:space:]' | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
 
 [ -n "$BIN_VERSION" ] || die "binary reported no version — is it stamped? rebuild via scripts/build.sh"
 [ -n "$BIN_ABI" ] || die "binary reported no abiVersion — is it up to date? rebuild via scripts/build.sh"
