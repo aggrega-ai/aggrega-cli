@@ -147,8 +147,11 @@ type buildRunOptions struct {
 	autoPull bool
 	// detail prints, per resolved entity, what the auto-pull fill did, and reports
 	// which entities a higher-precedence catalog directory shadowed. Display-only:
-	// it changes what is written to the diagnostic stream, never the rendered
-	// output or the lockfile.
+	// it changes only what is written, never the rendered output or the lockfile.
+	// The resolution report goes to stdout, which is what the flag's help promises
+	// — the per-entity rows, and the note saying so when no fill ran. The shadow
+	// report is a catalog-precedence warning rather than resolution detail, and
+	// stays on the diagnostic stream with the other warnings.
 	detail bool
 	// upgrade makes the auto-pull step a full refresh: the pull discards the
 	// existing pin set and re-resolves every dependency, floating each to the
@@ -309,7 +312,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
 	// the identical stack with the same config.
 	progress.phase(phaseLockfile)
-	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.upgrade, run.detail, diagOut)
+	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.upgrade, run.detail, diagOut, out)
 	if err != nil {
 		return err
 	}
@@ -656,10 +659,13 @@ func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire 
 // verify-on-read Tier-2 reads through which every closure entity (and the
 // libraries a $ref names) resolves.
 //
-// It writes any diagnostics (the no-pull --detail note, and the auto-pull's
-// reuse/verify notices forwarded through pullConfig.DiagOut) to diagOut
-// (os.Stderr in production).
-func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, autoPull, upgrade, detail bool, diagOut io.Writer) (bool, error) {
+// The two sinks are kept apart, because --detail's own help promises the
+// resolution report on stdout. out carries that report: the no-pull note written
+// here, and the fill's per-entity rows and completion line forwarded through
+// pullConfig.Out. diagOut carries the fill's reuse/verify notices and progress
+// surface, forwarded through pullConfig.DiagOut. In production out is os.Stdout
+// and diagOut is os.Stderr.
+func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, autoPull, upgrade, detail bool, diagOut, out io.Writer) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
@@ -694,7 +700,7 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// resolution runs through the nil-puller pinned lazy lookup, untouched — so build
 	// output is unchanged by this fill.
 	if autoPull || wsCfg.AutoPull {
-		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: diagOut, diag: buildDiagOptions{quiet: true}}); err != nil {
+		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: diagOut, Out: out, diag: buildDiagOptions{quiet: true}}); err != nil {
 			return false, fmt.Errorf("auto-pull: %w", err)
 		}
 		return false, nil
@@ -705,7 +711,7 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// with the pull-first remediation.
 	if preexisted {
 		if detail {
-			fmt.Fprintf(diagOut, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present, so no pull ran this build\n", lockfilePath)
+			fmt.Fprintf(out, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present, so no pull ran this build\n", lockfilePath)
 		}
 		return true, nil
 	}
