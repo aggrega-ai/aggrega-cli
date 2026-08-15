@@ -6,7 +6,7 @@ entities:
         - manifest.spec.mappings.components.type.core/devtool/adminer
     - uri: compose-bridge-fr:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:5ea73bd91dfa54f811ea748bde82e7a7e51b364d3c3220c0d04db1283515621c
+      digest: sha256:1f6616b1b655bc0ff638cfa9a446bb9d8ef079eb5a8681e76e2d9a1066ae4b47
       referenced_from:
         - manifest.spec.mappings.features.type.core/compose-bridge:1.0.0
     - uri: compose/postgres:1.0.0
