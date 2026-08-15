@@ -3185,31 +3185,6 @@ func wiredBoundaryContexts(release *types.Release) map[string]*BoundaryInfra {
 	return perComponent
 }
 
-// declaredConformancePaths returns, per objection, the site the rule named joined
-// with the path inside the payload the violation landed on — the whole dotted
-// path of the offending leaf, which is what the hand-written reading spells
-// directly in its own locator.
-//
-// 🔴 The join is the measurement rather than a convenience. These rules position
-// at the SITE carrying the payload — the component, or the connection — and hand
-// the path within that payload to the objection's detail, while the hand-written
-// reading writes the whole path into its locator. So the leaf is not lost, it is
-// carried on a different field, and a comparison over the locator alone would read
-// that relocation as a coverage difference. Each side's raw sequence is asserted
-// verbatim beside this, so the join cannot hide a difference between them.
-func declaredConformancePaths(objections []constraint.Objection) []string {
-	out := make([]string, 0, len(objections))
-	for _, o := range objections {
-		detail := o.Detail()
-		if len(detail) == 0 {
-			out = append(out, o.Locator())
-			continue
-		}
-		out = append(out, o.Locator()+"."+detail[0])
-	}
-	return out
-}
-
 // conformanceViolations returns the locators of the hand-written findings
 // carrying the conformance identity, in the order reported.
 //
@@ -3230,12 +3205,13 @@ func TestTheComponentConfigurationConformanceRuleAgreesWithItsHandWrittenReading
 	for _, tc := range []struct {
 		name       string
 		components []conformanceComponent
-		// declared is the locator sequence the declared rule raises — the SITE
-		// carrying the payload, one entry per violation.
+		// declared is the locator sequence the declared rule raises: the whole
+		// dotted path of the offending leaf, one entry per violation. These
+		// rules position INSIDE the site carrying the payload, at the key the
+		// contract measured, which is the position the hand-written reading
+		// spells too — so the two are compared spelling for spelling below
+		// rather than after reuniting a relocated part.
 		declared []string
-		// declaredPaths is the same sequence with each objection's payload path
-		// joined on, which is the shape the hand-written reading spells.
-		declaredPaths []string
 		// handWritten is the sequence the hand-written reading reports under this
 		// rule's identity, spelled the way that reading spells an authored key.
 		handWritten []string
@@ -3256,10 +3232,9 @@ func TestTheComponentConfigurationConformanceRuleAgreesWithItsHandWrittenReading
 				{name: "ghost", typ: socketAbsentComponent,
 					values: conformancePayload("replicas", "many")},
 			},
-			declared:      []string{".spec.components.web"},
-			declaredPaths: []string{".spec.components.web.values.replicas"},
-			handWritten:   []string{`.spec.components["web"].values.replicas`},
-			agree:         true,
+			declared:    []string{".spec.components.web.values.replicas"},
+			handWritten: []string{`.spec.components["web"].values.replicas`},
+			agree:       true,
 		},
 		{
 			// The empty payload is the row that separates this rule from its
@@ -3269,10 +3244,9 @@ func TestTheComponentConfigurationConformanceRuleAgreesWithItsHandWrittenReading
 			components: []conformanceComponent{
 				{name: "web", typ: conformanceContractedType},
 			},
-			declared:      []string{".spec.components.web"},
-			declaredPaths: []string{".spec.components.web.values.replicas"},
-			handWritten:   []string{`.spec.components["web"].values.replicas`},
-			agree:         true,
+			declared:    []string{".spec.components.web.values.replicas"},
+			handWritten: []string{`.spec.components["web"].values.replicas`},
+			agree:       true,
 		},
 		{
 			// Two reports, authored against their alphabetical order. With a
@@ -3285,8 +3259,7 @@ func TestTheComponentConfigurationConformanceRuleAgreesWithItsHandWrittenReading
 				{name: "alpha", typ: conformanceContractedType,
 					values: conformancePayload("replicas", 0)},
 			},
-			declared: []string{".spec.components.alpha", ".spec.components.zeta"},
-			declaredPaths: []string{
+			declared: []string{
 				".spec.components.alpha.values.replicas",
 				".spec.components.zeta.values.replicas",
 			},
@@ -3324,14 +3297,11 @@ func TestTheComponentConfigurationConformanceRuleAgreesWithItsHandWrittenReading
 			if !equalStrings(fromDeclared, tc.declared) {
 				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
 			}
-			if got := declaredConformancePaths(objections); !equalStrings(got, tc.declaredPaths) {
-				t.Errorf("declared payload paths = %v; want %v", got, tc.declaredPaths)
-			}
 			if !equalStrings(fromHandWritten, tc.handWritten) {
 				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
 			}
 
-			declaredSet := sortedCopy(declaredConformancePaths(objections))
+			declaredSet := sortedCopy(fromDeclared)
 			handWrittenSet := dottedCopy(fromHandWritten)
 			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
 				t.Errorf("the two readings cover the same leaves = %t; want %t:\n"+
@@ -3361,11 +3331,10 @@ func TestTheComponentSizingConformanceRuleAgreesWithItsHandWrittenReading(t *tes
 		name       string
 		components []conformanceComponent
 		// deployed is the boundary block of the deployment document.
-		deployed      string
-		declared      []string
-		declaredPaths []string
-		handWritten   []string
-		agree         bool
+		deployed    string
+		declared    []string
+		handWritten []string
+		agree       bool
 	}{
 		{
 			name: "sizing violating the contract is reported by both; a component the deployment wrote no sizing for is reported by neither",
@@ -3383,10 +3352,9 @@ func TestTheComponentSizingConformanceRuleAgreesWithItsHandWrittenReading(t *tes
             size: 3
         api: {}
 `,
-			declared:      []string{".spec.components.web"},
-			declaredPaths: []string{".spec.components.web.infra.size"},
-			handWritten:   []string{`.spec.components["web"].infra.size`},
-			agree:         true,
+			declared:    []string{".spec.components.web.infra.size"},
+			handWritten: []string{`.spec.components["web"].infra.size`},
+			agree:       true,
 		},
 		{
 			// The component sits inside a boundary nested in another, which is the
@@ -3406,10 +3374,9 @@ func TestTheComponentSizingConformanceRuleAgreesWithItsHandWrittenReading(t *tes
               infra:
                 size: 3
 `,
-			declared:      []string{".spec.components.web"},
-			declaredPaths: []string{".spec.components.web.infra.size"},
-			handWritten:   []string{`.spec.components["web"].infra.size`},
-			agree:         true,
+			declared:    []string{".spec.components.web.infra.size"},
+			handWritten: []string{`.spec.components["web"].infra.size`},
+			agree:       true,
 		},
 		{
 			// The counterpart of the empty-payload row on the configuration rule:
@@ -3432,10 +3399,9 @@ func TestTheComponentSizingConformanceRuleAgreesWithItsHandWrittenReading(t *tes
         api:
           infra: {}
 `,
-			declared:      []string{".spec.components.web"},
-			declaredPaths: []string{".spec.components.web.infra.size"},
-			handWritten:   []string{`.spec.components["web"].infra.size`},
-			agree:         true,
+			declared:    []string{".spec.components.web.infra.size"},
+			handWritten: []string{`.spec.components["web"].infra.size`},
+			agree:       true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3466,14 +3432,11 @@ func TestTheComponentSizingConformanceRuleAgreesWithItsHandWrittenReading(t *tes
 			if !equalStrings(fromDeclared, tc.declared) {
 				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
 			}
-			if got := declaredConformancePaths(objections); !equalStrings(got, tc.declaredPaths) {
-				t.Errorf("declared payload paths = %v; want %v", got, tc.declaredPaths)
-			}
 			if !equalStrings(fromHandWritten, tc.handWritten) {
 				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
 			}
 
-			declaredSet := sortedCopy(declaredConformancePaths(objections))
+			declaredSet := sortedCopy(fromDeclared)
 			handWrittenSet := dottedCopy(fromHandWritten)
 			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
 				t.Errorf("the two readings cover the same leaves = %t; want %t:\n"+
@@ -3556,12 +3519,11 @@ func TestTheConnectionConfigurationConformanceRuleAgreesWithItsHandWrittenReadin
 	catalog := conformanceRuleCatalog(t)
 
 	for _, tc := range []struct {
-		name          string
-		components    []conformanceComponent
-		declared      []string
-		declaredPaths []string
-		handWritten   []string
-		agree         bool
+		name        string
+		components  []conformanceComponent
+		declared    []string
+		handWritten []string
+		agree       bool
 	}{
 		{
 			name: "configuration violating the socket's contract is reported by both; a type declaring no contract on the socket and a type the catalog holds no entry for are reported by neither",
@@ -3583,10 +3545,9 @@ func TestTheConnectionConfigurationConformanceRuleAgreesWithItsHandWrittenReadin
 							values: conformancePayload("pool", "many")},
 					}},
 			},
-			declared:      []string{".spec.components.web.uses.store.primary"},
-			declaredPaths: []string{".spec.components.web.uses.store.primary.values.pool"},
-			handWritten:   []string{`.spec.components["web"].uses["store"]["primary"].values.pool`},
-			agree:         true,
+			declared:    []string{".spec.components.web.uses.store.primary.values.pool"},
+			handWritten: []string{`.spec.components["web"].uses["store"]["primary"].values.pool`},
+			agree:       true,
 		},
 		{
 			// A connection that wrote nothing is the maximal violation of a key
@@ -3599,10 +3560,9 @@ func TestTheConnectionConfigurationConformanceRuleAgreesWithItsHandWrittenReadin
 						{alias: "primary", target: "db"},
 					}},
 			},
-			declared:      []string{".spec.components.web.uses.store.primary"},
-			declaredPaths: []string{".spec.components.web.uses.store.primary.values.pool"},
-			handWritten:   []string{`.spec.components["web"].uses["store"]["primary"].values.pool`},
-			agree:         true,
+			declared:    []string{".spec.components.web.uses.store.primary.values.pool"},
+			handWritten: []string{`.spec.components["web"].uses["store"]["primary"].values.pool`},
+			agree:       true,
 		},
 		{
 			// 🔴 The short authoring form. It lists targets and gives each
@@ -3615,10 +3575,9 @@ func TestTheConnectionConfigurationConformanceRuleAgreesWithItsHandWrittenReadin
 					values:  conformancePayload("replicas", 1),
 					compact: []string{"db"}},
 			},
-			declared:      []string{".spec.components.web.uses.store"},
-			declaredPaths: []string{".spec.components.web.uses.store.values.pool"},
-			handWritten:   []string{`.spec.components["web"].uses["store"]["db"].values.pool`},
-			agree:         false,
+			declared:    []string{".spec.components.web.uses.store.values.pool"},
+			handWritten: []string{`.spec.components["web"].uses["store"]["db"].values.pool`},
+			agree:       false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3648,14 +3607,11 @@ func TestTheConnectionConfigurationConformanceRuleAgreesWithItsHandWrittenReadin
 			if !equalStrings(fromDeclared, tc.declared) {
 				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
 			}
-			if got := declaredConformancePaths(objections); !equalStrings(got, tc.declaredPaths) {
-				t.Errorf("declared payload paths = %v; want %v", got, tc.declaredPaths)
-			}
 			if !equalStrings(fromHandWritten, tc.handWritten) {
 				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
 			}
 
-			declaredSet := sortedCopy(declaredConformancePaths(objections))
+			declaredSet := sortedCopy(fromDeclared)
 			handWrittenSet := dottedCopy(fromHandWritten)
 			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
 				t.Errorf("the two readings cover the same leaves = %t; want %t:\n"+
@@ -3705,13 +3661,12 @@ func TestTheConnectionSizingConformanceRuleAgreesWithItsHandWrittenReading(t *te
 	catalog := conformanceRuleCatalog(t)
 
 	for _, tc := range []struct {
-		name          string
-		components    []conformanceComponent
-		deployed      string
-		declared      []string
-		declaredPaths []string
-		handWritten   []string
-		agree         bool
+		name        string
+		components  []conformanceComponent
+		deployed    string
+		declared    []string
+		handWritten []string
+		agree       bool
 	}{
 		{
 			// The deployment configures a connection the application declared,
@@ -3736,8 +3691,7 @@ func TestTheConnectionSizingConformanceRuleAgreesWithItsHandWrittenReading(t *te
                 infra:
                   tier: 7
 `,
-			declared:      []string{".spec.components.web.uses.store.primary"},
-			declaredPaths: []string{".spec.components.web.uses.store.primary.infra.tier"},
+			declared: []string{".spec.components.web.uses.store.primary.infra.tier"},
 			handWritten: []string{
 				`.spec.boundaries["prod"].components["web"].uses["store"]["primary"].infra.tier`},
 			agree: true,
@@ -3764,8 +3718,7 @@ func TestTheConnectionSizingConformanceRuleAgreesWithItsHandWrittenReading(t *te
                 infra:
                   tier: 7
 `,
-			declared:      []string{".spec.components.web.uses.store.primary"},
-			declaredPaths: []string{".spec.components.web.uses.store.primary.infra.tier"},
+			declared: []string{".spec.components.web.uses.store.primary.infra.tier"},
 			handWritten: []string{
 				`.spec.boundaries["prod"].components["web"].uses["store"]["primary"].infra.tier`},
 			agree: true,
@@ -3791,8 +3744,7 @@ func TestTheConnectionSizingConformanceRuleAgreesWithItsHandWrittenReading(t *te
             store:
               primary: {}
 `,
-			declared:      []string{".spec.components.web.uses.store.primary"},
-			declaredPaths: []string{".spec.components.web.uses.store.primary.infra.tier"},
+			declared: []string{".spec.components.web.uses.store.primary.infra.tier"},
 			handWritten: []string{
 				`.spec.boundaries["prod"].components["web"].uses["store"]["primary"].infra.tier`},
 			agree: true,
@@ -3826,14 +3778,11 @@ func TestTheConnectionSizingConformanceRuleAgreesWithItsHandWrittenReading(t *te
 			if !equalStrings(fromDeclared, tc.declared) {
 				t.Errorf("declared sequence = %v; want %v", fromDeclared, tc.declared)
 			}
-			if got := declaredConformancePaths(objections); !equalStrings(got, tc.declaredPaths) {
-				t.Errorf("declared payload paths = %v; want %v", got, tc.declaredPaths)
-			}
 			if !equalStrings(fromHandWritten, tc.handWritten) {
 				t.Errorf("hand-written sequence = %v; want %v", fromHandWritten, tc.handWritten)
 			}
 
-			declaredSet := connectionSizingSites(t, declaredConformancePaths(objections))
+			declaredSet := connectionSizingSites(t, fromDeclared)
 			handWrittenSet := connectionSizingSites(t, fromHandWritten)
 			if got := equalStrings(declaredSet, handWrittenSet); got != tc.agree {
 				t.Errorf("the two readings cover the same connections = %t; want %t:\n"+

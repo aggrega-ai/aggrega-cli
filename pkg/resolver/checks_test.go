@@ -225,11 +225,14 @@ func TestDeclaredParameterReadAgreesWithTheHandWrittenReading(t *testing.T) {
 //
 // The expectations are written out rather than compared against a second run of
 // the framework, so the test says nothing that could be satisfied by the
-// framework agreeing with itself. Three things fail it: taking the check out of
+// framework agreeing with itself. Four things fail it: taking the check out of
 // the invocation, which empties the slice; changing the sequence away from the
-// order the contract declares; and re-typing the finding's message beside the
-// rule's identity instead of deriving it, which is what the message assertion
-// pins.
+// order the contract declares; re-typing the finding's message beside the rule's
+// identity instead of deriving it; and dropping what the check raised the
+// objection ABOUT, which is the half a registered message cannot carry — one
+// static string per rule cannot name the parameter this advisory is about, so a
+// message that were only that text would leave every unread parameter reading
+// identically.
 func TestResolveAdvisoriesAreWhatTheDeclaredCheckRaised(t *testing.T) {
 	t.Parallel()
 
@@ -250,9 +253,16 @@ func TestResolveAdvisoriesAreWhatTheDeclaredCheckRaised(t *testing.T) {
 		if !errors.Is(a, ErrUnreadParameter()) {
 			t.Errorf("advisory does not carry the rule's identity: %v", a)
 		}
-		if want := ErrUnreadParameter().Error(); a.Message != want {
-			t.Errorf("advisory message = %q; want %q, the text the identity was registered with",
-				a.Message, want)
+		registered := ErrUnreadParameter().Error()
+		if !strings.HasPrefix(a.Message, registered) {
+			t.Errorf("advisory message = %q; want it to open with %q, the text the identity "+
+				"was registered with", a.Message, registered)
+		}
+		parameter := strings.TrimPrefix(a.Field, ".spec.parameters.")
+		if !strings.Contains(a.Message, `"`+parameter+`"`) {
+			t.Errorf("advisory message = %q; want it to name %q, the parameter the check "+
+				"raised about — a message that is only the registered text reads the same "+
+				"for every unread parameter", a.Message, parameter)
 		}
 		if !strings.Contains(a.Entity, "unread-params-multi") {
 			t.Errorf("Entity does not name the Aggregate: %q", a.Entity)

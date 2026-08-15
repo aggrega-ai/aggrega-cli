@@ -4,6 +4,9 @@
 package resolver
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
@@ -17,10 +20,13 @@ import (
 // it is the only place the conversion is made, so every rule reporting this way
 // reports identically.
 //
-// Every field is derived and none is re-typed. The message is the sentinel's own
-// registered text, so a rule's wording lives with the rule's identity and a
-// second copy cannot drift from it. The locator becomes the field the finding
-// positions at, which is what lets a front end place it on the offending
+// Every field is derived and none is re-typed. The message opens with the
+// sentinel's own registered text, so a rule's wording lives with the rule's
+// identity and a second copy cannot drift from it, and the values the check
+// supplied follow it — because the registered text is one static string per
+// rule and cannot carry them, so a message that were only that text would drop
+// the very thing an author has to act on. The locator becomes the field the
+// finding positions at, which is what lets a front end place it on the offending
 // authoring key rather than at the head of the file. The sentinel becomes the
 // wrapped error, so a caller matching the finding by identity keeps matching —
 // both the caller that drops one rule's findings out of a halt set and the
@@ -54,9 +60,35 @@ func FindingsFromObjections(
 		out = append(out, &ResolverError{
 			Entity:  entity,
 			Field:   o.Locator(),
-			Message: o.Sentinel().Error(),
+			Message: objectionMessage(o),
 			Err:     o.Sentinel(),
 		})
 	}
 	return out
+}
+
+// objectionMessage renders what one check raised as the text a finding carries:
+// the sentinel's registered wording, then the values the check supplied.
+//
+// The values are rendered rather than described, because this reads every rule
+// and knows none of them: a check's detail is an ordered list of strings whose
+// meaning is the rule's, so any attempt here to caption them would be one
+// conversion holding a copy of every rule's grammar. Each is quoted, which keeps
+// a value carrying a space or a comma readable as one value and makes a value
+// the check supplied empty visible instead of vanishing into the separator.
+//
+// A check that supplied no detail gets the registered wording alone, so a rule
+// whose identity says the whole of it reads as a sentence rather than as one
+// with an empty parenthesis after it.
+func objectionMessage(o constraint.Objection) string {
+	registered := o.Sentinel().Error()
+	detail := o.Detail()
+	if len(detail) == 0 {
+		return registered
+	}
+	quoted := make([]string, 0, len(detail))
+	for _, d := range detail {
+		quoted = append(quoted, fmt.Sprintf("%q", d))
+	}
+	return registered + " (" + strings.Join(quoted, ", ") + ")"
 }

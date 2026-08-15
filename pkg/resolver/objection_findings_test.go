@@ -5,6 +5,7 @@ package resolver
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -143,6 +144,207 @@ func TestTheConversionAttributesFindingsToTheDocumentItIsGiven(t *testing.T) {
 					"CONSEQUENCE: a finding about one document is reported against the other.",
 					f.Entity, entity)
 			}
+		}
+	}
+}
+
+// TestTwoRulesOverOneComponentPositionAtTheDepthEachRaisedAt measures the two
+// positions a finding can take, on ONE component, so the only thing that differs
+// between the two readings is which raise the rule used.
+//
+// One rule objects about a key inside the component's configuration and names it;
+// the other objects about the component's pairing with its type, whose first value
+// is a type name and not a place in the file. Both are invoked over the same
+// subject through the same traversal, and both convert through the same
+// conversion — so a difference in where they land is attributable to the raise and
+// to nothing else.
+//
+// INVARIANT: a rule that raised at a leaf is positioned at that leaf; a rule that
+// raised at the subject stays at the subject.
+// CONSEQUENCE: were the two collapsed, an author whose configuration violates a
+// contract would be sent to the component and left to find which key, which is
+// the position this rule's hand-written predecessor did not settle for.
+func TestTwoRulesOverOneComponentPositionAtTheDepthEachRaisedAt(t *testing.T) {
+	t.Parallel()
+
+	catalog := conformanceRuleCatalog(t)
+
+	// One component: its configuration violates the contract its type declares,
+	// and it writes an injection block on a type that permits no delivery. The
+	// first is reported by a rule that names the offending key; the second by a
+	// rule whose value is the component type.
+	components := types.OrderedMap[types.ComponentInstance]{}
+	values := types.OrderedMap[any]{}
+	values.Set("replicas", "many")
+	components.Set("web", types.ComponentInstance{
+		Type:   conformanceContractedType,
+		Values: values,
+		Inject: writtenBlock(),
+	})
+	na := normalized(t, &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "positions"},
+		Spec:     types.AggregateSpec{Components: components},
+	})
+	view := newNormalizedView(na, nil, catalog, nil)
+
+	atLeaf := fieldsFromRule(t, view, componentValuesConformToTheType)
+	atSubject := fieldsFromRule(t, view, selfInjectBlockAllowed)
+
+	if want := []string{".spec.components.web.values.replicas"}; !equalStrings(atLeaf, want) {
+		t.Errorf("the rule that raised at a leaf positioned at %v; want %v", atLeaf, want)
+	}
+	if want := []string{".spec.components.web"}; !equalStrings(atSubject, want) {
+		t.Errorf("the rule that raised at the subject positioned at %v; want %v", atSubject, want)
+	}
+
+	// The control. Both rules are invoked over the same component, so if the
+	// composition silently stopped happening both would report the component and
+	// the two assertions above would still be describing a coherent-looking
+	// system — one of them wrongly.
+	if equalStrings(atLeaf, atSubject) {
+		t.Errorf("both rules positioned at %v.\n"+
+			"INVARIANT: the two raises produce different depths over one subject.\n"+
+			"CONSEQUENCE: the leaf positioning has stopped happening, and nothing else "+
+			"in this package would notice — the finding is still produced, still carries "+
+			"its identity, and still names a real component.", atLeaf)
+	}
+}
+
+// fieldsFromRule invokes one rule over the presented documents and returns the
+// field each converted finding positions at, in the order raised.
+//
+// It goes through the conversion rather than reading the objections directly,
+// because the field is what a consumer recovering a position reads and the
+// conversion is what puts it there.
+func fieldsFromRule(
+	t *testing.T,
+	view constraint.NormalizedView,
+	check constraint.Check[constraint.NormalizedView, constraint.NodeSubject],
+) []string {
+	t.Helper()
+
+	objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, newCoordinateSet(view.(*normalizedView)), view, check)
+	if err != nil {
+		t.Fatalf("the node traversal returned an error: %v", err)
+	}
+	if len(objections) == 0 {
+		t.Fatal("the rule raised nothing, so the row measures no position at all")
+	}
+	out := make([]string, 0, len(objections))
+	for _, f := range FindingsFromObjections(objections, "Aggregate positions") {
+		out = append(out, f.Field)
+	}
+	return out
+}
+
+// TestAFindingCarriesWhatTheCheckRaisedItAbout pins the half of a message a
+// registered sentinel cannot carry.
+//
+// A sentinel's message is one static string per rule, so it names the rule and
+// can never name the value the rule objected about. The check supplies that value
+// and the framework carries it, and this is where the two are put together — so a
+// conversion reading only the sentinel would report every violation of one rule
+// with identical text, whatever the author actually wrote.
+//
+// INVARIANT: a finding opens with the rule's registered wording and goes on to
+// name what the check raised about.
+// CONSEQUENCE: without the second half, two components with different faults
+// under one rule produce two findings a reader cannot tell apart, and the
+// offending value reaches the author from nowhere at all.
+func TestAFindingCarriesWhatTheCheckRaisedItAbout(t *testing.T) {
+	t.Parallel()
+
+	// Two components naming two different absent types, so a message that
+	// dropped the detail would render both identically.
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/absent-one:1.0.0"})
+	components.Set("web", types.ComponentInstance{Type: "core/absent-two:1.0.0"})
+	na := normalized(t, &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "detail"},
+		Spec:     types.AggregateSpec{Components: components},
+	})
+
+	view := newNormalizedView(na, nil, presentCatalog(), nil)
+	objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, newCoordinateSet(view), view, componentTypeResolvesToACatalogEntry)
+	if err != nil {
+		t.Fatalf("the node traversal returned an error: %v", err)
+	}
+
+	findings := FindingsFromObjections(objections, "Aggregate detail")
+	if len(findings) != 2 {
+		t.Fatalf("the rule produced %d findings; want 2, one per component naming an absent "+
+			"type — with one finding the rows below cannot tell two messages apart",
+			len(findings))
+	}
+
+	registered := ErrGuardEntityViewInconsistency().Error()
+	for _, f := range findings {
+		if !strings.HasPrefix(f.Message, registered) {
+			t.Errorf("message = %q; want it to open with %q, the rule's own registered "+
+				"wording, so the wording has one home", f.Message, registered)
+		}
+	}
+	if a, b := findings[0].Message, findings[1].Message; a == b {
+		t.Errorf("both findings read %q.\n"+
+			"INVARIANT: a message names what its own check raised about.\n"+
+			"CONSEQUENCE: the detail is being dropped, and every violation of one rule "+
+			"reads identically however different the authoring faults are.", a)
+	}
+	for i, want := range []string{`"core/absent-one:1.0.0"`, `"core/absent-two:1.0.0"`} {
+		if !strings.Contains(findings[i].Message, want) {
+			t.Errorf("message = %q; want it to name %s, the type the check raised about",
+				findings[i].Message, want)
+		}
+	}
+}
+
+// TestAFindingWithNoDetailReadsAsTheRulesOwnWording pins the arm on the other
+// side of the enrichment: a rule supplying no value has nothing to append, and
+// its message is the registered wording alone rather than that wording with an
+// empty parenthesis after it.
+//
+// It is asserted over an objection built through the framework's own raise, so
+// the empty-detail arm is exercised on the real path rather than described.
+func TestAFindingWithNoDetailReadsAsTheRulesOwnWording(t *testing.T) {
+	t.Parallel()
+
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("web", types.ComponentInstance{Type: componentTypeURI})
+	na := normalized(t, &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "bare"},
+		Spec:     types.AggregateSpec{Components: components},
+	})
+	view := newNormalizedView(na, nil, CatalogLookup{}, nil)
+
+	// A rule declared here rather than reused, because every shipped rule
+	// supplies detail and this arm needs one that does not.
+	silent := constraint.Check[constraint.NormalizedView, constraint.NodeSubject]{
+		Sentinel: ErrGuardEntityViewInconsistency(),
+		Severity: constraint.SeverityFatal,
+		Run: func(
+			_ constraint.NormalizedView,
+			s constraint.NodeSubject,
+		) []constraint.Objection {
+			return []constraint.Objection{s.Raise(ErrGuardEntityViewInconsistency())}
+		},
+	}
+
+	objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, newCoordinateSet(view), view, silent)
+	if err != nil {
+		t.Fatalf("the node traversal returned an error: %v", err)
+	}
+	findings := FindingsFromObjections(objections, "Aggregate bare")
+	if len(findings) == 0 {
+		t.Fatal("the rule raised nothing, so there is no message to read")
+	}
+	for _, f := range findings {
+		if want := ErrGuardEntityViewInconsistency().Error(); f.Message != want {
+			t.Errorf("message = %q; want %q exactly — a rule that supplied no value has "+
+				"nothing to name, and rendering an empty list would put punctuation with "+
+				"nothing in it into what an author reads", f.Message, want)
 		}
 	}
 }

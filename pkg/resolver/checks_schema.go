@@ -36,6 +36,17 @@ import (
 // value and a diagnostic is read by anyone watching a build. The path, the
 // keyword and the pillar survive the withholding, so a reader still learns which
 // leaf failed and on what.
+//
+// Each objection is positioned at that path rather than at the site holding the
+// payload, and this is the one place any rule in this package does so. What
+// qualifies these four is that their first detail value is an authored path
+// relative to the subject — the key inside the payload the contract measured.
+// Every other rule here leads with something that is not a place in the document
+// at all, such as the component type or the name of a mechanism, or with a name
+// the subject's own locator already ends with; positioning on either would name
+// a key no file contains. Keeping the choice at one site is what stops it being
+// made per rule, where the value happens to look path-like often enough to be
+// appended by mistake.
 func pillarObjections(
 	s constraint.Subject,
 	pillar string,
@@ -49,7 +60,7 @@ func pillarObjections(
 	}
 	out := make([]constraint.Objection, 0, len(findings))
 	for _, f := range findings {
-		out = append(out, s.Raise(ErrSchemaConformance(), f.path, f.keyword, f.reason))
+		out = append(out, s.RaiseAt(ErrSchemaConformance(), f.path, f.keyword, f.reason))
 	}
 	return out
 }

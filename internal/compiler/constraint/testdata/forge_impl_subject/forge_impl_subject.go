@@ -21,6 +21,10 @@ func (impostor) Locator() string { return ".spec.components.web" }
 
 func (impostor) Raise(error, ...string) constraint.Objection { return constraint.Objection{} }
 
+func (impostor) RaiseAt(error, string, ...string) constraint.Objection {
+	return constraint.Objection{}
+}
+
 func (impostor) sealed() {}
 
 // Passed claims the impostor satisfies the framework's subject contract.

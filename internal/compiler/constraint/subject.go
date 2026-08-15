@@ -3,7 +3,10 @@
 
 package constraint
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // Subject is what a check is invoked once per, and the only source of an
 // [Objection]. It answers where the thing it stands for was authored, and it
@@ -36,15 +39,28 @@ type Subject interface {
 	// sentinel and the check's detail.
 	Raise(sentinel error, detail ...string) Objection
 
+	// RaiseAt produces an Objection attributed to the element leaf names
+	// inside this subject, carrying sentinel, leaf as the first detail
+	// value, and the check's remaining detail after it.
+	RaiseAt(sentinel error, leaf string, detail ...string) Objection
+
 	sealed()
 }
 
 // provenance is the one implementation of [Subject]'s behaviour. Every subject
 // kind embeds it, so attribution and objection construction have a single home
 // and a kind contributes only its traversal and its marker.
+//
+// The segments are kept alongside the locator they assemble because a raise
+// positioned inside the subject has to assemble a longer locator, and it does
+// that by handing a longer segment list to the same assembly the shorter one
+// came from. Keeping the string alone would leave that raise to re-express the
+// dialect's separator, which is the second assembly site authoredLocator exists
+// to prevent.
 type provenance struct {
-	file    string
-	locator string
+	file     string
+	segments []string
+	locator  string
 }
 
 func (provenance) sealed() {}
@@ -58,7 +74,14 @@ func (p provenance) Locator() string { return p.locator }
 // subject kind's constructor goes through it, so a traversal supplies segments
 // and never a format.
 func newProvenance(sourceFile string, segments ...string) provenance {
-	return provenance{file: sourceFile, locator: authoredLocator(segments...)}
+	return provenance{
+		file: sourceFile,
+		// Copied because a subject outlives the call that built its segments,
+		// and a producer reusing its slice would otherwise change a locator
+		// already handed out.
+		segments: slices.Clone(segments),
+		locator:  authoredLocator(segments...),
+	}
 }
 
 func (p provenance) Raise(sentinel error, detail ...string) Objection {
@@ -67,6 +90,44 @@ func (p provenance) Raise(sentinel error, detail ...string) Objection {
 		o.detail = make([]string, len(detail))
 		copy(o.detail, detail)
 	}
+	return o
+}
+
+// RaiseAt is the raise for a rule whose objection is about a named element
+// inside the subject rather than about the subject as a whole.
+//
+// A rule measuring a payload against a contract objects about one key inside
+// that payload, and a finding positioned at the payload's owner leaves the
+// author to find which key it meant. leaf names that element relative to the
+// subject, and may be several authored keys deep.
+//
+// Which rules use it is the rule author's statement and not a property the
+// framework derives: calling it declares that leaf names an authored element.
+// A rule whose leading value names something else — a declared type, a
+// mechanism, a key some other declaration publishes — or names one this
+// subject's own locator already ends with, calls [Subject.Raise] instead and
+// keeps its finding at the subject. The framework cannot tell those apart,
+// because every detail value is a string, which is why the declaration is the
+// call rather than something derived from the value.
+//
+// leaf becomes the objection's first detail value as well as the last part of
+// its locator, so a reader of the detail and a reader of the locator cannot be
+// told two different things about which element the objection is about.
+//
+// A subject with no authored locator gets none from this either. An element
+// inside a site the source file does not name has nothing to be named relative
+// to, and rooting leaf on nothing would name a path no file contains — the
+// same reason the traversals drop a tail whose base is empty.
+func (p provenance) RaiseAt(sentinel error, leaf string, detail ...string) Objection {
+	o := p.Raise(sentinel, append([]string{leaf}, detail...)...)
+	if p.locator == "" {
+		return o
+	}
+	// Assembled from a copy: appending onto the subject's own segments could
+	// write into the array a sibling subject reads.
+	within := make([]string, 0, len(p.segments)+1)
+	within = append(within, p.segments...)
+	o.locator = authoredLocator(append(within, leaf)...)
 	return o
 }
 

@@ -290,6 +290,133 @@ func TestAuthoredLocatorDialectAndTheEmptyRule(t *testing.T) {
 	}
 }
 
+// TestRaisingAtALeafPositionsInsideTheSubject pins the raise a rule uses when its
+// objection is about a named element inside the subject rather than about the
+// subject as a whole.
+//
+// INVARIANT: the leaf lands on the locator and on the detail, from one call, so a
+// reader of the position and a reader of the values cannot be told two different
+// things about which element the objection is about.
+// CONSEQUENCE: were the leaf carried on the detail alone, a front end would
+// position every such finding at the element's owner, and the author would be
+// told which component is wrong without being told which key.
+func TestRaisingAtALeafPositionsInsideTheSubject(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name        string
+		segments    []string
+		leaf        string
+		wantLocator string
+	}{
+		{
+			name:        "a single authored key",
+			segments:    []string{"spec", "components", "web"},
+			leaf:        "values",
+			wantLocator: ".spec.components.web.values",
+		},
+		{
+			// The shape every rule that opts in actually supplies: the contract
+			// reports a path several keys deep inside the payload, and it arrives
+			// as one already-dotted value rather than as separate segments.
+			name:        "a leaf several authored keys deep arrives already joined",
+			segments:    []string{"spec", "components", "web"},
+			leaf:        "values.replicas",
+			wantLocator: ".spec.components.web.values.replicas",
+		},
+		{
+			name:        "a subject inside a declared scope keeps its scope",
+			segments:    []string{"spec", "subsystems", "data", "components", "web"},
+			leaf:        "infra.size",
+			wantLocator: ".spec.subsystems.data.components.web.infra.size",
+		},
+		{
+			// A subject the source file does not name has nothing for the leaf to
+			// be named relative to, so the leaf is dropped rather than rooted on
+			// nothing. Emitting it alone would name ".values.replicas", a path no
+			// file contains.
+			name:        "a subject with no authored locator gets none from the leaf either",
+			segments:    nil,
+			leaf:        "values.replicas",
+			wantLocator: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			p := newProvenance("aggregate.yaml", tc.segments...)
+			at := p.RaiseAt(errRuleBroken, tc.leaf, "minimum", "expected at least 1")
+
+			if got := at.Locator(); got != tc.wantLocator {
+				t.Errorf("locator = %q; want %q", got, tc.wantLocator)
+			}
+			want := []string{tc.leaf, "minimum", "expected at least 1"}
+			if got := at.Detail(); !equalDetail(got, want) {
+				t.Errorf("detail = %v; want %v, the leaf first and the rule's own values after it",
+					got, want)
+			}
+
+			// The control. Raise is the same call without the positioning, so if
+			// RaiseAt silently stopped composing, every assertion above would
+			// still hold for a subject whose locator happens to be the empty one
+			// — and this row is what makes that visible everywhere else.
+			plain := p.Raise(errRuleBroken, tc.leaf, "minimum", "expected at least 1")
+			if plain.Locator() != p.Locator() {
+				t.Errorf("Raise moved the locator to %q; want the subject's own %q — "+
+					"positioning belongs to RaiseAt alone", plain.Locator(), p.Locator())
+			}
+			if tc.wantLocator != "" && at.Locator() == plain.Locator() {
+				t.Errorf("RaiseAt and Raise both positioned at %q.\n"+
+					"INVARIANT: raising at a leaf positions deeper than raising at the subject.\n"+
+					"CONSEQUENCE: the composition has stopped happening and every rule that "+
+					"opted in has quietly gone back to naming the element's owner.",
+					at.Locator())
+			}
+		})
+	}
+}
+
+// TestRaisingAtALeafDoesNotDisturbTheSubject pins that the composition is per
+// objection rather than to the subject the framework handed the check.
+//
+// A check is invoked once per subject and may raise many times, so a composition
+// writing through to the subject would make the second objection's position
+// depend on the first one's leaf. Nothing about that failure is loud: every
+// finding still carries a plausible path.
+func TestRaisingAtALeafDoesNotDisturbTheSubject(t *testing.T) {
+	t.Parallel()
+
+	p := newProvenance("aggregate.yaml", "spec", "components", "web")
+
+	first := p.RaiseAt(errRuleBroken, "values.replicas")
+	second := p.RaiseAt(errRuleBroken, "values.image")
+
+	if first.Locator() != ".spec.components.web.values.replicas" {
+		t.Errorf("first locator = %q; want .spec.components.web.values.replicas", first.Locator())
+	}
+	if second.Locator() != ".spec.components.web.values.image" {
+		t.Errorf("second locator = %q; want .spec.components.web.values.image — the second "+
+			"raise composed onto the first one's leaf rather than onto the subject",
+			second.Locator())
+	}
+	if p.Locator() != ".spec.components.web" {
+		t.Errorf("the subject's own locator is now %q; want .spec.components.web unchanged",
+			p.Locator())
+	}
+}
+
+func equalDetail(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // TestNestedScopeSegmentsRepeatTheContainerKeyPerLevel pins the segment rule for a
 // scope that nests, which the traversal transcript exercises for one shape per
 // axis only.
