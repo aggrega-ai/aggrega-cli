@@ -138,16 +138,25 @@ type CatalogLookup struct {
 //
 // Returns nil when agg is nil. Individual guards skip silently when their
 // required CatalogLookup function is nil.
+// The derived contracts every guard below reads are resolved ONCE, here, and the
+// guards that need one read it rather than compiling it again. Compiling per
+// guard would multiply the work by the number of guards, and — because the
+// compile entry reports every failure the same way it reports an absent contract
+// — would give each guard its own chance to read a compile failure as a type
+// that simply declares nothing, validate nothing, and say nothing. One
+// resolution has one place a failure can be named.
 func RunGuards(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup, boundaryInfra map[string]*BoundaryInfra, parameters map[string]any) []*ResolverError {
+	contracts := newNormalizedView(na, release, catalog, parameters)
+
 	var errs []*ResolverError
 	errs = append(errs, guardUsesSocket(na, release, catalog)...)
 	errs = append(errs, guardReleaseUsesSocket(na, release, catalog)...)
 	errs = append(errs, guardSelfInject(na, catalog)...)
-	errs = append(errs, guardInjectKeys(na, catalog)...)
+	errs = append(errs, guardInjectKeys(na, catalog, contracts)...)
 	errs = append(errs, guardFeatureMerge(na, release)...)
 	errs = append(errs, guardRequiredUsesSockets(na, release, catalog)...)
-	errs = append(errs, guardSchemaConformance(na, catalog, boundaryInfra, parameters)...)
-	errs = append(errs, guardEdgeConformance(na, release, catalog, parameters)...)
+	errs = append(errs, guardSchemaConformance(na, catalog, boundaryInfra, parameters, contracts)...)
+	errs = append(errs, guardEdgeConformance(na, release, catalog, parameters, contracts)...)
 	errs = append(errs, guardAttachmentSlotShape(na, catalog)...)
 	return errs
 }

@@ -106,7 +106,7 @@ spec:
 `+indent(tc.usesBlock, 8)+`    db:
       type: app/db:1.0.0
 `)
-			errs := guardEdgeConformance(normalized(t, agg), nil, cat, nil)
+			errs := guardEdgeConformance(normalized(t, agg), nil, cat, nil, newNormalizedView(normalized(t, agg), nil, cat, nil))
 			if len(errs) != len(tc.wantAliases) {
 				t.Fatalf("want %d diagnostic(s) at aliases %q; got %d: %v",
 					len(tc.wantAliases), tc.wantAliases, len(errs), errs)

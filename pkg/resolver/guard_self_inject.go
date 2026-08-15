@@ -170,23 +170,47 @@ func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 // User-facing error emission is canonicalised at each emitting boundary; this
 // helper's slice ordering is semantic-only.
 func InjectMechanismNames(inject *types.InjectBlock) []string {
-	if inject == nil {
+	payloads := injectMechanismPayloads(inject)
+	if payloads.Len() == 0 {
 		return nil
 	}
-	var mechs []string
+	return payloads.Keys()
+}
+
+// injectMechanismPayloads pairs every mechanism an injection block dictates with
+// the payload the author wrote under it, in the order above: the core mechanisms
+// in struct-field order when their sub-field is non-nil, then custom mechanisms
+// in author order.
+//
+// It is the one enumeration of an injection block's mechanisms, which is why the
+// name reading sits on top of it rather than beside it. A reader that walked the
+// block itself would be a second statement of which names the block carries as
+// fields, and the two would be free to disagree the moment either moved — a
+// disagreement nothing would catch, because both would still compile and both
+// would still return mechanism names.
+//
+// Presence is the key's, not the payload's, for the reason the name reading
+// records: the conversions further down the build drop a payload they cannot
+// express as one string per delivery key, so counting a mechanism only when its
+// payload survives would silently miss a dictation.
+func injectMechanismPayloads(inject *types.InjectBlock) types.OrderedMap[any] {
+	out := types.OrderedMap[any]{}
+	if inject == nil {
+		return out
+	}
 	if inject.Env != nil {
-		mechs = append(mechs, "env")
+		out.Set("env", inject.Env)
 	}
 	if inject.File != nil {
-		mechs = append(mechs, "file")
+		out.Set("file", inject.File)
 	}
 	if inject.Arg != nil {
-		mechs = append(mechs, "arg")
+		out.Set("arg", inject.Arg)
 	}
-	for k := range inject.Additional.All() {
-		mechs = append(mechs, k)
+	for k, v := range inject.Additional.All() {
+		out.Set(k, v)
 	}
-	return mechs
+	return out
 }
 
 // appendInjectDeliveryKeys appends the delivery-key names carried by one

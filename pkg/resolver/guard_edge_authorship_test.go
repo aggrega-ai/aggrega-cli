@@ -170,7 +170,7 @@ func TestEdgeConformance_OperatorEntryIsJudgedWhereItWasWritten(t *testing.T) {
 			if tc.alias != "" {
 				rel = releaseNaming(t, "databases", tc.alias, tc.body)
 			}
-			errs := guardEdgeConformance(normalized(t, agg), rel, cat, nil)
+			errs := guardEdgeConformance(normalized(t, agg), rel, cat, nil, newNormalizedView(normalized(t, agg), rel, cat, nil))
 			if !tc.wantHalt {
 				if len(errs) != 0 {
 					t.Fatalf("nothing authored against the contract must pass; got %v", errs)
@@ -224,7 +224,7 @@ spec:
     db:
       type: app/db:1.0.0
 `)
-	errs := guardEdgeConformance(normalized(t, authoredEmpty), nil, cat, nil)
+	errs := guardEdgeConformance(normalized(t, authoredEmpty), nil, cat, nil, newNormalizedView(normalized(t, authoredEmpty), nil, cat, nil))
 	if len(errs) != 1 || !errors.Is(errs[0], ErrSchemaConformance()) {
 		t.Fatalf("a developer entry authoring no required per-edge key must halt exactly once; got %v", errs)
 	}
@@ -259,7 +259,7 @@ spec:
       type: app/db:1.0.0
 `)
 	rel := releaseNaming(t, "databases", "replica", "target: db\ninfra:\n  storage_class: fast\n")
-	if errs := guardEdgeConformance(normalized(t, oneConnection), rel, cat, nil); len(errs) != 0 {
+	if errs := guardEdgeConformance(normalized(t, oneConnection), rel, cat, nil, newNormalizedView(normalized(t, oneConnection), rel, cat, nil)); len(errs) != 0 {
 		t.Fatalf("a connection the application's block never wrote must not be judged against its developer contract; got %v", errs)
 	}
 }

@@ -5,7 +5,7 @@ package resolver
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -42,7 +42,12 @@ import (
 // catalog-less paths skip the check rather than erroring. Instances whose type
 // is not in the catalog are skipped; unknown-type reporting belongs to other
 // guards.
-func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
+//
+// The published-key set is READ off the resolution the guarded resolve already
+// performed, through the projection of a component type's own contract, so this
+// rule and the rule over that contract read one resolution rather than two that
+// happen to agree.
+func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup, contracts *normalizedView) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
@@ -57,40 +62,32 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 		typeByInstance[p.name] = p.inst.Type
 	}
 
-	// Memoise provides-key extraction per Component type. The bool reports
-	// whether the type resolved in the catalog; absent types are skipped.
-	providesCache := map[string]map[string]bool{}
-	resolvedType := map[string]bool{}
 	// View-inconsistency halts collected from providesFor's catalog miss; merged
 	// into errs before sorting (providesFor's bool return cannot carry a halt).
+	// Reported once per type, which is what the seen set holds.
+	reported := map[string]bool{}
 	var viewErrs []*ResolverError
-	providesFor := func(compType string) (map[string]bool, bool) {
-		if keys, seen := providesCache[compType]; seen {
-			return keys, resolvedType[compType]
-		}
-		// One reader: a Component's authored schema. An extending Component
-		// receives its base's pillar block exactly as the base authored it, so
-		// the authored set already carries every inherited provides key and
-		// there is no second, composed view to prefer over it. Do not
-		// reintroduce one — a Component whose authored and enforced pillar sets
-		// could differ is how an extending Component came to accept a provides
-		// key its standalone twin rejected.
-		catComp, found := catalog.Component(compType)
-		if !found {
+	providesFor := func(compType string) ([]string, bool) {
+		// One reader: a Component's authored schema, projected once. An
+		// extending Component receives its base's pillar block exactly as the
+		// base authored it, so the authored set already carries every inherited
+		// provides key and there is no second, composed view to prefer over it.
+		// Do not reintroduce one — a Component whose authored and enforced
+		// pillar sets could differ is how an extending Component came to accept
+		// a provides key its standalone twin rejected.
+		if !contracts.CatalogComponentPresent(compType) {
 			// providesFor's bool return cannot carry a halt; record a view
 			// inconsistency for a resolved bare-token catalog ref absent here
 			// (a Tier-1 relative-path type legitimately resolves to no entity).
-			if verr := guardEntityViewInconsistency(entity, fmt.Sprintf("inject resolution for type %q", compType), compType); verr != nil {
-				viewErrs = append(viewErrs, verr)
+			if !reported[compType] {
+				reported[compType] = true
+				if verr := guardEntityViewInconsistency(entity, fmt.Sprintf("inject resolution for type %q", compType), compType); verr != nil {
+					viewErrs = append(viewErrs, verr)
+				}
 			}
-			providesCache[compType] = nil
-			resolvedType[compType] = false
 			return nil, false
 		}
-		keys := ComponentProvidesKeys(catComp, catalog.SchemaLibraries)
-		providesCache[compType] = keys
-		resolvedType[compType] = true
-		return keys, true
+		return contracts.DeclaredProvidesKeys(compType), true
 	}
 
 	var errs []*ResolverError
@@ -104,7 +101,7 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 			ownKeys, ok := providesFor(comp.Type)
 			if ok {
 				for _, ref := range selfInjectFromRefs(comp.Inject) {
-					if !ownKeys[ref.providesKey] {
+					if !slices.Contains(ownKeys, ref.providesKey) {
 						errs = append(errs, &ResolverError{
 							Entity:  entity,
 							Field:   fmt.Sprintf("%s.inject.%s[%q]", base, ref.mechanism, ref.deliveryKey),
@@ -135,7 +132,7 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 					continue
 				}
 				for _, ref := range usesInjectFromRefs(entry.Inject) {
-					if !targetKeys[ref.providesKey] {
+					if !slices.Contains(targetKeys, ref.providesKey) {
 						errs = append(errs, &ResolverError{
 							Entity:  entity,
 							Field:   fmt.Sprintf("%s.uses[%q][%q].inject.%s[%q]", base, socket, alias, ref.mechanism, ref.deliveryKey),
@@ -167,19 +164,7 @@ type injectFromRef struct {
 // string literals and verbose `value:` templates are not. Custom mechanisms
 // flow through the same extraction as env / file / arg.
 func selfInjectFromRefs(inject *types.InjectBlock) []injectFromRef {
-	var refs []injectFromRef
-	collect := func(mech string, raw any) {
-		for _, e := range decodeFromEntries(raw, true) {
-			refs = append(refs, injectFromRef{mechanism: mech, deliveryKey: e.deliveryKey, providesKey: e.providesKey})
-		}
-	}
-	collect("env", inject.Env)
-	collect("file", inject.File)
-	collect("arg", inject.Arg)
-	for mech, raw := range inject.Additional.All() {
-		collect(mech, raw)
-	}
-	return refs
+	return injectFromRefs(inject, true)
 }
 
 // usesInjectFromRefs returns the provides-key references in a uses-level inject
@@ -187,17 +172,24 @@ func selfInjectFromRefs(inject *types.InjectBlock) []injectFromRef {
 // and verbose `from:` entries alike. Custom mechanisms flow through the same
 // extraction as env / file / arg.
 func usesInjectFromRefs(inject *types.InjectBlock) []injectFromRef {
+	return injectFromRefs(inject, false)
+}
+
+// injectFromRefs walks an injection block's mechanisms through the one
+// enumeration of them and extracts each mechanism's references in the mode the
+// surface calls for.
+//
+// The two surfaces differ only in that mode, which is why one walk serves both.
+// A walk per surface would be a second statement of which mechanisms a block
+// carries, and the two would be free to recognise different sets — a
+// disagreement nothing catches, because each would still return references.
+func injectFromRefs(inject *types.InjectBlock, selfMode bool) []injectFromRef {
 	var refs []injectFromRef
-	collect := func(mech string, raw any) {
-		for _, e := range decodeFromEntries(raw, false) {
+	payloads := injectMechanismPayloads(inject)
+	for mech, raw := range payloads.All() {
+		for _, e := range decodeFromEntries(raw, selfMode) {
 			refs = append(refs, injectFromRef{mechanism: mech, deliveryKey: e.deliveryKey, providesKey: e.providesKey})
 		}
-	}
-	collect("env", inject.Env)
-	collect("file", inject.File)
-	collect("arg", inject.Arg)
-	for mech, raw := range inject.Additional.All() {
-		collect(mech, raw)
 	}
 	return refs
 }
@@ -305,18 +297,15 @@ func decodeFromEntries(raw any, selfMode bool) []fromEntry {
 
 // invalidInjectKeyMessage formats the actionable diagnostic for an inject
 // `from:` reference to a key the target Component does not declare. The legal
-// keys are listed in sorted order; an empty `provides` is named explicitly so
-// the developer understands the Component exposes no public API.
-func invalidInjectKeyMessage(key, targetType string, declared map[string]bool) string {
+// keys arrive sorted — the projection they are read from promises that — and an
+// empty `provides` is named explicitly so the developer understands the
+// Component exposes no public API. Sorting again here would be a second
+// statement of the same ordering, free to disagree with the first.
+func invalidInjectKeyMessage(key, targetType string, declared []string) string {
 	if len(declared) == 0 {
 		return fmt.Sprintf("inject from-key %q is not a provides key of component type %q, which declares no provides keys", key, targetType)
 	}
-	keys := make([]string, 0, len(declared))
-	for k := range declared {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return fmt.Sprintf("inject from-key %q is not declared in component type %q provides; declared keys are: %v", key, targetType, keys)
+	return fmt.Sprintf("inject from-key %q is not declared in component type %q provides; declared keys are: %v", key, targetType, declared)
 }
 
 // ComponentProvidesKeys returns the set of declared `provides` keys for a

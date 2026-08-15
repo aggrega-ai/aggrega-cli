@@ -42,11 +42,11 @@ func componentNoSchema() types.Component {
 // TestGuardInjectKeys_NilInputsReturnNil verifies boundary behavior.
 func TestGuardInjectKeys_NilInputsReturnNil(t *testing.T) {
 	t.Parallel()
-	if errs := guardInjectKeys(normalized(t, nil), CatalogLookup{}); errs != nil {
+	if errs := guardInjectKeys(normalized(t, nil), CatalogLookup{}, newNormalizedView(normalized(t, nil), nil, CatalogLookup{}, nil)); errs != nil {
 		t.Errorf("expected nil errors on nil agg; got %v", errs)
 	}
 	agg := &types.Aggregate{}
-	if errs := guardInjectKeys(normalized(t, agg), CatalogLookup{Component: nil}); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), CatalogLookup{Component: nil}, newNormalizedView(normalized(t, agg), nil, CatalogLookup{Component: nil}, nil)); errs != nil {
 		t.Errorf("expected nil errors on nil catalog.Component; got %v", errs)
 	}
 }
@@ -66,7 +66,7 @@ func TestGuardInjectKeys_NoInjectIsClean(t *testing.T) {
 		},
 	}
 
-	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog, newNormalizedView(normalized(t, agg), nil, catalog, nil)); errs != nil {
 		t.Errorf("expected nil errors; got %v", errs)
 	}
 }
@@ -94,7 +94,7 @@ func TestGuardInjectKeys_SelfInjectFromTypoHalts(t *testing.T) {
 		},
 	}
 
-	errs := guardInjectKeys(normalized(t, agg), catalog)
+	errs := guardInjectKeys(normalized(t, agg), catalog, newNormalizedView(normalized(t, agg), nil, catalog, nil))
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d (%v)", len(errs), errs)
 	}
@@ -136,7 +136,7 @@ func TestGuardInjectKeys_SelfInjectValidFromPasses(t *testing.T) {
 		},
 	}
 
-	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog, newNormalizedView(normalized(t, agg), nil, catalog, nil)); errs != nil {
 		t.Errorf("expected nil errors; got %v", errs)
 	}
 }
@@ -187,7 +187,7 @@ func TestGuardInjectKeys_InheritedProvidesAccepted(t *testing.T) {
 		Component: func(string) (types.Component, bool) { return resolved, true },
 	}
 
-	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog, newNormalizedView(normalized(t, agg), nil, catalog, nil)); errs != nil {
 		t.Errorf("inherited provides key must resolve off the extending Component's schema; got %v", errs)
 	}
 }
@@ -226,7 +226,7 @@ func TestGuardInjectKeys_UsesCrossInjectTypoHalts(t *testing.T) {
 		},
 	}
 
-	errs := guardInjectKeys(normalized(t, agg), catalog)
+	errs := guardInjectKeys(normalized(t, agg), catalog, newNormalizedView(normalized(t, agg), nil, catalog, nil))
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d (%v)", len(errs), errs)
 	}
@@ -273,7 +273,7 @@ func TestGuardInjectKeys_UsesCrossInjectValidPasses(t *testing.T) {
 		},
 	}
 
-	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog, newNormalizedView(normalized(t, agg), nil, catalog, nil)); errs != nil {
 		t.Errorf("expected nil errors; got %v", errs)
 	}
 }
@@ -306,7 +306,7 @@ func TestGuardInjectKeys_CustomMechanismCovered(t *testing.T) {
 		},
 	}
 
-	errs := guardInjectKeys(normalized(t, agg), catalog)
+	errs := guardInjectKeys(normalized(t, agg), catalog, newNormalizedView(normalized(t, agg), nil, catalog, nil))
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d (%v)", len(errs), errs)
 	}
@@ -342,7 +342,7 @@ func TestGuardInjectKeys_NoProvidesRejectsEveryFrom(t *testing.T) {
 		},
 	}
 
-	errs := guardInjectKeys(normalized(t, agg), catalog)
+	errs := guardInjectKeys(normalized(t, agg), catalog, newNormalizedView(normalized(t, agg), nil, catalog, nil))
 	if len(errs) != 2 {
 		t.Fatalf("expected 2 errors (every from: rejected); got %d (%v)", len(errs), errs)
 	}
@@ -377,7 +377,7 @@ func TestGuardInjectKeys_RelativePathTargetTypeSkipped(t *testing.T) {
 		},
 	}
 
-	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
+	if errs := guardInjectKeys(normalized(t, agg), catalog, newNormalizedView(normalized(t, agg), nil, catalog, nil)); errs != nil {
 		t.Errorf("expected nil errors for relative-path (non-catalog) type; got %v", errs)
 	}
 }

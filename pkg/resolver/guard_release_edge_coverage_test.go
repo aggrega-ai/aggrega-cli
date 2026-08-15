@@ -206,13 +206,13 @@ func TestEdgeConformanceGuard_InspectsEveryPlacement(t *testing.T) {
 			cat := edgeCoverageCatalog(t)
 
 			bad := releaseNaming(t, "databases", "main", "target: db\ninfra:\n  storage_class: nonsense\n")
-			errs := guardEdgeConformance(normalized(t, agg), bad, cat, nil)
+			errs := guardEdgeConformance(normalized(t, agg), bad, cat, nil, newNormalizedView(normalized(t, agg), bad, cat, nil))
 			if len(errs) != 1 || !errors.Is(errs[0], ErrSchemaConformance()) {
 				t.Fatalf("non-conforming per-edge infra must halt; got %v", errs)
 			}
 
 			good := releaseNaming(t, "databases", "main", "target: db\ninfra:\n  storage_class: fast\n")
-			if errs := guardEdgeConformance(normalized(t, agg), good, cat, nil); len(errs) != 0 {
+			if errs := guardEdgeConformance(normalized(t, agg), good, cat, nil, newNormalizedView(normalized(t, agg), good, cat, nil)); len(errs) != 0 {
 				t.Fatalf("conforming per-edge infra must pass; got %v", errs)
 			}
 		})
@@ -301,7 +301,7 @@ spec:
 `+indent(tc.usesBlock, 8)+`    db:
       type: app/db:1.0.0
 `)
-			errs := guardEdgeConformance(normalized(t, agg), nil, cat, nil)
+			errs := guardEdgeConformance(normalized(t, agg), nil, cat, nil, newNormalizedView(normalized(t, agg), nil, cat, nil))
 			if tc.wantHalt {
 				if len(errs) != 1 || !errors.Is(errs[0], ErrSchemaConformance()) {
 					t.Fatalf("edge authoring no required per-edge key must halt; got %v", errs)
@@ -340,7 +340,7 @@ spec:
 `)
 	// "databases" declares an infraSchema but no valueSchema, so the developer
 	// per-edge values pillar has no contract to be checked against.
-	if errs := guardEdgeConformance(normalized(t, agg), nil, edgeCoverageCatalog(t), nil); len(errs) != 0 {
+	if errs := guardEdgeConformance(normalized(t, agg), nil, edgeCoverageCatalog(t), nil, newNormalizedView(normalized(t, agg), nil, edgeCoverageCatalog(t), nil)); len(errs) != 0 {
 		t.Fatalf("socket declaring no valueSchema must skip its edges; got %v", errs)
 	}
 }

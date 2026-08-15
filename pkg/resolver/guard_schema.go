@@ -58,11 +58,19 @@ import (
 // type is absent from the catalog is skipped (unknown-type reporting belongs to
 // other guards). A Component with no values schema has no values to validate;
 // a component with no boundary infra has no infra to validate.
+//
+// The contract each instance's type declares is READ from the resolution the
+// guarded resolve already performed, rather than compiled here. Compiling it
+// here would resolve the same contract a second time, and the compile entry's
+// not-ok answer covers a declared contract that failed as well as a type that
+// declares none — so a second resolution is a second chance to read a failure as
+// an absence and validate nothing without saying so.
 func guardSchemaConformance(
 	na types.NormalizedAggregate,
 	catalog CatalogLookup,
 	boundaryInfra map[string]*BoundaryInfra,
 	parameters map[string]any,
+	contracts *normalizedView,
 ) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
@@ -70,36 +78,21 @@ func guardSchemaConformance(
 	}
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 
-	// Memoise the compiled schema per Component type — many instances share one.
-	type compiledEntry struct {
-		schema compactform.Schema
-		ok     bool
-	}
-	compiledCache := map[string]compiledEntry{}
-	compiledFor := func(compType string) (compactform.Schema, bool) {
-		if e, seen := compiledCache[compType]; seen {
-			return e.schema, e.ok
-		}
-		compiled, ok := CompileComponentSchema(catalog, compType)
-		compiledCache[compType] = compiledEntry{schema: compiled, ok: ok}
-		return compiled, ok
-	}
-
 	var errs []*ResolverError
 	for _, p := range collectComponentInstances(na) {
 		componentField := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
-		// Classify a missing catalog entity HERE, before the compile call —
-		// compiledFor/CompileComponentSchema return only a bool, which would
-		// swallow a resolved-but-absent halt into the legitimate Kind==0 /
-		// compile-failure skip. A bare-token catalog ref absent from the view is
-		// a loud inconsistency; a Tier-1 relative-path type is a legitimate skip.
+		// Classify a missing catalog entity HERE, before reading the contract —
+		// the resolved-contract answer carries a bool, which would swallow a
+		// resolved-but-absent halt into the legitimate no-contract skip. A
+		// bare-token catalog ref absent from the view is a loud inconsistency; a
+		// Tier-1 relative-path type is a legitimate skip.
 		if _, found := catalog.Component(p.inst.Type); !found {
 			if verr := guardEntityViewInconsistency(entity, componentField, p.inst.Type); verr != nil {
 				errs = append(errs, verr)
 			}
 			continue
 		}
-		compiled, ok := compiledFor(p.inst.Type)
+		compiled, ok := contracts.CompiledComponentSchema(p.inst.Type)
 		if !ok {
 			continue
 		}
@@ -148,7 +141,12 @@ func guardSchemaConformance(
 // graph is flattened — is skipped here and validated once flattening has made it
 // visible; that coverage boundary is the same one the undeclared-socket guard
 // carries.
-func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup, parameters map[string]any) []*ResolverError {
+//
+// Each socket's per-edge contract is READ from the resolution the guarded
+// resolve already performed, for the reason its component-level sibling records:
+// one resolution has one place a failure can be named, and a second one would be
+// a second chance to read that failure as a socket that declares no contract.
+func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup, parameters map[string]any, contracts *normalizedView) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
@@ -178,7 +176,7 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 			continue
 		}
 		for socket, sv := range p.inst.Uses.All() {
-			compiled, ok := CompileSocketPillarSchema(catalog, p.inst.Type, socket, "values")
+			compiled, ok := contracts.CompiledSocketValueSchema(p.inst.Type, socket)
 			if !ok {
 				continue
 			}
@@ -205,15 +203,15 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 			}
 			field := fmt.Sprintf("%s.uses[%q][%q]",
 				releaseComponentFieldPath(ref.boundaryPath, ref.locator, ref.synthesized), ref.socket, ref.alias)
-			// Classify before CompileSocketPillarSchema (bool-swallow) — same as
-			// the values path above.
+			// Classify before reading the contract (bool-swallow) — same as the
+			// values path above.
 			if _, found := catalog.Component(compType); !found {
 				if verr := guardEntityViewInconsistency(relEntity, field, compType); verr != nil {
 					errs = append(errs, verr)
 				}
 				continue
 			}
-			compiled, ok := CompileSocketPillarSchema(catalog, compType, ref.socket, "infra")
+			compiled, ok := contracts.CompiledSocketInfraSchema(compType, ref.socket)
 			if !ok {
 				continue
 			}
@@ -304,13 +302,40 @@ func EdgeValuesOf(sv types.UsesSocketValue) []EdgeValues {
 // undeclared, the socket declares no schema for the pillar (Kind == 0), or the
 // content fails to compile.
 func CompileSocketPillarSchema(catalog CatalogLookup, compType, socket, pillar string) (compactform.Schema, bool) {
-	catComp, found := catalog.Component(compType)
-	if !found {
+	compiled, declared, err := compileSocketPillarSchema(catalog, compType, socket, pillar)
+	if !declared || err != nil {
 		return nil, false
+	}
+	return compiled, true
+}
+
+// compileSocketPillarSchema is the classifying form of the socket-contract
+// compile, and the home of it: it separates a socket that declares no contract
+// for the pillar from one whose declared contract failed to compile, which the
+// bool-returning entry above cannot express.
+//
+// The distinction exists because the two require opposite treatment and only one
+// of them is correct to pass over silently. A socket declaring no contract has
+// nothing to measure an edge against, and skipping is right. A declared contract
+// that fails to compile has something to measure against that nobody can read,
+// and skipping it retires a diagnostic without saying so — which is precisely
+// how a check comes to stop firing with nothing to show that it did.
+//
+// The returned declared flag reports whether a contract was authored at all; err
+// is why an authored one did not compile. A schema and a nil error together are
+// the only combination that means there is a contract to read, and a contract
+// that compiles to nothing is a non-nil empty schema rather than the nil one an
+// absence returns.
+func compileSocketPillarSchema(
+	catalog CatalogLookup, compType, socket, pillar string,
+) (compactform.Schema, bool, error) {
+	catComp, found := lookupComponent(catalog, compType)
+	if !found {
+		return nil, false, nil
 	}
 	sock, ok := catComp.Spec.UsesSchema.Get(socket)
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 	var node *yaml.Node
 	switch pillar {
@@ -319,10 +344,10 @@ func CompileSocketPillarSchema(catalog CatalogLookup, compType, socket, pillar s
 	case "infra":
 		node = &sock.InfraSchema
 	default:
-		return nil, false
+		return nil, false, nil
 	}
 	if node.Kind == 0 {
-		return nil, false
+		return nil, false, nil
 	}
 	wrapper := &yaml.Node{
 		Kind: yaml.MappingNode,
@@ -331,15 +356,11 @@ func CompileSocketPillarSchema(catalog CatalogLookup, compType, socket, pillar s
 			node,
 		},
 	}
-	var opts []compactform.CompileOption
-	if len(catalog.SchemaLibraries) > 0 {
-		opts = append(opts, compactform.WithSchemaLibraries(catalog.SchemaLibraries))
-	}
-	compiled, err := compactform.Compile(wrapper, opts...)
+	compiled, err := compactform.Compile(wrapper, schemaLibraryOptions(catalog)...)
 	if err != nil {
-		return nil, false
+		return nil, true, err
 	}
-	return compiled, true
+	return compiled, true, nil
 }
 
 // ValidatePillarConformance validates a resolved or authored pillar instance
@@ -408,19 +429,48 @@ func ValidatePillarConformanceStructural(
 // — two views of one Component's contract is how an inherited constraint came
 // to be enforced on one path and not another.
 func CompileComponentSchema(catalog CatalogLookup, compType string) (compactform.Schema, bool) {
-	catComp, found := catalog.Component(compType)
-	if !found || catComp.Spec.Schema.Kind == 0 {
-		return nil, false
-	}
-	var opts []compactform.CompileOption
-	if len(catalog.SchemaLibraries) > 0 {
-		opts = append(opts, compactform.WithSchemaLibraries(catalog.SchemaLibraries))
-	}
-	compiled, err := compactform.Compile(&catComp.Spec.Schema, opts...)
-	if err != nil {
+	compiled, declared, err := compileComponentSchema(catalog, compType)
+	if !declared || err != nil {
 		return nil, false
 	}
 	return compiled, true
+}
+
+// compileComponentSchema is the classifying form of the component-contract
+// compile, and the home of it. It separates a type declaring no contract from
+// one whose declared contract failed to compile, for the reason its socket-side
+// sibling records: only one of those two is correct to pass over silently, and
+// the bool-returning entry above reports them identically.
+//
+// The library set is not an option here. A caller that omitted it would compile
+// a contract whose cross-document references cannot resolve, and the failure
+// would arrive as the same not-ok an absent contract returns — so every
+// component whose contract reaches another document would quietly stop being
+// measured. The libraries come from the catalog this reads through, which is the
+// one place they can be missing from without the omission being a choice a
+// caller made.
+func compileComponentSchema(
+	catalog CatalogLookup, compType string,
+) (compactform.Schema, bool, error) {
+	catComp, found := lookupComponent(catalog, compType)
+	if !found || catComp.Spec.Schema.Kind == 0 {
+		return nil, false, nil
+	}
+	compiled, err := compactform.Compile(&catComp.Spec.Schema, schemaLibraryOptions(catalog)...)
+	if err != nil {
+		return nil, true, err
+	}
+	return compiled, true, nil
+}
+
+// schemaLibraryOptions is how a compile in this package reaches the catalog's
+// resolved library set, stated once so the two compiles cannot come to disagree
+// about whether cross-document references resolve.
+func schemaLibraryOptions(catalog CatalogLookup) []compactform.CompileOption {
+	if len(catalog.SchemaLibraries) == 0 {
+		return nil
+	}
+	return []compactform.CompileOption{compactform.WithSchemaLibraries(catalog.SchemaLibraries)}
 }
 
 func validatePillarConformance(

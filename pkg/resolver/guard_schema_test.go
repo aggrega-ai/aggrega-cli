@@ -84,7 +84,7 @@ func TestGuardSchemaConformance_InheritedConstraintEnforced(t *testing.T) {
 	t.Parallel()
 	cl := catalogFromExtendsChain(t, "values:\n  name: { type: string, required: true }\n  tls_enabled: { type: boolean, required: true }\n")
 	// name supplied, tls_enabled (inherited, required, no default) omitted.
-	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, nil, nil)
+	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, nil, nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil))
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values")
 }
 
@@ -96,10 +96,10 @@ func TestGuardSchemaConformance_ExtendsPredicateReadsParameter(t *testing.T) {
 	t.Parallel()
 	cl := catalogFromExtendsChain(t, "values:\n  tier:\n    type: string\n    validate: '{{ eq . (param \"allowedTier\") }}'\n    validateMessage: \"tier must equal allowedTier\"\n")
 	agg := aggWithValues("tier", "gold")
-	if errs := guardSchemaConformance(normalized(t, agg), cl, nil, map[string]any{"allowedTier": "gold"}); len(errs) != 0 {
+	if errs := guardSchemaConformance(normalized(t, agg), cl, nil, map[string]any{"allowedTier": "gold"}, newNormalizedView(normalized(t, agg), nil, cl, map[string]any{"allowedTier": "gold"})); len(errs) != 0 {
 		t.Fatalf("tier=gold under allowedTier=gold should pass on the inherited schema; got %v", errs)
 	}
-	errs := guardSchemaConformance(normalized(t, agg), cl, nil, map[string]any{"allowedTier": "silver"})
+	errs := guardSchemaConformance(normalized(t, agg), cl, nil, map[string]any{"allowedTier": "silver"}, newNormalizedView(normalized(t, agg), nil, cl, map[string]any{"allowedTier": "silver"}))
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values.tier")
 }
 
@@ -160,7 +160,7 @@ func aggWithValues(pairs ...any) *types.Aggregate {
 }
 
 func runSchemaGuard(agg *types.Aggregate, t *testing.T) []*ResolverError {
-	return guardSchemaConformance(normalized(t, agg), schemaComponentCatalog(t), nil, nil)
+	return guardSchemaConformance(normalized(t, agg), schemaComponentCatalog(t), nil, nil, newNormalizedView(normalized(t, agg), nil, schemaComponentCatalog(t), nil))
 }
 
 // aggWithValuesInSubsystem builds an Aggregate with component "svc" inside a
@@ -232,7 +232,7 @@ values:
   $ref: "#/$defs/PortParams"
 `
 	catalog := catalogFromComponentSchema(t, composedSchema)
-	errs := guardSchemaConformance(normalized(t, aggWithValues("port", 0)), catalog, nil, nil)
+	errs := guardSchemaConformance(normalized(t, aggWithValues("port", 0)), catalog, nil, nil, newNormalizedView(normalized(t, aggWithValues("port", 0)), nil, catalog, nil))
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values")
 }
 
@@ -280,11 +280,11 @@ func TestGuardSchemaConformance_PredicateReadsParameter(t *testing.T) {
 	agg := aggWithValues("tier", "gold")
 
 	// allowedTier=gold → conforms.
-	if errs := guardSchemaConformance(normalized(t, agg), catalog, nil, map[string]any{"allowedTier": "gold"}); len(errs) != 0 {
+	if errs := guardSchemaConformance(normalized(t, agg), catalog, nil, map[string]any{"allowedTier": "gold"}, newNormalizedView(normalized(t, agg), nil, catalog, map[string]any{"allowedTier": "gold"})); len(errs) != 0 {
 		t.Fatalf("tier=gold under allowedTier=gold should pass; got %v", errs)
 	}
 	// allowedTier=silver → same value, now violates → exactly one halt.
-	errs := guardSchemaConformance(normalized(t, agg), catalog, nil, map[string]any{"allowedTier": "silver"})
+	errs := guardSchemaConformance(normalized(t, agg), catalog, nil, map[string]any{"allowedTier": "silver"}, newNormalizedView(normalized(t, agg), nil, catalog, map[string]any{"allowedTier": "silver"}))
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values.tier")
 }
 
@@ -310,7 +310,7 @@ func TestGuardSchemaConformance_Conforming(t *testing.T) {
 
 func TestGuardSchemaConformance_CatalogLessSkips(t *testing.T) {
 	t.Parallel()
-	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), CatalogLookup{}, nil, nil); errs != nil {
+	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), CatalogLookup{}, nil, nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, CatalogLookup{}, nil)); errs != nil {
 		t.Fatalf("catalog-less path must skip; got %v", errs)
 	}
 }
@@ -324,7 +324,7 @@ func TestGuardSchemaConformance_RelativePathTypeSkips(t *testing.T) {
 	comps := types.OrderedMap[types.ComponentInstance]{}
 	comps.Set("svc", types.ComponentInstance{Type: "./local-variant"})
 	agg := &types.Aggregate{Metadata: types.AggregateMetadata{Name: "demo"}, Spec: types.AggregateSpec{Components: comps}}
-	if errs := guardSchemaConformance(normalized(t, agg), schemaComponentCatalog(t), nil, nil); errs != nil {
+	if errs := guardSchemaConformance(normalized(t, agg), schemaComponentCatalog(t), nil, nil, newNormalizedView(normalized(t, agg), nil, schemaComponentCatalog(t), nil)); errs != nil {
 		t.Fatalf("relative-path (non-catalog) type must be skipped; got %v", errs)
 	}
 }
@@ -362,7 +362,7 @@ func TestGuardInfraConformance_TypoCaught(t *testing.T) {
 	t.Parallel()
 	cl := infraCatalog(t)
 	bi := infraBoundary("replicas", 2, "replcas", 3)
-	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
+	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil))
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra")
 }
 
@@ -373,7 +373,7 @@ func TestGuardInfraConformance_UndeclaredKeyRejected(t *testing.T) {
 	t.Parallel()
 	cl := infraCatalog(t)
 	bi := infraBoundary("replicas", 2, "workers", 4, "tier", "gold")
-	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
+	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil))
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra")
 }
 
@@ -383,7 +383,7 @@ func TestGuardInfraConformance_DeclaredKeyAdmitted(t *testing.T) {
 	t.Parallel()
 	cl := infraCatalog(t)
 	bi := infraBoundary("replicas", 2, "tier", "gold")
-	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil); len(errs) != 0 {
+	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil)); len(errs) != 0 {
 		t.Fatalf("schema.infra-declared keys must be admitted; got %v", errs)
 	}
 }
@@ -394,7 +394,7 @@ func TestGuardInfraConformance_DeclaredKeyWrongType(t *testing.T) {
 	t.Parallel()
 	cl := infraCatalog(t)
 	bi := infraBoundary("replicas", "two", "tier", "gold")
-	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil)
+	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil))
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra.replicas")
 }
 
@@ -404,7 +404,7 @@ func TestGuardInfraConformance_RequiredWithDefaultNotMissing(t *testing.T) {
 	t.Parallel()
 	cl := infraCatalog(t)
 	bi := infraBoundary("replicas", 2) // tier omitted; defaulted "prod"
-	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil); len(errs) != 0 {
+	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil)); len(errs) != 0 {
 		t.Fatalf("required-with-default infra key must not be flagged missing; got %v", errs)
 	}
 }
@@ -428,14 +428,14 @@ infra:
 	// The composed infra $ref is resolved (not skipped): the declared-via-$ref
 	// key (replicas) is admitted.
 	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl,
-		infraBoundary("replicas", 2), nil); len(errs) != 0 {
+		infraBoundary("replicas", 2), nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil)); len(errs) != 0 {
 		t.Fatalf("composed infra $ref must resolve and admit the declared key; got %v", errs)
 	}
 	// The constraint behind the $ref is enforced: replicas below the minimum halts.
 	// The finding is reported at the pillar root (matching the values-pillar $ref
 	// parity), since the violation surfaces through the $ref indirection.
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl,
-		infraBoundary("replicas", 0), nil)
+		infraBoundary("replicas", 0), nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil))
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].infra")
 }
 
@@ -444,7 +444,7 @@ infra:
 func TestGuardInfraConformance_SkipsWithoutBoundaryInfra(t *testing.T) {
 	t.Parallel()
 	cl := infraCatalog(t)
-	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, nil, nil); len(errs) != 0 {
+	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, nil, nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil)); len(errs) != 0 {
 		t.Fatalf("no boundary infra → infra validation skipped; got %v", errs)
 	}
 }
@@ -457,7 +457,7 @@ func TestGuardInfraConformance_NoInfraPillarSkips(t *testing.T) {
 	// schemaComponentCatalog declares only a values pillar (no infra).
 	cl := schemaComponentCatalog(t)
 	bi := infraBoundary("anything", "goes")
-	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil); len(errs) != 0 {
+	if errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, bi, nil, newNormalizedView(normalized(t, aggWithValues("name", "api")), nil, cl, nil)); len(errs) != 0 {
 		t.Fatalf("component without schema.infra must not be infra-validated; got %v", errs)
 	}
 }

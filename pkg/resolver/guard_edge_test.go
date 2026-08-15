@@ -165,7 +165,7 @@ func TestGuardEdgeConformance_SynthesizedDefaultElidesInfraPath(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
 	rel := normalizedReleaseTopLevelEdge("databases", "main", om("storage_clas", "fast")) // typo'd key
-	errs := guardEdgeConformance(normalized(t, agg), rel, edgeSchemaCatalog(t), nil)
+	errs := guardEdgeConformance(normalized(t, agg), rel, edgeSchemaCatalog(t), nil, newNormalizedView(normalized(t, agg), rel, edgeSchemaCatalog(t), nil))
 	requireConformance(t, errs, 1, `.spec.components["svc"].uses["databases"]["main"]`)
 }
 
@@ -177,7 +177,7 @@ func TestGuardEdgeConformance_SynthesizedDefaultElidesInfraPath(t *testing.T) {
 func TestGuardEdgeConformance_ValuesConforming(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", om("pool_size", 20))
-	if errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil); len(errs) != 0 {
+	if errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil, newNormalizedView(normalized(t, agg), nil, edgeSchemaCatalog(t), nil)); len(errs) != 0 {
 		t.Fatalf("conforming per-edge values should not halt; got %v", errs)
 	}
 }
@@ -188,7 +188,7 @@ func TestGuardEdgeConformance_ValuesConforming(t *testing.T) {
 func TestGuardEdgeConformance_ValuesTypoHalts(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", om("pool_sze", 20)) // typo'd key
-	errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil)
+	errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil, newNormalizedView(normalized(t, agg), nil, edgeSchemaCatalog(t), nil))
 	requireConformance(t, errs, 1, `.spec.components["svc"].uses["databases"]["main"]`)
 }
 
@@ -197,7 +197,7 @@ func TestGuardEdgeConformance_ValuesTypoHalts(t *testing.T) {
 func TestGuardEdgeConformance_ValuesOutOfRangeHalts(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", om("pool_size", 9999)) // maximum 100
-	errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil)
+	errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil, newNormalizedView(normalized(t, agg), nil, edgeSchemaCatalog(t), nil))
 	requireConformance(t, errs, 1, `.spec.components["svc"].uses["databases"]["main"].values.pool_size`)
 }
 
@@ -207,7 +207,7 @@ func TestGuardEdgeConformance_ValuesOutOfRangeHalts(t *testing.T) {
 func TestGuardEdgeConformance_NoSchemaSocketSkips(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("plain", "main", om("anything", "goes"))
-	if errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil); len(errs) != 0 {
+	if errs := guardEdgeConformance(normalized(t, agg), nil, edgeSchemaCatalog(t), nil, newNormalizedView(normalized(t, agg), nil, edgeSchemaCatalog(t), nil)); len(errs) != 0 {
 		t.Fatalf("socket with no per-edge schema should skip; got %v", errs)
 	}
 }
@@ -220,7 +220,7 @@ func TestGuardEdgeConformance_ReleaseInfraConforming(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
 	rel := releaseWithEdgeInfra("databases", "main", om("storage_class", "fast"))
-	if errs := guardEdgeConformance(normalized(t, agg), rel, edgeSchemaCatalog(t), nil); len(errs) != 0 {
+	if errs := guardEdgeConformance(normalized(t, agg), rel, edgeSchemaCatalog(t), nil, newNormalizedView(normalized(t, agg), rel, edgeSchemaCatalog(t), nil)); len(errs) != 0 {
 		t.Fatalf("conforming per-edge infra should not halt; got %v", errs)
 	}
 }
@@ -231,7 +231,7 @@ func TestGuardEdgeConformance_ReleaseInfraTypoHalts(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
 	rel := releaseWithEdgeInfra("databases", "main", om("storage_clas", "fast")) // typo'd key
-	errs := guardEdgeConformance(normalized(t, agg), rel, edgeSchemaCatalog(t), nil)
+	errs := guardEdgeConformance(normalized(t, agg), rel, edgeSchemaCatalog(t), nil, newNormalizedView(normalized(t, agg), rel, edgeSchemaCatalog(t), nil))
 	requireConformance(t, errs, 1, `.spec.boundaries["prod"].components["svc"].uses["databases"]["main"]`)
 }
 

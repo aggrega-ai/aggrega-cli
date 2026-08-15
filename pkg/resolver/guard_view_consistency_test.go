@@ -65,7 +65,7 @@ func TestGuardSelfInject_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 func TestGuardInjectKeys_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 	t.Parallel()
 	agg := oneBareComponent("core/absent:1.0.0", &types.InjectBlock{Env: map[string]any{"X": map[string]any{"from": "nope"}}})
-	requireViewInconsistency(t, guardInjectKeys(normalized(t, agg), notFoundCatalog()))
+	requireViewInconsistency(t, guardInjectKeys(normalized(t, agg), notFoundCatalog(), newNormalizedView(normalized(t, agg), nil, notFoundCatalog(), nil)))
 }
 
 func TestGuardRequiredUsesSockets_ResolvedCatalogRefAbsentHalts(t *testing.T) {
@@ -77,7 +77,7 @@ func TestGuardRequiredUsesSockets_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 func TestGuardSchemaConformance_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 	t.Parallel()
 	agg := oneBareComponent("core/absent:1.0.0", nil)
-	requireViewInconsistency(t, guardSchemaConformance(normalized(t, agg), notFoundCatalog(), nil, nil))
+	requireViewInconsistency(t, guardSchemaConformance(normalized(t, agg), notFoundCatalog(), nil, nil, newNormalizedView(normalized(t, agg), nil, notFoundCatalog(), nil)))
 }
 
 func TestGuardUsesSocket_ResolvedCatalogRefAbsentHalts(t *testing.T) {
@@ -104,5 +104,5 @@ func TestGuardReleaseUsesSocket_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 func TestGuardEdgeConformance_SocketPillarResolvedCatalogRefAbsentHalts(t *testing.T) {
 	t.Parallel()
 	agg := aggWithEdge("databases", "main", om("size", "10Gi"))
-	requireViewInconsistency(t, guardEdgeConformance(normalized(t, agg), nil, notFoundCatalog(), nil))
+	requireViewInconsistency(t, guardEdgeConformance(normalized(t, agg), nil, notFoundCatalog(), nil, newNormalizedView(normalized(t, agg), nil, notFoundCatalog(), nil)))
 }
