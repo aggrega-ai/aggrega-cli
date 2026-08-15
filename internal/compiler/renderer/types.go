@@ -111,6 +111,23 @@ type RendererInput struct {
 // Key: nodeID, Value: provides dictionary (key → resolved value string).
 type NodeProvides map[string]types.OrderedMap[string]
 
+// NodeDeclaredProvides holds, per node, the set of `provides` keys that node's
+// Component declares in spec.schema — the output contract, which is what a
+// consumer across a `uses` edge is allowed to read. Key: nodeID, Value: the
+// declared key set.
+//
+// It is computed data, not a catalog handle: whoever builds it has the catalog
+// in hand, and the consumer-context projection receives only the finished set.
+// That is what keeps the projection catalog-free.
+//
+// 🔴 The map is deliberately PARTIAL, and a missing node means DO NOT FILTER
+// rather than "declares nothing". A node whose Component is absent from the
+// catalog view — a relative-path type, a catalog-less path — legitimately has no
+// declaration to read, and treating that silence as an empty contract would
+// empty the node's whole projected bag instead of narrowing it. Absence of a
+// declaration is absence of information, never a declaration of nothing.
+type NodeDeclaredProvides map[string]map[string]bool
+
 // NodeLocals holds the resolved locals for all nodes, evaluated in the Pass-1
 // preamble ahead of each node's provides.
 // Key: nodeID, Value: locals dictionary (key → resolved value string).

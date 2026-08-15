@@ -160,6 +160,20 @@ var errUsesSocketNearMiss = cerrors.Register("resolver/uses-socket-near-miss", c
 	Message: "uses socket name is a near miss for a declared socket",
 })
 
+// ErrProvidesKeyNotDeclared marks an ADVISORY finding, not a halt: a bound
+// Recipe publishes a provides key its Component does not declare in
+// spec.schema. Publishing more than the Component declares is legal — the
+// provides contract is subset-required and superset-permitted — so this
+// sentinel never reaches a build's verdict; it exists so a front end can
+// recognise the advisory class and render it as a warning. The key is not
+// delivered across a uses edge, which reads the Component's declared contract,
+// and the advisory names that consequence where it is caused.
+func ErrProvidesKeyNotDeclared() error { return errProvidesKeyNotDeclared }
+
+var errProvidesKeyNotDeclared = cerrors.Register("resolver/provides-key-not-declared", cerrors.Meta{
+	Message: "Recipe publishes a provides key its Component does not declare",
+})
+
 // ErrUnreadParameter marks an ADVISORY finding, not a halt: a parameter the
 // Aggregate declares that no reference in the Aggregate's own text reads.
 // Declaring a parameter nothing reads is legal — the compiler does not police

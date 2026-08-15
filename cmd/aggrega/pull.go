@@ -655,6 +655,7 @@ func pullRun(cfg pullConfig) error {
 			AggregatePath:     catalog.RelativeToWorkspace(workspaceRoot, aggRes.Path),
 		},
 		pullLookup,
+		lazyView.RecipeLookupWithManifest(manifest).Recipe,
 		lazyView.SubAggregateLoader(),
 		func(rr *resolver.ResolveResult, topo *topology.TopologyResult) error {
 

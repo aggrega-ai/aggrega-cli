@@ -476,6 +476,7 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 			RootAggregateFile: catalog.RelativeToWorkspace(wsRoot, aggPath),
 		},
 		catalogLookup,
+		cat.RecipeLookupWithManifest(manifest).Recipe,
 		cat.SubAggregateLoader(),
 		func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
 			graph, _, err := ir.BuildIR(ir.BuildIRConfig{

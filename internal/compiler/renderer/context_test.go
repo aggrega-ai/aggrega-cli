@@ -73,7 +73,7 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 	}
 
 	inject, injectRaw := BuildInjectPipe(nil)
-	ctx := AssembleNodeContext("api", graph, allProvides, inject, injectRaw)
+	ctx := AssembleNodeContext("api", graph, allProvides, nil, inject, injectRaw)
 
 	// Context block
 	if ctx.Context.InstanceID != "api" {
@@ -179,7 +179,7 @@ func TestAssembleNodeContext_ProvidesTemplateReference(t *testing.T) {
 	dbProv2.Set("port", "5432")
 	allProvides := NodeProvides{"db": dbProv2}
 	inject, injectRaw := BuildInjectPipe(nil)
-	ctx := AssembleNodeContext("db", graph, allProvides, inject, injectRaw)
+	ctx := AssembleNodeContext("db", graph, allProvides, nil, inject, injectRaw)
 
 	out, err := EvalTemplate("test-values", `{"dsn":"postgres://{{ .provides.host }}:{{ .provides.port }}"}`, ctx)
 	if err != nil {
@@ -204,7 +204,7 @@ func TestAssembleNodeContext_EmptyNode(t *testing.T) {
 	}
 
 	inject, injectRaw := BuildInjectPipe(nil)
-	ctx := AssembleNodeContext("simple", graph, NodeProvides{"simple": types.OrderedMap[string]{}}, inject, injectRaw)
+	ctx := AssembleNodeContext("simple", graph, NodeProvides{"simple": types.OrderedMap[string]{}}, nil, inject, injectRaw)
 
 	if ctx.Context.InstanceID != "simple" {
 		t.Errorf("instance_id: %q", ctx.Context.InstanceID)

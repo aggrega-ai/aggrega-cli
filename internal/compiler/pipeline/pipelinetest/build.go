@@ -119,6 +119,7 @@ func Tier4E(t *testing.T, in Input) (*pipeline.Tier4Result, error) {
 		context.Background(),
 		loaded.inputs,
 		loaded.catalogLookup,
+		loaded.recipeLookup.Recipe,
 		loaded.subAggregateLoader,
 	)
 }

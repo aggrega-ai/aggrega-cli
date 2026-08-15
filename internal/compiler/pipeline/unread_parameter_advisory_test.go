@@ -83,6 +83,7 @@ func TestUnreadParameterAdvisoryReachesTheDiagnosticStream(t *testing.T) {
 	stderr := captureStderr(t, func() {
 		if rerr := pipeline.ResolveAndValidate(context.Background(), inputs,
 			wiredLookup(cat, manifest),
+			cat.RecipeLookupWithManifest(manifest).Recipe,
 			func(rr *resolver.ResolveResult) error {
 				advisories = rr.LintAdvisories
 				return nil
@@ -108,6 +109,7 @@ func TestUnreadParameterAdvisoryReachesTheDiagnosticStream(t *testing.T) {
 	clean := captureStderr(t, func() {
 		if rerr := pipeline.ResolveAndValidate(context.Background(), inputs,
 			wiredLookup(cat, manifest),
+			cat.RecipeLookupWithManifest(manifest).Recipe,
 			func(*resolver.ResolveResult) error { return nil },
 		); rerr != nil {
 			t.Errorf("ResolveAndValidate (control): %v", rerr)

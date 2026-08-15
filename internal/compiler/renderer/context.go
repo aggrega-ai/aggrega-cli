@@ -32,6 +32,7 @@ func AssembleNodeContext(
 	nodeID string,
 	graph *types.IRGraph,
 	allProvides NodeProvides,
+	declaredProvides NodeDeclaredProvides,
 	inject types.InjectPipe,
 	injectRaw any,
 ) *types.TemplateContext {
@@ -50,7 +51,7 @@ func AssembleNodeContext(
 	}
 
 	// Enriched uses
-	uses := AssembleEnrichedUses(nodeID, graph, allProvides)
+	uses := AssembleEnrichedUses(nodeID, graph, allProvides, declaredProvides)
 
 	// Annotation buckets
 	var annotations *types.AnnotationBuckets

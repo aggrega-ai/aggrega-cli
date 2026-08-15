@@ -704,6 +704,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 			WorkspaceConfig:   srv.wsConfig,
 		},
 		view.AsCatalogLookup(),
+		view.RecipeLookupWithManifest(resolved.Manifest).Recipe,
 		view.SubAggregateLoader(),
 	)
 	if tier4 == nil || tier4.Analysis == nil {

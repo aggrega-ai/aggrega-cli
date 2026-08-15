@@ -44,7 +44,7 @@ func projGraph(edgeValues, edgeInfra types.OrderedMap[any]) *types.IRGraph {
 func projContext(t *testing.T, nodeID string, graph *types.IRGraph) *types.TemplateContext {
 	t.Helper()
 	inject, injectRaw := BuildInjectPipe(nil)
-	return AssembleNodeContext(nodeID, graph, NodeProvides{}, inject, injectRaw)
+	return AssembleNodeContext(nodeID, graph, NodeProvides{}, nil, inject, injectRaw)
 }
 
 // TestAssembleEnrichedUses_ProjectsValuesInfraAndOrigin pins the projection:

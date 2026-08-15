@@ -303,6 +303,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// The binding is a render-time fact (Manifest-driven), so the check runs here
 	// where the produced bag exists — a shortfall halts loudly rather than dropping
 	// the missing key silently at inject/render time.
+	//
+	// The declared contract is also retained per node rather than recomputed later:
+	// it is what the consumer-context projection narrows each target's provides bag
+	// to, so a consumer reads the Component's published contract instead of whatever
+	// its Recipe happens to emit. Retaining it here is what lets the projection stay
+	// catalog-free — it receives the finished set as data. Every `continue` below
+	// leaves a node OUT of the set, which the projection reads as "do not narrow";
+	// that is the intended reading, not an oversight (see NodeDeclaredProvides).
+	declaredProvides := NodeDeclaredProvides{}
 	if input.CatalogLookup.Component != nil {
 		for _, nodeID := range nodeIDs {
 			recipe := nodeRecipes[nodeID]
@@ -315,6 +324,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				continue
 			}
 			contract := resolver.ComponentProvidesKeys(comp, input.CatalogLookup.SchemaLibraries)
+			declaredProvides[nodeID] = contract
 			if err := enforceProvidesContract(contract, allProvides[nodeID], nodeID,
 				fmt.Sprintf("node %q", nodeID),
 				fmt.Sprintf("Recipe %q", recipe.Metadata.Name),
@@ -504,7 +514,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// Build template context
-		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, inject, injectRaw)
+		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, declaredProvides, inject, injectRaw)
 		if input.ResolveResult != nil && input.ResolveResult.Release != nil {
 			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
 		}

@@ -26,6 +26,19 @@ import (
 // projected entry carries no field for them, so a template that reaches for one
 // finds nothing rather than finding a value it was never meant to see.
 //
+// The projected provides bag is narrowed to the keys the target's Component
+// DECLARES, so a consumer reads the target's published contract rather than
+// whatever its Recipe happens to emit. That is what makes Recipes
+// interchangeable: two Recipes realizing one Component present the same surface
+// to a consumer, and swapping them cannot silently withdraw a key a consumer had
+// come to depend on. A Recipe publishing more than its Component declares stays
+// legal — the extra key is simply not part of the contract, and it is reported
+// where it is caused rather than where it is read.
+//
+// Narrowing is skipped for a node the declared set does not cover, per
+// NodeDeclaredProvides: no declaration read is not the same as a declaration of
+// nothing.
+//
 // The projection is consumer-scoped by construction: the loop only includes
 // edges whose Source is this node (the node's outgoing edges), so a node never
 // sees per-edge config authored on an edge pointing at it. This is what keeps a
@@ -37,6 +50,7 @@ func AssembleEnrichedUses(
 	nodeID string,
 	graph *types.IRGraph,
 	allProvides NodeProvides,
+	declaredProvides NodeDeclaredProvides,
 ) types.OrderedMap[types.EnrichedEdge] {
 	result := types.OrderedMap[types.EnrichedEdge]{}
 
@@ -53,7 +67,7 @@ func AssembleEnrichedUses(
 		ee := types.EnrichedEdge{
 			Target:          edge.Target,
 			Socket:          edge.Socket,
-			Provides:        allProvides[edge.Target],
+			Provides:        narrowToDeclared(allProvides[edge.Target], declaredProvides, edge.Target),
 			Inject:          edge.Inject,
 			Labels:          targetNode.Labels,
 			Component:       targetNode.Component,
@@ -83,4 +97,35 @@ func AssembleEnrichedUses(
 	}
 
 	return result
+}
+
+// narrowToDeclared returns the target's produced provides bag restricted to the
+// keys its Component declares, in the producing Recipe's author order.
+//
+// It returns produced unchanged in two cases, and the first of them is the
+// load-bearing one: when the target has no entry in declared at all, because an
+// absent entry means no declaration was read rather than a declaration of
+// nothing (see NodeDeclaredProvides). The second is when every produced key is
+// already declared — the ordinary case for a well-authored pair — which keeps
+// the common path allocation-free and the projected value bit-for-bit what it
+// was before narrowing existed.
+func narrowToDeclared(produced types.OrderedMap[string], declared NodeDeclaredProvides, target string) types.OrderedMap[string] {
+	contract, covered := declared[target]
+	if !covered {
+		return produced
+	}
+
+	for k := range produced.All() {
+		if contract[k] {
+			continue
+		}
+		narrowed := types.OrderedMap[string]{}
+		for k, v := range produced.All() {
+			if contract[k] {
+				narrowed.Set(k, v)
+			}
+		}
+		return narrowed
+	}
+	return produced
 }

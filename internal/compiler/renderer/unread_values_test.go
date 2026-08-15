@@ -38,7 +38,7 @@ func uvGraph(nodeIDs []string, edges ...types.IREdge) *types.IRGraph {
 func uvWarnings(t *testing.T, nodeID string, graph *types.IRGraph, recipe *types.Recipe) []string {
 	t.Helper()
 	inject, injectRaw := BuildInjectPipe(nil)
-	ctx := AssembleNodeContext(nodeID, graph, NodeProvides{}, inject, injectRaw)
+	ctx := AssembleNodeContext(nodeID, graph, NodeProvides{}, nil, inject, injectRaw)
 	return unreadValueWarnings(nodeID, recipe, ctx.Values, ctx.Infra, ctx.Context.Uses)
 }
 

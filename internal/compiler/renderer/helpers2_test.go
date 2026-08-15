@@ -323,7 +323,7 @@ func TestAssembleEnrichedUses_AllBranches(t *testing.T) {
 	}
 
 	provides := NodeProvides{"target-id": types.OrderedMap[string]{}}
-	got := AssembleEnrichedUses("node-1", graph, provides)
+	got := AssembleEnrichedUses("node-1", graph, provides, nil)
 	if got.Len() != 1 {
 		t.Fatalf("expected 1 enriched edge; got %d", got.Len())
 	}
@@ -345,7 +345,7 @@ func TestAssembleEnrichedUses_AllBranches(t *testing.T) {
 	graph.Spec.Edges = []types.IREdge{
 		{Source: "node-1", Target: "target-id", Socket: "http"},
 	}
-	got = AssembleEnrichedUses("node-1", graph, provides)
+	got = AssembleEnrichedUses("node-1", graph, provides, nil)
 	if _, ok := got.Get("target-id"); !ok {
 		t.Errorf("alias should default to target")
 	}

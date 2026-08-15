@@ -342,6 +342,7 @@ func runStepsOneToFour(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
+	recipeFor resolver.RecipeBinding,
 	subAggregateLoader topology.SubAggregateLoader,
 	use func(*stepsOneToFourOutput) error,
 ) error {
@@ -353,7 +354,7 @@ func runStepsOneToFour(
 	// per-component source resolution via ResolveAndFlatten, so lock-time
 	// source-descent and build-time rendering run one resolve + topology +
 	// recipe-selection path (no drift).
-	return ResolveAndFlatten(ctx, inputs, catalogLookup, subAggregateLoader, func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
+	return ResolveAndFlatten(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
 		out := &stepsOneToFourOutput{
 			ResolveResult: resolveResult,
 			Topology:      topoResult,
@@ -466,10 +467,16 @@ func dropCatalogViewInconsistencies(errs []*resolver.ResolverError) []*resolver.
 // The continuation runs inside resolver.ResolveAndUse's scope, so the resolved
 // view is live throughout it and reachable nowhere else. A resolve, annotation,
 // or guard failure returns the error without invoking use.
+//
+// recipeFor is the component-instance-to-Recipe binding the caller will render
+// with. It is read by the advisory drain below and by nothing else here, so a
+// caller with no binding to offer passes nil and that one advisory is skipped
+// while every other check is unaffected.
 func ResolveAndValidate(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
+	recipeFor resolver.RecipeBinding,
 	use func(*resolver.ResolveResult) error,
 ) error {
 	if err := ctx.Err(); err != nil {
@@ -517,6 +524,8 @@ func ResolveAndValidate(
 			resolver.LintAttachmentSlotNearMiss(normalized, catalogLookup)...)
 		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
 			resolver.LintUsesSocketNearMiss(normalized, catalogLookup)...)
+		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
+			resolver.LintProvidesNotDeclared(normalized, catalogLookup, recipeFor)...)
 		for _, a := range resolveResult.LintAdvisories {
 			fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
 		}
@@ -569,10 +578,11 @@ func ResolveAndFlatten(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
+	recipeFor resolver.RecipeBinding,
 	subAggregateLoader topology.SubAggregateLoader,
 	use func(*resolver.ResolveResult, *topology.TopologyResult) error,
 ) error {
-	return ResolveAndValidate(ctx, inputs, catalogLookup, func(resolveResult *resolver.ResolveResult) error {
+	return ResolveAndValidate(ctx, inputs, catalogLookup, recipeFor, func(resolveResult *resolver.ResolveResult) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -633,11 +643,12 @@ func RunTier4Pipeline(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
+	recipeFor resolver.RecipeBinding,
 	subAggregateLoader topology.SubAggregateLoader,
 ) (*Tier4Result, error) {
 	out := &Tier4Result{}
 	var assertionErr error
-	err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
+	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
 		// Capture the phase outputs inside the resolve scope, which
 		// resolver.ResolveAndUse closes once this returns. Tier-4 runs no
 		// further work in the scope — analyzer errors ride on
@@ -860,7 +871,7 @@ func RunPipeline(
 	opts Options,
 ) (*Result, error) {
 	var result *Result
-	err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
+	err := runStepsOneToFour(ctx, inputs, catalogLookup, recipeLookup.Recipe, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
 		// Step 4: convert analyzer errors to the joined-error shape that
 		// pre-extraction RunPipeline returned. Preserves the first-error-fatal
 		// semantic existing callers (irgraph, CLI build) consume.
