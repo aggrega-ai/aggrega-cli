@@ -49,13 +49,9 @@ func TestTerraformExamplesHermeticOfflineBuild(t *testing.T) {
 				t.Fatalf("offline pull %q (a network dependency would fail here): %v", name, err)
 			}
 
-			prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-			t.Cleanup(func() {
-				releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-			})
-			releasePath = "release.yaml"
-			catalogDirs = []string{catalogRoot}
-			traceEnabled = false
+			releasePath := "release.yaml"
+			catalogDirs := []string{catalogRoot}
+			traceEnabled := false
 
 			// The build refuses to network under offline; success proves the
 			// render path (embedded guest + local/inline source) is hermetic.

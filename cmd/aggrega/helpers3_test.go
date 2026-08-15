@@ -96,13 +96,9 @@ spec:
           web: {{ .values.port }}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{catalogRoot}
-	traceEnabled = false
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{catalogRoot}
+	traceEnabled := false
 
 	// Either succeeds (no annotations on Aggregate to fire on) or fails;
 	// both paths exercise the validation dispatch.
@@ -140,13 +136,9 @@ spec:
 	catalogRoot := filepath.Join(root, "catalog")
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{catalogRoot}
-	traceEnabled = false
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{catalogRoot}
+	traceEnabled := false
 
 	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
@@ -187,13 +179,9 @@ spec:
   boundaries: {}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{catalogRoot}
-	traceEnabled = false
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{catalogRoot}
+	traceEnabled := false
 
 	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {

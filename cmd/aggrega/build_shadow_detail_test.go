@@ -106,14 +106,9 @@ spec:
         image: {{ .values.image }}
 `)
 
-	prevRelease, prevCatalog, prevTrace, prevDetail := releasePath, catalogDirs, traceEnabled, buildDetail
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled, buildDetail = prevRelease, prevCatalog, prevTrace, prevDetail
-	})
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{dirA, dirB}
-	traceEnabled = false
-	buildDetail = true
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{dirA, dirB}
+	traceEnabled := false
 
 	// The build writes artifacts under a relative `dist/` in the process working
 	// directory; anchor it at root so the output is hermetic to this test.
@@ -128,7 +123,8 @@ spec:
 	}
 
 	var diag bytes.Buffer
-	if err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, &diag, os.Stdout); err != nil {
+	if err := dispatchBuildWithDiag(ws, releasePath, catalogDirs, traceEnabled,
+		buildDiagOptions{}, buildRunOptions{detail: true}, &diag, os.Stdout); err != nil {
 		t.Fatalf("build failed: %v\n--- diag ---\n%s", err, diag.String())
 	}
 

@@ -18,10 +18,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 )
 
-var (
-	versionOutput  string
-	versionVerbose bool
-)
+// versionFlags carries the `version` command's flag state. It is constructed per
+// command so two invocations in one process cannot observe each other's flag
+// values.
+type versionFlags struct {
+	output  string
+	verbose bool
+}
 
 // version is the release version stamped at build time via
 // -ldflags "-X main.version=<v>" (the build scripts set it from
@@ -48,6 +51,7 @@ var commit string
 // VS Code extension's startup compatibility check and by operators
 // inspecting a binary by hand.
 func newVersionCmd() *cobra.Command {
+	opts := &versionFlags{}
 	c := &cobra.Command{
 		Use:   "version",
 		Short: "Print the aggrega CLI version",
@@ -73,15 +77,15 @@ Operators who see "(devel)" know they are running an unreleased
 build.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			format, err := parseFormat("version", versionOutput, "text", "json")
+			format, err := parseFormat("version", opts.output, "text", "json")
 			if err != nil {
 				return err
 			}
-			return runVersion(cmd.OutOrStdout(), format == "json", versionVerbose)
+			return runVersion(cmd.OutOrStdout(), format == "json", opts.verbose)
 		},
 	}
-	c.Flags().StringVarP(&versionOutput, "output", "o", "text", "Output format: text|json.")
-	c.Flags().BoolVar(&versionVerbose, "verbose", false, "include the embedded-plugin set in the output")
+	c.Flags().StringVarP(&opts.output, "output", "o", "text", "Output format: text|json.")
+	c.Flags().BoolVar(&opts.verbose, "verbose", false, "include the embedded-plugin set in the output")
 	return c
 }
 

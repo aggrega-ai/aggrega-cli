@@ -681,20 +681,17 @@ func TestPullVerifyAndUpgradeMutuallyExclusive(t *testing.T) {
 
 	// The mutual-exclusion check lives in the cobra RunE wrapper,
 	// not in pullRun itself, so this test exercises the cobra
-	// command-execution path. Construct the command first (its flag
-	// binding resets the globals to their defaults), then set the
-	// globals the RunE wrapper reads.
+	// command-execution path: the flags are parsed into the command's own
+	// state exactly as an invocation would, then the wrapper is called.
 	cmd := newPullCmd()
-	pullReleasePath = releasePath
-	pullCatalogDirs = []string{filepath.Join(root, "catalog")}
-	pullVerify = true
-	pullUpgrade = true
-	defer func() {
-		pullReleasePath = ""
-		pullCatalogDirs = []string{"."}
-		pullVerify = false
-		pullUpgrade = false
-	}()
+	if err := cmd.ParseFlags([]string{
+		"--release", releasePath,
+		"--catalog", filepath.Join(root, "catalog"),
+		"--verify",
+		"--upgrade",
+	}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
 
 	err := cmd.RunE(cmd, nil)
 	if err == nil {

@@ -23,15 +23,20 @@ import (
 // "docs", so a bundle published here can never shadow an entity pull.
 const dataArtifactNamespace = "docs"
 
-var (
-	pushArtifactName      string
-	pushArtifactTag       string
-	pushArtifactMediaType string
-	pushArtifactRegistry  string
-	pushArtifactDryRun    bool
-)
+// pushArtifactFlags carries the `push-artifact` command's flag state. It is
+// constructed per command so two invocations in one process cannot observe each
+// other's flag values. It is distinct from pushArtifactConfig, which is the
+// input contract pushArtifactRun reads.
+type pushArtifactFlags struct {
+	name      string
+	tag       string
+	mediaType string
+	registry  string
+	dryRun    bool
+}
 
 func newPushArtifactCmd() *cobra.Command {
+	opts := &pushArtifactFlags{}
 	c := &cobra.Command{
 		Use:   "push-artifact <file>",
 		Short: "Publish a standalone data artifact (such as a documentation bundle) to an OCI registry",
@@ -52,26 +57,26 @@ func newPushArtifactCmd() *cobra.Command {
 			}
 			return pushArtifactRun(pushArtifactConfig{
 				FilePath:  path,
-				Name:      pushArtifactName,
-				Tag:       pushArtifactTag,
-				MediaType: pushArtifactMediaType,
-				Registry:  pushArtifactRegistry,
-				DryRun:    pushArtifactDryRun,
+				Name:      opts.name,
+				Tag:       opts.tag,
+				MediaType: opts.mediaType,
+				Registry:  opts.registry,
+				DryRun:    opts.dryRun,
 				ws:        rw,
 			})
 		},
 	}
-	c.Flags().StringVar(&pushArtifactName, "name", "", "Artifact name within the reserved docs/ namespace (e.g. \"aggrega-docs\" publishes at docs/aggrega-docs)")
-	c.Flags().StringVar(&pushArtifactTag, "tag", "", "Version tag to publish the artifact under (required)")
-	c.Flags().StringVar(&pushArtifactMediaType, "media-type", oci.MediaTypeDocs, "OCI artifact media type; defaults to the documentation-bundle media type")
-	c.Flags().StringVar(&pushArtifactRegistry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
-	c.Flags().BoolVar(&pushArtifactDryRun, "dry-run", false, "Compute the reference and print the proposed <reference>:<tag>; skip the network call")
+	c.Flags().StringVar(&opts.name, "name", "", "Artifact name within the reserved docs/ namespace (e.g. \"aggrega-docs\" publishes at docs/aggrega-docs)")
+	c.Flags().StringVar(&opts.tag, "tag", "", "Version tag to publish the artifact under (required)")
+	c.Flags().StringVar(&opts.mediaType, "media-type", oci.MediaTypeDocs, "OCI artifact media type; defaults to the documentation-bundle media type")
+	c.Flags().StringVar(&opts.registry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Compute the reference and print the proposed <reference>:<tag>; skip the network call")
 	return c
 }
 
 // pushArtifactConfig is the input contract for the generic data-artifact push
-// workflow. The cobra command populates it from the flag-bound globals;
-// pushArtifactRun reads ONLY from cfg (no package-level globals referenced
+// workflow. The cobra command populates it from its own per-command flag state;
+// pushArtifactRun reads ONLY from cfg (no package-level variables referenced
 // inside the function body) so test bodies stay race-free under t.Parallel.
 // Same shape discipline as pushConfig.
 type pushArtifactConfig struct {

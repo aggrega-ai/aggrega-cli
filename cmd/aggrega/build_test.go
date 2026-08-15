@@ -111,13 +111,9 @@ spec:
           web: {{ .values.port }}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{catalogRoot}
-	traceEnabled = false
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{catalogRoot}
+	traceEnabled := false
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	// Build is read-only: prime the lockfile with an explicit pull. The assertion
@@ -404,11 +400,9 @@ func TestRunBuild_ProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
 	root := providesContractFixture(t, `  provides:
     endpoint: "{{ .context.instance_id }}.svc.local"`)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() { releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace })
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{filepath.Join(root, "catalog")}
-	traceEnabled = false
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{filepath.Join(root, "catalog")}
+	traceEnabled := false
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
@@ -591,11 +585,9 @@ func TestRunBuild_FeatureProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
 	root := featureProvidesContractFixture(t, `  provides:
     endpoint: "{{ .context.instance_id }}.metrics"`)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() { releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace })
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{filepath.Join(root, "catalog")}
-	traceEnabled = false
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{filepath.Join(root, "catalog")}
+	traceEnabled := false
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {

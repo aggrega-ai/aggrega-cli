@@ -21,24 +21,26 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-var (
-	pushEntityPath string
-	pushRegistry   string
-	pushDryRun     bool
-	pushSign       bool
-	pushKeyPath    string
-	pushFulcio     string
-	pushRekor      string
-	pushTimestamp  string
-	pushIDToken    string
-	pushPluginPath string
-)
+// pushFlags carries the `push` command's flag state. It is constructed per
+// command so two invocations in one process cannot observe each other's flag
+// values. It is distinct from pushConfig, which is the input contract pushRun
+// reads.
+type pushFlags struct {
+	entityPath string
+	registry   string
+	dryRun     bool
+	sign       bool
+	keyPath    string
+	fulcio     string
+	rekor      string
+	timestamp  string
+	idToken    string
+	pluginPath string
+	listKinds  bool
+}
 
 func newPushCmd() *cobra.Command {
-	// listKinds is a local rather than one of the flag-bound globals above so
-	// each newPushCmd() construction carries its own copy, keeping a test that
-	// builds the command independent of the root command's.
-	var listKinds bool
+	opts := &pushFlags{}
 	c := &cobra.Command{
 		Use:   "push <entity-path>",
 		Short: "Bundle and publish a catalog entity to an OCI registry",
@@ -46,7 +48,7 @@ func newPushCmd() *cobra.Command {
 			// --list-kinds answers a question about the binary, not about an
 			// entity, so naming one alongside it is refused rather than
 			// ignored: a silently-dropped path reads as a push that happened.
-			if listKinds {
+			if opts.listKinds {
 				return cobra.NoArgs(cmd, args)
 			}
 			return cobra.MaximumNArgs(1)(cmd, args)
@@ -56,10 +58,10 @@ func newPushCmd() *cobra.Command {
 			// property of the binary, and resolution both reads the config
 			// cascade and reports its warnings on stderr — neither belongs in
 			// the path of a query a script parses.
-			if listKinds {
+			if opts.listKinds {
 				return listPublishableKinds(cmd.OutOrStdout())
 			}
-			path := pushEntityPath
+			path := opts.entityPath
 			if path == "" && len(args) > 0 {
 				path = args[0]
 			}
@@ -69,37 +71,37 @@ func newPushCmd() *cobra.Command {
 			}
 			pc := pushConfig{
 				EntityPath:   path,
-				Registry:     pushRegistry,
-				DryRun:       pushDryRun,
-				KeyPath:      pushKeyPath,
-				FulcioURL:    pushFulcio,
-				RekorURL:     pushRekor,
-				TimestampURL: pushTimestamp,
-				IDToken:      pushIDToken,
-				PluginPath:   pushPluginPath,
+				Registry:     opts.registry,
+				DryRun:       opts.dryRun,
+				KeyPath:      opts.keyPath,
+				FulcioURL:    opts.fulcio,
+				RekorURL:     opts.rekor,
+				TimestampURL: opts.timestamp,
+				IDToken:      opts.idToken,
+				PluginPath:   opts.pluginPath,
 				ws:           rw,
 			}
 			// --sign is tri-state: when the operator passes it explicitly we
 			// honour the value; otherwise the registry policy decides whether
 			// to sign by default.
 			if cmd.Flags().Changed("sign") {
-				v := pushSign
+				v := opts.sign
 				pc.Sign = &v
 			}
 			return pushRun(pc)
 		},
 	}
-	c.Flags().StringVar(&pushEntityPath, "entity", "", "Path to the entity YAML to publish (alternatively pass as the positional arg)")
-	c.Flags().StringVar(&pushRegistry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
-	c.Flags().BoolVar(&pushDryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag>; skip the network call")
-	c.Flags().BoolVar(&pushSign, "sign", false, "Sign the published artifact and attach the signature as an OCI referrer. When omitted, signing follows the destination registry's policy.")
-	c.Flags().StringVar(&pushKeyPath, "key", "", "Path to a held ECDSA P-256 private key PEM for offline keyed signing. When omitted, keyless signing is used.")
-	c.Flags().StringVar(&pushFulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing. When omitted, the public-good Fulcio instance is used.")
-	c.Flags().StringVar(&pushRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing. When omitted, the public-good Rekor instance is used.")
-	c.Flags().StringVar(&pushTimestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
-	c.Flags().StringVar(&pushIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one) and on GitHub Actions (the workflow OIDC token is minted automatically); required for other non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
-	c.Flags().StringVar(&pushPluginPath, "plugin", "", "Path to the local .wasm artifact for a Plugin entity. Required when publishing a Plugin: publish pushes the .wasm artifact, computes its content digest, and pushes the entity.")
-	c.Flags().BoolVar(&listKinds, "list-kinds", false, "List every entity kind that can be published, then exit without publishing anything. The output is machine-readable and its shape is stable: one kind per line, in sorted order, with nothing else.")
+	c.Flags().StringVar(&opts.entityPath, "entity", "", "Path to the entity YAML to publish (alternatively pass as the positional arg)")
+	c.Flags().StringVar(&opts.registry, "registry", "", "Destination registry host (overrides the workspace's default_registry)")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Compute the bundle and print the proposed <reference>:<tag>; skip the network call")
+	c.Flags().BoolVar(&opts.sign, "sign", false, "Sign the published artifact and attach the signature as an OCI referrer. When omitted, signing follows the destination registry's policy.")
+	c.Flags().StringVar(&opts.keyPath, "key", "", "Path to a held ECDSA P-256 private key PEM for offline keyed signing. When omitted, keyless signing is used.")
+	c.Flags().StringVar(&opts.fulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing. When omitted, the public-good Fulcio instance is used.")
+	c.Flags().StringVar(&opts.rekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing. When omitted, the public-good Rekor instance is used.")
+	c.Flags().StringVar(&opts.timestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
+	c.Flags().StringVar(&opts.idToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one) and on GitHub Actions (the workflow OIDC token is minted automatically); required for other non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
+	c.Flags().StringVar(&opts.pluginPath, "plugin", "", "Path to the local .wasm artifact for a Plugin entity. Required when publishing a Plugin: publish pushes the .wasm artifact, computes its content digest, and pushes the entity.")
+	c.Flags().BoolVar(&opts.listKinds, "list-kinds", false, "List every entity kind that can be published, then exit without publishing anything. The output is machine-readable and its shape is stable: one kind per line, in sorted order, with nothing else.")
 	return c
 }
 
@@ -126,9 +128,9 @@ func listPublishableKinds(out io.Writer) error {
 }
 
 // pushConfig is the input contract for the push workflow. The cobra
-// command populates it from the flag-bound globals at invocation
-// time; pushRun reads ONLY from cfg (no package-level globals
-// referenced inside the function body) so test bodies stay
+// command populates it from its own per-command flag state at
+// invocation time; pushRun reads ONLY from cfg (no package-level
+// variables referenced inside the function body) so test bodies stay
 // race-free under t.Parallel. Same shape as pullRun(pullConfig) /
 // dispatchBuild(...).
 type pushConfig struct {

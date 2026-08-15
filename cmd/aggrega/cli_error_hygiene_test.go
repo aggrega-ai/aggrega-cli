@@ -15,10 +15,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/hometest"
 )
 
-// These tests share the package-level flag globals, so they must not run
-// under t.Parallel. Each case builds a fresh command tree via newRootCmd
-// (which resets the globals on construction) to avoid SilenceUsage / flag
-// bleed between cases.
+// These tests isolate the home directory and move the working directory, so
+// they must not run under t.Parallel. Each case builds a fresh command tree
+// via newRootCmd so SilenceUsage set on one case's commands cannot bleed into
+// the next.
 
 // TestSilenceUsageOnRun_WrapsEntireTree proves the centralized wrap reaches
 // every RunE in the subtree — including nested commands — and leaves

@@ -191,16 +191,11 @@ func renderedTree(t *testing.T, dir string) map[string]string {
 // and reads the warning surface a user reads: the class is present without the
 // flag and gone with it, and both builds still render.
 func TestBuildCmd_UnsupportedFieldWarningFlagReachesTheFilter(t *testing.T) {
-	// Not parallel: the build command binds its flags to package-level variables
-	// and the warning surface is the process stderr, both of which this test moves.
+	// Not parallel: the warning surface under assertion is the process stderr, and
+	// the test moves the process working directory.
 	work := t.TempDir()
 	t.Chdir(work)
 	releaseFile, catalogRoot, _ := composeUnsupportedFieldWorkspace(t, work)
-
-	prevRelease, prevCatalog, prevSuppress := releasePath, catalogDirs, noUnsupportedFieldWarns
-	t.Cleanup(func() {
-		releasePath, catalogDirs, noUnsupportedFieldWarns = prevRelease, prevCatalog, prevSuppress
-	})
 
 	// Build is read-only about dependency resolution: prime the lockfile first.
 	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: work}), ReleasePath: releaseFile, CatalogDirs: []string{catalogRoot}}); err != nil {

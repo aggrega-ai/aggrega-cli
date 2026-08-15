@@ -84,13 +84,9 @@ spec:
       c:
         image: x:latest
 `)
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{catalogRoot}
-	traceEnabled = false
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{catalogRoot}
+	traceEnabled := false
 	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Errorf("unknown provider should error at render")

@@ -35,22 +35,26 @@ import (
 // aligned at compile time.
 var _ wasm.FetchService = (*externalinputs.Service)(nil)
 
-var (
+// buildFlags carries the `build` command's flag state. It is constructed per
+// command so two invocations in one process cannot observe each other's flag
+// values. It is distinct from buildRunOptions and buildDiagOptions below, which
+// carry the post-parse knobs the dispatch itself consumes.
+type buildFlags struct {
 	releasePath             string
 	catalogDirs             []string
 	traceEnabled            bool
 	traceUnredacted         bool
-	buildDetail             bool
-	buildQuiet              bool
-	buildProgress           bool
-	buildDebug              bool
+	detail                  bool
+	quiet                   bool
+	progress                bool
+	debug                   bool
 	noAcquireInputs         bool
 	disablePluginCache      bool
 	verifyDeterminism       bool
-	buildAutoPull           bool
-	buildUpgrade            bool
+	autoPull                bool
+	upgrade                 bool
 	noUnsupportedFieldWarns bool
-)
+}
 
 // Every command that renders offers the unsupported-field warning filter, so the
 // flag's name and help text are declared once here and shared by each
@@ -69,34 +73,37 @@ var helpTraceUnredacted = "Write the declared-sensitive values into the .trace/ 
 	" text that stands in for them, and stamp every file the trace writes with a header saying so. Requires --trace. It reaches .trace/ and nothing else: rendered artifacts, aggrega inspect output and diagnostic text are identical with and without it. Invocation-only — there is no workspace-config setting for it, so it can never be left on for a later build"
 
 func newBuildCmd() *cobra.Command {
+	opts := &buildFlags{}
 	c := &cobra.Command{
 		Use:   "build",
 		Short: "Compile Aggregate + Release into Helm artifacts via the 5-step pipeline",
 		Args:  cobra.NoArgs,
-		RunE:  runBuild,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runBuild(cmd, args, opts)
+		},
 	}
-	c.Flags().StringVar(&releasePath, "release", "", "Path to Release YAML file (required)")
-	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
-	c.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
-	c.Flags().BoolVar(&traceUnredacted, "trace-unredacted", false, helpTraceUnredacted)
-	c.Flags().BoolVar(&buildDetail, "detail", false, "Build is read-only by default and prints no resolution detail. When workspace auto_pull is enabled and no lockfile is present, build fills the lockfile in-process; this flag then prints per resolved entity what that fill did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no fill this build)")
-	c.Flags().BoolVar(&buildQuiet, "quiet", false, "Silence the build-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
-	c.Flags().BoolVar(&buildProgress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal. --quiet and --debug both override --progress")
-	c.Flags().BoolVar(&buildDebug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/dependency counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
-	c.Flags().BoolVar(&noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input set: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
-	c.Flags().BoolVar(&noUnsupportedFieldWarns, flagNoUnsupportedFieldWarnings, false, helpNoUnsupportedFieldWarnings)
-	c.Flags().BoolVar(&disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
-	c.Flags().BoolVar(&verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
-	c.Flags().BoolVar(&buildAutoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
-	c.Flags().BoolVar(&buildUpgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build")
+	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to Release YAML file (required)")
+	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
+	c.Flags().BoolVar(&opts.traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
+	c.Flags().BoolVar(&opts.traceUnredacted, "trace-unredacted", false, helpTraceUnredacted)
+	c.Flags().BoolVar(&opts.detail, "detail", false, "Build is read-only by default and prints no resolution detail. When workspace auto_pull is enabled and no lockfile is present, build fills the lockfile in-process; this flag then prints per resolved entity what that fill did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no fill this build)")
+	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the build-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
+	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal. --quiet and --debug both override --progress")
+	c.Flags().BoolVar(&opts.debug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/dependency counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
+	c.Flags().BoolVar(&opts.noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input set: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
+	c.Flags().BoolVar(&opts.noUnsupportedFieldWarns, flagNoUnsupportedFieldWarnings, false, helpNoUnsupportedFieldWarnings)
+	c.Flags().BoolVar(&opts.disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
+	c.Flags().BoolVar(&opts.verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
+	c.Flags().BoolVar(&opts.autoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
+	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
 	return c
 }
 
-// runBuild is the cobra entry point. It reads the flag-bound package
-// globals and delegates to dispatchBuild, which composes catalog loading,
+// runBuild is the cobra entry point. It reads the command's own flag state and
+// delegates to dispatchBuild, which composes catalog loading,
 // lockfile verification, and dist/ writing around the in-memory pipeline
 // callable (pipeline.RunPipeline). Per-step diagnostic output (extends
 // errors, deprecation warnings, guard violations, selector violations,
@@ -107,14 +114,14 @@ func newBuildCmd() *cobra.Command {
 // builds don't leak into this one, preserving GitOps byte-identity)
 // and the rendered files are written to dist/. A summary line writes
 // to stdout.
-func runBuild(cmd *cobra.Command, args []string) error {
+func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 	rw, err := workspaceFromContext(cmd.Context())
 	if err != nil {
 		return err
 	}
-	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
-		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade, suppressUnsupportedFieldWarnings: noUnsupportedFieldWarns, traceUnredacted: traceUnredacted}, os.Stderr, os.Stdout)
+	return dispatchBuildWithDiag(rw, opts.releasePath, opts.catalogDirs, opts.traceEnabled,
+		buildDiagOptions{quiet: opts.quiet, debug: opts.debug, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
+		buildRunOptions{detail: opts.detail, noAcquireInputs: opts.noAcquireInputs, disablePluginCache: opts.disablePluginCache, verifyDeterminism: opts.verifyDeterminism, autoPull: opts.autoPull, upgrade: opts.upgrade, suppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, traceUnredacted: opts.traceUnredacted}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr
@@ -138,6 +145,11 @@ type buildRunOptions struct {
 	// workspace auto_pull setting performs), turning it on for a single build.
 	// Effective when this flag OR workspace auto_pull is set.
 	autoPull bool
+	// detail prints, per resolved entity, what the auto-pull fill did, and reports
+	// which entities a higher-precedence catalog directory shadowed. Display-only:
+	// it changes what is written to the diagnostic stream, never the rendered
+	// output or the lockfile.
+	detail bool
 	// upgrade makes the auto-pull step a full refresh: the pull discards the
 	// existing pin set and re-resolves every dependency, floating each to the
 	// highest available version rather than honoring existing pins. It implies the
@@ -169,10 +181,10 @@ type buildRunOptions struct {
 
 // dispatchBuild is the silent-diagnostics form of dispatchBuildWithDiag: it runs
 // with no phase-progress surface and no verbose debug layer. Tests call it
-// directly, passing the workspace they declared, to avoid racing on flag-bound
-// globals under t.Parallel; the CLI entry point calls dispatchBuildWithDiag to
-// thread the operator's --quiet / --debug choices. Both share the single
-// implementation below.
+// directly, passing the workspace and inputs they declared, so a test body reads
+// no state it did not supply and stays race-free under t.Parallel; the CLI entry
+// point calls dispatchBuildWithDiag to thread the operator's --quiet / --debug
+// choices. Both share the single implementation below.
 func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut, out io.Writer) error {
 	return dispatchBuildWithDiag(rw, releasePath, catalogFlagDirs, traceEnabled, buildDiagOptions{}, buildRunOptions{}, diagOut, out)
 }
@@ -287,7 +299,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// When more than one catalog directory is searched, report which entities a
 	// higher-precedence directory shadowed (--detail only); the override is never
 	// silent.
-	if buildDetail {
+	if run.detail {
 		reportCatalogShadows(cat, diagOut)
 	}
 
@@ -297,7 +309,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
 	// the identical stack with the same config.
 	progress.phase(phaseLockfile)
-	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.upgrade, buildDetail, diagOut)
+	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.upgrade, run.detail, diagOut)
 	if err != nil {
 		return err
 	}

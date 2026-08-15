@@ -32,18 +32,23 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-var (
-	pullReleasePath       string
-	pullCatalogDirs       []string
-	pullUpgrade           bool
-	pullVerify            bool
-	pullIncludePrerelease bool
-	pullDetail            bool
-	pullQuiet             bool
-	pullProgress          bool
-)
+// pullFlags carries the `pull` command's flag state. It is constructed per
+// command so two invocations in one process cannot observe each other's flag
+// values. It is distinct from pullConfig, which is the input contract pullRun
+// reads.
+type pullFlags struct {
+	releasePath       string
+	catalogDirs       []string
+	upgrade           bool
+	verify            bool
+	includePrerelease bool
+	detail            bool
+	quiet             bool
+	progress          bool
+}
 
 func newPullCmd() *cobra.Command {
+	opts := &pullFlags{}
 	c := &cobra.Command{
 		Use:   "pull [<uri>...]",
 		Short: "Resolve catalog and source dependencies into the cache and write the per-Release lockfile",
@@ -62,10 +67,10 @@ version. Pass one or more entity URIs after --upgrade to upgrade only those: eac
 is dropped and re-resolved fresh while every other pin — and the recorded external inputs —
 is held unchanged. A URI given without --upgrade is a usage error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if pullVerify && pullUpgrade {
+			if opts.verify && opts.upgrade {
 				return fmt.Errorf("--verify and --upgrade are mutually exclusive")
 			}
-			if len(args) > 0 && !pullUpgrade {
+			if len(args) > 0 && !opts.upgrade {
 				return fmt.Errorf("positional arguments name upgrade targets and require --upgrade")
 			}
 			rw, err := workspaceFromContext(cmd.Context())
@@ -73,26 +78,26 @@ is held unchanged. A URI given without --upgrade is a usage error.`,
 				return err
 			}
 			return pullRun(pullConfig{
-				ReleasePath:       pullReleasePath,
-				CatalogDirs:       pullCatalogDirs,
-				Upgrade:           pullUpgrade,
+				ReleasePath:       opts.releasePath,
+				CatalogDirs:       opts.catalogDirs,
+				Upgrade:           opts.upgrade,
 				UpgradeTargets:    args,
-				Verify:            pullVerify,
-				IncludePrerelease: pullIncludePrerelease,
-				Detail:            pullDetail,
+				Verify:            opts.verify,
+				IncludePrerelease: opts.includePrerelease,
+				Detail:            opts.detail,
 				ws:                rw,
-				diag:              buildDiagOptions{quiet: pullQuiet, progress: pullProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
+				diag:              buildDiagOptions{quiet: opts.quiet, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
 			})
 		},
 	}
-	c.Flags().StringVar(&pullReleasePath, "release", "", "Path to Release YAML file (required)")
-	c.Flags().StringArrayVar(&pullCatalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
-	c.Flags().BoolVar(&pullUpgrade, "upgrade", false, "Re-resolve dependencies from current registry state, floating each to the highest available version. Bare (no positional URIs) discards the lockfile and re-resolves every entity; with one or more entity URIs, re-resolves only those, holding all other pins and the recorded external inputs unchanged")
-	c.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile")
-	c.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
-	c.Flags().BoolVar(&pullDetail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not written to the lockfile")
-	c.Flags().BoolVar(&pullQuiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
-	c.Flags().BoolVar(&pullProgress, "progress", false, "Force the pull-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal")
+	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to Release YAML file (required)")
+	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
+	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-resolve dependencies from current registry state, floating each to the highest available version. Bare (no positional URIs) discards the lockfile and re-resolves every entity; with one or more entity URIs, re-resolves only those, holding all other pins and the recorded external inputs unchanged")
+	c.Flags().BoolVar(&opts.verify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile")
+	c.Flags().BoolVar(&opts.includePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
+	c.Flags().BoolVar(&opts.detail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not written to the lockfile")
+	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
+	c.Flags().BoolVar(&opts.progress, "progress", false, "Force the pull-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}

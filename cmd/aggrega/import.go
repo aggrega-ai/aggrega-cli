@@ -27,10 +27,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-var (
-	importFormat string
-	importStdout bool
-)
+// importFlags carries the `import` command's flag state. It is constructed per
+// command so two invocations in one process cannot observe each other's flag
+// values. It is distinct from importOptions, which carries the post-parse
+// arguments the import run itself consumes.
+type importFlags struct {
+	format string
+	stdout bool
+}
 
 // newImportCmd turns a foreign source description into draft Aggrega authoring
 // files. It reads the source file, selects the importer for the source format,
@@ -38,6 +42,7 @@ var (
 // entry point to adopting existing infrastructure without hand-authoring the
 // entities from scratch.
 func newImportCmd() *cobra.Command {
+	opts := &importFlags{}
 	c := &cobra.Command{
 		Use:   "import <file>",
 		Short: "Turn a foreign source description into draft Aggrega authoring files",
@@ -65,7 +70,7 @@ the result can be reviewed or piped before anything is written.`,
 				return fmt.Errorf("read source %q: %w", path, err)
 			}
 
-			format, err := selectImportFormat(importFormat, path, content)
+			format, err := selectImportFormat(opts.format, path, content)
 			if err != nil {
 				return err
 			}
@@ -89,7 +94,7 @@ the result can be reviewed or piped before anything is written.`,
 
 			return runImport(cmd.Context(), res, load, parserRes, parserLoad, content, importOptions{
 				format:   format,
-				stdout:   importStdout,
+				stdout:   opts.stdout,
 				workDir:  ".",
 				out:      cmd.OutOrStdout(),
 				errOut:   cmd.ErrOrStderr(),
@@ -98,8 +103,8 @@ the result can be reviewed or piped before anything is written.`,
 			})
 		},
 	}
-	c.Flags().StringVar(&importFormat, "format", "", "Name the source format explicitly, overriding shape detection (for example langflow or flowise)")
-	c.Flags().BoolVar(&importStdout, "stdout", false, "Write the drafted files to standard output instead of to disk")
+	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding shape detection (for example langflow or flowise)")
+	c.Flags().BoolVar(&opts.stdout, "stdout", false, "Write the drafted files to standard output instead of to disk")
 	return c
 }
 

@@ -13,37 +13,41 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
 )
 
-// lint command flags. Cobra populates these globals from the invocation; the
-// RunE assembles them into a lintops.Config for the single-entity path and
-// threads them into the release / whole-catalog cores.
-var (
-	lintEntityPath  string
-	lintReleasePath string
-	lintPrePublish  bool
-	lintBaseline    string
-	lintPluginPath  string
-	lintCatalogDirs []string
+// lintFlags carries the `lint` command's flag state. It is constructed per
+// command so two invocations in one process cannot observe each other's flag
+// values. Cobra populates it from the invocation; the RunE assembles it into a
+// lintops.Config for the single-entity path and threads it into the release /
+// whole-catalog cores.
+type lintFlags struct {
+	entityPath  string
+	releasePath string
+	prePublish  bool
+	baseline    string
+	pluginPath  string
+	catalogDirs []string
 
 	// Tri-state policy override flags. Each of the six `allow_*`
-	// policy keys gets a paired CLI flag. makeResolverFromCobra
-	// decides effective value per cobra Flags().Changed() state.
-	lintAllowDynamicRefs          bool
-	lintNoAllowDynamicRefs        bool
-	lintAllowIDOverrides          bool
-	lintNoAllowIDOverrides        bool
-	lintAllowDirectXAggregaExt    bool
-	lintNoAllowDirectXAggregaExt  bool
-	lintAllowAggregaAIPrefix      bool
-	lintNoAllowAggregaAIPrefix    bool
-	lintAllowNonstandardNames     bool
-	lintNoAllowNonstandardNames   bool
-	lintAllowCategoryMismatches   bool
-	lintNoAllowCategoryMismatches bool
+	// policy keys gets a paired CLI flag. These fields exist as the flags'
+	// bind targets; the effective value is decided by makeResolverFromCobra
+	// per cobra Flags().Changed() state rather than read from here.
+	allowDynamicRefs          bool
+	noAllowDynamicRefs        bool
+	allowIDOverrides          bool
+	noAllowIDOverrides        bool
+	allowDirectXAggregaExt    bool
+	noAllowDirectXAggregaExt  bool
+	allowAggregaAIPrefix      bool
+	noAllowAggregaAIPrefix    bool
+	allowNonstandardNames     bool
+	noAllowNonstandardNames   bool
+	allowCategoryMismatches   bool
+	noAllowCategoryMismatches bool
 
-	lintOutput string
-)
+	output string
+}
 
 func newLintCmd() *cobra.Command {
+	opts := &lintFlags{}
 	c := &cobra.Command{
 		Use:   "lint [entity-path]",
 		Short: "Check catalog publishing conventions across the catalog, a Release, or one entity",
@@ -83,12 +87,12 @@ human renderings never word a finding differently. The exit status is the same
 under either format.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			format, err := parseFormat("lint", lintOutput, "text", "json")
+			format, err := parseFormat("lint", opts.output, "text", "json")
 			if err != nil {
 				return err
 			}
 			structured := format == "json"
-			path := lintEntityPath
+			path := opts.entityPath
 			if path == "" && len(args) > 0 {
 				path = args[0]
 			}
@@ -122,7 +126,7 @@ under either format.`,
 				return runErr
 			}
 
-			if lintReleasePath != "" {
+			if opts.releasePath != "" {
 				// Release-closure mode is mutually exclusive with a positional /
 				// --entity target — they select different closures.
 				if path != "" {
@@ -131,25 +135,25 @@ under either format.`,
 				// --pre-publish drives the single-entity registry-bump check; the
 				// release-closure pass never consults it. Halt loudly rather than
 				// silently ignore the flag.
-				if lintPrePublish {
+				if opts.prePublish {
 					return fmt.Errorf("OPS_ERROR: --pre-publish is mutually exclusive with --release; --pre-publish applies to a single entity, --release checks a Release closure")
 				}
-				return emit(lintops.RunRelease(rw, lintReleasePath, lintCatalogDirs, opOut, os.Stderr, collect))
+				return emit(lintops.RunRelease(rw, opts.releasePath, opts.catalogDirs, opOut, os.Stderr, collect))
 			}
 			if path == "" {
 				// No entity argument → whole-catalog conventions.
-				return emit(lintops.RunCatalogWide(rw, lintCatalogDirs, opOut, os.Stderr, collect))
+				return emit(lintops.RunCatalogWide(rw, opts.catalogDirs, opOut, os.Stderr, collect))
 			}
-			if lintBaseline != "" && !lintPrePublish {
+			if opts.baseline != "" && !opts.prePublish {
 				// --baseline only shapes the pre-publish predecessor; forcing a
 				// baseline without the check it feeds is a mistake, so halt loudly.
 				return fmt.Errorf("OPS_ERROR: --baseline requires --pre-publish")
 			}
 			return emit(lintops.RunEntity(lintops.Config{
 				EntityPath:     path,
-				PrePublish:     lintPrePublish,
-				Baseline:       lintBaseline,
-				PluginPath:     lintPluginPath,
+				PrePublish:     opts.prePublish,
+				Baseline:       opts.baseline,
+				PluginPath:     opts.pluginPath,
 				PolicyResolver: makeResolverFromCobra(cmd),
 				Workspace:      rw,
 				Out:            opOut,
@@ -157,28 +161,28 @@ under either format.`,
 			}))
 		},
 	}
-	c.Flags().StringArrayVar(&lintCatalogDirs, "catalog", nil,
+	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil,
 		"Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Used by the whole-catalog and --release conventions passes.")
-	c.Flags().StringVar(&lintReleasePath, "release", "", "Path to a Release YAML to check conventions over its resolved dependency closure (mutually exclusive with an entity argument)")
-	c.Flags().StringVar(&lintEntityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
-	c.Flags().BoolVar(&lintPrePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
-	c.Flags().StringVar(&lintBaseline, "baseline", "", "Diff the pre-publish evolution check against this specific already-published version instead of the auto-selected highest version below the one being published; must be a strict-SemVer tag present in the registry (requires --pre-publish)")
-	c.Flags().StringVar(&lintPluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (overrides workspace plugins.linter[0].uri)")
-	c.Flags().StringVarP(&lintOutput, "output", "o", "text", "Output format: text|json.")
+	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to a Release YAML to check conventions over its resolved dependency closure (mutually exclusive with an entity argument)")
+	c.Flags().StringVar(&opts.entityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
+	c.Flags().BoolVar(&opts.prePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
+	c.Flags().StringVar(&opts.baseline, "baseline", "", "Diff the pre-publish evolution check against this specific already-published version instead of the auto-selected highest version below the one being published; must be a strict-SemVer tag present in the registry (requires --pre-publish)")
+	c.Flags().StringVar(&opts.pluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (overrides workspace plugins.linter[0].uri)")
+	c.Flags().StringVarP(&opts.output, "output", "o", "text", "Output format: text|json.")
 
 	// Tri-state allow_* flags
-	c.Flags().BoolVar(&lintAllowDynamicRefs, "allow-dynamic-refs", false, "Force allow_dynamic_refs=true for this invocation")
-	c.Flags().BoolVar(&lintNoAllowDynamicRefs, "no-allow-dynamic-refs", false, "Force allow_dynamic_refs=false for this invocation")
-	c.Flags().BoolVar(&lintAllowIDOverrides, "allow-id-overrides", false, "Force allow_id_overrides=true for this invocation")
-	c.Flags().BoolVar(&lintNoAllowIDOverrides, "no-allow-id-overrides", false, "Force allow_id_overrides=false for this invocation")
-	c.Flags().BoolVar(&lintAllowDirectXAggregaExt, "allow-direct-x-aggrega-extensions", false, "Force allow_direct_x_aggrega_extensions=true")
-	c.Flags().BoolVar(&lintNoAllowDirectXAggregaExt, "no-allow-direct-x-aggrega-extensions", false, "Force allow_direct_x_aggrega_extensions=false")
-	c.Flags().BoolVar(&lintAllowAggregaAIPrefix, "allow-aggrega-ai-prefix", false, "Force allow_aggrega_ai_prefix=true")
-	c.Flags().BoolVar(&lintNoAllowAggregaAIPrefix, "no-allow-aggrega-ai-prefix", false, "Force allow_aggrega_ai_prefix=false")
-	c.Flags().BoolVar(&lintAllowNonstandardNames, "allow-nonstandard-names", false, "Force allow_nonstandard_names=true")
-	c.Flags().BoolVar(&lintNoAllowNonstandardNames, "no-allow-nonstandard-names", false, "Force allow_nonstandard_names=false")
-	c.Flags().BoolVar(&lintAllowCategoryMismatches, "allow-category-mismatches", false, "Force allow_category_mismatches=true")
-	c.Flags().BoolVar(&lintNoAllowCategoryMismatches, "no-allow-category-mismatches", false, "Force allow_category_mismatches=false")
+	c.Flags().BoolVar(&opts.allowDynamicRefs, "allow-dynamic-refs", false, "Force allow_dynamic_refs=true for this invocation")
+	c.Flags().BoolVar(&opts.noAllowDynamicRefs, "no-allow-dynamic-refs", false, "Force allow_dynamic_refs=false for this invocation")
+	c.Flags().BoolVar(&opts.allowIDOverrides, "allow-id-overrides", false, "Force allow_id_overrides=true for this invocation")
+	c.Flags().BoolVar(&opts.noAllowIDOverrides, "no-allow-id-overrides", false, "Force allow_id_overrides=false for this invocation")
+	c.Flags().BoolVar(&opts.allowDirectXAggregaExt, "allow-direct-x-aggrega-extensions", false, "Force allow_direct_x_aggrega_extensions=true")
+	c.Flags().BoolVar(&opts.noAllowDirectXAggregaExt, "no-allow-direct-x-aggrega-extensions", false, "Force allow_direct_x_aggrega_extensions=false")
+	c.Flags().BoolVar(&opts.allowAggregaAIPrefix, "allow-aggrega-ai-prefix", false, "Force allow_aggrega_ai_prefix=true")
+	c.Flags().BoolVar(&opts.noAllowAggregaAIPrefix, "no-allow-aggrega-ai-prefix", false, "Force allow_aggrega_ai_prefix=false")
+	c.Flags().BoolVar(&opts.allowNonstandardNames, "allow-nonstandard-names", false, "Force allow_nonstandard_names=true")
+	c.Flags().BoolVar(&opts.noAllowNonstandardNames, "no-allow-nonstandard-names", false, "Force allow_nonstandard_names=false")
+	c.Flags().BoolVar(&opts.allowCategoryMismatches, "allow-category-mismatches", false, "Force allow_category_mismatches=true")
+	c.Flags().BoolVar(&opts.noAllowCategoryMismatches, "no-allow-category-mismatches", false, "Force allow_category_mismatches=false")
 
 	return c
 }

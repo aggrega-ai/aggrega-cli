@@ -20,15 +20,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-var (
-	signKeyPath   string
-	signFulcio    string
-	signRekor     string
-	signTimestamp string
-	signIDToken   string
-)
+// signFlags carries the `sign` command's flag state. It is constructed per
+// command so two invocations in one process cannot observe each other's flag
+// values. It is distinct from signConfig, which is the input contract signRun
+// reads.
+type signFlags struct {
+	keyPath   string
+	fulcio    string
+	rekor     string
+	timestamp string
+	idToken   string
+}
 
 func newSignCmd() *cobra.Command {
+	opts := &signFlags{}
 	c := &cobra.Command{
 		Use:   "sign <reference>...",
 		Short: "Sign one or more already-published artifacts and attach their signatures",
@@ -48,20 +53,20 @@ func newSignCmd() *cobra.Command {
 			}
 			return signRun(signConfig{
 				References:   args,
-				KeyPath:      signKeyPath,
-				FulcioURL:    signFulcio,
-				RekorURL:     signRekor,
-				TimestampURL: signTimestamp,
-				IDToken:      signIDToken,
+				KeyPath:      opts.keyPath,
+				FulcioURL:    opts.fulcio,
+				RekorURL:     opts.rekor,
+				TimestampURL: opts.timestamp,
+				IDToken:      opts.idToken,
 				ws:           rw,
 			})
 		},
 	}
-	c.Flags().StringVar(&signKeyPath, "key", "", "Path to a held ECDSA P-256 private key PEM for offline keyed signing. When omitted, keyless signing is used.")
-	c.Flags().StringVar(&signFulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing.")
-	c.Flags().StringVar(&signRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing.")
-	c.Flags().StringVar(&signTimestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
-	c.Flags().StringVar(&signIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one) and on GitHub Actions (the workflow OIDC token is minted automatically); required for other non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
+	c.Flags().StringVar(&opts.keyPath, "key", "", "Path to a held ECDSA P-256 private key PEM for offline keyed signing. When omitted, keyless signing is used.")
+	c.Flags().StringVar(&opts.fulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing.")
+	c.Flags().StringVar(&opts.rekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing.")
+	c.Flags().StringVar(&opts.timestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
+	c.Flags().StringVar(&opts.idToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one) and on GitHub Actions (the workflow OIDC token is minted automatically); required for other non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
 	return c
 }
 

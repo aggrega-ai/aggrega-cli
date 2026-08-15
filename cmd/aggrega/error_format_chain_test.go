@@ -232,13 +232,9 @@ func TestFormatCompilerError_AssertionFailureReachesTerminal(t *testing.T) {
 	root := t.TempDir()
 	writeAssertionFailureFixture(t, root)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{filepath.Join(root, "catalog")}
-	traceEnabled = false
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{filepath.Join(root, "catalog")}
+	traceEnabled := false
 
 	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {

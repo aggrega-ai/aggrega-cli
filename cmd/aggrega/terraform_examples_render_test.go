@@ -189,13 +189,9 @@ func buildExampleToDist(t *testing.T, src string, catalogStack []string) map[str
 	copyExampleInputs(t, src, ws)
 	t.Chdir(ws)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = "release.yaml"
-	catalogDirs = catalogStack
-	traceEnabled = false
+	releasePath := "release.yaml"
+	catalogDirs := catalogStack
+	traceEnabled := false
 
 	// Build is read-only: prime the lockfile with an explicit pull (output discarded),
 	// then build reads it. Each call runs in its own fresh workspace, so the two

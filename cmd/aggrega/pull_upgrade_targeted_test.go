@@ -213,15 +213,7 @@ func TestPullPositionalArgsWithoutUpgradeIsUsageError(t *testing.T) {
 	rel, cat := twoEntityFixture(t, root)
 
 	cmd := newPullCmd()
-	pullReleasePath = rel
-	pullCatalogDirs = []string{cat}
-	pullUpgrade = false
-	defer func() {
-		pullReleasePath = ""
-		pullCatalogDirs = []string{"."}
-		pullUpgrade = false
-	}()
-	cmd.SetArgs([]string{"--release", rel, "server-recipe"})
+	cmd.SetArgs([]string{"--release", rel, "--catalog", cat, "server-recipe"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected a usage error for positional args without --upgrade; got nil")

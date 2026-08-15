@@ -97,13 +97,9 @@ spec:
           web: {{ .values.port }}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{catalogRoot}
-	traceEnabled = true // exercise the trace-enabled branch
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{catalogRoot}
+	traceEnabled := true // exercise the trace-enabled branch
 	if err := os.RemoveAll(filepath.Join(root, ".trace")); err != nil {
 		t.Fatalf("clean .trace: %v", err)
 	}
@@ -202,13 +198,9 @@ spec:
           web: {{ .values.port }}
 `)
 
-	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
-	t.Cleanup(func() {
-		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
-	})
-	releasePath = filepath.Join(root, "release.yaml")
-	catalogDirs = []string{catalogRoot}
-	traceEnabled = true
+	releasePath := filepath.Join(root, "release.yaml")
+	catalogDirs := []string{catalogRoot}
+	traceEnabled := true
 
 	// runBuild may succeed or fail depending on the fixture's
 	// completeness; the goal is to exercise the trace-enable code path,
