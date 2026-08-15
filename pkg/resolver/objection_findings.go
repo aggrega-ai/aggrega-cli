@@ -4,13 +4,11 @@
 package resolver
 
 import (
-	"fmt"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
-// advisoriesFromObjections renders what a check raised into the finding shape
-// this package's callers already read.
+// findingsFromObjections renders what a check raised into the finding shape this
+// package's callers already read.
 //
 // A check hands back the sentinel naming the rule and the provenance of what it
 // objected about, and nothing else: it is deliberately not a diagnostic, so the
@@ -24,21 +22,27 @@ import (
 // second copy cannot drift from it. The locator becomes the field the finding
 // positions at, which is what lets a front end place it on the offending
 // authoring key rather than at the head of the file. The sentinel becomes the
-// wrapped error, so a caller matching the finding by identity keeps matching.
-// The entity names the Aggregate the objections are about.
+// wrapped error, so a caller matching the finding by identity keeps matching —
+// both the caller that drops one rule's findings out of a halt set and the
+// caller that matches a rule through the error a failed resolve returns.
+//
+// The entity names the document the findings are about, and it is supplied
+// rather than derived because the rules reporting through here span both
+// authoring documents: a rule over what the deployment wrote is not attributable
+// to the application, and a conversion that named one document for everything
+// would send an operator to a file they did not write in.
 //
 // Findings come back in the order the objections were raised, which is the order
 // the check was invoked in.
 //
 // Returns nil when nothing was raised.
-func advisoriesFromObjections(
+func findingsFromObjections(
 	objections []constraint.Objection,
-	aggregateName string,
+	entity string,
 ) []*ResolverError {
 	if len(objections) == 0 {
 		return nil
 	}
-	entity := fmt.Sprintf("Aggregate %s", aggregateName)
 	out := make([]*ResolverError, 0, len(objections))
 	for _, o := range objections {
 		out = append(out, &ResolverError{

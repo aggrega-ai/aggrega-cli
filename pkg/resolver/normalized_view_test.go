@@ -268,59 +268,15 @@ func TestAnUnresolvableContractDoesNotChangeTheBuildVerdict(t *testing.T) {
 
 // ---------------------------------------------------------------- the cross-check
 
-// nodeSet, edgeSet, mechanismSet and deliveryKeySet enumerate the coordinates
-// the declared rules are invoked once per.
+// The coordinates the declared rules are invoked once per come from the same
+// derivation production uses, rather than from a second one written here.
 //
-// They are here rather than beside the presentation deliberately. Nothing in
-// production invokes a declared rule at this stage, so an enumerator shipped
-// beside the presentation would be production code with no consumer — and an
-// enumerator that yields a plausible wrong coordinate set is silent, where an
-// absent one is loud.
-type nodeSet struct{ nodes []constraint.NodeInstance }
-
-func (n nodeSet) Nodes() []constraint.NodeInstance { return n.nodes }
-
-type edgeSet struct{ edges []constraint.EdgeInstance }
-
-func (e edgeSet) Edges() []constraint.EdgeInstance { return e.edges }
-
-type mechanismSet struct{ view *normalizedView }
-
-func (m mechanismSet) Mechanisms(node string) []string {
-	return m.view.AuthoredInjectMechanismNames(node)
-}
-
-type deliveryKeySet struct{ view *normalizedView }
-
-func (k deliveryKeySet) DeliveryKeys(node, mechanism string) []string {
-	return k.view.AuthoredInjectDeliveryKeys(node, mechanism)
-}
-
-// coordinatesOf derives the node and edge sets an application declares, read
-// through the presentation rather than off the documents, so the walk and the
-// facts cannot disagree about which coordinates exist.
-func coordinatesOf(na types.NormalizedAggregate, view *normalizedView) (nodeSet, edgeSet) {
-	var nodes nodeSet
-	var edges edgeSet
-	for _, p := range collectComponentInstances(na) {
-		node := constraint.NodeInstance{
-			ID:                   p.name,
-			AuthoredName:         p.name,
-			SubsystemPath:        p.subsystemPath,
-			SynthesizedSubsystem: p.synthesized,
-		}
-		nodes.nodes = append(nodes.nodes, node)
-		connections := view.AuthoredUsesSocketConnections(p.name)
-		for _, socket := range connections.Keys() {
-			for _, alias := range view.AuthoredUsesSocketEntryAliases(p.name, socket) {
-				edges.edges = append(edges.edges, constraint.EdgeInstance{
-					Node: node, Socket: socket, Alias: alias,
-				})
-			}
-		}
-	}
-	return nodes, edges
-}
+// A test-local derivation would be a second answer to "which coordinates does
+// this document declare", and the two would agree on the day they were written
+// with nothing comparing them afterwards. That is the failure this cross-check
+// exists to catch, so reproducing it in the cross-check itself would blind the
+// instrument: the comparison would run over whichever coordinate set the test
+// happened to build, and a production set that had drifted would still pass.
 
 // TestTheDeclaredRulesAgreeWithTheHandWrittenGuardsOverOneDocument is the
 // equal-coverage cross-check, and it is what the declared rules' invocation
@@ -380,7 +336,7 @@ func TestTheDeclaredRulesAgreeWithTheHandWrittenGuardsOverOneDocument(t *testing
 	})
 
 	view := newNormalizedView(na, nil, catalog, nil)
-	nodes, edges := coordinatesOf(na, view)
+	coordinates := newCoordinateSet(view)
 
 	// The hand-written reading, per rule. Each guard is called directly rather
 	// than through the guard sequence, so what is compared is one rule against
@@ -398,7 +354,7 @@ func TestTheDeclaredRulesAgreeWithTheHandWrittenGuardsOverOneDocument(t *testing
 		componentValuesConformToTheType,
 		componentInfraConformsToTheType,
 	} {
-		objections, err := constraint.RunOnNodes[constraint.NormalizedView](nil, nodes, view, check)
+		objections, err := constraint.RunOnNodes[constraint.NormalizedView](nil, coordinates, view, check)
 		if err != nil {
 			t.Fatalf("the node traversal returned an error: %v", err)
 		}
@@ -407,7 +363,7 @@ func TestTheDeclaredRulesAgreeWithTheHandWrittenGuardsOverOneDocument(t *testing
 		}
 	}
 	selfInject, err := constraint.RunOnNodeMechanismDeliveryKeys[constraint.NormalizedView](
-		nil, nodes, mechanismSet{view: view}, deliveryKeySet{view: view}, view,
+		nil, coordinates, coordinates, coordinates, view,
 		selfInjectReferenceIsPublished)
 	if err != nil {
 		t.Fatalf("the delivery-key traversal returned an error: %v", err)
@@ -416,7 +372,7 @@ func TestTheDeclaredRulesAgreeWithTheHandWrittenGuardsOverOneDocument(t *testing
 		declared[o.Sentinel().Error()]++
 	}
 	connectionInject, err := constraint.RunOnEdges[constraint.NormalizedView](
-		nil, edges, view, connectionInjectReferenceIsPublished)
+		nil, coordinates, view, connectionInjectReferenceIsPublished)
 	if err != nil {
 		t.Fatalf("the edge traversal returned an error: %v", err)
 	}

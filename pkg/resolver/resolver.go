@@ -275,14 +275,14 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	// happens to agree.
 	var presented constraint.DocumentView = newAggregateDocumentView(
 		in.AggregatePath, in.AggregateRawBytes, contract)
-	advisories := advisoriesFromObjections(
+	advisories := findingsFromObjections(
 		constraint.RunOnDocumentParameters(
 			in.AggregatePath,
 			presented.DeclaredParameterKeys(in.AggregatePath),
 			presented,
 			declaredParameterRead,
 		),
-		agg.Metadata.Name,
+		fmt.Sprintf("Aggregate %s", agg.Metadata.Name),
 	)
 
 	// Validate instance names

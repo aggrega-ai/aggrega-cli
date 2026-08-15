@@ -88,6 +88,22 @@ type normalizedView struct {
 	subsystemFeatures map[string]types.OrderedMap[types.FeatureInstance]
 	boundaryFeatures  map[string]types.OrderedMap[types.BoundaryFeature]
 
+	// subsystemPaths and boundaryPaths are the same scopes in the order their
+	// documents declare them, outer scope before the scopes nested inside it.
+	//
+	// They are recorded by the walks that fill the two maps above rather than
+	// derived from those maps afterwards, and the reason is that they cannot be
+	// derived from them at all: a Go map holds no order, so a reader ranging one
+	// gets a different sequence per run. The order is a property of the authored
+	// document, so it is captured where the document is read.
+	//
+	// Composing a scope's path is the same one rule either way — a synthesized
+	// scope contributes no level, a nested one joins under its axis's separator
+	// — so recording the path alongside the block keyed by it is what keeps a
+	// second expression of that rule from existing to disagree with this one.
+	subsystemPaths []string
+	boundaryPaths  []string
+
 	// componentContracts is the resolved contract of each component type in
 	// play, produced once when this value was built.
 	componentContracts map[string]resolvedContract
@@ -172,10 +188,11 @@ func newNormalizedView(
 		v.instances[p.name] = p.inst
 	}
 	if agg := na.Aggregate(); agg != nil {
-		collectSubsystemFeatures("", agg.Spec.Subsystems, v.subsystemFeatures)
+		collectSubsystemFeatures("", agg.Spec.Subsystems, v.subsystemFeatures, &v.subsystemPaths)
 	}
 	if release != nil {
-		collectBoundaryContent(types.NormalizeRelease(release), v.releaseComponents, v.boundaryFeatures)
+		collectBoundaryContent(
+			types.NormalizeRelease(release), v.releaseComponents, v.boundaryFeatures, &v.boundaryPaths)
 	}
 
 	v.resolveContracts()
@@ -183,15 +200,23 @@ func newNormalizedView(
 }
 
 // collectSubsystemFeatures records each declared scope's attachment block under
-// the scope path the enumerator names it by, descending into nested scopes.
+// the scope path the enumerator names it by, descending into nested scopes, and
+// appends that path to order in the order the document declares it.
 //
 // A synthesized scope is descended into and contributes no path of its own: it
 // is not a scope the author declared, so an attachment named under it would be
-// reported at a key no file contains.
+// reported at a key no file contains. It contributes no entry to order either,
+// for the same reason and in the same step — a scope absent from the map and
+// present in the order would be enumerated as a coordinate no fact answers for.
+//
+// The order is appended here rather than recovered from the map afterwards
+// because the map holds none: the sequence is the author's and this walk is
+// where the authored document is read.
 func collectSubsystemFeatures(
 	path string,
 	subsystems types.OrderedMap[types.Subsystem],
 	out map[string]types.OrderedMap[types.FeatureInstance],
+	order *[]string,
 ) {
 	for name, sub := range subsystems.All() {
 		child := name
@@ -202,17 +227,26 @@ func collectSubsystemFeatures(
 		}
 		if !sub.Synthesized {
 			out[child] = sub.Features
+			*order = append(*order, child)
 		}
-		collectSubsystemFeatures(child, sub.Subsystems, out)
+		collectSubsystemFeatures(child, sub.Subsystems, out, order)
 	}
 }
 
 // collectBoundaryContent records every component the deployment wrote against
-// and every scope-wide attachment it declared, descending the boundary tree.
+// and every scope-wide attachment it declared, descending the boundary tree, and
+// appends each declared scope's path to order in the order the document declares
+// it.
+//
+// A synthesized scope contributes neither a block nor an entry in the order, on
+// the same reasoning its counterpart on the other authoring document does: the
+// operator declared no such scope, so naming one would report at a key the file
+// does not contain.
 func collectBoundaryContent(
 	nr types.NormalizedRelease,
 	components map[string]types.BoundaryComponent,
 	features map[string]types.OrderedMap[types.BoundaryFeature],
+	order *[]string,
 ) {
 	rel := nr.Release()
 	if rel == nil {
@@ -222,6 +256,7 @@ func collectBoundaryContent(
 	walk = func(path string, b types.Boundary) {
 		if !b.Synthesized {
 			features[path] = b.Features
+			*order = append(*order, path)
 		}
 		declared := types.BoundaryComponents(b)
 		for name, bc := range declared.All() {
