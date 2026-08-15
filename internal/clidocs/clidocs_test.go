@@ -41,7 +41,10 @@ func TestRenderFlagSetSortsAndSkipsHidden(t *testing.T) {
 }
 
 // newTestTree builds a small cobra tree that exercises leaf commands,
-// subcommands, and flags without any machine-specific defaults.
+// subcommands, and flags without any machine-specific defaults. It carries one
+// family whose subcommands mix flag-bearing with flagless and one family that
+// is wholly flagless, so the two ways a subcommand flags table can be
+// suppressed are both reachable.
 func newTestTree() *cobra.Command {
 	root := &cobra.Command{Use: "aggrega", Short: "root"}
 	root.PersistentFlags().String("workspace-root", "", "workspace root path")
@@ -49,11 +52,104 @@ func newTestTree() *cobra.Command {
 	build := &cobra.Command{Use: "build", Short: "compile", Run: func(*cobra.Command, []string) {}}
 	build.Flags().String("release", "", "release file")
 
-	parent := &cobra.Command{Use: "auth", Short: "identity"}
-	parent.AddCommand(&cobra.Command{Use: "token", Short: "get token", Run: func(*cobra.Command, []string) {}})
+	auth := &cobra.Command{Use: "auth", Short: "identity"}
+	auth.AddCommand(&cobra.Command{Use: "token", Short: "get token", Run: func(*cobra.Command, []string) {}})
 
-	root.AddCommand(build, parent)
+	capture := &cobra.Command{Use: "capture", Short: "freeze config", Run: func(*cobra.Command, []string) {}}
+	capture.Flags().Bool("all-plugins", false, "capture every plugin socket")
+	initCmd := &cobra.Command{Use: "init", Short: "seed config", Run: func(*cobra.Command, []string) {}}
+	initCmd.Flags().String("registry", "", "registry host to seed")
+	show := &cobra.Command{Use: "show", Short: "print config", Run: func(*cobra.Command, []string) {}}
+
+	config := &cobra.Command{Use: "config", Short: "configuration"}
+	config.AddCommand(capture, initCmd, show)
+
+	root.AddCommand(build, auth, config)
 	return root
+}
+
+// descriptorFor returns the catalog entry for path, failing the test when the
+// tree does not carry it, so a renamed fixture command fails loudly rather than
+// leaving an assertion to pass over a zero value.
+func descriptorFor(t *testing.T, cat []clisurface.Descriptor, path string) clisurface.Descriptor {
+	t.Helper()
+	for _, d := range cat {
+		if d.Path == path {
+			return d
+		}
+	}
+	t.Fatalf("no catalog entry for %q", path)
+	return clisurface.Descriptor{}
+}
+
+func TestRenderSubcommandFlagsTablePerFlagBearingSubcommand(t *testing.T) {
+	cat := clisurface.Catalog(newTestTree())
+	out := renderSubcommandFlags(descriptorFor(t, cat, "aggrega config"), cat)
+
+	captureAt := strings.Index(out, "**`aggrega config capture` flags**")
+	initAt := strings.Index(out, "**`aggrega config init` flags**")
+	if captureAt == -1 || initAt == -1 {
+		t.Fatalf("expected a labelled table for each flag-bearing subcommand:\n%s", out)
+	}
+	if captureAt > initAt {
+		t.Errorf("subcommand tables not in the order the subcommand table lists them:\n%s", out)
+	}
+	if !strings.Contains(out, "| `--all-plugins` | `false` | capture every plugin socket |") {
+		t.Errorf("subcommand flag row not rendered as expected:\n%s", out)
+	}
+	// A subcommand declaring no flags of its own contributes nothing, so the
+	// reference carries no empty table for it.
+	if strings.Contains(out, "aggrega config show") {
+		t.Errorf("flagless subcommand rendered a table:\n%s", out)
+	}
+}
+
+func TestRenderSubcommandFlagsSuppressedWhenNoSubcommandDeclaresFlags(t *testing.T) {
+	cat := clisurface.Catalog(newTestTree())
+	cases := []struct {
+		name string
+		path string
+		why  string
+	}{
+		{"wholly flagless family", "aggrega auth", "its only subcommand declares no flags"},
+		{"leaf command", "aggrega build", "it has no subcommands at all"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := renderSubcommandFlags(descriptorFor(t, cat, tc.path), cat); got != "" {
+				t.Errorf("expected no output because %s, got:\n%s", tc.why, got)
+			}
+		})
+	}
+}
+
+func TestRenderCommandPlacesSubcommandFlagsAfterTheSubcommandTable(t *testing.T) {
+	cat := clisurface.Catalog(newTestTree())
+	out := renderCommand(descriptorFor(t, cat, "aggrega config"), cat)
+
+	subsAt := strings.Index(out, "**Subcommands**")
+	flagsAt := strings.Index(out, "**`aggrega config capture` flags**")
+	if subsAt == -1 || flagsAt == -1 {
+		t.Fatalf("expected both the subcommand table and a subcommand flags table:\n%s", out)
+	}
+	if subsAt > flagsAt {
+		t.Errorf("subcommand flags rendered before the subcommand table:\n%s", out)
+	}
+}
+
+// TestRenderCommandEmitsNoHeadings pins the property that makes regeneration
+// safe for a page's inbound links: a markdown heading inside the generated
+// region would publish a link target that moves whenever the command tree
+// changes, so every label in the fragment is bold text instead.
+func TestRenderCommandEmitsNoHeadings(t *testing.T) {
+	cat := clisurface.Catalog(newTestTree())
+	for _, cmd := range visibleCommands(cat, cat[0].Path) {
+		for i, line := range strings.Split(renderCommand(cmd, cat), "\n") {
+			if strings.HasPrefix(line, "#") {
+				t.Errorf("%s: generated line %d is a heading and would create an anchor: %q", cmd.Path, i+1, line)
+			}
+		}
+	}
 }
 
 func TestGenerateIsDeterministicAndPreservesCuratedProse(t *testing.T) {
@@ -93,9 +189,21 @@ func TestGenerateIsDeterministicAndPreservesCuratedProse(t *testing.T) {
 	if !strings.Contains(string(after1), "<!-- BEGIN GENERATED: cli-build -->") {
 		t.Errorf("generated block missing:\n%s", after1)
 	}
-	// A page for the previously-undocumented parent command is created.
+	// A page for a parent command with no page of its own is created.
 	if _, err := os.Stat(filepath.Join(cliDir, "aggrega-auth.md")); err != nil {
 		t.Errorf("expected auth page created: %v", err)
+	}
+	// A subcommand's flags reach the page of its parent command, which is the
+	// only page the family has.
+	configPage, err := os.ReadFile(filepath.Join(cliDir, "aggrega-config.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(configPage), "**`aggrega config init` flags**") {
+		t.Errorf("subcommand flags table missing from the parent page:\n%s", configPage)
+	}
+	if !strings.Contains(string(configPage), "| `--registry` | — | registry host to seed |") {
+		t.Errorf("subcommand flag row missing from the parent page:\n%s", configPage)
 	}
 
 	// Second run must be a byte-identical no-op across every page.

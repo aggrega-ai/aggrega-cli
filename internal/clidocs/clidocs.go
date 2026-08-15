@@ -6,10 +6,10 @@
 // between HTML-comment markers.
 //
 // The package owns one concern: rendering — turning a command descriptor into a
-// stable markdown fragment (synopsis, flags table, subcommand list). Placing
-// that fragment into a page belongs to docsplice, which owns the generated-region
-// convention for every generator that writes one, so the marker format is not
-// restated here.
+// stable markdown fragment (synopsis, flags table, subcommand list, and a flags
+// table for each subcommand that declares flags). Placing that fragment into a
+// page belongs to docsplice, which owns the generated-region convention for
+// every generator that writes one, so the marker format is not restated here.
 //
 // It does not read the command tree itself. Every command fact it renders comes
 // from the catalog clisurface.Catalog projects, which is the single place the
@@ -153,10 +153,15 @@ func visibleCommands(cat []clisurface.Descriptor, parentPath string) []clisurfac
 }
 
 // renderCommand produces the mechanical reference fragment for one command:
-// its synopsis, its own flags, and its subcommands. Descriptive prose is left
-// to the curated portion of the page. The flags rendered are the command's
-// local ones — the flags it inherits are documented once on the global-flags
-// page instead of repeated under every command.
+// its synopsis, its own flags, its subcommands, and one flags table per
+// subcommand that declares flags. Descriptive prose is left to the curated
+// portion of the page. The flags rendered are the command's local ones — the
+// flags it inherits are documented once on the global-flags page instead of
+// repeated under every command.
+//
+// A command and its subcommands share one page, so a reader looking up a
+// subcommand's flags finds them beside the parent's rather than on a page of
+// their own.
 func renderCommand(cmd clisurface.Descriptor, cat []clisurface.Descriptor) string {
 	var b strings.Builder
 	b.WriteString("**Synopsis**\n\n")
@@ -172,6 +177,11 @@ func renderCommand(cmd clisurface.Descriptor, cat []clisurface.Descriptor) strin
 	if subs := renderSubcommands(cmd, cat); subs != "" {
 		b.WriteString("\n\n**Subcommands**\n\n")
 		b.WriteString(subs)
+	}
+
+	if subFlags := renderSubcommandFlags(cmd, cat); subFlags != "" {
+		b.WriteString("\n\n")
+		b.WriteString(subFlags)
 	}
 
 	return b.String()
@@ -227,6 +237,34 @@ func renderSubcommands(cmd clisurface.Descriptor, cat []clisurface.Descriptor) s
 		b.WriteString("| `" + c.Path + "` | " + escapeCell(c.Short) + " |\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// renderSubcommandFlags renders one flags table per subcommand of cmd, each
+// under a label naming the subcommand's full invocation path. Subcommands are
+// visited in the order renderSubcommands lists them, and one declaring no flags
+// of its own contributes nothing, so the reference carries no empty table and a
+// wholly flagless family renders exactly as it did before — the same
+// empty-string contract renderFlagSet has. It returns the empty string when no
+// subcommand declares a flag, so callers can suppress the whole section.
+//
+// The label is bold rather than a markdown heading. Every part of the generated
+// region is deliberately heading-free, so regenerating a page can neither add
+// nor move a link target and the page's inbound links keep resolving to its
+// curated headings alone.
+//
+// The subcommands covered are cmd's own, matching the depth of the subcommand
+// table above them: a reader sees a flags table for each command that table
+// lists, and for no command it does not.
+func renderSubcommandFlags(cmd clisurface.Descriptor, cat []clisurface.Descriptor) string {
+	var blocks []string
+	for _, sub := range visibleCommands(cat, cmd.Path) {
+		flags := renderFlagSet(sub.LocalFlags)
+		if flags == "" {
+			continue
+		}
+		blocks = append(blocks, "**`"+sub.Path+"` flags**\n\n"+flags)
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 // renderCommandList renders the top-level command summary table used in the
