@@ -12,16 +12,21 @@ import (
 // The rules over a component's own injection block, expressed as constraint
 // declarations. See checks.go for what a declaration here is.
 //
-// Three of the four rules the hand-written form carries are declared below. The
-// fourth — that a component type reserving delivery to its Recipe refuses an
-// instance which writes an injection block AT ALL, whatever the block carries —
-// is not, and its absence is deliberate rather than an oversight. That rule
-// turns on whether the block was written, and a block written and left empty
-// yields the same mechanism names as no block at all: none. Nothing a view
-// exposes reports that authorship, so the rule cannot be stated here without
-// stating it wrongly, and a rule that reads the mechanisms instead would accept
-// exactly the document this one exists to refuse. The rule is enforced beside
-// this file until the authorship it turns on is readable.
+// All four rules the hand-written form carries are declared below. The one that
+// turns on authorship — that a component type reserving delivery to its Recipe
+// refuses an instance which writes an injection block AT ALL, whatever the block
+// carries — reads a fact reporting whether the block was written, because the
+// mechanisms it declares cannot answer that: a block written and left empty
+// yields the same names as no block at all, none, while the two require opposite
+// verdicts. A rule reading the mechanisms instead would accept exactly the
+// document that rule exists to refuse.
+//
+// The two rules that a type permitting nothing bears on are separate
+// declarations and each states its own finding, so a block dictating mechanisms
+// on such a type is reported by both: once for having been written, and once per
+// mechanism dictated against an allowlist admitting none. That follows from
+// declaring them independently rather than in sequence, and it is why neither is
+// written to fall silent when the other speaks.
 
 // connectionDeliveryKeys is the keys one connection delivers through one
 // mechanism, read out of that connection's authored delivery payload.
@@ -40,6 +45,53 @@ func connectionDeliveryKeys(mechanism string, payload any) []string {
 	keys := map[string][]string{}
 	appendInjectDeliveryKeys(keys, mechanism, payload)
 	return keys[mechanism]
+}
+
+// selfInjectBlockAllowed reports a component's own injection block written on a
+// component type that permits no delivery mechanism at all.
+//
+// A type naming no mechanism states that its Recipe wires its material
+// internally, so it permits an instance to dictate nothing for its own
+// configuration. Writing the block is what this refuses, and what the block
+// carries makes no difference to the verdict: an author who writes an empty
+// block has dictated delivery on a type that reserves it, and an author who
+// writes no block has dictated nothing, which is what most components ship.
+//
+// It reads whether the block was written rather than what it declares, because
+// the two documents the rule must separate declare the same thing — no
+// mechanism. A rule reading the mechanisms would accept the very document this
+// one exists to refuse, and would do it silently, since the accepting answer and
+// the refusing one are the same empty list.
+//
+// A component type the catalog holds no entry for ends the rule, because the
+// allowlist reads empty for it exactly as it does for a type permitting nothing.
+// What that absence means is a separate rule's question.
+//
+// The detail is the component type, which is what an author has to change: the
+// block is correct authoring against a type that permits delivery, so the finding
+// is about the pairing rather than about the block alone.
+var selfInjectBlockAllowed = constraint.Check[
+	constraint.NormalizedView,
+	constraint.NodeSubject,
+]{
+	Sentinel: ErrSelfInjectForbidden(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.NormalizedView,
+		s constraint.NodeSubject,
+	) []constraint.Objection {
+		if !v.AuthoredInjectBlockPresent(s.NodeID()) {
+			return nil
+		}
+		componentType, present := v.InstanceComponentType(s.NodeID())
+		if !present || !v.CatalogComponentPresent(componentType) {
+			return nil
+		}
+		if len(v.DeclaredInjectMechanismNames(componentType)) > 0 {
+			return nil
+		}
+		return []constraint.Objection{s.Raise(ErrSelfInjectForbidden(), componentType)}
+	},
 }
 
 // selfInjectMechanismAllowed reports each delivery mechanism a component's own

@@ -560,6 +560,34 @@ type NormalizedView interface {
 	// Keyed by (node, slot); read from types.AttachmentSlot.Required.
 	SlotRequired(componentType string, slot string) bool
 
+	// AuthoredInjectBlockPresent reports whether an instance wrote an
+	// injection block at all.
+	//
+	// It reports authorship and nothing else, and a block appears here whether
+	// or not it carries any delivery. So it is not a count of what the block
+	// dictates and it does not become false when the block dictates nothing:
+	// it separates a block the author wrote from a block the author omitted,
+	// which is the one question every fact over this surface reads its zero
+	// value for.
+	//
+	// Authorship is reported positively rather than inferred, and that is why
+	// the fact exists. The mechanisms an instance declares are empty for a
+	// block written and left empty exactly as they are for no block at all, so
+	// a rule reading them cannot tell those apart while they need opposite
+	// verdicts: writing an empty block on a component type that reserves
+	// delivery to its Recipe dictates delivery the type permits none of, and
+	// writing no block dictates nothing and is what most components ship.
+	// Inferring authorship from emptiness is the alternative and it is not
+	// available here at all — emptiness is the value both cases produce, so
+	// the inference has nothing to read.
+	//
+	// It reads the instance's own injection block and no other surface.
+	// Delivery dictated on a connection is separately authored and
+	// independently absent, and neither carries the other.
+	//
+	// Keyed by node; read from types.ComponentInstance.Inject.
+	AuthoredInjectBlockPresent(node string) bool
+
 	// AuthoredInjectMechanismNames are the delivery mechanisms an instance's
 	// injection block declares, in author order.
 	//
