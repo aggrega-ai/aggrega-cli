@@ -330,6 +330,55 @@ var facts = []factDecl{
 			"at the mercy of map iteration.",
 	},
 	{
+		Name:        "per-edge-infra",
+		Stage:       "normalized",
+		SourceField: "types.VerboseUsesEntry.Infra",
+		Subject:     []string{"edge"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
+		},
+		Returns: "types.OrderedMap[any]",
+		Doc: "PerEdgeInfra is the physical-sizing configuration a component's own " +
+			"dependency block wrote for one connection on one socket, carried as " +
+			"an opaque ordered payload.\n\nIt is the payload rather than a named " +
+			"fact about it, on the same reasoning the configuration pillars are: " +
+			"a rule whose predicate is \"what was written here conforms to the " +
+			"contract the socket declares\" has that content as its input, and " +
+			"the content has no other home to be read from.\n\nEmpty is the " +
+			"author writing nothing, and it is NOT a case with nothing to check. " +
+			"Once a socket declares a contract for this pillar, every connection " +
+			"on that socket is measured against it, and a connection that wrote " +
+			"nothing is the maximal violation of a key the contract declares " +
+			"required rather than an exemption from it. What is opt-in is the " +
+			"socket's contract, never the connection's content.\n\nThis pillar " +
+			"is written on both documents and the developer's half is the one " +
+			"declared here, which is the difference from the two pillars either " +
+			"side of it. A connection's developer configuration is written on " +
+			"one document only, because the deployment surface may not declare " +
+			"it at all; this one may be seeded by the component's own dependency " +
+			"block and supplied by the deployment's edge surface, so both halves " +
+			"exist and each is separately authored, independently absent, and " +
+			"measured against the same declared contract. The operator's half is " +
+			"a separate fact on that separate surface. A rule reading one half " +
+			"alone answers for that document and not for the connection; a rule " +
+			"about the connection reads both, and the pair is what makes that " +
+			"askable at all.\n\nIt is keyed per connection on the consuming " +
+			"component, which is where the socket's contract is declared and " +
+			"where the entry was written. The target the connection names " +
+			"contributes nothing to this payload, so the target is not part of " +
+			"this fact's key.\n\nBoth authoring forms of the block are covered, " +
+			"and the short form carries no payload: it lists targets and gives " +
+			"each connection the target's own name as its alias, with nowhere to " +
+			"write a pillar, so a short-form connection reads empty here. That " +
+			"empty is the author writing nothing, which is the same answer it " +
+			"is for a long-form entry that omitted the block, and it is measured " +
+			"the same way.\n\nAuthor order is carried because these entries " +
+			"reach rendered output, and an unordered payload would put a " +
+			"byte-identical result at the mercy of map iteration.",
+	},
+	{
 		Name:        "authored-per-edge-inject",
 		Stage:       "normalized",
 		SourceField: "types.VerboseUsesEntry.Inject",
@@ -1671,6 +1720,92 @@ var facts = []factDecl{
 
 	// ---------------------------------------------------------------- topology
 
+	{
+		Name:        "flattened-node-component-type",
+		Stage:       "topology",
+		SourceField: "topology.TopologyNode.ComponentType",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "(string, bool)",
+		Doc: "FlattenedNodeComponentType is the component type a node in the " +
+			"flattened set carries, and whether a node of that name is in the " +
+			"set at all.\n\nIt answers for every node the composition " +
+			"contributes, which is what separates it from the type an instance " +
+			"declares. A component a sub-aggregate contributes is declared in " +
+			"that sub-aggregate's document, which is read only when the " +
+			"composition is flattened — so the fact over the application's own " +
+			"instance list cannot see it, and a rule reading that alone reports " +
+			"every such component as not existing and then declines to judge it. " +
+			"This reads the flattened node instead, where a node contributed by " +
+			"any document carries its type the same way.\n\nOne read serves " +
+			"both tiers and there is deliberately no second path to keep in " +
+			"step. A node the application declared directly and a node a " +
+			"composition contributed are the same shape here, so a rule reading " +
+			"this needs no fallback and cannot acquire two behaviours that drift " +
+			"apart.\n\nIt does not replace the fact over the application's own " +
+			"instance list, and that fact does not replace it. That one is " +
+			"complete earlier, so a rule asked before the composition is " +
+			"flattened can read it and cannot read this; and it separates a name " +
+			"no instance declares from an instance declaring the empty type, " +
+			"which is a distinction about an authored document that a node in a " +
+			"built set cannot carry. A rule asking what an author wrote reads " +
+			"that; a rule asking what the build assembled reads this.\n\nThe " +
+			"second result reports membership of the flattened set and nothing " +
+			"finer. A name absent from it was never contributed, or was " +
+			"contributed and then removed by a false activation toggle — two " +
+			"findings this fact does not separate. The build keeps the removed " +
+			"names apart from the surviving ones, so the distinction is not " +
+			"lost by the flattening; reporting it is a separate question and " +
+			"not this one.\n\nIt names the type as the node carries it, which is " +
+			"a reference to a catalog entity and not a reading of one. Whether " +
+			"the catalog holds an entity under that name is a separate fact, and " +
+			"a rule needing both asks both.",
+	},
+	{
+		Name:        "flattened-attachment-type",
+		Stage:       "topology",
+		SourceField: "topology.TopologyResult.FeatureAttachments",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "FlattenedAttachmentType is the Feature type declared for one " +
+			"attachment on one node of the flattened set, reported absent when " +
+			"no attachment of that name was collected for it.\n\nIt answers for " +
+			"an attachment a sub-aggregate contributes, which is what separates " +
+			"it from the type the application's own component instance declares. " +
+			"Such an attachment is written on a component in that " +
+			"sub-aggregate's document, which is read only when the composition " +
+			"is flattened — so the fact over the application's own instance " +
+			"list cannot see it, and a rule reading that alone reports the " +
+			"attachment as not declared.\n\nIt covers the " +
+			"attachments written on a component and no others. An attachment " +
+			"declared once for a whole scope, and inherited by the components " +
+			"inside it, is carried separately and is not collected here — so an " +
+			"absent answer means no attachment of that name was written on that " +
+			"component, and never that no attachment of that name applies to it. " +
+			"A rule about what applies to a node reads the merged set, which is " +
+			"complete a stage later, once the whole inheritance has been folded.\n" +
+			"\nIt is what was declared and not what the declaration merged to. " +
+			"Two documents may name one attachment, and reconciling them is a " +
+			"question the facts over the authored surfaces answer between them; " +
+			"the merged answer is a separate fact at a later stage. A rule " +
+			"asking what a document declared reads a declaration fact, and a " +
+			"rule asking what the attachment became reads the merged one.\n\nIt " +
+			"does not replace the fact over the application's own attachment " +
+			"declarations, and that fact does not replace it. That " +
+			"one is complete earlier, so a rule asked before the composition is " +
+			"flattened can read it and cannot read this; and it separates an " +
+			"attachment the document does not declare from one declaring the " +
+			"empty type, which is a distinction about an authored document. A " +
+			"rule asking what an author wrote reads that; a rule asking what the " +
+			"build assembled reads this.\n\nIt names the Feature TYPE and never " +
+			"the attachment's own name. The name is the coordinate this fact is " +
+			"keyed by; the type is what it reports, and a rule reaching for the " +
+			"Feature's declaration needs the type.",
+	},
 	{
 		Name:        "resolved-parameter",
 		Stage:       "topology",
