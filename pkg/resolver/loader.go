@@ -45,12 +45,34 @@ func LoadAggregate(path string) (*types.Aggregate, error) {
 // attributing any error to path. It is the read-free core of LoadAggregate,
 // for callers that already hold the bytes (the same-directory triad scan) and
 // must not read the file a second time.
+//
+// The document is read through the same tolerant parse the envelope gate
+// applies to these bytes, so the two agree on what parses. A bare
+// `{{ .parameters.x }}` reference is well-formed YAML that reads as a flow
+// mapping rather than a scalar, and reading it structurally is what lets an
+// author leave a reference unquoted: the reference is substituted into the raw
+// bytes before the authoritative parse, and YAML's own quoting rule then
+// decides the value's type — bare yields the value's natural type, quoted
+// yields a string.
+//
+// The tolerant parse is structural. It does not preserve the text of an
+// expression standing in a mapping key position, so a caller needing that text
+// reads it from the raw bytes, which this does not modify.
 func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
 		return nil, &ResolverError{Entity: "Aggregate", Field: path, Message: eerr.Error(), Err: eerr}
 	}
+	node, perr := envelope.ParseDecodable(data, path)
+	if perr != nil {
+		return nil, &ResolverError{
+			Entity:  "Aggregate",
+			Field:   path,
+			Message: fmt.Sprintf("failed to unmarshal YAML: %v", perr),
+			Err:     ErrYAMLLoad(),
+		}
+	}
 	var agg types.Aggregate
-	if err := yaml.Unmarshal(data, &agg); err != nil {
+	if err := node.Decode(&agg); err != nil {
 		return nil, &ResolverError{
 			Entity:  "Aggregate",
 			Field:   path,

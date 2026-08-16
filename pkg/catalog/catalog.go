@@ -1252,12 +1252,24 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 // parseAggregateEntity is the single per-entity Aggregate resolution: unmarshal
 // plus kind-check. Mirrors parseComponentEntity (returns the raw error; the
 // indexing caller wraps the unmarshal failure with "unmarshal Aggregate").
+//
+// It reads the document through the same tolerant parse the envelope gate
+// applies, for the reason LoadAggregateFromBytes does: a catalog-resident
+// Aggregate may leave a `{{ .parameters.x }}` reference unquoted, and the index
+// is a structural read — identity, versions, and the type references the
+// closure walk follows. The authoritative parse of such an Aggregate happens
+// after its parameters are substituted into the retained raw bytes, so the
+// index never decides a value's type.
 func parseAggregateEntity(data []byte, path string) (types.Aggregate, error) {
 	if _, err := envelope.ValidateBytes(envelope.KindAggregate, data, path); err != nil {
 		return types.Aggregate{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
 	}
+	node, perr := envelope.ParseDecodable(data, path)
+	if perr != nil {
+		return types.Aggregate{}, perr
+	}
 	var e types.Aggregate
-	if err := yaml.Unmarshal(data, &e); err != nil {
+	if err := node.Decode(&e); err != nil {
 		return types.Aggregate{}, err
 	}
 	if e.Kind != "Aggregate" {
