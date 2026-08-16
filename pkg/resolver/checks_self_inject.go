@@ -67,9 +67,16 @@ func connectionDeliveryKeys(mechanism string, payload any) []string {
 // allowlist reads empty for it exactly as it does for a type permitting nothing.
 // What that absence means is a separate rule's question.
 //
-// The detail is the component type, which is what an author has to change: the
-// block is correct authoring against a type that permits delivery, so the finding
-// is about the pairing rather than about the block alone.
+// The finding is positioned at the injection block itself, because the block is
+// the element the author wrote and the one they have to remove. The component is
+// where the pairing is visible, but it is not where the offending authoring is:
+// a component declares its configuration, its dependencies and its attachments
+// beside that block, so a finding at the component names a site holding several
+// unrelated declarations and leaves the author to work out which one is meant.
+//
+// The detail names the block and then the component type, which is what an author
+// has to change: the block is correct authoring against a type that permits
+// delivery, so the finding is about the pairing rather than about the block alone.
 var selfInjectBlockAllowed = constraint.Check[
 	constraint.NormalizedView,
 	constraint.NodeSubject,
@@ -90,7 +97,7 @@ var selfInjectBlockAllowed = constraint.Check[
 		if len(v.DeclaredInjectMechanismNames(componentType)) > 0 {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(ErrSelfInjectForbidden(), componentType)}
+		return []constraint.Objection{s.RaiseAt(ErrSelfInjectForbidden(), "inject", componentType)}
 	},
 }
 

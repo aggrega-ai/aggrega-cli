@@ -2094,7 +2094,7 @@ func TestTheSelfDeliveryBlockPermittedRuleReportsABlockWrittenOnAClosedType(t *t
 				{name: "cache", typ: selfDeliveryClosedType},
 				{name: "ghost", typ: socketAbsentComponent, block: writtenBlock()},
 			},
-			raised: []string{".spec.components.web"},
+			raised: []string{".spec.components.web.inject"},
 		},
 		{
 			// Two reports, authored against their alphabetical order. With a single
@@ -2105,7 +2105,7 @@ func TestTheSelfDeliveryBlockPermittedRuleReportsABlockWrittenOnAClosedType(t *t
 				{name: "zeta", typ: selfDeliveryClosedType, block: writtenBlock()},
 				{name: "alpha", typ: selfDeliveryClosedType, block: writtenBlock()},
 			},
-			raised: []string{".spec.components.alpha", ".spec.components.zeta"},
+			raised: []string{".spec.components.alpha.inject", ".spec.components.zeta.inject"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2586,7 +2586,11 @@ func TestTheSelfDeliveryRulesReportOneDocumentAtAKnownMultiplicity(t *testing.T)
 		locators   []string
 		wantRaised []string
 	}{
-		{"the block rule", locatorsOf(nodes), []string{".spec.components.web"}},
+		// The four positions below descend by exactly one authored segment per
+		// rule — the block, a mechanism the block dictates, a key that mechanism
+		// delivers — so the family's positions read as one ladder over the
+		// document rather than as four independently chosen depths.
+		{"the block rule", locatorsOf(nodes), []string{".spec.components.web.inject"}},
 		{"the mechanism rule", locatorsOf(mechanisms), []string{
 			".spec.components.web.inject.env",
 			".spec.components.web.inject.arg",

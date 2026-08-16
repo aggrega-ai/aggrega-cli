@@ -153,11 +153,17 @@ func TestTheConversionAttributesFindingsToTheDocumentItIsGiven(t *testing.T) {
 // between the two readings is which raise the rule used.
 //
 // One rule objects about a key inside the component's configuration and names it;
-// the other objects about the component's pairing with its type, whose first value
-// is a type name and not a place in the file. Both are invoked over the same
+// the other objects about a socket name the component wrote, whose first value is
+// a type name and not a place in the file. Both are invoked over the same
 // subject through the same traversal, and both convert through the same
 // conversion — so a difference in where they land is attributable to the raise and
 // to nothing else.
+//
+// The second rule is one whose leading value is a component type, which is what
+// makes it the honest exemplar of a raise that stays at the subject: a rule naming
+// an authored element positions at that element instead, so a rule chosen merely
+// because it reports at the component today would stop being an exemplar the
+// moment its own position was corrected.
 //
 // INVARIANT: a rule that raised at a leaf is positioned at that leaf; a rule that
 // raised at the subject stays at the subject.
@@ -170,17 +176,21 @@ func TestTwoRulesOverOneComponentPositionAtTheDepthEachRaisedAt(t *testing.T) {
 	catalog := conformanceRuleCatalog(t)
 
 	// One component: its configuration violates the contract its type declares,
-	// and it writes an injection block on a type that permits no delivery. The
-	// first is reported by a rule that names the offending key; the second by a
-	// rule whose value is the component type.
+	// and it wires a dependency socket one edit from the one that type declares.
+	// The first is reported by a rule that names the offending key; the second by
+	// a rule whose leading value is the component type.
 	components := types.OrderedMap[types.ComponentInstance]{}
 	values := types.OrderedMap[any]{}
 	values.Set("replicas", "many")
-	components.Set("web", types.ComponentInstance{
+	nearMiss := types.UsesSocketValue{}
+	nearMiss.Verbose.Set("primary", types.VerboseUsesEntry{Target: "web"})
+	instance := types.ComponentInstance{
 		Type:   conformanceContractedType,
 		Values: values,
-		Inject: writtenBlock(),
-	})
+	}
+	// conformanceSocket is "store"; "stores" is one insertion from it.
+	instance.Uses.Set(conformanceSocket+"s", nearMiss)
+	components.Set("web", instance)
 	na := normalized(t, &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "positions"},
 		Spec:     types.AggregateSpec{Components: components},
@@ -188,7 +198,7 @@ func TestTwoRulesOverOneComponentPositionAtTheDepthEachRaisedAt(t *testing.T) {
 	view := newNormalizedView(na, nil, catalog, nil)
 
 	atLeaf := fieldsFromRule(t, view, componentValuesConformToTheType)
-	atSubject := fieldsFromRule(t, view, selfInjectBlockAllowed)
+	atSubject := fieldsFromRule(t, view, authoredSocketNameNearADeclaredOne)
 
 	if want := []string{".spec.components.web.values.replicas"}; !equalStrings(atLeaf, want) {
 		t.Errorf("the rule that raised at a leaf positioned at %v; want %v", atLeaf, want)
