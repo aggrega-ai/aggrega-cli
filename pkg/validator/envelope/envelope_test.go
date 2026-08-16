@@ -194,6 +194,56 @@ spec:
 	}
 }
 
+// TestEnvelope_AggregateEdgeInfraRefused is the edge-level sibling of the
+// pillar-ownership ban above: per-connection infra is the Operator's pillar
+// too, authored on a Release edge entry. An Aggregate uses entry carrying
+// infra: fails the envelope loudly instead of being silently dropped, which
+// is what the closed verbose-entry object buys — a key the entry does not
+// declare is a refusal, not a discard.
+//
+// The values: leg is a positive control on the same entry shape: it must
+// keep passing, so a regression that closed the whole entry surface rather
+// than removing one key cannot report green here.
+func TestEnvelope_AggregateEdgeInfraRefused(t *testing.T) {
+	t.Parallel()
+	doc := func(pillar string) []byte {
+		return []byte(`
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: edge-infra-refusal
+  version: "1.0.0"
+spec:
+  components:
+    db:
+      type: core/datastore/postgres
+    api:
+      type: core/compute/api-server
+      uses:
+        databases:
+          primary:
+            target: db
+            ` + pillar + `:
+              pool_size: 20
+`)
+	}
+
+	if _, err := ValidateBytes(KindAggregate, doc("values"), "aggregate.yaml"); err != nil {
+		t.Fatalf("per-edge values: is the developer's own surface and must pass: %v", err)
+	}
+
+	_, err := ValidateBytes(KindAggregate, doc("infra"), "aggregate.yaml")
+	if err == nil {
+		t.Fatal("Aggregate per-edge infra: must fail the envelope; got nil")
+	}
+	if !errors.Is(err, ErrEntityEnvelope()) {
+		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
+	}
+	if !strings.Contains(err.Error(), "infra") {
+		t.Errorf("diagnostic must name the offending key: %v", err)
+	}
+}
+
 // TestEnvelope_BareStringUsesTargetRefused is the permanent pin of the
 // single-form alias contract: a uses alias maps to an entry object
 // ({target: ...}); the bare-string shorthand (alias: target-name) is

@@ -5,6 +5,7 @@ package types
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -342,13 +343,13 @@ caches:
 	}
 }
 
-// TestVerboseUsesEntry_ValuesInfra_RoundTrip pins connection-scoped per-edge
-// values/infra through both marshalers: a verbose entry carrying values and
-// infra round-trips (YAML and JSON) preserving the keys, the nested content,
+// TestVerboseUsesEntry_Values_RoundTrip pins connection-scoped per-edge
+// values through both marshalers: a verbose entry carrying values
+// round-trips (YAML and JSON) preserving the keys, the nested content,
 // and author order, alongside target/inject.
-func TestVerboseUsesEntry_ValuesInfra_RoundTrip(t *testing.T) {
+func TestVerboseUsesEntry_Values_RoundTrip(t *testing.T) {
 	t.Parallel()
-	const src = `{target: corp-db, values: {pool_size: 20, mode: ro}, infra: {storage_class: fast}}`
+	const src = `{target: corp-db, values: {pool_size: 20, mode: ro}}`
 
 	checkEntry := func(t *testing.T, e VerboseUsesEntry) {
 		if e.Target != "corp-db" {
@@ -359,9 +360,6 @@ func TestVerboseUsesEntry_ValuesInfra_RoundTrip(t *testing.T) {
 		}
 		if v, ok := e.Values.Get("mode"); !ok || v != "ro" {
 			t.Errorf("values.mode = %v (ok=%v), want ro", v, ok)
-		}
-		if v, ok := e.Infra.Get("storage_class"); !ok || v != "fast" {
-			t.Errorf("infra.storage_class = %v (ok=%v), want fast", v, ok)
 		}
 	}
 
@@ -383,7 +381,7 @@ func TestVerboseUsesEntry_ValuesInfra_RoundTrip(t *testing.T) {
 
 	// JSON: same loop.
 	var j VerboseUsesEntry
-	if err := json.Unmarshal([]byte(`{"target":"corp-db","values":{"pool_size":20,"mode":"ro"},"infra":{"storage_class":"fast"}}`), &j); err != nil {
+	if err := json.Unmarshal([]byte(`{"target":"corp-db","values":{"pool_size":20,"mode":"ro"}}`), &j); err != nil {
 		t.Fatalf("JSON unmarshal: %v", err)
 	}
 	checkEntry(t, j)
@@ -397,11 +395,69 @@ func TestVerboseUsesEntry_ValuesInfra_RoundTrip(t *testing.T) {
 	}
 	checkEntry(t, j2)
 
-	// An entry with no values/infra stays zero (IsZero true for a bare target? no —
-	// target is set; but values/infra must be empty and omitted from output).
+	// An entry with no values stays empty and is omitted from output.
 	var empty VerboseUsesEntry
 	_ = yaml.Unmarshal([]byte(`{target: x}`), &empty)
-	if empty.Values.Len() != 0 || empty.Infra.Len() != 0 {
-		t.Errorf("omitted values/infra should be empty; got values=%d infra=%d", empty.Values.Len(), empty.Infra.Len())
+	if empty.Values.Len() != 0 {
+		t.Errorf("omitted values should be empty; got values=%d", empty.Values.Len())
+	}
+}
+
+// TestVerboseUsesEntry_CarriesNoInfraSurface pins the absence of a per-edge
+// infra surface on the developer's dependency block. Per-connection infra is
+// the deployment's surface, authored on a Release edge entry; the Aggregate
+// entry has nowhere to carry it. A document that writes one is refused by the
+// Aggregate's own schema before reaching this type, so the property asserted
+// here is the type-level half: no infra content survives a decode, and no
+// infra key is ever emitted.
+//
+// Both marshalers are asserted because they are separate code paths with
+// separate struct definitions, and an infra field restored to one of them
+// alone would leave the other reporting green.
+func TestVerboseUsesEntry_CarriesNoInfraSurface(t *testing.T) {
+	t.Parallel()
+
+	assertNoInfra := func(t *testing.T, label string, out []byte) {
+		t.Helper()
+		if strings.Contains(string(out), "infra") {
+			t.Errorf("%s emitted an infra key; the Aggregate edge surface carries none:\n%s", label, out)
+		}
+	}
+
+	// A source that writes infra decodes without it: the key reaches no field.
+	var y VerboseUsesEntry
+	if err := yaml.Unmarshal([]byte(`{target: corp-db, values: {mode: ro}, infra: {storage_class: fast}}`), &y); err != nil {
+		t.Fatalf("YAML unmarshal: %v", err)
+	}
+	if y.Target != "corp-db" {
+		t.Errorf("Target = %q, want corp-db", y.Target)
+	}
+	if v, ok := y.Values.Get("mode"); !ok || v != "ro" {
+		t.Errorf("values.mode = %v (ok=%v), want ro — the values half is unaffected", v, ok)
+	}
+	yOut, err := yaml.Marshal(y)
+	if err != nil {
+		t.Fatalf("YAML marshal: %v", err)
+	}
+	assertNoInfra(t, "MarshalYAML", yOut)
+
+	var j VerboseUsesEntry
+	if err := json.Unmarshal([]byte(`{"target":"corp-db","values":{"mode":"ro"},"infra":{"storage_class":"fast"}}`), &j); err != nil {
+		t.Fatalf("JSON unmarshal: %v", err)
+	}
+	jOut, err := json.Marshal(j)
+	if err != nil {
+		t.Fatalf("JSON marshal: %v", err)
+	}
+	assertNoInfra(t, "MarshalJSON", jOut)
+
+	// IsZero reads the surfaces the entry actually has: an entry whose only
+	// source content was infra is indistinguishable from an empty one.
+	var infraOnly VerboseUsesEntry
+	if err := yaml.Unmarshal([]byte(`{infra: {storage_class: fast}}`), &infraOnly); err != nil {
+		t.Fatalf("YAML unmarshal (infra-only): %v", err)
+	}
+	if !infraOnly.IsZero() {
+		t.Errorf("an entry whose only source key was infra should be zero; got %+v", infraOnly)
 	}
 }

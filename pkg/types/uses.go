@@ -60,13 +60,12 @@ type VerboseUsesEntry struct {
 	// render context at .uses.<alias>.values (the uses map is alias-keyed).
 	// Empty when omitted: this is the authored bag verbatim, and the
 	// socket's declared defaults are merged in when the graph is built.
+	//
+	// It has no Infra counterpart by construction: per-connection infra is
+	// the operator's surface and is authored on a Release edge entry, which
+	// carries its own Infra field. The developer declares the connection and
+	// its values; the deployment sizes it.
 	Values OrderedMap[any] `yaml:"values,omitempty" json:"values,omitempty,omitzero"`
-
-	// Infra carries per-connection infra config for this edge, validated
-	// against the infraSchema the same consuming component declares on the
-	// socket. An Aggregate edge may seed it; a Release edge surface may
-	// supply it. Empty when omitted, on the same terms as Values.
-	Infra OrderedMap[any] `yaml:"infra,omitempty" json:"infra,omitempty,omitzero"`
 }
 
 // UnmarshalYAML on UsesSocketValue dispatches on the YAML node kind.
@@ -173,7 +172,7 @@ func (v UsesSocketValue) IsZero() bool {
 }
 
 // UnmarshalYAML on VerboseUsesEntry dispatches on the YAML node kind.
-// MappingNode decodes the full {target, inject, values, infra} struct. A
+// MappingNode decodes the full {target, inject, values} struct. A
 // ScalarNode (a bare-string alias value) is rejected, naming the alias
 // and the required entry-object form.
 func (e *VerboseUsesEntry) UnmarshalYAML(node *yaml.Node) error {
@@ -186,7 +185,6 @@ func (e *VerboseUsesEntry) UnmarshalYAML(node *yaml.Node) error {
 			Target string          `yaml:"target,omitempty"`
 			Inject *InjectBlock    `yaml:"inject,omitempty"`
 			Values OrderedMap[any] `yaml:"values,omitempty"`
-			Infra  OrderedMap[any] `yaml:"infra,omitempty"`
 		}
 		var p plain
 		if err := node.Decode(&p); err != nil {
@@ -195,7 +193,6 @@ func (e *VerboseUsesEntry) UnmarshalYAML(node *yaml.Node) error {
 		e.Target = p.Target
 		e.Inject = p.Inject
 		e.Values = p.Values
-		e.Infra = p.Infra
 		return nil
 	default:
 		return fmt.Errorf("VerboseUsesEntry: expected scalar or mapping at line %d, got kind %d", node.Line, node.Kind)
@@ -203,8 +200,8 @@ func (e *VerboseUsesEntry) UnmarshalYAML(node *yaml.Node) error {
 }
 
 // UnmarshalJSON on VerboseUsesEntry dispatches on the leading
-// non-whitespace byte. `{` decodes the full {target, inject, values,
-// infra} struct; a `"` string scalar (a bare-string alias value) is
+// non-whitespace byte. `{` decodes the full {target, inject, values}
+// struct; a `"` string scalar (a bare-string alias value) is
 // rejected, naming the required entry-object form.
 func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 	trimmed := bytes.TrimLeft(data, " \t\n\r")
@@ -220,7 +217,6 @@ func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 			Target string          `json:"target,omitempty"`
 			Inject *InjectBlock    `json:"inject,omitempty"`
 			Values OrderedMap[any] `json:"values,omitempty,omitzero"`
-			Infra  OrderedMap[any] `json:"infra,omitempty,omitzero"`
 		}
 		var p plain
 		if err := json.Unmarshal(data, &p); err != nil {
@@ -229,7 +225,6 @@ func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 		e.Target = p.Target
 		e.Inject = p.Inject
 		e.Values = p.Values
-		e.Infra = p.Infra
 		return nil
 	default:
 		preview := trimmed
@@ -241,30 +236,28 @@ func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalYAML emits the entry's mapping form `{ target?, inject?,
-// values?, infra? }`.
+// values? }`.
 func (e VerboseUsesEntry) MarshalYAML() (any, error) {
 	type plain struct {
 		Target string          `yaml:"target,omitempty"`
 		Inject *InjectBlock    `yaml:"inject,omitempty"`
 		Values OrderedMap[any] `yaml:"values,omitempty"`
-		Infra  OrderedMap[any] `yaml:"infra,omitempty"`
 	}
-	return plain{Target: e.Target, Inject: e.Inject, Values: e.Values, Infra: e.Infra}, nil
+	return plain{Target: e.Target, Inject: e.Inject, Values: e.Values}, nil
 }
 
 // MarshalJSON emits the entry's mapping form `{ target?, inject?,
-// values?, infra? }`.
+// values? }`.
 func (e VerboseUsesEntry) MarshalJSON() ([]byte, error) {
 	type plain struct {
 		Target string          `json:"target,omitempty"`
 		Inject *InjectBlock    `json:"inject,omitempty"`
 		Values OrderedMap[any] `json:"values,omitempty,omitzero"`
-		Infra  OrderedMap[any] `json:"infra,omitempty,omitzero"`
 	}
-	return json.Marshal(plain{Target: e.Target, Inject: e.Inject, Values: e.Values, Infra: e.Infra})
+	return json.Marshal(plain{Target: e.Target, Inject: e.Inject, Values: e.Values})
 }
 
 // IsZero reports whether the entry is empty.
 func (e VerboseUsesEntry) IsZero() bool {
-	return e.Target == "" && e.Inject == nil && e.Values.Len() == 0 && e.Infra.Len() == 0
+	return e.Target == "" && e.Inject == nil && e.Values.Len() == 0
 }

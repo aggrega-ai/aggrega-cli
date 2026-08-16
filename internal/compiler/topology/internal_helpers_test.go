@@ -276,18 +276,22 @@ func findEdge(edges []NormalizedEdge, source, socket, alias string) *NormalizedE
 	return nil
 }
 
-// TestBuild_ComponentUsesValuesInfraFlowToEdge pins the developer-authored
-// per-edge values/infra arm: a verbose `uses` entry carrying values and infra
-// projects those maps onto the produced edge.
-func TestBuild_ComponentUsesValuesInfraFlowToEdge(t *testing.T) {
+// TestBuild_ComponentUsesValuesFlowToEdge pins the developer-authored
+// per-edge values arm: a verbose `uses` entry carrying values projects that
+// map onto the produced edge.
+//
+// It also pins the other half of the split — the edge's Infra stays empty
+// with no Release in play. Per-connection infra is the deployment's surface,
+// so a build driven by the Aggregate alone contributes none, and the edge
+// arrives at the conformance gate with nothing to measure. The companion
+// Release-side test beside this one supplies that half.
+func TestBuild_ComponentUsesValuesFlowToEdge(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}
 	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
 	values := types.OrderedMap[any]{}
 	values.Set("pool_size", 20)
-	infra := types.OrderedMap[any]{}
-	infra.Set("storage_class", "fast")
-	verbose.Set("db", types.VerboseUsesEntry{Target: "db", Values: values, Infra: infra})
+	verbose.Set("db", types.VerboseUsesEntry{Target: "db", Values: values})
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
 	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Uses: uses})
@@ -304,8 +308,8 @@ func TestBuild_ComponentUsesValuesInfraFlowToEdge(t *testing.T) {
 	if v, ok := e.Values.Get("pool_size"); !ok || v != 20 {
 		t.Errorf("edge values.pool_size = %v (ok=%v), want 20", v, ok)
 	}
-	if v, ok := e.Infra.Get("storage_class"); !ok || v != "fast" {
-		t.Errorf("edge infra.storage_class = %v (ok=%v), want fast", v, ok)
+	if e.Infra.Len() != 0 {
+		t.Errorf("edge infra = %v, want empty: the Aggregate contributes no per-connection infra", e.Infra.Keys())
 	}
 }
 

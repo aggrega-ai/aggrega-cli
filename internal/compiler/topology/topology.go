@@ -205,8 +205,8 @@ type NormalizedEdge struct {
 	// origin and carries the Release infra in Infra. The IR builder copies this
 	// into IREdge.OriginRelease.
 	OriginRelease bool
-	// Values / Infra carry the resolved per-connection config: Values from the
-	// verbose Aggregate uses entry; Infra from the Aggregate entry and/or merged
+	// Values / Infra carry the resolved per-connection config, one per
+	// authoring surface: Values from the verbose Aggregate uses entry, Infra
 	// from a Release per-edge entry. Opaque OrderedMaps the core does not
 	// interpret — the conformance gate (Step 1) validates them and the renderer
 	// projects them at .uses.<alias>.{values,infra}.

@@ -330,55 +330,6 @@ var facts = []factDecl{
 			"at the mercy of map iteration.",
 	},
 	{
-		Name:        "per-edge-infra",
-		Stage:       "normalized",
-		SourceField: "types.VerboseUsesEntry.Infra",
-		Subject:     []string{"edge"},
-		Params: []paramDecl{
-			{Name: "node", Type: "string"},
-			{Name: "socket", Type: "string"},
-			{Name: "alias", Type: "string"},
-		},
-		Returns: "types.OrderedMap[any]",
-		Doc: "PerEdgeInfra is the physical-sizing configuration a component's own " +
-			"dependency block wrote for one connection on one socket, carried as " +
-			"an opaque ordered payload.\n\nIt is the payload rather than a named " +
-			"fact about it, on the same reasoning the configuration pillars are: " +
-			"a rule whose predicate is \"what was written here conforms to the " +
-			"contract the socket declares\" has that content as its input, and " +
-			"the content has no other home to be read from.\n\nEmpty is the " +
-			"author writing nothing, and it is NOT a case with nothing to check. " +
-			"Once a socket declares a contract for this pillar, every connection " +
-			"on that socket is measured against it, and a connection that wrote " +
-			"nothing is the maximal violation of a key the contract declares " +
-			"required rather than an exemption from it. What is opt-in is the " +
-			"socket's contract, never the connection's content.\n\nThis pillar " +
-			"is written on both documents and the developer's half is the one " +
-			"declared here, which is the difference from the two pillars either " +
-			"side of it. A connection's developer configuration is written on " +
-			"one document only, because the deployment surface may not declare " +
-			"it at all; this one may be seeded by the component's own dependency " +
-			"block and supplied by the deployment's edge surface, so both halves " +
-			"exist and each is separately authored, independently absent, and " +
-			"measured against the same declared contract. The operator's half is " +
-			"a separate fact on that separate surface. A rule reading one half " +
-			"alone answers for that document and not for the connection; a rule " +
-			"about the connection reads both, and the pair is what makes that " +
-			"askable at all.\n\nIt is keyed per connection on the consuming " +
-			"component, which is where the socket's contract is declared and " +
-			"where the entry was written. The target the connection names " +
-			"contributes nothing to this payload, so the target is not part of " +
-			"this fact's key.\n\nBoth authoring forms of the block are covered, " +
-			"and the short form carries no payload: it lists targets and gives " +
-			"each connection the target's own name as its alias, with nowhere to " +
-			"write a pillar, so a short-form connection reads empty here. That " +
-			"empty is the author writing nothing, which is the same answer it " +
-			"is for a long-form entry that omitted the block, and it is measured " +
-			"the same way.\n\nAuthor order is carried because these entries " +
-			"reach rendered output, and an unordered payload would put a " +
-			"byte-identical result at the mercy of map iteration.",
-	},
-	{
 		Name:        "authored-per-edge-inject",
 		Stage:       "normalized",
 		SourceField: "types.VerboseUsesEntry.Inject",

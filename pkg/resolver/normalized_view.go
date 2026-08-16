@@ -631,16 +631,6 @@ func (v *normalizedView) PerEdgeValues(node string, socket string, alias string)
 	return entry.Values
 }
 
-// PerEdgeInfra returns the developer-document half of one connection's physical
-// sizing, as the author wrote it, empty when the author wrote none.
-func (v *normalizedView) PerEdgeInfra(node string, socket string, alias string) types.OrderedMap[any] {
-	entry, ok := v.verboseEntry(node, socket, alias)
-	if !ok {
-		return types.OrderedMap[any]{}
-	}
-	return entry.Infra
-}
-
 // AuthoredPerEdgeInject returns the delivery payload one connection of an
 // instance's own dependency block dictates, by mechanism, in author order.
 func (v *normalizedView) AuthoredPerEdgeInject(
