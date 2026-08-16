@@ -47,16 +47,24 @@ import (
 // The rules are declared here and the hand-written functions beside this file
 // still run. That is what a reader comparing the two should expect rather than
 // read as duplication left behind: a declaration is invoked where something
-// presents a view over the compilation products its stage names, and nothing
-// presents one at the stages these rules declare. The declaration is what makes
-// the placement computable; the invocation arrives with the change that supplies
-// the view these rules need, and the hand-written form is removed by the change
-// that no longer needs it.
+// presents a view over the compilation products its stage names, and for every
+// rule here that reads the finalised graph, nothing presents one. The
+// declaration is what makes the placement computable; the invocation arrives
+// with the change that supplies the view those rules need, and the hand-written
+// form is removed by the change that no longer needs it.
 //
 // That is a statement about these declarations and not about the framework. A
 // view over an authored document is presented elsewhere, and a rule declared
 // there is invoked through it, so a reader must not read the paragraph above as
 // saying no view exists anywhere.
+//
+// One rule here is likewise not waiting on a view at all, and separating it
+// matters because it would otherwise be mistaken for the rest.
+// [AttachmentRequirementWellFormed] reads only facts complete once the
+// composition is flattened, and a presentation of those is already built where
+// the flattening happens, with rules invoked through it there. So what that rule
+// waits on is a site that invokes it against that presentation, not a view that
+// has yet to exist.
 //
 // Where a rule evaluates an authored label constraint, the last element of its
 // detail is why that constraint could not be evaluated at all, and its absence
