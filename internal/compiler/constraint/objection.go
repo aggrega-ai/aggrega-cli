@@ -3,6 +3,11 @@
 
 package constraint
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Objection is what a check hands back when an input violates the rule the
 // check enforces: the sentinel naming the rule, the provenance of the subject
 // the objection is about, and the check's detail.
@@ -48,4 +53,46 @@ func (o Objection) Detail() []string {
 	out := make([]string, len(o.detail))
 	copy(out, o.detail)
 	return out
+}
+
+// ObjectionMessage renders what one check raised as the text a diagnostic
+// carries: the sentinel's registered wording, then the values the check
+// supplied.
+//
+// It lives here, beside the objection, because it reads nothing else. A
+// boundary converting an objection into its own diagnostic shape decides which
+// of its fields the provenance lands on, and that decision differs per boundary
+// — but the wording does not, and a second boundary composing it again would be
+// free to compose it differently. One renderer is what makes "every rule
+// reporting this way reports identically" a property rather than an intention,
+// and the package that owns the objection is the only home every boundary can
+// reach.
+//
+// The message opens with the sentinel's own registered text, so a rule's
+// wording lives with the rule's identity and a second copy cannot drift from
+// it. The values the check supplied follow it, because the registered text is
+// one static string per rule and cannot carry them — so a message that were
+// only that text would drop the very thing an author has to act on.
+//
+// The values are rendered rather than described, because this reads every rule
+// and knows none of them: a check's detail is an ordered list of strings whose
+// meaning is the rule's, so any attempt here to caption them would be one
+// renderer holding a copy of every rule's grammar. Each is quoted, which keeps
+// a value carrying a space or a comma readable as one value and makes a value
+// the check supplied empty visible instead of vanishing into the separator.
+//
+// A check that supplied no detail gets the registered wording alone, so a rule
+// whose identity says the whole of it reads as a sentence rather than as one
+// with an empty parenthesis after it.
+func ObjectionMessage(o Objection) string {
+	registered := o.Sentinel().Error()
+	detail := o.Detail()
+	if len(detail) == 0 {
+		return registered
+	}
+	quoted := make([]string, 0, len(detail))
+	for _, d := range detail {
+		quoted = append(quoted, fmt.Sprintf("%q", d))
+	}
+	return registered + " (" + strings.Join(quoted, ", ") + ")"
 }

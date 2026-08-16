@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
@@ -307,6 +308,20 @@ type stepsOneToFourOutput struct {
 	FeatureOrder  ir.FeatureOrder
 	Analysis      *analyzer.AnalysisResult
 
+	// GraphView presents the finalised graph to a check as the named facts
+	// complete once the whole attachment cascade and the annotation-driven
+	// expansion have run, with every fact complete earlier answered by the
+	// presentation the flattening produced.
+	//
+	// It is built here because this is the one place holding both products at
+	// once: a presentation of a stage embeds the presentation of the stage below
+	// it rather than re-reading that stage's own inputs, so it can only be built
+	// where both are in hand. A rule placed at this stage reads it; a rule placed
+	// later reads a presentation that embeds it in turn.
+	//
+	// Nil when either product is absent.
+	GraphView constraint.GraphView
+
 	// AssertionErr carries the first failing Component or Feature assertion, or
 	// nil when every assertion passed. It is produced inside runStepsOneToFour
 	// rather than by each consumer, because the rule's inputs — the finalised IR
@@ -382,6 +397,13 @@ func runStepsOneToFour(
 		}
 		out.IRGraph = graph
 		out.FeatureOrder = featureOrder
+
+		// The presentation of the graph just finalised, extending the one the
+		// flattening produced. Built here because this is where both products are
+		// in hand: a stage's presentation embeds the stage below it rather than
+		// re-reading that stage's inputs, so building it anywhere else would mean
+		// producing a second answer to facts this one already answers.
+		out.GraphView = ir.NewGraphView(graph, topoResult.StageView)
 
 		if err := ctx.Err(); err != nil {
 			return err

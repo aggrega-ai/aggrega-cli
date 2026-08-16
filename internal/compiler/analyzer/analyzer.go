@@ -71,6 +71,18 @@ const (
 	// rest of the diagnostic verbatim instead of composing it from the edge
 	// fields. Which rule failed is carried by the Sentinel, not by the kind.
 	AnalysisErrorAttachmentRequirement AnalysisErrorKind = "attachment-requirement"
+
+	// AnalysisErrorLocated marks a violation whose Message is already a
+	// complete diagnostic and whose authoring site is carried on Field and
+	// OriginFile rather than composed from the edge fields.
+	//
+	// It is the shape a rule reporting through [ErrorsFromObjections] takes.
+	// Such a rule names its subject by a locator, which positions the finding
+	// on the offending authoring key; the edge fields would have to be
+	// re-derived to be filled, and a value re-derived here could disagree with
+	// the one the rule read. So they stay empty and [AnalysisError.Error]
+	// returns the Message verbatim.
+	AnalysisErrorLocated AnalysisErrorKind = "located"
 )
 
 // AnalysisError is one violation discovered during Step 4. The struct
@@ -174,7 +186,10 @@ func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
 
 // Error formats the violation as a single human-readable string. A policy
 // verdict (Kind [AnalysisErrorPolicy]) returns its Message verbatim — the
-// plugin already supplied a complete diagnostic. A presence-mandate violation
+// plugin already supplied a complete diagnostic — and so does a located
+// violation (Kind [AnalysisErrorLocated]), whose message a rule already
+// composed and whose site is carried on Field rather than in the text. A
+// presence-mandate violation
 // (Kind [AnalysisErrorAttachmentRequirement]) reads as "<node>: <message>",
 // naming the node the mandate was evaluated against. Selector violations (Socket
 // non-empty) read as "<source> -> <target> (<socket>): <message>"; appliesTo
@@ -183,7 +198,7 @@ func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
 // Source-and-Target reuse semantics carry different meaning. The edge shapes
 // are distinguished by Socket presence per the package's documented convention.
 func (e AnalysisError) Error() string {
-	if e.Kind == AnalysisErrorPolicy {
+	if e.Kind == AnalysisErrorPolicy || e.Kind == AnalysisErrorLocated {
 		return e.Message
 	}
 	if e.Kind == AnalysisErrorAttachmentRequirement {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -60,6 +61,20 @@ type TopologyResult struct {
 	// lets a consumer tell a reference to a deliberately-removed component apart
 	// from a reference to one that never existed.
 	Pruned types.OrderedMap[bool]
+	// StageView presents this composition to a check as the named facts complete
+	// once it is flattened, with every fact complete earlier answered by the
+	// presentation the resolve produced.
+	//
+	// It is carried rather than rebuilt because it cannot be rebuilt from the
+	// fields above: the module set flattening recorded is not among them, and two
+	// producers of one fact are free to disagree about it with nothing comparing
+	// them. A later stage extends this presentation by embedding it, so carrying it
+	// is what lets the presentation of a later stage answer an earlier stage's
+	// facts by delegation instead of by reading these fields again.
+	//
+	// Nil when the build holds no resolve result, because the earlier stage's
+	// presentation is built from the documents that result carries.
+	StageView constraint.TopologyView
 }
 
 // TopologyNode is one flattened node in the topology graph. Fields are
@@ -680,6 +695,13 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// other. Predicate-inert: the sub-aggregate's own parameter context is not
 	// resolved, so only context-independent structural constraints are checked
 	// (conditional x-aggrega predicates are validated where the context exists).
+
+	// The presentation of what this build flattened, produced once. The placement
+	// rule below reads it, and it is carried on the result so that the stage above
+	// answers this stage's facts by embedding this value rather than by building a
+	// second presentation over the same composition.
+	stageView := newStageView(cfg, flat, edges)
+
 	result := &TopologyResult{
 		Nodes:                      flat.Nodes,
 		Edges:                      edges,
@@ -687,6 +709,12 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		ExportedComponents:         flat.ExportedComponents,
 		ExportedComponentsDeclared: declaredExports,
 		Pruned:                     flat.Pruned,
+	}
+	// Assigned only when one was built. Storing an absent presentation directly
+	// would leave the field non-nil while the value behind it is not there, so a
+	// consumer's nil check would pass and its first read would panic.
+	if stageView != nil {
+		result.StageView = stageView
 	}
 
 	if cfg.ResolveResult != nil {
@@ -710,7 +738,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		// this call site: the facts are complete at this stage and nowhere
 		// earlier, because a module's node set exists only once the composition
 		// is flattened and a node's placement is written after that.
-		placementErrs, err := guardSubModulePlacement(ctx.Err, cfg, newStageView(cfg, flat, edges))
+		placementErrs, err := guardSubModulePlacement(ctx.Err, cfg, stageView)
 		if err != nil {
 			return nil, err
 		}
