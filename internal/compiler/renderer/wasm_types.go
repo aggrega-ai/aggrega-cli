@@ -8,8 +8,8 @@ import (
 )
 
 // The Provider render socket wire structs — RenderNodeInput, IRNodeProjection,
-// CatalogProjection, SourceProjection, SourceFile, RenderNodeOutput,
-// RenderedFile, AssembleBoundaryInput, RenderedNode, RenderEdge, and
+// SourceProjection, SourceFile, RenderNodeOutput, RenderedFile,
+// AssembleBoundaryInput, RenderedNode, RenderEdge, and
 // AssembleBoundaryOutput — are generated from the canonical provider render
 // schema into providerrender_host_gen.go. This file carries the hand-written
 // companions the generator does not emit: the type aliases that keep the shared

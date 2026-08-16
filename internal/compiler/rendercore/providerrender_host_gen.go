@@ -22,13 +22,11 @@ import (
 	"unicode/utf8"
 )
 
-// RenderNodeInput The payload a Provider guest receives on its render_node export: the per-node IR projection the guest renders, the render-time context, and an optional pre-packaged catalog projection. When the catalog projection is present the guest renders from the payload alone and needs no host round-trips for catalog content; when it is omitted the guest fetches catalog entries through the read-only host functions bound at load time.
+// RenderNodeInput The payload a Provider guest receives on its render_node export: the per-node IR projection the guest renders, the render-time context, and the pre-evaluated inputs the node's bound Recipe declares — an acquired-source listing, a workload, an artifact set — each present only when that Recipe declares it.
 type RenderNodeInput struct {
 	Node IRNodeProjection `json:"node" yaml:"node" cbor:"node"`
 	// Context The render-time context the host hands the guest. The guest reads it to resolve parameters, annotations, and boundary metadata; the schema does not interpret its internal shape (an opaque passthrough), so the provider socket schema does not rebind the cross-boundary render-context shape. The render context's own contract is the render-context wire shape; a guest that reads it consults that contract.
 	Context renderctx.RenderContext `json:"context" yaml:"context" cbor:"context"`
-	// CatalogProjection The pre-packaged catalog content the guest renders against when the host supplies catalog entries in the payload rather than behind host functions. Absent when the guest fetches catalog entries through the read-only host functions instead.
-	CatalogProjection *CatalogProjection `json:"catalog_projection,omitempty" yaml:"catalog_projection,omitempty" cbor:"catalog_projection,omitempty"`
 	// SourceListing The generic enumeration of the acquired source the host hands the guest for a sourced provider: the source root, whether that root is a directory, and the sorted root-relative entries under it. The host reads no file content here — it lists names only. The guest applies its own resolution logic over the listing and asks the host to pack a chosen selection through the pack-source host function, so all per-provider source-resolution intelligence lives in the guest. Present for sourced providers; absent otherwise.
 	SourceListing *SourceListing `json:"source_listing,omitempty" yaml:"source_listing,omitempty" cbor:"source_listing,omitempty"`
 	// WorkloadProjection The pre-evaluated workload the host hands the guest to synthesize provider-native manifests from; present when the bound Recipe declares a workload rather than a chart source, absent otherwise.
@@ -79,20 +77,6 @@ type NodeProvenance struct {
 	ProviderName string `json:"provider_name,omitempty" yaml:"provider_name,omitempty" cbor:"provider_name,omitempty"`
 	// ProviderVersion The resolved provider-rendering plugin version, stamped as the aggrega.ai/provider-version label when non-empty.
 	ProviderVersion string `json:"provider_version,omitempty" yaml:"provider_version,omitempty" cbor:"provider_version,omitempty"`
-}
-
-// CatalogProjection The pre-packaged catalog content a Provider guest renders against when the host supplies catalog entries in the payload rather than behind host functions. It is a closure walk outward from the IR node: only the catalog entries transitively referenced by the node being rendered are included, not the whole catalog. Each map is keyed by catalog URI and preserves key order so the payload is byte-identical across runs of identical input. Opaque at this schema layer; the guest reads each entry through the catalog entity's own wire contract.
-type CatalogProjection struct {
-	// Components The Component entries the node transitively references, keyed by catalog URI.
-	Components types.OrderedMap[types.Component] `json:"components,omitempty" yaml:"components,omitempty" cbor:"components,omitempty"`
-	// Features The Feature entries the node transitively references, keyed by catalog URI.
-	Features types.OrderedMap[types.Feature] `json:"features,omitempty" yaml:"features,omitempty" cbor:"features,omitempty"`
-	// Recipes The Recipe entries the node transitively references, keyed by catalog URI.
-	Recipes types.OrderedMap[types.Recipe] `json:"recipes,omitempty" yaml:"recipes,omitempty" cbor:"recipes,omitempty"`
-	// FeatureRecipes The FeatureRecipe entries the node transitively references, keyed by catalog URI.
-	FeatureRecipes types.OrderedMap[types.FeatureRecipe] `json:"feature_recipes,omitempty" yaml:"feature_recipes,omitempty" cbor:"feature_recipes,omitempty"`
-	// MappingLibraries The MappingLibrary entries the node transitively references, keyed by catalog URI.
-	MappingLibraries types.OrderedMap[types.MappingLibrary] `json:"mapping_libraries,omitempty" yaml:"mapping_libraries,omitempty" cbor:"mapping_libraries,omitempty"`
 }
 
 // RenderNodeOutput The payload a Provider guest returns from its render_node export: the serialized bytes of each output file the guest emitted, the names it derived into each of its own key spaces, and any diagnostics the guest raised while rendering. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
@@ -437,18 +421,6 @@ func (t RenderNodeInput) MarshalJSON() ([]byte, error) {
 	} else {
 		buf.Write(enc)
 	}
-	if t.CatalogProjection != nil {
-		if !first {
-			buf.WriteByte(',')
-		}
-		first = false
-		buf.WriteString("\"catalog_projection\":")
-		if enc, err := t.CatalogProjection.MarshalJSON(); err != nil {
-			return nil, err
-		} else {
-			buf.Write(enc)
-		}
-	}
 	if t.SourceListing != nil {
 		if !first {
 			buf.WriteByte(',')
@@ -520,16 +492,6 @@ func (t *RenderNodeInput) UnmarshalJSON(data []byte) error {
 				if err := dec2.Decode(&t.Context); err != nil {
 					return err
 				}
-			}
-		case "catalog_projection":
-			if raw, err := readRaw(dec, data); err != nil {
-				return err
-			} else {
-				v := new(CatalogProjection)
-				if err := v.UnmarshalJSON(raw); err != nil {
-					return err
-				}
-				t.CatalogProjection = v
 			}
 		case "source_listing":
 			if raw, err := readRaw(dec, data); err != nil {
@@ -932,142 +894,6 @@ func (t *NodeProvenance) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.ProviderVersion = s
-			}
-		default:
-			if _, err := readRaw(dec, data); err != nil {
-				return err
-			}
-		}
-	}
-	if err := expectDelim(dec, '}'); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON encodes CatalogProjection in field-declaration order, omitting
-// empty non-required fields, dispatch-free.
-func (t CatalogProjection) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	first := true
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"components\":")
-	if enc, err := json.Marshal(t.Components); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
-	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"features\":")
-	if enc, err := json.Marshal(t.Features); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
-	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"recipes\":")
-	if enc, err := json.Marshal(t.Recipes); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
-	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"feature_recipes\":")
-	if enc, err := json.Marshal(t.FeatureRecipes); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
-	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"mapping_libraries\":")
-	if enc, err := json.Marshal(t.MappingLibraries); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
-	}
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
-}
-
-// UnmarshalJSON decodes CatalogProjection with a streaming token walk, descending
-// into composite fields by direct call to each nested type's generated
-// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
-func (t *CatalogProjection) UnmarshalJSON(data []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	if err := expectDelim(dec, '{'); err != nil {
-		return err
-	}
-	for dec.More() {
-		key, err := readKey(dec)
-		if err != nil {
-			return err
-		}
-		switch key {
-		case "components":
-			if raw, err := readRaw(dec, data); err != nil {
-				return err
-			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Components); err != nil {
-					return err
-				}
-			}
-		case "features":
-			if raw, err := readRaw(dec, data); err != nil {
-				return err
-			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Features); err != nil {
-					return err
-				}
-			}
-		case "recipes":
-			if raw, err := readRaw(dec, data); err != nil {
-				return err
-			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.Recipes); err != nil {
-					return err
-				}
-			}
-		case "feature_recipes":
-			if raw, err := readRaw(dec, data); err != nil {
-				return err
-			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.FeatureRecipes); err != nil {
-					return err
-				}
-			}
-		case "mapping_libraries":
-			if raw, err := readRaw(dec, data); err != nil {
-				return err
-			} else {
-				dec2 := json.NewDecoder(bytes.NewReader(raw))
-				dec2.UseNumber()
-				if err := dec2.Decode(&t.MappingLibraries); err != nil {
-					return err
-				}
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -4419,9 +4245,6 @@ func (t RenderNodeInput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.SourceListing != nil {
 		n++
 	}
-	if t.CatalogProjection != nil {
-		n++
-	}
 	if t.WorkloadProjection != nil {
 		n++
 	}
@@ -4445,14 +4268,6 @@ func (t RenderNodeInput) appendCBOR(dst []byte) ([]byte, error) {
 		if t.SourceListing == nil {
 			dst = append(dst, 0xf6)
 		} else if dst, err = t.SourceListing.appendCBOR(dst); err != nil {
-			return nil, err
-		}
-	}
-	if t.CatalogProjection != nil {
-		dst = appendCBORTextString(dst, "catalog_projection")
-		if t.CatalogProjection == nil {
-			dst = append(dst, 0xf6)
-		} else if dst, err = t.CatalogProjection.appendCBOR(dst); err != nil {
 			return nil, err
 		}
 	}
@@ -4506,14 +4321,6 @@ func (t *RenderNodeInput) decodeCBOR(dec *cborDec) error {
 				if err := d2.Decode(&t.Context); err != nil {
 					return err
 				}
-			}
-		case "catalog_projection":
-			{
-				v := new(CatalogProjection)
-				if err := v.decodeCBOR(dec); err != nil {
-					return err
-				}
-				t.CatalogProjection = v
 			}
 		case "source_listing":
 			{
@@ -4957,253 +4764,6 @@ func (t *NodeProvenance) decodeCBOR(dec *cborDec) error {
 				return err
 			} else {
 				t.ProviderVersion = s
-			}
-		default:
-			if err := dec.skip(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// EncodeCBOR encodes CatalogProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
-// CBOR CDE §4.2), dispatch-free.
-func (t CatalogProjection) EncodeCBOR() ([]byte, error) {
-	return t.appendCBOR(nil)
-}
-
-// appendCBOR appends CatalogProjection's canonical CBOR encoding to dst. Fields emit in
-// canonical key order (fixed at generation time), omitting empty
-// non-required fields so the map head's pair count matches.
-func (t CatalogProjection) appendCBOR(dst []byte) ([]byte, error) {
-	n := 5
-	dst = appendCBORHead(dst, 5, uint64(n))
-	dst = appendCBORTextString(dst, "recipes")
-	{
-		keys := t.Recipes.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Recipes.Get(k)
-			if raw, mErr := json.Marshal(mv); mErr != nil {
-				return nil, mErr
-			} else {
-				dst = appendCBORByteString(dst, raw)
-			}
-		}
-	}
-	dst = appendCBORTextString(dst, "features")
-	{
-		keys := t.Features.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Features.Get(k)
-			if raw, mErr := json.Marshal(mv); mErr != nil {
-				return nil, mErr
-			} else {
-				dst = appendCBORByteString(dst, raw)
-			}
-		}
-	}
-	dst = appendCBORTextString(dst, "components")
-	{
-		keys := t.Components.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Components.Get(k)
-			if raw, mErr := json.Marshal(mv); mErr != nil {
-				return nil, mErr
-			} else {
-				dst = appendCBORByteString(dst, raw)
-			}
-		}
-	}
-	dst = appendCBORTextString(dst, "feature_recipes")
-	{
-		keys := t.FeatureRecipes.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.FeatureRecipes.Get(k)
-			if raw, mErr := json.Marshal(mv); mErr != nil {
-				return nil, mErr
-			} else {
-				dst = appendCBORByteString(dst, raw)
-			}
-		}
-	}
-	dst = appendCBORTextString(dst, "mapping_libraries")
-	{
-		keys := t.MappingLibraries.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.MappingLibraries.Get(k)
-			if raw, mErr := json.Marshal(mv); mErr != nil {
-				return nil, mErr
-			} else {
-				dst = appendCBORByteString(dst, raw)
-			}
-		}
-	}
-	return dst, nil
-}
-
-// DecodeCBOR decodes CatalogProjection from canonical CBOR, dispatch-free. Unknown keys
-// are skipped.
-func (t *CatalogProjection) DecodeCBOR(data []byte) error {
-	dec := &cborDec{data: data}
-	return t.decodeCBOR(dec)
-}
-
-func (t *CatalogProjection) decodeCBOR(dec *cborDec) error {
-	n, err := dec.readMapHeader()
-	if err != nil {
-		return err
-	}
-	for i := 0; i < n; i++ {
-		key, err := dec.readTextString()
-		if err != nil {
-			return err
-		}
-		switch key {
-		case "components":
-			{
-				mn, err := dec.readMapHeader()
-				if err != nil {
-					return err
-				}
-				var om types.OrderedMap[types.Component]
-				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
-					if err != nil {
-						return err
-					}
-					var mv types.Component
-					if raw, err := dec.readByteString(); err != nil {
-						return err
-					} else {
-						d2 := json.NewDecoder(bytes.NewReader(raw))
-						d2.UseNumber()
-						if err := d2.Decode(&mv); err != nil {
-							return err
-						}
-					}
-					om.Set(mk, mv)
-				}
-				t.Components = om
-			}
-		case "features":
-			{
-				mn, err := dec.readMapHeader()
-				if err != nil {
-					return err
-				}
-				var om types.OrderedMap[types.Feature]
-				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
-					if err != nil {
-						return err
-					}
-					var mv types.Feature
-					if raw, err := dec.readByteString(); err != nil {
-						return err
-					} else {
-						d2 := json.NewDecoder(bytes.NewReader(raw))
-						d2.UseNumber()
-						if err := d2.Decode(&mv); err != nil {
-							return err
-						}
-					}
-					om.Set(mk, mv)
-				}
-				t.Features = om
-			}
-		case "recipes":
-			{
-				mn, err := dec.readMapHeader()
-				if err != nil {
-					return err
-				}
-				var om types.OrderedMap[types.Recipe]
-				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
-					if err != nil {
-						return err
-					}
-					var mv types.Recipe
-					if raw, err := dec.readByteString(); err != nil {
-						return err
-					} else {
-						d2 := json.NewDecoder(bytes.NewReader(raw))
-						d2.UseNumber()
-						if err := d2.Decode(&mv); err != nil {
-							return err
-						}
-					}
-					om.Set(mk, mv)
-				}
-				t.Recipes = om
-			}
-		case "feature_recipes":
-			{
-				mn, err := dec.readMapHeader()
-				if err != nil {
-					return err
-				}
-				var om types.OrderedMap[types.FeatureRecipe]
-				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
-					if err != nil {
-						return err
-					}
-					var mv types.FeatureRecipe
-					if raw, err := dec.readByteString(); err != nil {
-						return err
-					} else {
-						d2 := json.NewDecoder(bytes.NewReader(raw))
-						d2.UseNumber()
-						if err := d2.Decode(&mv); err != nil {
-							return err
-						}
-					}
-					om.Set(mk, mv)
-				}
-				t.FeatureRecipes = om
-			}
-		case "mapping_libraries":
-			{
-				mn, err := dec.readMapHeader()
-				if err != nil {
-					return err
-				}
-				var om types.OrderedMap[types.MappingLibrary]
-				for mi := 0; mi < mn; mi++ {
-					mk, err := dec.readTextString()
-					if err != nil {
-						return err
-					}
-					var mv types.MappingLibrary
-					if raw, err := dec.readByteString(); err != nil {
-						return err
-					} else {
-						d2 := json.NewDecoder(bytes.NewReader(raw))
-						d2.UseNumber()
-						if err := d2.Decode(&mv); err != nil {
-							return err
-						}
-					}
-					om.Set(mk, mv)
-				}
-				t.MappingLibraries = om
 			}
 		default:
 			if err := dec.skip(); err != nil {

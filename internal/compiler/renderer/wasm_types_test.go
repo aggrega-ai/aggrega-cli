@@ -77,11 +77,6 @@ func sampleRenderNodeInput(t *testing.T) renderer.RenderNodeInput {
 				Annotations:  orderedMap[string](t, "aggrega.ai/namespace", "payments"),
 			},
 		},
-		CatalogProjection: &renderer.CatalogProjection{
-			Components: orderedMap[types.Component](t,
-				"core/web-service", types.Component{},
-			),
-		},
 		SourceListing: &renderer.SourceListing{
 			Root:      "/acquired/payments-chart",
 			RootIsDir: true,
