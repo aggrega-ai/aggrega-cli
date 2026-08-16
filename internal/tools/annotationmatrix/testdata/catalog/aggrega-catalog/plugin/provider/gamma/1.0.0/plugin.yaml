@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: gamma
+  version: 1.0.0
+  pluginType: provider
+spec:
+  provider:
+    contract:
+      inputKinds:
+        sourced: true
+        artifactsStandalone: true

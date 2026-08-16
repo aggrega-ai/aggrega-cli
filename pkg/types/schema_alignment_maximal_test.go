@@ -173,7 +173,16 @@ func maximalPlugin() types.Plugin {
 				Capabilities:   []string{"helm", "compose"},
 				WorkloadSchema: "type: object",
 				WellKnownAnnotations: []types.WellKnownAnnotation{
-					{Key: "aggrega.ai/namespace", Purpose: "target namespace", DefaultBehavior: "default namespace"},
+					{
+						Key:             "aggrega.ai/namespace",
+						Purpose:         "target namespace",
+						DefaultBehavior: "default namespace",
+						Scope: []string{
+							types.WellKnownAnnotationScopeSourced,
+							types.WellKnownAnnotationScopeSynthesized,
+							types.WellKnownAnnotationScopeArtifactsStandalone,
+						},
+					},
 				},
 				Contract: &types.ProviderContract{
 					InputKinds: types.PluginInputKinds{

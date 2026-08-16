@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: overclaimer
+  version: 1.0.0
+  pluginType: provider
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - overclaimer
+    wellKnownAnnotations:
+      - key: aggrega.ai/image-registry
+        purpose: Registry prefix prepended to container image references.
+        defaultBehavior: No prefix; images render with their authored references.
+        scope:
+          - synthesized
+    contract:
+      inputKinds:
+        sourced: true

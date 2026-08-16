@@ -1388,6 +1388,12 @@ func parseArtifactsLibraryEntity(data []byte, path string) (types.ArtifactsLibra
 // call, so a plugin entity is validated and decoded identically wherever it is
 // read from.
 //
+// The static per-entity load-time check is the well-known-annotation scope
+// contradiction: a provider declaring a key at an input-kind scope its own
+// contract does not render is refused here, so the rejection reaches every
+// surface that reads a plugin entity — including a catalog walk with no plugin
+// binary present, where the entity-against-guest cross-check cannot run.
+//
 // Like parseRecipeEntity, this self-wraps every failure into its final
 // CATALOG_ERROR shape so a single `return err` at the indexing caller preserves
 // byte-identical diagnostics. The wrapping preserves the error chain, so a
@@ -1399,6 +1405,9 @@ func parsePluginEntity(data []byte, path string) (types.Plugin, error) {
 	var e types.Plugin
 	if err := yaml.Unmarshal(data, &e); err != nil {
 		return types.Plugin{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Plugin")
+	}
+	if err := types.ValidateWellKnownAnnotationScopes(e); err != nil {
+		return types.Plugin{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
 	}
 	return e, nil
 }

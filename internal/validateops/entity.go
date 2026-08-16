@@ -109,11 +109,7 @@ func ValidateEntity(wsRoot, cacheDir string, dirs []string, path string, suppres
 	case envelope.KindFeatureRecipe:
 		return res, validateFeatureRecipeEntity(&res, path, data)
 	case envelope.KindPlugin:
-		// A Plugin is schema-only: it declares a Wasm module reference and has no
-		// values or pillar surface and no render tier, so the envelope gate above
-		// is the complete check.
-		res.Valid = true
-		return res, nil
+		return res, validatePluginEntity(&res, path, data)
 	}
 	res.Valid = true
 	return res, nil
@@ -225,6 +221,29 @@ func validateWorkloadEntity(res *EntityResult, path string, data []byte) error {
 		return fmt.Errorf("parse Workload at %q: %w", path, err)
 	}
 	if err := validator.ValidateWorkload(&wl, path, "", ""); err != nil {
+		return fmt.Errorf("shape: %w", err)
+	}
+	res.Diagnostics = append(res.Diagnostics, "Shape:  valid")
+	res.Valid = true
+	return nil
+}
+
+// validatePluginEntity runs the Plugin shape check: the well-known-annotation
+// scope contradiction, which is the one rule a Plugin carries beyond its
+// envelope schema. A Plugin has no values or pillar surface and no render tier,
+// so there is nothing else to drive here.
+//
+// It runs the same check the catalog loader runs at its parse boundary, and
+// that is the point of it being here at all: without it this command would call
+// an entity valid that a catalog walk over the same file refuses, and an author
+// checking one file before committing it is exactly who needs the two verdicts
+// to agree.
+func validatePluginEntity(res *EntityResult, path string, data []byte) error {
+	var p types.Plugin
+	if err := yaml.Unmarshal(data, &p); err != nil {
+		return fmt.Errorf("parse Plugin at %q: %w", path, err)
+	}
+	if err := types.ValidateWellKnownAnnotationScopes(p); err != nil {
 		return fmt.Errorf("shape: %w", err)
 	}
 	res.Diagnostics = append(res.Diagnostics, "Shape:  valid")

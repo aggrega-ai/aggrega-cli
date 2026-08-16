@@ -99,12 +99,15 @@ type PluginProvider struct {
 	// is compiled to JSON Schema 2020-12 at load as a structural guardrail;
 	// it becomes executable input to Wasm translators in a future iteration.
 	WorkloadSchema string `json:"workloadSchema,omitempty" yaml:"workloadSchema,omitempty"`
-	// WellKnownAnnotations documents the platform-native annotation keys
-	// (the aggrega.ai/ namespace) this provider's engine reads, each with
-	// the behavior applied when the annotation is absent. It is descriptive
-	// contract metadata for catalog readers and the inspect surface; the
-	// compiler does not consume it to gate or branch a build. Entries
-	// preserve author order.
+	// WellKnownAnnotations is this provider's support claim over the
+	// platform-native annotation keys (the aggrega.ai/ namespace): the keys
+	// its engine reads, each with the scope it is read at and the behavior
+	// applied when the annotation is absent. The published support matrix is
+	// rendered from these entries. The compiler reads the claim in one way —
+	// a declared scope naming an input kind Contract.InputKinds does not
+	// claim halts the load through ValidateWellKnownAnnotationScopes — and
+	// branches on nothing else in it. Absent declares no support claim.
+	// Entries preserve author order.
 	WellKnownAnnotations []WellKnownAnnotation `json:"wellKnownAnnotations,omitempty" yaml:"wellKnownAnnotations,omitempty"`
 	// Contract is the provider's self-declared render-behavior contract: the
 	// input kinds it renders, how it assembles a dispatch group's per-node

@@ -53,14 +53,26 @@ type ArtifactDigest struct {
 	Digest string `json:"digest" yaml:"digest"`
 }
 
-// WellKnownAnnotation documents one platform-native annotation key a
-// provider's rendering engine reads, for catalog readers and the inspect
-// surface. It is descriptive contract metadata — the compiler does not
-// consume it to gate or branch a build.
+// WellKnownAnnotation is one platform-native annotation key a provider's
+// rendering engine reads, with the scope it is read at and the behavior applied
+// when it is absent. It is the provider's support claim for that key, and the
+// published support matrix is rendered from it.
+//
+// The compiler reads the claim in one way: a Scope entry naming an input kind
+// the provider's own ProviderContract.InputKinds does not claim contradicts an
+// adjacent claim in the same entity, and the load halts. Nothing else about a
+// build branches on the claim.
 type WellKnownAnnotation struct {
 	Key             string `json:"key" yaml:"key"`
 	Purpose         string `json:"purpose" yaml:"purpose"`
 	DefaultBehavior string `json:"defaultBehavior,omitempty" yaml:"defaultBehavior,omitempty"`
+	// Scope is where the engine reads this key: the input kinds it is read on
+	// (WellKnownAnnotationScopeSourced, ...Synthesized, ...ArtifactsStandalone)
+	// and WellKnownAnnotationScopeBoundary for a key resolved once per boundary,
+	// for which input kind is not an axis. Empty makes no per-path claim, so the
+	// load-time contradiction check has nothing to compare. Entries preserve
+	// author order.
+	Scope []string `json:"scope,omitempty" yaml:"scope,omitempty"`
 }
 
 // ComponentType is the 7-type Cloud-Native Ontology from component-v1alpha1.schema.json.

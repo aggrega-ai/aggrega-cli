@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
@@ -23,6 +24,7 @@ const (
 
 	validatePluginPath           = "testdata/validate/plugin.yaml"
 	validatePluginBadTypePath    = "testdata/validate/plugin-bad-type.yaml"
+	validatePluginBadScopePath   = "testdata/validate/plugin-overclaimed-scope.yaml"
 	validatePluginMissingABIPath = "testdata/validate/plugin-missing-abi.yaml"
 )
 
@@ -99,22 +101,24 @@ func TestValidateFeatureRecipeShape(t *testing.T) {
 	}
 }
 
-// TestValidatePluginSchemaOnly checks that a Plugin is a recognized single-entity
-// target and is schema-checked only: it reaches the envelope gate, reports a valid
-// schema, and runs no pillar or render tier. It also proves the old refusal for
-// an unrecognized single-entity kind no longer applies to a Plugin.
-func TestValidatePluginSchemaOnly(t *testing.T) {
+// TestValidatePluginSchemaAndShape checks that a Plugin is a recognized
+// single-entity target and reaches both tiers it has: the envelope gate and the
+// shape check that refuses a well-known-annotation scope the provider's own
+// contract does not render. It has no pillar surface and no render tier, so
+// those must stay absent. It also proves the old refusal for an unrecognized
+// single-entity kind no longer applies to a Plugin.
+func TestValidatePluginSchemaAndShape(t *testing.T) {
 	var buf bytes.Buffer
 	if err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginPath, []string{validateCatalogDir}, false, &buf); err != nil {
 		t.Fatalf("dispatchValidate: %v", err)
 	}
 	got := buf.String()
-	for _, want := range []string{"Kind:   Plugin", "Schema: valid"} {
+	for _, want := range []string{"Kind:   Plugin", "Schema: valid", "Shape:  valid"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, got)
 		}
 	}
-	for _, absent := range []string{"Pillars:", "Shape:", "Resolution:", "Render:"} {
+	for _, absent := range []string{"Pillars:", "Resolution:", "Render:"} {
 		if strings.Contains(got, absent) {
 			t.Errorf("output unexpectedly contains %q (a Plugin has no such tier)\nfull output:\n%s", absent, got)
 		}
@@ -295,5 +299,27 @@ func TestValidateBrokenEntityHaltsLoudly(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "envelope schema") {
 		t.Errorf("diagnostic does not name the envelope schema: %v", err)
+	}
+}
+
+// TestValidatePluginOverclaimedAnnotationScopeHaltsLoudly drives the
+// contradiction through the real single-entity command path. A provider
+// declaring a well-known annotation on the synthesis path while declaring that
+// it renders no synthesized input contradicts itself in one file, and the
+// author checking that file before committing it must be told so — the same
+// verdict a catalog walk over the same bytes reaches.
+func TestValidatePluginOverclaimedAnnotationScopeHaltsLoudly(t *testing.T) {
+	var buf bytes.Buffer
+	err := dispatchValidate(resolveTempWorkspace(t, tempWorkspaceOptions{}), validatePluginBadScopePath, []string{validateCatalogDir}, false, &buf)
+	if err == nil {
+		t.Fatal("a scope the provider's contract does not render was accepted")
+	}
+	if !errors.Is(err, types.ErrWellKnownAnnotationScope()) {
+		t.Fatalf("rejection does not carry the halting condition: %v", err)
+	}
+	for _, want := range []string{"overclaimer", "aggrega.ai/image-registry", "contract.inputKinds.synthesized"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("rejection does not name %q: %v", want, err)
+		}
 	}
 }

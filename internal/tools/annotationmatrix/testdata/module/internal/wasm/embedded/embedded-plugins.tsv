@@ -1,0 +1,5 @@
+# fixture manifest
+provider	alpha	./plugins/alpha-provider	go
+provider	beta	./plugins/beta-provider	go
+provider	gamma	./plugins/gamma-provider	go
+parser	yaml	./plugins/yaml-parser	go

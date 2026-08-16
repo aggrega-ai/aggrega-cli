@@ -1,0 +1,7 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: gamma
+spec:
+  runtime:
+    timeoutMs: 1000

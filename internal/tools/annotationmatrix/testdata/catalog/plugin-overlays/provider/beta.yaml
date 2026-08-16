@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: beta
+spec:
+  provider:
+    wellKnownAnnotations:
+      - key: aggrega.ai/edge
+        purpose: A key resolved once per boundary.
+        defaultBehavior: The boundary path is used.
+        scope:
+          - boundary

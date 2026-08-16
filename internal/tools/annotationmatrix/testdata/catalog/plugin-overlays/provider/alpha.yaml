@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: alpha
+spec:
+  provider:
+    wellKnownAnnotations:
+      - key: aggrega.ai/first
+        purpose: First key.
+        defaultBehavior: Nothing happens.
+        scope:
+          - sourced
+          - synthesized
+      - key: aggrega.ai/second
+        purpose: Second key.
+        scope:
+          - synthesized

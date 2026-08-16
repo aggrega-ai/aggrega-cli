@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: alpha
+  version: 1.0.0
+  pluginType: provider
+spec:
+  provider:
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: true
+        artifactsStandalone: true
