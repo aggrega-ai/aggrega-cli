@@ -69,3 +69,15 @@ func ErrRecipeOutputLabelReservedNamespace() error { return errRecipeOutputLabel
 var errRecipeOutputLabelReservedNamespace = cerrors.Register("validator/recipe-output-label-reserved-namespace", cerrors.Meta{
 	Message: "recipe output-labels constraint: key uses a reserved namespace",
 })
+
+// ErrRecipeOutputComponentLabelCollision: a key promoted through
+// outputComponentLabels is also declared as a literal key in outputLabels.
+// The two blocks stamp onto the same label surface, so a key named in both
+// would carry a value from two sources — the component's own label and the
+// literal written in place — with nothing to say which wins. Rejecting the
+// overlap at load keeps every stamped key traceable to exactly one source.
+func ErrRecipeOutputComponentLabelCollision() error { return errRecipeOutputComponentLabelCollision }
+
+var errRecipeOutputComponentLabelCollision = cerrors.Register("validator/recipe-output-component-label-collision", cerrors.Meta{
+	Message: "recipe output-component-labels constraint: key is also declared in outputLabels",
+})

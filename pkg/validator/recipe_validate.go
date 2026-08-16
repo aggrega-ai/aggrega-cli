@@ -47,10 +47,14 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 		return nil
 	}
 
-	// The reserved-namespace rule is engine-agnostic and runs before the eval
+	// The output-label rules are engine-agnostic and run before the eval
 	// carve-out: an eval Recipe declares no rendering surface but must still not
-	// claim a reserved provenance key.
+	// claim a reserved provenance key, whether it names one literally or
+	// promotes it from a component label.
 	if err := validateRecipeOutputLabels(r, sourcePath); err != nil {
+		return err
+	}
+	if err := validateRecipeOutputComponentLabels(r, sourcePath); err != nil {
 		return err
 	}
 
@@ -120,8 +124,7 @@ func validateRecipeOutputLabels(r *types.Recipe, sourcePath string) error {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		if strings.HasPrefix(key, types.ReservedLabelPrefixAggregaAI) ||
-			strings.HasPrefix(key, types.ReservedLabelPrefixK8sRecommended) {
+		if isReservedLabelKey(key) {
 			return NewShapeRuleError(ShapeRuleViolation{
 				Kind:       envelope.KindRecipe,
 				Name:       r.Metadata.Name,
@@ -133,6 +136,70 @@ func validateRecipeOutputLabels(r *types.Recipe, sourcePath string) error {
 					"key %q uses a reserved namespace (%q and %q are reserved for platform provenance)",
 					key, types.ReservedLabelPrefixAggregaAI, types.ReservedLabelPrefixK8sRecommended),
 				Err: ErrRecipeOutputLabelReservedNamespace(),
+			})
+		}
+	}
+	return nil
+}
+
+// isReservedLabelKey reports whether key sits in a platform-reserved label
+// namespace. It is the single home for the plain-prefix test, so the literal
+// and the promoted output-label rules cannot drift apart on what "reserved"
+// means.
+//
+// The test is the bare root only. A key that merely contains a reserved root
+// deeper in its own namespace — component.aggrega.ai/hosting, say — is a
+// distinct keyspace the platform does not own, and stays authorable.
+func isReservedLabelKey(key string) bool {
+	return strings.HasPrefix(key, types.ReservedLabelPrefixAggregaAI) ||
+		strings.HasPrefix(key, types.ReservedLabelPrefixK8sRecommended)
+}
+
+// validateRecipeOutputComponentLabels enforces the two load-time rules on
+// spec.outputComponentLabels, the block naming component label keys whose
+// values are promoted onto rendered output.
+//
+// A reserved-namespace key is rejected on the same grounds as a literal
+// outputLabels key: the platform-owned provenance keyspace stays disjoint from
+// anything a recipe stamps. A key declared in both this block and outputLabels
+// is rejected because the two would stamp one key from two sources.
+//
+// The reserved rule is applied across the whole block before the collision
+// rule, so a recipe violating both always reports the reserved namespace —
+// the more fundamental fault, and the one whose fix does not depend on the
+// other block's contents. Entries are checked in author order, which is
+// already deterministic for a list and reports the offending entry the author
+// wrote first; unlike the literal block, there is no map iteration to order.
+func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) error {
+	for _, key := range r.Spec.OutputComponentLabels {
+		if isReservedLabelKey(key) {
+			return NewShapeRuleError(ShapeRuleViolation{
+				Kind:       envelope.KindRecipe,
+				Name:       r.Metadata.Name,
+				Version:    r.Metadata.Version,
+				Path:       sourcePath,
+				Rule:       "output-component-labels",
+				Constraint: "outputComponentLabels may not use a reserved namespace",
+				Suggestion: fmt.Sprintf(
+					"key %q uses a reserved namespace (%q and %q are reserved for platform provenance)",
+					key, types.ReservedLabelPrefixAggregaAI, types.ReservedLabelPrefixK8sRecommended),
+				Err: ErrRecipeOutputLabelReservedNamespace(),
+			})
+		}
+	}
+	for _, key := range r.Spec.OutputComponentLabels {
+		if _, literal := r.Spec.OutputLabels[key]; literal {
+			return NewShapeRuleError(ShapeRuleViolation{
+				Kind:       envelope.KindRecipe,
+				Name:       r.Metadata.Name,
+				Version:    r.Metadata.Version,
+				Path:       sourcePath,
+				Rule:       "output-component-labels",
+				Constraint: "a key may not be declared in both outputComponentLabels and outputLabels",
+				Suggestion: fmt.Sprintf(
+					"key %q is promoted and also declared literally; keep whichever source the label should come from and drop the other",
+					key),
+				Err: ErrRecipeOutputComponentLabelCollision(),
 			})
 		}
 	}

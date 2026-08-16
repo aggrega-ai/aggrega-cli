@@ -318,3 +318,154 @@ func TestValidateRecipe_OutputLabels_FirstReportedIsDeterministic(t *testing.T) 
 		t.Fatalf("expected the sorted-first key aggrega.ai/a reported, got %v", err)
 	}
 }
+
+// ----- outputComponentLabels promoted-key rules -----
+
+// recipeWithComponentLabels builds a renderable Recipe declaring promoted keys
+// and, optionally, literal outputLabels alongside them.
+func recipeWithComponentLabels(provider string, promoted []string, literal map[string]string) *types.Recipe {
+	r := newRecipe(provider)
+	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	r.Spec.Artifacts.Set("out.yaml", types.ArtifactEntry{Inline: "kind: ConfigMap"})
+	r.Spec.OutputComponentLabels = promoted
+	r.Spec.OutputLabels = literal
+	return r
+}
+
+// The reserved keyspace is the bare root only. A scoped key sits in a
+// namespace the platform does not own and stays promotable — that case is the
+// reason the guard is a root test rather than a substring test.
+func TestValidateRecipe_OutputComponentLabels_ReservedNamespace(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		promoted []string
+		reserved bool
+	}{
+		{"platform root rejected", []string{"aggrega.ai/component-id"}, true},
+		{"k8s recommended root rejected", []string{"app.kubernetes.io/name"}, true},
+		{"scoped platform key allowed", []string{"component.aggrega.ai/hosting"}, false},
+		{"unscoped key allowed", []string{"hosting"}, false},
+		{"reserved root reached later in the list is still rejected", []string{"hosting", "aggrega.ai/x"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := recipeWithComponentLabels("helm", tc.promoted, nil)
+			err := validator.ValidateRecipe(r, tFile)
+			if tc.reserved {
+				if !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace()) {
+					t.Fatalf("expected ErrRecipeOutputLabelReservedNamespace, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("promoted key %v should pass, got %v", tc.promoted, err)
+			}
+		})
+	}
+}
+
+// The diagnostic names the offending key and the field it was declared in, so
+// the author is not left guessing which of the two label blocks to edit.
+func TestValidateRecipe_OutputComponentLabels_ReservedMessageNamesKeyAndField(t *testing.T) {
+	t.Parallel()
+	r := recipeWithComponentLabels("helm", []string{"aggrega.ai/foo"}, nil)
+	err := validator.ValidateRecipe(r, tFile)
+	if err == nil {
+		t.Fatal("expected a reserved-namespace error")
+	}
+	for _, want := range []string{"aggrega.ai/foo", "outputComponentLabels"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should contain %q, got %q", want, err.Error())
+		}
+	}
+}
+
+// A key carrying a value from two sources at once is rejected: the component's
+// own label and a literal written in place cannot both win.
+func TestValidateRecipe_OutputComponentLabels_CollidesWithLiteral_Fails(t *testing.T) {
+	t.Parallel()
+	r := recipeWithComponentLabels("helm",
+		[]string{"hosting"},
+		map[string]string{"hosting": "managed"})
+	err := validator.ValidateRecipe(r, tFile)
+	if !errors.Is(err, validator.ErrRecipeOutputComponentLabelCollision()) {
+		t.Fatalf("expected ErrRecipeOutputComponentLabelCollision, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "hosting") {
+		t.Errorf("error should name the colliding key, got %q", err.Error())
+	}
+}
+
+// Disjoint blocks are the ordinary authoring shape and must pass.
+func TestValidateRecipe_OutputComponentLabels_DisjointFromLiteral_Passes(t *testing.T) {
+	t.Parallel()
+	r := recipeWithComponentLabels("helm",
+		[]string{"component.aggrega.ai/hosting", "tier"},
+		map[string]string{"cost-centre": "platform"})
+	if err := validator.ValidateRecipe(r, tFile); err != nil {
+		t.Fatalf("disjoint label blocks should pass, got %v", err)
+	}
+}
+
+// An absent block is not a violation.
+func TestValidateRecipe_OutputComponentLabels_Empty_Passes(t *testing.T) {
+	t.Parallel()
+	r := recipeWithComponentLabels("helm", nil, nil)
+	if err := validator.ValidateRecipe(r, tFile); err != nil {
+		t.Fatalf("absent outputComponentLabels should pass, got %v", err)
+	}
+}
+
+// Rule precedence is fixed rather than incidental: a recipe breaking both
+// rules always reports the reserved namespace, whichever entry comes first.
+func TestValidateRecipe_OutputComponentLabels_ReservedOutranksCollision(t *testing.T) {
+	t.Parallel()
+	r := recipeWithComponentLabels("helm",
+		[]string{"hosting", "aggrega.ai/spoofed"},
+		map[string]string{"hosting": "managed", "aggrega.ai/spoofed": "x"})
+	err := validator.ValidateRecipe(r, tFile)
+	if !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace()) {
+		t.Fatalf("reserved namespace should outrank the collision rule, got %v", err)
+	}
+}
+
+// The first-reported entry is deterministic: a list is checked in author order.
+func TestValidateRecipe_OutputComponentLabels_FirstReportedIsAuthorOrder(t *testing.T) {
+	t.Parallel()
+	r := recipeWithComponentLabels("helm",
+		[]string{"app.kubernetes.io/z", "aggrega.ai/a"}, nil)
+	err := validator.ValidateRecipe(r, tFile)
+	if err == nil || !strings.Contains(err.Error(), "app.kubernetes.io/z") {
+		t.Fatalf("expected the first authored key app.kubernetes.io/z reported, got %v", err)
+	}
+}
+
+// Engine-agnostic, matching the literal block: the rule fires on an eval
+// Recipe, which the eval carve-out would otherwise short-circuit past.
+func TestValidateRecipe_OutputComponentLabels_EvalReserved_Fails(t *testing.T) {
+	t.Parallel()
+	r := newRecipe("eval")
+	r.Spec.OutputComponentLabels = []string{"aggrega.ai/x"}
+	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace()) {
+		t.Fatalf("expected reserved-namespace reject on eval Recipe, got %v", err)
+	}
+}
+
+// The collision sentinel threads through the converted CompilerError, so
+// callers inspecting the wrapped error still match errors.Is.
+func TestValidateRecipe_OutputComponentLabels_ThreadsThroughCompilerError(t *testing.T) {
+	t.Parallel()
+	r := recipeWithComponentLabels("helm",
+		[]string{"hosting"},
+		map[string]string{"hosting": "managed"})
+	err := validator.ValidateRecipe(r, tFile)
+	var ve *validator.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *validator.ValidationError, got %v", err)
+	}
+	if !errors.Is(ve.ToCompilerError(), validator.ErrRecipeOutputComponentLabelCollision()) {
+		t.Fatalf("sentinel should thread through the converted CompilerError")
+	}
+}
