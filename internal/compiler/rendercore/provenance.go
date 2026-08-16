@@ -42,10 +42,13 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 // are unconstrained and it has no annotation concept.)
 //
 // The returned set is the compiler-owned provenance keys plus the recipe's
-// author-declared output labels (nodeCtx.OutputLabels). The two are disjoint by
-// construction — load-time validation rejects any output-label key under the
-// reserved aggrega.ai/ or app.kubernetes.io/ prefixes — so the merge overwrites
-// nothing. Every emitting surface sorts keys, so merge order is not observable.
+// author-owned output labels (nodeCtx.OutputLabels) — both the keys written
+// literally on the recipe and the ones it promotes from the node's component
+// labels. All of them are disjoint from the provenance keys by construction:
+// load-time validation applies one reserved-namespace test to both blocks and
+// rejects any key under the aggrega.ai/ or app.kubernetes.io/ prefixes, so the
+// merge overwrites nothing. Every emitting surface sorts keys, so merge order is
+// not observable.
 func BuildAggregaProvenanceLabels(nodeCtx NodeRenderContext) map[string]string {
 	componentID := ProvenanceComponentID(nodeCtx)
 	labels := map[string]string{

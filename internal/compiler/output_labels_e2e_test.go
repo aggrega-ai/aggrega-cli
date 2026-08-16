@@ -61,6 +61,17 @@ func reservedOutputLabelsInput() pipelinetest.Input {
 	}
 }
 
+// The collision fixture carries exactly one fault — a single recipe naming
+// "hosting" in both outputLabels and outputComponentLabels — so the assertion
+// below cannot pass on some other rejection. Deliberately isolated from the
+// whole-catalog load for the same reason the reserved fixture is.
+func collidingOutputLabelsInput() pipelinetest.Input {
+	return pipelinetest.Input{
+		ReleasePath:  "testdata/fullstack-app/releases/helm-synthesized-with-artifacts.yaml",
+		CatalogPaths: []string{olBase, "testdata/output-labels/collision"},
+	}
+}
+
 // TestOutputLabels_HelmSynthesis_ObjectAndPodTemplate proves the synthesized
 // Deployment carries the recipe's output labels on BOTH the object
 // metadata.labels and the pod-template metadata.labels — the same dual
@@ -126,6 +137,80 @@ func TestOutputLabels_Compose_ServiceLabels(t *testing.T) {
 	}
 }
 
+// TestOutputComponentLabels_HelmSynthesis_ValueFollowsTheComponent proves a
+// promoted key is resolved by reference: the recipes name the key
+// component.aggrega.ai/type and each node's rendered output carries the value
+// that key holds on ITS OWN component. api-server declares "server" and postgres
+// declares "stateful-server", so two nodes stamped from the same named key
+// render two different values — which a literal outputLabels entry could not do.
+func TestOutputComponentLabels_HelmSynthesis_ValueFollowsTheComponent(t *testing.T) {
+	t.Parallel()
+	res := pipelinetest.Build(t, helmSynthesizedOutputLabelsInput())
+
+	backend, backendPath := findFile(res.Artifacts, "dist/backend/", "backend", "deployment")
+	if backend == "" {
+		t.Fatalf("backend deployment not found; files: %v", sortedKeys(res.Artifacts))
+	}
+	// Object metadata.labels AND pod-template metadata.labels, the same dual
+	// placement the literal output labels get on the synthesis path.
+	if n := strings.Count(backend, "component.aggrega.ai/type: server"); n < 2 {
+		t.Errorf("backend must carry its own promoted value on object AND pod template (want >=2, got %d) in %s:\n%s", n, backendPath, backend)
+	}
+	if strings.Contains(backend, "component.aggrega.ai/type: stateful-server") {
+		t.Errorf("backend must not carry the datastore's promoted value in %s:\n%s", backendPath, backend)
+	}
+
+	data, dataPath := findFile(res.Artifacts, "dist/data/", "deployment")
+	if data == "" {
+		t.Fatalf("data deployment not found; files: %v", sortedKeys(res.Artifacts))
+	}
+	if n := strings.Count(data, "component.aggrega.ai/type: stateful-server"); n < 2 {
+		t.Errorf("data node must carry its own promoted value (want >=2, got %d) in %s:\n%s", n, dataPath, data)
+	}
+	// The promoted key coexists with the literal output labels and with the
+	// compiler-owned provenance labels.
+	if !strings.Contains(data, "hosting: self-hosted") || !strings.Contains(data, "aggrega.ai/component-id: data.main-db") {
+		t.Errorf("promoted, literal and provenance labels must coexist in %s:\n%s", dataPath, data)
+	}
+}
+
+// TestOutputComponentLabels_HelmArtifacts_HostPath proves the host-computed
+// artifacts path stamps the promoted key too, so the promotion is not confined
+// to workload synthesis.
+func TestOutputComponentLabels_HelmArtifacts_HostPath(t *testing.T) {
+	t.Parallel()
+	res := pipelinetest.Build(t, helmSynthesizedOutputLabelsInput())
+
+	cm, path := findFile(res.Artifacts, "dist/backend/", "app-config")
+	if cm == "" {
+		t.Fatalf("backend app-config artifact not found; files: %v", sortedKeys(res.Artifacts))
+	}
+	if !strings.Contains(cm, "component.aggrega.ai/type: server") {
+		t.Errorf("artifact ConfigMap missing the promoted label in %s:\n%s", path, cm)
+	}
+}
+
+// TestOutputComponentLabels_Compose_ServiceLabels proves the promotion reaches a
+// non-helm surface unchanged — the compose service labels map — which is what
+// makes it a property of the shared label rail rather than of one provider.
+func TestOutputComponentLabels_Compose_ServiceLabels(t *testing.T) {
+	t.Parallel()
+	res := pipelinetest.Build(t, composeOutputLabelsInput())
+
+	compose, path := findFile(res.Artifacts, "compose", "docker-compose.yaml")
+	if compose == "" {
+		t.Fatalf("compose output not found; files: %v", sortedKeys(res.Artifacts))
+	}
+	// api is core/compute/api-server ("server"), db is core/datastore/postgres
+	// ("stateful-server") — one promoted key, two values, one compose file.
+	if !strings.Contains(compose, "component.aggrega.ai/type: server") {
+		t.Errorf("compose service labels missing the api service's promoted value in %s:\n%s", path, compose)
+	}
+	if !strings.Contains(compose, "component.aggrega.ai/type: stateful-server") {
+		t.Errorf("compose service labels missing the db service's promoted value in %s:\n%s", path, compose)
+	}
+}
+
 // TestOutputLabels_ReservedNamespace_HaltsBuild proves a recipe declaring an
 // output label under a reserved namespace (aggrega.ai/) halts the build loudly
 // at catalog load — the reserved-namespace guardrail fires before any provider
@@ -143,6 +228,36 @@ func TestOutputLabels_ReservedNamespace_HaltsBuild(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "CATALOG_ERROR") {
 		t.Errorf("build error should be a loud CATALOG_ERROR; got: %s", err.Error())
+	}
+}
+
+// TestOutputComponentLabels_CollidesWithLiteral_HaltsBuild proves the one-source
+// rule is enforced on the real build path, not only in isolation: a recipe naming
+// one key both literally and as a promoted key halts the build at catalog load
+// with the collision sentinel, so a stamped key can never have two sources.
+func TestOutputComponentLabels_CollidesWithLiteral_HaltsBuild(t *testing.T) {
+	t.Parallel()
+	_, err := pipelinetest.BuildE(t, collidingOutputLabelsInput())
+	if err == nil {
+		t.Fatalf("expected the build to halt on a promoted/literal key collision, got nil error")
+	}
+	if !errors.Is(err, validator.ErrRecipeOutputComponentLabelCollision()) {
+		t.Errorf("build error should carry ErrRecipeOutputComponentLabelCollision; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "CATALOG_ERROR") {
+		t.Errorf("build error should be a loud CATALOG_ERROR; got: %s", err.Error())
+	}
+	// The outermost message names only the catalog path; the diagnostic a user
+	// acts on is the validation error carried in the chain, so assert there —
+	// asserting on err.Error() would pass while the actionable detail was lost.
+	var ve *validator.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("the build error must carry the validation detail; got: %v", err)
+	}
+	for _, want := range []string{`"hosting"`, "outputComponentLabels", "outputLabels", "api-server.yaml"} {
+		if !strings.Contains(ve.Error(), want) {
+			t.Errorf("the validation detail must name %s; got: %s", want, ve.Error())
+		}
 	}
 }
 

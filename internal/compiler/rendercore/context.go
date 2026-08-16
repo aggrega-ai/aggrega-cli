@@ -66,12 +66,19 @@ type NodeRenderContext struct {
 	// label-value rules. Empty means "use NodeID directly" — the default for
 	// regular component nodes whose NodeIDs are already alphanumeric.
 	LabelComponentID string
-	// OutputLabels are the recipe-author-declared labels (recipe.spec.outputLabels)
-	// stamped onto every object this node's rendered output produces. They ride
-	// the same rail as the fixed provenance labels: merged into the set
-	// [BuildAggregaProvenanceLabels] returns. Load-time validation guarantees the
-	// keys are disjoint from the compiler-owned provenance keyspace (no
-	// aggrega.ai/ or app.kubernetes.io/ key), so the merge never collides.
+	// OutputLabels are the recipe-author-owned labels stamped onto every object
+	// this node's rendered output produces: the pairs written literally on the
+	// recipe (recipe.spec.outputLabels) together with the ones it promotes from
+	// this node's component labels by key (recipe.spec.outputComponentLabels),
+	// already resolved to their values. They ride the same rail as the fixed
+	// provenance labels: merged into the set [BuildAggregaProvenanceLabels]
+	// returns. Load-time validation guarantees the keys are disjoint from the
+	// compiler-owned provenance keyspace (no aggrega.ai/ or app.kubernetes.io/
+	// key), so the merge never collides.
+	//
+	// The map belongs to this node alone. Two nodes bound to one recipe hold
+	// separate maps, because a promoted value is this node's own component
+	// identity and must not reach a neighbour's output.
 	OutputLabels map[string]string
 	Provenance   ProvenanceContext
 	// YAMLIndent is the indentation width for artifacts rendered from this

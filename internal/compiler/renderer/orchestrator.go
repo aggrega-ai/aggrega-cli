@@ -850,18 +850,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
 		nodeCtx.ProviderName = providerName
 		nodeCtx.ProviderVersion = providerVersion
-		if recipe != nil {
-			nodeCtx.RecipeName = recipe.Metadata.Name
-			nodeCtx.RecipeVersion = recipe.Metadata.Version
-			nodeCtx.OutputLabels = recipe.Spec.OutputLabels
-		}
 		// Route the non-fatal advisories a provider guest raises while rendering
 		// this node into the per-node warnings accumulator, which the orchestrator
 		// drains into result.Warnings at the end of the per-node sequence. Set once
 		// here so every downstream crossing that carries this node context —
 		// engine.Render, artifacts emission, workload synthesis, and the FeatureRecipe
 		// sub-renders that copy it — surfaces its guest warnings through one channel.
+		// Attached before the recipe block below so the advisory a promoted output
+		// label raises for a key the component does not declare rides it too.
 		nodeCtx.WarningSink = func(w string) { state.Warnings = append(state.Warnings, w) }
+		if recipe != nil {
+			nodeCtx.RecipeName = recipe.Metadata.Name
+			nodeCtx.RecipeVersion = recipe.Metadata.Version
+			nodeCtx.OutputLabels = resolveOutputLabels(recipe, nodeID, node, nodeCtx.WarningSink)
+		}
 		// Structured unsupported-field diagnostics route here, kept apart from the
 		// free-form warnings so the class stays suppressible by its stable code.
 		nodeCtx.UnsupportedFieldSink = func(d Diagnostic) { state.Diagnostics = append(state.Diagnostics, d) }

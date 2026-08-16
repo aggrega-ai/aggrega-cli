@@ -9,6 +9,8 @@ spec:
   outputLabels:
     hosting: self-hosted
     example.io/team: platform
+  outputComponentLabels:
+    - component.aggrega.ai/type
   provides:
     host: "{{ .context.instance_id }}"
     service_port: "{{ optional .infra `port` 8080 }}"

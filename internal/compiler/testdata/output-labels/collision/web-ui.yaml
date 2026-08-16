@@ -1,0 +1,38 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-web-ui-synthesized-with-artifacts
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/compute/web-ui
+  outputLabels:
+    hosting: self-hosted
+    example.io/team: platform
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      main:
+        image: web-ui:latest
+        ports:
+          web: {{ optional .infra `port` 3000 }}
+        variables:
+          PORT: "{{ optional .infra `port` 3000 }}"
+          {{- range $k, $v := .context.inject.env }}
+          {{ $k }}: "{{ $v }}"
+          {{- end }}
+    services:
+      web:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 3000 }}
+  artifacts:
+    web-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-web-config
+      data:
+        BACKEND: {{ if .context.inject.env.API_HOST }}{{ .context.inject.env.API_HOST }}{{ else }}unset{{ end }}
