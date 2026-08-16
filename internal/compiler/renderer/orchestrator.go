@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -31,6 +32,17 @@ import (
 type RenderResult struct {
 	Files    map[string]AssembledFile // boundary-relative path → content + producer-declared format
 	Warnings []string
+	// Contributions attributes each group of assembled output to the boundaries
+	// and the provider that produced it, in assembly-path then provider order.
+	//
+	// Files is keyed by output path alone, so it cannot say which boundary or
+	// which provider wrote a given file; those two coordinates would otherwise
+	// end with the assembly that knew them. This is where they survive.
+	//
+	// It carries coordinates and never a second copy of the content: every
+	// entry's OutputPaths are keys of Files, the entries' path sets are pairwise
+	// disjoint, and together they cover Files exactly.
+	Contributions []AssemblyContribution
 	// Diagnostics carries the structured, coded advisories raised during render,
 	// separately from the free-form Warnings stream: the unsupported-field
 	// notices a lower-fidelity target emits for an authored field it cannot
@@ -41,6 +53,73 @@ type RenderResult struct {
 	// downstream consumers can match them structurally. Out-of-band: never part
 	// of the emitted bytes.
 	Diagnostics []Diagnostic
+}
+
+// AssemblyContribution attributes one group of assembled output to the
+// boundaries and the provider that produced it.
+//
+// Boundaries whose paths evaluate alike under one provider assemble as one
+// group, and that collapse is what makes a collision between them visible — so
+// the group stays keyed by the evaluated path together with the provider, as it
+// always has been, and this record is what keeps every contributor named once
+// the collapse has happened. Where a boundary's path is its own, Boundaries
+// holds exactly that one boundary and the attribution is the identity it looks
+// like.
+type AssemblyContribution struct {
+	// AssemblyPath is the evaluated final path this group assembled at.
+	AssemblyPath string
+	// Provider is the provider that rendered the group.
+	Provider string
+	// Boundaries is every boundary that fed the group, deduplicated, in the
+	// order the group first heard from each. It holds more than one entry
+	// exactly when several boundaries' paths evaluated alike under Provider.
+	Boundaries []string
+	// OutputPaths are the output paths this group wrote, in path order. They are
+	// keys of RenderResult.Files, which holds the bytes.
+	OutputPaths []string
+}
+
+// EmittedPaths returns the output paths written for one provider within one
+// boundary, in path order.
+//
+// The order is stated rather than inherited: the order files are placed into a
+// group is the order the contributing maps happen to iterate in, which is not a
+// property of the input, so path order is what makes this answer a function of
+// the build alone. A boundary that reaches more than one assembly path under one
+// provider gets the union across all of them.
+func (r *RenderResult) EmittedPaths(boundary, provider string) []string {
+	var out []string
+	for _, c := range r.Contributions {
+		if c.Provider != provider || !slices.Contains(c.Boundaries, boundary) {
+			continue
+		}
+		out = append(out, c.OutputPaths...)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// AssembledFileContent returns the bytes standing at one output path for one
+// provider within one boundary, and reports whether that pair wrote that path.
+//
+// It answers for the pair rather than for the path alone: a path is looked up
+// only among the paths the named boundary and provider actually contributed to,
+// so a caller asking about a boundary that wrote nothing there is told so rather
+// than handed another boundary's file.
+//
+// The bytes are the ones the result holds, not a copy of them.
+func (r *RenderResult) AssembledFileContent(boundary, provider, path string) ([]byte, bool) {
+	for _, c := range r.Contributions {
+		if c.Provider != provider || !slices.Contains(c.Boundaries, boundary) {
+			continue
+		}
+		if !slices.Contains(c.OutputPaths, path) {
+			continue
+		}
+		af, ok := r.Files[path]
+		return af.Content, ok
+	}
+	return nil, false
 }
 
 // FileBytes projects Files into a path→content map, dropping the per-file format
@@ -1549,11 +1628,29 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// Flush the retained (and possibly link-patched) assembled output into the
 	// result, reattaching each group's disk-write prefix. Groups iterate in
 	// orderedDispatch order for a deterministic walk.
+	//
+	// The same walk records each group's attribution, so the boundaries and the
+	// provider behind a file outlive the assembly that knew them. The file map
+	// alone is keyed by output path, which is the right key for a build's output
+	// and the wrong one for asking who produced it. Both non-path coordinates are
+	// already in hand here — the provider on the group key, the boundaries on the
+	// group's own contributor record — and nothing derives them again.
+	result.Contributions = make([]AssemblyContribution, 0, len(orderedDispatch))
 	for _, key := range orderedDispatch {
 		grp := assembledByDispatch[key]
+		outputPaths := make([]string, 0, len(grp.files))
 		for p, af := range grp.files {
-			result.Files[grp.prefix+p] = af
+			full := grp.prefix + p
+			result.Files[full] = af
+			outputPaths = append(outputPaths, full)
 		}
+		sort.Strings(outputPaths)
+		result.Contributions = append(result.Contributions, AssemblyContribution{
+			AssemblyPath: key.Path,
+			Provider:     key.Provider,
+			Boundaries:   slices.Clone(dispatch[key].contributingBoundaries),
+			OutputPaths:  outputPaths,
+		})
 	}
 
 	return result, nil

@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -19,9 +20,10 @@ import (
 func TestSingleFormatCarrier(t *testing.T) {
 	t.Parallel()
 
-	// RenderResult: {Files, Warnings, Diagnostics}, with Files valued by
-	// AssembledFile. Warnings and Diagnostics are advisory streams, not
-	// per-file carriers; a reintroduced `Formats map[string]string` sidecar keyed
+	// RenderResult: {Files, Warnings, Diagnostics, Contributions}, with Files
+	// valued by AssembledFile. Warnings and Diagnostics are advisory streams, not
+	// per-file carriers; Contributions carries per-group coordinates and is held
+	// to that below. A reintroduced `Formats map[string]string` sidecar keyed
 	// like the bytes shows up as an unexpected exported field and trips the set
 	// check.
 	rr := reflect.TypeOf(RenderResult{})
@@ -32,7 +34,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 			exported[f.Name] = f.Type
 		}
 	}
-	want := map[string]bool{"Files": true, "Warnings": true, "Diagnostics": true}
+	want := map[string]bool{"Files": true, "Warnings": true, "Diagnostics": true, "Contributions": true}
 	for name := range exported {
 		if !want[name] {
 			t.Errorf("RenderResult has unexpected exported field %q; a per-file format sidecar map must not reappear", name)
@@ -46,6 +48,30 @@ func TestSingleFormatCarrier(t *testing.T) {
 	assembledFile := reflect.TypeOf(AssembledFile{})
 	if got := exported["Files"]; got != reflect.MapOf(reflect.TypeOf(""), assembledFile) {
 		t.Errorf("RenderResult.Files must be map[string]AssembledFile (content and format on one record), got %v", got)
+	}
+
+	// AssemblyContribution: coordinates only. It is the one exported field of
+	// RenderResult that is keyed by the same paths the bytes are, so it is the
+	// place a sidecar would most plausibly reappear — as a format string, or as a
+	// second copy of the content living beside the coordinates. Neither belongs:
+	// it names output paths and lets Files hold what stands at them. The check is
+	// structural rather than a name list, so a differently-named carrier of
+	// either shape trips it too.
+	ac := reflect.TypeOf(AssemblyContribution{})
+	for i := 0; i < ac.NumField(); i++ {
+		f := ac.Field(i)
+		switch f.Type {
+		case assembledFile, reflect.SliceOf(assembledFile), reflect.TypeOf([]byte(nil)),
+			reflect.MapOf(reflect.TypeOf(""), assembledFile),
+			reflect.MapOf(reflect.TypeOf(""), reflect.TypeOf([]byte(nil))),
+			reflect.MapOf(reflect.TypeOf(""), reflect.TypeOf("")):
+			t.Errorf("AssemblyContribution field %q of type %v carries file content or format beside the "+
+				"coordinates; it must name output paths and leave the bytes in RenderResult.Files", f.Name, f.Type)
+		}
+		if strings.Contains(strings.ToLower(f.Name), "format") {
+			t.Errorf("AssemblyContribution field %q reintroduces a format carrier; format belongs on the "+
+				"AssembledFile record", f.Name)
+		}
 	}
 
 	// assembledGroup: no `formats` field, and files valued by AssembledFile.
