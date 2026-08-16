@@ -298,16 +298,18 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 	return out.Files, nil
 }
 
-// SynthesizeWorkload projects the evaluated workload, its attachments' resolved
-// provides, and which of those attachments handle declared-sensitive material
-// into a render_node payload, and returns the guest's synthesized manifests in
-// emission order. Emission order is deterministic and load-bearing, so the
-// guest's file order is preserved — never re-sorted. Both attachment lookups come
-// from AttachmentProjectionFromContext, the one host projection every synthesizer
-// surface builds them from, in a single walk over a single key set: a workload
-// attachment reference therefore resolves to the same emitted resource identity
-// wherever it is read, and the sensitivity lookup cannot name an attachment the
-// provides lookup does not.
+// SynthesizeWorkload projects the evaluated workload and its attachments'
+// resolved provides into a render_node payload, and returns the guest's
+// synthesized manifests in emission order. Emission order is deterministic and
+// load-bearing, so the guest's file order is preserved — never re-sorted. The
+// attachment lookup comes from renderer.AttachmentProvidesFromContext, the one
+// host projection every synthesizer surface builds it from, so a workload
+// attachment reference resolves to the same emitted resource identity wherever
+// it is read.
+//
+// Whether an attachment handles declared-sensitive material is not projected
+// here. It rides the node projection's feature entry for the same attachment,
+// under the same instance name, which is where a guest reads it.
 //
 // Each emitted file carries the Intermediate marking classified from the guest's
 // boundary-assembly self-report (renderer.RenderIsIntermediate): a fragment-merging
@@ -324,14 +326,12 @@ func (e *Engine) SynthesizeWorkload(
 		return nil, nil
 	}
 
-	attachmentProvides, attachmentSensitive := renderer.AttachmentProjectionFromContext(tmplCtx, nodeCtx.Attachments)
 	input := renderer.RenderNodeInput{
 		Node:    e.nodeProjection(nodeCtx, types.OrderedMap[any]{}),
 		Context: e.renderContext(nodeCtx),
 		WorkloadProjection: &renderer.WorkloadProjection{
-			Workload:            *w,
-			AttachmentProvides:  attachmentProvides,
-			AttachmentSensitive: attachmentSensitive,
+			Workload:           *w,
+			AttachmentProvides: renderer.AttachmentProvidesFromContext(tmplCtx),
 		},
 	}
 	out, err := e.invoke(ctx, RenderNodeExport, input, "")

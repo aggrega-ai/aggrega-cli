@@ -92,63 +92,35 @@ func TestBuildNodeRenderContext_NoAttachmentsIsEmpty(t *testing.T) {
 	}
 }
 
-// TestAttachmentProjectionFromContext_OneKeySet pins the property that keeps the
-// workload projection's two attachment lookups from drifting: both come out of one
-// walk over one key set, so the sensitivity lookup can never name an attachment the
-// provides lookup has no entry for. The fixture makes the two sources disagree on
-// purpose — the IR attachment map carries an extra entry the template context does
-// not — because that is exactly the shape a second, independent walk would let
-// through.
-func TestAttachmentProjectionFromContext_OneKeySet(t *testing.T) {
-	t.Parallel()
-	tmplCtx := &types.TemplateContext{}
-	tmplCtx.Features.Set("alpha-db", types.TemplateAttachment{Type: "core/referenced-secret"})
-	tmplCtx.Features.Set("zeta-cache", types.TemplateAttachment{Type: "core/cache"})
-
-	attachments := types.OrderedMap[types.IRFeatureEntry]{}
-	attachments.Set("alpha-db", types.IRFeatureEntry{Type: "core/referenced-secret", Sensitive: true})
-	attachments.Set("zeta-cache", types.IRFeatureEntry{Type: "core/cache"})
-	attachments.Set("stray", types.IRFeatureEntry{Type: "core/other", Sensitive: true})
-
-	provides, sensitive := AttachmentProjectionFromContext(tmplCtx, attachments)
-
-	if len(provides) != 2 {
-		t.Fatalf("provides lookup has %d entries, want 2", len(provides))
-	}
-	for alias := range sensitive {
-		if _, ok := provides[alias]; !ok {
-			t.Errorf("sensitivity lookup names %q, which the provides lookup has no entry for", alias)
-		}
-	}
-	if !sensitive["alpha-db"] {
-		t.Error("alpha-db is declared sensitive but carries no sensitivity entry")
-	}
-	if _, marked := sensitive["zeta-cache"]; marked {
-		t.Error("zeta-cache is not declared sensitive but carries a sensitivity entry")
-	}
-	if _, marked := sensitive["stray"]; marked {
-		t.Error("stray is absent from the template context yet carries a sensitivity entry")
-	}
-}
-
-// TestAttachmentProvidesFromContext_UnchangedForProvidesOnlyCallers pins that the
-// provides-only entry point still yields the provides lookup alone, so a caller
-// that has no attachment map to hand (the workload validation surface) reaches the
-// same single walk without one.
-func TestAttachmentProvidesFromContext_UnchangedForProvidesOnlyCallers(t *testing.T) {
+// TestAttachmentProvidesFromContext_ProjectsResolvedProvides pins the one
+// attachment lookup the workload projection carries: each attachment's resolved
+// provides, keyed by the instance name a workload attachment reference names, and
+// drawn from the template context alone. The template context is the only source,
+// so an attachment the IR records but the context does not carry cannot appear —
+// the fixture asserts that directly rather than trusting the walk's shape.
+//
+// A guest reading whether an attachment handles declared-sensitive material does
+// not read it here; it reads the node projection's feature entry for the same
+// attachment, which TestBuildNodeRenderContext_CarriesAttachmentsInAuthorOrder
+// above pins.
+func TestAttachmentProvidesFromContext_ProjectsResolvedProvides(t *testing.T) {
 	t.Parallel()
 	tmplCtx := &types.TemplateContext{}
 	pv := types.OrderedMap[string]{}
 	pv.Set("name", "app-secret")
 	tmplCtx.Features.Set("alpha-db", types.TemplateAttachment{Type: "core/referenced-secret", Provides: pv})
+	tmplCtx.Features.Set("zeta-cache", types.TemplateAttachment{Type: "core/cache"})
 
 	got := AttachmentProvidesFromContext(tmplCtx)
-	if len(got) != 1 {
-		t.Fatalf("provides lookup has %d entries, want 1", len(got))
+	if len(got) != 2 {
+		t.Fatalf("provides lookup has %d entries, want 2", len(got))
 	}
 	alphaProvides := got["alpha-db"]
 	if v, _ := alphaProvides.Get("name"); v != "app-secret" {
 		t.Errorf("alpha-db provides name = %q, want %q", v, "app-secret")
+	}
+	if _, present := got["stray"]; present {
+		t.Error("stray is absent from the template context yet carries a provides entry")
 	}
 	if AttachmentProvidesFromContext(nil) == nil {
 		t.Error("a nil template context yielded a nil lookup rather than an empty one")
