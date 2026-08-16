@@ -80,7 +80,10 @@ func replayDeferredPatches(
 
 	codec := selectCodec(engineFactory, provider, input.YAMLIndent)
 	invoke := newStepInvoker(lookup)
-	describe := newStepDescriber(lookup)
+	// The replay reads the same retained self-reports the per-node passes filled,
+	// so a plugin already described during the per-node work is not described
+	// again here.
+	describe := newStepDescriber(input.stepDescriptors, lookup)
 
 	var warnings []string
 	for _, rec := range ordered {

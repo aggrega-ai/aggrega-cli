@@ -541,7 +541,7 @@ func phaseB6(
 				// own provider is the FR's own engine kind (version pin stripped —
 				// codec + compatibility key on the kind); host provider is the host
 				// component's recipe engine kind (threaded in from the orchestrator).
-				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
+				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, input.stepDescriptors, engineFactory, nodeID)
 				if perr != nil {
 					return nil, nil, nil, perr
 				}

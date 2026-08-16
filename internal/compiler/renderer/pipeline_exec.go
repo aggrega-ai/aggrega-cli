@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
@@ -131,6 +133,10 @@ type pipelineFile0 struct {
 //
 // lookup nil disables execution: the steps are validated by their presence but
 // not run, and a validate-only warning is returned (the non-regression path).
+//
+// descriptors is the build's retained set of step-plugin self-reports, so a
+// plugin several nodes name is described once for the whole build rather than
+// once per node. nil narrows retention to this call.
 func runNodePipeline(
 	ctx context.Context,
 	steps []types.PipelineStep,
@@ -143,6 +149,7 @@ func runNodePipeline(
 	withCtx *types.TemplateContext,
 	yamlIndent int,
 	lookup pluginpath.Lookup,
+	descriptors *stepDescriptorMemo,
 	engineFactory EngineFactory,
 	nodeID string,
 ) (pipelineResult, error) {
@@ -171,7 +178,7 @@ func runNodePipeline(
 	// function owns only seam construction (and the empty-steps / nil-lookup
 	// short-circuits above); the executor body is single-sourced in
 	// runNodePipelineWithInvoker, which a test exercises with canned seams.
-	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, ownProvider, hostProvider, renderCtx, withCtx, ownCodec, hostCodec, newStepInvoker(lookup), newStepDescriber(lookup), nodeID)
+	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, ownProvider, hostProvider, renderCtx, withCtx, ownCodec, hostCodec, newStepInvoker(lookup), newStepDescriber(descriptors, lookup), nodeID)
 }
 
 // selectCodec resolves the codec for the scope rendered by providerName: the
@@ -512,31 +519,200 @@ func validateStepOutput(export wasm.PluginExport, raw []byte, step types.Pipelin
 type stepDescriber func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error)
 
 // newStepDescriber binds the per-step descriptor read over the shared
-// plugin-resolution cascade and the describe() gate: resolve the step's plugin
-// URI to its verified .wasm bytes, load them through LoadAndDescribe (which
-// validates the descriptor), and return the validated descriptor, closing the
-// plugin. The pre-walk compatibility check consumes the descriptor's
-// compatible providers. Loading here and again in the invoker is the bounded
-// double-load the per-step batch amortisation follow-on addresses; loading per
-// step is already accepted.
-func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
+// plugin-resolution cascade and the describe() gate, retaining each plugin's
+// self-report in descriptors so a plugin named by several steps is described
+// once rather than once per step. The pre-walk compatibility check consumes the
+// descriptor's compatible providers.
+//
+// A nil descriptors retains within the returned accessor alone rather than
+// across the build: there is no unretained mode to fall into, so a caller that
+// owns no build-wide retention still cannot describe one plugin twice inside a
+// single pipeline.
+//
+// The invoker loads separately and deliberately. It executes guest code, and
+// the load gate it goes through cross-checks the descriptor against the host
+// functions the loaded binary actually imports — a per-instance check that a
+// retained value cannot stand in for.
+func newStepDescriber(descriptors *stepDescriptorMemo, lookup pluginpath.Lookup) stepDescriber {
+	if descriptors == nil {
+		descriptors = newStepDescriptorMemo()
+	}
 	return func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error) {
-		resolved, err := lookup(step.Plugin)
-		if err != nil {
-			return wasm.PluginDescriptor{}, err
+		return descriptors.descriptor(ctx, step.Plugin, lookup)
+	}
+}
+
+// stepDescriptorMemo retains each pipeline-step plugin's validated describe()
+// self-report, keyed by the plugin URI a step names, for as long as the build
+// that read it runs.
+//
+// Retention is lazy and per plugin. The first read of a URI resolves it, loads
+// the guest, describes it, closes the guest, and stores what came back; every
+// later read of that URI answers from the stored value and crosses to no guest
+// at all. Nothing is described ahead of a reader asking, so a plugin no step
+// reaches is never loaded, and a plugin that cannot be loaded or described
+// still fails at the moment its first reader asks rather than earlier.
+//
+// A refusal is retained beside a success, and that is the point rather than an
+// economy: a plugin the host refuses is refused identically at every later
+// read, so two readers of one plugin cannot disagree about whether it loads.
+//
+// The URI is the whole key because one build resolves a URI through one lookup,
+// and that lookup's resolution cascade is fixed for the build — so a URI names
+// the same verified bytes at every read of it. A reader supplies the lookup at
+// each call rather than the memo holding one, which keeps the memo free of an
+// opinion about where bytes come from.
+//
+// Reads are serialised on the mutex across the load, so two readers racing on a
+// cold URI describe it once between them rather than once each.
+type stepDescriptorMemo struct {
+	mu      sync.Mutex
+	entries map[string]stepDescriptorEntry
+}
+
+// stepDescriptorEntry is one plugin's retained outcome: the self-report it
+// returned, or the error that refused it. err decides which of the two is
+// meaningful.
+type stepDescriptorEntry struct {
+	desc wasm.PluginDescriptor
+	err  error
+}
+
+// newStepDescriptorMemo returns an empty retention set, ready for its first
+// read. It holds no guest and describes nothing until something asks.
+func newStepDescriptorMemo() *stepDescriptorMemo {
+	return &stepDescriptorMemo{entries: map[string]stepDescriptorEntry{}}
+}
+
+// descriptor returns the self-report of the plugin named by pluginURI, loading
+// and describing it on the first read and answering from the retained value on
+// every later one. The returned descriptor shares no mutable memory with the
+// retained one, so a reader that writes through it cannot reach what a later
+// reader sees.
+func (m *stepDescriptorMemo) descriptor(ctx context.Context, pluginURI string, lookup pluginpath.Lookup) (wasm.PluginDescriptor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entry, retained := m.entries[pluginURI]
+	if !retained {
+		entry.desc, entry.err = loadAndDescribeStepPlugin(ctx, pluginURI, lookup)
+		m.entries[pluginURI] = entry
+	}
+	if entry.err != nil {
+		return wasm.PluginDescriptor{}, entry.err
+	}
+	return isolatedDescriptor(entry.desc), nil
+}
+
+// loadAndDescribeStepPlugin resolves one step plugin's URI to its verified
+// .wasm bytes, loads them through LoadAndDescribe (which validates the
+// descriptor), and closes the plugin before returning. The guest's lifetime
+// ends inside this call; what survives it is the reported value alone.
+//
+// It resolves and loads exactly once per call, with no other path to either, so
+// the number of times it runs is the number of times the build crosses to a
+// step guest to ask what it is.
+func loadAndDescribeStepPlugin(ctx context.Context, pluginURI string, lookup pluginpath.Lookup) (wasm.PluginDescriptor, error) {
+	resolved, err := lookup(pluginURI)
+	if err != nil {
+		return wasm.PluginDescriptor{}, err
+	}
+	// Same context-carried service as newStepInvoker: describe() runs
+	// guest code too, so its loader carries the same fetch surface and the
+	// same process-wide shared compilation cache.
+	loader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
+	stepSpec := resolver.PluginSpec(pluginURI, resolved)
+	stepSpec.PluginType = wasm.PluginTypePipelineStep
+	plugin, desc, err := loader.LoadAndDescribe(ctx, stepSpec)
+	if err != nil {
+		return wasm.PluginDescriptor{}, err
+	}
+	_ = plugin.Close(ctx)
+	return desc, nil
+}
+
+// isolatedDescriptor returns a copy of desc sharing no mutable memory with it,
+// so a reader that writes through a returned slice, pointer or raw message
+// cannot reach the retained value every later reader answers from. Returning
+// the value plainly would copy the struct and none of what its fields point at,
+// and the descriptor carries slices, pointers and raw JSON messages that would
+// each go on aliasing.
+//
+// The copy is derived from the value's own structure rather than written field
+// by field, because the descriptor is generated from the plugin self-report
+// contract and gains a field whenever that contract does. A hand-written copy
+// would keep compiling against the wider shape while silently sharing whatever
+// was added — a divergence that shows in no diff and fails no test.
+func isolatedDescriptor(desc wasm.PluginDescriptor) wasm.PluginDescriptor {
+	return isolate(reflect.ValueOf(desc)).Interface().(wasm.PluginDescriptor)
+}
+
+// isolate returns a value of v's type that shares no mutable memory with v,
+// recursing through every kind that can alias: a pointer's target, a slice's
+// and an array's elements, a map's keys and values, an interface's dynamic
+// value, and a struct's fields. A nil pointer, slice or map is returned as it
+// is, so the distinction between an absent value and an empty one survives the
+// copy — the descriptor's optional fields are read for presence, not only for
+// content.
+//
+// A field the reflect package cannot set is left as the enclosing struct copy
+// put it, which for an unexported field means it would still alias. That is not
+// a silent gap: the descriptor's field tree is asserted elsewhere to hold no
+// such field, so one appearing fails a test rather than quietly weakening the
+// isolation.
+func isolate(v reflect.Value) reflect.Value {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
 		}
-		// Same context-carried service as newStepInvoker: describe() runs
-		// guest code too, so its loader carries the same fetch surface and the
-		// same process-wide shared compilation cache.
-		loader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
-		stepSpec := resolver.PluginSpec(step.Plugin, resolved)
-		stepSpec.PluginType = wasm.PluginTypePipelineStep
-		plugin, desc, err := loader.LoadAndDescribe(ctx, stepSpec)
-		if err != nil {
-			return wasm.PluginDescriptor{}, err
+		out := reflect.New(v.Type().Elem())
+		out.Elem().Set(isolate(v.Elem()))
+		return out
+	case reflect.Slice:
+		if v.IsNil() {
+			return v
 		}
-		_ = plugin.Close(ctx)
-		return desc, nil
+		out := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		for i := 0; i < v.Len(); i++ {
+			out.Index(i).Set(isolate(v.Index(i)))
+		}
+		return out
+	case reflect.Array:
+		out := reflect.New(v.Type()).Elem()
+		for i := 0; i < v.Len(); i++ {
+			out.Index(i).Set(isolate(v.Index(i)))
+		}
+		return out
+	case reflect.Map:
+		if v.IsNil() {
+			return v
+		}
+		out := reflect.MakeMapWithSize(v.Type(), v.Len())
+		iter := v.MapRange()
+		for iter.Next() {
+			out.SetMapIndex(isolate(iter.Key()), isolate(iter.Value()))
+		}
+		return out
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		out := reflect.New(v.Type()).Elem()
+		out.Set(isolate(v.Elem()))
+		return out
+	case reflect.Struct:
+		out := reflect.New(v.Type()).Elem()
+		out.Set(v)
+		for i := 0; i < v.NumField(); i++ {
+			f := out.Field(i)
+			if !f.CanSet() {
+				continue
+			}
+			f.Set(isolate(v.Field(i)))
+		}
+		return out
+	default:
+		return v
 	}
 }
 

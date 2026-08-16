@@ -105,6 +105,20 @@ type RendererInput struct {
 	// regardless of whether the hook is set. nil (the common case) skips the
 	// call. Mirrors the Trace writer: an opt-in per-node hook, no-op when unset.
 	NodeProgress func(done, total int, nodeID string)
+
+	// stepDescriptors retains each pipeline-step plugin's describe() self-report
+	// for the whole render, so a plugin several steps or several nodes name is
+	// described once rather than once per site. RenderAll installs it, and every
+	// site that runs or replays a pipeline reads it from here — the input travels
+	// to all of them already, so the retention reaches them without a seam of its
+	// own.
+	//
+	// It is unexported because it is the render's own working state rather than
+	// anything a caller supplies: an input built elsewhere leaves it unset, and
+	// the pipeline executor then retains within each call instead of across the
+	// render. Nothing is described until a step asks, so installing it loads no
+	// plugin.
+	stepDescriptors *stepDescriptorMemo
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).

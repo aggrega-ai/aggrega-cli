@@ -272,6 +272,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, err
 	}
 
+	// Install this render's step-plugin retention before anything runs a
+	// pipeline. The input travels by value, so every copy downstream carries the
+	// same set and a plugin named at several sites is described once. It starts
+	// empty and stays empty until a step asks for a descriptor, so installing it
+	// crosses to no guest.
+	input.stepDescriptors = newStepDescriptorMemo()
+
 	graph := input.Graph
 	result := &RenderResult{
 		Files: make(map[string]AssembledFile),
@@ -968,7 +975,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			} else {
 				// own provider is this node's recipe provider; a Recipe step has no
 				// host scope (host nil), so hostProvider is empty.
-				pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
+				pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, input.stepDescriptors, engineFactory, nodeID)
 				if perr != nil {
 					return nil, perr
 				}

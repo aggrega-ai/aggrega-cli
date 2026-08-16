@@ -390,7 +390,7 @@ func dispatchBoundaryScopeFR(
 		// own provider is the boundary-scope FR's own engine kind (version pin
 		// stripped — codec + compatibility key on the kind); a boundary-scope FR
 		// has no single host component (host nil), so hostProvider is empty.
-		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Capability), "", renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
+		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Capability), "", renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, input.stepDescriptors, engineFactory, frNodeCtx.NodeID)
 		if perr != nil {
 			return perr
 		}

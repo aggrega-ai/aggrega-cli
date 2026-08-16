@@ -62,7 +62,7 @@ func TestRunNodePipeline_MultiDocSiblingPreserved(t *testing.T) {
 	steps := []types.PipelineStep{{ID: "patch", Plugin: "frp-step-patch-rust.wasm", Function: "step"}}
 
 	res, err := runNodePipeline(context.Background(), steps, own, nil, false, "helm", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, nil, "node")
+		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, nil, nil, "node")
 	if err != nil {
 		t.Fatalf("runNodePipeline: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestRunNodePipeline_AssemblerOwnPatchHalts(t *testing.T) {
 	steps := []types.PipelineStep{{ID: "patch", Plugin: "frp-step-patch-rust.wasm", Function: "step"}}
 
 	_, err := runNodePipeline(context.Background(), steps, frag, nil, false, "helm", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, nil, "node")
+		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, nil, nil, "node")
 	if err == nil {
 		t.Fatalf("expected pre-assembly halt; got nil error")
 	}
@@ -150,7 +150,7 @@ func TestRunNodePipeline_HostEmitWhenHostPresent(t *testing.T) {
 	steps := []types.PipelineStep{{ID: "patch", Plugin: "frp-step-patch-rust.wasm", Function: "step"}}
 
 	res, err := runNodePipeline(context.Background(), steps, own, host, false, "helm", "helm",
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, nil, "node")
+		renderctx.RenderContext{}, &types.TemplateContext{}, 2, lookup, nil, nil, "node")
 	if err != nil {
 		t.Fatalf("runNodePipeline: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestRunNodePipeline_ValidateOnlyWhenNoLookup(t *testing.T) {
 	own := []EmittedFile{{Name: "a.yaml", Origin: EmitOriginWorkload, Body: []byte("kind: ConfigMap\n")}}
 	steps := []types.PipelineStep{{ID: "p", Plugin: "x.wasm", Function: "step"}}
 	res, err := runNodePipeline(context.Background(), steps, own, nil, false, "helm", "",
-		renderctx.RenderContext{}, &types.TemplateContext{}, 2, nil, nil, "node")
+		renderctx.RenderContext{}, &types.TemplateContext{}, 2, nil, nil, nil, "node")
 	if err != nil {
 		t.Fatalf("validate-only path errored: %v", err)
 	}
