@@ -69,6 +69,10 @@ func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 		aggregate string
 		release   string // confRelease unless a case needs parameters
 		wantErr   bool
+		// wantDiag are fragments the diagnostic stream must contain, stated per
+		// case rather than shared, so each violating case pins its own fault
+		// instead of every case passing on one loose substring.
+		wantDiag []string
 	}{
 		{
 			name: "conforming_value_passes",
@@ -89,6 +93,10 @@ func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 			manifest:  confManifest("test/conf-comp:1.0.0", "compose/conf:1.0.0"),
 			aggregate: confAggregate("test/conf-comp", "        x: 3"), // 3 < minimum 5
 			wantErr:   true,
+			wantDiag: []string{
+				`.spec.components.app.values.x: authored pillar does not conform to its declared schema`,
+				`is less than 5`,
+			},
 		},
 		{
 			name: "extends_inherited_pillar_value_checked_against_the_base_contract",
@@ -102,6 +110,10 @@ func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 			manifest:  confManifest("test/conf-child:1.0.0", "compose/conf-child:1.0.0"),
 			aggregate: confAggregate("test/conf-child", "        x: 3"), // x=3 violates the INHERITED minimum 5
 			wantErr:   true,
+			wantDiag: []string{
+				`.spec.components.app.values.x: authored pillar does not conform to its declared schema`,
+				`is less than 5`,
+			},
 		},
 		{
 			name: "extends_inherited_pillar_conforming_value_passes",
@@ -121,9 +133,14 @@ func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 				"recipe.yaml": composeRecipe("conf", "test/conf-comp"),
 			},
 			manifest: confManifest("test/conf-comp:1.0.0", "compose/conf:1.0.0"),
-			// x references an Aggregate parameter; the Release fulfills it with 3 →
-			// resolves to 3 → violates minimum 5 (proving conformance runs on
-			// POST-resolution values).
+			// x references an Aggregate parameter and the Release fulfills it with
+			// 3, so conformance runs on the POST-resolution value: the diagnostic
+			// quotes 3, the fulfilled parameter, rather than the reference text an
+			// unresolved reading would leave behind. Which constraint it fails is
+			// the type rather than the minimum beside it, because the value the
+			// contract measures here arrives as the string "3" — so the type is
+			// what this case pins, and the minimum is carried by the two cases
+			// above that author their value directly.
 			aggregate: `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -159,6 +176,10 @@ spec:
             replicas: 1
 `,
 			wantErr: true,
+			wantDiag: []string{
+				`.spec.components.app.values.x: authored pillar does not conform to its declared schema`,
+				`type: 3 has type`,
+			},
 		},
 	}
 
@@ -187,12 +208,23 @@ spec:
 			if !tc.wantErr && err != nil {
 				t.Fatalf("%s: expected conformance to pass; got %v", tc.name, err)
 			}
-			// The value-conformance violation surfaces as a diagnostic naming the
-			// offending values pillar; the verdict error carries the diagnostic
-			// count. Assert the diagnostic itself identifies a values-pillar-vs-
-			// schema conformance failure.
-			if tc.wantErr && !strings.Contains(diag.String(), "does not conform to the Component schema") {
-				t.Errorf("%s: expected a values-conformance diagnostic; got err=%v diagnostics:\n%s", tc.name, err, diag.String())
+			// The verdict error carries only the diagnostic count, so the
+			// diagnostic stream is where the fault is actually described. Each
+			// violating case states the fragments its own fault produces: the
+			// offending key's locator immediately followed by the conformance
+			// wording, plus the constraint that failed. Requiring the locator and
+			// the wording adjacent is what keeps this from passing on a
+			// conformance diagnostic about some other key of the same component.
+			if tc.wantErr {
+				if len(tc.wantDiag) == 0 {
+					t.Fatalf("%s: a violating case must state what its diagnostic says", tc.name)
+				}
+				for _, want := range tc.wantDiag {
+					if !strings.Contains(diag.String(), want) {
+						t.Errorf("%s: expected a values-conformance diagnostic containing %q; got err=%v diagnostics:\n%s",
+							tc.name, want, err, diag.String())
+					}
+				}
 			}
 		})
 	}

@@ -127,15 +127,18 @@ spec:
 	if err == nil {
 		t.Fatalf("x=3 violates the base's minimum 5, inherited by the child; lint --release must halt. diagnostics:\n%s", out)
 	}
-	if !strings.Contains(out, "does not conform to the Component schema") {
+	if !strings.Contains(out, "authored pillar does not conform to its declared schema") {
 		t.Errorf("expected a values-conformance diagnostic; got:\n%s", out)
 	}
 	if !strings.Contains(out, "is less than 5") {
 		t.Errorf("expected the diagnostic to name the inherited minimum; got:\n%s", out)
 	}
-	// The base's own name must not appear as the offending entity — the constraint
-	// is enforced on the child's instance, at the child's path.
-	if !strings.Contains(out, `.spec.components["app"].values.x`) {
-		t.Errorf("expected the diagnostic at the child instance's own values path; got:\n%s", out)
+	// The constraint is enforced on the child's instance, so the diagnostic is
+	// positioned at the child's own offending key rather than anywhere the base is
+	// named. The locator and the conformance wording are required adjacent: apart,
+	// they would also be satisfied by a conformance diagnostic about a different
+	// key that merely mentions this one somewhere else in the stream.
+	if !strings.Contains(out, `.spec.components.app.values.x: authored pillar does not conform to its declared schema`) {
+		t.Errorf("expected the conformance diagnostic at the child instance's own values key; got:\n%s", out)
 	}
 }
