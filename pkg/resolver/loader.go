@@ -14,18 +14,23 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// The three Load* functions in this file are raw YAML readers: each reads a
-// path, unmarshals into the typed entity, and wraps any failure as a
-// ResolverError with the entity kind and source path attached. They do not
-// validate against the JSON Schema envelope — schema validation is handled
-// in pkg/validator against the entity's authored Schema content composed
-// with the usesSchema / featuresSchema bridge synthesis.
+// Each Load* function in this file is a raw YAML reader: it reads a path,
+// gates the bytes through the document envelope, unmarshals into the typed
+// entity, and wraps any failure as a ResolverError with the entity kind and
+// source path attached. The envelope gate checks the document against its
+// kind's schema; the per-entity content validation is separate and runs in
+// pkg/validator against the entity's authored Schema content composed with
+// the usesSchema / featuresSchema bridge synthesis.
 //
-// LoadRelease and LoadManifest are used directly: cmd/aggrega/build.go
-// pre-loads the Release to discover the Aggregate and Manifest paths, and
-// Resolve loads the Manifest as part of its pipeline. LoadAggregate exists
-// for symmetry but is not used by Resolve, which reads raw Aggregate bytes
-// for parameter interpolation and unmarshals them only after interpolation.
+// Every reader is paired with a *FromBytes core doing the same work without
+// the read, for callers that already hold the bytes. The two sides of a pair
+// differ sharply in reach, so neither stands in for the other when tracing
+// what a build touches: LoadAggregate is reached from the command that
+// reports a single Aggregate as authored, while LoadAggregateFromBytes runs
+// on every build — from the same-directory triad scan, the closure descent,
+// the catalog's sub-aggregate parameter resolution and the pull path. Each of
+// those reads the document as authored, before any parameter reference has
+// been substituted.
 
 // LoadAggregate reads and unmarshals an Aggregate YAML file.
 func LoadAggregate(path string) (*types.Aggregate, error) {
