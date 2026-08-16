@@ -305,17 +305,23 @@ type PrecalculatedPath struct {
 //     same Errors slice).
 //  3. Precalculated paths from calculatePaths.
 //  4. The PolicyInput payload from assemblePolicyInput.
-//  5. Advisory warnings from lintOverriddenAnnotation, on
-//     AnalysisResult.Warnings — one string per authoring leaf where an
-//     explicit attachment value suppressed an annotation-supplied one.
 //
-// Build flow gates on len(result.Errors) > 0 before invoking Step 5.
-// AnalysisResult.Warnings, AnalysisResult.Paths and
-// AnalysisResult.PolicyInput are computed unconditionally, and none of
-// them reaches that gate: a warning is advisory, so a result carrying
-// warnings and no errors proceeds and the warnings are surfaced to the
-// operator alongside the build. See the package doc Pipeline
-// Integration subsection for their downstream consumption status.
+// It populates no advisory warnings, and the omission is where a reader is
+// most likely to expect one. The annotation-override advisory is declared as
+// [OverriddenAnnotationAdvisory] and is invoked over the presentation of the
+// finalised graph, which this function is not handed and does not build — a
+// presentation has one producer, and building a second one here would give one
+// fact two answers. So AnalysisResult.Warnings is empty from here and is filled
+// by whatever holds that presentation; a caller reading it still reads one
+// stream.
+//
+// Build flow gates on len(result.Errors) > 0 before invoking the render.
+// AnalysisResult.Paths and AnalysisResult.PolicyInput are computed
+// unconditionally and neither reaches that gate, and no warning reaches it
+// either: a warning is advisory, so a result carrying warnings and no errors
+// proceeds and the warnings are surfaced to the operator alongside the build.
+// See the package doc Pipeline Integration subsection for their downstream
+// consumption status.
 func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *AnalysisResult {
 	// Background context never cancels, so the discarded error is always
 	// nil; callers that participate in cancellation use AnalyzeContext.
@@ -376,12 +382,8 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup res
 	// 4. Assemble policy input
 	policyInput := assemblePolicyInput(graph, paths)
 
-	// 5. Advisory lints (non-fatal warnings).
-	warnings := lintOverriddenAnnotation(graph)
-
 	return &AnalysisResult{
 		Errors:      errs,
-		Warnings:    warnings,
 		Paths:       paths,
 		PolicyInput: policyInput,
 	}, nil

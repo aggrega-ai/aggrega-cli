@@ -420,6 +420,17 @@ func runStepsOneToFour(
 		}
 		out.Analysis = analysis
 
+		// The rules declared over the finalised graph are invoked here, against
+		// the presentation built above and the coordinates of the same graph.
+		// This is the site that holds both, which is why the invocation sits
+		// beside the analysis rather than inside it: the analysis is handed the
+		// graph and the catalog and would have to build a second presentation of
+		// its own to ask a rule anything, and one fact with two producers is two
+		// answers free to disagree.
+		if err := runGraphStageRules(ctx, out, catalogLookup); err != nil {
+			return err
+		}
+
 		// Step 4b: ir-verdict governance role. Config-driven off the ir-verdict
 		// attachments in WorkspaceConfig.Plugins.Governance — a no-op when
 		// unconfigured. When configured, each plugin evaluates the full IR graph and

@@ -53,7 +53,7 @@ func TestLintOverriddenAnnotation_NoOverride_NoWarning(t *testing.T) {
 		),
 	}
 	graph := buildIRGraphWithFeature("api", "feature.myco/db-pool", entry)
-	warnings := lintOverriddenAnnotation(graph)
+	warnings := LintOverriddenAnnotation(graph)
 	if len(warnings) != 0 {
 		t.Errorf("expected zero warnings; got %d: %v", len(warnings), warnings)
 	}
@@ -70,7 +70,7 @@ func TestLintOverriddenAnnotation_OneOverride_OneWarning(t *testing.T) {
 		ValuesProvenance: makeProvenanceMap("pool", override),
 	}
 	graph := buildIRGraphWithFeature("api", "feature.myco/db-pool", entry)
-	warnings := lintOverriddenAnnotation(graph)
+	warnings := LintOverriddenAnnotation(graph)
 	if len(warnings) != 1 {
 		t.Fatalf("expected exactly 1 warning; got %d: %v", len(warnings), warnings)
 	}
@@ -104,7 +104,7 @@ func TestLintOverriddenAnnotation_MultipleOverrides_PerOverride(t *testing.T) {
 		InfraProvenance: makeProvenanceMap("upstream", overrideI),
 	}
 	graph := buildIRGraphWithFeature("api", "feature.myco/db-pool", entry)
-	warnings := lintOverriddenAnnotation(graph)
+	warnings := LintOverriddenAnnotation(graph)
 	if len(warnings) != 3 {
 		t.Fatalf("expected 3 warnings; got %d: %v", len(warnings), warnings)
 	}
@@ -133,7 +133,7 @@ func TestLintOverriddenAnnotation_WarningContainsKeyAndSource(t *testing.T) {
 		InfraProvenance: makeProvenanceMap("upstream", override),
 	}
 	graph := buildIRGraphWithFeature("api", "feature.myco/rewrite-host", entry)
-	warnings := lintOverriddenAnnotation(graph)
+	warnings := LintOverriddenAnnotation(graph)
 	if len(warnings) != 1 {
 		t.Fatalf("expected 1 warning; got %d", len(warnings))
 	}

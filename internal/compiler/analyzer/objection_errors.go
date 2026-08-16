@@ -56,3 +56,65 @@ func ErrorsFromObjections(objections []constraint.Objection) []AnalysisError {
 	}
 	return out
 }
+
+// AdvisoriesFromObjections renders what an advisory check raised into the
+// warning shape this package's callers already read.
+//
+// It is the sibling of [ErrorsFromObjections] on the other side of this stage's
+// reporting boundary, and the two exist separately because the two sides carry
+// different consequences: a violation halts the build and a warning does not,
+// so a rule the author declared advisory must not reach the slice a build gates
+// on. Routing one through the violation conversion would turn a build that
+// passes into a build that fails, which is the opposite of what an advisory is.
+//
+// The wording comes from [constraint.ObjectionMessage], the same renderer the
+// violation conversion reads, so one rule carries one wording whichever side it
+// reports on.
+//
+// A warning is a plain string and carries no locator field, so the locator is
+// composed into the text rather than dropped: it is the only thing naming which
+// authored key the finding is about, and an advisory that cannot be navigated
+// to is an advisory the author cannot act on. The file precedes it where the
+// finding carries one, so the pair reads as a position. A finding whose
+// provenance names neither is rendered as its message alone, rather than as a
+// message with an empty position hanging off it.
+//
+// Advisories come back in the order the objections were raised, which is the
+// order the check was invoked in.
+//
+// Returns nil when nothing was raised.
+func AdvisoriesFromObjections(objections []constraint.Objection) []string {
+	if len(objections) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(objections))
+	for _, o := range objections {
+		message := constraint.ObjectionMessage(o)
+		switch position := advisoryPosition(o.SourceFile(), o.Locator()); position {
+		case "":
+			out = append(out, message)
+		default:
+			out = append(out, position+": "+message)
+		}
+	}
+	return out
+}
+
+// advisoryPosition composes the file and the authored locator an objection
+// carries into the position an advisory names, or returns empty when it carries
+// neither.
+//
+// Either half may be absent on its own — a finding about an element whose
+// authored site this stage cannot name still knows the file, and a synthetic
+// graph carries a locator and no file — so each is emitted when it is there
+// rather than both being conditioned on one of them.
+func advisoryPosition(sourceFile, locator string) string {
+	switch {
+	case sourceFile != "" && locator != "":
+		return sourceFile + locator
+	case sourceFile != "":
+		return sourceFile
+	default:
+		return locator
+	}
+}

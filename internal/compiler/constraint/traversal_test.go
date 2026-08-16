@@ -247,11 +247,18 @@ func newTraversalFixture() traversalFixture {
 			fixtureKey("web"):         {"db_size"},
 			fixtureKey("billing.api"): {"region"},
 		},
+		// An attachment's pillar is the key its configuration is written under,
+		// and its leaf is a dotted path inside that key — which is why this axis
+		// is spelled differently from the node pillars above, where the pillar is
+		// a key within the block rather than the block itself. The two are not a
+		// pair to be tidied into agreement: they are different axes, and a pillar
+		// named anything but an authored key would put this walk's locator on a
+		// site no document contains.
 		attachPillars: map[string][]string{
-			fixtureKey("web", "tls"): {"app"},
+			fixtureKey("web", "tls"): {"values"},
 		},
 		attachLeaves: map[string][]string{
-			fixtureKey("web", "tls", "app"): {"issuer"},
+			fixtureKey("web", "tls", "values"): {"app.issuer"},
 		},
 		providers: map[string][]string{
 			fixtureKey("prod/edge"): {"helm", "terraform"},
@@ -445,6 +452,11 @@ func traversalCases() []traversalCase {
 			},
 		},
 		{
+			// The pillar is itself the key the attachment's configuration is
+			// written under, so it contributes that segment and the locator
+			// spells no further key ahead of it. A second key spliced in here
+			// would name .features.tls.values.values.app.issuer, which the
+			// authored-site walk beside this table refuses.
 			kind: SubjectNodeAttachmentPillarLeaf,
 			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
 				return RunOnNodeAttachmentPillarLeaves(cancelled, f, f, f, f, v, raisingCheck[NodeAttachmentPillarLeafSubject]())
@@ -1021,7 +1033,7 @@ func coordinateFlowCases() []coordinateFlowCase {
 					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.PillarName() + "|" + s.LeafName()
 				})
 			},
-			want: []string{"web|tls|app|issuer"},
+			want: []string{"web|tls|values|app.issuer"},
 		},
 
 		// The Recipe-authored kinds are the ones whose identifier and whose source

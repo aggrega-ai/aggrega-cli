@@ -12,10 +12,9 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // The fixture this proof compiles. It is named here rather than shared with the
@@ -30,40 +29,33 @@ const (
 	invocationVersion       = "0.1.0"
 )
 
-// realGraphEdges enumerates the edges of a compilation that actually happened.
+// coordinatesOf is the enumeration the production path itself builds, taken for
+// a compilation that actually happened.
 //
-// It exists because the framework will not let a rule be invoked without an
-// enumerator, and no production value enumerates this stage's subjects yet. It
-// is NOT a presentation and answers no fact: every coordinate below is read
-// straight off the graph the build produced, so the rule is asked about the
-// edges the compilation really drew and the answers still come from the
-// presentation the production path built.
-type realGraphEdges struct {
-	edges []constraint.EdgeInstance
+// The proofs below take it rather than assembling an axis of their own: an
+// enumeration a test writes is the test's account of what the graph holds, and
+// a rule asked about that account proves the account rather than the compiler.
+func coordinatesOf(t *testing.T, out *stepsOneToFourOutput, catalogLookup resolver.CatalogLookup) *ir.GraphStageCoordinates {
+	t.Helper()
+	coordinates := ir.NewGraphStageCoordinates(out.IRGraph, out.GraphView, catalogLookup)
+	if coordinates == nil {
+		t.Fatal("the compilation produced no enumeration of the finalised graph; no rule over it can be invoked")
+	}
+	return coordinates
 }
 
-func (e realGraphEdges) Edges() []constraint.EdgeInstance { return e.edges }
-
-// edgesOf reads the enumeration axis off a finalised graph.
-func edgesOf(graph *types.IRGraph) realGraphEdges {
-	var out realGraphEdges
-	for _, edge := range graph.Spec.Edges {
-		node, ok := graph.Spec.Nodes.Get(edge.Source)
-		if !ok {
-			continue
-		}
-		out.edges = append(out.edges, constraint.EdgeInstance{
-			Node: constraint.NodeInstance{
-				ID:            edge.Source,
-				SourceFile:    node.SourceFile,
-				AuthoredName:  edge.Source,
-				SubsystemPath: node.SubsystemPath,
-			},
-			Socket: edge.Socket,
-			Alias:  edge.Alias,
-		})
+// fixtureCatalog loads the catalog the fixture below compiles against, which the
+// enumeration needs for the one axis the graph does not carry.
+func fixtureCatalog(t *testing.T) resolver.CatalogLookup {
+	t.Helper()
+	cat, err := catalog.LoadAll("", invocationCatalogPath)
+	if err != nil {
+		t.Fatalf("catalog load: %v", err)
 	}
-	return out
+	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+		t.Fatalf("catalog extends: %d error(s); first: %v", len(extErrs), extErrs[0])
+	}
+	return cat.CatalogLookup()
 }
 
 // compileFixture runs the real pre-render pipeline over the fullstack fixture
@@ -73,49 +65,13 @@ func edgesOf(graph *types.IRGraph) realGraphEdges {
 // analysis result by design and this proof compiles a document that has one.
 func compileFixture(t *testing.T, aggregate []byte) *stepsOneToFourOutput {
 	t.Helper()
-
-	rel, err := resolver.LoadRelease(invocationReleasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
-	manifest, err := resolver.LoadManifest(invocationManifestPath)
-	if err != nil {
-		t.Fatalf("load manifest: %v", err)
-	}
-	cat, err := catalog.LoadAll("", invocationCatalogPath)
-	if err != nil {
-		t.Fatalf("catalog load: %v", err)
-	}
-	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
-		t.Fatalf("catalog extends: %d error(s); first: %v", len(extErrs), extErrs[0])
-	}
-
-	var captured *stepsOneToFourOutput
-	runErr := runStepsOneToFour(
-		context.Background(),
-		Inputs{
-			Release:           rel,
-			Manifest:          manifest,
-			AggregateRawBytes: aggregate,
-			AggregatePath:     invocationAggregatePath,
-			WorkspaceConfig:   workspaceconfig.Default(),
-			CompilerVersion:   invocationVersion,
-		},
-		cat.CatalogLookup(),
-		cat.RecipeLookupWithManifest(manifest).Recipe,
-		cat.SubAggregateLoader(),
-		func(out *stepsOneToFourOutput) error {
-			captured = out
-			return nil
-		},
-	)
-	if runErr != nil {
-		t.Fatalf("pre-render pipeline: %v", runErr)
-	}
-	if captured == nil {
-		t.Fatal("pipeline completed without invoking the continuation")
-	}
-	return captured
+	out, _ := compileWorkspace(t, workspaceFixture{
+		aggregatePath: invocationAggregatePath,
+		releasePath:   invocationReleasePath,
+		manifestPath:  invocationManifestPath,
+		catalogPath:   invocationCatalogPath,
+	}, aggregate)
+	return out
 }
 
 // readAggregate returns the fixture's aggregate bytes.
@@ -186,7 +142,7 @@ func TestGraphPresentationAnswersARuleFromTheCompiledGraph(t *testing.T) {
 
 		objections, err := constraint.RunOnEdges(
 			context.Background().Err,
-			edgesOf(out.IRGraph),
+			coordinatesOf(t, out, fixtureCatalog(t)),
 			out.GraphView,
 			analyzer.EdgeTargetSatisfiesSocketSelector,
 		)
@@ -232,7 +188,7 @@ func TestGraphPresentationAnswersARuleFromTheCompiledGraph(t *testing.T) {
 
 		objections, err := constraint.RunOnEdges(
 			context.Background().Err,
-			edgesOf(out.IRGraph),
+			coordinatesOf(t, out, fixtureCatalog(t)),
 			out.GraphView,
 			analyzer.EdgeTargetSatisfiesSocketSelector,
 		)

@@ -543,8 +543,10 @@ func RunOnNodeParameters[V View](
 // pillar order, then leaf order.
 //
 // The locator is
-// .spec.components.<name>.features.<attachment>.values.<pillar>.<leaf>. The
-// pillar is a coordinate here and the slot is a coordinate in its own right
+// .spec.components.<name>.features.<attachment>.<pillar>.<leaf>. A pillar is
+// itself one of the keys an attachment's block is written under, so it
+// contributes that segment directly and no further key is spelled ahead of it.
+// The pillar is a coordinate here and the slot is a coordinate in its own right
 // elsewhere: the two are not the same axis.
 func RunOnNodeAttachmentPillarLeaves[V View](
 	cancelled Cancellation,
@@ -563,7 +565,7 @@ func RunOnNodeAttachmentPillarLeaves[V View](
 					out = append(out, newNodeAttachmentPillarLeafSubject(
 						node.SourceFile, node.ID, attachment, pillar, leaf,
 						componentInnerSegments(
-							node, authoredKeyFeatures, attachment, authoredKeyValues, pillar, leaf,
+							node, authoredKeyFeatures, attachment, pillar, leaf,
 						)...,
 					))
 				}

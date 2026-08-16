@@ -10,7 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// lintOverriddenAnnotation walks every IRFeatureEntry's
+// LintOverriddenAnnotation walks every IRFeatureEntry's
 // per-pillar provenance maps and emits one advisory warning for each
 // leaf where an explicit contribution suppressed an annotation
 // contribution. The lint surfaces the authoring scenario where a
@@ -34,7 +34,15 @@ import (
 // order it encounters them within each node's author-order Feature
 // map and the per-pillar OrderedMap iteration. Same input produces
 // byte-identical warnings across runs.
-func lintOverriddenAnnotation(graph *types.IRGraph) []string {
+//
+// It no longer contributes to a build. What a build reports is
+// [OverriddenAnnotationAdvisory], the declared rule invoked over the
+// presentation of the finalised graph, and this reading is retained beside it
+// as the independent one that rule's coverage is measured against. Two readings
+// of one rule is exactly the duplication this package is removing, so the two
+// are not both live: this one is reachable only from the measurement, and it
+// retires when the measurement has served its purpose.
+func LintOverriddenAnnotation(graph *types.IRGraph) []string {
 	if graph == nil {
 		return nil
 	}
