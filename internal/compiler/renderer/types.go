@@ -119,6 +119,18 @@ type RendererInput struct {
 	// render. Nothing is described until a step asks, so installing it loads no
 	// plugin.
 	stepDescriptors *stepDescriptorMemo
+
+	// hydrated retains, per node, a projection of the mid-render state that node
+	// reached before any of its artifact bytes existed. The state itself is a
+	// loop-local and is dropped when the node's turn ends; what survives is one
+	// field per question declared over that state, so the retention grows with
+	// those questions rather than with the node count.
+	//
+	// It is unexported for the same reason the step-plugin retention is: it is the
+	// render's own working state rather than anything a caller supplies. An input
+	// built elsewhere leaves it unset and nothing is recorded. RenderAll installs
+	// it and publishes it on the result, where it outlives the render's node walk.
+	hydrated *hydratedProjections
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).

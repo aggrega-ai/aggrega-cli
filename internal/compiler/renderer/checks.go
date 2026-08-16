@@ -220,6 +220,32 @@ func pillarRefMatches(ref, pillar string) bool {
 	return ref == pillar || strings.HasPrefix(ref, pillar+".")
 }
 
+// recipeSourceDeclared reports whether a Recipe carries a source, reading the
+// RESOLVED value rather than the text the author wrote.
+//
+// A source that evaluated to an empty string leaves the Recipe with none just as
+// an absent source does, and an author cannot tell the two apart from the
+// outcome — so this is one condition rather than two, which is what lets a rule
+// about a template reading the source pillar name a single cause.
+//
+// One helper for the same reason the pillar roots above have one home: this is a
+// single decision with more than one reader, and a copy per reader would agree
+// today and would be exactly what diverges the next time the emptiness condition
+// changes. A nil Recipe carries no source.
+func recipeSourceDeclared(recipe *types.Recipe) bool {
+	if recipe == nil {
+		return false
+	}
+	switch src := recipe.Spec.Source.(type) {
+	case nil:
+		return false
+	case string:
+		return src != ""
+	default:
+		return true
+	}
+}
+
 // ArtifactPillarDeclared reports each reference an artifact template makes to a
 // configuration pillar the node's Recipe does not carry.
 //

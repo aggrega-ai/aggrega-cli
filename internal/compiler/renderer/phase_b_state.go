@@ -157,6 +157,18 @@ type PhaseBState struct {
 	// ArtifactsLibraries are present (a non-library artifacts entry never reads it).
 	ArtifactsLibraries map[string]types.ArtifactsLibrary
 
+	// hydrated is the render's retained set of per-node mid-render projections,
+	// carried here so the artifacts walk can record the template text standing at
+	// each entry — the one value whose recording site is inside that walk, because
+	// that is where an imported or bundle-supplied entry resolves to its content.
+	//
+	// It is unexported and is set only for a node's own base-Recipe state. An
+	// attachment's render builds its own state around a synthesized Recipe and
+	// leaves this nil, which is what keeps an attachment's artifact templates out
+	// of a value declared over a node's own Recipe — the two would otherwise
+	// collide under one node identity. nil records nothing.
+	hydrated *hydratedProjections
+
 	// AttachmentProvides is the per-node `slot → resolved fill provides` map the
 	// orchestrator resolves once, through the single attachment-provides
 	// resolution, before context assembly. The same bag is surfaced to the

@@ -53,6 +53,17 @@ type RenderResult struct {
 	// downstream consumers can match them structurally. Out-of-band: never part
 	// of the emitted bytes.
 	Diagnostics []Diagnostic
+
+	// hydrated is the render's retained set of per-node mid-render projections.
+	//
+	// It is published here because the state each projection is taken from is a
+	// loop-local: it is dropped when its node's turn ends, and the render's own
+	// working input is gone once the render returns. A reader asking what a node
+	// held before its artifact bytes existed has this and nothing else.
+	//
+	// Out-of-band: it carries no content that reaches an emitted file, and the
+	// emitted bytes are the same whether it is populated or not.
+	hydrated *hydratedProjections
 }
 
 // AssemblyContribution attributes one group of assembled output to the
@@ -384,6 +395,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "locals and provides evaluation")
 	}
 
+	// Install this render's retention of per-node mid-render state, holding the
+	// resolved provides by reference: they are evaluated once above for the whole
+	// render and are not written to afterwards, so a per-node copy of them would
+	// carry nothing the one bag does not. It is installed here rather than at the
+	// top because that bag is its first content, and it is placed on both the
+	// travelling input and the result — the input reaches the recording sites, the
+	// result outlives the node walk.
+	input.hydrated = newHydratedProjections(allProvides)
+	result.hydrated = input.hydrated
+
 	// Producer-fulfilment (Component↔Recipe): the bound Recipe must publish every
 	// provides key its Component declares as the output contract in schema.provides.
 	// The binding is a render-time fact (Manifest-driven), so the check runs here
@@ -690,6 +711,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// emitted workload document where the display promised a re-render of it.
 		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
 		state.Trace = traceWriter
+		// The retention travels onto this node's own state so the artifacts walk
+		// can record each entry's template text where that text is resolved. An
+		// attachment's render builds its own state and does not receive it.
+		state.hydrated = input.hydrated
 		// The state's copy is the authoritative set for this node: a Phase B
 		// sub-pass records the workload display decision onto it, and a capture
 		// reading a copy taken earlier would show a document the decision said to
@@ -947,6 +972,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err := phaseB2(tmplCtx, state, slots); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
+
+		// Reduce this node's mid-render state to the projection that outlives it.
+		// The position is the latest point at which every recorded value still
+		// stands as its own definition names it: source resolution has replaced
+		// the Recipe with the copy carrying the resolved source, the workload has
+		// been parsed, and no artifact template has been evaluated. The state is
+		// read and not retained.
+		input.hydrated.recordNode(state)
 
 		// Phase B.3 — artifacts evaluation. Each artifacts: entry (inline
 		// content or $import:-loaded) renders through Go templates against

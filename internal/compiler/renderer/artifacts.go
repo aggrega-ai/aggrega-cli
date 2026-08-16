@@ -101,6 +101,12 @@ func buildArtifactsProjection(
 	// case or widen it to a scope it cannot see from here.
 	seen := map[string]struct{}{}
 	emit := func(outputName, origin, tmplText string) error {
+		// The retained text is taken here rather than beside the authored entry,
+		// because this is where an imported entry's and a bundle entry's content
+		// has been resolved to the text that stands at the artifact — and it is
+		// taken before evaluation, which is the state the retained value names. A
+		// node whose render carries no retention records nothing.
+		state.hydrated.recordArtifactTemplate(state.NodeID, outputName, tmplText)
 		if err := preCheckArtifactPillars(state, outputName, tmplText, leftDelim, rightDelim); err != nil {
 			return err
 		}
@@ -218,17 +224,7 @@ func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, 
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template parse", filename))
 	}
 	workloadDeclared := state.ParsedWorkload != nil
-	sourceDeclared := false
-	if state.Recipe != nil {
-		switch s := state.Recipe.Spec.Source.(type) {
-		case nil:
-			sourceDeclared = false
-		case string:
-			sourceDeclared = s != ""
-		default:
-			sourceDeclared = true
-		}
-	}
+	sourceDeclared := recipeSourceDeclared(state.Recipe)
 
 	for _, ref := range refs {
 		if !workloadDeclared && pillarRefMatches(ref, pillarRefWorkload) {
