@@ -96,8 +96,8 @@ func TestLintUsesSocketNearMiss_NeverHalts(t *testing.T) {
 	// The advisory class must not reach the guard verdict: RunGuards is the
 	// halting set, and the lint is deliberately not registered in it.
 	na := aggWithSockets(t, []string{"databses"})
-	if errs := RunGuards(na, nil, socketCatalog(), nil, nil); len(errs) != 0 {
-		t.Fatalf("the near-miss lint must not halt through RunGuards; got %v", errs)
+	if errs, err := RunGuards(nil, na, nil, socketCatalog(), nil, nil); err != nil || len(errs) != 0 {
+		t.Fatalf("the near-miss lint must not halt through the guard suite; got %v (err %v)", errs, err)
 	}
 	if got := LintUsesSocketNearMiss(na, socketCatalog()); len(got) != 1 {
 		t.Fatalf("expected the advisory from the lint producer; got %v", got)

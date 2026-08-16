@@ -49,16 +49,11 @@ func guardRequiredUsesSockets(na types.NormalizedAggregate, release *types.Relea
 	for _, pair := range instances {
 		comp, ok := catalog.Component(pair.inst.Type)
 		if !ok {
-			// A resolved bare-token catalog ref absent here is a view
-			// inconsistency (loud); a Tier-1 relative-path type legitimately has
-			// no catalog entity (skip).
-			if verr := guardEntityViewInconsistency(
-				fmt.Sprintf("Aggregate %s", agg.Metadata.Name),
-				componentFieldPath(pair.subsystemPath, pair.name, pair.synthesized),
-				pair.inst.Type,
-			); verr != nil {
-				errs = append(errs, verr)
-			}
+			// A type the catalog holds no entry for declares no socket set to
+			// read, so this rule has nothing to ask of it. Whether that absence
+			// is itself a fault is a separate rule with its own sentinel, asked
+			// once per component naming such a type — so it is not restated
+			// here, where it would report the same fault a second time.
 			continue
 		}
 		if comp.Spec.UsesSchema.Len() == 0 {

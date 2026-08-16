@@ -5,7 +5,6 @@ package resolver
 
 import (
 	"errors"
-	"sort"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -57,12 +56,26 @@ func oneInstanceAggregate(t *testing.T, name string, values types.OrderedMap[any
 	})
 }
 
-// TestTheGuardReadsTheResolvedContractRatherThanResolvingItAgain is the
+// ruleFindings asks the configuration-conformance rule over one presentation and
+// returns its objections. The rule is reached through the framework's traversal
+// rather than by calling its predicate, so what is measured is what the suite
+// asks in production.
+func ruleFindings(t *testing.T, view *normalizedView) []constraint.Objection {
+	t.Helper()
+	objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, newCoordinateSet(view), view, componentValuesConformToTheType)
+	if err != nil {
+		t.Fatalf("the node walk returned an error: %v", err)
+	}
+	return objections
+}
+
+// TestTheRuleReadsTheResolvedContractRatherThanResolvingItAgain is the
 // production-once property, observed rather than asserted.
 //
 // The presentation is built against one authored contract and the catalog is
-// then made to answer with a different one. A guard that resolves the contract
-// for itself would measure against the second; a guard that reads the resolved
+// then made to answer with a different one. A reader that resolves the contract
+// for itself would measure against the second; a reader that reads the resolved
 // fact measures against the first. The two contracts disagree about the same
 // instance — one refuses it and the other accepts it — so the verdict alone
 // separates the two implementations, with no counter to instrument and nothing
@@ -70,10 +83,10 @@ func oneInstanceAggregate(t *testing.T, name string, values types.OrderedMap[any
 //
 // INVARIANT: a derived contract is resolved once, at the point its derivation
 // completes, and every reader downstream reads that result.
-// CONSEQUENCE: were this to fail, each guard would resolve the same contract
+// CONSEQUENCE: were this to fail, each rule would resolve the same contract
 // again — multiplying the work by the number of readers, and giving each of them
 // its own chance to read a resolution failure as a type that declares nothing.
-func TestTheGuardReadsTheResolvedContractRatherThanResolvingItAgain(t *testing.T) {
+func TestTheRuleReadsTheResolvedContractRatherThanResolvingItAgain(t *testing.T) {
 	t.Parallel()
 
 	// The first contract requires a key the instance does not write; the second
@@ -97,7 +110,7 @@ func TestTheGuardReadsTheResolvedContractRatherThanResolvingItAgain(t *testing.T
 	// Establish that the two contracts really do disagree about this instance,
 	// so a passing verdict below cannot come from a pair that agrees.
 	view := newNormalizedView(na, nil, catalog, nil)
-	underRefusing := guardSchemaConformance(na, catalog, nil, nil, view)
+	underRefusing := ruleFindings(t, view)
 	if len(underRefusing) == 0 {
 		t.Fatalf("the first contract accepted an instance that omits a key it declares required.\n" +
 			"INVARIANT: the two fixtures must disagree about this instance for the swap below to " +
@@ -106,7 +119,7 @@ func TestTheGuardReadsTheResolvedContractRatherThanResolvingItAgain(t *testing.T
 			"guard reads, and proves nothing.")
 	}
 	answered = accepting
-	underAccepting := guardSchemaConformance(na, catalog, nil, nil, newNormalizedView(na, nil, catalog, nil))
+	underAccepting := ruleFindings(t, newNormalizedView(na, nil, catalog, nil))
 	if len(underAccepting) != 0 {
 		t.Fatalf("the second contract refused an instance it declares nothing about; got %v.\n"+
 			"INVARIANT: the two fixtures must disagree about this instance.\n"+
@@ -117,15 +130,16 @@ func TestTheGuardReadsTheResolvedContractRatherThanResolvingItAgain(t *testing.T
 	// The catalog now answers with the accepting contract, and the presentation
 	// still holds the refusing one it resolved. A guard reading the resolved
 	// fact refuses; a guard resolving again accepts.
-	got := guardSchemaConformance(na, catalog, nil, nil, view)
+	got := ruleFindings(t, view)
 	if len(got) == 0 {
-		t.Fatalf("the guard raised nothing after the catalog was made to answer with a different " +
+		t.Fatalf("the rule raised nothing after the catalog was made to answer with a different " +
 			"contract.\n" +
-			"INVARIANT: the guard reads the contract resolved when the presentation was built.\n" +
-			"CONSEQUENCE: raising nothing here means the guard resolved the contract for itself, " +
-			"so the derived artefact is produced once per reader rather than once per build.")
+			"INVARIANT: the rule reads the contract resolved when the presentation was built.\n" +
+			"CONSEQUENCE: raising nothing here means the contract is resolved per reader rather " +
+			"than once per build, and each reader gets its own chance to read a resolution " +
+			"failure as a type that declares nothing.")
 	}
-	if !errors.Is(got[0], ErrSchemaConformance()) {
+	if !errors.Is(got[0].Sentinel(), ErrSchemaConformance()) {
 		t.Errorf("the finding carries %v; want the conformance rule.\n"+
 			"INVARIANT: the rule that measures a pillar against its declared contract is identified "+
 			"by its own sentinel.\n"+
@@ -258,7 +272,7 @@ func TestAnUnresolvableContractDoesNotChangeTheBuildVerdict(t *testing.T) {
 			"INVARIANT: the fixture must reach the failed-resolution outcome.\n" +
 			"CONSEQUENCE: the verdict assertion below passes for the wrong reason.")
 	}
-	if errs := guardSchemaConformance(na, catalog, nil, nil, view); len(errs) != 0 {
+	if errs := ruleFindings(t, view); len(errs) != 0 {
 		t.Fatalf("a contract that failed to resolve halted the build with %v.\n"+
 			"INVARIANT: the failure is a distinguishable value, not a refusal.\n"+
 			"CONSEQUENCE: a build that is accepted today starts failing, on an input class whose "+
@@ -266,39 +280,24 @@ func TestAnUnresolvableContractDoesNotChangeTheBuildVerdict(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------- the cross-check
+// ---------------------------------------------------------------- coordinates
 
-// The coordinates the declared rules are invoked once per come from the same
-// derivation production uses, rather than from a second one written here.
+// The coordinates the rules are invoked once per come from the same derivation
+// production uses, rather than from a second one written here.
 //
 // A test-local derivation would be a second answer to "which coordinates does
 // this document declare", and the two would agree on the day they were written
-// with nothing comparing them afterwards. That is the failure this cross-check
-// exists to catch, so reproducing it in the cross-check itself would blind the
-// instrument: the comparison would run over whichever coordinate set the test
-// happened to build, and a production set that had drifted would still pass.
+// with nothing comparing them afterwards.
 
-// TestTheDeclaredRulesAgreeWithTheHandWrittenGuardsOverOneDocument is the
-// equal-coverage cross-check, and it is what the declared rules' invocation
-// waits on rather than a nicety alongside it.
+// TestTheRulesReportEachFaultOfOneDocumentExactlyOnce holds the rules over ONE
+// authored document that violates three of them at once, and pins what each
+// contributes.
 //
-// Both readings are driven from ONE authored document: the hand-written guards
-// read it directly, and the declared rules read the same document through the
-// presentation, invoked by the framework's own traversals. So what follows is
-// one document read two ways rather than two fixtures that happen to agree.
-//
-// The comparison is by sentinel and by count. The finding SHAPE deliberately
-// differs between the two readings — a hand-written finding composes its own
-// sentence and locator, a raised objection carries the sentinel's registered
-// wording and the framework's locator — so comparing text would measure that
-// difference rather than coverage.
-//
-// INVARIANT: for one document, the declared rules raise exactly what the
-// hand-written guards report, rule for rule.
-// CONSEQUENCE: were this to fail, the declared rules could not replace the
-// hand-written ones without changing which documents the compiler refuses — and
-// the divergence would be invisible until a user hit it.
-func TestTheDeclaredRulesAgreeWithTheHandWrittenGuardsOverOneDocument(t *testing.T) {
+// 🔴 It is per rule rather than a total, and that is the point: a total says
+// nothing about which rules produced it, so a document that stopped exercising
+// one rule would still satisfy a count while that rule's coverage had gone. Each
+// rule's own expectation is what makes a lost one visible.
+func TestTheRulesReportEachFaultOfOneDocumentExactlyOnce(t *testing.T) {
 	t.Parallel()
 
 	// The type declares a required key, publishes one key, and declares one
@@ -338,99 +337,64 @@ func TestTheDeclaredRulesAgreeWithTheHandWrittenGuardsOverOneDocument(t *testing
 	view := newNormalizedView(na, nil, catalog, nil)
 	coordinates := newCoordinateSet(view)
 
-	// The hand-written reading, per rule. Each guard is called directly rather
-	// than through the guard sequence, so what is compared is one rule against
-	// one rule.
-	handWritten := map[string]int{}
-	for _, err := range guardSchemaConformance(na, catalog, nil, nil, view) {
-		handWritten[sentinelKey(err)]++
+	configuration, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, coordinates, view, componentValuesConformToTheType)
+	if err != nil {
+		t.Fatalf("the node traversal returned an error: %v", err)
 	}
-	for _, err := range guardInjectKeys(na, catalog, view) {
-		handWritten[sentinelKey(err)]++
-	}
-
-	declared := map[string]int{}
-	for _, check := range []constraint.Check[constraint.NormalizedView, constraint.NodeSubject]{
-		componentValuesConformToTheType,
-		componentInfraConformsToTheType,
-	} {
-		objections, err := constraint.RunOnNodes[constraint.NormalizedView](nil, coordinates, view, check)
-		if err != nil {
-			t.Fatalf("the node traversal returned an error: %v", err)
-		}
-		for _, o := range objections {
-			declared[o.Sentinel().Error()]++
-		}
+	sizing, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, coordinates, view, componentInfraConformsToTheType)
+	if err != nil {
+		t.Fatalf("the node traversal returned an error: %v", err)
 	}
 	selfInject, err := constraint.RunOnNodeMechanismDeliveryKeys[constraint.NormalizedView](
-		nil, coordinates, coordinates, coordinates, view,
-		selfInjectReferenceIsPublished)
+		nil, coordinates, coordinates, coordinates, view, selfInjectReferenceIsPublished)
 	if err != nil {
 		t.Fatalf("the delivery-key traversal returned an error: %v", err)
-	}
-	for _, o := range selfInject {
-		declared[o.Sentinel().Error()]++
 	}
 	connectionInject, err := constraint.RunOnEdges[constraint.NormalizedView](
 		nil, coordinates, view, connectionInjectReferenceIsPublished)
 	if err != nil {
 		t.Fatalf("the edge traversal returned an error: %v", err)
 	}
-	for _, o := range connectionInject {
-		declared[o.Sentinel().Error()]++
-	}
 
-	// A positive control PER RULE, not one over the whole comparison. A count
-	// of findings says nothing about which rules produced them, so a fixture
-	// that stopped exercising one rule would leave that rule's two sides
-	// agreeing at zero — an agreement over nothing, reported as coverage.
-	for _, control := range []error{ErrSchemaConformance(), ErrInvalidInjectKey()} {
-		if handWritten[control.Error()] == 0 {
-			t.Fatalf("the hand-written reading raised nothing for rule %q.\n"+
-				"INVARIANT: the fixture violates every rule being compared, so each rule has a "+
-				"non-empty pair to compare.\n"+
-				"CONSEQUENCE: that rule's comparison succeeds over two empty sets, and the "+
-				"agreement is reported as coverage of a rule nothing exercised.", control.Error())
+	for _, tc := range []struct {
+		rule       string
+		objections []constraint.Objection
+		want       []string
+	}{
+		{
+			rule:       "the configuration-conformance rule",
+			objections: configuration,
+			// Both instances omit the key the contract declares required, and the
+			// components come back in instance-name order.
+			want: []string{".spec.components.peer.values.size", ".spec.components.svc.values.size"},
+		},
+		{
+			rule:       "the sizing-conformance rule",
+			objections: sizing,
+			// No deployment document, so nothing wrote sizing to measure.
+			want: nil,
+		},
+		{
+			rule:       "the self-delivery reference rule",
+			objections: selfInject,
+			want:       []string{".spec.components.svc.inject.env.SVC_HOST"},
+		},
+		{
+			rule:       "the connection delivery reference rule",
+			objections: connectionInject,
+			want:       []string{".spec.components.svc.uses.backend.peer"},
+		},
+	} {
+		if got := locatorsOf(tc.objections); !equalStrings(got, tc.want) {
+			t.Errorf("%s raised %v; want %v.\n"+
+				"INVARIANT: each rule reports its own fault of this document, once.\n"+
+				"CONSEQUENCE: a rule reporting less has stopped being asked about a coordinate "+
+				"this document presents, and the loss is invisible from any total.",
+				tc.rule, got, tc.want)
 		}
 	}
-
-	for _, key := range unionOfKeys(handWritten, declared) {
-		if handWritten[key] != declared[key] {
-			t.Errorf("rule %q: the hand-written reading raised %d and the declared rule raised %d "+
-				"over the same document.\n"+
-				"INVARIANT: for one document the two readings agree rule for rule.\n"+
-				"CONSEQUENCE: replacing the hand-written path with the declared one changes which "+
-				"documents the compiler refuses, and the change is invisible until a user hits it.",
-				key, handWritten[key], declared[key])
-		}
-	}
-}
-
-// sentinelKey is the identity a finding is counted under: the rule's own
-// registered wording, which both readings carry and neither composes.
-func sentinelKey(err *ResolverError) string {
-	if err == nil || err.Err == nil {
-		return ""
-	}
-	return err.Err.Error()
-}
-
-// unionOfKeys returns every rule either reading raised, sorted, so a rule
-// present on one side only is compared rather than skipped.
-func unionOfKeys(a, b map[string]int) []string {
-	seen := map[string]bool{}
-	for k := range a {
-		seen[k] = true
-	}
-	for k := range b {
-		seen[k] = true
-	}
-	out := make([]string, 0, len(seen))
-	for k := range seen {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // TestTheResolvedContractIsTheSameDocumentTheCompileEntryProduces holds the

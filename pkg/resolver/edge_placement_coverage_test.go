@@ -10,6 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -82,29 +83,36 @@ var nodePlacements = []struct {
 	wrap func(componentBlock string) string
 	// field is the authoring locator a diagnostic against the placed component
 	// must point at, which differs per placement even though the identity does
-	// not.
+	// not. It is the bracketed spelling the surviving hand-written guard renders.
 	field string
+	// dotted is the same locator in the spelling a declared rule renders, which
+	// is the one the project's field-path reader can resolve. Both are carried
+	// because both spellings are live in the tree.
+	dotted string
 }{
 	{
 		name: "top level",
 		wrap: func(block string) string {
 			return "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  components:\n" + indent(block, 4)
 		},
-		field: `.spec.components["api"]`,
+		field:  `.spec.components["api"]`,
+		dotted: ".spec.components.api",
 	},
 	{
 		name: "declared subsystem",
 		wrap: func(block string) string {
 			return "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  subsystems:\n    data:\n      components:\n" + indent(block, 8)
 		},
-		field: `.spec.subsystems.data.components["api"]`,
+		field:  `.spec.subsystems.data.components["api"]`,
+		dotted: ".spec.subsystems.data.components.api",
 	},
 	{
 		name: "nested subsystem",
 		wrap: func(block string) string {
 			return "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  subsystems:\n    data:\n      subsystems:\n        inner:\n          components:\n" + indent(block, 12)
 		},
-		field: `.spec.subsystems.data.subsystems.inner.components["api"]`,
+		field:  `.spec.subsystems.data.subsystems.inner.components["api"]`,
+		dotted: ".spec.subsystems.data.subsystems.inner.components.api",
 	},
 }
 
@@ -164,14 +172,31 @@ spec:
 `+indent(body, 16))
 }
 
-// TestReleaseUsesSocketGuard_InspectsEveryPlacement proves the socket-allowlist
-// gate reaches a component wherever the Aggregate declares it, in BOTH
-// directions: a Release naming a socket the consuming component does not declare
-// halts, and a Release naming one it does declare passes. The passing half is
-// the load-bearing one — a gate that skipped the component silently would also
-// report no error for the legitimate input, and the two results together are
-// what distinguishes inspection from omission.
-func TestReleaseUsesSocketGuard_InspectsEveryPlacement(t *testing.T) {
+// placedEdgeRule asks one rule over the edge surface at every placement, and
+// returns the sockets or locators it reported.
+func placedEdgeSockets(
+	t *testing.T, agg *types.Aggregate, release *types.Release, catalog CatalogLookup,
+) []string {
+	t.Helper()
+	na := normalized(t, agg)
+	view := newNormalizedView(na, release, catalog, nil)
+	objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, newCoordinateSet(view), view, releaseEdgeSocketDeclared)
+	if err != nil {
+		t.Fatalf("the node walk returned an error: %v", err)
+	}
+	return declaredSocketsOf(objections)
+}
+
+// TestTheDeploymentEdgeSocketRuleReachesEveryPlacement proves the socket rule
+// reaches a component wherever the application declares it, in BOTH directions:
+// a deployment naming a socket the consuming component does not declare is
+// reported, and one naming a socket it does declare is not.
+//
+// The passing half is the load-bearing one — a rule that skipped the component
+// silently would also report nothing for the legitimate input, and the two
+// results together are what distinguishes inspection from omission.
+func TestTheDeploymentEdgeSocketRuleReachesEveryPlacement(t *testing.T) {
 	t.Parallel()
 	for _, pl := range nodePlacements {
 		t.Run(pl.name, func(t *testing.T) {
@@ -180,24 +205,27 @@ func TestReleaseUsesSocketGuard_InspectsEveryPlacement(t *testing.T) {
 			cat := edgeCoverageCatalog(t)
 
 			undeclared := releaseNaming(t, "nope", "main", "target: db\n")
-			errs := guardReleaseUsesSocket(normalized(t, agg), undeclared, cat)
-			if len(errs) != 1 || !errors.Is(errs[0], ErrUnknownUsesSocket()) {
-				t.Fatalf("undeclared socket must halt; got %v", errs)
+			if got := placedEdgeSockets(t, agg, undeclared, cat); !equalStrings(got, []string{"nope"}) {
+				t.Fatalf("an undeclared socket reported %v; want [nope]", got)
 			}
 
 			declared := releaseNaming(t, "databases", "main", "target: db\n")
-			if errs := guardReleaseUsesSocket(normalized(t, agg), declared, cat); len(errs) != 0 {
-				t.Fatalf("declared socket must pass; got %v", errs)
+			if got := placedEdgeSockets(t, agg, declared, cat); len(got) != 0 {
+				t.Fatalf("a declared socket must pass; got %v", got)
 			}
 		})
 	}
 }
 
-// TestEdgeConformanceGuard_InspectsEveryPlacement proves the per-edge
-// conformance gate reaches a component wherever the Aggregate declares it, in
-// both directions: operator per-edge infra that violates the socket's
-// infraSchema halts, and conforming infra of the same shape passes.
-func TestEdgeConformanceGuard_InspectsEveryPlacement(t *testing.T) {
+// TestTheConnectionSizingRuleReachesEveryPlacement proves the per-edge sizing
+// rule reaches a component wherever the application declares it, in both
+// directions: operator per-edge sizing that violates the socket's contract is
+// reported, and conforming sizing of the same shape is not.
+//
+// The locator names the placement the author wrote, so it differs per placement
+// even though the component's identity — the name the deployment addresses it by
+// — does not.
+func TestTheConnectionSizingRuleReachesEveryPlacement(t *testing.T) {
 	t.Parallel()
 	for _, pl := range nodePlacements {
 		t.Run(pl.name, func(t *testing.T) {
@@ -205,15 +233,26 @@ func TestEdgeConformanceGuard_InspectsEveryPlacement(t *testing.T) {
 			agg := parseAggregate(t, pl.wrap(plainComponents))
 			cat := edgeCoverageCatalog(t)
 
+			ask := func(release *types.Release) []string {
+				na := normalized(t, agg)
+				view := newNormalizedView(na, release, cat, nil)
+				objections, err := constraint.RunOnEdges[constraint.NormalizedView](
+					nil, newCoordinateSet(view), view, connectionInfraConformsToTheSocket)
+				if err != nil {
+					t.Fatalf("the connection walk returned an error: %v", err)
+				}
+				return locatorsOf(objections)
+			}
+
 			bad := releaseNaming(t, "databases", "main", "target: db\ninfra:\n  storage_class: nonsense\n")
-			errs := guardEdgeConformance(normalized(t, agg), bad, cat, nil, newNormalizedView(normalized(t, agg), bad, cat, nil))
-			if len(errs) != 1 || !errors.Is(errs[0], ErrSchemaConformance()) {
-				t.Fatalf("non-conforming per-edge infra must halt; got %v", errs)
+			want := []string{pl.dotted + ".uses.databases.main.infra.storage_class"}
+			if got := ask(bad); !equalStrings(got, want) {
+				t.Fatalf("non-conforming per-edge sizing raised %v; want %v", got, want)
 			}
 
 			good := releaseNaming(t, "databases", "main", "target: db\ninfra:\n  storage_class: fast\n")
-			if errs := guardEdgeConformance(normalized(t, agg), good, cat, nil, newNormalizedView(normalized(t, agg), good, cat, nil)); len(errs) != 0 {
-				t.Fatalf("conforming per-edge infra must pass; got %v", errs)
+			if got := ask(good); len(got) != 0 {
+				t.Fatalf("conforming per-edge sizing must pass; got %v", got)
 			}
 		})
 	}
@@ -253,37 +292,47 @@ func TestRequiredSocketGuard_InspectsEveryPlacement(t *testing.T) {
 	}
 }
 
-// TestEdgeConformance_RequiredPerEdgeKeyAgainstAnEmptyEdge proves a socket's
-// required per-edge key is enforced against an edge that authors no per-edge
-// config at all — in both authoring forms — and that an edge authoring the key
-// passes.
+// TestTheConnectionConfigurationRuleMeasuresAnEmptyEdgeInEitherAuthoringForm
+// proves a socket's required per-edge key is enforced against an edge that
+// authors no per-edge configuration at all — in both authoring forms — and that
+// an edge authoring the key passes.
 //
 // The empty edge is the case such a key exists to catch: enforcing the contract
 // only where the author wrote something enforces it everywhere except where it
 // matters.
-func TestEdgeConformance_RequiredPerEdgeKeyAgainstAnEmptyEdge(t *testing.T) {
+func TestTheConnectionConfigurationRuleMeasuresAnEmptyEdgeInEitherAuthoringForm(t *testing.T) {
 	t.Parallel()
 	cat := edgeCoverageCatalog(t)
 
 	cases := []struct {
 		name      string
 		usesBlock string
-		wantHalt  bool
+		want      []string
 	}{
 		{
 			name:      "verbose entry authoring no values",
 			usesBlock: "caches:\n  main:\n    target: db\n",
-			wantHalt:  true,
+			want:      []string{".spec.components.api.uses.caches.main.values.pool_size"},
 		},
 		{
+			// The short form spells no alias in the file, so the report positions
+			// at the socket — the deepest key the file does contain.
 			name:      "compact entry, which has nowhere to write per-edge values",
 			usesBlock: "caches: [db]\n",
-			wantHalt:  true,
+			want:      []string{".spec.components.api.uses.caches.values.pool_size"},
 		},
 		{
 			name:      "verbose entry authoring the required key",
 			usesBlock: "caches:\n  main:\n    target: db\n    values:\n      pool_size: 5\n",
-			wantHalt:  false,
+			want:      nil,
+		},
+		{
+			// The socket declaring an infraSchema but no valueSchema is the
+			// boundary of the change above: what is opt-in is the SOCKET's
+			// contract on this pillar, not the edge's content.
+			name:      "a socket declaring no contract on this pillar skips its edges",
+			usesBlock: "databases: [db]\n",
+			want:      nil,
 		},
 	}
 	for _, tc := range cases {
@@ -301,46 +350,16 @@ spec:
 `+indent(tc.usesBlock, 8)+`    db:
       type: app/db:1.0.0
 `)
-			errs := guardEdgeConformance(normalized(t, agg), nil, cat, nil, newNormalizedView(normalized(t, agg), nil, cat, nil))
-			if tc.wantHalt {
-				if len(errs) != 1 || !errors.Is(errs[0], ErrSchemaConformance()) {
-					t.Fatalf("edge authoring no required per-edge key must halt; got %v", errs)
-				}
-				if !strings.Contains(errs[0].Message, "pool_size") {
-					t.Errorf("diagnostic must name the missing key; got %s", errs[0].Message)
-				}
-				return
+			na := normalized(t, agg)
+			view := newNormalizedView(na, nil, cat, nil)
+			objections, err := constraint.RunOnEdges[constraint.NormalizedView](
+				nil, newCoordinateSet(view), view, connectionValuesConformToTheSocket)
+			if err != nil {
+				t.Fatalf("the connection walk returned an error: %v", err)
 			}
-			if len(errs) != 0 {
-				t.Fatalf("edge authoring the required per-edge key must pass; got %v", errs)
+			if got := locatorsOf(objections); !equalStrings(got, tc.want) {
+				t.Errorf("raised sequence = %v; want %v", got, tc.want)
 			}
 		})
-	}
-}
-
-// TestEdgeConformance_SocketWithoutAContractStillSkips pins the boundary of the
-// change above: what is opt-in is the SOCKET's contract, not the edge's content.
-// A socket declaring no per-edge schema is skipped whatever its edges author, so
-// validating the empty case did not turn every edge in the corpus into a
-// candidate for a violation.
-func TestEdgeConformance_SocketWithoutAContractStillSkips(t *testing.T) {
-	t.Parallel()
-	agg := parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
-kind: Aggregate
-metadata:
-  name: demo
-spec:
-  components:
-    api:
-      type: app/svc:1.0.0
-      uses:
-        databases: [db]
-    db:
-      type: app/db:1.0.0
-`)
-	// "databases" declares an infraSchema but no valueSchema, so the developer
-	// per-edge values pillar has no contract to be checked against.
-	if errs := guardEdgeConformance(normalized(t, agg), nil, edgeCoverageCatalog(t), nil, newNormalizedView(normalized(t, agg), nil, edgeCoverageCatalog(t), nil)); len(errs) != 0 {
-		t.Fatalf("socket declaring no valueSchema must skip its edges; got %v", errs)
 	}
 }

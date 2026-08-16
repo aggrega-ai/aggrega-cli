@@ -679,6 +679,18 @@ func (v *normalizedView) releaseAttachment(node, attachment string) (types.Bound
 	return bc.Features.Get(attachment)
 }
 
+// releaseAttachmentNames returns the names the deployment's own attachment block
+// declares against a component, in author order.
+//
+// It is unexported because the axis is what needs it, and the axis holds this
+// presentation directly. The rules read an attachment's content through the
+// facts keyed by (node, attachment) beside it; nothing declared reads this set,
+// so publishing it as a fact would add a surface no rule consults.
+func (v *normalizedView) releaseAttachmentNames(node string) []string {
+	bc := v.releaseComponents[node]
+	return bc.Features.Keys()
+}
+
 // ReleaseAuthoredUsesSocketConnections returns the connections the deployment's
 // edge surface carries for one component, one entry per socket it wrote, in
 // author order, each holding that socket's connection count.

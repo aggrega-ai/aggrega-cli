@@ -4,17 +4,15 @@
 package resolver
 
 import (
-	"errors"
-	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // aggWithSubsystemComponent builds an Aggregate whose only component is inside a
-// subsystem "svc" — the shape that exercises whether a guard recurses into
-// subsystems. Before the shared instance-walker, the root-only guards iterated
-// an empty top-level `components` and never reached this component.
+// subsystem "svc" — the shape that exercises whether a walk recurses into
+// subsystems rather than iterating the top-level `components` alone.
 func aggWithSubsystemComponent(name string, inst types.ComponentInstance) *types.Aggregate {
 	comps := types.OrderedMap[types.ComponentInstance]{}
 	comps.Set(name, inst)
@@ -23,54 +21,41 @@ func aggWithSubsystemComponent(name string, inst types.ComponentInstance) *types
 	return &types.Aggregate{Metadata: types.AggregateMetadata{Name: "t"}, Spec: types.AggregateSpec{Subsystems: subs}}
 }
 
-// subsysDBPath is the accurate authoring locator the path-aware walker must
-// render for component "db" inside subsystem "svc" — NOT a flattened
-// `.spec.components["db"]`.
-const subsysDBPath = `.spec.subsystems.svc.components["db"]`
-
-func requireSubsystemHalt(t *testing.T, errs []*ResolverError, want error, wantPath string) {
-	t.Helper()
-	if len(errs) == 0 {
-		t.Fatalf("RED→GREEN: a subsystem component must now trip the guard (it was root-only before the walker)")
-	}
-	if !errors.Is(errs[0], want) {
-		t.Fatalf("want errors.Is(err, %v); got %v", want, errs[0])
-	}
-	if !strings.Contains(errs[0].Field, wantPath) {
-		t.Errorf("diagnostic must carry the accurate subsystem path %q; got %q", wantPath, errs[0].Field)
-	}
-}
-
-// TestSubsystemGuardCoverage_SelfInject — a black-box self-inject violation on a
-// component inside a subsystem now halts (was a root-only gap).
-func TestSubsystemGuardCoverage_SelfInject(t *testing.T) {
+// TestTheNodeAxisPresentsAComponentDeclaredInsideASubsystem pins the coordinate
+// every node-keyed rule is invoked per: a component the document declares inside
+// a subsystem is presented, and the locator it is presented under names the
+// subsystem the author wrote rather than a flattened root path.
+//
+// It is asserted over a rule rather than over the axis alone because a rule is
+// what a reader cares about, and it is asserted in both directions: the same
+// component with nothing to report must draw nothing, or a rule that reported
+// unconditionally would satisfy the first half.
+func TestTheNodeAxisPresentsAComponentDeclaredInsideASubsystem(t *testing.T) {
 	t.Parallel()
-	agg := aggWithSubsystemComponent("db", types.ComponentInstance{
-		Type:   "core/datastore/postgres",
-		Inject: &types.InjectBlock{Env: map[string]any{"X": "1"}},
-	})
-	requireSubsystemHalt(t, guardSelfInject(normalized(t, agg), selfInjectCatalog()), ErrSelfInjectForbidden(), subsysDBPath)
-}
 
-// TestSubsystemGuardCoverage_Merge — a feature-type merge conflict on a
-// subsystem component now halts (was a root-only gap). The Release boundary
-// attaches the same feature name with a conflicting type for the same instance.
-func TestSubsystemGuardCoverage_Merge(t *testing.T) {
-	t.Parallel()
-	aggFeats := types.OrderedMap[types.FeatureInstance]{}
-	aggFeats.Set("logging", types.FeatureInstance{Type: "core/logging-a"})
-	agg := aggWithSubsystemComponent("db", types.ComponentInstance{Type: "core/server", Features: aggFeats})
+	ask := func(inject *types.InjectBlock) []string {
+		agg := aggWithSubsystemComponent("db", types.ComponentInstance{
+			Type:   "core/datastore/postgres", // declares no injection allowlist
+			Inject: inject,
+		})
+		na := normalized(t, agg)
+		view := newNormalizedView(na, nil, selfInjectCatalog(), nil)
+		objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+			nil, newCoordinateSet(view), view, selfInjectBlockAllowed)
+		if err != nil {
+			t.Fatalf("the node walk returned an error: %v", err)
+		}
+		return locatorsOf(objections)
+	}
 
-	relFeats := types.OrderedMap[types.BoundaryFeature]{}
-	relFeats.Set("logging", types.BoundaryFeature{Type: "core/logging-b"})
-	bc := types.OrderedMap[types.BoundaryComponent]{}
-	bc.Set("db", types.BoundaryComponent{Features: relFeats})
-	boundaries := types.OrderedMap[types.Boundary]{}
-	boundaries.Set("main", types.Boundary{Components: bc})
-	rel := &types.Release{}
-	rel.Spec.Boundaries = boundaries
-
-	requireSubsystemHalt(t, guardFeatureMerge(normalized(t, agg), rel), ErrFeatureMergeConflict(), subsysDBPath)
+	want := []string{".spec.subsystems.svc.components.db"}
+	if got := ask(&types.InjectBlock{Env: map[string]any{"X": "1"}}); !equalStrings(got, want) {
+		t.Errorf("raised sequence = %v; want %v — the locator names the subsystem the author "+
+			"wrote", got, want)
+	}
+	if got := ask(nil); len(got) != 0 {
+		t.Errorf("the same component with no injection block must draw nothing; got %v", got)
+	}
 }
 
 // TestCollectComponentInstances_RootOnlyFoldsToDefault pins the walker's

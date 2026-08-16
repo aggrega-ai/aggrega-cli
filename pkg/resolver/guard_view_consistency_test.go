@@ -7,26 +7,16 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // notFoundCatalog is a CatalogLookup whose Component lookup always misses — the
-// "resolved-but-absent from the guard's view" condition the guards now turn into
-// a loud halt for a bare catalog reference.
+// resolved-but-absent condition a bare catalog reference turns into a loud halt.
 func notFoundCatalog() CatalogLookup {
 	return CatalogLookup{Component: func(string) (types.Component, bool) {
 		return types.Component{}, false
 	}}
-}
-
-func requireViewInconsistency(t *testing.T, errs []*ResolverError) {
-	t.Helper()
-	for _, e := range errs {
-		if errors.Is(e, ErrGuardEntityViewInconsistency()) {
-			return
-		}
-	}
-	t.Fatalf("want an ErrGuardEntityViewInconsistency halt; got %v", errs)
 }
 
 func oneBareComponent(typeRef string, inject *types.InjectBlock) *types.Aggregate {
@@ -36,7 +26,7 @@ func oneBareComponent(typeRef string, inject *types.InjectBlock) *types.Aggregat
 }
 
 // TestGuardEntityViewInconsistency_Classifies pins the shared classifier: a
-// Tier-1 relative-path type is a legitimate skip (nil); a bare catalog reference
+// relative-path type is a legitimate skip (nil); a bare catalog reference
 // absent from the view is the loud halt.
 func TestGuardEntityViewInconsistency_Classifies(t *testing.T) {
 	t.Parallel()
@@ -52,57 +42,52 @@ func TestGuardEntityViewInconsistency_Classifies(t *testing.T) {
 	}
 }
 
-// The halt arm per silent-skip guard: a bare-token catalog reference absent from
-// the guard's view HALTS with ErrGuardEntityViewInconsistency. (The skip arm — a
-// `./local` type — lives in each guard's own _test.go.)
-
-func TestGuardSelfInject_ResolvedCatalogRefAbsentHalts(t *testing.T) {
+// TestTheRequiredSocketGuardLeavesTheAbsentCatalogEntryToTheRuleThatOwnsIt pins
+// the one-home property for a fault that two paths can see.
+//
+// The required-socket guard reaches a component whose type the catalog holds no
+// entry for, and such a type declares no socket set for that guard to read. It
+// therefore ends on that component rather than classifying it: the classification
+// is a separate rule with its own sentinel, asked once per component naming such
+// a type. A guard that also classified would report one fault twice.
+//
+// 🔴 Both halves are asserted over ONE document, and the pair is what makes this
+// a property rather than two observations: the guard's silence alone would also
+// be produced by a guard that never reached the component, and the rule's report
+// alone says nothing about whether a second path reports it too.
+func TestTheRequiredSocketGuardLeavesTheAbsentCatalogEntryToTheRuleThatOwnsIt(t *testing.T) {
 	t.Parallel()
-	agg := oneBareComponent("core/absent:1.0.0", &types.InjectBlock{Env: map[string]any{"X": "1"}})
-	requireViewInconsistency(t, guardSelfInject(normalized(t, agg), notFoundCatalog()))
-}
 
-func TestGuardInjectKeys_ResolvedCatalogRefAbsentHalts(t *testing.T) {
-	t.Parallel()
-	agg := oneBareComponent("core/absent:1.0.0", &types.InjectBlock{Env: map[string]any{"X": map[string]any{"from": "nope"}}})
-	requireViewInconsistency(t, guardInjectKeys(normalized(t, agg), notFoundCatalog(), newNormalizedView(normalized(t, agg), nil, notFoundCatalog(), nil)))
-}
-
-func TestGuardRequiredUsesSockets_ResolvedCatalogRefAbsentHalts(t *testing.T) {
-	t.Parallel()
 	agg := oneBareComponent("core/absent:1.0.0", nil)
-	requireViewInconsistency(t, guardRequiredUsesSockets(normalized(t, agg), nil, notFoundCatalog()))
-}
+	na := normalized(t, agg)
+	catalog := notFoundCatalog()
 
-func TestGuardSchemaConformance_ResolvedCatalogRefAbsentHalts(t *testing.T) {
-	t.Parallel()
-	agg := oneBareComponent("core/absent:1.0.0", nil)
-	requireViewInconsistency(t, guardSchemaConformance(normalized(t, agg), notFoundCatalog(), nil, nil, newNormalizedView(normalized(t, agg), nil, notFoundCatalog(), nil)))
-}
+	if errs := guardRequiredUsesSockets(na, nil, catalog); len(errs) != 0 {
+		t.Errorf("the required-socket guard reported on a type the catalog holds no entry for: %v.\n"+
+			"INVARIANT: the classification has one home, and it is not this guard.\n"+
+			"CONSEQUENCE: one fault is reported twice, once with a sentinel a caller matching on "+
+			"the socket rule does not expect.", errs)
+	}
 
-func TestGuardUsesSocket_ResolvedCatalogRefAbsentHalts(t *testing.T) {
-	t.Parallel()
-	// aggWithEdge builds component "svc" of bare type "app/svc:1.0.0" with a uses
-	// socket — guardUsesSocket reaches ValidateUsesAgainstSchema, which on a
-	// missing catalog entity now halts for a bare ref.
-	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
-	requireViewInconsistency(t, guardUsesSocket(normalized(t, agg), nil, notFoundCatalog()))
-}
-
-func TestGuardReleaseUsesSocket_ResolvedCatalogRefAbsentHalts(t *testing.T) {
-	t.Parallel()
-	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
-	rel := releaseWithEdgeInfra("databases", "main", om("k", "v"))
-	requireViewInconsistency(t, guardReleaseUsesSocket(normalized(t, agg), rel, notFoundCatalog()))
-}
-
-// TestGuardEdgeConformance_SocketPillarResolvedCatalogRefAbsentHalts is the
-// operator-required socket-pillar arm: the halt must surface through the
-// CompileSocketPillarSchema path (its (Schema, bool) return must not swallow the
-// halt into ok==false). The edge carries values so the socket-pillar path is
-// exercised.
-func TestGuardEdgeConformance_SocketPillarResolvedCatalogRefAbsentHalts(t *testing.T) {
-	t.Parallel()
-	agg := aggWithEdge("databases", "main", om("size", "10Gi"))
-	requireViewInconsistency(t, guardEdgeConformance(normalized(t, agg), nil, notFoundCatalog(), nil, newNormalizedView(normalized(t, agg), nil, notFoundCatalog(), nil)))
+	view := newNormalizedView(na, nil, catalog, nil)
+	objections, err := constraint.RunOnNodes[constraint.NormalizedView](
+		nil, newCoordinateSet(view), view, componentTypeResolvesToACatalogEntry)
+	if err != nil {
+		t.Fatalf("the node walk returned an error: %v", err)
+	}
+	if len(objections) != 1 {
+		t.Fatalf("the rule that owns the classification raised %d objection(s); want 1.\n"+
+			"INVARIANT: a component naming a catalog identity nobody found is reported once.\n"+
+			"CONSEQUENCE: with the guard's own raise removed, nothing reports the fault at all.",
+			len(objections))
+	}
+	if !errors.Is(objections[0].Sentinel(), ErrGuardEntityViewInconsistency()) {
+		t.Errorf("the objection carries %v; want the catalog-entry rule's own sentinel.\n"+
+			"INVARIANT: the fault keeps its identity when its home moves.\n"+
+			"CONSEQUENCE: a caller matching on the sentinel stops seeing this refusal.",
+			objections[0].Sentinel())
+	}
+	if want := ".spec.components.svc"; objections[0].Locator() != want {
+		t.Errorf("the objection is positioned at %q; want %q", objections[0].Locator(), want)
+	}
 }

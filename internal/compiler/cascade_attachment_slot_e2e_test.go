@@ -203,18 +203,25 @@ func TestCascadeAttachmentSlot_AuthoredFillHalts(t *testing.T) {
 	// The locator names the authoring site, which is what makes the contrast
 	// legible: it points at the component instance, whereas the row above
 	// authors the same attachment one scope up and gets no locator at all.
-	const wantLocator = `.spec.subsystems.svc.components["consumer"].features.root_password.inject`
+	//
+	// The offending delivery mechanism is named in the message rather than in the
+	// locator, and the rule reports once per mechanism the fill dictates — so the
+	// mechanism is asserted beside the site, or a halt about a different mechanism
+	// at the same attachment would pass.
+	const wantLocator = `.spec.subsystems.svc.components.consumer.features.root_password`
+	const wantMechanism = "env"
 	var multi *resolver.MultiResolverError
 	if !errors.As(err, &multi) {
 		t.Fatalf("want a MultiResolverError carrying the per-violation slice; got %T", err)
 	}
 	var found bool
 	for _, v := range multi.Violations {
-		if v.Field == wantLocator {
+		if v.Field == wantLocator && strings.Contains(v.Message, wantMechanism) {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("no violation located at %s; got %v", wantLocator, multi.Violations)
+		t.Errorf("no violation located at %s naming mechanism %q; got %v",
+			wantLocator, wantMechanism, multi.Violations)
 	}
 }

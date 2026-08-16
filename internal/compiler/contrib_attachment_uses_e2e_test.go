@@ -43,24 +43,42 @@ import (
 func TestContribAttachmentUses_UndeclaredSocketHaltsAtEveryScope(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name        string
-		release     string
+		name    string
+		release string
+		// wantLocator is the authoring site the halt must name. It is a PREFIX
+		// match, because the locator names the attachment and the offending socket
+		// is carried in the message beside it.
 		wantLocator string
+		// wantSocket is the socket the halt must name. It is asserted separately
+		// because a halt about the wrong socket at the right attachment would
+		// otherwise pass — and it is looked for across the whole diagnostic,
+		// because the two paths answering these rows spell it in different places:
+		// the pre-flatten rules carry it in the message beside a locator naming the
+		// attachment, and the post-flatten one spells it in the locator itself.
+		wantSocket string
 	}{
 		{
 			name:        "subsystem-wide attachment",
 			release:     "release-contrib-subsystem.yaml",
-			wantLocator: `.spec.subsystems.svc.features["subsysfeat"].uses["bogus-subsystem-socket"]`,
+			wantLocator: `.spec.subsystems.svc.features.subsysfeat`,
+			wantSocket:  "bogus-subsystem-socket",
 		},
 		{
 			name:        "release boundary-wide attachment",
 			release:     "release-contrib-boundary.yaml",
-			wantLocator: `.spec.boundaries["cluster"].features["bndfeat"].uses["bogus-boundary-socket"]`,
+			wantLocator: `.spec.boundaries.cluster.features.bndfeat`,
+			wantSocket:  "bogus-boundary-socket",
 		},
 		{
+			// 🔴 The locator names the component's site on the APPLICATION document
+			// while the attachment itself is written on the deployment. That follows
+			// from the coordinate this rule is invoked per — a component's
+			// attachment names, taken from both documents and presented under the
+			// component — and the entity beside it says which document to open.
 			name:        "release boundary-component attachment",
 			release:     "release-contrib-component.yaml",
-			wantLocator: `.spec.boundaries["cluster"].components["consumer"].features["compfeat"].uses["bogus-component-socket"]`,
+			wantLocator: `.spec.components.consumer.features.compfeat`,
+			wantSocket:  "bogus-component-socket",
 		},
 		{
 			// The positive control for the row below: the identical `components:`
@@ -69,16 +87,22 @@ func TestContribAttachmentUses_UndeclaredSocketHaltsAtEveryScope(t *testing.T) {
 			// tripping some unrelated gate.
 			name:        "component attachment at an Aggregate root",
 			release:     "release-contrib-component-root.yaml",
-			wantLocator: `.spec.components["consumer"].features["modfeat"].uses["bogus-module-socket"]`,
+			wantLocator: `.spec.components.consumer.features.modfeat`,
+			wantSocket:  "bogus-module-socket",
 		},
 		{
 			// The same block one document deeper. The locator names the flattened
 			// node rather than an authoring path inside the module, matching every
 			// other post-flatten diagnostic: the module's own document is out of
 			// view by the time the node exists.
+			//
+			// This row is answered after the composition is flattened rather than
+			// by the pre-flatten rules above, which is why its locator still spells
+			// the socket and still carries the bracketed keys.
 			name:        "component attachment inside a sub-aggregate module",
 			release:     "release-contrib-module.yaml",
 			wantLocator: `.data.consumer.features["modfeat"].uses["bogus-module-socket"]`,
+			wantSocket:  "bogus-module-socket",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -102,12 +126,14 @@ func TestContribAttachmentUses_UndeclaredSocketHaltsAtEveryScope(t *testing.T) {
 			}
 			var found bool
 			for _, v := range multi.Violations {
-				if strings.Contains(v.Field, tc.wantLocator) {
+				named := strings.Contains(v.Field, tc.wantSocket) || strings.Contains(v.Message, tc.wantSocket)
+				if strings.Contains(v.Field, tc.wantLocator) && named {
 					found = true
 				}
 			}
 			if !found {
-				t.Errorf("no violation located at %s; got %v", tc.wantLocator, multi.Violations)
+				t.Errorf("no violation located at %s naming socket %q; got %v",
+					tc.wantLocator, tc.wantSocket, multi.Violations)
 			}
 		})
 	}

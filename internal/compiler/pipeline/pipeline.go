@@ -530,7 +530,15 @@ func ResolveAndValidate(
 			fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
 		}
 
-		guardErrs := resolver.RunGuards(normalized, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
+		// ctx.Err is the cancellation signal the rule walks read once per
+		// component and once per declared scope: a caller that has given up on
+		// this build stops paying for the rest of it, and a walk that stops hands
+		// back nothing rather than a partial set that would read as a document
+		// satisfying rules nobody asked.
+		guardErrs, err := resolver.RunGuards(ctx.Err, normalized, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
+		if err != nil {
+			return err
+		}
 		if inputs.TolerateCatalogViewInconsistency {
 			// Resilient inspection against a lazily-populated view: a resolved
 			// catalog reference momentarily absent from the view (a drifted cache

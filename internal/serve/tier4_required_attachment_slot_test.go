@@ -141,21 +141,28 @@ func TestRunTier4Validation_AttachmentSlotDiagnosticsReachTheEditor(t *testing.T
 		t.Fatalf("write shape variant: %v", err)
 	}
 	shapeResult := validateBuffer(string(shapeBytes))
-	shape := findDiagnostic(t, shapeResult.Diagnostics, "does not conform to the declared slot shape")
+	shape := findDiagnostic(t, shapeResult.Diagnostics, "does not conform to its declared slot shape")
 	if containsSubstring(shape.Message, "declares the attachment slot") {
 		t.Errorf("shape diagnostic must not read as an unmet requirement: %q", shape.Message)
 	}
 	if shape.Severity != "error" {
 		t.Errorf("shape diagnostic severity = %q; want error", shape.Severity)
 	}
-	// The shape violation's locator is the resolver-class component-instance
-	// form, whose bracket-quoted instance segment the document walker does not
-	// follow, so the position recovered is the enclosing key rather than the
-	// offending one. The assertion is deliberately the weaker "not at the file
-	// head": pinning the enclosing key would cement the locator-form gap as
-	// intended behavior, and pinning the offending key would assert a walk that
-	// does not happen. The gap is shared by every resolver-class instance
-	// locator, not introduced here.
+	// Positioning: the shape violation lands on the attachment the offending fill
+	// was written under, inside the component that wrote it — NOT on the
+	// same-named attachment of the sibling component above it, and not at the
+	// file head.
+	//
+	// The sibling is what makes this assertion worth making: both components
+	// declare an attachment called `root_password`, so a locator that named only
+	// the attachment, or one the document walker could not follow past its first
+	// segment, would land on the wrong one and still look plausible.
+	boundLine := fixtureKeyLine(t, string(shapeBytes), "bound:")
+	if shape.Line <= boundLine {
+		t.Errorf("shape diagnostic at line %d; want a line inside the `bound:` component, which "+
+			"starts at line %d — the sibling component declares an attachment of the same name "+
+			"(diagnostics: %v)", shape.Line, boundLine, diagMessages(shapeResult.Diagnostics))
+	}
 	if unbound.Line == 1 || shape.Line == 1 {
 		t.Error("a slot diagnostic positioned at file:1:1 is not usable in the editor")
 	}

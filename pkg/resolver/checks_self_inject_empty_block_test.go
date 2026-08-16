@@ -21,8 +21,8 @@ func (n selfInjectNodes) Nodes() []constraint.NodeInstance {
 }
 
 // selfInjectView answers the facts the declared self-inject rules read, for one
-// component instance, out of the same two authored values the hand-written guard
-// reads: the instance itself and the catalog entry its type names.
+// component instance, out of the two authored values that carry them: the
+// instance itself and the catalog entry its type names.
 //
 // Every answer is computed here the way the fact's own source carrier says it is
 // read, rather than being set row by row. A stub whose booleans were assigned per
@@ -97,11 +97,10 @@ func (v selfInjectView) DeclaredInjectMechanismNames(componentType string) []str
 // whether the block was written, not what it carries; the two assertions
 // below are one pair and neither is meaningful alone.
 //
-// Each case is read twice: by the hand-written guard, and by the declared rule
-// through the framework's node traversal. Both readings are driven from one
-// instance, so the declared one is held to the same pair rather than to a
-// fixture of its own — which is what makes it evidence that the declared rule
-// separates the two documents, rather than evidence that some rule does.
+// The rule is read through the framework's own node traversal rather than by
+// calling its predicate, and both cases are driven from ONE instance — so what
+// follows is one authored document read under two verdicts rather than two
+// fixtures that happen to differ.
 func TestSelfInjectSeparatesAnEmptyBlockFromAnAbsentOne(t *testing.T) {
 	t.Parallel()
 
@@ -130,19 +129,7 @@ func TestSelfInjectSeparatesAnEmptyBlockFromAnAbsentOne(t *testing.T) {
 				Type:   "core/datastore/postgres", // declares no injection allowlist
 				Inject: tc.inject,
 			}
-			components := types.OrderedMap[types.ComponentInstance]{}
-			components.Set("db", instance)
-			agg := &types.Aggregate{
-				Metadata: types.AggregateMetadata{Name: "test"},
-				Spec:     types.AggregateSpec{Components: components},
-			}
 
-			errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
-
-			// The declared rule reads the same instance, through the framework's
-			// own node traversal rather than through a call to its predicate. Both
-			// readings are driven from `instance`, so what follows is one authored
-			// document read two ways rather than two fixtures that agree.
 			objections, err := constraint.RunOnNodes[constraint.NormalizedView](
 				nil,
 				selfInjectNodes{node: constraint.NodeInstance{ID: "db", AuthoredName: "db"}},
@@ -154,19 +141,6 @@ func TestSelfInjectSeparatesAnEmptyBlockFromAnAbsentOne(t *testing.T) {
 			}
 
 			if tc.wantRaise {
-				if len(errs) != 1 {
-					t.Fatalf("an instance that wrote an injection block on a type permitting none "+
-						"raised %d finding(s); want exactly 1.\n"+
-						"INVARIANT: writing the block is what the rule refuses, whatever the block carries.\n"+
-						"CONSEQUENCE: raising nothing here retires a live refusal — the author has dictated "+
-						"delivery on a type that reserves it, and nothing says so.\ngot: %v", len(errs), errs)
-				}
-				if !errors.Is(errs[0], ErrSelfInjectForbidden()) {
-					t.Errorf("the finding carries %v; want the forbidden-self-injection rule.\n"+
-						"INVARIANT: the rule that refuses an injection block on a type permitting none is "+
-						"identified by its own sentinel.\n"+
-						"CONSEQUENCE: a caller matching on the sentinel stops seeing this refusal.", errs[0])
-				}
 				if len(objections) != 1 {
 					t.Fatalf("the declared rule raised %d objection(s) for an instance that wrote an "+
 						"injection block on a type permitting none; want exactly 1.\n"+
@@ -183,12 +157,6 @@ func TestSelfInjectSeparatesAnEmptyBlockFromAnAbsentOne(t *testing.T) {
 						"sentinel sees one of them only.", objections[0].Sentinel())
 				}
 				return
-			}
-			if len(errs) != 0 {
-				t.Fatalf("an instance that wrote no injection block raised %d finding(s); want 0.\n"+
-					"INVARIANT: dictating no delivery is not dictating forbidden delivery.\n"+
-					"CONSEQUENCE: raising here refuses a document every component that simply has no "+
-					"injection block can ship.\ngot: %v", len(errs), errs)
 			}
 			if len(objections) != 0 {
 				t.Fatalf("the declared rule raised %d objection(s) for an instance that wrote no "+

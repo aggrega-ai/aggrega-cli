@@ -4,6 +4,8 @@
 package resolver
 
 import (
+	"slices"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
@@ -21,8 +23,11 @@ import (
 //
 // Several axes are named by a fact as well as by an enumerator. Those delegate
 // rather than recompute, so the coordinate a rule is invoked for and the content
-// it then reads come from one place and cannot drift apart. The axes no fact
-// names are derived once, when this value is built, from the ordered documents.
+// it then reads come from the same reading and cannot drift apart. An axis both
+// documents can write to delegates to the fact naming each document's own names
+// and merges them, which is still one reading per document rather than a second
+// derivation of either. The axes no fact names are derived once, when this value
+// is built, from the ordered documents.
 //
 // # Order
 //
@@ -172,10 +177,30 @@ func authoredCoordinates(paths []string) []constraint.AuthoredCoordinate {
 	return out
 }
 
-// Attachments returns the attachments one node's own block declares, in author
-// order, delegated to the fact that names them.
+// Attachments returns the attachments declared against one node by either
+// authoring document: the application's own block in author order, then any name
+// the deployment declares that the application does not, in the deployment's
+// author order.
+//
+// Both documents are read because the rules over an attachment are split across
+// them, exactly as the connection axis beside this one is. One measures what the
+// application declared, the next measures what the deployment declared, and each
+// narrows to its own document's block on its own — so an axis carrying only the
+// application's names would leave the deployment-side rule invoked for none of
+// the attachments it exists to judge. That absence has no loud form: a rule never
+// asked raises nothing and every build stays green.
+//
+// A name both documents declare is one attachment and is enumerated once.
+// Enumerating it per document would invoke every rule over it twice and report
+// one authoring fault as two.
 func (c *coordinateSet) Attachments(node string) []string {
-	return c.view.AuthoredAttachmentNames(node)
+	names := c.view.AuthoredAttachmentNames(node)
+	for _, name := range c.view.releaseAttachmentNames(node) {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // Mechanisms returns the delivery mechanisms one node's injection block

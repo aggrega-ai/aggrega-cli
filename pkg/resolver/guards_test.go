@@ -63,71 +63,6 @@ func testCatalog() CatalogLookup {
 	}
 }
 
-// --- Feature merge tests ---
-
-func TestGuardFeatureMerge_MatchingTypes(t *testing.T) {
-	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("metrics", types.FeatureInstance{Type: "core/metrics:1.0.0"})
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "test-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-	infra := types.OrderedMap[any]{}
-	infra.Set("cpu", "500m")
-	features2 := types.OrderedMap[types.BoundaryFeature]{}
-	features2.Set("metrics", types.BoundaryFeature{Type: "core/metrics:1.0.0", Infra: infra})
-	components2 := types.OrderedMap[types.BoundaryComponent]{}
-	components2.Set("web", types.BoundaryComponent{Features: features2})
-	boundaries := types.OrderedMap[types.Boundary]{}
-	boundaries.Set("prod", types.Boundary{Components: components2})
-	release := &types.Release{
-		Spec: types.ReleaseSpec{
-			Boundaries: boundaries,
-		},
-	}
-
-	errs := guardFeatureMerge(normalized(t, agg), release)
-	if len(errs) > 0 {
-		t.Fatalf("expected no errors for matching types, got: %v", errs[0].Error())
-	}
-}
-
-func TestGuardFeatureMerge_TypeMismatch(t *testing.T) {
-	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("metrics", types.FeatureInstance{Type: "core/metrics:1.0.0"})
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "test-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-	features2 := types.OrderedMap[types.BoundaryFeature]{}
-	features2.Set("metrics", types.BoundaryFeature{Type: "core/logging:1.0.0"})
-	components2 := types.OrderedMap[types.BoundaryComponent]{}
-	components2.Set("web", types.BoundaryComponent{Features: features2})
-	boundaries := types.OrderedMap[types.Boundary]{}
-	boundaries.Set("prod", types.Boundary{Components: components2})
-	release := &types.Release{
-		Spec: types.ReleaseSpec{
-			Boundaries: boundaries,
-		},
-	}
-
-	errs := guardFeatureMerge(normalized(t, agg), release)
-	if len(errs) == 0 {
-		t.Fatal("expected error for type mismatch")
-	}
-	if !errors.Is(errs[0], ErrFeatureMergeConflict()) {
-		t.Errorf("expected ErrFeatureMergeConflict, got %v", errs[0].Err)
-	}
-}
-
 // --- Guard ordering test ---
 
 func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
@@ -159,7 +94,10 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 		},
 	}
 
-	errs := RunGuards(normalized(t, agg), nil, testCatalog(), nil, nil)
+	errs, err := RunGuards(nil, normalized(t, agg), nil, testCatalog(), nil, nil)
+	if err != nil {
+		t.Fatalf("the suite returned an error: %v", err)
+	}
 	if len(errs) < 2 {
 		t.Fatalf("expected at least 2 violations (unknown socket + self-inject), got %d: %v", len(errs), errs)
 	}
@@ -182,7 +120,10 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 }
 
 func TestRunGuards_NilInputs(t *testing.T) {
-	errs := RunGuards(normalized(t, nil), nil, CatalogLookup{}, nil, nil)
+	errs, err := RunGuards(nil, normalized(t, nil), nil, CatalogLookup{}, nil, nil)
+	if err != nil {
+		t.Fatalf("the suite returned an error: %v", err)
+	}
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors for nil inputs, got %d", len(errs))
 	}
