@@ -12,9 +12,14 @@
 // site in the tree. A reader of a document that has no entity kind — a
 // cache slot's own metadata sidecar, say — validates against its own
 // schema and cannot dispatch through this package. Such a reader shares
-// the step it genuinely can share: NormaliseYAML is exported for exactly
-// that, so the shape the schema engine consumes has one definition even
-// where the dispatch does not.
+// the steps it genuinely can share, which are exported for exactly that:
+// ParseDecodable, so a document carrying an unquoted template expression
+// has one definition of what makes it decodable, and NormaliseYAML, so the
+// shape the schema engine consumes has one definition — each holding even
+// where the dispatch does not. A reader that decodes into its own typed
+// entity takes ParseDecodable and decodes the tree itself; the step that is
+// shared is the parse, never the decode, because a generic shape and a
+// typed one are different destinations for one document.
 //
 // The envelope layer is distinct from the content-validation pipeline
 // (compact form → resolved JSON Schema → instance validation): the
@@ -255,29 +260,16 @@ func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEn
 func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 	var instance any
 	if err := yaml.Unmarshal(data, &instance); err != nil {
-		// Aggregate values may carry unquoted Go-template expressions
-		// ({{ .parameters.x }}) that parse as mapping-shaped YAML keys —
-		// valid to the product (the typed path defers those nodes), but
-		// unhashable for a generic map decode. Re-parse via yaml.Node
-		// and stringify complex keys so the document still validates.
-		var node yaml.Node
-		if nerr := yaml.Unmarshal(data, &node); nerr != nil {
-			return nil, &envelopeFailure{cause: fmt.Errorf("envelope: parse %s: %w", path, err)}
+		// A generic map decode cannot hold a mapping-shaped key, which is what
+		// an unquoted template expression parses as. ParseDecodable yields a
+		// tree that decodes, so such a document still reaches validation. The
+		// decode above is an entirely ordinary fast path for the documents that
+		// need no repair; the repair itself is reachable on its own.
+		node, perr := ParseDecodable(data, path)
+		if perr != nil {
+			return nil, &envelopeFailure{cause: perr}
 		}
-		// Parsing a node tree does not expand aliases, so a document whose
-		// anchor is aliased inside its own content parses fine here and only
-		// fails when something walks it. The refusal therefore belongs on
-		// this side of the walk, once, rather than in each walker: every
-		// consumer of this tree inherits it, and none has to rediscover the
-		// hazard. It is deliberately independent of why the decode above
-		// failed — a document can fail that decode for its template keys and
-		// carry a recursive anchor as well, which would leave the anchor
-		// unreported if this checked the decode's message instead.
-		if anchor, found := anchorcycle.Find(&node); found {
-			return nil, &envelopeFailure{cause: fmt.Errorf(
-				"envelope: parse %s: %s", path, anchorcycle.Explain(anchor))}
-		}
-		instance = nodeToAny(&node)
+		instance = nodeToAny(node)
 	}
 	if instance == nil {
 		return nil, &Error{Kind: kind, Path: path, Findings: []jsonvalidator.Finding{{Message: "document is empty"}}}
@@ -361,17 +353,91 @@ func ValidateInstance(kind Kind, instance any) ([]jsonvalidator.Finding, error) 
 	return report.Findings, nil
 }
 
+// ParseDecodable parses raw YAML document bytes into a node tree that decodes,
+// whatever the caller decodes it into.
+//
+// A document may carry an unquoted template expression as a value —
+// `{{ .parameters.x }}`. YAML reads the braces as a flow mapping, so the
+// expression arrives as a mapping-shaped mapping KEY: well-formed YAML that no
+// decode can consume, because neither a generic map nor a string-keyed one
+// accepts a mapping as a key. Every such key is replaced by an indexed
+// placeholder, which is what makes the tree decodable.
+//
+// The replacement is lossy in exactly one thing: the text of the key it
+// replaces, which for a template-valued entry is the expression itself. Nothing
+// else moves — values, scalar keys, tags, anchors and positions all survive. So
+// a caller reading the tree for declared structure (a type reference, a name, a
+// version) reads it intact, while a caller that needs an expression's own text
+// works from the raw bytes, which this does not modify. A template expression
+// standing where a scalar is required does not decode into one silently: it is
+// still a mapping, and the decode says so.
+//
+// A document whose anchor is aliased inside its own content is refused here,
+// naming that anchor: it describes an infinite tree rather than a malformed one,
+// so there is nothing to decode. Parsing a node tree does not expand aliases, so
+// such a document parses cleanly and fails only when something walks it. The
+// refusal therefore sits on this side of every walk, once, rather than in each
+// walker: every consumer of the returned tree inherits it and none has to
+// rediscover the hazard. Depth on its own is never a reason for it.
+func ParseDecodable(data []byte, path string) (*yaml.Node, error) {
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, fmt.Errorf("envelope: parse %s: %w", path, err)
+	}
+	if anchor, found := anchorcycle.Find(&node); found {
+		return nil, fmt.Errorf("envelope: parse %s: %s", path, anchorcycle.Explain(anchor))
+	}
+	scalariseMappingKeys(&node)
+	return &node, nil
+}
+
+// scalariseMappingKeys replaces every non-scalar mapping key in the tree with an
+// indexed placeholder naming its position among the mapping's pairs. It is the
+// one place that replacement is decided, so no consumer of a tree has to know
+// the rule or restate it.
+//
+// It descends into a key it replaces as well as into every value. The replaced
+// node stays reachable through any alias naming its anchor, and an alias
+// reaching an unrepaired subtree would decode differently from the same subtree
+// reached structurally — so repairing it keeps one document from having two
+// readings. Alias links themselves are not followed: every anchor is defined
+// somewhere in the structural tree and is therefore reached exactly once, which
+// also makes this walk terminate on a tree the anchor check has not seen.
+func scalariseMappingKeys(n *yaml.Node) {
+	switch n.Kind {
+	case yaml.DocumentNode, yaml.SequenceNode:
+		for _, c := range n.Content {
+			scalariseMappingKeys(c)
+		}
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if k := n.Content[i]; k.Kind != yaml.ScalarNode {
+				scalariseMappingKeys(k)
+				n.Content[i] = &yaml.Node{
+					Kind:   yaml.ScalarNode,
+					Tag:    "!!str",
+					Value:  fmt.Sprintf("{{template-key-%d}}", i/2),
+					Line:   k.Line,
+					Column: k.Column,
+				}
+			}
+			scalariseMappingKeys(n.Content[i+1])
+		}
+	}
+}
+
 // nodeToAny converts a yaml.Node tree into the generic shape the
-// validator consumes. Mapping keys that are not scalars (template
-// expressions parsed as flow mappings) are represented by an indexed
-// placeholder — lossy, but those keys live inside free-form value
-// content the envelope schemas do not constrain per-key.
+// validator consumes.
+//
+// Every mapping key it meets is a scalar, because the tree came from
+// ParseDecodable and that is what ParseDecodable guarantees. So a key is read
+// here and never decided here, which leaves the rule that decides a
+// placeholder's text with one home.
 //
 // It follows alias links without tracking where it has been, so it
-// terminates only on a tree whose anchors are free of recursion. Callers
-// establish that with anchorcycle.Find before calling; the check is not
-// repeated here, because a guarantee that has one home cannot drift out of
-// agreement with itself.
+// terminates only on a tree whose anchors are free of recursion.
+// ParseDecodable establishes that; the check is not repeated here, because a
+// guarantee that has one home cannot drift out of agreement with itself.
 func nodeToAny(n *yaml.Node) any {
 	switch n.Kind {
 	case yaml.DocumentNode:
@@ -382,12 +448,7 @@ func nodeToAny(n *yaml.Node) any {
 	case yaml.MappingNode:
 		out := make(map[string]any, len(n.Content)/2)
 		for i := 0; i+1 < len(n.Content); i += 2 {
-			k := n.Content[i]
-			key := k.Value
-			if k.Kind != yaml.ScalarNode {
-				key = fmt.Sprintf("{{template-key-%d}}", i/2)
-			}
-			out[key] = nodeToAny(n.Content[i+1])
+			out[n.Content[i].Value] = nodeToAny(n.Content[i+1])
 		}
 		return out
 	case yaml.SequenceNode:
