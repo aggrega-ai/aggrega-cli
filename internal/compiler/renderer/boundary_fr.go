@@ -817,6 +817,15 @@ func buildBoundaryContext(
 	// Feature attachments: the boundary's Feature attachments read from the
 	// IR projection (the IR builder parsed them once at build; no Release
 	// re-walk here).
+	//
+	// A boundary attachment carries type and infra and nothing else, because
+	// IRBoundaryFeature declares nothing else: values are absent by the same
+	// deliberate design its own documentation states, and resolved_version,
+	// labels and provides never reach this site at all. So they are left unset
+	// here rather than defaulted — a boundary template sees them absent, which
+	// is the honest reading of a fact the boundary projection does not carry.
+	// The per-node projection is where an attachment is read with its version,
+	// labels and published provides.
 	if graph != nil {
 		if inner, ok := graph.Spec.BoundaryFeatures.Get(boundaryPath); ok {
 			for fname, bf := range inner.All() {

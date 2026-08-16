@@ -367,7 +367,7 @@ type TemplateMetadata struct {
 
 // TemplateAttachment is one attachment available in the template context —
 // the per-instance view of an attached Feature, keyed by the instance name the
-// author gave it. Every attachment exposes the same four fields; what differs
+// author gave it. Every attachment exposes the same shape; what differs
 // between attachments is what they produce, not the shape they are read through.
 //
 // Type is the attached Feature's catalog URI. Values and Infra are the
@@ -375,23 +375,41 @@ type TemplateMetadata struct {
 // sizing — carried verbatim from the attachment declaration and opaque to the
 // compiler.
 //
+// ResolvedVersion is the attached Feature's version after Manifest resolution,
+// so a template reads the version actually bound rather than restating a pin.
+// Labels are the attached Feature's catalog labels, carried verbatim in the
+// order its catalog entity declares them — neither filtered, normalised nor
+// prefix-stripped, so a template reads exactly what the catalog author wrote.
+// Both mirror the fields of the same name on EnrichedEdge, so an attachment and
+// an edge are read the same way. Both are empty when the attachment's type
+// resolves to no catalog entity, and Labels is additionally empty when that
+// entity declares none.
+//
+// Both are carried, never interpreted: a template author branches on them, and
+// no behaviour is selected from them on the way here. Whether an attachment is
+// admitted into a declared slot is decided earlier, against the Feature's own
+// catalog metadata, and does not read this projection.
+//
 // Provides is the bound FeatureRecipe's resolved provides: the attachment's
 // published output (an emitted resource's name, a data key, an identity) exposed
 // to the consumer as .features.<name>.provides.<key>, mirroring
 // .uses.<alias>.provides. The consumer reads the producer's published contract
 // instead of re-deriving it. An attachment whose FeatureRecipe publishes nothing
-// carries an empty map, never a missing field.
+// carries no provides key at all rather than an empty map, on the same terms as
+// Labels above, so a template guards before addressing an individual key.
 //
-// The four fields are the same for every attachment family, which is what keeps
-// a credential attachment's infra and provides readable rather than silently
+// The shape is the same for every attachment family, which is what keeps a
+// credential attachment's infra and provides readable rather than silently
 // dropped on the way to a template.
 //
 // Schema: template-context-v1alpha1.schema.json#/$defs/template_attachment
 type TemplateAttachment struct {
-	Type     string             `json:"type" yaml:"type"`
-	Values   OrderedMap[any]    `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
-	Infra    OrderedMap[any]    `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
-	Provides OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
+	Type            string             `json:"type" yaml:"type"`
+	ResolvedVersion string             `json:"resolved_version,omitempty" yaml:"resolved_version,omitempty"`
+	Labels          OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
+	Values          OrderedMap[any]    `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Infra           OrderedMap[any]    `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
+	Provides        OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
 }
 
 // StepOutput holds the outputs exported by one pipeline step for inter-step communication.

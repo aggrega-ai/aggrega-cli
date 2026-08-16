@@ -115,9 +115,11 @@ func projectAttachments(bucket types.OrderedMap[types.OrderedMap[types.IRFeature
 	}
 	for name, entry := range entries.All() {
 		out.Set(name, types.TemplateAttachment{
-			Type:   entry.Type,
-			Values: entry.Values,
-			Infra:  entry.Infra,
+			Type:            entry.Type,
+			ResolvedVersion: entry.ResolvedVersion,
+			Labels:          entry.Labels,
+			Values:          entry.Values,
+			Infra:           entry.Infra,
 		})
 	}
 	return out
