@@ -144,7 +144,9 @@ type pullConfig struct {
 
 	// puller overrides the production OCI puller; tests inject an in-memory
 	// implementation to exercise a remote-library fetch without the network. Nil
-	// uses NewDefaultOCIPuller (which is nil under workspace.offline).
+	// builds the production puller, which is nil when the workspace is offline:
+	// the network-egress gate refuses before any dial, so no registry tier exists
+	// and unresolved references surface as NotFound rather than as a fetch error.
 	puller catalog.OCIPuller
 
 	// sourceResolver overrides the production source-resolver shim; tests inject
@@ -187,14 +189,6 @@ func pullProgressSpine() progressSpine {
 	}
 }
 
-// pullRun executes the pull workflow against the supplied
-// configuration. Loads workspace config + Release + Manifest +
-// Aggregate, walks the catalog and source closures, and writes the
-// per-Release lockfile.
-//
-// Returns wrapped errors on workspace-config validation failure,
-// Release/Manifest/Aggregate load failure, closure walk failure
-// (typically a missing catalog entity surfaced by closure.ErrUnresolvableURI),
 // irEntityInfra derives the per-instance source infra for FeatureRecipe
 // entities from the IR render-set (graph.Spec) — the exact attachment set the
 // renderer renders, assembled across all five tiers (Aggregate component/subsystem,
@@ -266,6 +260,14 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 	return out, nil
 }
 
+// pullRun executes the pull workflow against the supplied
+// configuration. Loads workspace config + Release + Manifest +
+// Aggregate, walks the catalog and source closures, and writes the
+// per-Release lockfile.
+//
+// Returns wrapped errors on workspace-config validation failure,
+// Release/Manifest/Aggregate load failure, closure walk failure
+// (typically a missing catalog entity surfaced by closure.ErrUnresolvableURI),
 // source descent failure (closure.ErrSourceTemplateAtLockTime), and
 // lockfile write failure.
 func pullRun(cfg pullConfig) error {
