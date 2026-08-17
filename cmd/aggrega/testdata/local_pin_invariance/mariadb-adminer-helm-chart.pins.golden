@@ -70,7 +70,6 @@ entities:
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
 external_inputs: []
-generated_at: ""
 mapping_libraries: []
 mutators: []
 plugins: []

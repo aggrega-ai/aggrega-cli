@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
 // versionFlags carries the `version` command's flag state. It is constructed per
@@ -348,6 +349,42 @@ func collectVersionInfo() versionInfo {
 // (ldflags else ReadBuildInfo) so the stamp and the version command cannot drift.
 func provenanceCompilerVersion() string {
 	return collectVersionInfo().Version
+}
+
+// toolchainStamp returns the toolchain versions a pull records in the lockfile:
+// this binary's compiler version, and the version of each core plugin it carries.
+// Both halves are read through the derivations this file already owns —
+// provenanceCompilerVersion and collectEmbeddedSummaries — so the stamp cannot
+// report a different version from the one `aggrega version` reports for the same
+// binary.
+//
+// It records versions and nothing else. A core plugin is published on the
+// compiler's own tag at the same version, so the version reads the same whether a
+// plugin was served from inside the binary or fetched from a registry; recording
+// which of those happened would make the lockfile differ between two machines that
+// resolved the same closure, which is the property a committed lockfile depends on.
+// So the descriptor's URI and version are read and its source is deliberately not.
+//
+// The stamp is advisory: nothing reads it back to decide whether a build may
+// proceed. See lockfile.ToolchainStamp for why enforcing it would pin the compiler
+// by proxy.
+//
+// A build carrying no embedded plugins — the light build, which compiles the
+// guests out — yields a stamp with an empty core-plugin list rather than no stamp,
+// because the compiler version is recorded either way.
+func toolchainStamp() *lockfile.ToolchainStamp {
+	summaries := collectEmbeddedSummaries()
+	stamp := &lockfile.ToolchainStamp{
+		CompilerVersion: provenanceCompilerVersion(),
+		CorePlugins:     make([]lockfile.CorePluginVersion, 0, len(summaries)),
+	}
+	for _, s := range summaries {
+		stamp.CorePlugins = append(stamp.CorePlugins, lockfile.CorePluginVersion{
+			Plugin:  s.uri,
+			Version: normalizeVersion(s.version),
+		})
+	}
+	return stamp
 }
 
 // normalizeVersion strips the leading "v" from tag-shaped version

@@ -1427,24 +1427,32 @@ func localExamplesRoot(t *testing.T, wd string) string {
 }
 
 // canonicalPins loads a written lockfile and returns its pins as canonical YAML
-// with the wall-clock generated_at masked — the one non-deterministic field,
-// which is not a pin. Everything that IS a pin (per-entity / per-library URI,
-// resolved_version, digest, the referenced-from and consumer sets) is captured.
-// Comparing this extracted form (not a raw on-disk file diff) is the invariance
-// check: gitignored lockfiles have no committed baseline, and a raw diff would
-// trip on generated_at.
+// with every section that describes the pull rather than the closure removed.
+// Everything that IS a pin (per-entity / per-library URI, resolved_version,
+// digest, the referenced-from and consumer sets) is captured. Comparing this
+// extracted form (not a raw on-disk file diff) is the invariance check:
+// gitignored lockfiles have no committed baseline, and a raw diff would trip on
+// the waived sections.
+//
+// The removal routes through lockfile.ParityWaived, the one home for that
+// tolerance, rather than zeroing named fields here. That matters for more than
+// tidiness: the goldens this feeds are COMMITTED, so a waived section left in
+// would write a build-dependent value into version-controlled test data — the
+// toolchain stamp carries the compiler version, so cutting a release would have
+// to update four goldens, and a golden would fail on any binary whose version
+// differs from the one that last regenerated it. A section added to the waiver is
+// therefore removed from these goldens automatically.
 func canonicalPins(t *testing.T, lockPath string) []byte {
 	t.Helper()
 	lf, _, err := lockfile.LoadLockfile(lockPath)
 	if err != nil {
 		t.Fatalf("load lock %s: %v", lockPath, err)
 	}
-	lf.GeneratedAt = ""
 	out, err := yaml.Marshal(lf)
 	if err != nil {
 		t.Fatalf("marshal pins: %v", err)
 	}
-	return out
+	return lockfile.ParityWaived(out)
 }
 
 // TestIntegration_LocalPathPinInvariance is the durable, repeatable form of the

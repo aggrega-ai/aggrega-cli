@@ -33,6 +33,7 @@ import (
 //     LibraryConsumer, Fragments sorted lexicographically.
 //   - Inside each SourceArtifact: ReferencedBy sorted by the
 //     composite (URI, Field).
+//   - Inside Toolchain: CorePlugins sorted by plugin coordinate.
 //
 // Determinism scope: two independent WriteLockfile invocations
 // against the same in-memory *Lockfile produce byte-identical bytes.
@@ -138,6 +139,13 @@ func generatedAtValue(b []byte) string {
 // The same hazard on a library row is handled beside the section binding, where
 // canonicaliseLibrarySection reallocates each row's slice and pointer fields for
 // every axis at once.
+//
+// The hazard also reaches a pointer or slice field on the Lockfile itself, not
+// only on a row: the literal below copies the three scalar top-level fields by
+// value and every other field is assigned explicitly, so a newly added composite
+// field left out of that sequence is silently absent from the canonical form
+// rather than shared with the caller. Toolchain is the first such pointer and
+// clones through cloneToolchain.
 func canonicalise(lf *Lockfile) *Lockfile {
 	out := &Lockfile{
 		GeneratedAt: lf.GeneratedAt,
@@ -211,6 +219,8 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		return out.Providers[i].Capability < out.Providers[j].Capability
 	})
 
+	out.Toolchain = cloneToolchain(lf.Toolchain)
+
 	// Mutators carries a semantic order (the mutator runner applies attachments
 	// in list order), so it is copied in author order and deliberately NOT
 	// sorted — unlike every URI-sorted section above. Two independent
@@ -277,6 +287,30 @@ func cloneDeprecation(in *DeprecationRecord) *DeprecationRecord {
 	}
 	out := *in
 	out.Signer = cloneSignature(in.Signer)
+	return &out
+}
+
+// cloneToolchain deep-copies a ToolchainStamp pointer and returns its core-plugin
+// list sorted by plugin coordinate, so a caller mutating the canonicalised output
+// cannot reach back into the input and two independent calls over the same input
+// produce byte-identical output. Returns nil for a nil input (a lockfile carrying
+// no stamp), which is what omits the section entirely.
+//
+// The list is sorted here rather than trusted from the producer, for the same
+// reason VerdictInputs is: a core-plugin set carries no semantic order — it is a
+// set, unlike Mutators, whose list order is what the transform runners apply — so
+// nothing is lost by ordering it and the canonical form stops depending on the
+// producer having enumerated it in order.
+func cloneToolchain(in *ToolchainStamp) *ToolchainStamp {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.CorePlugins = make([]CorePluginVersion, len(in.CorePlugins))
+	copy(out.CorePlugins, in.CorePlugins)
+	sort.Slice(out.CorePlugins, func(i, j int) bool {
+		return out.CorePlugins[i].Plugin < out.CorePlugins[j].Plugin
+	})
 	return &out
 }
 

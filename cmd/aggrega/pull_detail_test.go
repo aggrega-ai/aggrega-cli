@@ -33,10 +33,6 @@ func TestLockfileIgnoresResolutionTier(t *testing.T) {
 
 	write := func(cl closure.Closure) []byte {
 		lf := buildLockfile("release-prod.yaml", cl, workspaceconfig.Config{}, nil, nil, nil, nil)
-		// generated_at is intentionally non-deterministic (wall-clock) and is
-		// excluded from the byte-identity guarantee; normalise it so the proof
-		// isolates the resolution-tier field.
-		lf.GeneratedAt = "2026-06-06T00:00:00Z"
 		dir := t.TempDir()
 		path := filepath.Join(dir, "release-prod.lock")
 		if err := lockfile.WriteLockfile(path, lf); err != nil {
@@ -46,7 +42,13 @@ func TestLockfileIgnoresResolutionTier(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read lockfile: %v", err)
 		}
-		return data
+		// The sections that describe the pull rather than the closure are removed
+		// through the one home for that tolerance — generated_at, which is
+		// wall-clock, and the toolchain stamp — so the proof isolates the
+		// resolution-tier field. Routing through the shared waiver rather than
+		// zeroing fields here keeps this comparison and the offline/online parity
+		// comparison waiving the same set.
+		return lockfile.ParityWaived(data)
 	}
 
 	local := write(mk("tier-1-catalog"))

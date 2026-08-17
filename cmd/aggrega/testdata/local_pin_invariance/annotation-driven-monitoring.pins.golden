@@ -40,7 +40,6 @@ entities:
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
 external_inputs: []
-generated_at: ""
 mapping_libraries: []
 mutators: []
 plugins: []

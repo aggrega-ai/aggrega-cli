@@ -43,7 +43,6 @@ entities:
       referenced_from:
         - release.spec.manifest
 external_inputs: []
-generated_at: ""
 mapping_libraries: []
 mutators: []
 plugins: []

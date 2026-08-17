@@ -93,7 +93,7 @@ is held unchanged. A URI given without --upgrade is a usage error.`,
 	c.Flags().StringVar(&opts.releasePath, "release", "", "Path to Release YAML file (required)")
 	c.Flags().StringArrayVar(&opts.catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-resolve dependencies from current registry state, floating each to the highest available version. Bare (no positional URIs) discards the lockfile and re-resolves every entity; with one or more entity URIs, re-resolves only those, holding all other pins and the recorded external inputs unchanged")
-	c.Flags().BoolVar(&opts.verify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile")
+	c.Flags().BoolVar(&opts.verify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile. Also reports the compiler and core-plugin versions the lockfile records — reported for audit and never compared against this binary, so a toolchain difference is never drift")
 	c.Flags().BoolVar(&opts.includePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
 	c.Flags().BoolVar(&opts.detail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, served from inside the compiler binary, or external. Stdout only; not written to the lockfile")
 	c.Flags().BoolVar(&opts.quiet, "quiet", false, "Silence the pull-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
@@ -620,6 +620,13 @@ func pullRun(cfg pullConfig) error {
 		}
 		fmt.Fprintf(out, "Verify: lockfile %s matches current dependency resolution (entities=%d)\n",
 			lockfilePath, len(cl.Entities))
+		// Report the toolchain the lockfile records. Verify is the surface a user
+		// reaches to find out what a lockfile says, and it has the file loaded
+		// already, so the stamp is read back here rather than through a command of
+		// its own. It is reported and never compared against this binary: the
+		// toolchain is not part of the pinned closure, and checking it would pin the
+		// compiler by proxy.
+		printLockfileToolchain(out, lf.Toolchain)
 		return nil
 	}
 
@@ -810,6 +817,10 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 		Version:     1,
 		Release:     filepath.Base(releasePath),
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		// Records which compiler and which core plugins produced the file.
+		// Versions only, so it stays identical across machines that resolved the
+		// same closure with the same compiler; advisory, so nothing compares it.
+		Toolchain: toolchainStamp(),
 	}
 
 	for _, b := range bindings {

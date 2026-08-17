@@ -22,20 +22,32 @@
 //     structured shape captures the library's fan-in (many consumers,
 //     each potentially at many fragments) cleanly.
 //
-// The Lockfile struct field declaration order is alphabetical so
-// yaml.v3's marshaller (which emits struct fields in declaration
-// order) produces canonical top-level key ordering. WriteLockfile
+// The Lockfile struct field declaration order is alphabetical — with
+// ArtifactsLibraries the single exception, appended rather than
+// inserted — so yaml.v3's marshaller (which emits struct fields in
+// declaration order) produces a fixed top-level key ordering. A field
+// added later goes in its alphabetical position. WriteLockfile
 // further canonicalises slice ordering by URI / prefix / consumer
 // URI / fragment string so two independent WriteLockfile invocations
 // against the same in-memory *Lockfile produce byte-identical
 // output. Pull-time determinism (same Release → same lockfile bytes
 // over time) is NOT a target: generated_at records wall-clock
 // provenance and intentionally changes between pulls.
+//
+// Two sections describe the pull rather than the closure, and a
+// comparison asking whether two pulls resolved the same dependencies
+// waives both through ParityWaived: generated_at, and the toolchain
+// stamp, which records the compiler and core-plugin versions that
+// produced the file. Neither is enforced — see ToolchainStamp for why
+// the stamp in particular must not become a gate.
 package lockfile
 
 // Lockfile is the typed Go representation of `<release-stem>.lock`.
-// Field declaration order is alphabetical to drive yaml.v3's
-// canonical key emission.
+// Field declaration order drives yaml.v3's canonical key emission and
+// is alphabetical, with ArtifactsLibraries the single exception —
+// appended rather than inserted, so the emitted order is fixed rather
+// than strictly alphabetical. A field added later goes in its
+// alphabetical position.
 type Lockfile struct {
 	Entities           []Entity            `yaml:"entities"`
 	ExternalInputs     []ExternalInput     `yaml:"external_inputs"`
@@ -47,6 +59,7 @@ type Lockfile struct {
 	Release            string              `yaml:"release"`
 	SchemaLibraries    []SchemaLibrary     `yaml:"schema_libraries"`
 	SourceArtifacts    []SourceArtifact    `yaml:"source_artifacts"`
+	Toolchain          *ToolchainStamp     `yaml:"toolchain,omitempty"`
 	VerdictInputs      []VerdictInput      `yaml:"verdict_inputs"`
 	Version            int                 `yaml:"version"`
 	WorkloadLibraries  []WorkloadLibrary   `yaml:"workload_libraries"`
@@ -465,4 +478,68 @@ type ProviderBinding struct {
 	// same identity the catalog indexes under and the registry location derives
 	// from; it is derived from the (pluginType, name) pair, not authored.
 	Plugin string `yaml:"plugin"`
+}
+
+// ToolchainStamp records the versions of the toolchain that produced the
+// lockfile: the compiler's own version and the version of each core plugin the
+// compiler carries. It answers, after the fact, which compiler and which core
+// plugins resolved and rendered a build — a question the pinned sections cannot
+// always answer, because a core provider plugin served from inside the binary is
+// left unpinned and so carries no recorded version of its own.
+//
+// It records VERSIONS ONLY, never where a plugin's bytes came from. A core
+// plugin is published on the compiler's own tag at the same version, so the
+// recorded versions read the same whether the compiler served the plugin from
+// inside itself or fetched it from a registry, while a record of which of those
+// happened would differ between two machines that pinned the same closure.
+// Keeping the distinction is what makes the stamp admissible at all: it carries
+// no machine-specific state, so it does not compromise the property that a
+// committed lockfile is byte-identical across machines that resolved the same
+// closure.
+//
+// # Not enforced, by design
+//
+// Nothing compares this stamp, warns about it, or refuses a build over it, and
+// its absence from a lockfile is silent — no error, no diagnostic. That is a
+// decision rather than an unfinished edge: the toolchain is not part of the
+// dependency closure the lockfile pins, so enforcing the stamp would pin the
+// compiler by proxy and impose a version lock nobody chose to adopt. A recorded
+// version invites enforcement by increments — an advisory, then a warning, then a
+// halt — which is why the prohibition is stated here, where a reader meets it at
+// the point they would otherwise write the check, rather than left implicit in
+// current behaviour.
+//
+// For the same reason the stamp is waived by ParityWaived, the byte-identity
+// comparison between two pulls of the same inputs, on the same footing as
+// GeneratedAt. A stamp that could make two such lockfiles differ would be a
+// determinism defect rather than a feature.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the Lockfile-wide discipline.
+type ToolchainStamp struct {
+	// CompilerVersion is the version of the compiler that wrote the lockfile, in
+	// the v-less form every surface reports (1.2.0, not v1.2.0). A tagged release
+	// build records its tag; a build from source records the "(devel)" marker, so
+	// a lockfile produced by an unreleased compiler is not mistaken for release
+	// output.
+	CompilerVersion string `yaml:"compiler_version"`
+	// CorePlugins carries one entry per core plugin the compiler carries, ordered
+	// by plugin coordinate. Empty for a build that carries no core plugins.
+	CorePlugins []CorePluginVersion `yaml:"core_plugins"`
+}
+
+// CorePluginVersion is one core plugin's recorded version. Plugin is the
+// coordinate identity — a Plugin entity's <pluginType>/<name> form, the same
+// identity ProviderBinding.Plugin and MutatorAttachment.Plugin name a plugin by;
+// Version is that plugin's version in the same v-less form CompilerVersion uses.
+//
+// It deliberately carries no digest and no source. A digest would duplicate what
+// the Entities and Plugins sections already pin for a pinned plugin, and a source
+// is the machine-specific detail ToolchainStamp exists to exclude.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the Lockfile-wide discipline.
+type CorePluginVersion struct {
+	Plugin  string `yaml:"plugin"`
+	Version string `yaml:"version"`
 }

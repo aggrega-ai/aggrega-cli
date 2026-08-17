@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
 // printPullDetail renders the transient pull-event diagnostic for
@@ -83,6 +84,49 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 		} else {
 			fmt.Fprintf(tw, "  %s\t%s\t%s\n", r.tier, r.kind, r.uri)
 		}
+	}
+	tw.Flush()
+}
+
+// printLockfileToolchain renders the toolchain stamp an existing lockfile
+// records: the compiler version that wrote the file, then one row per core
+// plugin the compiler carried, in plugin-coordinate order.
+//
+// It is a separate printer from printPullDetail rather than a section of it,
+// because the two report different subjects. printPullDetail reports the pull
+// EVENT — what this run did, read from transient in-memory state — while this
+// reports post-pull STATE read back out of the lockfile on disk. Folding the
+// stamp into that printer would contradict the scope its own documentation
+// states.
+//
+// It keeps that printer's two properties: output goes only to the supplied
+// writer (stdout in production, never the diagnostic stream), and rows are
+// deterministically ordered. Order comes from the caller's slice, which
+// WriteLockfile canonicalises by plugin coordinate, so the printed order is the
+// recorded order and this function introduces no ordering of its own.
+//
+// A nil stamp prints nothing at all. A lockfile written before the stamp existed
+// carries none, and reporting its absence would be a notice about a field that is
+// deliberately not enforced — the stamp produces no halt, no warning and no
+// verdict, so it produces no complaint about being missing either.
+//
+// "reported, not verified" is on the surface deliberately. This runs directly
+// after the line stating that the lockfile matches the current dependency
+// resolution, and a reader who saw a toolchain reported there could otherwise
+// reasonably conclude the toolchain had been checked too. Nothing compares it:
+// the toolchain is not part of the pinned closure.
+func printLockfileToolchain(out io.Writer, stamp *lockfile.ToolchainStamp) {
+	if stamp == nil {
+		return
+	}
+	fmt.Fprintf(out, "toolchain recorded by the pull that wrote it (reported, not verified): compiler %s\n",
+		stamp.CompilerVersion)
+	if len(stamp.CorePlugins) == 0 {
+		return
+	}
+	tw := tabwriter.NewWriter(out, 2, 2, 2, ' ', 0)
+	for _, p := range stamp.CorePlugins {
+		fmt.Fprintf(tw, "  %s\t%s\n", p.Plugin, p.Version)
 	}
 	tw.Flush()
 }

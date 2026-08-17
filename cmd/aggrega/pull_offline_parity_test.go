@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
 // TestPullOfflineLockfileMatchesOnlineByteForByte proves that an offline
@@ -23,10 +25,14 @@ import (
 // serialized bytes are the artifact a reviewer diffs and a deployment pipeline
 // consumes.
 //
-// generated_at records when the pull ran, so it differs between any two pulls
-// by construction and is the one line permitted to differ here. Every other
-// differing line fails the test and is named in the failure, so nothing else is
-// normalized away.
+// Two sections describe the pull rather than the closure and are the only
+// content permitted to differ here: generated_at, which records when the pull ran
+// and so differs between any two pulls by construction, and the toolchain stamp,
+// which records the compiler and core-plugin versions that produced the file.
+// Both are waived through lockfile.ParityWaived, the one home for that tolerance,
+// so this comparison and every other lockfile comparison waive the same set
+// rather than each maintaining its own list. Every other differing line fails the
+// test and is named in the failure, so nothing else is normalized away.
 func TestPullOfflineLockfileMatchesOnlineByteForByte(t *testing.T) {
 	pull := func(configBody string) []byte {
 		t.Helper()
@@ -59,44 +65,41 @@ func TestPullOfflineLockfileMatchesOnlineByteForByte(t *testing.T) {
 	// halting or skipping an entry.
 	offline := pull("offline: true\n")
 
-	onlineLines := strings.Split(string(online), "\n")
-	offlineLines := strings.Split(string(offline), "\n")
-
-	// The tolerance below waives whole lines, so it is only as narrow as the
-	// number of lines it can match. generated_at is a single column-0 key; if a
-	// lockfile ever carried more than one, the waiver would silently widen.
-	const stamp = "generated_at:"
-	countStamps := func(lines []string) int {
-		n := 0
-		for _, l := range lines {
-			if strings.HasPrefix(l, stamp) {
-				n++
-			}
+	// The waiver removes a whole section per waived key, so it is only as narrow
+	// as the number of sections it can match: a lockfile carrying a waived key
+	// twice at column 0 would have both removed and the tolerance would widen
+	// with nothing failing. A pull writes each waived section exactly once, so
+	// asserting that count first is what keeps the widening loud. This runs
+	// against every declared waived key rather than a key named here, so a section
+	// added to the waiver is covered without this test being remembered.
+	for _, key := range lockfile.ParityWaivedSections() {
+		if n := lockfile.ParityWaivedSectionCount(online, key); n != 1 {
+			t.Fatalf("online lockfile opens the waived section %q %d times; want exactly 1, "+
+				"otherwise the parity tolerance is wider than it reads", key, n)
 		}
-		return n
-	}
-	if n := countStamps(onlineLines); n != 1 {
-		t.Fatalf("online lockfile has %d %s lines; want exactly 1", n, stamp)
-	}
-	if n := countStamps(offlineLines); n != 1 {
-		t.Fatalf("offline lockfile has %d %s lines; want exactly 1", n, stamp)
+		if n := lockfile.ParityWaivedSectionCount(offline, key); n != 1 {
+			t.Fatalf("offline lockfile opens the waived section %q %d times; want exactly 1, "+
+				"otherwise the parity tolerance is wider than it reads", key, n)
+		}
 	}
 
-	if bytes.Equal(online, offline) {
+	onlineCompared := lockfile.ParityWaived(online)
+	offlineCompared := lockfile.ParityWaived(offline)
+	if bytes.Equal(onlineCompared, offlineCompared) {
 		return
 	}
+
+	onlineLines := strings.Split(string(onlineCompared), "\n")
+	offlineLines := strings.Split(string(offlineCompared), "\n")
 	if len(onlineLines) != len(offlineLines) {
-		t.Fatalf("offline lockfile has %d lines, online has %d — the two pulls pinned different content\n--- online ---\n%s\n--- offline ---\n%s",
-			len(offlineLines), len(onlineLines), online, offline)
+		t.Fatalf("offline lockfile has %d compared lines, online has %d — the two pulls pinned different content (waived: %s)\n--- online ---\n%s\n--- offline ---\n%s",
+			len(offlineLines), len(onlineLines), strings.Join(lockfile.ParityWaivedSections(), ", "), online, offline)
 	}
 	for i := range onlineLines {
 		if onlineLines[i] == offlineLines[i] {
 			continue
 		}
-		if strings.HasPrefix(onlineLines[i], stamp) && strings.HasPrefix(offlineLines[i], stamp) {
-			continue
-		}
-		t.Errorf("line %d differs between an offline and an online pull of identical inputs:\n  online:  %s\n  offline: %s",
+		t.Errorf("line %d differs between an offline and an online pull of identical inputs (waived sections already removed):\n  online:  %s\n  offline: %s",
 			i+1, onlineLines[i], offlineLines[i])
 	}
 }
