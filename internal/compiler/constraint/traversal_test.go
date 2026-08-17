@@ -54,17 +54,17 @@ type traversalFixture struct {
 	nodePillars       map[string][]string
 	nodePillarLeaves  map[string][]string
 	parameters        map[string][]string
-	attachPillars     map[string][]string
 	attachLeaves      map[string][]string
 	providers         map[string][]string
 	emittedPaths      map[string][]string
 	boundaryAttach    map[string][]string
 	subsystemAttach   map[string][]string
 
-	locals    map[string][]AuthoredCoordinate
-	provides  map[string][]AuthoredCoordinate
-	pipeline  map[string][]AuthoredCoordinate
-	artifacts map[string][]AuthoredCoordinate
+	locals        map[string][]AuthoredCoordinate
+	provides      map[string][]AuthoredCoordinate
+	pipeline      map[string][]AuthoredCoordinate
+	artifacts     map[string][]AuthoredCoordinate
+	attachPillars map[string][]AuthoredCoordinate
 
 	attachPipeline         map[string][]AuthoredCoordinate
 	boundaryAttachPipeline map[string][]AuthoredCoordinate
@@ -97,7 +97,7 @@ func (f traversalFixture) NodePillarLeaves(node, pillar string) []string {
 	return f.nodePillarLeaves[fixtureKey(node, pillar)]
 }
 
-func (f traversalFixture) AttachmentPillars(node, attachment string) []string {
+func (f traversalFixture) AttachmentPillars(node, attachment string) []AuthoredCoordinate {
 	return f.attachPillars[fixtureKey(node, attachment)]
 }
 
@@ -254,11 +254,24 @@ func newTraversalFixture() traversalFixture {
 		// pair to be tidied into agreement: they are different axes, and a pillar
 		// named anything but an authored key would put this walk's locator on a
 		// site no document contains.
-		attachPillars: map[string][]string{
-			fixtureKey("web", "tls"): {"values"},
+		//
+		// One attachment carrying BOTH pillars, from two different documents, and
+		// that pairing is the whole reason this axis carries a file at all. The
+		// developer wrote the values in the application document; the operator
+		// wrote the infrastructure configuration on the deployment, which is the
+		// only surface whose attachment block admits one. A fixture keeping both
+		// pillars in one document would produce the same transcript whether the
+		// file came from the pillar or from the node, so it could not tell a
+		// working axis from the defect this pairing exists to catch.
+		attachPillars: map[string][]AuthoredCoordinate{
+			fixtureKey("web", "tls"): {
+				{Value: "values", SourceFile: "aggregate.yaml"},
+				{Value: "infra", SourceFile: "release-flat.yaml"},
+			},
 		},
 		attachLeaves: map[string][]string{
 			fixtureKey("web", "tls", "values"): {"app.issuer"},
+			fixtureKey("web", "tls", "infra"):  {"pool_size"},
 		},
 		providers: map[string][]string{
 			fixtureKey("prod/edge"): {"helm", "terraform"},
@@ -457,12 +470,22 @@ func traversalCases() []traversalCase {
 			// spells no further key ahead of it. A second key spliced in here
 			// would name .features.tls.values.values.app.issuer, which the
 			// authored-site walk beside this table refuses.
+			//
+			// Two invocations over ONE attachment on ONE node, whose locators
+			// differ only in the pillar segment and whose FILES differ outright.
+			// That is the property the axis carries a file for: an attachment's
+			// values are the developer's and are written in the application
+			// document, its infrastructure configuration is the operator's and is
+			// written on the deployment, and a file taken from the node would
+			// attribute the second to a document whose attachment block cannot
+			// hold the key its locator names.
 			kind: SubjectNodeAttachmentPillarLeaf,
 			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
 				return RunOnNodeAttachmentPillarLeaves(cancelled, f, f, f, f, v, raisingCheck[NodeAttachmentPillarLeafSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.features.tls.values.app.issuer",
+				"release-flat.yaml|.spec.components.web.features.tls.infra.pool_size",
 			},
 		},
 		{
@@ -1033,7 +1056,7 @@ func coordinateFlowCases() []coordinateFlowCase {
 					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.PillarName() + "|" + s.LeafName()
 				})
 			},
-			want: []string{"web|tls|values|app.issuer"},
+			want: []string{"web|tls|values|app.issuer", "web|tls|infra|pool_size"},
 		},
 
 		// The Recipe-authored kinds are the ones whose identifier and whose source

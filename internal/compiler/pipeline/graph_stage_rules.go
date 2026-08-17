@@ -37,7 +37,14 @@ func runGraphStageRules(
 	// ago. It is reported rather than skipped, because a rule that never ran
 	// reports exactly what a rule that ran and approved reports, and nothing
 	// downstream could tell the two apart.
-	coordinates := ir.NewGraphStageCoordinates(out.IRGraph, out.GraphView, catalogLookup)
+	// The deployment's file comes from the resolve result, which already carries
+	// it so downstream phases can build source locations without re-discovering
+	// it. One axis needs it: an attachment's infrastructure configuration is
+	// authored on the deployment and nowhere else, so a finding about one of its
+	// leaves is positioned in that document rather than in the node's.
+	coordinates := ir.NewGraphStageCoordinates(
+		out.IRGraph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
+	)
 	if coordinates == nil {
 		return fmt.Errorf(
 			"graph-stage rules: the compilation produced no presentation of the finalised graph to invoke them against")
@@ -57,4 +64,18 @@ func runGraphStageRules(
 	}
 	out.Analysis.Warnings = append(out.Analysis.Warnings, analyzer.AdvisoriesFromObjections(advisories)...)
 	return nil
+}
+
+// releaseFileOf reads the deployment's file off the resolve result, empty when
+// no resolve result is in hand.
+//
+// It is read from there rather than from the pipeline's own inputs because the
+// resolve result already carries it for exactly this purpose — building source
+// locations downstream — so a second read of the same value could not disagree
+// with the annotation source locations this stage's own advisories quote.
+func releaseFileOf(result *resolver.ResolveResult) string {
+	if result == nil {
+		return ""
+	}
+	return result.ReleasePath
 }

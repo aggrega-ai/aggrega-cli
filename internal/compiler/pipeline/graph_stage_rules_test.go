@@ -87,8 +87,13 @@ func compileWorkspace(
 			Manifest:          manifest,
 			AggregateRawBytes: aggregate,
 			AggregatePath:     fixture.aggregatePath,
-			WorkspaceConfig:   workspaceconfig.Default(),
-			CompilerVersion:   invocationVersion,
+			// The deployment's path is supplied because one enumerated axis is
+			// authored there: an attachment's infra pillar. Leaving it out would
+			// leave that axis unpositioned, so a proof over it would be measuring
+			// the omission rather than the compiler.
+			ReleasePath:     fixture.releasePath,
+			WorkspaceConfig: workspaceconfig.Default(),
+			CompilerVersion: invocationVersion,
 		},
 		cat.CatalogLookup(),
 		cat.RecipeLookupWithManifest(manifest).Recipe,
@@ -273,6 +278,136 @@ func TestGraphStageEnumerationWalksTheSlotsAComponentTypeDeclares(t *testing.T) 
 		return
 	}
 	t.Error("every enumerated slot happened to be bound, so the axis was never shown presenting the unbound case the rules over it exist for")
+}
+
+// giveTheRoutingAttachmentAValuesPillar rewrites the fixture so the attachment
+// the deployment already configures also carries a developer-authored values
+// leaf.
+//
+// The pairing is what the proof needs and no committed workspace carries it: the
+// deployment's own document already attaches this feature with an infra pillar,
+// and the rewrite adds the other half in the application document, so one
+// attachment ends up carrying one pillar from each of the two authoring
+// surfaces. The rewrite is in memory, because the fixture on disk is shared with
+// other proofs and must keep producing exactly what they expect.
+func giveTheRoutingAttachmentAValuesPillar(t *testing.T, aggregate []byte) []byte {
+	t.Helper()
+	const authored = "    frontend:\n" +
+		"      type: core/compute/web-ui\n" +
+		"      uses:\n"
+	const withValues = "    frontend:\n" +
+		"      type: core/compute/web-ui\n" +
+		"      features:\n" +
+		"        cross-namespace-routing:\n" +
+		"          type: core/k8s-dns-resolver\n" +
+		"          values:\n" +
+		"            resolver_mode: \"cluster-local\"\n" +
+		"      uses:\n"
+	if !bytes.Contains(aggregate, []byte(authored)) {
+		t.Fatalf("fixture no longer declares %q the way the rewrite expects; the rewrite would be silently inert", "frontend")
+	}
+	return bytes.Replace(aggregate, []byte(authored), []byte(withValues), 1)
+}
+
+// pillarLeafPosition is one invocation of the attachment-pillar-leaf traversal,
+// reduced to the three things this proof is about.
+type pillarLeafPosition struct {
+	pillar     string
+	sourceFile string
+	locator    string
+}
+
+// TestEachAttachmentPillarNamesItsOwnAuthoringDocument is the proof that an
+// attachment's two configuration pillars are positioned in the two documents
+// they are actually written in.
+//
+// It is driven over a real compilation and through the framework's own
+// traversal, so what is asserted is the provenance a rule would receive rather
+// than an enumerator's return value on its own.
+//
+// The two-document pairing is the whole of it. A developer writes an
+// attachment's values in the application document; an operator writes its
+// infrastructure configuration on the deployment, which is the only authoring
+// surface whose attachment block admits one. A leaf of the second positioned in
+// the first names a key that document cannot contain, so an editor following the
+// position lands nowhere — and a single-document fixture cannot see that,
+// because there the two answers are the same string.
+func TestEachAttachmentPillarNamesItsOwnAuthoringDocument(t *testing.T) {
+	fixture := workspaceFixture{
+		aggregatePath: invocationAggregatePath,
+		releasePath:   invocationReleasePath,
+		manifestPath:  invocationManifestPath,
+		catalogPath:   invocationCatalogPath,
+	}
+	out, catalogLookup := compileWorkspace(t, fixture, giveTheRoutingAttachmentAValuesPillar(t, readAggregate(t)))
+	coordinates := coordinatesOf(t, out, catalogLookup)
+
+	const (
+		node       = "frontend"
+		attachment = "cross-namespace-routing"
+	)
+
+	var seen []pillarLeafPosition
+	_, err := constraint.RunOnNodeAttachmentPillarLeaves(
+		nil,
+		singleNode(coordinates, node),
+		coordinates,
+		coordinates,
+		coordinates,
+		out.GraphView,
+		constraint.Check[constraint.GraphView, constraint.NodeAttachmentPillarLeafSubject]{
+			Sentinel: analyzer.ErrOverriddenAnnotation(),
+			Severity: constraint.SeverityWarning,
+			Run: func(_ constraint.GraphView, s constraint.NodeAttachmentPillarLeafSubject) []constraint.Objection {
+				if s.AttachmentName() != attachment {
+					return nil
+				}
+				seen = append(seen, pillarLeafPosition{
+					pillar:     s.PillarName(),
+					sourceFile: s.SourceFile(),
+					locator:    s.Locator(),
+				})
+				return nil
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("the traversal returned %v over a walk nothing cancelled", err)
+	}
+
+	want := []pillarLeafPosition{
+		{
+			pillar:     "values",
+			sourceFile: fixture.aggregatePath,
+			locator:    ".spec.components.frontend.features.cross-namespace-routing.values.resolver_mode",
+		},
+		{
+			pillar:     "infra",
+			sourceFile: fixture.releasePath,
+			locator:    ".spec.components.frontend.features.cross-namespace-routing.infra.target_var",
+		},
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("the traversal was invoked %d time(s) for attachment %q; want %d.\n"+
+			"CONSEQUENCE: the pairing this proof rests on is one pillar from each authoring "+
+			"surface, so a different count measures a different shape.\ngot: %+v", len(seen), attachment, len(want), seen)
+	}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Errorf("invocation %d carried %+v; want %+v.\n"+
+				"INVARIANT: a pillar's leaf is positioned in the document that pillar was authored in.\n"+
+				"CONSEQUENCE: an infrastructure leaf attributed to the application document names a key "+
+				"that document's attachment block cannot hold, so the position resolves nowhere.",
+				i, seen[i], want[i])
+		}
+	}
+
+	// The two files being different is the property, stated separately so it
+	// cannot be satisfied by both halves drifting onto one document together.
+	if seen[0].sourceFile == seen[1].sourceFile {
+		t.Errorf("both pillars were positioned in %q; the two are authored in different documents "+
+			"and one of the two answers is therefore wrong", seen[0].sourceFile)
+	}
 }
 
 // contestOneLeafBetweenAnAnnotationAndAnExplicitValue rewrites the fixture so an

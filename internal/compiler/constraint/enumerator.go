@@ -136,9 +136,18 @@ type EdgeInstance struct {
 // Only an axis authored in a *different* document from its outer coordinate
 // needs one. An axis authored in the same document inherits that document, and
 // supplying the file again would be a second answer to one question — two
-// answers that can disagree. So a node's sockets, attachments and pillars
-// enumerate as plain names, while the entries of a node's Recipe and the
-// boundaries of a Release carry their own file.
+// answers that can disagree. So a node's sockets, its attachments and its own
+// configuration pillars enumerate as plain names, while the entries of a node's
+// Recipe, the boundaries of a Release and an attachment's configuration pillars
+// carry their own file.
+//
+// An attachment's pillars are on the second list for a reason worth stating
+// where the type is declared, because the axis reads at first sight like the
+// node's own: the two pillars of an attachment are authored on two different
+// documents. The developer writes an attachment's values in the Aggregate that
+// declares the component, and the operator writes its infrastructure
+// configuration on the Release — which is the only surface whose attachment
+// block admits one. So the pillar names them, not the node.
 type AuthoredCoordinate struct {
 	// Value is the coordinate value, which is also the name the author wrote.
 	Value string
@@ -320,14 +329,25 @@ type ParameterEnumerator interface {
 
 // AttachmentPillarEnumerator supplies the configuration pillars of one
 // attachment.
+//
+// Each entry carries its own file, because the two pillars are written on two
+// different authoring documents: an attachment's values are the developer's and
+// are written in the Aggregate that declares the component, while its
+// infrastructure configuration is the operator's and is written on the Release.
+// Attributing both to the node's document would name, for one of them, a file
+// whose attachment block cannot hold the key the locator spells.
 type AttachmentPillarEnumerator interface {
-	// AttachmentPillars returns one attachment's pillar names, in a
-	// deterministic order the implementation declares.
-	AttachmentPillars(node string, attachment string) []string
+	// AttachmentPillars returns one attachment's pillars, each with the file it
+	// was authored in, in a deterministic order the implementation declares.
+	AttachmentPillars(node string, attachment string) []AuthoredCoordinate
 }
 
 // AttachmentPillarLeafEnumerator supplies the leaves of one pillar of one
 // attachment's configuration.
+//
+// A leaf carries no file of its own: it is a path inside the pillar, so it is
+// written wherever that pillar is written and inherits the pillar's document. A
+// file here would be a second answer to a question the pillar already answers.
 type AttachmentPillarLeafEnumerator interface {
 	// AttachmentPillarLeaves returns the leaf names of one attachment pillar,
 	// in a deterministic order the implementation declares.

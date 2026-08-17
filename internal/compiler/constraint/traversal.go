@@ -548,6 +548,14 @@ func RunOnNodeParameters[V View](
 // contributes that segment directly and no further key is spelled ahead of it.
 // The pillar is a coordinate here and the slot is a coordinate in its own right
 // elsewhere: the two are not the same axis.
+//
+// The file comes from the enumerated pillar and not from the node, because an
+// attachment's two pillars are written on two different documents: the values
+// the developer wrote sit in the Aggregate that declares the component, and the
+// infrastructure configuration the operator wrote sits on the Release, whose
+// attachment block is the only one that admits it. Taking the node's file would
+// pair one of the two with a document that cannot hold the key the locator
+// names.
 func RunOnNodeAttachmentPillarLeaves[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -561,11 +569,11 @@ func RunOnNodeAttachmentPillarLeaves[V View](
 		var out []NodeAttachmentPillarLeafSubject
 		for _, attachment := range attachments.Attachments(node.ID) {
 			for _, pillar := range pillars.AttachmentPillars(node.ID, attachment) {
-				for _, leaf := range leaves.AttachmentPillarLeaves(node.ID, attachment, pillar) {
+				for _, leaf := range leaves.AttachmentPillarLeaves(node.ID, attachment, pillar.Value) {
 					out = append(out, newNodeAttachmentPillarLeafSubject(
-						node.SourceFile, node.ID, attachment, pillar, leaf,
+						pillar.SourceFile, node.ID, attachment, pillar.Value, leaf,
 						componentInnerSegments(
-							node, authoredKeyFeatures, attachment, pillar, leaf,
+							node, authoredKeyFeatures, attachment, pillar.Value, leaf,
 						)...,
 					))
 				}

@@ -35,9 +35,13 @@ const (
 // The proofs below take it rather than assembling an axis of their own: an
 // enumeration a test writes is the test's account of what the graph holds, and
 // a rule asked about that account proves the account rather than the compiler.
+// The deployment's file is taken from the same place the production path takes
+// it, so a proof over this enumeration is a proof over the one the build uses.
 func coordinatesOf(t *testing.T, out *stepsOneToFourOutput, catalogLookup resolver.CatalogLookup) *ir.GraphStageCoordinates {
 	t.Helper()
-	coordinates := ir.NewGraphStageCoordinates(out.IRGraph, out.GraphView, catalogLookup)
+	coordinates := ir.NewGraphStageCoordinates(
+		out.IRGraph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
+	)
 	if coordinates == nil {
 		t.Fatal("the compilation produced no enumeration of the finalised graph; no rule over it can be invoked")
 	}

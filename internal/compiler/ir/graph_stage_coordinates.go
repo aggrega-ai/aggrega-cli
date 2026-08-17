@@ -52,9 +52,20 @@ type GraphStageCoordinates struct {
 	view          constraint.GraphView
 	catalogLookup resolver.CatalogLookup
 
+	// releaseFile is the file the deployment was authored in. It is held
+	// because one axis is authored there rather than in the document its node
+	// came from: an attachment's infrastructure configuration is the operator's
+	// and the deployment's attachment block is the only surface that admits it.
+	releaseFile string
+
 	// nodes is the enumerated node set, folded once when this value is built
 	// because it is the outermost order of every node-keyed traversal.
 	nodes []constraint.NodeInstance
+
+	// nodesByID indexes that same set by the identity the facts take, so an
+	// axis needing one node's provenance reads the instance the node axis
+	// already hands out rather than reading the graph a second time.
+	nodesByID map[string]constraint.NodeInstance
 
 	// edges is the enumerated edge set, folded once alongside the nodes: an
 	// edge's subject carries the provenance of the component it is authored
@@ -71,6 +82,14 @@ type GraphStageCoordinates struct {
 // a slot exists whether or not anything binds it, which is the case the rules
 // over it exist to catch, so it cannot be read off what the node ended up with.
 //
+// The deployment's file is taken for the same class of reason as the catalog:
+// it is not in the graph. One axis is authored on the deployment rather than in
+// the document its node came from — an attachment's infrastructure
+// configuration, which no other authoring surface admits — so an enumeration
+// naming only the graph's own files could not tell a rule where that axis was
+// written. It is a source-location label and nothing is read from disk with it;
+// an empty one leaves that axis unpositioned rather than mispositioned.
+//
 // It returns nil when either the graph or the presentation is absent. An
 // enumeration built from nothing would present every rule an empty subject set,
 // and a rule invoked zero times reports exactly what a rule invoked and
@@ -80,13 +99,19 @@ func NewGraphStageCoordinates(
 	graph *types.IRGraph,
 	view constraint.GraphView,
 	catalogLookup resolver.CatalogLookup,
+	releaseFile string,
 ) *GraphStageCoordinates {
 	if graph == nil || view == nil {
 		return nil
 	}
-	c := &GraphStageCoordinates{graph: graph, view: view, catalogLookup: catalogLookup}
+	c := &GraphStageCoordinates{
+		graph:         graph,
+		view:          view,
+		catalogLookup: catalogLookup,
+		releaseFile:   releaseFile,
+		nodesByID:     make(map[string]constraint.NodeInstance, graph.Spec.Nodes.Len()),
+	}
 
-	byID := make(map[string]constraint.NodeInstance, graph.Spec.Nodes.Len())
 	for id, node := range graph.Spec.Nodes.All() {
 		instance := constraint.NodeInstance{
 			ID:                   id,
@@ -96,11 +121,11 @@ func NewGraphStageCoordinates(
 			SynthesizedSubsystem: node.SynthesizedSubsystem,
 		}
 		c.nodes = append(c.nodes, instance)
-		byID[id] = instance
+		c.nodesByID[id] = instance
 	}
 
 	for _, edge := range graph.Spec.Edges {
-		node, held := byID[edge.Source]
+		node, held := c.nodesByID[edge.Source]
 		if !held {
 			// An edge whose consumer is not in the node set has no component
 			// block for its locator to be named relative to, so there is
@@ -170,24 +195,46 @@ func (c *GraphStageCoordinates) Slots(node string) []string {
 }
 
 // AttachmentPillars returns the configuration pillars one attachment carries
-// per-leaf provenance for, in the fixed order the pillars are declared in.
+// per-leaf provenance for, each with the document it was authored in, in the
+// fixed order the pillars are declared in.
 //
 // The two pillars are a fixed authoring surface rather than an open set, so the
 // order is declared here rather than derived from a carrier. A pillar the
 // attachment carries no provenance for is absent, because the leaf axis beneath
 // it would be empty and enumerating it would claim the attachment wrote a
 // pillar it did not.
-func (c *GraphStageCoordinates) AttachmentPillars(node string, attachment string) []string {
+//
+// # Each pillar names its own document, and the two differ
+//
+// The values pillar is the developer's and is written in the document that
+// declares the component, so it takes that node's own file. The infrastructure
+// pillar is the operator's and is written on the deployment: it is the only
+// authoring surface whose attachment block admits one, on either route a leaf
+// can arrive by — an authored block, where no application-side attachment
+// schema declares the key, or an annotation, where the routing admits an
+// infrastructure path from the deployment side alone. So the answer is a
+// reading of where such a leaf can come from rather than a guess about where
+// this one did.
+func (c *GraphStageCoordinates) AttachmentPillars(
+	node string,
+	attachment string,
+) []constraint.AuthoredCoordinate {
 	entry, held := c.attachment(node, attachment)
 	if !held {
 		return nil
 	}
-	var out []string
+	var out []constraint.AuthoredCoordinate
 	if entry.ValuesProvenance.Len() > 0 {
-		out = append(out, pillarValues)
+		out = append(out, constraint.AuthoredCoordinate{
+			Value:      pillarValues,
+			SourceFile: c.nodesByID[node].SourceFile,
+		})
 	}
 	if entry.InfraProvenance.Len() > 0 {
-		out = append(out, pillarInfra)
+		out = append(out, constraint.AuthoredCoordinate{
+			Value:      pillarInfra,
+			SourceFile: c.releaseFile,
+		})
 	}
 	return out
 }

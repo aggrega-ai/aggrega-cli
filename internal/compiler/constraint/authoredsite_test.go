@@ -138,6 +138,11 @@ spec:
 		// A Release whose boundaries nest. The fixture enumerates the inner one as
 		// "prod/edge", and the document spells it as "edge" inside "prod" under the
 		// container's own key — the two levels a single spliced segment would lose.
+		//
+		// It is the boundaried one of the deployment's two component-routing forms.
+		// The other is below, and the two are separate documents because the schema
+		// refuses one document carrying both: a deployment either names boundaries
+		// or lists components at its own spec level, never both.
 		"release.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Release
@@ -157,6 +162,32 @@ spec:
     dev:
       components:
         web: {}
+`,
+		// A deployment written in the other component-routing form: components at
+		// the spec level, for a single-scope deployment naming no boundaries. It is
+		// what the attachment-pillar locator is walked through, because that
+		// locator names the component's own site and this is the form that spells
+		// one there.
+		//
+		// The attachment it carries holds an infra pillar and no values pillar,
+		// which is not an omission but the authoring rule: the infra pillar is the
+		// operator's and this is the only surface whose attachment block admits
+		// one, while the values beside it are the developer's and are written in
+		// the application document above. One attachment, two pillars, two
+		// documents — which is what the pillar axis carries a file for.
+		"release-flat.yaml": `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: storefront-single-scope
+spec:
+  aggregate: storefront
+  components:
+    web:
+      features:
+        tls:
+          infra:
+            pool_size: 20
 `,
 		"recipes/web.yaml": `
 apiVersion: aggrega.ai/v1alpha1
