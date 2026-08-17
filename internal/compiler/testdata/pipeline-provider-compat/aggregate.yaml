@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: pipeline-provider-compat
+  version: "1.0.0"
+spec:
+  # A sub-module contributes a component, so this workspace carries a component
+  # no root document declares. That component's Recipe carries a pipeline too, so
+  # a pipeline reading built from the root document alone would enumerate the
+  # root's steps and silently miss this one's.
+  aggregates:
+    data:
+      type: db-module
+  components:
+    api:
+      type: core/server
+      features:
+        request-guard:
+          type: feature.example/request-guard
+          values:
+            label: "guarded"

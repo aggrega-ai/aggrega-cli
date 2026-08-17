@@ -1,0 +1,30 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-store-synthesized
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/store
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      store:
+        image: store:latest
+        ports:
+          db: 5432
+    services:
+      db:
+        type: ClusterIP
+        ports:
+          db: 5432
+  # The component this Recipe is bound to is contributed by a sub-module, so this
+  # pipeline is reachable only through the identity the composed graph gives that
+  # component. A reading keyed by the name a root document typed finds nothing
+  # here and reports no step at all.
+  pipeline:
+    - id: annotate_contributed_output
+      plugin: pipeline-step/patch:1.0.0
+      function: step

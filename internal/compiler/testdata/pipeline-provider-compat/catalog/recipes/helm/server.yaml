@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-server-synthesized
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/server
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      server:
+        image: server:latest
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+  # Addresses this component's own documents, so it is matched against the
+  # provider this Recipe declares.
+  pipeline:
+    - id: annotate_own_output
+      plugin: pipeline-step/patch:1.0.0
+      function: step

@@ -83,7 +83,7 @@ func replayDeferredPatches(
 	// The replay reads the same retained self-reports the per-node passes filled,
 	// so a plugin already described during the per-node work is not described
 	// again here.
-	describe := newStepDescriber(input.stepDescriptors, lookup)
+	describe := stepDescriberOver(input.stepDescriptors, lookup)
 
 	var warnings []string
 	for _, rec := range ordered {

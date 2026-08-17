@@ -15,13 +15,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// describerFor returns a stepDescriber that always reports a pipeline-step descriptor
+// describerFor returns a StepDescriber that always reports a pipeline-step descriptor
 // whose step export declares the given scope and whose targets is the
 // given set. It is the seam through which the pre-walk compatibility check reads a
 // plugin's declared compatibility without a real .wasm — the executor body
 // (runNodePipelineWithInvoker) is the production code path; only the descriptor is
 // canned.
-func describerFor(scope string, compatible []string) stepDescriber {
+func describerFor(scope string, compatible []string) StepDescriber {
 	return func(_ context.Context, _ types.PipelineStep) (wasm.PluginDescriptor, error) {
 		return wasm.PluginDescriptor{
 			AbiVersion:   wasm.ABIVersionV1Alpha1,

@@ -15,12 +15,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// compatibleDescriber returns a stepDescriber that always reports a descriptor
+// compatibleDescriber returns a StepDescriber that always reports a descriptor
 // whose step export is own-scope and tested-compatible with the "helm" provider.
 // The sentinel tests pass ownProvider "helm" so the pre-walk compatibility check
 // proceeds, letting each test exercise its own downstream halt (absent target,
 // hostless /host) rather than tripping ErrPluginProviderIncompatible first.
-func compatibleDescriber() stepDescriber {
+func compatibleDescriber() StepDescriber {
 	return func(_ context.Context, _ types.PipelineStep) (wasm.PluginDescriptor, error) {
 		return wasm.PluginDescriptor{
 			AbiVersion:   wasm.ABIVersionV1Alpha1,

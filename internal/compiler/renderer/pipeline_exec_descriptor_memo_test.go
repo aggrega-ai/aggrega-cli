@@ -37,7 +37,7 @@ func countingLookup(inner pluginpath.Lookup, crossings *int64) pluginpath.Lookup
 // closes afresh. It is the comparison arm — keeping it here means the "fewer
 // crossings" and "identical bytes" claims are measured against a shape that
 // actually runs in the same test, rather than against a remembered one.
-func unretainedDescriber(lookup pluginpath.Lookup) stepDescriber {
+func unretainedDescriber(lookup pluginpath.Lookup) StepDescriber {
 	return func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error) {
 		return loadAndDescribeStepPlugin(ctx, step.Plugin, lookup)
 	}
@@ -78,7 +78,7 @@ func TestStepDescriptorRetentionCrossesOnceForOnePlugin(t *testing.T) {
 	}
 
 	var retainedCrossings int64
-	retained := newStepDescriber(newStepDescriptorMemo(), countingLookup(lookup, &retainedCrossings))
+	retained := stepDescriberOver(newStepDescriptorMemo(), countingLookup(lookup, &retainedCrossings))
 	for i := 0; i < reads; i++ {
 		desc, err := retained(ctx, step)
 		if err != nil {
@@ -106,7 +106,7 @@ func TestStepDescriptorRetentionCrossesOnceForOnePlugin(t *testing.T) {
 	// single-crossing result above would also be produced by a memo that
 	// answered every URI with whatever it stored first.
 	var secondCrossings int64
-	perPlugin := newStepDescriber(newStepDescriptorMemo(), countingLookup(lookup, &secondCrossings))
+	perPlugin := stepDescriberOver(newStepDescriptorMemo(), countingLookup(lookup, &secondCrossings))
 	for _, uri := range []string{"frp-step-patch-rust.wasm", "a-second-plugin.wasm"} {
 		if _, err := perPlugin(ctx, types.PipelineStep{ID: "s", Plugin: uri, Function: "step"}); err != nil {
 			t.Fatalf("read of %q: %v", uri, err)
@@ -126,7 +126,7 @@ func TestStepDescriptorRetentionDescribesNothingUntilAsked(t *testing.T) {
 
 	var crossings int64
 	memo := newStepDescriptorMemo()
-	describe := newStepDescriber(memo, countingLookup(nil, &crossings))
+	describe := stepDescriberOver(memo, countingLookup(nil, &crossings))
 	if crossings != 0 {
 		t.Fatalf("crossings after constructing the accessor = %d; want 0 — nothing may be described before a reader asks", crossings)
 	}
@@ -149,7 +149,7 @@ func TestStepDescriptorRetentionRetainsARefusal(t *testing.T) {
 	t.Parallel()
 
 	var crossings int64
-	describe := newStepDescriber(newStepDescriptorMemo(), countingLookup(nil, &crossings))
+	describe := stepDescriberOver(newStepDescriptorMemo(), countingLookup(nil, &crossings))
 	step := types.PipelineStep{ID: "s", Plugin: "unresolvable.wasm", Function: "step"}
 
 	firstErr := errOf(t, describe, step)
@@ -163,7 +163,7 @@ func TestStepDescriptorRetentionRetainsARefusal(t *testing.T) {
 }
 
 // errOf reads a descriptor expecting a refusal and returns the error.
-func errOf(t *testing.T, describe stepDescriber, step types.PipelineStep) error {
+func errOf(t *testing.T, describe StepDescriber, step types.PipelineStep) error {
 	t.Helper()
 	_, err := describe(context.Background(), step)
 	if err == nil {
@@ -193,7 +193,7 @@ func TestPipelineEmitsIdenticalBytesWithAndWithoutRetention(t *testing.T) {
 		{ID: "patch-c", Plugin: "frp-step-patch-rust.wasm", Function: "step"},
 	}
 
-	run := func(describe stepDescriber, crossings *int64, countedLookup pluginpath.Lookup) pipelineResult {
+	run := func(describe StepDescriber, crossings *int64, countedLookup pluginpath.Lookup) pipelineResult {
 		t.Helper()
 		own := []EmittedFile{{Name: "bundle.yaml", Origin: EmitOriginWorkload, Body: []byte(multiDocOwn)}}
 		codec := newStockYAMLCodec(2)
@@ -215,7 +215,7 @@ func TestPipelineEmitsIdenticalBytesWithAndWithoutRetention(t *testing.T) {
 
 	var retainedCrossings int64
 	retainedLookup := countingLookup(lookup, &retainedCrossings)
-	after := run(newStepDescriber(newStepDescriptorMemo(), retainedLookup), &retainedCrossings, retainedLookup)
+	after := run(stepDescriberOver(newStepDescriptorMemo(), retainedLookup), &retainedCrossings, retainedLookup)
 
 	// Anti-needle: a parity of two empty emissions must not be able to pass.
 	if len(before.Own) == 0 {
@@ -419,7 +419,7 @@ func TestRetainedDescriptorSurvivesAReadersMutation(t *testing.T) {
 	lookup := refPluginLookup(t)
 	t.Parallel()
 
-	describe := newStepDescriber(newStepDescriptorMemo(), lookup)
+	describe := stepDescriberOver(newStepDescriptorMemo(), lookup)
 	step := types.PipelineStep{ID: "patch", Plugin: "frp-step-patch-rust.wasm", Function: "step"}
 	ctx := context.Background()
 

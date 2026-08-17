@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: boundary-guard-patcher
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: "feature.example/boundary-guard"
+  # Attached at a boundary rather than against a named component, so it runs
+  # once for the boundary however many components that boundary holds. Its
+  # templates read only what a boundary carries — a per-component field would be
+  # refused, because there is no single component here to read one from.
+  executionScope: boundary
+  artifacts:
+    boundary-guard.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: boundary-guard
+      data:
+        boundary: "{{ .boundary.boundary_name }}"
+  # A boundary attachment stands against no component, so it has no host
+  # documents: the step addresses the attachment's own output and is matched
+  # against the provider this FeatureRecipe declares.
+  pipeline:
+    - id: annotate_boundary_output
+      plugin: pipeline-step/patch:1.0.0
+      function: step

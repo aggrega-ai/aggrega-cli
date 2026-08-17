@@ -1,0 +1,39 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: pipeline-provider-compat-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    # Three boundaries, and only the first carries an attachment. The other two
+    # are what tells a reading of the declared boundaries from a reading of the
+    # boundaries something happened to be attached at.
+    #
+    # Each component sits in its own boundary because both pipelines contribute a
+    # document under a fixed name, and two components writing it into one
+    # boundary's output would be a genuine collision rather than a property worth
+    # exercising here.
+    main:
+      directory: ./dist/main
+      # Written on the boundary itself, naming no component: it reaches every
+      # component the boundary holds, so no component entry could carry it.
+      features:
+        boundary-guard:
+          type: feature.example/boundary-guard
+          infra:
+            note: "wide"
+      components:
+        api:
+          infra:
+            replicas: 1
+    store:
+      directory: ./dist/store
+      components:
+        data.main-db:
+          infra:
+            replicas: 1
+    spare:
+      directory: ./dist/spare

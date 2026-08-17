@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.example/request-guard
+  version: "1.0.0"
+spec:
+  schema:
+    values:
+      label: { type: string }

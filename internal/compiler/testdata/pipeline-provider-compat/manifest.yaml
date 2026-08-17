@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: pipeline-provider-compat-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/server: helm-server-synthesized:1.0.0
+        core/store: helm-store-synthesized:1.0.0
+    features:
+      type:
+        feature.example/request-guard: request-guard-patcher:1.0.0
+        feature.example/boundary-guard: boundary-guard-patcher:1.0.0

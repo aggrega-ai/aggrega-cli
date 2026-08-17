@@ -178,7 +178,7 @@ func runNodePipeline(
 	// function owns only seam construction (and the empty-steps / nil-lookup
 	// short-circuits above); the executor body is single-sourced in
 	// runNodePipelineWithInvoker, which a test exercises with canned seams.
-	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, ownProvider, hostProvider, renderCtx, withCtx, ownCodec, hostCodec, newStepInvoker(lookup), newStepDescriber(descriptors, lookup), nodeID)
+	return runNodePipelineWithInvoker(ctx, steps, own, host, hostIsAssembler, ownProvider, hostProvider, renderCtx, withCtx, ownCodec, hostCodec, newStepInvoker(lookup), stepDescriberOver(descriptors, lookup), nodeID)
 }
 
 // selectCodec resolves the codec for the scope rendered by providerName: the
@@ -225,7 +225,7 @@ func runNodePipelineWithInvoker(
 	ownCodec frp.Codec,
 	hostCodec frp.Codec,
 	invoke frp.StepInvoker,
-	describe stepDescriber,
+	describe StepDescriber,
 	nodeID string,
 ) (pipelineResult, error) {
 	res := pipelineResult{Own: own}
@@ -242,7 +242,7 @@ func runNodePipelineWithInvoker(
 	//    plugin's describe() descriptor and assert the provider rendering every
 	//    scope the step's export touches is in the plugin's compatible providers.
 	//    Fail-fast: a mismatch halts before the walk runs any guest.
-	if err := enforceProviderCompatibility(ctx, steps, ownProvider, hostProvider, describe, nodeID); err != nil {
+	if err := EnforceProviderCompatibility(ctx, steps, ownProvider, hostProvider, describe, nodeID); err != nil {
 		return pipelineResult{}, err
 	}
 
@@ -507,18 +507,41 @@ func validateStepOutput(export wasm.PluginExport, raw []byte, step types.Pipelin
 	return nil
 }
 
-// stepDescriber reads one pipeline step's plugin describe() descriptor — the
+// StepDescriber reads one pipeline step's plugin describe() descriptor — the
 // seam through which the executor reaches a plugin's declared providers
 // and per-export capability declarations before the walk runs any guest. Reading
 // the descriptor is itself a guest call, so what it precedes is the walk, not
 // every crossing to a guest. The production path binds it to the shared
-// resolver + describe() gate (newStepDescriber); a test supplies a canned
+// resolver + describe() gate ([NewStepDescriber]); a test supplies a canned
 // descriptor so the pre-walk enforcement is exercised without a real .wasm. It
 // is separate from frp.StepInvoker because enforcement needs the descriptor
 // (which the invoker hides) ahead of the walk.
-type stepDescriber func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error)
+//
+// It is exported for the same reason [EnforceProviderCompatibility] is: the
+// seam is half that function's signature, so a caller comparing that reading
+// against the equivalent declared rules on one input has to be able to name it.
+type StepDescriber func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error)
 
-// newStepDescriber binds the per-step descriptor read over the shared
+// NewStepDescriber binds the per-step descriptor read over a plugin-resolution
+// cascade and the describe() gate, retaining each plugin's self-report within
+// the returned accessor so a plugin named by several steps is described once.
+//
+// It exists so one caller can read a plugin's self-report the way the pipeline
+// executor reads it, without holding the build's own retention: a plugin's
+// self-report is a pure function of its bytes and one lookup resolves a URI to
+// one set of bytes for the whole build, so a reader with its own retention is
+// told exactly what the build's retention holds. That is what lets the reading
+// [EnforceProviderCompatibility] performs and the reading the declared rules
+// over a build's plugin self-reports perform be compared on one input — the
+// comparison the presence of both readings makes necessary. Without it the
+// comparison would have to supply one side a descriptor of its own, and a
+// descriptor supplied to one side alone compares a reading against a
+// transcription of what its author believes the plugin says.
+func NewStepDescriber(lookup pluginpath.Lookup) StepDescriber {
+	return stepDescriberOver(newStepDescriptorMemo(), lookup)
+}
+
+// stepDescriberOver binds the per-step descriptor read over the shared
 // plugin-resolution cascade and the describe() gate, retaining each plugin's
 // self-report in descriptors so a plugin named by several steps is described
 // once rather than once per step. The pre-walk compatibility check consumes the
@@ -533,7 +556,7 @@ type stepDescriber func(ctx context.Context, step types.PipelineStep) (wasm.Plug
 // the load gate it goes through cross-checks the descriptor against the host
 // functions the loaded binary actually imports — a per-instance check that a
 // retained value cannot stand in for.
-func newStepDescriber(descriptors *stepDescriptorMemo, lookup pluginpath.Lookup) stepDescriber {
+func stepDescriberOver(descriptors *stepDescriptorMemo, lookup pluginpath.Lookup) StepDescriber {
 	if descriptors == nil {
 		descriptors = newStepDescriptorMemo()
 	}
@@ -716,7 +739,7 @@ func isolate(v reflect.Value) reflect.Value {
 	}
 }
 
-// enforceProviderCompatibility runs the pre-walk provider-compatibility check
+// EnforceProviderCompatibility runs the pre-walk provider-compatibility check
 // over every pipeline step. For each step it reads the plugin descriptor, finds
 // the step's export by name, and asserts the provider rendering every scope the
 // export declares is in the plugin's compatible providers (exact-string,
@@ -736,12 +759,20 @@ func isolate(v reflect.Value) reflect.Value {
 // document to patch after assembly; it halts via pipelineOwnOnAssemblerErr with
 // a cause-naming message rather than reporting an empty-provider compatibility
 // claim.
-func enforceProviderCompatibility(
+//
+// It is exported so one caller can put this reading and the declared rules over
+// a build's plugin self-reports side by side on a single input. Both readings
+// exist, so which findings they share and which they do not is a question about
+// the code rather than about either author's intent — and it is answerable only
+// if both can be invoked from one place. Everything it reads it takes as an
+// argument, so a caller supplies the steps, the two providers and the descriptor
+// seam a real build supplied, and compares the verdicts.
+func EnforceProviderCompatibility(
 	ctx context.Context,
 	steps []types.PipelineStep,
 	ownProvider string,
 	hostProvider string,
-	describe stepDescriber,
+	describe StepDescriber,
 	nodeID string,
 ) error {
 	for _, step := range steps {

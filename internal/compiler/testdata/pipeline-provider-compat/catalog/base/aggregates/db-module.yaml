@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: db-module
+  version: "1.0.0"
+spec:
+  components:
+    main-db:
+      type: core/store

@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -451,6 +452,63 @@ var AttachmentPipelineStepProviderCompatible = constraint.Check[
 		}
 		return []constraint.Objection{s.Raise(
 			ErrPluginProviderIncompatible(), s.AttachmentName(), provider,
+		)}
+	},
+}
+
+// AttachmentPipelineStepOwnScopeHasAMergedTarget reports each step of an
+// attachment's pipeline that addresses the attachment's own documents on a node
+// whose documents are merged with its dispatch group's, where the step has
+// nothing to address by the time it runs.
+//
+// It is the second rule over an attachment's pipeline steps, and the two are
+// separate because they are separate findings with separate conditions and
+// separate remedies. The one beside it asks whether a step's plugin declares
+// compatibility with the provider its scope names. This one asks whether the
+// documents that scope names will exist as discrete documents at all — a
+// question that has an answer before any provider is matched against anything,
+// and a different answer to give the author.
+//
+// # Why the condition is about the host's provider and not the attachment's
+//
+// A provider that merges its dispatch group's per-node output renders that
+// output as fragments: the discrete documents arrive only once the group is
+// merged. An attachment's pipeline against such a component therefore cannot
+// run while the component is rendered, and runs once the merge has produced
+// the documents instead. The attachment's OWN output is never part of that
+// merge — an attachment's documents are written under its own position, as
+// discrete files, whichever provider the component uses — so a step addressing
+// the attachment's own documents has no merged document waiting for it, and
+// nothing to address when it finally runs.
+//
+// So the finding is a property of the component's provider paired with the
+// step's own scope, and the attachment's provider does not enter it. That is
+// what makes the condition readable here: both halves are declared facts at the
+// point every plugin and provider has described itself.
+//
+// The remedies are the ones the condition admits: give the attachment's own
+// output a provider that does not merge, address the component's documents
+// instead, or drop the step.
+var AttachmentPipelineStepOwnScopeHasAMergedTarget = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentPipelineStepSubject,
+]{
+	Sentinel: ErrPipelinePatchPreAssembly(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentPipelineStepSubject,
+	) []constraint.Objection {
+		if v.AttachmentStepExportScope(
+			s.NodeID(), s.AttachmentName(), s.StepID(),
+		) == types.ScopeHost {
+			return nil
+		}
+		if v.ProviderBoundaryAssembly(s.NodeID()) != wasm.BoundaryAssemblyMerge {
+			return nil
+		}
+		return []constraint.Objection{s.Raise(
+			ErrPipelinePatchPreAssembly(), s.AttachmentName(),
 		)}
 	},
 }

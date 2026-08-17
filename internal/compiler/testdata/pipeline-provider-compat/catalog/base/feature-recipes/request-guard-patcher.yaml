@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: request-guard-patcher
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: "feature.example/request-guard"
+  # An artifacts: entry makes this FeatureRecipe resource-generating, so it
+  # renders output of its own and its pipeline runs against that output.
+  artifacts:
+    request-guard.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: request-guard
+      data:
+        label: "{{ .values.label }}"
+  # The step addresses the attachment's own documents, so it is matched against
+  # the provider this FeatureRecipe declares rather than the one rendering the
+  # component it is attached to.
+  pipeline:
+    - id: annotate_attachment_output
+      plugin: pipeline-step/patch:1.0.0
+      function: step

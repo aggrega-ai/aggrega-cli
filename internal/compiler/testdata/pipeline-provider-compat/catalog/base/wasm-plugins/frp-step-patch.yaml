@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: patch
+  version: "1.0.0"
+  pluginType: pipeline-step
+spec:
+  abiVersion: v1alpha1
+  pipelineStep:
+    capabilities:
+      - helm
