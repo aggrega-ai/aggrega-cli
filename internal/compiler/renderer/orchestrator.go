@@ -70,6 +70,23 @@ type RenderResult struct {
 	// and the emitted bytes are the same whether it is populated or not.
 	DescribedView constraint.DescribedView
 
+	// HydratedView presents, as named facts, the state each node reached before
+	// any of its artifact bytes existed: the locals its Recipe declares, the
+	// values it resolved for its provides keys, the reference set of its inline
+	// values mapping, whether a source and a workload survived into the render,
+	// and the text standing at each of its artifacts before evaluation.
+	//
+	// It is published here because the state it presents is a loop-local dropped
+	// when each node's turn ends, so a reader asking what a node held before its
+	// bytes existed has this and nothing else. It embeds the presentation of what
+	// every plugin reports about itself, so every fact complete earlier is
+	// readable through it.
+	//
+	// nil when the render could present no earlier stage to extend. Out-of-band:
+	// it carries no content that reaches an emitted file, and the emitted bytes
+	// are the same whether it is populated or not.
+	HydratedView constraint.HydratedView
+
 	// hydrated is the render's retained set of per-node mid-render projections.
 	//
 	// It is published here because the state each projection is taken from is a
@@ -435,6 +452,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// result outlives the node walk.
 	input.hydrated = newHydratedProjections(allProvides)
 	result.hydrated = input.hydrated
+
+	// Present the state each node reaches before its artifact bytes exist, with
+	// the facts complete earlier answered by the presentation built above. Built
+	// here because this is the first point holding every product it names: the
+	// retention installed on the line before, and the earlier presentation it
+	// extends. It holds the retention by pointer, so it answers from whatever the
+	// node walk has recorded by the time a reader asks — the walk fills the
+	// retention this presentation reads, rather than this presentation waiting on
+	// the walk.
+	result.HydratedView = newHydratedView(result.DescribedView, input.hydrated)
 
 	// Producer-fulfilment (Component↔Recipe): the bound Recipe must publish every
 	// provides key its Component declares as the output contract in schema.provides.

@@ -20,14 +20,18 @@ import (
 func TestSingleFormatCarrier(t *testing.T) {
 	t.Parallel()
 
-	// RenderResult: {Files, Warnings, Diagnostics, Contributions, DescribedView},
-	// with Files valued by AssembledFile. Warnings and Diagnostics are advisory
-	// streams, not per-file carriers; Contributions carries per-group coordinates
-	// and is held to that below; DescribedView is a stage presentation keyed by
-	// node, boundary and pipeline step rather than by output path, so it is not a
-	// carrier of anything a file is keyed by. A reintroduced
-	// `Formats map[string]string` sidecar keyed like the bytes shows up as an
-	// unexpected exported field and trips the set check.
+	// RenderResult: {Files, Warnings, Diagnostics, Contributions, DescribedView,
+	// HydratedView}, with Files valued by AssembledFile. Warnings and Diagnostics
+	// are advisory streams, not per-file carriers; Contributions carries per-group
+	// coordinates and is held to that below; DescribedView and HydratedView are
+	// stage presentations, keyed by node, boundary, pipeline step, provides key
+	// and artifact name rather than by output path, so neither is a carrier of
+	// anything a file is keyed by. HydratedView's artifact axis is the closest
+	// call and still passes it: an artifact is a Recipe's authored entry, which is
+	// a coordinate of the node that declares it and not of the assembled output
+	// path the bytes end up under. A reintroduced `Formats map[string]string`
+	// sidecar keyed like the bytes shows up as an unexpected exported field and
+	// trips the set check.
 	rr := reflect.TypeOf(RenderResult{})
 	exported := map[string]reflect.Type{}
 	for i := 0; i < rr.NumField(); i++ {
@@ -38,7 +42,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 	}
 	want := map[string]bool{
 		"Files": true, "Warnings": true, "Diagnostics": true,
-		"Contributions": true, "DescribedView": true,
+		"Contributions": true, "DescribedView": true, "HydratedView": true,
 	}
 	for name := range exported {
 		if !want[name] {
