@@ -559,25 +559,29 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 	first = false
 	buf.WriteString("\"resolved_recipe\":")
 	writeJSONString(&buf, t.ResolvedRecipe)
-	if !first {
-		buf.WriteByte(',')
+	if !t.Values.IsZero() {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"values\":")
+		if enc, err := json.Marshal(t.Values); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
 	}
-	first = false
-	buf.WriteString("\"values\":")
-	if enc, err := json.Marshal(t.Values); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
-	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"features\":")
-	if enc, err := json.Marshal(t.Features); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
+	if !t.Features.IsZero() {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"features\":")
+		if enc, err := json.Marshal(t.Features); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
 	}
 	if len(t.SensitiveRenderedKeys) != 0 {
 		if !first {
@@ -604,15 +608,17 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 			buf.WriteByte('}')
 		}
 	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"uses\":")
-	if enc, err := json.Marshal(t.Uses); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
+	if !t.Uses.IsZero() {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"uses\":")
+		if enc, err := json.Marshal(t.Uses); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
 	}
 	if t.BoundaryPath != "" {
 		if !first {
@@ -977,15 +983,17 @@ func (t RenderNodeOutput) MarshalJSON() ([]byte, error) {
 		}
 	}
 	buf.WriteByte(']')
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"derived_keys\":")
-	if enc, err := json.Marshal(t.DerivedKeys); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
+	if !t.DerivedKeys.IsZero() {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"derived_keys\":")
+		if enc, err := json.Marshal(t.DerivedKeys); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
 	}
 	if len(t.Diagnostics) != 0 {
 		if !first {
@@ -2530,15 +2538,17 @@ func (t RenderedNode) MarshalJSON() ([]byte, error) {
 	} else {
 		buf.Write(enc)
 	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"annotations\":")
-	if enc, err := json.Marshal(t.Annotations); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
+	if !t.Annotations.IsZero() {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"annotations\":")
+		if enc, err := json.Marshal(t.Annotations); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
 	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
@@ -2680,15 +2690,17 @@ func (t SubChart) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"version\":")
 		writeJSONString(&buf, t.Version)
 	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"values\":")
-	if enc, err := json.Marshal(t.Values); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
+	if !t.Values.IsZero() {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"values\":")
+		if enc, err := json.Marshal(t.Values); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
 	}
 	if len(t.ChartYaml) != 0 {
 		if !first {
@@ -3281,15 +3293,17 @@ func (t BoundaryEnvOverridesInput) MarshalJSON() ([]byte, error) {
 		}
 		buf.WriteByte(']')
 	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"infra\":")
-	if enc, err := json.Marshal(t.Infra); err != nil {
-		return nil, err
-	} else {
-		buf.Write(enc)
+	if !t.Infra.IsZero() {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"infra\":")
+		if enc, err := json.Marshal(t.Infra); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
 	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
@@ -4361,7 +4375,16 @@ func (t IRNodeProjection) EncodeCBOR() ([]byte, error) {
 // canonical key order (fixed at generation time), omitting empty
 // non-required fields so the map head's pair count matches.
 func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
-	n := 7
+	n := 4
+	if !t.Uses.IsZero() {
+		n++
+	}
+	if !t.Values.IsZero() {
+		n++
+	}
+	if !t.Features.IsZero() {
+		n++
+	}
 	if t.SyncWave != 0 {
 		n++
 	}
@@ -4389,48 +4412,54 @@ func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORTextString(dst, t.ID)
 	dst = appendCBORTextString(dst, "type")
 	dst = appendCBORTextString(dst, t.Type)
-	dst = appendCBORTextString(dst, "uses")
-	{
-		keys := t.Uses.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Uses.Get(k)
-			dst = appendCBORHead(dst, 4, uint64(len(mv)))
-			for i := range mv {
-				ev := mv[i]
-				dst = appendCBORTextString(dst, ev)
+	if !t.Uses.IsZero() {
+		dst = appendCBORTextString(dst, "uses")
+		{
+			keys := t.Uses.Keys()
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv, _ := t.Uses.Get(k)
+				dst = appendCBORHead(dst, 4, uint64(len(mv)))
+				for i := range mv {
+					ev := mv[i]
+					dst = appendCBORTextString(dst, ev)
+				}
 			}
 		}
 	}
-	dst = appendCBORTextString(dst, "values")
-	{
-		keys := t.Values.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Values.Get(k)
-			if raw, mErr := json.Marshal(mv); mErr != nil {
-				return nil, mErr
-			} else {
-				dst = appendCBORByteString(dst, raw)
+	if !t.Values.IsZero() {
+		dst = appendCBORTextString(dst, "values")
+		{
+			keys := t.Values.Keys()
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv, _ := t.Values.Get(k)
+				if raw, mErr := json.Marshal(mv); mErr != nil {
+					return nil, mErr
+				} else {
+					dst = appendCBORByteString(dst, raw)
+				}
 			}
 		}
 	}
-	dst = appendCBORTextString(dst, "features")
-	{
-		keys := t.Features.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Features.Get(k)
-			if raw, mErr := json.Marshal(mv); mErr != nil {
-				return nil, mErr
-			} else {
-				dst = appendCBORByteString(dst, raw)
+	if !t.Features.IsZero() {
+		dst = appendCBORTextString(dst, "features")
+		{
+			keys := t.Features.Keys()
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv, _ := t.Features.Get(k)
+				if raw, mErr := json.Marshal(mv); mErr != nil {
+					return nil, mErr
+				} else {
+					dst = appendCBORByteString(dst, raw)
+				}
 			}
 		}
 	}
@@ -4821,11 +4850,14 @@ func (t RenderNodeOutput) EncodeCBOR() ([]byte, error) {
 // canonical key order (fixed at generation time), omitting empty
 // non-required fields so the map head's pair count matches.
 func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
-	n := 2
+	n := 1
 	if t.Error != "" {
 		n++
 	}
 	if len(t.Diagnostics) != 0 {
+		n++
+	}
+	if !t.DerivedKeys.IsZero() {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
@@ -4854,18 +4886,20 @@ func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 			}
 		}
 	}
-	dst = appendCBORTextString(dst, "derived_keys")
-	{
-		keys := t.DerivedKeys.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.DerivedKeys.Get(k)
-			dst = appendCBORHead(dst, 4, uint64(len(mv)))
-			for i := range mv {
-				ev := mv[i]
-				dst = appendCBORTextString(dst, ev)
+	if !t.DerivedKeys.IsZero() {
+		dst = appendCBORTextString(dst, "derived_keys")
+		{
+			keys := t.DerivedKeys.Keys()
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv, _ := t.DerivedKeys.Get(k)
+				dst = appendCBORHead(dst, 4, uint64(len(mv)))
+				for i := range mv {
+					ev := mv[i]
+					dst = appendCBORTextString(dst, ev)
+				}
 			}
 		}
 	}
@@ -6313,7 +6347,10 @@ func (t RenderedNode) EncodeCBOR() ([]byte, error) {
 // canonical key order (fixed at generation time), omitting empty
 // non-required fields so the map head's pair count matches.
 func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
-	n := 4
+	n := 3
+	if !t.Annotations.IsZero() {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
 	dst = appendCBORTextString(dst, "id")
@@ -6324,15 +6361,17 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	if dst, err = t.Rendered.appendCBOR(dst); err != nil {
 		return nil, err
 	}
-	dst = appendCBORTextString(dst, "annotations")
-	{
-		keys := t.Annotations.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Annotations.Get(k)
-			dst = appendCBORTextString(dst, mv)
+	if !t.Annotations.IsZero() {
+		dst = appendCBORTextString(dst, "annotations")
+		{
+			keys := t.Annotations.Keys()
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv, _ := t.Annotations.Get(k)
+				dst = appendCBORTextString(dst, mv)
+			}
 		}
 	}
 	return dst, nil
@@ -6471,7 +6510,10 @@ func (t SubChart) EncodeCBOR() ([]byte, error) {
 // canonical key order (fixed at generation time), omitting empty
 // non-required fields so the map head's pair count matches.
 func (t SubChart) appendCBOR(dst []byte) ([]byte, error) {
-	n := 2
+	n := 1
+	if !t.Values.IsZero() {
+		n++
+	}
 	if t.Version != "" {
 		n++
 	}
@@ -6479,18 +6521,20 @@ func (t SubChart) appendCBOR(dst []byte) ([]byte, error) {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
-	dst = appendCBORTextString(dst, "values")
-	{
-		keys := t.Values.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Values.Get(k)
-			if raw, mErr := json.Marshal(mv); mErr != nil {
-				return nil, mErr
-			} else {
-				dst = appendCBORByteString(dst, raw)
+	if !t.Values.IsZero() {
+		dst = appendCBORTextString(dst, "values")
+		{
+			keys := t.Values.Keys()
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv, _ := t.Values.Get(k)
+				if raw, mErr := json.Marshal(mv); mErr != nil {
+					return nil, mErr
+				} else {
+					dst = appendCBORByteString(dst, raw)
+				}
 			}
 		}
 	}
@@ -7058,23 +7102,28 @@ func (t BoundaryEnvOverridesInput) EncodeCBOR() ([]byte, error) {
 // canonical key order (fixed at generation time), omitting empty
 // non-required fields so the map head's pair count matches.
 func (t BoundaryEnvOverridesInput) appendCBOR(dst []byte) ([]byte, error) {
-	n := 1
+	n := 0
+	if !t.Infra.IsZero() {
+		n++
+	}
 	if len(t.InternalUsesEdges) != 0 {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
-	dst = appendCBORTextString(dst, "infra")
-	{
-		keys := t.Infra.Keys()
-		sortCBORKeys(keys)
-		dst = appendCBORHead(dst, 5, uint64(len(keys)))
-		for _, k := range keys {
-			dst = appendCBORTextString(dst, k)
-			mv, _ := t.Infra.Get(k)
-			if raw, mErr := json.Marshal(mv); mErr != nil {
-				return nil, mErr
-			} else {
-				dst = appendCBORByteString(dst, raw)
+	if !t.Infra.IsZero() {
+		dst = appendCBORTextString(dst, "infra")
+		{
+			keys := t.Infra.Keys()
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv, _ := t.Infra.Get(k)
+				if raw, mErr := json.Marshal(mv); mErr != nil {
+					return nil, mErr
+				} else {
+					dst = appendCBORByteString(dst, raw)
+				}
 			}
 		}
 	}

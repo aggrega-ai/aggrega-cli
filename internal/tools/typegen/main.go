@@ -1459,9 +1459,24 @@ func emitEncodeAnyFallback(b *strings.Builder, src, indent string) {
 
 // omitGuard returns a boolean expression that is true when a non-required
 // field of the given Go type must be emitted (i.e. it is non-empty), matching
-// encoding/json's omitempty semantics for that type. An empty string means the
-// type carries no omitempty notion (the field is always emitted).
+// encoding/json's omitempty semantics for that type. For an order-preserving
+// container, whose emptiness omitempty cannot see, it matches omitzero
+// semantics instead, so the field is omitted when empty rather than emitted as
+// an empty map. An empty string means the type carries no omitempty notion (the
+// field is always emitted).
 func omitGuard(expr, goType string) string {
+	// An order-preserving container is a struct value, so encoding/json's
+	// omitempty is a no-op on it: emptiness has to be asked of the type. IsZero
+	// is the method omitzero dispatches to, so guarding on it omits exactly the
+	// values a reader of the field's omitempty tag expects omitted. The spelling
+	// is recognised through orderedMapValueType so this and the value encoder
+	// agree on what an order-preserving container is. Checked before the switch
+	// below, which no order-preserving container's spelling reaches; a composite
+	// that merely contains one — a plain map of them, a slice of them — still
+	// falls to its own case there.
+	if _, ok := orderedMapValueType(goType); ok {
+		return "!" + expr + ".IsZero()"
+	}
 	switch {
 	case goType == "string":
 		return expr + ` != ""`
