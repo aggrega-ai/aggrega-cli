@@ -176,6 +176,17 @@ func buildResolveResult(agg *types.Aggregate) *resolver.ResolveResult {
 // determinism_test.go (byte-identical artifact maps across full builds). The two
 // are complementary: this one guards the graph the front half produces; that one
 // guards the bytes the renderer emits.
+// runPipeline assembles the pre-render phases by hand — topology, IR, analysis —
+// and hands back the graph and the analysis.
+//
+// It is NOT the build's own sequence, and one consequence has to be stated
+// because nothing about the returned value shows it: the rules declared over the
+// finalised graph are invoked by the build beside the analysis, not inside it, so
+// this harness never invokes them. An assertion here that such a rule reported
+// nothing would therefore pass on a rule that was never asked. Those rules are
+// proved where they are invoked, and end to end through the real product
+// elsewhere in this package; an assertion about one does not belong on this
+// harness.
 func runPipeline(t *testing.T, agg *types.Aggregate) (*types.IRGraph, *analyzer.AnalysisResult) {
 	t.Helper()
 	catalog := integrationCatalog()
@@ -418,31 +429,6 @@ func TestPipeline_FeatureNormalization(t *testing.T) {
 	}
 	if credsEntry.Type != "core/db-creds" {
 		t.Errorf("credential attachment type: %q", credsEntry.Type)
-	}
-}
-
-func TestPipeline_SelectorViolation(t *testing.T) {
-	t.Parallel()
-	uses := types.OrderedMap[types.UsesSocketValue]{}
-	uses.Set("databases", types.UsesSocketValue{Compact: []string{"cache"}})
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
-	components.Set("cache", types.ComponentInstance{Type: "core/redis"})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "bad-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-
-	_, analysis := runPipeline(t, agg)
-
-	if len(analysis.Errors) != 1 {
-		t.Fatalf("expected 1 selector violation, got %d", len(analysis.Errors))
-	}
-	e := analysis.Errors[0]
-	if e.Source != "api" || e.Target != "cache" || e.Socket != "databases" {
-		t.Errorf("error: %+v", e)
 	}
 }
 

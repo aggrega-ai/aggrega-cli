@@ -14,8 +14,8 @@ import (
 )
 
 // validateSlotSelectors runs the attachment-slot selector check at Step 4 — the
-// slot analog of validateSelectors (usesSchema) and validateAppliesTo (Feature
-// appliesTo), reusing pkg/selector: when a filled slot declares a `selector`,
+// slot analog of the usesSchema socket constraint and of validateAppliesTo
+// (Feature appliesTo), reusing pkg/selector: when a filled slot declares a `selector`,
 // the attached Feature's labels must satisfy it, or the fill halts with
 // ErrSlotSelectorUnsatisfied.
 //

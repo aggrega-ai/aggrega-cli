@@ -25,8 +25,21 @@ import (
 //
 // It reports the reason a walk stopped and nothing else. A rule raising is not
 // an error here: an advisory joins the warning stream the caller surfaces, and
-// a violation would join the slice the build gates on, exactly as the readings
+// a violation joins the slice the build gates on, exactly as the readings
 // beside it do.
+//
+// # Two streams, chosen by the severity the rule declared
+//
+// A violation is appended to the analysis result's violation slice and an
+// advisory to its warning slice, and which one a rule reaches is decided by the
+// severity on its own declaration rather than by anything here. The analysis
+// result is the one the caller already holds, so a violation appended here
+// reaches the gate that halts the build and the joined error a build caller
+// reads, while an advisory reaches neither of those and is surfaced alongside a
+// build that finishes — the same two destinations the readings beside it use.
+//
+// The rules are invoked in the order the readings beside them run, so the order
+// a caller sees findings in does not depend on which reading produced them.
 func runGraphStageRules(
 	ctx context.Context,
 	out *stepsOneToFourOutput,
@@ -55,6 +68,21 @@ func runGraphStageRules(
 		return fmt.Errorf(
 			"graph-stage rules: the compilation produced no presentation of the finalised graph to invoke them against")
 	}
+
+	// The label constraint a dependency socket declares over what may satisfy
+	// it, evaluated once per connection the graph holds. The cancellation
+	// signal is the caller's own, so a long walk over a large graph stops
+	// within one connection of the caller asking it to.
+	violations, err := constraint.RunOnEdges(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		analyzer.EdgeTargetSatisfiesSocketSelector,
+	)
+	if err != nil {
+		return err
+	}
+	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
 
 	advisories, err := constraint.RunOnNodeAttachmentPillarLeaves(
 		ctx.Err,

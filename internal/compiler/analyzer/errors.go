@@ -13,8 +13,11 @@ import (
 // [AnalysisError] entry on [AnalysisResult].Errors with this sentinel
 // in its Sentinel field; [AnalysisError.ToCompilerError] wraps it as
 // the CompilerError's inner error, so the joined build error is
-// errors.Is-recoverable at the pipeline boundary. Both the selector
-// and the appliesTo checks carry this one sentinel.
+// errors.Is-recoverable at the pipeline boundary. Both the socket
+// constraint and the appliesTo check carry this one sentinel, which is why
+// it has more than one emission site: the socket constraint is declared as
+// [EdgeTargetSatisfiesSocketSelector] and raises through the framework,
+// and the appliesTo check raises it directly.
 func ErrSelectorViolation() error { return errSelectorViolation }
 
 var errSelectorViolation = cerrors.Register("compiler-analyzer/selector-violation", cerrors.Meta{
@@ -107,7 +110,7 @@ var errOverriddenAnnotation = cerrors.Register("compiler-analyzer/overridden-ann
 
 // ErrCatalogLookup is the ABI-stable sentinel reserved for catalog
 // lookups that fail during analyzer-phase evaluation. Today catalog
-// misses inside validateSelectors and validateAppliesTo trigger a
+// misses inside validateAppliesTo trigger a
 // silent skip rather than a wrapped halt: Step 1's resolver guards
 // already validate that every component and feature reference an
 // Aggregate or Release names, so an analyzer-phase miss reflects an

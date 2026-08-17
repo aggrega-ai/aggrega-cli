@@ -28,13 +28,15 @@ package constraint
 // to a provenance rule: the identifier's qualification records how the node was
 // reached, which is a different question from what the author typed.
 //
-// Three hand-assembled locator builders elsewhere in the compiler name a
-// component's site per violation class, and they name the top-level shape only:
-// a component in a subsystem the author declared gets no locator from them. So
-// they no longer agree with this rule, and the disagreement is carried
-// deliberately rather than overlooked — they are left in place until the checks
-// that use them are written against this framework, at which point they retire
-// onto this one and the disagreement retires with them.
+// Hand-assembled locator builders elsewhere in the compiler name a component's
+// site per violation class, and they name the top-level shape only: a component
+// in a subsystem the author declared gets no locator from them. So they do not
+// agree with this rule, and the disagreement is carried deliberately rather
+// than overlooked — each is left in place until the check that uses it is
+// written against this framework, at which point it retires onto this one and
+// its share of the disagreement retires with it. Their number is deliberately
+// not stated: it falls by one with each such check, and a stated count would go
+// stale on the next one while still reading as current.
 func componentAuthoredSegments(componentName, subsystemPath string, synthesizedSubsystem bool) []string {
 	return scopedComponentSegments(
 		subsystemNesting,

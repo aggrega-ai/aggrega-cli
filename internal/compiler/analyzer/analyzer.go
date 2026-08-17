@@ -86,16 +86,11 @@ const (
 )
 
 // AnalysisError is one violation discovered during Step 4. The struct
-// is shaped for edge-style violations (the selector check) and reused
-// for per-Feature-attachment violations (the appliesTo check) and for
-// policy-socket verdicts; the fields carry slightly different semantics
-// across the classes:
+// is shaped for edge-style violations and reused for per-Feature-attachment
+// violations (the appliesTo check), for policy-socket verdicts, and for
+// violations a declared rule raised; the fields carry slightly different
+// semantics across the classes:
 //
-//   - Selector violations (from validateSelectors): Source is the
-//     source nodeID of the violating edge, Target is the target
-//     nodeID, Socket is the socket name, Selector is the selector
-//     string that failed to match (or whose parse failed), Message
-//     is a human-readable diagnostic.
 //   - AppliesTo violations (from validateAppliesTo): Source is the
 //     target nodeID of the Feature attachment, Target is the Feature
 //     instance name, Socket is empty, Selector is [formatAppliesTo]'s
@@ -105,15 +100,22 @@ const (
 //     complete diagnostic the policy plugin supplied (a rule
 //     failure), and the edge fields (Source/Target/Socket/Selector) are
 //     empty.
+//   - Violations a declared rule raised (Kind [AnalysisErrorLocated]):
+//     Message is the complete diagnostic, Field names the authoring key
+//     the finding is about, OriginFile names the document holding it, and
+//     the edge fields are empty. This is the shape a socket's declared
+//     label constraint reports in.
 //
-// Callers that branch on the edge classes distinguish them by inspecting
-// Socket: a non-empty Socket signals a selector violation; an empty
-// Socket signals an appliesTo violation. A policy verdict carries the
-// explicit Kind [AnalysisErrorPolicy].
+// Kind is what distinguishes the classes, and it is the only thing that
+// does. Socket presence is not a classifier: a violation about one
+// connection can arrive with the edge fields empty and its coordinates on
+// Field instead, so a caller reading Socket to decide what it is holding
+// would misread exactly that class.
 type AnalysisError struct {
 	// Kind classifies the violation. The zero value ([AnalysisErrorEdge])
-	// is an edge-shaped selector/appliesTo violation; [AnalysisErrorPolicy]
-	// marks a policy-socket verdict whose Message is already complete.
+	// is an edge-shaped appliesTo violation; [AnalysisErrorPolicy]
+	// marks a policy-socket verdict whose Message is already complete;
+	// [AnalysisErrorLocated] marks one a declared rule raised.
 	Kind     AnalysisErrorKind
 	Source   string
 	Target   string
@@ -132,20 +134,25 @@ type AnalysisError struct {
 	OriginFile string
 	// Field is a mapping-style dotted locator naming the authoring site
 	// of the violation within OriginFile, e.g.
-	// ".spec.components.<name>.uses.<socket>" for a selector violation or
 	// ".spec.components.<name>.features.<instance>" for an appliesTo
 	// violation. It mirrors the resolver's locator shape so a consumer
 	// can walk the parsed source document to a sub-file position. Empty
 	// when the violation has no recoverable single-key locator; consumers
-	// fall back to file-level positioning. The locator addresses a
-	// top-level component, so subsystem-nested components (authored under
-	// .spec.subsystems.*) yield an empty Field rather than a path that
-	// names the wrong authoring site.
+	// fall back to file-level positioning.
+	//
+	// How deep the locator reaches depends on which reading produced the
+	// violation. A hand-assembled locator in this package addresses a
+	// top-level component only, so a component the author declared inside a
+	// subsystem yields an empty Field rather than a path naming the wrong
+	// authoring site. A locator a declared rule's subject carries names the
+	// subsystem the author declared, level by level, and then the component,
+	// so it positions such a violation rather than declining to.
 	Field string
 	// Sentinel is the domain sentinel this violation wraps. ToCompilerError
 	// surfaces it as the CompilerError's inner error so callers can detect
 	// the violation class with errors.Is at the pipeline boundary. The
-	// selector and appliesTo emission sites set it to ErrSelectorViolation.
+	// appliesTo emission site sets it to ErrSelectorViolation, and so does
+	// the declared rule over a socket's label constraint.
 	Sentinel error
 }
 
@@ -160,23 +167,12 @@ func lastSegment(nodeID string) string {
 	return nodeID
 }
 
-// selectorFieldPath builds the mapping-style YAML locator for a selector
-// violation — the uses-socket key on the source component. Returns ""
-// for a subsystem-nested component (non-empty subsystemPath): its
-// authored site is .spec.subsystems.*, not .spec.components.*, so a
-// top-level locator would name the wrong path; an empty Field routes the
-// consumer to file-level positioning instead.
-func selectorFieldPath(nodeID, socket, subsystemPath string) string {
-	if subsystemPath != "" {
-		return ""
-	}
-	return fmt.Sprintf(".spec.components.%s.uses.%s", lastSegment(nodeID), socket)
-}
-
 // appliesToFieldPath builds the mapping-style YAML locator for an appliesTo
 // violation — the Feature-instance key under the attaching component.
-// Returns "" for a subsystem-nested component for the same reason as
-// selectorFieldPath.
+// Returns "" for a subsystem-nested component (non-empty subsystemPath): its
+// authored site is .spec.subsystems.*, not .spec.components.*, so a top-level
+// locator would name the wrong path; an empty Field routes the consumer to
+// file-level positioning instead.
 func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
 	if subsystemPath != "" {
 		return ""
@@ -191,12 +187,13 @@ func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
 // composed and whose site is carried on Field rather than in the text. A
 // presence-mandate violation
 // (Kind [AnalysisErrorAttachmentRequirement]) reads as "<node>: <message>",
-// naming the node the mandate was evaluated against. Selector violations (Socket
-// non-empty) read as "<source> -> <target> (<socket>): <message>"; appliesTo
-// violations (Socket empty) read as
+// naming the node the mandate was evaluated against. An edge-shaped violation
+// carrying a socket reads as "<source> -> <target> (<socket>): <message>"; an
+// appliesTo violation (Socket empty) reads as
 // "<source> attaches Feature <target>: <message>" since the appliesTo check's
-// Source-and-Target reuse semantics carry different meaning. The edge shapes
-// are distinguished by Socket presence per the package's documented convention.
+// Source-and-Target reuse semantics carry different meaning. Those two shapes
+// are the only ones Socket presence tells apart, and both of them carry the
+// zero-value kind; every other class is identified by its kind.
 func (e AnalysisError) Error() string {
 	if e.Kind == AnalysisErrorPolicy || e.Kind == AnalysisErrorLocated {
 		return e.Message
@@ -211,29 +208,37 @@ func (e AnalysisError) Error() string {
 }
 
 // ToCompilerError converts the analyzer violation into a *cerrors.CompilerError,
-// choosing the category from the violation's Kind. Selector and appliesTo
-// violations (the edge-shaped kinds) are authoring-time problems on the
-// developer's Aggregate — the developer authored the uses-edge or Feature
-// attachment that fails the selector or appliesTo constraint — so they route
+// choosing the category from the violation's Kind. An appliesTo violation and a
+// violation about one connection's declared label constraint are both
+// authoring-time problems on the developer's Aggregate — the developer authored
+// the uses-edge or Feature attachment that fails the constraint — so they route
 // to cerrors.DeveloperError. A policy verdict (Kind [AnalysisErrorPolicy]) is a
 // governance rejection from an operator-attached policy plugin, not a
 // developer authoring mistake, so it routes to cerrors.PolicyError; the
 // remediation is to satisfy the enforced policy or reconsider its attachment,
 // not to edit the Aggregate.
 //
-// Source location maps the violating-node ID into SourceLocation.File. The
-// node ID is the most-specific authoring-locator available at the analyzer
-// stage — finer-grained source positions (file/line/column) require the
-// resolver to thread file-path metadata onto IRNode, which is a separate
-// future improvement. A policy verdict carries no edge fields, so its Source
-// is empty and the pointer is message-only.
+// The source pointer is read from whichever field the violation's class
+// actually populates, and the two classes populate different ones. A violation
+// a declared rule raised (Kind [AnalysisErrorLocated]) carries the document its
+// finding is about on OriginFile and no node ID at all, so the pointer names
+// that document. Every other class carries the violating node's ID on Source
+// and that is the most-specific locator those readings produce, so the pointer
+// names it. Reading one field for both would leave one class pointing nowhere,
+// and the class it left empty would be the one carrying a real path. A policy
+// verdict populates neither, so its pointer is message-only.
+//
+// Finer-grained positions within the document — line and column — are not
+// composed here. The authoring key a violation is about is carried on Field,
+// and turning a key into a line needs the parsed document, which a consumer
+// walking source holds and this conversion does not.
 //
 // The CompilerError wraps e.Sentinel as its inner error, so a violation
 // class is detectable with errors.Is at the pipeline boundary (the build
 // error joins these CompilerErrors and errors.Is traverses the chain).
-// Selector and appliesTo violations carry ErrSelectorViolation; policy
-// verdicts carry ErrPolicyViolation. When Sentinel is nil the inner chain is
-// empty, matching the prior behavior.
+// An appliesTo violation and a socket-constraint violation both carry
+// ErrSelectorViolation; policy verdicts carry ErrPolicyViolation. When Sentinel
+// is nil the inner chain is empty.
 func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 	category := cerrors.DeveloperError
 	switch {
@@ -246,9 +251,13 @@ func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 		// attaching the feature.
 		category = cerrors.CatalogError
 	}
+	pointer := e.Source
+	if e.Kind == AnalysisErrorLocated {
+		pointer = e.OriginFile
+	}
 	return cerrors.New(
 		category,
-		cerrors.SourceLocation{File: e.Source},
+		cerrors.SourceLocation{File: pointer},
 		e.Error(),
 		nil,
 		e.Sentinel,
@@ -297,23 +306,29 @@ type PrecalculatedPath struct {
 // Analyze executes Step 4 of the compiler pipeline. It returns a
 // non-nil [AnalysisResult] populated with:
 //
-//  1. Selector-violation errors from validateSelectors.
-//  2. AppliesTo-violation errors from validateAppliesTo, attachment-slot
+//  1. AppliesTo-violation errors from validateAppliesTo, attachment-slot
 //     selector errors from validateSlotSelectors, presence-mandate errors
 //     from validateRequiredAttachmentTypes, and unfilled-required-slot
 //     errors from validateRequiredAttachmentSlots (all appended to the
 //     same Errors slice).
-//  3. Precalculated paths from calculatePaths.
-//  4. The PolicyInput payload from assemblePolicyInput.
+//  2. Precalculated paths from calculatePaths.
+//  3. The PolicyInput payload from assemblePolicyInput.
+//
+// One violation class a reader will look for here is absent, and it is absent
+// for the same reason the advisory below is. The label constraint a dependency
+// socket declares over what may satisfy it is declared as
+// [EdgeTargetSatisfiesSocketSelector] and is evaluated over the presentation of
+// the finalised graph, which this function is not handed and does not build — a
+// presentation has one producer, and building a second one here would give one
+// fact two answers. Its violations are appended to the same Errors slice by
+// whatever holds that presentation, so a caller reading that slice still reads
+// one stream and the gate below still sees them.
 //
 // It populates no advisory warnings, and the omission is where a reader is
 // most likely to expect one. The annotation-override advisory is declared as
-// [OverriddenAnnotationAdvisory] and is invoked over the presentation of the
-// finalised graph, which this function is not handed and does not build — a
-// presentation has one producer, and building a second one here would give one
-// fact two answers. So AnalysisResult.Warnings is empty from here and is filled
-// by whatever holds that presentation; a caller reading it still reads one
-// stream.
+// [OverriddenAnnotationAdvisory] and is invoked over that same presentation. So
+// AnalysisResult.Warnings is empty from here and is filled by whatever holds
+// it; a caller reading it still reads one stream.
 //
 // Build flow gates on len(result.Errors) > 0 before invoking the render.
 // AnalysisResult.Paths and AnalysisResult.PolicyInput are computed
@@ -329,8 +344,8 @@ func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *Analys
 	return result
 }
 
-// AnalyzeContext is Analyze with cooperative cancellation: validateSelectors,
-// validateAppliesTo, validateSlotSelectors, validateRequiredAttachmentTypes and
+// AnalyzeContext is Analyze with cooperative cancellation: validateAppliesTo,
+// validateSlotSelectors, validateRequiredAttachmentTypes and
 // validateRequiredAttachmentSlots each check ctx.Err() per iteration — every
 // validator the sequence runs, so none of them can hold a cancelled caller — so
 // a long analysis over a large graph can be interrupted (e.g. by the daemon's
@@ -339,27 +354,20 @@ func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *Analys
 // structured data, never as the function-level error. Analyze is the
 // background-context convenience wrapper.
 func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup resolver.CatalogLookup) (*AnalysisResult, error) {
-	// 1. Selector validation (usesSchema selector rules)
-	errs, err := validateSelectors(ctx, graph, catalogLookup)
+	// Feature appliesTo validation.
+	errs, err := validateAppliesTo(ctx, graph, catalogLookup)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Feature appliesTo validation
-	appliesErrs, err := validateAppliesTo(ctx, graph, catalogLookup)
-	if err != nil {
-		return nil, err
-	}
-	errs = append(errs, appliesErrs...)
-
-	// 2b. attachment slot selector validation (fill satisfaction)
+	// Attachment slot selector validation (fill satisfaction).
 	slotErrs, err := validateSlotSelectors(ctx, graph, catalogLookup)
 	if err != nil {
 		return nil, err
 	}
 	errs = append(errs, slotErrs...)
 
-	// 2c. presence mandates — each requiredType annotation a node's Component
+	// Presence mandates — each requiredType annotation a node's Component
 	// declares is satisfied by some attachment of that type.
 	mandateErrs, err := validateRequiredAttachmentTypes(ctx, graph)
 	if err != nil {
@@ -367,19 +375,20 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup res
 	}
 	errs = append(errs, mandateErrs...)
 
-	// 2d. required attachment slots — each slot a node's Component declares
-	// required is bound by some attachment. A separate check from 2c: a slot
-	// names one binding point, a mandate names a type at any name.
+	// Required attachment slots — each slot a node's Component declares
+	// required is bound by some attachment. A separate check from the presence
+	// mandates above: a slot names one binding point, a mandate names a type at
+	// any name.
 	slotFillErrs, err := validateRequiredAttachmentSlots(ctx, graph, catalogLookup)
 	if err != nil {
 		return nil, err
 	}
 	errs = append(errs, slotFillErrs...)
 
-	// 3. DFS path calculation
+	// DFS path calculation.
 	paths := calculatePaths(graph)
 
-	// 4. Assemble policy input
+	// Assemble policy input.
 	policyInput := assemblePolicyInput(graph, paths)
 
 	return &AnalysisResult{

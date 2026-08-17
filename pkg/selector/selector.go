@@ -12,9 +12,9 @@ import (
 // per-clause results from matchRequirement against the supplied labels.
 // Comma-separated requirements combine with AND logic per the Kubernetes
 // label-selector convention; an empty selector parses to zero requirements
-// and the function returns (true, nil) — the "no constraint" case static
-// analysis's usesSchema-selector validator (analyzer/selector.go) relies on to skip
-// edges whose source socket declares no selector.
+// and the function returns (true, nil) — the "no constraint" case the rule over
+// a usesSchema socket's declared constraint relies on, so an edge whose socket
+// declares no constraint leaves its target unconstrained.
 //
 // The Parse/match split (this function = orchestration; parse.go = syntax;
 // match.go = structured-selector evaluation) keeps the string parsing

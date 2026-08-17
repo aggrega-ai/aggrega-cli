@@ -18,7 +18,14 @@
 //     entity's appliesTo / appliesToAnyOf constraints (AND across the
 //     two surfaces; an omitted constraint is vacuously satisfied).
 //
-// Both checks delegate label matching to pkg/selector.
+// Both checks delegate label matching to pkg/selector, and both report on
+// [AnalysisResult].Errors, but they are not both evaluated in this package.
+// The first is declared here as [EdgeTargetSatisfiesSocketSelector] and is
+// evaluated over a presentation of the finalised graph, which this package is
+// not handed; whatever holds that presentation invokes it and appends what it
+// raised to the same slice, through [ErrorsFromObjections]. So a reader looking
+// for the edge walk that enforces it will not find one here, and that is the
+// arrangement rather than a gap.
 //
 // # Outputs
 //
@@ -54,7 +61,8 @@
 //     (path_01, path_02, …) — the index reflects traversal sequence
 //     rather than a post-sort over the path set.
 //   - AttachedFeatures on each path sort alphabetically.
-//   - Selector-violation errors sort by (source, target, socket).
+//   - Socket-constraint violations emerge in the order the graph holds its
+//     edges, which is the order the traversal invokes the rule in.
 //   - AppliesTo-violation errors emerge in (nodeID, instance) order
 //     by virtue of pre-sorted iteration in validateAppliesTo, with
 //     no explicit post-sort.
