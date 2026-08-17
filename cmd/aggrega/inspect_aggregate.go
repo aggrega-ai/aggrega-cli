@@ -77,7 +77,7 @@ func renderAggregateFile(rw *workspaceconfig.ResolvedWorkspace, path string, dat
 		return nil
 	}
 
-	renderAggregateNodes(opts, topoResult, lookup)
+	renderAggregateNodes(opts, topoResult, lookup, readAuthoredValueExpressions(data))
 	renderAggregateDependencyGraph(opts, topoResult)
 	return nil
 }
@@ -158,7 +158,11 @@ func renderAggregateNodeList(opts inspectOptions, topo *topology.TopologyResult)
 // to one block per node keyed by the full dotted InstanceID. Each block carries
 // the component type, the developer-authored values, the uses-edges grouped by
 // socket, and the catalog-declared required Features.
-func renderAggregateNodes(opts inspectOptions, topo *topology.TopologyResult, lookup resolver.CatalogLookup) {
+//
+// authored supplies the text of values the document wrote as unquoted template
+// expressions, whose own text the structural read of the document does not
+// preserve. It is consulted per node, and only for the fields it holds.
+func renderAggregateNodes(opts inspectOptions, topo *topology.TopologyResult, lookup resolver.CatalogLookup, authored authoredValueExpressions) {
 	fmt.Fprintf(opts.out, "\n%s\n", opts.colorize.header("Components:"))
 	for id, node := range topo.Nodes.All() {
 		label := id
@@ -170,7 +174,8 @@ func renderAggregateNodes(opts inspectOptions, topo *topology.TopologyResult, lo
 		}
 		fmt.Fprintf(opts.out, "%s%s  (type: %s)\n", indent, label, opts.colorize.uri(node.ComponentType))
 		body := indent + "  "
-		renderAggregateNodeValues(opts, body, node.Values, declaredComponentLeaves(lookup, node.ComponentType).Values)
+		values := authored.applyTo(id, node.Values)
+		renderAggregateNodeValues(opts, body, values, declaredComponentLeaves(lookup, node.ComponentType).Values)
 		renderAggregateNodeUses(opts, body, node.Uses)
 		renderAggregateNodeRequiredAttachments(opts, body, node.ComponentType, lookup)
 	}

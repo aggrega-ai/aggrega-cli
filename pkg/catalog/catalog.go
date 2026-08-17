@@ -1250,8 +1250,12 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 }
 
 // parseAggregateEntity is the single per-entity Aggregate resolution: unmarshal
-// plus kind-check. Mirrors parseComponentEntity (returns the raw error; the
-// indexing caller wraps the unmarshal failure with "unmarshal Aggregate").
+// plus kind-check. The decode and kind-check failures return the raw error, as
+// parseComponentEntity does, and the indexing caller wraps the unmarshal failure
+// with "unmarshal Aggregate". The two failures that read the document — the
+// envelope gate and the parse below it — instead report as classified catalog
+// errors carrying the file they were reading, because a reader who cannot open a
+// catalog entry needs to know which entry it was before anything else.
 //
 // It reads the document through the same tolerant parse the envelope gate
 // applies, for the reason LoadAggregateFromBytes does: a catalog-resident
@@ -1266,7 +1270,7 @@ func parseAggregateEntity(data []byte, path string) (types.Aggregate, error) {
 	}
 	node, perr := envelope.ParseDecodable(data, path)
 	if perr != nil {
-		return types.Aggregate{}, perr
+		return types.Aggregate{}, cerrors.Wrap(perr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, perr.Error())
 	}
 	var e types.Aggregate
 	if err := node.Decode(&e); err != nil {

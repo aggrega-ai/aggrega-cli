@@ -69,10 +69,14 @@ func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) 
 	}
 	node, perr := envelope.ParseDecodable(data, path)
 	if perr != nil {
+		// The parse failure already names what failed and which file it was
+		// reading, so it is reported as it stands. Restating that here would
+		// tell the reader twice, in two different vocabularies, that one parse
+		// of one file did not succeed.
 		return nil, &ResolverError{
 			Entity:  "Aggregate",
 			Field:   path,
-			Message: fmt.Sprintf("failed to unmarshal YAML: %v", perr),
+			Message: perr.Error(),
 			Err:     ErrYAMLLoad(),
 		}
 	}
