@@ -761,7 +761,7 @@ func RunOnNodeArtifacts[V View](
 
 // RunOnBoundaryProviderPaths invokes check once per output path written for one
 // provider within one boundary, in boundary order, then provider order, then
-// emission order.
+// path order.
 //
 // The locator names the boundary alone — .spec.boundaries.<boundary>, with the
 // container's key repeated for each level of a nested boundary — and that is the

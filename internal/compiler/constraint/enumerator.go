@@ -426,7 +426,12 @@ type ProviderEnumerator interface {
 // within one boundary.
 type EmittedPathEnumerator interface {
 	// EmittedPaths returns the paths written for one provider within one
-	// boundary, in emission order.
+	// boundary, in path order.
+	//
+	// The sibling axes leave their order to the implementation to declare; this
+	// one fixes it, because the order in which files are placed into a group is
+	// not a property of the input. An implementation inheriting that placement
+	// order would answer differently for identical input.
 	EmittedPaths(boundary string, provider string) []string
 }
 

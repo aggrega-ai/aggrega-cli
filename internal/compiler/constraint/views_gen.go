@@ -2326,7 +2326,13 @@ type RenderedView interface {
 	PipelineStepInputShape(node string, step string) types.OrderedMap[any]
 
 	// EmittedFilePathSet are the output paths written for one provider within
-	// one boundary, in emission order.
+	// one boundary, in path order.
+	//
+	// The order is stated rather than inherited. The order in which files are
+	// placed into a group is not a property of the input, so answering in that
+	// order would return a different sequence for identical input; path order
+	// is derived from something ordered and is therefore the same on every
+	// run.
 	//
 	// Several distinct collision rules read this one fact at different points
 	// of assembly. They stay distinct rules over one fact rather than becoming
