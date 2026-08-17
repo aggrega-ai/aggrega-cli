@@ -127,13 +127,22 @@ func buildArtifactsProjection(
 				fmt.Sprintf("Recipe %q emits artifact output %q more than once", state.RecipeName, outputName))
 		}
 		seen[outputName] = struct{}{}
-		proj.Entries = append(proj.Entries, ArtifactProjectionEntry{
+		entry := ArtifactProjectionEntry{
 			Name:        outputName,
 			Origin:      origin,
 			Content:     []byte(rendered),
 			Labels:      labels,
 			Annotations: annotations,
-		})
+		}
+		proj.Entries = append(proj.Entries, entry)
+		// The evaluated bytes are retained here rather than beside the recorded
+		// text above, because this is the point the entry becomes part of what the
+		// render projects: the renders-to-nothing skip and the collision guard both
+		// sit between the two, so the key set recorded here is the render's and the
+		// one recorded above is the Recipe's. Retaining the same entry the provider
+		// receives is what keeps the two from being separate readings of one value.
+		// A node whose render carries no retention records nothing.
+		state.artifacts.record(state.NodeID, entry.Name, entry.Content)
 		return nil
 	}
 

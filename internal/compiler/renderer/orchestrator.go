@@ -87,6 +87,27 @@ type RenderResult struct {
 	// are the same whether it is populated or not.
 	HydratedView constraint.HydratedView
 
+	// RenderedView presents, as named facts, what this render produced: the output
+	// paths each provider wrote within each boundary, the bytes standing at one of
+	// them, the artifact names each node projected, and the bytes each of those
+	// artifacts evaluated to.
+	//
+	// It is published here for the reason the presentations above are, reaching two
+	// retentions rather than one. The paths and their bytes are read from the
+	// attribution beside each assembled group, which the assembly that knew the
+	// boundary and the provider is the last thing to hold; the artifact facts are
+	// read from a per-node retention taken inside the artifacts walk, whose own
+	// state is dropped when each node's turn ends. Neither is reachable once the
+	// render returns except through this.
+	//
+	// It embeds the presentation of the state each node reached before its artifact
+	// bytes existed, so every fact complete earlier is readable through it.
+	//
+	// nil when the render could present no earlier stage to extend. Out-of-band:
+	// it carries no content that reaches an emitted file, and the emitted bytes are
+	// the same whether it is populated or not.
+	RenderedView constraint.RenderedView
+
 	// hydrated is the render's retained set of per-node mid-render projections.
 	//
 	// It is published here because the state each projection is taken from is a
@@ -97,6 +118,17 @@ type RenderResult struct {
 	// Out-of-band: it carries no content that reaches an emitted file, and the
 	// emitted bytes are the same whether it is populated or not.
 	hydrated *hydratedProjections
+
+	// artifacts is the render's retained set of per-node artifact projections.
+	//
+	// It is published here because the artifacts walk's own state is a loop-local
+	// and only the provider's returned files survive it: a reader asking which
+	// artifacts a node projected, or what one of them evaluated to, has this and
+	// nothing else.
+	//
+	// Out-of-band: it carries no content that reaches an emitted file, and the
+	// emitted bytes are the same whether it is populated or not.
+	artifacts *artifactProjections
 }
 
 // AssemblyContribution attributes one group of assembled output to the
@@ -453,6 +485,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	input.hydrated = newHydratedProjections(allProvides)
 	result.hydrated = input.hydrated
 
+	// Install this render's retention of what each node's artifacts walk projects.
+	// It is installed beside the retention above and travels the same way — onto
+	// the travelling input, which reaches the recording site inside the walk, and
+	// onto the result, which outlives the node walk. It starts empty because its
+	// first content is produced by the walk rather than before it.
+	input.artifacts = newArtifactProjections()
+	result.artifacts = input.artifacts
+
 	// Present the state each node reaches before its artifact bytes exist, with
 	// the facts complete earlier answered by the presentation built above. Built
 	// here because this is the first point holding every product it names: the
@@ -769,10 +809,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// emitted workload document where the display promised a re-render of it.
 		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
 		state.Trace = traceWriter
-		// The retention travels onto this node's own state so the artifacts walk
-		// can record each entry's template text where that text is resolved. An
-		// attachment's render builds its own state and does not receive it.
+		// The retentions travel onto this node's own state so the artifacts walk can
+		// record each entry's template text where that text is resolved, and each
+		// entry's evaluated bytes where the entry becomes part of what the render
+		// projects. An attachment's render builds its own state and receives
+		// neither.
 		state.hydrated = input.hydrated
+		state.artifacts = input.artifacts
 		// The state's copy is the authoritative set for this node: a Phase B
 		// sub-pass records the workload display decision onto it, and a capture
 		// reading a copy taken earlier would show a document the decision said to
@@ -1745,6 +1788,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			OutputPaths:  outputPaths,
 		})
 	}
+
+	// Present what this render produced, with the facts complete earlier answered
+	// by the presentation built before the node walk. Built here rather than beside
+	// that one because this is the first point holding every product it names: the
+	// attribution the loop above has just recorded, and the artifact retention the
+	// walk has filled. Building it earlier would hand a reader a presentation whose
+	// path facts answer from an attribution not yet written.
+	result.RenderedView = newRenderedView(
+		result.HydratedView, assembledOutput{result: result}, input.artifacts,
+	)
 
 	return result, nil
 }

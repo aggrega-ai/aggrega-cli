@@ -169,6 +169,20 @@ type PhaseBState struct {
 	// collide under one node identity. nil records nothing.
 	hydrated *hydratedProjections
 
+	// artifacts is the render's retained set of per-node artifact projections,
+	// carried here so the artifacts walk can record each entry's evaluated bytes
+	// at the point that entry becomes part of what the render projects — after the
+	// walk has dropped an entry evaluating to nothing and refused a name already
+	// emitted, which is what makes the recorded key set the render's rather than
+	// the set of entries the Recipe declared.
+	//
+	// It is unexported and is set only for a node's own base-Recipe state, on the
+	// same reading the mid-render retention above follows: an attachment's render
+	// walks the same producer under the host node's identity and leaves this nil,
+	// which keeps an attachment's artifacts out of a value declared over a node's
+	// own Recipe. nil records nothing.
+	artifacts *artifactProjections
+
 	// AttachmentProvides is the per-node `slot → resolved fill provides` map the
 	// orchestrator resolves once, through the single attachment-provides
 	// resolution, before context assembly. The same bag is surfaced to the

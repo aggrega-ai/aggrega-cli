@@ -143,6 +143,18 @@ type RendererInput struct {
 	// built elsewhere leaves it unset and nothing is recorded. RenderAll installs
 	// it and publishes it on the result, where it outlives the render's node walk.
 	hydrated *hydratedProjections
+
+	// artifacts retains, per node, the artifact names that node's artifacts walk
+	// projected and the bytes each of them evaluated to. The walk's own state is a
+	// loop-local and only the provider's returned files survive it, so a question
+	// about what an artifact evaluated to has nothing to read once the render
+	// finishes.
+	//
+	// It is unexported for the same reason the retentions above are: it is the
+	// render's own working state rather than anything a caller supplies. An input
+	// built elsewhere leaves it unset and nothing is recorded. RenderAll installs
+	// it and publishes it on the result, where it outlives the render's node walk.
+	artifacts *artifactProjections
 }
 
 // NodeProvides holds the resolved provides for all nodes (Pass 1 output).

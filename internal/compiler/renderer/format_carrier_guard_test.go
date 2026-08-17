@@ -21,17 +21,29 @@ func TestSingleFormatCarrier(t *testing.T) {
 	t.Parallel()
 
 	// RenderResult: {Files, Warnings, Diagnostics, Contributions, DescribedView,
-	// HydratedView}, with Files valued by AssembledFile. Warnings and Diagnostics
-	// are advisory streams, not per-file carriers; Contributions carries per-group
-	// coordinates and is held to that below; DescribedView and HydratedView are
-	// stage presentations, keyed by node, boundary, pipeline step, provides key
-	// and artifact name rather than by output path, so neither is a carrier of
-	// anything a file is keyed by. HydratedView's artifact axis is the closest
-	// call and still passes it: an artifact is a Recipe's authored entry, which is
-	// a coordinate of the node that declares it and not of the assembled output
-	// path the bytes end up under. A reintroduced `Formats map[string]string`
-	// sidecar keyed like the bytes shows up as an unexpected exported field and
-	// trips the set check.
+	// HydratedView, RenderedView}, with Files valued by AssembledFile. Warnings and
+	// Diagnostics are advisory streams, not per-file carriers; Contributions
+	// carries per-group coordinates and is held to that below; the three views are
+	// stage presentations. A reintroduced `Formats map[string]string` sidecar keyed
+	// like the bytes shows up as an unexpected exported field and trips the set
+	// check.
+	//
+	// DescribedView and HydratedView are keyed by node, boundary, pipeline step,
+	// provides key and artifact name rather than by output path, so neither is a
+	// carrier of anything a file is keyed by. HydratedView's artifact axis is a
+	// close call and passes: an artifact is a Recipe's authored entry, which is a
+	// coordinate of the node that declares it and not of the assembled output path
+	// the bytes end up under.
+	//
+	// RenderedView is the closest call of the three, because one of its facts IS
+	// keyed by output path and answers with bytes — and it still passes, for a
+	// reason worth stating rather than leaving to be re-derived. It holds no
+	// structure keyed by path. It answers that fact by delegating to Files and
+	// Contributions, so the bytes have exactly one home and the format travels on
+	// the record that holds them. Its own retention is keyed by node and artifact
+	// name and carries no format at all. What would trip this guard is a view that
+	// grew a path-keyed field of its own — which is why the check is over the field
+	// set rather than over what any accessor returns.
 	rr := reflect.TypeOf(RenderResult{})
 	exported := map[string]reflect.Type{}
 	for i := 0; i < rr.NumField(); i++ {
@@ -43,6 +55,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 	want := map[string]bool{
 		"Files": true, "Warnings": true, "Diagnostics": true,
 		"Contributions": true, "DescribedView": true, "HydratedView": true,
+		"RenderedView": true,
 	}
 	for name := range exported {
 		if !want[name] {
