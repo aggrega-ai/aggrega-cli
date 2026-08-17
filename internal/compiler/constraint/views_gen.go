@@ -2319,12 +2319,6 @@ type HydratedView interface {
 type RenderedView interface {
 	HydratedView
 
-	// PipelineStepInputShape is the input a pipeline step was rendered with,
-	// carried as an opaque ordered payload.
-	//
-	// Keyed by (node, pipeline-step); read from types.RecipeSpec.Pipeline.
-	PipelineStepInputShape(node string, step string) types.OrderedMap[any]
-
 	// EmittedFilePathSet are the output paths written for one provider within
 	// one boundary, in path order.
 	//

@@ -2571,19 +2571,6 @@ var facts = []factDecl{
 	// ---------------------------------------------------------------- rendered
 
 	{
-		Name:        "pipeline-step-input-shape",
-		Stage:       "rendered",
-		SourceField: "types.RecipeSpec.Pipeline",
-		Subject:     []string{"node", "pipeline-step"},
-		Params: []paramDecl{
-			{Name: "node", Type: "string"},
-			{Name: "step", Type: "string"},
-		},
-		Returns: "types.OrderedMap[any]",
-		Doc: "PipelineStepInputShape is the input a pipeline step was rendered " +
-			"with, carried as an opaque ordered payload.",
-	},
-	{
 		Name:        "emitted-file-path-set",
 		Stage:       "rendered",
 		SourceField: "renderer.AssembledFile",
