@@ -1037,14 +1037,12 @@ func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyN
 		return
 	}
 
-	var slots types.OrderedMap[types.AttachmentSlot]
-	slotsResolved := false
-	if topoNode != nil && topoNode.ComponentType != "" && catalogLookup.Component != nil {
-		if comp, found := catalogLookup.Component(topoNode.ComponentType); found {
-			slots = comp.Spec.FeaturesSchema
-			slotsResolved = true
-		}
+	componentType := ""
+	if topoNode != nil {
+		componentType = topoNode.ComponentType
 	}
+	slots, slotsResolved := ComponentAttachmentSlots(catalogLookup, componentType)
+	sensitiveSlots := SensitiveSlots(slots)
 
 	declaredCache := map[string]resolver.SensitiveLeaves{}
 	declaredFor := func(featureType string) resolver.SensitiveLeaves {
@@ -1061,7 +1059,7 @@ func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyN
 
 	for name, entry := range result.Features.All() {
 		declared := declaredFor(entry.Type)
-		slot, slotDeclared := slots.Get(name)
+		_, slotDeclared := slots.Get(name)
 
 		entry.Labels, entry.CatalogAnnotations = featureCatalogLabelsAndAnnotations(catalogLookup, entry.Type)
 		if slotsResolved {
@@ -1071,7 +1069,7 @@ func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyN
 			}
 		}
 
-		sensitive := declared.Any() || (slotDeclared && slot.Sensitive)
+		sensitive := declared.Any() || sensitiveSlots[name]
 		marked := deriveInjectSensitivity(entry.Inject, declared.Provides)
 		if sensitive || marked.Len() > 0 {
 			// A marked delivery key implies a sensitive provides declaration,

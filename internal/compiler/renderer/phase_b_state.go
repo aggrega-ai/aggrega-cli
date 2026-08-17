@@ -45,6 +45,16 @@ type PhaseBState struct {
 	// before then.
 	ResolvedValues map[string]any
 
+	// ValuesAreDeclaredLeaves reports that ResolvedValues' keys ARE the authored
+	// values-pillar leaf paths, which holds exactly when the Recipe declares no
+	// values mapping. A mapping is one whole-document template, so with one
+	// declared the keys are the template's own invention and no declaration names
+	// any of them. Recorded by the sub-pass that resolves the values so no reader
+	// has to re-answer the question from the Recipe. False before B.1, which is
+	// the safe reading: a consumer joining a declaration to one of these keys
+	// declines the join rather than making it on an unproven spelling.
+	ValuesAreDeclaredLeaves bool
+
 	// ParsedWorkload is the typed Workload B.2 produces after yaml.Unmarshal
 	// + validator.ValidateWorkload + validator.ValidateWorkloadAttachments all
 	// succeed. nil before B.2 and for Recipes that don't declare workload:.

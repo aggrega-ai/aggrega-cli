@@ -275,7 +275,7 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 	}
 
 	input := renderer.RenderNodeInput{
-		Node:          e.nodeProjection(nodeCtx, valuesToOrdered(values)),
+		Node:          e.nodeProjection(nodeCtx, valuesToOrdered(values), nil),
 		Context:       e.renderContext(nodeCtx),
 		SourceListing: listing,
 	}
@@ -327,7 +327,7 @@ func (e *Engine) SynthesizeWorkload(
 	}
 
 	input := renderer.RenderNodeInput{
-		Node:    e.nodeProjection(nodeCtx, types.OrderedMap[any]{}),
+		Node:    e.nodeProjection(nodeCtx, types.OrderedMap[any]{}, w),
 		Context: e.renderContext(nodeCtx),
 		WorkloadProjection: &renderer.WorkloadProjection{
 			Workload:           *w,
@@ -375,7 +375,7 @@ func (e *Engine) EmitArtifacts(
 	nodeCtx renderer.NodeRenderContext,
 ) ([]renderer.EmittedFile, error) {
 	input := renderer.RenderNodeInput{
-		Node:                e.nodeProjection(nodeCtx, types.OrderedMap[any]{}),
+		Node:                e.nodeProjection(nodeCtx, types.OrderedMap[any]{}, nil),
 		Context:             e.renderContext(nodeCtx),
 		ArtifactsProjection: &proj,
 	}
@@ -640,7 +640,7 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 	}
 
 	input := renderer.RenderNodeInput{
-		Node:    e.nodeProjection(nodeCtx, valuesToOrdered(values)),
+		Node:    e.nodeProjection(nodeCtx, valuesToOrdered(values), nil),
 		Context: e.renderContext(nodeCtx),
 	}
 	src, _ := nodeCtx.Source.(string)
@@ -834,41 +834,17 @@ func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) 
 	return out, nil
 }
 
-// nodeProjection builds the wire node projection from the host node context —
-// the inverse of the guest's own context reconstruction. It carries the identity
-// and provenance the render core stamps onto every emitted manifest, plus the
-// node's attachments in author order: an attachment entry carries the derived
-// sensitivity marking, which is what lets a guest render a target-native
-// sensitivity primitive rather than guess from a value.
+// nodeProjection builds this dispatch's wire node projection. The construction
+// itself has one home in the render core, beside both the host context it reads
+// and the wire type it produces, so every render shape reaches a guest through
+// one projection builder and none can carry a field another leaves unset.
 //
-// Type, resolved recipe, and uses edges stay unset, each for its own reason. The
-// component type is opaque metadata rather than a behavior switch, so carrying it
-// would only invite a guest to branch on it. The bound Recipe's identity already
-// reaches the guest as the recipe name and version it stamps into provenance, so
-// the resolved URI adds nothing it renders from. And an outbound edge is
-// consumed before dispatch: the edge's provides are rehydrated into the node's
-// own inject pipe, which the Recipe has already evaluated into the values and
-// workload the guest receives, while a boundary assembler that needs the topology
-// itself gets the edge list on its own input.
-func (e *Engine) nodeProjection(nodeCtx renderer.NodeRenderContext, values types.OrderedMap[any]) renderer.IRNodeProjection {
-	return renderer.IRNodeProjection{
-		ID:               nodeCtx.NodeID,
-		Values:           values,
-		Features:         nodeCtx.Attachments,
-		BoundaryPath:     nodeCtx.BoundaryPath,
-		SyncWave:         nodeCtx.SyncWave,
-		RecipeName:       nodeCtx.RecipeName,
-		RecipeVersion:    nodeCtx.RecipeVersion,
-		LabelComponentID: nodeCtx.LabelComponentID,
-		OutputLabels:     nodeCtx.OutputLabels,
-		Provenance: renderer.NodeProvenance{
-			CompilerVersion: nodeCtx.Provenance.CompilerVersion,
-			AggregateName:   nodeCtx.Provenance.AggregateName,
-			Environment:     nodeCtx.Provenance.Environment,
-			ProviderName:    nodeCtx.ProviderName,
-			ProviderVersion: nodeCtx.ProviderVersion,
-		},
-	}
+// Each caller passes exactly what its own shape carries — the resolved values a
+// sourced render consumes, the evaluated workload a synthesizing render consumes
+// — because that is what lets the builder recover a rendered key's identity from
+// a declaration for the shape at hand.
+func (e *Engine) nodeProjection(nodeCtx renderer.NodeRenderContext, values types.OrderedMap[any], w *types.Workload) renderer.IRNodeProjection {
+	return renderer.NodeProjection(nodeCtx, values, w)
 }
 
 // renderContext builds the wire render context from the host node context: the

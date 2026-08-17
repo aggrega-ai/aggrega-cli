@@ -31,6 +31,16 @@ var SensitiveByValueDiagnostic = rendercore.SensitiveByValueDiagnostic
 // identically.
 var RenderDiagnosticText = rendercore.RenderDiagnosticText
 
+// NodeProjection re-exports the one builder of a render dispatch's node
+// projection, so the render orchestration package and the provider engines build
+// it from the single definition in rendercore.
+var NodeProjection = rendercore.NodeProjection
+
+// SensitiveRenderedKeys re-exports the one join from a node's sensitivity
+// declarations to the rendered identities its dispatch produces, so nothing
+// outside rendercore recovers a rendered key a second way.
+var SensitiveRenderedKeys = rendercore.SensitiveRenderedKeys
+
 // Wire types of the provider-render socket.
 type (
 	ArtifactProjectionEntry    = rendercore.ArtifactProjectionEntry
@@ -74,6 +84,7 @@ type (
 	IREdgeInfo                 = rendercore.IREdgeInfo
 	NodeRenderContext          = rendercore.NodeRenderContext
 	ProvenanceContext          = rendercore.ProvenanceContext
+	DeclaredSensitivity        = rendercore.DeclaredSensitivity
 )
 
 // Unexported alias so in-package type assertions name the concrete stock codec.

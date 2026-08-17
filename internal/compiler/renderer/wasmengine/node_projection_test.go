@@ -30,7 +30,7 @@ func TestNodeProjection_CarriesAttachmentsAndWithholdsTheRest(t *testing.T) {
 		Attachments: attachments,
 	}
 
-	proj := (&Engine{}).nodeProjection(nodeCtx, types.OrderedMap[any]{})
+	proj := (&Engine{}).nodeProjection(nodeCtx, types.OrderedMap[any]{}, nil)
 
 	want := []string{"zeta-cache", "alpha-db"}
 	got := proj.Features.Keys()

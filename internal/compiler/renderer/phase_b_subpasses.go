@@ -111,6 +111,12 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		// No valuesMapping declared — flatten the values pillar as the
 		// engine input. Matches today's ExecutePhaseB behaviour.
 		state.ResolvedValues = flattenOrderedMap(ctx.Values)
+		// This branch is the ONLY one whose resolved keys are the authored leaf
+		// paths, so it is the only one that can record the fact. Recorded here
+		// rather than re-answered downstream: reading the Recipe's values mapping
+		// a second time to reach the same conclusion would be two readings of one
+		// declaration, free to disagree once either moves.
+		state.ValuesAreDeclaredLeaves = true
 		state.PhaseReached = 1
 		return nil
 	}

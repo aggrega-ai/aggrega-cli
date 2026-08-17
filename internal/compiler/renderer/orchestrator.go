@@ -658,6 +658,22 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return declared
 	}
 
+	// Declared-sensitive attachment slots per Component type, memoised the same
+	// way and for the same reason as the two declaration readers above. The read
+	// goes through the one home for that declaration, so this reader and the
+	// per-attachment fact the IR graph carries cannot disagree about what a slot
+	// declares.
+	sensitiveSlotsByType := map[string]map[string]bool{}
+	sensitiveSlots := func(componentType string) map[string]bool {
+		if s, cached := sensitiveSlotsByType[componentType]; cached {
+			return s
+		}
+		slots, _ := ir.ComponentAttachmentSlots(input.CatalogLookup, componentType)
+		marked := ir.SensitiveSlots(slots)
+		sensitiveSlotsByType[componentType] = marked
+		return marked
+	}
+
 	// Per-node rendering. nodeIDs is sorted (topology author order for the
 	// deterministic walk); nodeOrder is the host node's position in that order,
 	// the outer A1 replay-ordering key for deferred host PATCHes.
@@ -951,6 +967,24 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		nodeCtx := buildNodeRenderContext(nodeID, node, graph, input)
 		nodeCtx.ProviderName = providerName
 		nodeCtx.ProviderVersion = providerVersion
+		// The declarations a provider guest's per-node marking is recovered from.
+		// The leaf half reads the SAME memoised declaration reader the node's
+		// withholding set reads above, so the two answers cannot describe
+		// different declarations; what differs downstream is the direction, and
+		// deliberately so. Withholding treats an untraceable key as sensitive,
+		// because printing a secret is worse than hiding a readable value. Marking
+		// admits only a key whose identity is recovered exactly, because asserting
+		// sensitivity of a value an author left public makes the target's own
+		// tooling hide it from an operator who needed to see it. The slot half is
+		// the slot DECLARATION rather than the per-attachment roll-up the graph
+		// carries: the roll-up is true whenever the attached entity declares any
+		// sensitive leaf anywhere, which says nothing about the datum one rendered
+		// key reads.
+		nodeCtx.DeclaredSensitivity = DeclaredSensitivity{
+			ValueLeaves:             declared.Values,
+			ValuesAreDeclaredLeaves: state.ValuesAreDeclaredLeaves,
+			Slots:                   sensitiveSlots(node.Component),
+		}
 		// Route the non-fatal advisories a provider guest raises while rendering
 		// this node into the per-node warnings accumulator, which the orchestrator
 		// drains into result.Warnings at the end of the per-node sequence. Set once

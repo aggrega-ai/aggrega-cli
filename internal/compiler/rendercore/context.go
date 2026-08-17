@@ -30,6 +30,13 @@ type NodeRenderContext struct {
 	// reads them without a host round-trip and the host derives nothing a
 	// second time. Empty for a node with no attachments.
 	Attachments types.OrderedMap[types.IRFeatureEntry]
+	// DeclaredSensitivity carries the sensitivity declarations this node's render
+	// joins against to name a rendered key. It is read only by the node
+	// projection's own construction, which turns it into the per-node marking a
+	// provider guest receives; nothing else consults it, and nothing derived from
+	// it reaches an emitted byte. The zero value declares nothing and therefore
+	// marks nothing, which is the safe direction here — see DeclaredSensitivity.
+	DeclaredSensitivity DeclaredSensitivity
 	// Source is what engines actually consume (via loader.Load or
 	// equivalent): the resolved filesystem path for remote sources
 	// (extracted directory under the source-artifact cache slot),
