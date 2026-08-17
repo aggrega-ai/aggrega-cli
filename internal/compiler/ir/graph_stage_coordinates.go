@@ -4,11 +4,29 @@
 package ir
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
+
+// The delivery mechanisms an injection block names as its own fields, as against
+// the further mechanisms an author may add. The distinction is the authored
+// shape's and is why a payload lookup needs both halves: these three are read
+// from the fields that carry them and any other from the block's remaining
+// entries.
+//
+// The name set itself is not restated by the axis that enumerates it — that
+// delegates to the one reading of which mechanisms a block declares — so a
+// mechanism added to the authored shape appears on the axis whether or not the
+// lookup below is extended. What would then be missing is its payload, which the
+// parity assertion over the earlier stage's own key reading is what catches.
+const (
+	injectMechanismEnv  = "env"
+	injectMechanismFile = "file"
+	injectMechanismArg  = "arg"
 )
 
 // GraphStageCoordinates supplies the instance sets the framework's traversals
@@ -297,6 +315,135 @@ func (c *GraphStageCoordinates) AttachmentPillarLeaves(
 	return out
 }
 
+// Mechanisms returns the delivery mechanisms a node's own injection block
+// declares, in the order that block enumerates them: the mechanisms it names as
+// fields first, then any further mechanism in author order.
+//
+// It reads the block the finalised graph carries for the node, which is what
+// keys this axis where the facts a rule over it reads are keyed. The equivalent
+// fact belongs to an earlier stage and is answered from the documents that stage
+// holds — the application's own instances — so it holds no entry for a component
+// a sub-aggregate contributed, whose identity here carries the contributing
+// module's prefix. An axis delegating to it would present a rule no subject at
+// all for such a node, and a rule invoked zero times reports exactly what a rule
+// invoked and satisfied reports.
+//
+// A node the graph does not hold, and one whose author wrote no injection block,
+// both contribute nothing: there is no block to enumerate.
+func (c *GraphStageCoordinates) Mechanisms(node string) []string {
+	return resolver.InjectMechanismNames(c.selfInject(node))
+}
+
+// DeliveryKeys returns the keys a node's own injection block delivers under one
+// mechanism, in author order where the authored shape carries one and
+// alphabetically where it does not.
+//
+// The order is the authored shape's rather than a chosen one, because a rule
+// raises in the order it is invoked and that order reaches the build's output.
+// Every mechanism is authored as an array of entries, each naming the identifier
+// it delivers into, so the authored order is the array's; the mapping shapes are
+// answered in sorted order because a plain mapping carries none.
+//
+// # Why this reads the block rather than the fact that names the same keys
+//
+// This is a second reader of one authored shape, left deliberately and held to
+// the first by a parity assertion rather than by eye. The reason is the one the
+// mechanism axis above records: the fact naming these keys belongs to an earlier
+// stage, is answered from that stage's own documents, and therefore cannot answer
+// for a node the composition contributed. Reading the block the graph carries is
+// what makes the axis complete over the flattened node set. A reader tempted to
+// collapse the two should export the earlier stage's own key reading and call it
+// with this block, which removes the duplication without reintroducing the
+// keying gap; re-deriving the keys a third time would not.
+func (c *GraphStageCoordinates) DeliveryKeys(node string, mechanism string) []string {
+	return injectDeliveryKeys(c.selfInject(node), mechanism)
+}
+
+// selfInject returns the injection block a node's author wrote, nil when the
+// graph holds no such node or the node carries no block.
+func (c *GraphStageCoordinates) selfInject(node string) *types.InjectBlock {
+	n, held := c.graph.Spec.Nodes.Get(node)
+	if !held {
+		return nil
+	}
+	return n.SelfInject
+}
+
+// injectMechanismPayload returns what an injection block carries under one
+// mechanism name, nil when it carries nothing there.
+//
+// The three mechanisms the block names as fields are read from those fields and
+// every other from the block's remaining entries, which is the same division the
+// authored shape makes.
+func injectMechanismPayload(inject *types.InjectBlock, mechanism string) any {
+	if inject == nil {
+		return nil
+	}
+	switch mechanism {
+	case injectMechanismEnv:
+		return inject.Env
+	case injectMechanismFile:
+		return inject.File
+	case injectMechanismArg:
+		return inject.Arg
+	}
+	payload, held := inject.Additional.Get(mechanism)
+	if !held {
+		return nil
+	}
+	return payload
+}
+
+// injectDeliveryKeys returns the identifiers one mechanism of an injection block
+// delivers into.
+//
+// The array shape is the one an authored document reaches: every mechanism is
+// authored as an array of entries, and each entry is decoded through the one
+// decoder that reads such an entry rather than by reaching into it here. The
+// mapping shapes are read defensively and sorted, since a mapping carries no
+// order of its own; an entry that decodes to no identifier is skipped rather
+// than contributing an empty coordinate no fact could answer for.
+func injectDeliveryKeys(inject *types.InjectBlock, mechanism string) []string {
+	switch payload := injectMechanismPayload(inject, mechanism).(type) {
+	case []any:
+		out := make([]string, 0, len(payload))
+		for _, entry := range payload {
+			if in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry); ok {
+				out = append(out, in)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case *types.OrderedMap[any]:
+		if payload == nil {
+			return nil
+		}
+		return payload.Keys()
+	case map[string]any:
+		return sortedKeys(payload)
+	case map[string]string:
+		return sortedKeys(payload)
+	default:
+		return nil
+	}
+}
+
+// sortedKeys returns a mapping's keys in sorted order, which is the only
+// deterministic order a plain mapping admits.
+func sortedKeys[V any](m map[string]V) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // attachment returns one attachment on one node from the merged set.
 func (c *GraphStageCoordinates) attachment(node, attachment string) (types.IRFeatureEntry, bool) {
 	merged, held := c.graph.Spec.FeatureValuesMapping.Get(node)
@@ -363,6 +510,8 @@ var (
 	_ constraint.EdgeEnumerator                 = (*GraphStageCoordinates)(nil)
 	_ constraint.AttachmentEnumerator           = (*GraphStageCoordinates)(nil)
 	_ constraint.SlotEnumerator                 = (*GraphStageCoordinates)(nil)
+	_ constraint.MechanismEnumerator            = (*GraphStageCoordinates)(nil)
+	_ constraint.DeliveryKeyEnumerator          = (*GraphStageCoordinates)(nil)
 	_ constraint.AttachmentPillarEnumerator     = (*GraphStageCoordinates)(nil)
 	_ constraint.AttachmentPillarLeafEnumerator = (*GraphStageCoordinates)(nil)
 )
