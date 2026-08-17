@@ -96,7 +96,7 @@ func TestSignVerifyRunRealLinter(t *testing.T) {
 	const uri = "keyed.example.com/plugin/linter/publishing-linter"
 	cl := closure.Closure{
 		Plugins: []closure.ResolvedRef{
-			{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3"},
+			{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3-pull"},
 		},
 	}
 	lf := &lockfile.Lockfile{
@@ -161,7 +161,7 @@ func TestSignVerifyRealLinterWrongKeyHalts(t *testing.T) {
 
 	const uri = "keyed.example.com/plugin/linter/publishing-linter"
 	cl := closure.Closure{
-		Plugins: []closure.ResolvedRef{{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3"}},
+		Plugins: []closure.ResolvedRef{{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3-pull"}},
 	}
 	lf := &lockfile.Lockfile{Plugins: []lockfile.Plugin{{URI: uri, Digest: contentDg, ManifestDigest: dg}}}
 	wsCfg := workspaceconfig.Config{

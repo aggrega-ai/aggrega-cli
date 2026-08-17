@@ -2147,12 +2147,12 @@ func (x *lazyClosureLookup) ResolvePlugin(uri, version string) (closure.Resoluti
 // unavailable for this request, surfaced upstream rather than self-healed.
 func (l *LazyLookup) resolveComponentForClosure(uri string, puller OCIPuller) (closure.Resolution, bool) {
 	if comp, ok := l.tier1ReadComponent(uri); ok {
-		return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-1-catalog"), true
+		return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCatalog), true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if comp, err := parseComponentEntity(bytes, uri); err == nil {
 			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
-			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-2-cache"), true
+			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathCache), true
 		}
 	} else if outcome == tier2Skip {
 		return closure.Resolution{}, false
@@ -2160,7 +2160,7 @@ func (l *LazyLookup) resolveComponentForClosure(uri string, puller OCIPuller) (c
 	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri, "Component"); err == nil && bytes != nil {
 		if comp, perr := parseComponentEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = bytes
-			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, "tier-3-pull"), true
+			return l.closureResolution("Component", comp.Metadata.Name, comp.Metadata.Version, uri, closure.ResolutionPathRegistry), true
 		}
 	}
 	return closure.Resolution{}, false
@@ -2170,12 +2170,12 @@ func (l *LazyLookup) resolveComponentForClosure(uri string, puller OCIPuller) (c
 // surface.
 func (l *LazyLookup) resolveFeatureForClosure(uri string, puller OCIPuller) (closure.Resolution, bool) {
 	if feat, ok := l.tier1ReadFeature(uri); ok {
-		return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-1-catalog"), true
+		return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCatalog), true
 	}
 	if bytes, outcome := l.tier2Verified(uri); outcome == tier2Use {
 		if feat, err := parseFeatureEntity(bytes, uri); err == nil {
 			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
-			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-2-cache"), true
+			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathCache), true
 		}
 	} else if outcome == tier2Skip {
 		return closure.Resolution{}, false
@@ -2183,7 +2183,7 @@ func (l *LazyLookup) resolveFeatureForClosure(uri string, puller OCIPuller) (clo
 	if bytes, _, err := tier3PullCatalogEntity(l.workspaceRoot, l.cacheDir, puller, uri, "Feature"); err == nil && bytes != nil {
 		if feat, perr := parseFeatureEntity(bytes, uri); perr == nil {
 			l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = bytes
-			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, "tier-3-pull"), true
+			return l.closureResolution("Feature", feat.Metadata.Name, feat.Metadata.Version, uri, closure.ResolutionPathRegistry), true
 		}
 	}
 	return closure.Resolution{}, false

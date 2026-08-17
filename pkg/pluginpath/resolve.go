@@ -41,17 +41,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// Tier names the resolution tier a plugin's bytes came from. It is a
-// diagnostic tag — the loaded bytes are identical regardless of tier when the
-// digest pin matches; the tag exists for logging.
+// Tier names the source a plugin's bytes came from. It is a diagnostic tag: the
+// loaded bytes are identical regardless of source when the digest pin matches, so
+// nothing branches on it. Where a tag reaches a user it is rendered through
+// Source, never printed raw, because these spellings are this resolver's internal
+// vocabulary rather than words the reference teaches.
 type Tier string
 
 const (
@@ -61,6 +65,44 @@ const (
 	TierCache     Tier = "cache"     // 2
 	TierRegistry  Tier = "registry"  // 3
 )
+
+// resolutionCascade lists the sources the cascade consults, in precedence order.
+// The diagnostic that reports exhaustion renders this slice rather than repeating
+// the names, so the message cannot claim a cascade the resolver does not walk.
+var resolutionCascade = []Tier{TierEmbed, TierColocated, TierLocal, TierCache, TierRegistry}
+
+// cascadeNames renders the consulted sources for the exhaustion diagnostic.
+func cascadeNames() string {
+	names := make([]string, len(resolutionCascade))
+	for i, t := range resolutionCascade {
+		names[i] = string(t)
+	}
+	return strings.Join(names, ", ")
+}
+
+// Source maps this resolver's source tag to the word user-facing output prints
+// for it, drawn from the shared provenance vocabulary so that a plugin's
+// resolution and a pulled entity's resolution name the same source identically.
+//
+// The mapping is deliberately many-to-one: a .wasm laid down beside its entity
+// and one named by an explicit path are distinct lookups here, but to a reader
+// both mean the bytes were found locally, so both report the same word. That is
+// the whole extent of the sharing — this cascade and the pull-side resolution
+// tags are separate axes, over different subjects and at different granularity,
+// and only their rendering is common.
+func (t Tier) Source() closure.ResolutionSource {
+	switch t {
+	case TierEmbed:
+		return closure.SourceInBinary
+	case TierColocated, TierLocal:
+		return closure.SourceLocal
+	case TierCache:
+		return closure.SourceCacheReuse
+	case TierRegistry:
+		return closure.SourceFetchedFresh
+	}
+	return ""
+}
 
 // ResolvedPlugin is the cascade's output: the plugin's .wasm bytes, the tier
 // they were resolved from, and the URI they were resolved for. Bytes feeds the
@@ -426,7 +468,7 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	if workspaceconfig.LooksLikeOCIURI(uri) {
 		return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable: %s: %w", uri, ociNotWiredHint, oci.ErrFetchNotFound())
 	}
-	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (embed, colocated, local, cache, registry): %w", uri, oci.ErrFetchNotFound())
+	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (%s): %w", uri, cascadeNames(), oci.ErrFetchNotFound())
 }
 
 // verified checks bytes against the URI's digest pin when one is present, then
@@ -440,8 +482,8 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 	if pin, ok := r.pins[uri]; ok && pin != "" {
 		if got := digest.ContentDigest(b); got != pin {
 			return ResolvedPlugin{}, fmt.Errorf(
-				"plugin %q resolved from %s tier: content digest %s does not match lockfile pin %s: %w",
-				uri, tier, got, pin, oci.ErrFetchIntegrity())
+				"plugin %q resolved from %s: content digest %s does not match lockfile pin %s: %w",
+				uri, tier.Source(), got, pin, oci.ErrFetchIntegrity())
 		}
 	}
 	if bundleDigest, ok := r.bundleDigests[uri]; ok && bundleDigest != "" {
@@ -466,13 +508,13 @@ func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf(
-			"plugin %q resolved from %s tier: cached signature bundle %s is unreadable: %w",
-			uri, tier, path, ErrPluginBundleDigestMismatch())
+			"plugin %q resolved from %s: cached signature bundle %s is unreadable: %w",
+			uri, tier.Source(), path, ErrPluginBundleDigestMismatch())
 	}
 	if got := digest.ContentDigest(b); got != bundleDigest {
 		return fmt.Errorf(
-			"plugin %q resolved from %s tier: cached signature bundle %s has digest %s, recorded digest is %s: %w",
-			uri, tier, path, got, bundleDigest, ErrPluginBundleDigestMismatch())
+			"plugin %q resolved from %s: cached signature bundle %s has digest %s, recorded digest is %s: %w",
+			uri, tier.Source(), path, got, bundleDigest, ErrPluginBundleDigestMismatch())
 	}
 	return nil
 }

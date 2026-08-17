@@ -48,24 +48,6 @@ func providerPluginEntityURI(p types.Plugin) string {
 // field; the lockfile writer copies only the wire-shape fields.
 const pluginKindHint = "plugin"
 
-// tier1CatalogPath is the ResolutionPath a Lookup reports for an entity resolved
-// from a local catalog directory (Tier-1). A pull-side descent pins an entity
-// only when it resolves above Tier-1 (the registry-backed cache / pull tiers);
-// a Tier-1-local entity stays catalog-resident and resolves at build through the
-// local catalog walk, never the lockfile pin.
-const tier1CatalogPath = "tier-1-catalog"
-
-// ResolutionPathEmbedded is the ResolutionPath a Lookup reports for a core plugin
-// resolved from the copy that ships inside the compiler binary. It is declared
-// beside the Lookup contract it belongs to so the value has a single home: the
-// catalog-side resolver reports it and the pull-side pin sites below recognise it,
-// with no second spelling to drift.
-//
-// The path states provenance only — where the bytes came from — never whether the
-// reference is pinned. The pin decision belongs to the pin sites below and differs
-// by plugin type, so a reader must not infer one from the other.
-const ResolutionPathEmbedded = "tier-0-embed"
-
 // resolvedInLocalCatalog reports whether a resolution came from a local catalog
 // directory (or a workspace-relative path) rather than from a registry pull. It is
 // the universal leg of the registry-only rule: no plugin type is pinned when it
@@ -73,7 +55,7 @@ const ResolutionPathEmbedded = "tier-0-embed"
 // catalog walk, and a pin would strand a lockfile entry the hermetic build cannot
 // reconstruct. Both pin-decision helpers below compose it, so the rule has one home.
 func resolvedInLocalCatalog(resolutionPath string) bool {
-	return resolutionPath == tier1CatalogPath
+	return resolutionPath == ResolutionPathCatalog
 }
 
 // entityNeedsNoPin reports whether a resolved plugin ENTITY is left out of the

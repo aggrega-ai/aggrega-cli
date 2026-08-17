@@ -493,12 +493,17 @@ func cacheBundleBlob(cacheDir, bundleDigest string, bundle []byte) error {
 	return os.WriteFile(path, bundle, 0o644)
 }
 
-// isRegistryResolved reports whether a closure entity's resolution path
-// indicates a fresh registry (Tier-3) fetch — the only case where a
-// signature is verified at pull time. A Tier-1 / Tier-2 / external path is
-// not re-verified here.
+// isRegistryResolved reports whether a closure entity resolved by fetching from
+// a registry during this run — the only case where a signature is verified at
+// pull time. A local-catalog, cache or external resolution is not re-verified
+// here.
+//
+// It delegates to the shared predicate rather than testing the tag itself: a
+// string comparison here would keep compiling after the tag was respelled and
+// then silently stop matching, leaving signatures unverified with nothing failed
+// and nothing logged.
 func isRegistryResolved(resolutionPath string) bool {
-	return strings.Contains(resolutionPath, "tier-3")
+	return closure.ResolvedFromRegistry(resolutionPath)
 }
 
 // isRegistryHost reports whether host looks like a real registry authority

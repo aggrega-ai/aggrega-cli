@@ -16,14 +16,14 @@ import (
 // printPullDetail renders the transient pull-event diagnostic for
 // `aggrega pull --detail`: per resolved entity (and Wasm plugin), what THIS
 // pull run did — fetched fresh from a registry, reused a cache slot, found in a
-// local catalog, or external. It reads the closure's in-memory resolution tier,
-// which is deliberately not persisted in the lockfile (a committed lockfile is
-// byte-identical across machines that resolved the same closure from different
-// local state). The report is therefore unrecoverable after the pull: a
-// freshly-pulled entity is cached, so the same lookup reads the cache tier on
-// the next run.
+// local catalog, served from inside the compiler binary, or external. It reads
+// the closure's in-memory resolution tag, which is deliberately not persisted in
+// the lockfile (a committed lockfile is byte-identical across machines that
+// resolved the same closure from different local state). The report is therefore
+// unrecoverable after the pull: a freshly-pulled entity is cached, so the same
+// lookup reads the cache on the next run.
 //
-// Scope is the pull EVENT, not post-pull state: it reports the tier, the kind,
+// Scope is the pull EVENT, not post-pull state: it reports the source, the kind,
 // the identity, and the always-present referenced-from disambiguator — not
 // minimum-version-selection decisions or consumer→library chains, which are
 // `aggrega inspect`'s remit (and why the library axes, whose only disambiguator
@@ -87,22 +87,18 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 	tw.Flush()
 }
 
-// pullEventTier maps the in-memory resolution-tier tag to the pull-event verb.
+// pullEventTier maps the in-memory resolution tag to the word this column
+// prints for the source that served the entity. The words come from the shared
+// provenance vocabulary, so this column and the plugin-resolution diagnostics
+// name the same source identically and cannot drift apart.
+//
 // An unrecognised tag passes through verbatim rather than being silently
-// dropped.
+// dropped: a tag with no word yet is a gap worth seeing in the output.
 func pullEventTier(resolutionPath string) string {
-	switch resolutionPath {
-	case "tier-3-pull":
-		return "fetched-fresh"
-	case "tier-2-cache":
-		return "cache-reuse"
-	case "tier-1-catalog":
-		return "local"
-	case "external":
-		return "external"
-	default:
-		return resolutionPath
+	if source, ok := closure.ResolutionSourceFor(resolutionPath); ok {
+		return string(source)
 	}
+	return resolutionPath
 }
 
 // entityKindForDetail derives the display kind for a resolved entity. The

@@ -577,7 +577,7 @@ func (l *catalogLookup) lookupExternal(uri string) (closure.Resolution, bool) {
 	return closure.Resolution{
 		ResolvedVersion: version,
 		Digest:          contentDigest(bytes),
-		ResolutionPath:  "external",
+		ResolutionPath:  closure.ResolutionPathExternal,
 	}, true
 }
 
@@ -793,7 +793,7 @@ func pinnedPluginResolution(pinDigest, manifestDigest string) closure.Resolution
 		ResolvedVersion: pinDigest,
 		Digest:          pinDigest,
 		ManifestDigest:  manifestDigest,
-		ResolutionPath:  "tier-3-pull",
+		ResolutionPath:  closure.ResolutionPathRegistry,
 	}
 }
 
@@ -939,7 +939,7 @@ func (l *catalogLookup) tier1Resolution(kind, identifier, metaVersion, requested
 	return closure.Resolution{
 		ResolvedVersion: resolved,
 		Digest:          contentDigest(bytes),
-		ResolutionPath:  "tier-1-catalog",
+		ResolutionPath:  closure.ResolutionPathCatalog,
 	}
 }
 
@@ -1036,7 +1036,7 @@ func tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri string) ([]byte, closu
 	return bytes, closure.Resolution{
 		ResolvedVersion: version,
 		Digest:          contentDigest(bytes),
-		ResolutionPath:  "tier-2-cache",
+		ResolutionPath:  closure.ResolutionPathCache,
 	}, true
 }
 
@@ -1169,7 +1169,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 			ResolvedVersion: pinnedVersion,
 			Digest:          contentDigest(result.Bytes),
 			ManifestDigest:  result.Digest,
-			ResolutionPath:  "tier-3-pull",
+			ResolutionPath:  closure.ResolutionPathRegistry,
 		}, nil
 	}
 
@@ -1199,7 +1199,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 		ResolvedVersion: tag,
 		Digest:          contentDigest(result.Bytes),
 		ManifestDigest:  result.Digest,
-		ResolutionPath:  "tier-3-pull",
+		ResolutionPath:  closure.ResolutionPathRegistry,
 	}, nil
 }
 
@@ -1247,7 +1247,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 			ResolvedVersion: pinnedVersion,
 			Digest:          digest,
 			ManifestDigest:  result.Digest,
-			ResolutionPath:  "tier-3-pull",
+			ResolutionPath:  closure.ResolutionPathRegistry,
 		}, nil
 	}
 
@@ -1273,7 +1273,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 		ResolvedVersion: tag,
 		Digest:          digest,
 		ManifestDigest:  result.Digest,
-		ResolutionPath:  "tier-3-pull",
+		ResolutionPath:  closure.ResolutionPathRegistry,
 	}, nil
 }
 
@@ -1300,7 +1300,7 @@ func (l *catalogLookup) tier3Aggregate(uri string) (closure.Resolution, error) {
 		ResolvedVersion: version,
 		Digest:          digest,
 		ManifestDigest:  manifestDigest,
-		ResolutionPath:  "tier-3-pull",
+		ResolutionPath:  closure.ResolutionPathRegistry,
 	}, nil
 }
 
