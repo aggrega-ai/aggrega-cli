@@ -20,12 +20,14 @@ import (
 func TestSingleFormatCarrier(t *testing.T) {
 	t.Parallel()
 
-	// RenderResult: {Files, Warnings, Diagnostics, Contributions}, with Files
-	// valued by AssembledFile. Warnings and Diagnostics are advisory streams, not
-	// per-file carriers; Contributions carries per-group coordinates and is held
-	// to that below. A reintroduced `Formats map[string]string` sidecar keyed
-	// like the bytes shows up as an unexpected exported field and trips the set
-	// check.
+	// RenderResult: {Files, Warnings, Diagnostics, Contributions, DescribedView},
+	// with Files valued by AssembledFile. Warnings and Diagnostics are advisory
+	// streams, not per-file carriers; Contributions carries per-group coordinates
+	// and is held to that below; DescribedView is a stage presentation keyed by
+	// node, boundary and pipeline step rather than by output path, so it is not a
+	// carrier of anything a file is keyed by. A reintroduced
+	// `Formats map[string]string` sidecar keyed like the bytes shows up as an
+	// unexpected exported field and trips the set check.
 	rr := reflect.TypeOf(RenderResult{})
 	exported := map[string]reflect.Type{}
 	for i := 0; i < rr.NumField(); i++ {
@@ -34,7 +36,10 @@ func TestSingleFormatCarrier(t *testing.T) {
 			exported[f.Name] = f.Type
 		}
 	}
-	want := map[string]bool{"Files": true, "Warnings": true, "Diagnostics": true, "Contributions": true}
+	want := map[string]bool{
+		"Files": true, "Warnings": true, "Diagnostics": true,
+		"Contributions": true, "DescribedView": true,
+	}
 	for name := range exported {
 		if !want[name] {
 			t.Errorf("RenderResult has unexpected exported field %q; a per-file format sidecar map must not reappear", name)

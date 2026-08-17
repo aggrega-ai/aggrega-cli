@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -105,6 +106,17 @@ type RendererInput struct {
 	// regardless of whether the hook is set. nil (the common case) skips the
 	// call. Mirrors the Trace writer: an opt-in per-node hook, no-op when unset.
 	NodeProgress func(done, total int, nodeID string)
+
+	// GraphView presents the finalised graph as the named facts complete once it
+	// was built. The render does not produce it: it is built where the graph and
+	// the composition below it are both in hand, and travels here so the
+	// presentation of what every plugin reports about itself can embed it rather
+	// than re-derive the facts it already answers.
+	//
+	// nil leaves this render unable to present the plugin-report stage at all,
+	// which is the honest outcome: a presentation missing the stage it extends
+	// would answer every earlier fact from nothing.
+	GraphView constraint.GraphView
 
 	// stepDescriptors retains each pipeline-step plugin's describe() self-report
 	// for the whole render, so a plugin several steps or several nodes name is

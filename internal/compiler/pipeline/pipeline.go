@@ -980,7 +980,13 @@ func RunPipeline(
 		}()
 
 		rendererInput := renderer.RendererInput{
-			Graph:              graph,
+			Graph: graph,
+			// The presentation of the finalised graph, forwarded so the render
+			// can present what every plugin reports about itself as that
+			// presentation plus its own facts. Forwarding it is what keeps one
+			// fact to one producer: rebuilding it inside the render would give
+			// every earlier fact a second answer, free to disagree with this one.
+			GraphView:          stepsOut.GraphView,
 			FeatureOrder:       featureOrder,
 			ResolveResult:      resolveResult,
 			CatalogLookup:      catalogLookup,

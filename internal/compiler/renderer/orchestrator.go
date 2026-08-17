@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
@@ -53,6 +54,21 @@ type RenderResult struct {
 	// downstream consumers can match them structurally. Out-of-band: never part
 	// of the emitted bytes.
 	Diagnostics []Diagnostic
+
+	// DescribedView presents, as named facts, what every plugin this render
+	// reaches has reported about itself, together with the provider each site's
+	// documents render through.
+	//
+	// It is published here because the retention it reads is the render's own
+	// working state and is gone once the render returns, so a reader asking what
+	// a plugin declared has this and nothing else. Reading a fact from it may
+	// still load and describe a plugin no step reached, through the same
+	// retention the render shares — nothing is described until an accessor asks.
+	//
+	// nil when the render was handed no presentation of the finalised graph to
+	// extend. Out-of-band: it carries no content that reaches an emitted file,
+	// and the emitted bytes are the same whether it is populated or not.
+	DescribedView constraint.DescribedView
 
 	// hydrated is the render's retained set of per-node mid-render projections.
 	//
@@ -386,6 +402,21 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 		}
 	}
+
+	// Present what every plugin this render reaches reports about itself, with
+	// the facts complete before any of them described itself answered by the
+	// presentation the graph finalisation produced. Built here because this is
+	// the first point holding every product it names: the shared plugin
+	// retention installed above, the Recipe bound to each node, and the engine
+	// factory the provider facts read a self-report through.
+	//
+	// It describes nothing on its own. The retention is lazy, so a plugin is
+	// loaded when a reader first asks about it and never because this
+	// presentation exists.
+	result.DescribedView = newDescribedView(
+		ctx, graph, input.GraphView, nodeRecipes, recipeLookup,
+		input.stepDescriptors, input.PluginPathLookup, engineFactory,
+	)
 
 	// Pass 1: per node, resolve locals then provides. The locals travel with the
 	// provides so every downstream reader — Step 5b assertions and Phase B.0 —
