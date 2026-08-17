@@ -149,7 +149,12 @@ type EdgeInstance struct {
 // configuration on the Release — which is the only surface whose attachment
 // block admits one. So the pillar names them, not the node.
 type AuthoredCoordinate struct {
-	// Value is the coordinate value, which is also the name the author wrote.
+	// Value is the coordinate value.
+	//
+	// On most axes it is also the name the author wrote. Where an axis enumerates
+	// something a build produced rather than something a document declares — an
+	// artifact, named by the output the entry resolves to — the two diverge, and
+	// this carries the produced name.
 	Value string
 
 	// SourceFile is the workspace-relative file the value was authored in,

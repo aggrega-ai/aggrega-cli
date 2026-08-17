@@ -993,8 +993,16 @@ type NodeArtifactSubject interface {
 	// takes it.
 	NodeID() string
 
-	// ArtifactName is the artifact the check was invoked for: the authored key,
-	// which is the output filename.
+	// ArtifactName is the artifact the check was invoked for, named by the
+	// output name the entry resolves to.
+	//
+	// An entry written inline resolves to its own authored key, so for that form
+	// the two are one value. An entry supplied by an imported file resolves to
+	// that file's base name, and an entry supplied by a library bundle expands
+	// into one artifact per file the bundle holds, each named by the bundle's own
+	// filename — so there the authored key names no artifact at all. Keying a
+	// check by the output name is what lets it reach every artifact a node
+	// projects rather than only the ones whose two names coincide.
 	ArtifactName() string
 
 	nodeArtifact()

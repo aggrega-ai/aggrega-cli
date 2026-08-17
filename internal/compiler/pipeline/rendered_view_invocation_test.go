@@ -64,26 +64,29 @@ func (c renderedCoordinates) Boundaries() []constraint.AuthoredCoordinate { retu
 
 func (c renderedCoordinates) Providers(boundary string) []string { return c.byBoundary[boundary] }
 
-// renderedArtifactNames supplies the artifact axis from the rendered stage's OWN
-// name-set fact rather than from the Recipe.
+// projectedArtifactAxisOver builds the production artifact axis that enumerates
+// what a render actually projected, rather than what the Recipe declared.
 //
-// That is the point of it. The set the Recipe declares and the set the render
-// projected are different: an entry whose template evaluates to nothing is
-// declared and never projected. An axis read from the Recipe would present such
-// an entry to a rule and the rule would ask about bytes that were never written,
-// which is precisely the over-reporting the fact exists to avoid.
-type renderedArtifactNames struct {
-	view       constraint.RenderedView
-	sourceFile func(node string) string
-}
-
-func (a renderedArtifactNames) Artifacts(node string) []constraint.AuthoredCoordinate {
-	names := a.view.ArtifactProjectionNameSet(node)
-	out := make([]constraint.AuthoredCoordinate, 0, len(names))
-	for _, name := range names {
-		out = append(out, constraint.AuthoredCoordinate{Value: name, SourceFile: a.sourceFile(node)})
+// That distinction is the point of it. The set the Recipe declares and the set the
+// render projected are different: an entry whose template evaluates to nothing is
+// declared and never projected. An axis read from the Recipe would present such an
+// entry to a rule and the rule would ask about bytes that were never written,
+// which is precisely the over-reporting the name-set fact exists to avoid.
+func projectedArtifactAxisOver(
+	t *testing.T, res *renderer.RenderResult, graph *types.IRGraph, lookup renderer.RecipeLookup,
+) *renderer.ArtifactAxis {
+	t.Helper()
+	axis := res.RenderedArtifactAxis(func(node string) string {
+		recipe := recipeOfNode(graph, lookup, node)
+		if recipe == nil {
+			return ""
+		}
+		return recipe.Metadata.Name
+	})
+	if axis == nil {
+		t.Fatal("the render published no presentation, so no projected-artifact axis can be built over it")
 	}
-	return out
+	return axis
 }
 
 // renderedContentSubstituted answers the assembled-file bytes with chosen content
@@ -311,16 +314,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 			t.Fatal("the render published no presentation")
 		}
 		coordinates := coordinatesOf(t, out, catalogLookup)
-		artifacts := renderedArtifactNames{
-			view: res.RenderedView,
-			sourceFile: func(node string) string {
-				recipe := recipeOfNode(out.IRGraph, recipeLookup, node)
-				if recipe == nil {
-					return ""
-				}
-				return recipe.Metadata.Name
-			},
-		}
+		artifacts := projectedArtifactAxisOver(t, res, out.IRGraph, recipeLookup)
 
 		visited := 0
 		for _, n := range coordinates.Nodes() {

@@ -67,31 +67,30 @@ func hydratedRenderFactory(string) (renderer.Provider, error) {
 	return &hydratedRenderEngine{}, nil
 }
 
-// hydratedArtifactNames supplies the artifact axis for the traversal below.
+// artifactAxisOver builds the production artifact axis over one render, labelling
+// each coordinate with the file the node's Recipe was authored in.
 //
-// The node axis is the enumeration the production path itself builds; only this
-// one coordinate is supplied here, because no production implementation of it
-// exists yet — supplying the enumerators the declared rules need is the work of
-// the items this presentation unblocks, so nothing here should be read as a
-// production enumeration. It reads the entries from the Recipe the compilation
-// bound, in the order that document declares them, so the order is the authored
-// one rather than one this test invents. The coordinate is the output name an
-// entry resolves to, which for an inline entry is the authored key.
-type hydratedArtifactNames struct {
-	recipeFor func(node string) *types.Recipe
-}
-
-func (a hydratedArtifactNames) Artifacts(node string) []constraint.AuthoredCoordinate {
-	recipe := a.recipeFor(node)
-	if recipe == nil {
-		return nil
+// Both axes below come from the render itself rather than from an enumeration
+// assembled here, so what a rule is invoked for and what it then reads are one
+// reading of one build. The axis is the mid-render one: it enumerates every entry
+// whose text the walk recorded, which is the set a rule admitting or refusing
+// authoring has to see, because an entry such a rule refuses is exactly one whose
+// bytes are never produced.
+func artifactAxisOver(
+	t *testing.T, res *renderer.RenderResult, graph *types.IRGraph, lookup renderer.RecipeLookup,
+) *renderer.ArtifactAxis {
+	t.Helper()
+	axis := res.HydratedArtifactAxis(func(node string) string {
+		recipe := recipeOfNode(graph, lookup, node)
+		if recipe == nil {
+			return ""
+		}
+		return recipe.Metadata.Name
+	})
+	if axis == nil {
+		t.Fatal("the render retained no mid-render state, so no artifact axis can be built over it")
 	}
-	names := recipe.Spec.Artifacts.Keys()
-	out := make([]constraint.AuthoredCoordinate, 0, len(names))
-	for _, name := range names {
-		out = append(out, constraint.AuthoredCoordinate{Value: name, SourceFile: recipe.Metadata.Name})
-	}
-	return out
+	return axis
 }
 
 // hydratedTextSubstituted answers the artifact text with a chosen template and
@@ -291,9 +290,7 @@ func TestHydratedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		res := renderCompiledFixtureHydrated(t, out, catalogLookup, recipeLookup)
 
 		coordinates := coordinatesOf(t, out, catalogLookup)
-		artifacts := hydratedArtifactNames{recipeFor: func(node string) *types.Recipe {
-			return recipeOfNode(out.IRGraph, recipeLookup, node)
-		}}
+		artifacts := artifactAxisOver(t, res, out.IRGraph, recipeLookup)
 
 		// The traversal must actually visit something. A filter that selected no
 		// subject would report no objection and read exactly like a rule that ran
@@ -352,9 +349,7 @@ func TestHydratedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 			HydratedView: res.HydratedView, text: offending,
 		}
 		oneNode := singleNode(coordinates, node)
-		artifacts := hydratedArtifactNames{recipeFor: func(n string) *types.Recipe {
-			return recipeOfNode(out.IRGraph, recipeLookup, n)
-		}}
+		artifacts := artifactAxisOver(t, res, out.IRGraph, recipeLookup)
 		want := len(artifacts.Artifacts(node))
 		if want == 0 {
 			t.Fatal("the node projects no artifact; the traversal would visit nothing")

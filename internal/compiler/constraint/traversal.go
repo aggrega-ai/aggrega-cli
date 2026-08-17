@@ -807,8 +807,12 @@ func RunOnBoundaryAttachmentPipelineSteps[V View](
 // RunOnNodeArtifacts invokes check once per artifact each node projects, in node
 // order and then artifact order.
 //
-// The locator is .spec.artifacts.<name> in the Recipe's own file, where the
-// authored key is the output filename.
+// The locator is .spec.artifacts.<name> in the Recipe's own file, where <name>
+// is the output name the entry resolves to — the same value the subject carries
+// as its artifact coordinate. An entry written inline resolves to its own
+// authored key, so for that form the two are one value; an entry supplied by an
+// imported file resolves to that file's base name, and one supplied by a library
+// bundle resolves to a name per file the bundle holds.
 func RunOnNodeArtifacts[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,

@@ -197,6 +197,20 @@ func (h *hydratedProjections) projection(nodeID string) (hydratedProjection, boo
 	return *p, true
 }
 
+// artifactNames returns the output names one node's artifacts walk recorded text
+// under, in the order that walk reached them.
+//
+// It reads the same retention the artifact text is answered from, so the names an
+// axis built on it enumerates and the texts a rule then asks for are one set by
+// construction rather than by agreement.
+func (h *hydratedProjections) artifactNames(nodeID string) []string {
+	p, ok := h.projection(nodeID)
+	if !ok {
+		return nil
+	}
+	return p.ArtifactTemplateText.Keys()
+}
+
 // recordedNodes reports how many nodes the set holds.
 func (h *hydratedProjections) recordedNodes() int {
 	if h == nil {
