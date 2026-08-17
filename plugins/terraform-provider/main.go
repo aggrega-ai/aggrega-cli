@@ -26,6 +26,21 @@
 // host writes all returned bytes verbatim and runs no serializer, so the vendored
 // module matches the projected source byte-for-byte.
 //
+// Where the payload marks one of those inputs as carrying material an author
+// declared sensitive, the guest appends a third file, aggrega_override.tf.json,
+// declaring `sensitive = true` for each marked input. Terraform merges a file
+// whose name ends in _override into the configuration beside it, so the marked
+// input's own declaration acquires the attribute while the vendored module's
+// bytes stay untouched. Which input is marked is read from the payload and never
+// derived: the guest inspects no variable name, no key pattern, and nothing in
+// the module's own text. An unmarked node gains no such file.
+//
+// Terraform's `sensitive` bounds display, not storage: it redacts the value in
+// plan and apply output and refuses to export it from an unmarked root output.
+// It does not encrypt the value and does not change how state records it — a
+// sensitive input is stored in state in the clear, so protecting state remains a
+// matter of how the state backend is configured.
+//
 // The guest never rewrites the module: it passes the vendored bytes through and
 // emits the overlay as plain JSON. It does read the module's Terraform
 // configuration files — validate_node_input parses each one with the HCL library
@@ -43,8 +58,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -58,12 +71,6 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	hcljson "github.com/hashicorp/hcl/v2/json"
 )
-
-// tfvarsOverlayName is the output filename of the module-input overlay the guest
-// writes from the node's values. The .auto.tfvars.json suffix is the name
-// Terraform auto-loads without an explicit -var-file flag, so the overlay applies
-// to the vendored module with no wrapper wiring.
-const tfvarsOverlayName = "aggrega.auto.tfvars.json"
 
 // descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
 // the render_node and validate_node_input exports, compatibility with the
@@ -142,7 +149,7 @@ func renderNode() int32 {
 			pdk.SetError(err)
 			return 1
 		}
-		out.Files = make([]rendercore.RenderedFile, 0, len(proj.Files)+2)
+		out.Files = make([]rendercore.RenderedFile, 0, len(proj.Files)+3)
 		for _, f := range proj.Files {
 			out.Files = append(out.Files, rendercore.RenderedFile{Path: f.Path, Content: f.Content})
 		}
@@ -162,7 +169,24 @@ func renderNode() int32 {
 				pdk.SetError(err)
 				return 1
 			}
-			out.Files = append(out.Files, rendercore.RenderedFile{Path: tfvarsOverlayName, Content: overlay})
+			out.Files = append(out.Files, rendercore.RenderedFile{Path: terraformcore.TfvarsOverlayName, Content: overlay})
+			// Translate the payload's sensitivity marking into Terraform's own
+			// per-variable primitive. Which module input carries declared-sensitive
+			// material is the payload's finding, read here and never derived: the
+			// guest inspects no variable name, no key pattern, and nothing in the
+			// module's own text. The override rides beside the overlay because both
+			// address the same module inputs, and Terraform merges an override only
+			// into the configuration in its own directory — so the file that sets an
+			// input and the file that marks it are siblings by construction rather
+			// than by a second placement rule.
+			override, err := terraformcore.SensitivityOverride(in.Node.Values, in.Node.SensitiveRenderedKeys)
+			if err != nil {
+				pdk.SetError(err)
+				return 1
+			}
+			if override != nil {
+				out.Files = append(out.Files, rendercore.RenderedFile{Path: terraformcore.OverrideFileName, Content: override})
+			}
 		}
 	case in.ArtifactsProjection != nil:
 		// Artifacts placement: HCL bodies get build provenance prepended as a
@@ -314,19 +338,14 @@ func convertHCLDiagnostics(hd hcl.Diagnostics) []renderctx.Diagnostic {
 // byte-identical across runs of identical input (no map iteration, no key
 // re-sort). A value that is a Terraform interpolation string is a deterministic
 // ahead-of-time pointer: it encodes as a JSON string verbatim, never resolved.
-// The output is indented for readability, which reformats whitespace only and
-// leaves the key and value order untouched.
+// The formatting step is the shared one every appended JSON file passes through,
+// which reformats whitespace only and leaves the key and value order untouched.
 func tfvarsOverlay(values types.OrderedMap[any]) ([]byte, error) {
 	compact, err := values.MarshalJSON()
 	if err != nil {
 		return nil, err
 	}
-	var pretty bytes.Buffer
-	if err := json.Indent(&pretty, compact, "", "  "); err != nil {
-		return nil, err
-	}
-	pretty.WriteByte('\n')
-	return pretty.Bytes(), nil
+	return terraformcore.IndentJSONDocument(compact)
 }
 
 // nodeCtxFromInput reconstructs the render context from the wire input's node
