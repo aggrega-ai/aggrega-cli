@@ -7,17 +7,21 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// ErrSelectorViolation is the ABI-stable sentinel for the
-// usesSchema-selector and Feature-appliesTo cross-node type-safety
-// checks Step 4 performs. Each violation is recorded as an
+// ErrSelectorViolation is the ABI-stable sentinel for the two label-matching
+// rules Step 4 enforces: the label constraint a dependency socket declares over
+// what may satisfy it, and the applicability a Feature declares over what it
+// may attach to. Each violation is recorded as an
 // [AnalysisError] entry on [AnalysisResult].Errors with this sentinel
 // in its Sentinel field; [AnalysisError.ToCompilerError] wraps it as
 // the CompilerError's inner error, so the joined build error is
-// errors.Is-recoverable at the pipeline boundary. Both the socket
-// constraint and the appliesTo check carry this one sentinel, which is why
-// it has more than one emission site: the socket constraint is declared as
-// [EdgeTargetSatisfiesSocketSelector] and raises through the framework,
-// and the appliesTo check raises it directly.
+// errors.Is-recoverable at the pipeline boundary.
+//
+// The two rules share this one sentinel, which is why it has more than one
+// emission site: both are declared — [EdgeTargetSatisfiesSocketSelector] and
+// [AttachmentSatisfiesFeatureApplicability] — and both raise it through the
+// framework. So a caller matching on identity alone learns that a label
+// constraint went unsatisfied and not which surface declared it; the locator on
+// the violation is what separates the two.
 func ErrSelectorViolation() error { return errSelectorViolation }
 
 var errSelectorViolation = cerrors.Register("compiler-analyzer/selector-violation", cerrors.Meta{
@@ -109,9 +113,9 @@ var errOverriddenAnnotation = cerrors.Register("compiler-analyzer/overridden-ann
 })
 
 // ErrCatalogLookup is the ABI-stable sentinel reserved for catalog
-// lookups that fail during analyzer-phase evaluation. Today catalog
-// misses inside validateAppliesTo trigger a
-// silent skip rather than a wrapped halt: Step 1's resolver guards
+// lookups that fail during analyzer-phase evaluation. Today a catalog
+// miss during this stage's evaluation ends the reading silently rather
+// than producing a wrapped halt: Step 1's resolver guards
 // already validate that every component and feature reference an
 // Aggregate or Release names, so an analyzer-phase miss reflects an
 // internal invariant violation rather than an authoring error. The

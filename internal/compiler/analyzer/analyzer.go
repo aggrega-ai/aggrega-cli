@@ -15,16 +15,17 @@ import (
 )
 
 // AnalysisResult is the bundled output of [Analyze]. Its four fields
-// carry the artifacts produced by Step 4's two label-matching classes,
-// its attachment-requirement checks, its advisory lints, and its
+// carry the artifacts produced by this stage's slot-fill check, its
+// attachment-requirement checks, its advisory lints, and its
 // precalculated_paths / policy-input assembly:
 //
-//   - Errors — every selector and appliesTo violation discovered, plus
-//     every attachment-requirement violation and any failed
-//     policy-socket verdict appended by the pipeline, one
-//     [AnalysisError] per violation. Build flow gates on
-//     len(Errors) > 0; see the package doc Pipeline Integration
-//     subsection for the gating semantics.
+//   - Errors — every attachment-slot fill violation discovered here, plus
+//     every attachment-requirement violation, every violation a rule
+//     declared over the finalised graph raised, and any failed
+//     policy-socket verdict — the last two appended by whatever holds the
+//     presentation those rules read — one [AnalysisError] per violation.
+//     Build flow gates on len(Errors) > 0; see the package doc Pipeline
+//     Integration subsection for the gating semantics.
 //   - Warnings — one advisory string per finding from the lints, which
 //     never reach the Errors gate: a warning does not make the emitted
 //     output wrong, so a result carrying warnings and no errors
@@ -42,17 +43,17 @@ type AnalysisResult struct {
 }
 
 // AnalysisErrorKind classifies an [AnalysisError] so [AnalysisError.Error]
-// composes the right message and consumers can branch beyond the
-// Socket-presence heuristic. The zero value is the edge-shaped class
-// (selector or appliesTo, distinguished by Socket presence) and preserves
-// the original two-class behavior; [AnalysisErrorPolicy] marks a
-// policy-socket verdict.
+// composes the right message and consumers can branch on the class rather than
+// on which fields happen to be filled. The zero value is the edge-shaped class,
+// whose message is composed from the Source/Target/Socket fields;
+// [AnalysisErrorPolicy] marks a policy-socket verdict.
 type AnalysisErrorKind string
 
 const (
-	// AnalysisErrorEdge is the zero-value, edge-shaped class: a selector or
-	// appliesTo violation whose message [AnalysisError.Error] composes from
-	// the Source/Target/Socket fields.
+	// AnalysisErrorEdge is the zero-value, edge-shaped class, whose message
+	// [AnalysisError.Error] composes from the Source/Target/Socket fields. The
+	// attachment-slot fill check reports in it: its violation names a node and
+	// the slot an attachment binds, which is the shape those fields carry.
 	AnalysisErrorEdge AnalysisErrorKind = ""
 
 	// AnalysisErrorPolicy marks a Step-4 policy verdict whose
@@ -86,16 +87,14 @@ const (
 )
 
 // AnalysisError is one violation discovered during Step 4. The struct
-// is shaped for edge-style violations and reused for per-Feature-attachment
-// violations (the appliesTo check), for policy-socket verdicts, and for
-// violations a declared rule raised; the fields carry slightly different
-// semantics across the classes:
+// is shaped for edge-style violations and reused for per-attachment
+// violations, for policy-socket verdicts, and for violations a declared rule
+// raised; the fields carry slightly different semantics across the classes:
 //
-//   - AppliesTo violations (from validateAppliesTo): Source is the
-//     target nodeID of the Feature attachment, Target is the Feature
-//     instance name, Socket is empty, Selector is [formatAppliesTo]'s
-//     summary of the constraint set, Message is a human-readable
-//     diagnostic.
+//   - Attachment-slot fill violations (the zero kind): Source is the nodeID
+//     carrying the attachment, Target is the slot the attachment binds,
+//     Socket is empty, Selector is the label constraint the slot declares,
+//     Message is a human-readable diagnostic.
 //   - Policy verdicts (Kind [AnalysisErrorPolicy]): Message is the
 //     complete diagnostic the policy plugin supplied (a rule
 //     failure), and the edge fields (Source/Target/Socket/Selector) are
@@ -103,8 +102,9 @@ const (
 //   - Violations a declared rule raised (Kind [AnalysisErrorLocated]):
 //     Message is the complete diagnostic, Field names the authoring key
 //     the finding is about, OriginFile names the document holding it, and
-//     the edge fields are empty. This is the shape a socket's declared
-//     label constraint reports in.
+//     the edge fields are empty. It is the shape both label-matching rules
+//     report in — a socket's declared label constraint, and the
+//     applicability a Feature declares over what it may attach to.
 //
 // Kind is what distinguishes the classes, and it is the only thing that
 // does. Socket presence is not a classifier: a violation about one
@@ -113,9 +113,10 @@ const (
 // would misread exactly that class.
 type AnalysisError struct {
 	// Kind classifies the violation. The zero value ([AnalysisErrorEdge])
-	// is an edge-shaped appliesTo violation; [AnalysisErrorPolicy]
-	// marks a policy-socket verdict whose Message is already complete;
-	// [AnalysisErrorLocated] marks one a declared rule raised.
+	// is an edge-shaped violation composed from the fields below;
+	// [AnalysisErrorPolicy] marks a policy-socket verdict whose Message is
+	// already complete; [AnalysisErrorLocated] marks one a declared rule
+	// raised.
 	Kind     AnalysisErrorKind
 	Source   string
 	Target   string
@@ -134,8 +135,8 @@ type AnalysisError struct {
 	OriginFile string
 	// Field is a mapping-style dotted locator naming the authoring site
 	// of the violation within OriginFile, e.g.
-	// ".spec.components.<name>.features.<instance>" for an appliesTo
-	// violation. It mirrors the resolver's locator shape so a consumer
+	// ".spec.components.<name>.features.<attachment>" for a violation about
+	// one attachment. It mirrors the resolver's locator shape so a consumer
 	// can walk the parsed source document to a sub-file position. Empty
 	// when the violation has no recoverable single-key locator; consumers
 	// fall back to file-level positioning.
@@ -150,9 +151,10 @@ type AnalysisError struct {
 	Field string
 	// Sentinel is the domain sentinel this violation wraps. ToCompilerError
 	// surfaces it as the CompilerError's inner error so callers can detect
-	// the violation class with errors.Is at the pipeline boundary. The
-	// appliesTo emission site sets it to ErrSelectorViolation, and so does
-	// the declared rule over a socket's label constraint.
+	// the violation class with errors.Is at the pipeline boundary. Both
+	// label-matching rules set it to ErrSelectorViolation, which is why
+	// matching on it alone does not tell a socket constraint from a
+	// Feature's applicability — the locator does.
 	Sentinel error
 }
 
@@ -167,19 +169,6 @@ func lastSegment(nodeID string) string {
 	return nodeID
 }
 
-// appliesToFieldPath builds the mapping-style YAML locator for an appliesTo
-// violation — the Feature-instance key under the attaching component.
-// Returns "" for a subsystem-nested component (non-empty subsystemPath): its
-// authored site is .spec.subsystems.*, not .spec.components.*, so a top-level
-// locator would name the wrong path; an empty Field routes the consumer to
-// file-level positioning instead.
-func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
-	if subsystemPath != "" {
-		return ""
-	}
-	return fmt.Sprintf(".spec.components.%s.features.%s", lastSegment(nodeID), instance)
-}
-
 // Error formats the violation as a single human-readable string. A policy
 // verdict (Kind [AnalysisErrorPolicy]) returns its Message verbatim — the
 // plugin already supplied a complete diagnostic — and so does a located
@@ -188,12 +177,13 @@ func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
 // presence-mandate violation
 // (Kind [AnalysisErrorAttachmentRequirement]) reads as "<node>: <message>",
 // naming the node the mandate was evaluated against. An edge-shaped violation
-// carrying a socket reads as "<source> -> <target> (<socket>): <message>"; an
-// appliesTo violation (Socket empty) reads as
-// "<source> attaches Feature <target>: <message>" since the appliesTo check's
-// Source-and-Target reuse semantics carry different meaning. Those two shapes
-// are the only ones Socket presence tells apart, and both of them carry the
-// zero-value kind; every other class is identified by its kind.
+// carrying a socket reads as "<source> -> <target> (<socket>): <message>"; one
+// without a socket reads as "<source> attaches Feature <target>: <message>",
+// which is the shape an attachment-scoped violation takes since its Source and
+// Target name a node and what it attached rather than two ends of a
+// connection. Those two shapes are the only ones Socket presence tells apart,
+// and both of them carry the zero-value kind; every other class is identified
+// by its kind.
 func (e AnalysisError) Error() string {
 	if e.Kind == AnalysisErrorPolicy || e.Kind == AnalysisErrorLocated {
 		return e.Message
@@ -208,10 +198,11 @@ func (e AnalysisError) Error() string {
 }
 
 // ToCompilerError converts the analyzer violation into a *cerrors.CompilerError,
-// choosing the category from the violation's Kind. An appliesTo violation and a
-// violation about one connection's declared label constraint are both
-// authoring-time problems on the developer's Aggregate — the developer authored
-// the uses-edge or Feature attachment that fails the constraint — so they route
+// choosing the category from the violation's Kind. A violation about one
+// connection's declared label constraint and one about the applicability a
+// Feature declares are both authoring-time problems on the developer's
+// Aggregate — the developer authored the uses-edge or the Feature attachment
+// that fails it — so they route
 // to cerrors.DeveloperError. A policy verdict (Kind [AnalysisErrorPolicy]) is a
 // governance rejection from an operator-attached policy plugin, not a
 // developer authoring mistake, so it routes to cerrors.PolicyError; the
@@ -236,9 +227,8 @@ func (e AnalysisError) Error() string {
 // The CompilerError wraps e.Sentinel as its inner error, so a violation
 // class is detectable with errors.Is at the pipeline boundary (the build
 // error joins these CompilerErrors and errors.Is traverses the chain).
-// An appliesTo violation and a socket-constraint violation both carry
-// ErrSelectorViolation; policy verdicts carry ErrPolicyViolation. When Sentinel
-// is nil the inner chain is empty.
+// Both label-matching rules carry ErrSelectorViolation; policy verdicts carry
+// ErrPolicyViolation. When Sentinel is nil the inner chain is empty.
 func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 	category := cerrors.DeveloperError
 	switch {
@@ -306,23 +296,24 @@ type PrecalculatedPath struct {
 // Analyze executes Step 4 of the compiler pipeline. It returns a
 // non-nil [AnalysisResult] populated with:
 //
-//  1. AppliesTo-violation errors from validateAppliesTo, attachment-slot
-//     selector errors from validateSlotSelectors, presence-mandate errors
-//     from validateRequiredAttachmentTypes, and unfilled-required-slot
-//     errors from validateRequiredAttachmentSlots (all appended to the
-//     same Errors slice).
+//  1. Attachment-slot selector errors from validateSlotSelectors,
+//     presence-mandate errors from validateRequiredAttachmentTypes, and
+//     unfilled-required-slot errors from validateRequiredAttachmentSlots (all
+//     appended to the same Errors slice).
 //  2. Precalculated paths from calculatePaths.
 //  3. The PolicyInput payload from assemblePolicyInput.
 //
-// One violation class a reader will look for here is absent, and it is absent
-// for the same reason the advisory below is. The label constraint a dependency
-// socket declares over what may satisfy it is declared as
-// [EdgeTargetSatisfiesSocketSelector] and is evaluated over the presentation of
-// the finalised graph, which this function is not handed and does not build — a
-// presentation has one producer, and building a second one here would give one
-// fact two answers. Its violations are appended to the same Errors slice by
-// whatever holds that presentation, so a caller reading that slice still reads
-// one stream and the gate below still sees them.
+// Two violation classes a reader will look for here are absent, and they are
+// absent for the same reason the advisory below is. The label constraint a
+// dependency socket declares over what may satisfy it is declared as
+// [EdgeTargetSatisfiesSocketSelector], and the applicability a Feature declares
+// over what it may attach to is declared as
+// [AttachmentSatisfiesFeatureApplicability]. Both are evaluated over the
+// presentation of the finalised graph, which this function is not handed and
+// does not build — a presentation has one producer, and building a second one
+// here would give one fact two answers. Their violations are appended to the
+// same Errors slice by whatever holds that presentation, so a caller reading
+// that slice still reads one stream and the gate below still sees them.
 //
 // It populates no advisory warnings, and the omission is where a reader is
 // most likely to expect one. The annotation-override advisory is declared as
@@ -344,28 +335,21 @@ func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *Analys
 	return result
 }
 
-// AnalyzeContext is Analyze with cooperative cancellation: validateAppliesTo,
-// validateSlotSelectors, validateRequiredAttachmentTypes and
-// validateRequiredAttachmentSlots each check ctx.Err() per iteration — every
-// validator the sequence runs, so none of them can hold a cancelled caller — so
+// AnalyzeContext is Analyze with cooperative cancellation: validateSlotSelectors,
+// validateRequiredAttachmentTypes and validateRequiredAttachmentSlots each check
+// ctx.Err() per node — every validator the sequence runs, so none of them can
+// hold a cancelled caller — so
 // a long analysis over a large graph can be interrupted (e.g. by the daemon's
 // shutdown drain). It returns a non-nil error only when ctx is cancelled
 // mid-analysis; analyzer violations remain in the result's Errors slice as
 // structured data, never as the function-level error. Analyze is the
 // background-context convenience wrapper.
 func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup resolver.CatalogLookup) (*AnalysisResult, error) {
-	// Feature appliesTo validation.
-	errs, err := validateAppliesTo(ctx, graph, catalogLookup)
-	if err != nil {
-		return nil, err
-	}
-
 	// Attachment slot selector validation (fill satisfaction).
-	slotErrs, err := validateSlotSelectors(ctx, graph, catalogLookup)
+	errs, err := validateSlotSelectors(ctx, graph, catalogLookup)
 	if err != nil {
 		return nil, err
 	}
-	errs = append(errs, slotErrs...)
 
 	// Presence mandates — each requiredType annotation a node's Component
 	// declares is satisfied by some attachment of that type.

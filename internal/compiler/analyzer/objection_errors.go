@@ -108,10 +108,17 @@ func AdvisoriesFromObjections(objections []constraint.Objection) []string {
 // authored site this stage cannot name still knows the file, and a synthetic
 // graph carries a locator and no file — so each is emitted when it is there
 // rather than both being conditioned on one of them.
+//
+// The two are joined by a word rather than run together. A locator opens with a
+// separator of its own, so concatenating the pair yields one string that reads
+// as a single file name with a nonsense extension, and a reader cannot see
+// where the document ends and the key begins. The joining word is the one the
+// product's other positioned diagnostics already use, so one shape names a
+// position everywhere it is named.
 func advisoryPosition(sourceFile, locator string) string {
 	switch {
 	case sourceFile != "" && locator != "":
-		return sourceFile + locator
+		return sourceFile + " at " + locator
 	case sourceFile != "":
 		return sourceFile
 	default:

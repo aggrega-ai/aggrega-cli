@@ -5,9 +5,13 @@
 // surface through a real build. The positive build attaches one Feature per
 // selector operator class to a component whose labels satisfy each
 // constraint and asserts every attachment survives into the IR. The three
-// negative builds prove the analyzer halts: an unsatisfied appliesTo, a
+// negative builds prove the build halts: an unsatisfied appliesTo, a
 // malformed appliesTo selector, and a usesSchema socket-selector violation on
 // a wired uses-edge.
+//
+// All three halts are enforced by rules declared over the finalised graph and
+// invoked once per coordinate that graph holds, so what these proofs drive is
+// the real product rather than any one reading of it.
 
 package compiler_test
 
@@ -72,7 +76,13 @@ func TestSelectorSurface_OperatorVocabularyAttaches(t *testing.T) {
 
 // TestSelectorSurface_ConstraintNotSatisfiedHalts proves an attachment whose
 // target's labels do not satisfy the Feature's appliesTo halts the build with
-// ErrSelectorViolation and the "appliesTo constraint not satisfied" message.
+// ErrSelectorViolation, naming the attached Feature type and the applicability
+// that Feature declares.
+//
+// The halt is positioned rather than only reported: the document the attachment
+// was authored in is what the fault points at, where the identifier of the node
+// carrying the attachment was what it pointed at before the enforcement moved
+// onto the declaration.
 func TestSelectorSurface_ConstraintNotSatisfiedHalts(t *testing.T) {
 	t.Parallel()
 
@@ -86,13 +96,23 @@ func TestSelectorSurface_ConstraintNotSatisfiedHalts(t *testing.T) {
 	if !errors.Is(err, analyzer.ErrSelectorViolation()) {
 		t.Fatalf("expected ErrSelectorViolation, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "appliesTo constraint not satisfied") {
-		t.Fatalf("expected message to contain %q, got: %v", "appliesTo constraint not satisfied", err)
+	for _, want := range []string{
+		"core/feat-equality",
+		"component.aggrega.ai/type=server",
+		"testdata/selector-surface/aggregate-constraint.yaml",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("expected the halt to name %q, got: %v", want, err)
+		}
 	}
 }
 
 // TestSelectorSurface_MalformedSelectorHalts proves a Feature whose appliesTo
-// fails to parse halts the build with a "selector parse error" message.
+// fails to parse halts the build carrying the reason it could not be evaluated,
+// as against a constraint that parsed and came out false.
+//
+// The reason is what tells the two apart, so it is asserted rather than the
+// sentinel alone — both classes carry ErrSelectorViolation.
 func TestSelectorSurface_MalformedSelectorHalts(t *testing.T) {
 	t.Parallel()
 
@@ -103,8 +123,17 @@ func TestSelectorSurface_MalformedSelectorHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a build halt for the malformed appliesTo selector, got nil")
 	}
-	if !strings.Contains(err.Error(), "selector parse error") {
-		t.Fatalf("expected message to contain %q, got: %v", "selector parse error", err)
+	if !errors.Is(err, analyzer.ErrSelectorViolation()) {
+		t.Fatalf("expected ErrSelectorViolation, got: %v", err)
+	}
+	for _, want := range []string{
+		"core/feat-malformed",
+		"tier.aggrega.ai/zone in (frontend",
+		"expected (values) after in",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("expected the halt to name %q, got: %v", want, err)
+		}
 	}
 }
 

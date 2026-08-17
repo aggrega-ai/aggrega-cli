@@ -19,20 +19,22 @@
 //     two surfaces; an omitted constraint is vacuously satisfied).
 //
 // Both checks delegate label matching to pkg/selector, and both report on
-// [AnalysisResult].Errors, but they are not both evaluated in this package.
-// The first is declared here as [EdgeTargetSatisfiesSocketSelector] and is
-// evaluated over a presentation of the finalised graph, which this package is
-// not handed; whatever holds that presentation invokes it and appends what it
-// raised to the same slice, through [ErrorsFromObjections]. So a reader looking
-// for the edge walk that enforces it will not find one here, and that is the
-// arrangement rather than a gap.
+// [AnalysisResult].Errors, but neither is evaluated in this package. Each is
+// declared here — [EdgeTargetSatisfiesSocketSelector] and
+// [AttachmentSatisfiesFeatureApplicability] — and each is evaluated over a
+// presentation of the finalised graph, which this package is not handed;
+// whatever holds that presentation invokes them and appends what they raised to
+// the same slice, through [ErrorsFromObjections]. So a reader looking for the
+// edge walk or the attachment walk that enforces them will not find one here,
+// and that is the arrangement rather than a gap.
 //
 // # Outputs
 //
 // Analyze returns one [AnalysisResult] carrying:
 //
-//   - Errors — every selector and appliesTo violation, one
-//     [AnalysisError] per violation. The Errors slice is the gate
+//   - Errors — every violation this package's own readings discovered, one
+//     [AnalysisError] per violation, joined by whatever the rules declared
+//     here raised once something invokes them. The Errors slice is the gate
 //     signal: a non-empty slice halts the pipeline before Step 5.
 //   - Paths — the precalculated_paths array produced by cycle-safe
 //     DFS through the IR graph (see [PrecalculatedPath]).
@@ -63,7 +65,7 @@
 //   - AttachedFeatures on each path sort alphabetically.
 //   - Socket-constraint violations emerge in the order the graph holds its
 //     edges, which is the order the traversal invokes the rule in.
-//   - AppliesTo-violation errors emerge in (nodeID, instance) order
-//     by virtue of pre-sorted iteration in validateAppliesTo, with
-//     no explicit post-sort.
+//   - Feature-applicability violations emerge in the order the graph holds
+//     its nodes and then its merged attachments, which is again the order
+//     the traversal invokes the rule in.
 package analyzer

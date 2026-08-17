@@ -607,15 +607,21 @@ func TestRunTier4Validation_DanglingExtendsFallsBackToTierD(t *testing.T) {
 //     OriginFile names the root file AND at least one whose OriginFile
 //     names a different file (the sub-aggregate's path).
 //  3. Assert the daemon's response carries only the root-origin
-//     violations — the sub-origin entries must NOT appear in the
+//     violations — the sub-origin entries must NOT survive into the
 //     daemon's response (filtered) yet MUST appear in the pipeline's
 //     raw output (proving they were produced and not silently dropped
 //     upstream).
 //
 // If the fixture stops producing cross-file violations (catalog or
 // schema change), step 2 fails on disjointness. If the daemon's
-// filter becomes a no-op, step 3's "no sub-origin entry in response"
-// assertion fails — the test cannot pass by luck.
+// filter becomes a no-op, step 3's count assertion fails — the test
+// cannot pass by luck.
+//
+// Both halves discriminate on something that differs per file, and neither is
+// the message. The two violations report the same declaration failing on the
+// same grounds, so they read identically by design; what separates them is the
+// document each is about and the authoring key each names. Disjointness is
+// therefore asserted on the locator, and survival on the count.
 func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
@@ -715,36 +721,40 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	// against the relative form here.
 	const wantRootRel = "aggregate.yaml"
 	const wantSubRel = "catalog/aggregates/sub-with-violation.yaml"
-	rootOriginCount := 0
-	subOriginCount := 0
 	var rootMessages, subMessages []string
+	var rootLocators, subLocators []string
 	for _, e := range tier4.Analysis.Errors {
 		switch e.OriginFile {
 		case wantRootRel:
-			rootOriginCount++
 			rootMessages = append(rootMessages, e.Message)
+			rootLocators = append(rootLocators, e.Field)
 		case wantSubRel:
-			subOriginCount++
 			subMessages = append(subMessages, e.Message)
+			subLocators = append(subLocators, e.Field)
 		default:
 			t.Errorf("unexpected OriginFile on analyzer violation: %q (Source=%q); want %q or %q",
 				e.OriginFile, e.Source, wantRootRel, wantSubRel)
 		}
 	}
-	if rootOriginCount == 0 {
+	if len(rootMessages) == 0 {
 		t.Fatalf("expected ≥1 analyzer violation with OriginFile=%q (root); pipeline produced none. all errors: %+v",
 			wantRootRel, tier4.Analysis.Errors)
 	}
-	if subOriginCount == 0 {
+	if len(subMessages) == 0 {
 		t.Fatalf("expected ≥1 analyzer violation with OriginFile=%q (sub-aggregate); pipeline produced none. all errors: %+v",
 			wantSubRel, tier4.Analysis.Errors)
 	}
-	// Disjointness on message content prevents a degenerate fixture where
-	// the same message is emitted twice with different OriginFiles.
-	for _, rm := range rootMessages {
-		for _, sm := range subMessages {
-			if rm == sm {
-				t.Errorf("root-origin and sub-origin messages overlap; the fixture should produce per-file distinct violations.\n  root: %q\n  sub : %q", rm, sm)
+	// Disjointness prevents a degenerate fixture where one violation is
+	// counted twice, and it is asserted on the LOCATOR rather than on the
+	// message. Which document a violation is about is carried by its origin
+	// and its locator; the message carries the values the rule read, and two
+	// components failing the same declaration on the same grounds read the
+	// same by design. So a message comparison here would report a degenerate
+	// fixture for a fixture that is doing exactly what it was built to do.
+	for _, rl := range rootLocators {
+		for _, sl := range subLocators {
+			if rl == sl {
+				t.Errorf("root-origin and sub-origin violations name the same authoring key; the fixture should produce per-file distinct violations.\n  root: %q\n  sub : %q", rl, sl)
 			}
 		}
 	}
@@ -770,7 +780,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 		t.Fatalf("unmarshal result: %v", err)
 	}
 
-	// Every root-origin message must appear; no sub-origin message may.
+	// Every root-origin message must appear.
 	for _, rm := range rootMessages {
 		found := false
 		for _, d := range result.Diagnostics {
@@ -784,15 +794,39 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 				rm, diagMessages(result.Diagnostics))
 		}
 	}
-	for _, sm := range subMessages {
-		for _, d := range result.Diagnostics {
-			if containsSubstring(d.Message, sm) {
-				t.Errorf("sub-origin violation message %q leaked into daemon response; the per-file filter should have dropped it. all daemon diagnostics: %v",
-					sm, diagMessages(result.Diagnostics))
-				break
-			}
+
+	// The sub-origin entries must not survive, and that is asserted BY COUNT
+	// rather than by absence of their text. The two files' violations read the
+	// same, so a search for the sub-origin text finds the root-origin entry and
+	// reports a leak that did not happen; counting how many diagnostics of this
+	// class the response carries cannot be fooled that way. A filter turned into
+	// a no-op raises the count by exactly the sub-origin entries, which is what
+	// this fails on.
+	class := rootMessages[0]
+	carried := 0
+	for _, d := range result.Diagnostics {
+		if containsSubstring(d.Message, class) {
+			carried++
 		}
 	}
+	if want := countMatching(rootMessages, class); carried != want {
+		t.Errorf("the response carries %d diagnostic(s) of the violation class %q; want %d, the root-origin entries alone.\n"+
+			"the pipeline produced %d root-origin and %d sub-origin violation(s), so a per-file filter turned into a no-op reads as %d.\n"+
+			"all daemon diagnostics: %v",
+			carried, class, want, len(rootMessages), len(subMessages),
+			want+countMatching(subMessages, class), diagMessages(result.Diagnostics))
+	}
+}
+
+// countMatching counts how many of the messages carry the given text.
+func countMatching(messages []string, text string) int {
+	n := 0
+	for _, m := range messages {
+		if containsSubstring(m, text) {
+			n++
+		}
+	}
+	return n
 }
 
 // diagMessages returns the messages of every Diagnostic in the

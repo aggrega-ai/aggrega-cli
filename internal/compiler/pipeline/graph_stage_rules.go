@@ -84,6 +84,25 @@ func runGraphStageRules(
 	}
 	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
 
+	// The applicability a Feature declares over what it may attach to,
+	// evaluated once per attachment a node carries after the whole attachment
+	// cascade has folded. The merged set is the one the rule has to be asked
+	// about: an attachment contributed at a scope above the node binds it just
+	// as an attachment written on the node does, and only the folded set holds
+	// both. The signal is read once per node, which is the granularity the
+	// traversal promises and the same one the reading beside it had.
+	violations, err = constraint.RunOnNodeAttachments(
+		ctx.Err,
+		coordinates,
+		coordinates,
+		out.GraphView,
+		analyzer.AttachmentSatisfiesFeatureApplicability,
+	)
+	if err != nil {
+		return err
+	}
+	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+
 	advisories, err := constraint.RunOnNodeAttachmentPillarLeaves(
 		ctx.Err,
 		coordinates,

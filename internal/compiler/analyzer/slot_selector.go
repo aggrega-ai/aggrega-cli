@@ -14,8 +14,10 @@ import (
 )
 
 // validateSlotSelectors runs the attachment-slot selector check at Step 4 — the
-// slot analog of the usesSchema socket constraint and of validateAppliesTo
-// (Feature appliesTo), reusing pkg/selector: when a filled slot declares a `selector`,
+// slot analog of the two label-matching rules declared over the finalised
+// graph, [EdgeTargetSatisfiesSocketSelector] and
+// [AttachmentSatisfiesFeatureApplicability] — reusing pkg/selector: when a
+// filled slot declares a `selector`,
 // the attached Feature's labels must satisfy it, or the fill halts with
 // ErrSlotSelectorUnsatisfied.
 //
@@ -29,7 +31,9 @@ import (
 // free attachment and is not selector-constrained.
 //
 // Catalog misses skip silently (Step 1's resolver guards cover the user-facing
-// case), mirroring validateAppliesTo.
+// case), which is the convergence the declared rules reach too: an entity the
+// catalog does not hold declares no constraint, and an absent constraint admits
+// everything.
 func validateSlotSelectors(ctx context.Context, graph *types.IRGraph, catalogLookup resolver.CatalogLookup) ([]AnalysisError, error) {
 	var errs []AnalysisError
 
