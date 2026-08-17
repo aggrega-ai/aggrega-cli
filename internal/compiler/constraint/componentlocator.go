@@ -36,10 +36,86 @@ package constraint
 // that use them are written against this framework, at which point they retire
 // onto this one and the disagreement retires with them.
 func componentAuthoredSegments(componentName, subsystemPath string, synthesizedSubsystem bool) []string {
-	if subsystemPath != "" && !synthesizedSubsystem {
-		return nestedScopeSegments(subsystemNesting, subsystemPath, authoredKeyComponents, componentName)
+	return scopedComponentSegments(
+		subsystemNesting,
+		ComponentSite(componentName, subsystemPath, synthesizedSubsystem),
+	)
+}
+
+// ComponentSite returns the site a component instance's own block was written
+// at: the scope the author declared it in, and the name the author wrote.
+//
+// It is exported because the pipeline needs the same answer. An element the
+// author wrote inside a component's block — an attachment, and every leaf of
+// that attachment's configuration — is written at the component's own site, so
+// whatever supplies such an element's site has to produce exactly what this rule
+// produces or a locator will name one place for the element and another for the
+// component holding it. Deriving it twice is what makes that possible, so it is
+// derived once here and read from there.
+//
+// The synthesized scope is discarded here rather than at each reader, for the
+// reason the rule above gives: a scope normalization generated is not a scope
+// any file spells, so a component under one names the top-level shape the author
+// did write. Keying on the provenance flag is what keeps a scope the author
+// declares and happens to name the same as the synthesized one from being
+// mistaken for it.
+func ComponentSite(componentName, subsystemPath string, synthesizedSubsystem bool) AuthoredSite {
+	if synthesizedSubsystem {
+		subsystemPath = ""
 	}
-	return []string{authoredKeySpec, authoredKeyComponents, componentName}
+	return AuthoredSite{ScopePath: subsystemPath, Component: componentName}
+}
+
+// scopedComponentSegments returns the segments naming a component's own block
+// inside a scope of the given axis: the scope level by level under the
+// container's own key, then the component.
+//
+// It is the shape of [componentAuthoredSegments] with the axis lifted out,
+// because the two authoring documents nest components the same way and differ
+// only in what the nesting is spelled with. Lifting it is what keeps one rule
+// where there would otherwise be two — a second copy would agree the day it was
+// written and be free to drift afterwards, with nothing comparing them.
+//
+// An empty scope path names the top-level shape, which is where the discarded
+// synthesized case lands: a scope normalization generated is not a scope any
+// file spells, so a component under one is named at the site the author did
+// write. The collapse happens at the caller that knows the flag, so this rule
+// answers one question — which key does the file contain — rather than two.
+func scopedComponentSegments(nesting scopeNesting, site AuthoredSite) []string {
+	if site.ScopePath != "" {
+		return nestedScopeSegments(nesting, site.ScopePath, authoredKeyComponents, site.Component)
+	}
+	return []string{authoredKeySpec, authoredKeyComponents, site.Component}
+}
+
+// authoredSiteSegments returns the segments naming the site an entry was
+// written at, on the nesting axis the entry's own document nests with.
+//
+// Two shapes, and the second is the one a component-rooted path cannot express.
+// An entry keyed under a component names that component's block inside its
+// scope, which is the shape every component-inner element already takes. An
+// entry written scope-wide names the scope and stops: it reaches every
+// component the scope holds, so there is no component to name, and naming one
+// would point at a key the file does not contain and at an edit that would not
+// fix the finding — the scope's own block is the one place anyone can change it.
+//
+// A scope-wide entry with no scope to name yields no segments, which is the
+// mechanical form of not inventing a locator: the shape requires a scope, and a
+// consumer handed nothing falls back to file-level positioning rather than to a
+// path that resolves nowhere.
+func authoredSiteSegments(nesting scopeNesting, site AuthoredSite, tail ...string) []string {
+	var base []string
+	if site.Component != "" {
+		base = scopedComponentSegments(nesting, site)
+	} else {
+		base = nestedScopeSegments(nesting, site.ScopePath)
+	}
+	if len(base) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(base)+len(tail))
+	out = append(out, base...)
+	return append(out, tail...)
 }
 
 // newComponentNodeSubject is the node subject of a component instance, with the

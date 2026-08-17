@@ -479,7 +479,7 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 		cat.RecipeLookupWithManifest(manifest).Recipe,
 		cat.SubAggregateLoader(),
 		func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
-			graph, _, err := ir.BuildIR(ir.BuildIRConfig{
+			graph, _, _, err := ir.BuildIR(ir.BuildIRConfig{
 				Topology:        topoResult,
 				ResolveResult:   resolveResult,
 				CatalogLookup:   catalogLookup,

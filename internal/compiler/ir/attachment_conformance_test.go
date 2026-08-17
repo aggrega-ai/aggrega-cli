@@ -101,7 +101,7 @@ func buildWithAttachments(t *testing.T, feats []topology.FeatureAttachment) erro
 		Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 	}
-	_, _, err := BuildIR(BuildIRConfig{
+	_, _, _, err := BuildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: conformanceFeatureCatalog(t),
@@ -254,7 +254,7 @@ func TestAttachmentConformance_InheritedFeatureConstraintEnforced(t *testing.T) 
 		Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 	}
-	_, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: resolveResult, CatalogLookup: cl})
+	_, _, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: resolveResult, CatalogLookup: cl})
 	requireConformanceHalt(t, err, ".spec.components.api.features.mon.values")
 }
 
@@ -289,7 +289,7 @@ func TestAttachmentConformance_PredicateReadsParameter(t *testing.T) {
 			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 			Parameters:    map[string]any{"allowedTier": allowedTier},
 		}
-		_, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: rr, CatalogLookup: cl})
+		_, _, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: rr, CatalogLookup: cl})
 		return err
 	}
 	if err := build("gold"); err != nil {

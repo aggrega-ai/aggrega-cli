@@ -1,0 +1,38 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod-release-attachment-locator-boundaried
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregates/annotation-release-side.yaml
+  manifest: ../manifest.yaml
+  # Two boundaries deep, so a position naming this scope has to repeat the
+  # container key between the levels. A single level cannot show that: there the
+  # joined path and the nested spelling are the same string.
+  boundaries:
+    edge:
+      directory: ./dist/edge
+      boundaries:
+        web:
+          directory: ./dist/edge/web
+          # Written on the boundary itself, naming no component at all. It
+          # reaches every component the boundary holds, so no component entry
+          # exists to point at — this block is the one place it can be changed.
+          features:
+            traffic-shaping:
+              type: core/k8s-dns-resolver
+              infra:
+                shaping_mode: "burst"
+          components:
+            # Written under a component, inside a boundary. Both components sit
+            # here so the boundary-wide attachment above reaches more than one
+            # of them: a single component could not show that its position is
+            # the boundary's rather than the component's.
+            app1:
+              features:
+                cross-namespace-routing:
+                  type: core/k8s-dns-resolver
+                  infra:
+                    target_var: "API_HOST"
+            app2: {}

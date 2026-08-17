@@ -41,6 +41,7 @@ func coordinatesOf(t *testing.T, out *stepsOneToFourOutput, catalogLookup resolv
 	t.Helper()
 	coordinates := ir.NewGraphStageCoordinates(
 		out.IRGraph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
+		out.AttachmentSites,
 	)
 	if coordinates == nil {
 		t.Fatal("the compilation produced no enumeration of the finalised graph; no rule over it can be invoked")

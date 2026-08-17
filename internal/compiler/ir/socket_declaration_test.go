@@ -97,7 +97,7 @@ func TestBuildIR_SocketDeclarationCoversEveryEdgeOrigin(t *testing.T) {
 		{Source: "api", Target: "main-db", Socket: "freeform", Alias: "r-adhoc", OriginRelease: true},
 	}
 
-	graph, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := BuildIR(BuildIRConfig{
 		Topology: &topology.TopologyResult{
 			Nodes:              nodes,
 			Edges:              edges,
@@ -163,7 +163,7 @@ func TestBuildIR_SocketDeclarationNeverEmpty(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			graph, _, err := BuildIR(BuildIRConfig{
+			graph, _, _, err := BuildIR(BuildIRConfig{
 				Topology: &topology.TopologyResult{
 					Nodes: nodes,
 					Edges: []topology.NormalizedEdge{

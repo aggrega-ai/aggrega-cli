@@ -188,7 +188,7 @@ func buildSensitivityGraph(
 		boundaries.Set("prod", types.Boundary{Components: components})
 		resolveResult.Release = &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}}
 	}
-	graph, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := BuildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: sensitivityCatalog(t),

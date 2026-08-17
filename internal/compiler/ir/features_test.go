@@ -167,10 +167,10 @@ func TestResolvedVersionIsFeatureVersionNotComponent(t *testing.T) {
 	}
 	result := newFeatureResult()
 	empty := types.OrderedMap[any]{}
-	if err := mergeContribution(result, "mon", "core/monitoring", empty, empty, nil, cat, "api", explicitProvenance, scopeComponent); err != nil {
+	if err := mergeContribution(result, "mon", "core/monitoring", empty, empty, nil, cat, "api", explicitProvenance, leafOwner{scope: scopeComponent}); err != nil {
 		t.Fatalf("mergeContribution feature: %v", err)
 	}
-	if err := mergeContribution(result, "creds", "core/db-creds", empty, empty, nil, cat, "api", explicitProvenance, scopeComponent); err != nil {
+	if err := mergeContribution(result, "creds", "core/db-creds", empty, empty, nil, cat, "api", explicitProvenance, leafOwner{scope: scopeComponent}); err != nil {
 		t.Fatalf("mergeContribution credential: %v", err)
 	}
 	if f, _ := result.Features.Get("mon"); f.ResolvedVersion != "2.5.0" {
@@ -283,7 +283,7 @@ func TestMergeContribution_CredentialCarriesPerInstanceInfra(t *testing.T) {
 	infra := types.OrderedMap[any]{}
 	infra.Set("replica_count", "3")
 
-	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, nil, featureCatalog(), "api", explicitProvenance, scopeComponent); err != nil {
+	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, nil, featureCatalog(), "api", explicitProvenance, leafOwner{scope: scopeComponent}); err != nil {
 		t.Fatalf("mergeContribution: %v", err)
 	}
 	s, ok := result.Features.Get("db-creds")

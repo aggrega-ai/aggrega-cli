@@ -59,7 +59,7 @@ func TestBuildIR_InheritedDefaultMaterialised(t *testing.T) {
 		},
 	}
 
-	graph, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: resolveResult, CatalogLookup: cl})
+	graph, _, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: resolveResult, CatalogLookup: cl})
 	if err != nil {
 		t.Fatalf("BuildIR: %v", err)
 	}

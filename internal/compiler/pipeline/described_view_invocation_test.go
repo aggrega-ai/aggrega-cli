@@ -356,6 +356,7 @@ func TestGraphStageCoordinatesSupplyTheNodeAxis(t *testing.T) {
 
 	var _ constraint.NodeEnumerator = ir.NewGraphStageCoordinates(
 		out.IRGraph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
+		out.AttachmentSites,
 	)
 	if n := len(coordinatesOf(t, out, catalogLookup).Nodes()); n == 0 {
 		t.Fatal("the compilation enumerated no node; every traversal over it would be silent")

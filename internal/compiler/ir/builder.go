@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -62,6 +63,45 @@ type BuildIRConfig struct {
 // see internal/compiler/renderer/phase_a.go's ExecutePhaseA.
 type FeatureOrder map[string][]string
 
+// AttachmentLeafKey addresses one leaf of one pillar of one attachment on one
+// node — the coordinate a rule over such a leaf is invoked at.
+type AttachmentLeafKey struct {
+	Node       string
+	Attachment string
+	Pillar     string
+	Leaf       string
+}
+
+// AttachmentSites is BuildIR's third return value: per attachment leaf, the
+// site the contribution that won that leaf was written at.
+//
+// It exists because the graph cannot answer the question and nothing else can
+// either. An attachment's configuration is assembled from every scope reaching
+// its node, leaf by leaf, so a scope-wide contribution and a component-scoped
+// one on the same attachment each keep the leaves the other did not mention.
+// Which of them supplied any one leaf is settled while the cascade folds and is
+// gone the moment it finishes: the merged entry carries the winning value and
+// its origin, never the contest. A diagnostic about that leaf has to point at an
+// edit somebody can make, and the only edit that exists is the one that won.
+//
+// Recovering it afterwards is refused rather than merely unimplemented. It would
+// mean re-running the precedence over the authoring documents at each reader,
+// which is a second derivation of a value already derived once, free to disagree
+// with the fold that produced the bytes.
+//
+// # What it holds, and what bounds it
+//
+// One small site per leaf — a scope path and a component name — and never the
+// contributions themselves. The retention therefore grows with the coordinates
+// the rules are invoked at, which is a leaf apiece, rather than with the number
+// of tiers a build folds into each of them. Keeping the contributions would grow
+// with the build and would hold whole authored payloads to answer a question
+// that two strings answer.
+//
+// It is addressed by key only and never iterated, so it has no bearing on the
+// order anything is emitted in.
+type AttachmentSites map[AttachmentLeafKey]constraint.AuthoredSite
+
 // BuildIR executes Step 3 of the compiler pipeline: graph finalization.
 //
 // Steps performed (numbered to match the body's section comments):
@@ -101,7 +141,7 @@ type FeatureOrder map[string][]string
 // CatalogLookup, missing Release, JSON-marshal failures on values/infra
 // mapping leave the slot empty rather than aborting). Callers wrap the
 // error with the Step 3 prefix; see cmd/aggrega/build.go.
-func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
+func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, AttachmentSites, error) {
 	return BuildIRContext(context.Background(), cfg)
 }
 
@@ -110,7 +150,7 @@ func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
 // over a large graph can be interrupted (e.g. by the daemon's shutdown
 // drain). BuildIR is the background-context convenience wrapper for
 // callers that do not participate in cancellation.
-func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, error) {
+func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, AttachmentSites, error) {
 	topo := cfg.Topology
 	res := cfg.ResolveResult
 
@@ -121,7 +161,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	// catalog builders) per ErrInjectEntryAmbiguous's contract.
 	if res != nil {
 		if err := ValidateInjectBlocks(types.Normalize(res.Aggregate), res.Release); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -130,6 +170,10 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	infraMapping := types.OrderedMap[json.RawMessage]{}
 	featureValuesMapping := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	featureOrder := make(FeatureOrder)
+	// Per attachment leaf, where the contribution that won it was written. It is
+	// filled for every node rather than for the nodes some rule might reach,
+	// per AttachmentSites' own contract.
+	attachmentSites := AttachmentSites{}
 
 	// The per-node attachment gates. Both subjects only exist after the 5-Tier
 	// merge below — the merged per-attachment values/infra, and which declared
@@ -167,7 +211,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	// 1. Build IR nodes in author order (topo.Nodes is OrderedMap-backed).
 	for nodeID, topoNode := range topo.Nodes.All() {
 		if err := ctx.Err(); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		catalogAnnotations, releaseAnnotations, aggregateAnnotations := buildAnnotationBuckets(
@@ -251,13 +295,15 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			nodeID, topoNode, topo, res, cfg.CatalogLookup,
 		)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		if featResult.Features.Len() > 0 {
 			featureValuesMapping.Set(nodeID, featResult.Features)
 			featureOrder[nodeID] = featResult.FeatureOrder
 		}
+
+		featResult.projectAttachmentSites(nodeID, attachmentSites)
 
 		// Validate the merged attachment pillars against each attachment's
 		// declared Feature schema (collected across all nodes for one joined
@@ -277,7 +323,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	}
 
 	if len(attachmentErrs) > 0 {
-		return nil, nil, joinAttachmentViolations(attachmentErrs)
+		return nil, nil, nil, joinAttachmentViolations(attachmentErrs)
 	}
 
 	// 2. Convert topology edges to IR edges. A socket's declared per-edge
@@ -355,7 +401,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		irEdges = append(irEdges, irEdge)
 	}
 	if len(usesInjectViols) > 0 {
-		return nil, nil, joinUsesInjectViolations(usesInjectViols)
+		return nil, nil, nil, joinUsesInjectViolations(usesInjectViols)
 	}
 
 	// 6. Provenance
@@ -386,7 +432,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		},
 	}
 
-	return graph, featureOrder, nil
+	return graph, featureOrder, attachmentSites, nil
 }
 
 // convertInjectBlock translates the topology layer's typed *types.InjectBlock

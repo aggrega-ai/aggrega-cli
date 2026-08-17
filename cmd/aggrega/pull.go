@@ -677,7 +677,7 @@ func pullRun(cfg pullConfig) error {
 			// the recipe source pointer, never a fetched artifact); pull thus inherits the
 			// IR-build failure surface. Per-instance infra is the IR-resolved entry.Infra,
 			// so no Release-side join is needed.
-			graph, _, err := ir.BuildIR(ir.BuildIRConfig{
+			graph, _, _, err := ir.BuildIR(ir.BuildIRConfig{
 				Topology:        topo,
 				ResolveResult:   rr,
 				CatalogLookup:   pullLookup,

@@ -375,6 +375,13 @@ func TestEachAttachmentPillarNamesItsOwnAuthoringDocument(t *testing.T) {
 		t.Fatalf("the traversal returned %v over a walk nothing cancelled", err)
 	}
 
+	// The two paths differ as well as the two files, and that is the same
+	// property rather than a second one. Each pillar is written in the document
+	// that admits it, and the two documents nest their components differently:
+	// the application writes this one at its own top level, while the deployment
+	// routes it into a boundary. So the position of each is the shape its own
+	// document has, and a single shape spelled for both would be wrong for one of
+	// them wherever the two documents disagree — which is most deployments.
 	want := []pillarLeafPosition{
 		{
 			pillar:     "values",
@@ -384,7 +391,8 @@ func TestEachAttachmentPillarNamesItsOwnAuthoringDocument(t *testing.T) {
 		{
 			pillar:     "infra",
 			sourceFile: fixture.releasePath,
-			locator:    ".spec.components.frontend.features.cross-namespace-routing.infra.target_var",
+			locator: ".spec.boundaries.frontend-ns.components.frontend" +
+				".features.cross-namespace-routing.infra.target_var",
 		},
 	}
 	if len(seen) != len(want) {

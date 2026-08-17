@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod-release-attachment-locator-flat
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregates/annotation-release-side.yaml
+  manifest: ../manifest.yaml
+  # No boundaries at all: the components are routed at the document's top level.
+  # This is the shape a position must name as `.spec.components.<name>` — the
+  # scope normalization creates to hold these is generated rather than written,
+  # so naming it would point at a key this document does not contain.
+  components:
+    app1:
+      features:
+        cross-namespace-routing:
+          type: core/k8s-dns-resolver
+          infra:
+            target_var: "API_HOST"
+    app2: {}

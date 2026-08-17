@@ -54,7 +54,7 @@ type traversalFixture struct {
 	nodePillars       map[string][]string
 	nodePillarLeaves  map[string][]string
 	parameters        map[string][]string
-	attachLeaves      map[string][]string
+	attachLeaves      map[string][]AttachmentLeaf
 	providers         map[string][]string
 	emittedPaths      map[string][]string
 	boundaryAttach    map[string][]string
@@ -101,7 +101,7 @@ func (f traversalFixture) AttachmentPillars(node, attachment string) []AuthoredC
 	return f.attachPillars[fixtureKey(node, attachment)]
 }
 
-func (f traversalFixture) AttachmentPillarLeaves(node, attachment, pillar string) []string {
+func (f traversalFixture) AttachmentPillarLeaves(node, attachment, pillar string) []AttachmentLeaf {
 	return f.attachLeaves[fixtureKey(node, attachment, pillar)]
 }
 
@@ -269,9 +269,18 @@ func newTraversalFixture() traversalFixture {
 				{Value: "infra", SourceFile: "release-flat.yaml"},
 			},
 		},
-		attachLeaves: map[string][]string{
-			fixtureKey("web", "tls", "values"): {"app.issuer"},
-			fixtureKey("web", "tls", "infra"):  {"pool_size"},
+		// Each leaf carries the site the entry that supplied it was written at.
+		// Both here are the component's own block, which is the shape a locator
+		// built from the node would also have produced — so this row proves the
+		// axis still spells the ordinary case, and the authored-site table beside
+		// it proves the two shapes the node's own segments cannot express.
+		attachLeaves: map[string][]AttachmentLeaf{
+			fixtureKey("web", "tls", "values"): {
+				{Value: "app.issuer", Site: AuthoredSite{Component: "web"}},
+			},
+			fixtureKey("web", "tls", "infra"): {
+				{Value: "pool_size", Site: AuthoredSite{Component: "web"}},
+			},
 		},
 		providers: map[string][]string{
 			fixtureKey("prod/edge"): {"helm", "terraform"},

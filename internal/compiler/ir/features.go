@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -21,13 +22,17 @@ type featureResult struct {
 	Features     types.OrderedMap[types.IRFeatureEntry]
 	FeatureOrder []string // deterministic order following Onion Model
 
-	// leafScope records which authoring scope currently owns each merged
-	// leaf, so a contribution from a broader scope cannot overwrite a
-	// narrower scope's leaf just by arriving later in the cascade. It is
-	// merge-time bookkeeping: the emitted IR carries the winning value and
-	// its provenance, never the contest that produced them. Addressed by
-	// key only and never iterated, so it has no bearing on output order.
-	leafScope map[scopeKey]attachmentScope
+	// leafOwners records what is known about the contribution that currently
+	// owns each merged leaf. It is merge-time bookkeeping: the emitted IR
+	// carries the winning value and its provenance, never the contest that
+	// produced them. Addressed by key only and never iterated, so it has no
+	// bearing on output order.
+	//
+	// Its two halves answer two questions and are held together because they
+	// have one lifetime: both are written when a leaf is first taken and
+	// rewritten whenever it changes hands, so separate maps would be two
+	// copies of one bookkeeping with nothing keeping them in step.
+	leafOwners map[scopeKey]leafOwner
 
 	// contributedFills records each fill this node received from a scope
 	// broader than the node — with the scope it was authored at — so a rule
@@ -59,12 +64,50 @@ type contributedFill struct {
 	contribution types.FeatureInstance
 }
 
+// leafOwner is what the merge knows about the contribution that currently owns
+// one leaf.
+//
+// scope ranks that contribution against a later one, so a broader scope cannot
+// take a narrower scope's leaf merely by arriving later in the cascade. site
+// names where it was written, which is what a diagnostic about the leaf can
+// point at — and the two are different questions about one contribution: a rank
+// orders, a site locates, and neither can be recovered from the other.
+type leafOwner struct {
+	scope attachmentScope
+	site  constraint.AuthoredSite
+}
+
+// componentOwnSite returns the site of a node's own component block, which is
+// where an attachment the developer wrote in that block was written.
+//
+// It delegates to the framework's component-site rule rather than assembling
+// the answer, because the same rule decides where the component itself is
+// named: an attachment written inside a component's block has to be located
+// under exactly the segments that component is located under, and a second
+// derivation of them would be free to drift from the first.
+//
+// The rule's two scope inputs are the same values the node axis is built from,
+// which is what makes the agreement structural rather than coincidental: the
+// graph node this stage's enumeration reads them off carries them copied
+// verbatim from the topology node read here, so there is one origin and no
+// point at which the two could come to differ.
+func componentOwnSite(topoNode *topology.TopologyNode, nodeID string) constraint.AuthoredSite {
+	if topoNode == nil {
+		return constraint.ComponentSite(authoredComponentName(nodeID), "", false)
+	}
+	return constraint.ComponentSite(
+		authoredComponentName(nodeID),
+		topoNode.SubsystemPath,
+		topoNode.SynthesizedSubsystem,
+	)
+}
+
 // newFeatureResult is the one construction site for a per-node result, so
 // no caller can produce one whose merge bookkeeping is unallocated.
 func newFeatureResult() *featureResult {
 	return &featureResult{
-		Features:  types.OrderedMap[types.IRFeatureEntry]{},
-		leafScope: map[scopeKey]attachmentScope{},
+		Features:   types.OrderedMap[types.IRFeatureEntry]{},
+		leafOwners: map[scopeKey]leafOwner{},
 	}
 }
 
@@ -82,6 +125,28 @@ func (r *featureResult) recordContributedFill(instance, authoredLocator string, 
 		authoredLocator: authoredLocator,
 		contribution:    contribution,
 	})
+}
+
+// projectAttachmentSites writes this node's per-leaf sites into the shared
+// projection, under the coordinate a rule over such a leaf is invoked at.
+//
+// It is written for every leaf the node holds rather than for the leaves some
+// rule might ask about, because a condition deciding which to retain has to be
+// right and a wrong one produces no answer rather than a wrong one — and a rule
+// handed no site reports the same silence as a rule that ran and approved.
+//
+// The walk ranges a Go map, whose order is randomised, and that is sound here
+// because it writes into another map addressed by key. Nothing downstream reads
+// either in iteration order, so no order this walk takes reaches the output.
+func (r *featureResult) projectAttachmentSites(nodeID string, into AttachmentSites) {
+	for key, owner := range r.leafOwners {
+		into[AttachmentLeafKey{
+			Node:       nodeID,
+			Attachment: key.instance,
+			Pillar:     key.pillar,
+			Leaf:       key.leaf,
+		}] = owner.site
+	}
 }
 
 // scopeKey addresses one contested leaf: the attachment's instance name, the
@@ -338,7 +403,10 @@ func collectNodeFeatures(
 	// keyed by the canonical Aggregate-rooted path for the topology node.
 	if attachments, ok := topoResult.FeatureAttachments[nodeID]; ok {
 		canonicalPath := aggregateCanonicalPath(topoNode)
-		componentScope := componentAttachmentScope(topoNode)
+		componentOwner := leafOwner{
+			scope: componentAttachmentScope(topoNode),
+			site:  componentOwnSite(topoNode, nodeID),
+		}
 		for _, fa := range attachments {
 			prov := explicitProvenance
 			if canonicalPath != "" {
@@ -351,7 +419,7 @@ func collectNodeFeatures(
 					}
 				}
 			}
-			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, catalogLookup, nodeID, prov, componentScope); err != nil {
+			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, catalogLookup, nodeID, prov, componentOwner); err != nil {
 				return nil, err
 			}
 		}
@@ -372,7 +440,8 @@ func collectNodeFeatures(
 			// contributed survives into the merged attachment, and every level that
 			// contributed an out-of-shape one is a separate edit to make.
 			result.recordContributedFill(sf.name, resolver.ScopeAttachmentFieldPath(sf.scopePath, sf.name), sf.feat)
-			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, catalogLookup, nodeID, explicitProvenance, scopeShared); err != nil {
+			owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: sf.scopePath}}
+			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
 				return nil, err
 			}
 		}
@@ -386,7 +455,13 @@ func collectNodeFeatures(
 	if topoNode.BoundaryPath != "" && resolveResult.Release != nil {
 		boundaryFeatures := collectBoundaryWideFeatures(resolveResult.Release.Spec.Boundaries, topoNode.BoundaryPath)
 		for _, bf := range boundaryFeatures {
-			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, catalogLookup, nodeID, explicitProvenance, scopeShared); err != nil {
+			// The site names the boundary and no component, because that is what
+			// the operator wrote: a boundary-wide attachment reaches every
+			// component the boundary holds, so there is no component entry to
+			// point at and the boundary's own block is the one place it can be
+			// changed.
+			owner := leafOwner{scope: scopeShared, site: constraint.AuthoredSite{ScopePath: bf.scopePath}}
+			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, catalogLookup, nodeID, explicitProvenance, owner); err != nil {
 				return nil, err
 			}
 		}
@@ -411,7 +486,18 @@ func collectNodeFeatures(
 					AnnotationSource: record.AnnotationSource,
 				}
 			}
-			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, catalogLookup, nodeID, prov, scopeComponent); err != nil {
+			// The component segment is the node's own identifier and not the name
+			// its Aggregate wrote, because that is the key the deployment uses:
+			// a deployment addresses a component the composition contributed by
+			// the qualified identifier the composition gave it. Which spelling a
+			// document uses is a property of the document, which is why the site
+			// is recorded where the document is read rather than derived later
+			// from one naming rule applied to both.
+			owner := leafOwner{
+				scope: scopeComponent,
+				site:  constraint.AuthoredSite{ScopePath: cf.scopePath, Component: nodeID},
+			}
+			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, catalogLookup, nodeID, prov, owner); err != nil {
 				return nil, err
 			}
 		}
@@ -651,7 +737,7 @@ func mergeContribution(
 	catalogLookup resolver.CatalogLookup,
 	nodeID string,
 	provenance featureProvenance,
-	scope attachmentScope,
+	owner leafOwner,
 ) error {
 	// resolved_version is the attachment's OWN feature/credential version, not the
 	// host component's — resolved once here from the catalog.
@@ -667,7 +753,7 @@ func mergeContribution(
 		entry := newAttachmentEntry(featType, version, values, infra, injectMap, provenance)
 		result.Features.Set(instanceName, entry)
 		result.FeatureOrder = append(result.FeatureOrder, instanceName)
-		recordLeafScopes(result.leafScope, instanceName, values, infra, scope)
+		recordLeafOwners(result.leafOwners, instanceName, values, infra, owner)
 		return nil
 	}
 
@@ -682,11 +768,11 @@ func mergeContribution(
 
 	for _, leaf := range types.FlattenLeaves(values) {
 		key := scopeKey{instance: instanceName, pillar: pillarValues, leaf: leaf.Path}
-		mergeLeaf(&existing.Values, &existing.ValuesProvenance, result.leafScope, key, leaf.Value, provenance, scope)
+		mergeLeaf(&existing.Values, &existing.ValuesProvenance, result.leafOwners, key, leaf.Value, provenance, owner)
 	}
 	for _, leaf := range types.FlattenLeaves(infra) {
 		key := scopeKey{instance: instanceName, pillar: pillarInfra, leaf: leaf.Path}
-		mergeLeaf(&existing.Infra, &existing.InfraProvenance, result.leafScope, key, leaf.Value, provenance, scope)
+		mergeLeaf(&existing.Infra, &existing.InfraProvenance, result.leafOwners, key, leaf.Value, provenance, owner)
 	}
 
 	// Merge the authored attachment inject per-mechanism-per-key (incoming wins
@@ -713,23 +799,23 @@ func mergeContribution(
 	return nil
 }
 
-// recordLeafScopes stamps the owning scope onto every leaf of a
-// first-sight contribution, so a later broader-scope contribution to the
-// same instance can be ranked against it. The traversal delegates to
-// types.FlattenLeaves — the one home for "which leaves does this pillar
-// have" — so it cannot disagree with the provenance newAttachmentEntry
-// records over the same leaves.
-func recordLeafScopes(
-	scopes map[scopeKey]attachmentScope,
+// recordLeafOwners stamps the owning contribution onto every leaf of a
+// first-sight contribution, so a later broader-scope contribution to the same
+// instance can be ranked against it and so a rule asked about the leaf can name
+// where it was written. The traversal delegates to types.FlattenLeaves — the one
+// home for "which leaves does this pillar have" — so it cannot disagree with the
+// provenance newAttachmentEntry records over the same leaves.
+func recordLeafOwners(
+	owners map[scopeKey]leafOwner,
 	instance string,
 	values, infra types.OrderedMap[any],
-	scope attachmentScope,
+	owner leafOwner,
 ) {
 	for _, leaf := range types.FlattenLeaves(values) {
-		scopes[scopeKey{instance: instance, pillar: pillarValues, leaf: leaf.Path}] = scope
+		owners[scopeKey{instance: instance, pillar: pillarValues, leaf: leaf.Path}] = owner
 	}
 	for _, leaf := range types.FlattenLeaves(infra) {
-		scopes[scopeKey{instance: instance, pillar: pillarInfra, leaf: leaf.Path}] = scope
+		owners[scopeKey{instance: instance, pillar: pillarInfra, leaf: leaf.Path}] = owner
 	}
 }
 
@@ -769,17 +855,25 @@ func recordLeafScopes(
 // do not outrank each other, so same-scope contributions still resolve by
 // author order with the later one winning.
 //
-// A leaf with provenance but no recorded scope falls back to the zero
-// attachmentScope, which outranks nothing — so the incoming contribution
+// A leaf with provenance but no recorded owner falls back to the zero
+// leafOwner, whose scope outranks nothing — so the incoming contribution
 // wins rather than a missing record silently pinning a leaf.
+//
+// # The site moves with the value, always
+//
+// Whenever the leaf changes hands the incoming contribution's site replaces the
+// outgoing one, and whenever it does not the recorded site is left alone. That
+// is not bookkeeping symmetry: the site names the edit that produced what the
+// leaf now holds, so a site left behind by a value that moved would point a
+// reader at a document whose text does not appear in the build.
 func mergeLeaf(
 	pillarTree *types.OrderedMap[any],
 	pillarProv *types.OrderedMap[types.FieldProvenance],
-	scopes map[scopeKey]attachmentScope,
+	owners map[scopeKey]leafOwner,
 	key scopeKey,
 	incomingValue any,
 	incomingProv featureProvenance,
-	incomingScope attachmentScope,
+	incoming leafOwner,
 ) {
 	if pillarTree.Len() == 0 {
 		*pillarTree = types.OrderedMap[any]{}
@@ -790,7 +884,7 @@ func mergeLeaf(
 	take := func(prov types.FieldProvenance) {
 		types.SetLeafAtPath(pillarTree, key.leaf, incomingValue)
 		pillarProv.Set(key.leaf, prov)
-		scopes[key] = incomingScope
+		owners[key] = incoming
 	}
 	existingProv, exists := pillarProv.Get(key.leaf)
 	if !exists {
@@ -807,7 +901,7 @@ func mergeLeaf(
 		take(newProv)
 		return
 	}
-	if scopes[key].outranks(incomingScope) {
+	if owners[key].scope.outranks(incoming.scope) {
 		return
 	}
 	take(incomingProv.toFieldProvenance())
@@ -1074,10 +1168,19 @@ type namedFeature struct {
 	feat      types.FeatureInstance
 }
 
-// namedBoundaryFeature pairs an instance name with a BoundaryFeature.
+// namedBoundaryFeature pairs an instance name with a BoundaryFeature, plus the
+// path of the boundary that declared it.
+//
+// scopePath is the declaring boundary, not the node's own: a chain walk emits an
+// outer boundary's attachments to every node beneath it, and the per-component
+// scan reaches any boundary anywhere in the tree, so the two differ for most
+// contributions. Carried here for the reason the subsystem side carries its
+// own — it is only knowable inside the walk, and by the time a contribution has
+// been folded, which boundary supplied it is gone.
 type namedBoundaryFeature struct {
-	name string
-	feat types.BoundaryFeature
+	name      string
+	scopePath string
+	feat      types.BoundaryFeature
 }
 
 // collectSubsystemFeatures implements the per-subsystem cascade level:
@@ -1144,19 +1247,43 @@ func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], bo
 	var result []namedBoundaryFeature
 	current := boundaries
 
+	var scopePath string
 	for _, part := range parts {
 		boundary, ok := current.Get(part)
 		if !ok {
 			break
 		}
+		scopePath = boundaryScopePath(scopePath, part, boundary.Synthesized)
 		// Collect boundary-wide features (author order)
 		for fname, bf := range boundary.Features.All() {
-			result = append(result, namedBoundaryFeature{name: fname, feat: bf})
+			result = append(result, namedBoundaryFeature{name: fname, scopePath: scopePath, feat: bf})
 		}
 		current = boundary.Boundaries
 	}
 
 	return result
+}
+
+// boundaryScopePath extends a boundary path by one level, joined the way the
+// boundary axis joins its levels.
+//
+// A boundary normalization synthesized contributes no level and resets the path
+// to empty, because it is not a boundary any file spells: it is created to hold
+// the components a Release wrote at its top level, so an entry found inside one
+// was written at that top level and naming the generated scope would point at a
+// key the document does not contain. It keys on the provenance flag rather than
+// on the name, so a boundary an operator declares and happens to name the same
+// as the synthesized one keeps its level. This is the boundary axis's form of
+// the rule the component locator applies to a synthesized scope on the
+// application side.
+func boundaryScopePath(prefix, name string, synthesized bool) string {
+	if synthesized {
+		return ""
+	}
+	if prefix == "" {
+		return name
+	}
+	return prefix + "/" + name
 }
 
 // collectReleaseComponentFeatures implements the most-specific cascade
@@ -1181,19 +1308,30 @@ func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], bo
 // own fold, since collapsing them would change this cascade's output.
 func collectReleaseComponentFeatures(boundaries types.OrderedMap[types.Boundary], nodeID string) []namedBoundaryFeature {
 	var result []namedBoundaryFeature
-	collectCompFeaturesRecursive(boundaries, nodeID, &result)
+	collectCompFeaturesRecursive(boundaries, "", nodeID, &result)
 	return result
 }
 
-func collectCompFeaturesRecursive(boundaries types.OrderedMap[types.Boundary], nodeID string, result *[]namedBoundaryFeature) {
-	for _, boundary := range boundaries.All() {
+// collectCompFeaturesRecursive walks the boundary tree accumulating the path it
+// descended through, because a contribution's own boundary is what a diagnostic
+// about one of its leaves points at and the recursion is the only place it is
+// known. The path is joined the way the boundary axis joins its levels, so a
+// value taken from here splits back into the levels the operator wrote.
+func collectCompFeaturesRecursive(
+	boundaries types.OrderedMap[types.Boundary],
+	prefix string,
+	nodeID string,
+	result *[]namedBoundaryFeature,
+) {
+	for name, boundary := range boundaries.All() {
+		path := boundaryScopePath(prefix, name, boundary.Synthesized)
 		components := types.BoundaryComponents(boundary)
 		if bc, ok := components.Get(nodeID); ok {
 			for fname, feat := range bc.Features.All() {
-				*result = append(*result, namedBoundaryFeature{name: fname, feat: feat})
+				*result = append(*result, namedBoundaryFeature{name: fname, scopePath: path, feat: feat})
 			}
 		}
-		collectCompFeaturesRecursive(boundary.Boundaries, nodeID, result)
+		collectCompFeaturesRecursive(boundary.Boundaries, path, nodeID, result)
 	}
 }
 

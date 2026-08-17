@@ -157,6 +157,61 @@ type AuthoredCoordinate struct {
 	SourceFile string
 }
 
+// AuthoredSite names the place inside a document where something was written:
+// the scope it sits in, and the component it was keyed under, if any.
+//
+// It exists because a file is not a position. An axis whose entries can be
+// written at more than one site in one document — a scope-wide entry reaching
+// every component the scope holds, or an entry naming one of them — needs the
+// site as well, or a locator can only spell whichever of the two shapes it was
+// written against and will spell that one for both.
+//
+// It carries no axis. Which nesting a scope path belongs to is settled by what
+// is being named rather than by the site: an attachment's values are the
+// developer's and are written in the application's own scope tree, while its
+// infrastructure configuration is the operator's and is written in the
+// deployment's. A field here would be a second answer to a question already
+// settled, and two answers can disagree.
+type AuthoredSite struct {
+	// ScopePath is the scope the entry was written in, joined the way that
+	// axis joins its levels.
+	//
+	// Empty means there is no scope to name — the entry was written at its
+	// document's top level, or inside a scope normalization synthesized to
+	// hold entries the author wrote at the top level. Neither is a scope any
+	// file spells, so both name the top-level shape rather than a generated
+	// one. The two collapse to one value deliberately: a locator's question is
+	// which key the file contains, and the answer is the same for both.
+	ScopePath string
+
+	// Component is the component name the entry was keyed under, empty when
+	// the entry was written scope-wide and names no component at all.
+	//
+	// The empty case is the one a component-shaped path cannot express rather
+	// than an edge of it. A scope-wide entry takes effect on every component
+	// the scope holds, and none of those is a place anyone can edit: the one
+	// editable site is the scope's own block, which names no component.
+	Component string
+}
+
+// AttachmentLeaf is one leaf of one pillar of one attachment's configuration:
+// the leaf's own path, and the site the entry that supplied it was written at.
+//
+// The site is carried per leaf rather than per attachment because ownership is
+// settled leaf by leaf. A scope-wide entry and a component-scoped one on the
+// same attachment each keep the leaves the other does not mention, so two
+// leaves of one pillar are routinely written in two different places, and a
+// site taken once for the attachment would name the wrong one for whichever
+// leaf it did not come from.
+type AttachmentLeaf struct {
+	// Value is the leaf's dotted path inside the pillar, which is the
+	// coordinate every fact keyed at this leaf takes.
+	Value string
+
+	// Site names where the entry that supplied this leaf was written.
+	Site AuthoredSite
+}
+
 // NodeEnumerator supplies the node set: every component instance in the
 // flattened set, a sub-aggregate's nodes included.
 //
@@ -348,10 +403,19 @@ type AttachmentPillarEnumerator interface {
 // A leaf carries no file of its own: it is a path inside the pillar, so it is
 // written wherever that pillar is written and inherits the pillar's document. A
 // file here would be a second answer to a question the pillar already answers.
+//
+// It does carry its own site, and that is not the same question. The pillar
+// says which document; the site says where inside it, and the two differ per
+// leaf: an attachment's configuration is assembled from every scope that
+// reaches the node, so one pillar's leaves can come from a scope's own block
+// and from a component's entry under that scope at once. The document is
+// common to them and the site is not, which is why one sits on the pillar and
+// the other on the leaf.
 type AttachmentPillarLeafEnumerator interface {
-	// AttachmentPillarLeaves returns the leaf names of one attachment pillar,
-	// in a deterministic order the implementation declares.
-	AttachmentPillarLeaves(node string, attachment string, pillar string) []string
+	// AttachmentPillarLeaves returns the leaves of one attachment pillar, each
+	// with the site it was written at, in a deterministic order the
+	// implementation declares.
+	AttachmentPillarLeaves(node string, attachment string, pillar string) []AttachmentLeaf
 }
 
 // LocalsKeyEnumerator supplies the locals one node's Recipe declares.

@@ -42,8 +42,14 @@ func runGraphStageRules(
 	// it. One axis needs it: an attachment's infrastructure configuration is
 	// authored on the deployment and nowhere else, so a finding about one of its
 	// leaves is positioned in that document rather than in the node's.
+	// The per-leaf sites come from the fold that produced them rather than being
+	// recovered here. Which scope's contribution won any one leaf of an
+	// attachment is settled while the cascade folds, and re-running that
+	// precedence at this point would be a second answer to a question the build
+	// already answered — free to disagree with the bytes it produced.
 	coordinates := ir.NewGraphStageCoordinates(
 		out.IRGraph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
+		out.AttachmentSites,
 	)
 	if coordinates == nil {
 		return fmt.Errorf(

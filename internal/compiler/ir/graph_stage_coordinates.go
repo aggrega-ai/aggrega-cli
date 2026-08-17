@@ -58,6 +58,13 @@ type GraphStageCoordinates struct {
 	// and the deployment's attachment block is the only surface that admits it.
 	releaseFile string
 
+	// sites names, per attachment leaf, where the contribution that won it was
+	// written. It is held rather than derived for the reason the attachment axis
+	// is delegated to a fact: the answer was settled once, while the cascade
+	// folded, and a second derivation of it here would be free to disagree with
+	// the one that produced the bytes.
+	sites AttachmentSites
+
 	// nodes is the enumerated node set, folded once when this value is built
 	// because it is the outermost order of every node-keyed traversal.
 	nodes []constraint.NodeInstance
@@ -100,6 +107,7 @@ func NewGraphStageCoordinates(
 	view constraint.GraphView,
 	catalogLookup resolver.CatalogLookup,
 	releaseFile string,
+	sites AttachmentSites,
 ) *GraphStageCoordinates {
 	if graph == nil || view == nil {
 		return nil
@@ -109,6 +117,7 @@ func NewGraphStageCoordinates(
 		view:          view,
 		catalogLookup: catalogLookup,
 		releaseFile:   releaseFile,
+		sites:         sites,
 		nodesByID:     make(map[string]constraint.NodeInstance, graph.Spec.Nodes.Len()),
 	}
 
@@ -240,7 +249,8 @@ func (c *GraphStageCoordinates) AttachmentPillars(
 }
 
 // AttachmentPillarLeaves returns the leaves of one pillar of one attachment's
-// configuration, in the order the provenance record holds them.
+// configuration, each with the site it was written at, in the order the
+// provenance record holds them.
 //
 // The leaves come from the provenance record rather than from the merged
 // payload, and that is what keys the axis where the facts are keyed: a leaf
@@ -248,23 +258,43 @@ func (c *GraphStageCoordinates) AttachmentPillars(
 // record is keyed by, while the payload is a nested map whose top-level keys are
 // a different set. Enumerating the payload would hand a rule coordinates no fact
 // at this stage answers for.
+//
+// Each leaf's site is read from what the fold retained, under the same
+// coordinate the leaf is enumerated at. A leaf with no retained site carries an
+// empty one, which names no authored place and routes a rule's finding to
+// file-level positioning — the mechanical form of not inventing a locator, and
+// the same answer every other axis gives when it cannot name a site.
 func (c *GraphStageCoordinates) AttachmentPillarLeaves(
 	node string,
 	attachment string,
 	pillar string,
-) []string {
+) []constraint.AttachmentLeaf {
 	entry, held := c.attachment(node, attachment)
 	if !held {
 		return nil
 	}
+	var names []string
 	switch pillar {
 	case pillarValues:
-		return entry.ValuesProvenance.Keys()
+		names = entry.ValuesProvenance.Keys()
 	case pillarInfra:
-		return entry.InfraProvenance.Keys()
+		names = entry.InfraProvenance.Keys()
 	default:
 		return nil
 	}
+	out := make([]constraint.AttachmentLeaf, 0, len(names))
+	for _, name := range names {
+		out = append(out, constraint.AttachmentLeaf{
+			Value: name,
+			Site: c.sites[AttachmentLeafKey{
+				Node:       node,
+				Attachment: attachment,
+				Pillar:     pillar,
+				Leaf:       name,
+			}],
+		})
+	}
+	return out
 }
 
 // attachment returns one attachment on one node from the merged set.

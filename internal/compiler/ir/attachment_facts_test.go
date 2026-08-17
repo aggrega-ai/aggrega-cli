@@ -232,7 +232,7 @@ func buildAttachmentsForComponent(t *testing.T, componentType string, feats []to
 	node := &topology.TopologyNode{InstanceID: "api", ComponentType: componentType}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("api", node)
-	graph, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := BuildIR(BuildIRConfig{
 		Topology: &topology.TopologyResult{
 			Nodes:              nodes,
 			FeatureAttachments: map[string][]topology.FeatureAttachment{"api": feats},

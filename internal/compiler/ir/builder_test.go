@@ -123,7 +123,7 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 		},
 	}
 
-	graph, order, err := BuildIR(BuildIRConfig{
+	graph, order, _, err := BuildIR(BuildIRConfig{
 		Topology:        topoResult,
 		ResolveResult:   resolveResult,
 		CatalogLookup:   testCatalog(),
@@ -217,7 +217,7 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 	}
 
-	graph, order, err := BuildIR(BuildIRConfig{
+	graph, order, _, err := BuildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: testCatalog(),
@@ -276,7 +276,7 @@ func TestBuildIR_SyncWave(t *testing.T) {
 		},
 	}
 
-	graph, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := BuildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: testCatalog(),
@@ -317,7 +317,7 @@ func TestBuildIR_SyncWave_DefaultZero(t *testing.T) {
 		},
 	}
 
-	graph, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := BuildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: testCatalog(),
@@ -351,7 +351,7 @@ func TestBuildIR_InfraMapping(t *testing.T) {
 		},
 	}
 
-	graph, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := BuildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: testCatalog(),
@@ -541,7 +541,7 @@ func TestBuildIR_InjectValidationHaltsWithSpecificError(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 	}
 
-	graph, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := BuildIR(BuildIRConfig{
 		Topology:        &topology.TopologyResult{Nodes: types.OrderedMap[*topology.TopologyNode]{}},
 		ResolveResult:   resolveResult,
 		CatalogLookup:   testCatalog(),
@@ -598,7 +598,7 @@ func TestBuildIR_EdgeCarriesValuesInfraAndOrigin(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "local/default"}},
 	}
 
-	graph, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := BuildIR(BuildIRConfig{
 		Topology:        topoResult,
 		ResolveResult:   resolveResult,
 		CatalogLookup:   testCatalog(),

@@ -292,7 +292,7 @@ func TestDeterministicCompilation_IRSpecEdgesPreserveCompositionalAuthorOrder(t 
 		t.Fatalf("topology.Build: %v", err)
 	}
 
-	graph, _, err := ir.BuildIR(ir.BuildIRConfig{
+	graph, _, _, err := ir.BuildIR(ir.BuildIRConfig{
 		Topology:        topoResult,
 		ResolveResult:   res,
 		CatalogLookup:   cat,

@@ -189,7 +189,7 @@ func runPipeline(t *testing.T, agg *types.Aggregate) (*types.IRGraph, *analyzer.
 		t.Fatalf("topology.Build: %v", err)
 	}
 
-	graph, _, err := ir.BuildIR(ir.BuildIRConfig{
+	graph, _, _, err := ir.BuildIR(ir.BuildIRConfig{
 		Topology:        topoResult,
 		ResolveResult:   res,
 		CatalogLookup:   catalog,
@@ -477,7 +477,7 @@ func TestPipeline_FeatureTypeMismatch(t *testing.T) {
 		topology.FeatureAttachment{InstanceName: "feat", Feature: types.FeatureInstance{Type: "type-b"}},
 	)
 
-	_, _, err = ir.BuildIR(ir.BuildIRConfig{
+	_, _, _, err = ir.BuildIR(ir.BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: res,
 		CatalogLookup: catalog,

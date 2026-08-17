@@ -308,6 +308,14 @@ type stepsOneToFourOutput struct {
 	FeatureOrder  ir.FeatureOrder
 	Analysis      *analyzer.AnalysisResult
 
+	// AttachmentSites names, per attachment leaf, where the contribution that
+	// won that leaf was written. It is carried alongside the graph because the
+	// graph cannot answer the question: the cascade folds every scope's
+	// contribution into one entry and keeps the winning value, not the contest
+	// that produced it. A rule invoked over such a leaf needs the site to point
+	// its finding at an edit somebody can make.
+	AttachmentSites ir.AttachmentSites
+
 	// GraphView presents the finalised graph to a check as the named facts
 	// complete once the whole attachment cascade and the annotation-driven
 	// expansion have run, with every fact complete earlier answered by the
@@ -386,7 +394,7 @@ func runStepsOneToFour(
 		}
 
 		// Step 3: IR.
-		graph, featureOrder, err := ir.BuildIRContext(ctx, ir.BuildIRConfig{
+		graph, featureOrder, attachmentSites, err := ir.BuildIRContext(ctx, ir.BuildIRConfig{
 			Topology:        topoResult,
 			ResolveResult:   resolveResult,
 			CatalogLookup:   catalogLookup,
@@ -397,6 +405,7 @@ func runStepsOneToFour(
 		}
 		out.IRGraph = graph
 		out.FeatureOrder = featureOrder
+		out.AttachmentSites = attachmentSites
 
 		// The presentation of the graph just finalised, extending the one the
 		// flattening produced. Built here because this is where both products are

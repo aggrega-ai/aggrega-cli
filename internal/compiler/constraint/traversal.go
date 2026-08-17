@@ -58,6 +58,11 @@ import "strings"
 //   - A coordinate that is not authored at all — a provider, an emitted output
 //     path — contributes no segment, and the coordinate it sits within is what
 //     the locator names.
+//   - A coordinate whose authoring site is not fixed by the coordinates above it
+//     carries that site itself, and the locator is built from what it carries —
+//     see authoredSiteSegments. An attachment's configuration leaf is the case:
+//     it is assembled from every scope reaching its node, so which of them wrote
+//     any one leaf is settled by the fold and by nothing the traversal can see.
 
 // The authoring keys the locator dialect names. They are the keys the author
 // actually writes, so they are declared once here rather than spelled at each
@@ -71,6 +76,7 @@ const (
 	authoredKeyFeatures   = "features"
 	authoredKeyInject     = "inject"
 	authoredKeyValues     = "values"
+	authoredKeyInfra      = "infra"
 	authoredKeyParameters = "parameters"
 	authoredKeyLocals     = "locals"
 	authoredKeyProvides   = "provides"
@@ -538,16 +544,43 @@ func RunOnNodeParameters[V View](
 	})
 }
 
+// pillarNesting reports the axis an attachment pillar's document nests its
+// scopes with, and whether the pillar is one this rule can name at all.
+//
+// This is the one place the mapping lives. An attachment's two pillars are
+// written on two different documents, and each document nests with its own
+// container key: the values the developer wrote sit in the application, which
+// nests subsystems, and the infrastructure configuration the operator wrote
+// sits on the deployment, which nests boundaries. The file each pillar carries
+// says the same thing about the same pillar, so the two are one fact read twice
+// and a disagreement between them would be a locator naming a key in a document
+// that does not contain it.
+//
+// A pillar this rule does not know yields no axis rather than a default one,
+// and the difference is not defensive. A zero axis would join a scope path with
+// an empty separator, which splits that path into one level per character and
+// produces a locator of nonsense segments — a shape a reader would follow. No
+// axis produces no locator, which routes a consumer to file-level positioning
+// instead.
+func pillarNesting(pillar string) (scopeNesting, bool) {
+	switch pillar {
+	case authoredKeyValues:
+		return subsystemNesting, true
+	case authoredKeyInfra:
+		return boundaryNesting, true
+	default:
+		return scopeNesting{}, false
+	}
+}
+
 // RunOnNodeAttachmentPillarLeaves invokes check once per leaf of each pillar of
 // each attachment's configuration, in node order, then attachment order, then
 // pillar order, then leaf order.
 //
-// The locator is
-// .spec.components.<name>.features.<attachment>.<pillar>.<leaf>. A pillar is
-// itself one of the keys an attachment's block is written under, so it
-// contributes that segment directly and no further key is spelled ahead of it.
-// The pillar is a coordinate here and the slot is a coordinate in its own right
-// elsewhere: the two are not the same axis.
+// A pillar is itself one of the keys an attachment's block is written under, so
+// it contributes that segment directly and no further key is spelled ahead of
+// it. The pillar is a coordinate here and the slot is a coordinate in its own
+// right elsewhere: the two are not the same axis.
 //
 // The file comes from the enumerated pillar and not from the node, because an
 // attachment's two pillars are written on two different documents: the values
@@ -556,6 +589,29 @@ func RunOnNodeParameters[V View](
 // attachment block is the only one that admits it. Taking the node's file would
 // pair one of the two with a document that cannot hold the key the locator
 // names.
+//
+// # The path comes from the leaf's own site, and not from the node
+//
+// A node's own segments name one shape — a component's block, in the scope the
+// node was reached through — and an attachment's configuration is assembled
+// from every scope that reaches that node, so the shape is wrong for most of
+// what lands there. Three sites reach one leaf and only the first of them is
+// the node's own: a component's own attachment block; a component's entry
+// inside a scope, which the deployment keys by the identifier the composition
+// gave the node rather than by the name its own document wrote; and a scope's
+// own block, which names no component at all and whose leaves therefore have no
+// component segment to sit under. Naming the node's shape for the second spells
+// a component key under no scope, and for the third invents a component the
+// entry never mentioned — both of them paths that read plausibly and resolve
+// nowhere, which is worse than no path at all.
+//
+// So the site travels with the leaf, from the fold that settled which entry won
+// it. It is settled there and nowhere else: the fold merges every scope's
+// contribution into one entry, leaf by leaf, so a scope-wide entry and a
+// component-scoped one on the same attachment each keep the leaves the other
+// did not mention. Recovering that afterwards would mean re-running the
+// precedence over the documents, which is a second answer to a question already
+// answered.
 func RunOnNodeAttachmentPillarLeaves[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -569,12 +625,18 @@ func RunOnNodeAttachmentPillarLeaves[V View](
 		var out []NodeAttachmentPillarLeafSubject
 		for _, attachment := range attachments.Attachments(node.ID) {
 			for _, pillar := range pillars.AttachmentPillars(node.ID, attachment) {
+				nesting, named := pillarNesting(pillar.Value)
 				for _, leaf := range leaves.AttachmentPillarLeaves(node.ID, attachment, pillar.Value) {
+					var segments []string
+					if named {
+						segments = authoredSiteSegments(
+							nesting, leaf.Site,
+							authoredKeyFeatures, attachment, pillar.Value, leaf.Value,
+						)
+					}
 					out = append(out, newNodeAttachmentPillarLeafSubject(
-						pillar.SourceFile, node.ID, attachment, pillar.Value, leaf,
-						componentInnerSegments(
-							node, authoredKeyFeatures, attachment, pillar.Value, leaf,
-						)...,
+						pillar.SourceFile, node.ID, attachment, pillar.Value, leaf.Value,
+						segments...,
 					))
 				}
 			}
