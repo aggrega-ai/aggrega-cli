@@ -76,21 +76,35 @@ type ModuleDeclaration struct {
 	DeclaredIn string
 }
 
-// evalActive interprets a component's or module's resolved `active` toggle.
-// The toggle reaches flatten already resolved to a literal — a boolean the
-// author wrote directly, or a parameter template the resolver rendered before
-// unmarshal. An empty literal means the toggle was omitted and the entity is
-// present; otherwise the literal must parse as a boolean. A non-empty,
-// non-boolean literal (including the "<no value>" a template over a missing key
-// produces) is a Loud Guardrail naming the node and the offending value.
-func evalActive(active types.ActiveFlag, nodeID string) (bool, error) {
-	s := strings.TrimSpace(string(active))
-	if s == "" {
+// evalActive interprets a component's or module's `active` toggle.
+//
+// A nil toggle is one the author never wrote, and the entity is present. A
+// toggle the author did write must resolve to a boolean: it reaches flatten
+// already resolved to a literal — a boolean written directly, or a parameter
+// template the resolver rendered before unmarshal — and a literal that does not
+// parse as a boolean is a Loud Guardrail naming the node and the offending
+// value.
+//
+// An empty literal is one such value, and separating it from an omitted toggle
+// is why the toggle arrives as a pointer. A toggle reading a parameter resolves
+// to nothing while that parameter is unfulfilled, so treating empty as "present"
+// would deploy the very entity the author gated behind that parameter.
+func evalActive(active *types.ActiveFlag, nodeID string) (bool, error) {
+	if active == nil {
 		return true, nil
 	}
+	s := strings.TrimSpace(string(*active))
 	b, err := strconv.ParseBool(s)
 	if err != nil {
-		return false, cerrors.Wrap(ErrInvalidActive(), cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q active resolved to %q, which is not a boolean", nodeID, string(active)))
+		hint := ""
+		if s == "" {
+			// Stated as what a parameter-driven toggle does rather than as a
+			// claim about this one, so the sentence holds for a toggle authored
+			// empty outright as well as for one whose parameter is unfulfilled.
+			// The two are the same literal here and cannot be told apart.
+			hint = "; a toggle reading a parameter resolves to nothing until that parameter is fulfilled"
+		}
+		return false, cerrors.Wrap(ErrInvalidActive(), cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q active resolved to %q, which is not a boolean%s", nodeID, string(*active), hint))
 	}
 	return b, nil
 }

@@ -32,9 +32,9 @@ func TestBuild_CarriesPrunedSetForward(t *testing.T) {
 	build := func() *TopologyResult {
 		components := types.OrderedMap[types.ComponentInstance]{}
 		components.Set("api", types.ComponentInstance{Type: "core/compute/api-server"})
-		components.Set("cache", types.ComponentInstance{Type: "core/datastore/postgres", Active: "false"})
+		components.Set("cache", types.ComponentInstance{Type: "core/datastore/postgres", Active: activeFlag("false")})
 		components.Set("worker", types.ComponentInstance{Type: "core/compute/api-server"})
-		components.Set("legacy", types.ComponentInstance{Type: "core/datastore/postgres", Active: "false"})
+		components.Set("legacy", types.ComponentInstance{Type: "core/datastore/postgres", Active: activeFlag("false")})
 		agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
 		res, err := buildAgg(t, agg, nil)
@@ -96,7 +96,7 @@ func TestBuild_CarriesDeclaredExportAliasesForward(t *testing.T) {
 
 	childComps := types.OrderedMap[types.ComponentInstance]{}
 	childComps.Set("kept", types.ComponentInstance{Type: "core/compute/api-server"})
-	childComps.Set("gone", types.ComponentInstance{Type: "core/datastore/postgres", Active: "false"})
+	childComps.Set("gone", types.ComponentInstance{Type: "core/datastore/postgres", Active: activeFlag("false")})
 	exported := types.OrderedMap[string]{}
 	exported.Set("public-kept", "kept")
 	exported.Set("public-gone", "gone")

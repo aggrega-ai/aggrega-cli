@@ -12,6 +12,7 @@ import (
 	"github.com/Masterminds/sprig/v3"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -19,9 +20,29 @@ import (
 // YAML bytes against a parameter map exposed under the .parameters key
 // (e.g. {{ .parameters.db_size }}). Sprig template functions are available.
 //
-// The template runs with missingkey=zero: a reference to an undefined
-// parameter renders as the zero value (empty string for string contexts)
-// rather than producing an error.
+// A reference to a parameter the Release never filled renders as nothing. The
+// template runs with missingkey=zero, whose own answer for an absent key is the
+// zero value of a map of any — a nil interface, which the printer writes as the
+// text "<no value>" and printf "%s" writes as "%!s(<nil>)". Neither is anything
+// the author wrote, so an empty string is supplied at the key the template reads
+// instead and the read produces nothing. A `default` pipe or an `if` guard over
+// such a read behaves exactly as it would over the unfilled parameter, because an
+// empty string is as empty and as falsy.
+//
+// Two reads are deliberately left alone, both because supplying something for
+// them would replace a useful outcome with a worse one. A reference the template
+// ITERATES keeps iterating as nothing, which is what an author ranging over an
+// optional list wants; an empty string there would fail the execution instead. And
+// a reference whose PARENT is absent — .parameters.db.host where no db parameter
+// was filled — still halts, because creating the parent would trade a loud halt
+// for a silently wrong artifact.
+//
+// A read anchored at a name other than .parameters reaches nothing to supply and
+// resolves through missingkey=zero unchanged.
+//
+// The parameter map the caller passes is never modified: the empty strings are
+// written into a copy this function owns, so a parameter the author did not fill
+// stays unfilled for every later reader of that map.
 //
 // Both template-parse and template-execute errors are wrapped as
 // ResolverError with ErrInvalidParameterRef.
@@ -38,10 +59,13 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 		}
 	}
 
+	// The tree walked is the tree that runs, so the references seeded for are
+	// exactly the references the execution will make.
+	data := map[string]any{"parameters": copyParameterTree(params)}
+	gotmpl.SeedAbsentLeafKeys(data, gotmpl.CollectRootRefs(tmpl.Tree.Root))
+
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, map[string]any{
-		"parameters": params,
-	}); err != nil {
+	if err := tmpl.Execute(&buf, data); err != nil {
 		return nil, &ResolverError{
 			Entity:  "Aggregate",
 			Message: fmt.Sprintf("template execution error: %v", err),
@@ -50,6 +74,27 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// copyParameterTree returns a copy of a parameter map deep enough that inserting
+// into it cannot reach the original: every nested map is rebuilt, and everything
+// else is shared because nothing writes through a non-map value.
+//
+// It is deliberately not copyMap below, and the two must not be merged. copyMap
+// is the shallow copy the merge path wants, where a nested map is carried across
+// by reference on purpose; this one exists precisely to break that sharing before
+// template evaluation writes into the tree. A caller of one that got the other
+// would be wrong silently, in opposite directions.
+func copyParameterTree(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if nested, ok := v.(map[string]any); ok {
+			out[k] = copyParameterTree(nested)
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // LoadParametersImport reads a single parameter YAML file from the

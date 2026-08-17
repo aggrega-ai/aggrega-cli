@@ -1,0 +1,292 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package gotmpl
+
+import (
+	"sort"
+	"strings"
+	"testing"
+	"text/template/parse"
+)
+
+func mustParseForRoots(t *testing.T, text string) parse.Node {
+	t.Helper()
+	tree, err := ParseTree(text, "{{", "}}")
+	if err != nil {
+		t.Fatalf("parse %q: %v", text, err)
+	}
+	return tree
+}
+
+func refPaths(refs []RootRef) []string {
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, r.Path)
+	}
+	return out
+}
+
+func keysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Inside a range or with body the dot is rebound to the element, so a field read
+// there names a field of that element and is not a context root. Treating it as
+// one would reject every iterating template in the catalog. Asserted on the walk
+// itself, since what a rebound field resolves to at execute time is the
+// evaluator's business and not the root check's.
+func TestCollectRootRefs_DotRebinding(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		tmpl string
+		want []string
+	}{
+		{`{{ range .values }}{{ .anything }}{{ end }}`, []string{"values"}},
+		{`{{ range $k, $v := .infra }}{{ $k }}{{ .whatever }}{{ end }}`, []string{"infra"}},
+		{`{{ with .metadata }}{{ .release_name }}{{ end }}`, []string{"metadata"}},
+		{`{{ with .values.absentkey }}{{ .deep.deeper }}{{ else }}{{ .infra.replicas }}{{ end }}`, []string{"values", "infra"}},
+		{`{{ range .context.uses }}{{ .target }}{{ .provides.host }}{{ end }}`, []string{"context"}},
+		{`{{ range .steps }}{{ range .outputs }}{{ .deep }}{{ end }}{{ end }}`, []string{"steps"}},
+	}
+	for _, tc := range cases {
+		got := map[string]bool{}
+		for _, ref := range CollectRootRefs(mustParseForRoots(t, tc.tmpl)) {
+			got[ref.Segs[0]] = true
+		}
+		if len(got) != len(tc.want) {
+			t.Errorf("%q: collected roots %v, want exactly %v", tc.tmpl, keysOf(got), tc.want)
+			continue
+		}
+		for _, w := range tc.want {
+			if !got[w] {
+				t.Errorf("%q: collected roots %v, want %v", tc.tmpl, keysOf(got), tc.want)
+			}
+		}
+	}
+}
+
+// A chained field hangs off the receiver's value, not off the dot, so it is not
+// a root. This is what lets a defensive wrapper stay legal while the root it
+// wraps is still checked.
+func TestCollectRootRefs_ChainIsNotARoot(t *testing.T) {
+	t.Parallel()
+	tree := mustParseForRoots(t, `{{ (default dict .values.tls).ca }}`)
+	refs := CollectRootRefs(tree)
+	if len(refs) != 1 || refs[0].Segs[0] != "values" {
+		t.Fatalf("expected exactly the wrapped root .values.tls, got %v", refPaths(refs))
+	}
+}
+
+// $ names the context root under any rebinding, so a root-anchored reference
+// inside a ranged body is still checked.
+func TestCollectRootRefs_RootVariableInsideRebinding(t *testing.T) {
+	t.Parallel()
+	tree := mustParseForRoots(t, `{{ $notroot := .values }}{{ range .values }}{{ $.infra.replicas }}{{ $notroot.x }}{{ end }}`)
+	got := map[string]bool{}
+	for _, r := range CollectRootRefs(tree) {
+		got[r.Segs[0]] = true
+	}
+	if !got["values"] || !got["infra"] {
+		t.Errorf("expected roots values and infra, got %v", keysOf(got))
+	}
+	if got["notroot"] || got["x"] {
+		t.Errorf("a template-declared variable must not read as a context root: %v", keysOf(got))
+	}
+}
+
+// What the walk deliberately does NOT name, pinned so the residue is not later
+// mistaken for a second hole and closed by guesswork. A range body's dot is one
+// element of the container, and what a function yields is decided at evaluation
+// rather than by the text — so neither is a path the template names, and
+// attributing either would refuse authoring on an inference the walk has no basis
+// to make. The last case is the shipped edge-configuration idiom: attributing the
+// inner reads there would treat an edge's own fields as context pillars.
+func TestCollectRootRefs_UnnameableDotIsNotAttributed(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		tmpl string
+		want []string
+	}{
+		{`{{ range .context.uses }}{{ .target }}{{ end }}`, []string{".context.uses"}},
+		{`{{ range $k, $v := .infra }}{{ $k }}{{ $v.anything }}{{ end }}`, []string{".infra"}},
+		{`{{ with default dict .metadata }}{{ .no_such_key }}{{ end }}`, []string{".metadata"}},
+		{`{{ $m := default dict .metadata }}{{ $m.no_such_key }}`, []string{".metadata"}},
+		{`{{ with index .context.uses "main" }}{{ with .values }}{{ .protocol }}{{ end }}{{ end }}`, []string{".context.uses"}},
+	}
+	for _, tc := range cases {
+		got := refPaths(CollectRootRefs(mustParseForRoots(t, tc.tmpl)))
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("%q collected %v, want exactly %v", tc.tmpl, got, tc.want)
+		}
+	}
+}
+
+// A path bound to a variable and then iterated through it is one reference, iterated.
+// Resolving the alias to the path it aliases is what lets the two occurrences share a
+// single entry so the flag merges: without the merge the binding's non-iterated entry
+// would have an empty string seeded at the leaf, and the range would then fail on a
+// string where an absent reference would have iterated as nothing.
+func TestCollectRootRefs_AliasedIterationMergesOntoOneReference(t *testing.T) {
+	t.Parallel()
+	refs := CollectRootRefs(mustParseForRoots(t, `{{ $list := .values.items }}{{ range $list }}{{ . }}{{ end }}`))
+	if got := refPaths(refs); strings.Join(got, ",") != ".values.items" {
+		t.Fatalf("collected %v, want exactly [.values.items]", got)
+	}
+	if !refs[0].Iterated {
+		t.Error("a path iterated through an alias must be marked iterated, or its leaf is seeded as a scalar")
+	}
+}
+
+// A variable reassigned to something the walk cannot name UNBINDS rather than
+// keeping the path it used to hold, so a later read is not attributed to a root the
+// author never wrote at that point.
+func TestCollectRootRefs_ReassignedVariableDoesNotKeepAStalePath(t *testing.T) {
+	t.Parallel()
+	refs := CollectRootRefs(mustParseForRoots(t,
+		`{{ $m := .metadata }}{{ range .values }}{{ $m := . }}{{ $m.no_such_key }}{{ end }}`))
+	for _, r := range refs {
+		if r.Path == ".metadata.no_such_key" {
+			t.Errorf("a shadowed variable must not resolve through its outer binding: %v", refPaths(refs))
+		}
+	}
+}
+
+// The four rules the seeding is defined by, each asserted on what the map holds
+// afterwards rather than on rendered text, so a failure names the rule that broke.
+// A rendered-output form of the same rules sits on each consuming surface; this is
+// the primitive's own contract.
+func TestSeedAbsentLeafKeys_SuppliesOnlyWhereTheRulesAllow(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		tmpl    string
+		data    map[string]any
+		wantAt  []string // dotted paths that must hold the empty string afterwards
+		wantOut []string // dotted paths that must still be absent afterwards
+	}{
+		{
+			name:   "absent leaf under a resolving parent is supplied",
+			tmpl:   `{{ .parameters.missing }}`,
+			data:   map[string]any{"parameters": map[string]any{}},
+			wantAt: []string{"parameters.missing"},
+		},
+		{
+			name:   "a deeper chain is supplied at its leaf only",
+			tmpl:   `{{ .parameters.db.missing }}`,
+			data:   map[string]any{"parameters": map[string]any{"db": map[string]any{}}},
+			wantAt: []string{"parameters.db.missing"},
+		},
+		{
+			name:    "an ITERATED reference is left alone",
+			tmpl:    `{{ range .parameters.items }}{{ . }}{{ end }}`,
+			data:    map[string]any{"parameters": map[string]any{}},
+			wantOut: []string{"parameters.items"},
+		},
+		{
+			name:    "a reference whose PARENT is absent is left alone",
+			tmpl:    `{{ .parameters.nosuch.deeper }}`,
+			data:    map[string]any{"parameters": map[string]any{}},
+			wantOut: []string{"parameters.nosuch"},
+		},
+		{
+			name:    "a one-segment ROOT reference is left alone",
+			tmpl:    `{{ .parameters }}{{ .undeclared }}`,
+			data:    map[string]any{"parameters": map[string]any{}},
+			wantOut: []string{"undeclared"},
+		},
+		{
+			name:    "a parent resolving to a NON-map is left alone",
+			tmpl:    `{{ .parameters.scalar.deeper }}`,
+			data:    map[string]any{"parameters": map[string]any{"scalar": "x"}},
+			wantOut: []string{"parameters.scalar.deeper"},
+		},
+		{
+			name:    "a present leaf keeps its own value",
+			tmpl:    `{{ .parameters.filled }}`,
+			data:    map[string]any{"parameters": map[string]any{"filled": "kept"}},
+			wantOut: []string{"parameters.absent"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			SeedAbsentLeafKeys(tc.data, CollectRootRefs(mustParseForRoots(t, tc.tmpl)))
+			for _, path := range tc.wantAt {
+				got, present := lookupPath(tc.data, path)
+				if !present {
+					t.Errorf("%s: nothing supplied at %s", tc.name, path)
+					continue
+				}
+				if got != "" {
+					t.Errorf("%s: %s = %#v, want the empty string", tc.name, path, got)
+				}
+			}
+			for _, path := range tc.wantOut {
+				if _, present := lookupPath(tc.data, path); present {
+					t.Errorf("%s: %s was supplied for, and must not have been", tc.name, path)
+				}
+			}
+		})
+	}
+	// The present-leaf case above only asserts an unrelated key stayed absent; pin
+	// the value itself so an overwrite cannot pass.
+	data := map[string]any{"parameters": map[string]any{"filled": "kept"}}
+	SeedAbsentLeafKeys(data, CollectRootRefs(mustParseForRoots(t, `{{ .parameters.filled }}`)))
+	if got, _ := lookupPath(data, "parameters.filled"); got != "kept" {
+		t.Errorf("a filled leaf must keep its value, got %#v", got)
+	}
+}
+
+// Supplying a leaf makes its parent non-empty, so a guard over the PARENT flips
+// from falsy to truthy once the template reads an absent key beneath it. It is a
+// specified consequence rather than an accident, and it is pinned here because the
+// only way to avoid it is to stop supplying the leaf — which is the emitted
+// placeholder text the seeding exists to remove.
+func TestSeedAbsentLeafKeys_SuppliedLeafMakesItsParentTruthy(t *testing.T) {
+	t.Parallel()
+	guardOnly := map[string]any{"parameters": map[string]any{}}
+	SeedAbsentLeafKeys(guardOnly, CollectRootRefs(mustParseForRoots(t, `{{ if .parameters }}yes{{ end }}`)))
+	if got := len(guardOnly["parameters"].(map[string]any)); got != 0 {
+		t.Fatalf("a guard alone reads no key, so nothing may be supplied; parent holds %d key(s)", got)
+	}
+	guardAndRead := map[string]any{"parameters": map[string]any{}}
+	SeedAbsentLeafKeys(guardAndRead, CollectRootRefs(mustParseForRoots(t, `{{ if .parameters }}yes{{ end }}{{ .parameters.absent }}`)))
+	if got := len(guardAndRead["parameters"].(map[string]any)); got != 1 {
+		t.Fatalf("reading an absent key must supply it, making the parent non-empty; parent holds %d key(s)", got)
+	}
+	// The leaf itself stays falsy, which is what keeps a guard written on the FIELD
+	// behaving as it did over the unset value.
+	if v, _ := lookupPath(guardAndRead, "parameters.absent"); v != "" {
+		t.Errorf("supplied leaf = %#v, want the empty string so a guard over it stays falsy", v)
+	}
+}
+
+// The data a surface hands over is the data written into, and a non-map is
+// declined rather than panicking.
+func TestSeedAbsentLeafKeys_NonMapDataIsDeclined(t *testing.T) {
+	t.Parallel()
+	refs := CollectRootRefs(mustParseForRoots(t, `{{ .parameters.missing }}`))
+	SeedAbsentLeafKeys("not a map", refs)
+	SeedAbsentLeafKeys(nil, refs)
+	SeedAbsentLeafKeys(struct{ Parameters map[string]any }{}, refs)
+}
+
+func lookupPath(data map[string]any, path string) (any, bool) {
+	segs := strings.Split(path, ".")
+	cur := data
+	for _, seg := range segs[:len(segs)-1] {
+		next, ok := cur[seg].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur = next
+	}
+	v, ok := cur[segs[len(segs)-1]]
+	return v, ok
+}

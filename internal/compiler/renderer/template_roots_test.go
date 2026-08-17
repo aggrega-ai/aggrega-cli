@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"text/template/parse"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -118,91 +117,6 @@ func TestEvalTemplate_OptionalKeyUnderValidRootStillRenders(t *testing.T) {
 	}
 }
 
-// Inside a range or with body the dot is rebound to the element, so a field read
-// there names a field of that element and is not a context root. Treating it as
-// one would reject every iterating template in the catalog. Asserted on the walk
-// itself, since what a rebound field resolves to at execute time is the
-// evaluator's business and not the root check's.
-func TestCollectTemplateRootRefs_DotRebinding(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		tmpl string
-		want []string
-	}{
-		{`{{ range .values }}{{ .anything }}{{ end }}`, []string{"values"}},
-		{`{{ range $k, $v := .infra }}{{ $k }}{{ .whatever }}{{ end }}`, []string{"infra"}},
-		{`{{ with .metadata }}{{ .release_name }}{{ end }}`, []string{"metadata"}},
-		{`{{ with .values.absentkey }}{{ .deep.deeper }}{{ else }}{{ .infra.replicas }}{{ end }}`, []string{"values", "infra"}},
-		{`{{ range .context.uses }}{{ .target }}{{ .provides.host }}{{ end }}`, []string{"context"}},
-		{`{{ range .steps }}{{ range .outputs }}{{ .deep }}{{ end }}{{ end }}`, []string{"steps"}},
-	}
-	for _, tc := range cases {
-		got := map[string]bool{}
-		for _, ref := range collectTemplateRootRefs(mustParseForRoots(t, tc.tmpl)) {
-			got[ref.Segs[0]] = true
-		}
-		if len(got) != len(tc.want) {
-			t.Errorf("%q: collected roots %v, want exactly %v", tc.tmpl, keysOf(got), tc.want)
-			continue
-		}
-		for _, w := range tc.want {
-			if !got[w] {
-				t.Errorf("%q: collected roots %v, want %v", tc.tmpl, keysOf(got), tc.want)
-			}
-		}
-	}
-}
-
-func keysOf(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// A chained field hangs off the receiver's value, not off the dot, so it is not
-// a root. This is what lets a defensive wrapper stay legal while the root it
-// wraps is still checked.
-func TestCollectTemplateRootRefs_ChainIsNotARoot(t *testing.T) {
-	t.Parallel()
-	tree := mustParseForRoots(t, `{{ (default dict .values.tls).ca }}`)
-	refs := collectTemplateRootRefs(tree)
-	var paths []string
-	for _, r := range refs {
-		paths = append(paths, r.Path)
-	}
-	if len(refs) != 1 || refs[0].Segs[0] != "values" {
-		t.Fatalf("expected exactly the wrapped root .values.tls, got %v", paths)
-	}
-}
-
-// $ names the context root under any rebinding, so a root-anchored reference
-// inside a ranged body is still checked.
-func TestCollectTemplateRootRefs_RootVariableInsideRebinding(t *testing.T) {
-	t.Parallel()
-	tree := mustParseForRoots(t, `{{ $notroot := .values }}{{ range .values }}{{ $.infra.replicas }}{{ $notroot.x }}{{ end }}`)
-	got := map[string]bool{}
-	for _, r := range collectTemplateRootRefs(tree) {
-		got[r.Segs[0]] = true
-	}
-	if !got["values"] || !got["infra"] {
-		t.Errorf("expected roots values and infra, got %v", keysOf(got))
-	}
-	if got["notroot"] || got["x"] {
-		t.Errorf("a template-declared variable must not read as a context root: %v", keysOf(got))
-	}
-}
-
-func refPaths(refs []templateRootRef) []string {
-	out := make([]string, 0, len(refs))
-	for _, r := range refs {
-		out = append(out, r.Path)
-	}
-	return out
-}
-
 // Aliasing a WHOLE root — binding it to a variable, or rebinding the dot to it with
 // a with — is checked on the same terms as reading a key beneath it directly. The
 // diagnostic is asserted to be the direct spelling's verbatim, because a reference
@@ -295,63 +209,6 @@ func TestEvalTemplate_AliasedAbsentKeyUnderOpenRootRendersEmpty(t *testing.T) {
 		}
 		if out != "" {
 			t.Errorf("%q rendered %q, want the empty string; an unseeded read emits the literal <no value>", tmpl, out)
-		}
-	}
-}
-
-// What the walk deliberately does NOT name, pinned so the residue is not later
-// mistaken for a second hole and closed by guesswork. A range body's dot is one
-// element of the container, and what a function yields is decided at evaluation
-// rather than by the text — so neither is a path the template names, and
-// attributing either would refuse authoring on an inference the walk has no basis
-// to make. The last case is the shipped edge-configuration idiom: attributing the
-// inner reads there would treat an edge's own fields as context pillars.
-func TestCollectTemplateRootRefs_UnnameableDotIsNotAttributed(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		tmpl string
-		want []string
-	}{
-		{`{{ range .context.uses }}{{ .target }}{{ end }}`, []string{".context.uses"}},
-		{`{{ range $k, $v := .infra }}{{ $k }}{{ $v.anything }}{{ end }}`, []string{".infra"}},
-		{`{{ with default dict .metadata }}{{ .no_such_key }}{{ end }}`, []string{".metadata"}},
-		{`{{ $m := default dict .metadata }}{{ $m.no_such_key }}`, []string{".metadata"}},
-		{`{{ with index .context.uses "main" }}{{ with .values }}{{ .protocol }}{{ end }}{{ end }}`, []string{".context.uses"}},
-	}
-	for _, tc := range cases {
-		got := refPaths(collectTemplateRootRefs(mustParseForRoots(t, tc.tmpl)))
-		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
-			t.Errorf("%q collected %v, want exactly %v", tc.tmpl, got, tc.want)
-		}
-	}
-}
-
-// A path bound to a variable and then iterated through it is one reference, iterated.
-// Resolving the alias to the path it aliases is what lets the two occurrences share a
-// single entry so the flag merges: without the merge the binding's non-iterated entry
-// would have an empty string seeded at the leaf, and the range would then fail on a
-// string where an absent reference would have iterated as nothing.
-func TestCollectTemplateRootRefs_AliasedIterationMergesOntoOneReference(t *testing.T) {
-	t.Parallel()
-	refs := collectTemplateRootRefs(mustParseForRoots(t, `{{ $list := .values.items }}{{ range $list }}{{ . }}{{ end }}`))
-	if got := refPaths(refs); strings.Join(got, ",") != ".values.items" {
-		t.Fatalf("collected %v, want exactly [.values.items]", got)
-	}
-	if !refs[0].Iterated {
-		t.Error("a path iterated through an alias must be marked iterated, or its leaf is seeded as a scalar")
-	}
-}
-
-// A variable reassigned to something the walk cannot name UNBINDS rather than
-// keeping the path it used to hold, so a later read is not attributed to a root the
-// author never wrote at that point.
-func TestCollectTemplateRootRefs_ReassignedVariableDoesNotKeepAStalePath(t *testing.T) {
-	t.Parallel()
-	refs := collectTemplateRootRefs(mustParseForRoots(t,
-		`{{ $m := .metadata }}{{ range .values }}{{ $m := . }}{{ $m.no_such_key }}{{ end }}`))
-	for _, r := range refs {
-		if r.Path == ".metadata.no_such_key" {
-			t.Errorf("a shadowed variable must not resolve through its outer binding: %v", refPaths(refs))
 		}
 	}
 }
@@ -476,7 +333,7 @@ func TestTemplateUnknownRootErr_NamesOffenderAndAvailableRoots(t *testing.T) {
 	t.Parallel()
 	roots, _ := contextRootNames(populatedTemplateContext(t))
 	msg := templateUnknownRootErr(cerrors.CatalogError, "workload[db-recipe]", &templateScopeViolation{
-		Ref:      templateRootRef{Segs: []string{"staleroot", "key"}, Path: ".staleroot.key"},
+		Ref:      gotmpl.RootRef{Segs: []string{"staleroot", "key"}, Path: ".staleroot.key"},
 		Admitted: roots,
 		Level:    scopeLevelRoot,
 	}).Error()
@@ -543,13 +400,4 @@ func TestEvalTemplateWithDelims_DownstreamSyntaxIsNotAnAggregaRoot(t *testing.T)
 	if !strings.Contains(out, "8080") {
 		t.Errorf("Aggrega-delimited reference did not render: %q", out)
 	}
-}
-
-func mustParseForRoots(t *testing.T, text string) parse.Node {
-	t.Helper()
-	tree, err := gotmpl.ParseTree(text, "{{", "}}")
-	if err != nil {
-		t.Fatalf("parse %q: %v", text, err)
-	}
-	return tree
 }

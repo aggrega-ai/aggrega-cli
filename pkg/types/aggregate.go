@@ -20,9 +20,25 @@ import (
 // "true"/"false" for a boolean, or the raw string otherwise. A string is a
 // parameter template the resolver renders to a literal before the topology
 // reads it; the topology then interprets the literal strictly as a boolean.
-// The empty value means the toggle was omitted and the entity is present by
-// default. ActiveFlag is a compile-time authoring input only; it never
-// appears in compiled output.
+//
+// The carrier fields hold *ActiveFlag, and the pointer is what separates a
+// toggle nobody wrote from one that is written and carries an empty literal.
+// A nil pointer means the toggle was omitted, and the entity is present by
+// default. A non-nil pointer means the author wrote a toggle, which must then
+// resolve to a boolean: an empty literal is not one, and it is what a toggle
+// reading a parameter resolves to while that parameter is unfulfilled, so it
+// halts the build instead of defaulting the entity to present.
+//
+// Only a declared key can carry a value, which is why the pointer is enough to
+// hold that distinction: a decoder allocates and calls the unmarshalers below
+// only for a key the document declares, and leaves the pointer nil otherwise.
+// An explicit null is the one form that is written yet indistinguishable from
+// omission at the decoder, and it never reaches here — the Aggregate's envelope
+// schema admits only a boolean or a string at this field, so a null toggle is
+// refused before the document is decoded.
+//
+// ActiveFlag is a compile-time authoring input only; it never appears in
+// compiled output.
 type ActiveFlag string
 
 // UnmarshalYAML accepts a scalar boolean or string and stores the node's
@@ -79,8 +95,9 @@ func (a *ActiveFlag) UnmarshalJSON(data []byte) error {
 // Schema: aggregate-v1alpha1.schema.json#/properties/spec/properties/aggregates
 type SubAggregate struct {
 	Type string `json:"type" yaml:"type"`
-	// Active is the module's presence toggle; empty means present. See [ActiveFlag].
-	Active     ActiveFlag      `json:"active,omitempty" yaml:"active,omitempty"`
+	// Active is the module's presence toggle; nil means omitted, so the module
+	// is present. See [ActiveFlag].
+	Active     *ActiveFlag     `json:"active,omitempty" yaml:"active,omitempty"`
 	Parameters OrderedMap[any] `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 }
 
@@ -135,8 +152,9 @@ type Subsystem struct {
 // Schema: aggregate-v1alpha1.schema.json#/$defs/component_instance
 type ComponentInstance struct {
 	Type string `json:"type" yaml:"type"`
-	// Active is the component's presence toggle; empty means present. See [ActiveFlag].
-	Active      ActiveFlag                  `json:"active,omitempty" yaml:"active,omitempty"`
+	// Active is the component's presence toggle; nil means omitted, so the
+	// component is present. See [ActiveFlag].
+	Active      *ActiveFlag                 `json:"active,omitempty" yaml:"active,omitempty"`
 	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
 	Values      OrderedMap[any]             `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
 	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"`      // Component-level self-inject

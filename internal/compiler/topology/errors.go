@@ -116,15 +116,20 @@ var errUnnormalizedAggregate = cerrors.Register("compiler-topology/unnormalized-
 })
 
 // ErrInvalidActive fires from flattenAggregate when a component's or a
-// sub-aggregate module's resolved `active` toggle is neither empty nor a
-// boolean literal. The toggle reaches flatten as an already-resolved string
-// (a boolean authored directly, or a parameter template the resolver
-// rendered to a literal); flatten interprets it strictly, so a value that is
-// not empty and does not parse as a boolean — including the "<no value>"
-// literal a template over a missing key produces — is a Loud Guardrail
-// (Invariant 4) rather than a silent default. The wrapped error names the
-// node whose toggle failed and the offending resolved value so the author
-// can correct the toggle or the parameter driving it.
+// sub-aggregate module's authored `active` toggle does not resolve to a boolean
+// literal. The toggle reaches flatten as an already-resolved string (a boolean
+// authored directly, or a parameter template the resolver rendered to a
+// literal); flatten interprets it strictly, so a literal that does not parse as
+// a boolean is a Loud Guardrail (Invariant 4) rather than a silent default.
+//
+// An EMPTY literal is one such value, and it is the case worth naming: a toggle
+// reading a parameter resolves to nothing while that parameter is unfulfilled,
+// and defaulting that to "present" would deploy the entity the author gated
+// behind the parameter. Only a toggle the author never wrote defaults to
+// present, which flatten reads from the toggle's absence rather than from its
+// value. The wrapped error names the node whose toggle failed and the offending
+// resolved value so the author can correct the toggle or fulfill the parameter
+// it reads.
 func ErrInvalidActive() error { return errInvalidActive }
 
 var errInvalidActive = cerrors.Register("compiler-topology/invalid-active", cerrors.Meta{

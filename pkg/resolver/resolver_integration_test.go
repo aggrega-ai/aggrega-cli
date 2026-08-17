@@ -313,8 +313,8 @@ func TestResolve_ParameterLifecycle(t *testing.T) {
 //
 //   - release-empty-parent: Release authors `database: {}`. Case 2
 //     preserves the empty parent; children's defaults are NOT
-//     filled; `.parameters.database.host` is absent at interpolation
-//     time, so under missingkey=zero it renders as the empty string.
+//     filled; `.parameters.database.host` is unfilled at
+//     interpolation time, so the read renders as nothing at all.
 //     The empty-parent case is counterintuitive for users coming
 //     from ecosystems where `{}` is equivalent to omission — see
 //     parameters-context.md for the design rationale.
@@ -348,9 +348,12 @@ func TestResolve_ParameterDefaultBackfill_E2E(t *testing.T) {
 			releaseFile: "release-empty-parent.yaml",
 			wantTimeout: "30",
 			// Explicit `database: {}` opts out of the children's
-			// defaults; .parameters.database.host is absent at
-			// interpolation time → missingkey=zero renders empty.
-			wantDBHost: "<no value>",
+			// defaults, so .parameters.database.host is unfilled at
+			// interpolation time and the read renders as nothing.
+			// Asserted as the exact empty string: the engine's own
+			// placeholder text for an absent key is what this pins
+			// against, and it is not the empty string.
+			wantDBHost: "",
 			dbHostNote: "empty parent opts out of defaults",
 		},
 		{

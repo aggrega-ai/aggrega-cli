@@ -205,7 +205,7 @@ func checkLocalsReferenceOrder(tmplText string, site localsRefSite, resolved typ
 	if err != nil {
 		return nil
 	}
-	for _, ref := range collectTemplateRootRefs(tree) {
+	for _, ref := range gotmpl.CollectRootRefs(tree) {
 		if ref.Segs[0] != localsContextRoot || len(ref.Segs) < 2 {
 			continue
 		}

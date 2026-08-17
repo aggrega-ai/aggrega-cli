@@ -106,93 +106,25 @@ func (e templateEval) run() (string, error) {
 	// One walk of the tree serves both consumers: the admission check, and the
 	// absent-leaf seeding the execution data needs. Walking twice would let the
 	// two disagree about which references the template makes.
-	refs := collectTemplateRootRefs(t.Tree.Root)
+	refs := gotmpl.CollectRootRefs(t.Tree.Root)
 	if v := e.scope.checkRefs(refs); v != nil {
 		if e.refused != nil {
 			return "", e.refused(v)
 		}
 		return "", templateUnknownRootErr(category, e.name, v)
 	}
+	// The seeding writes in place, and the tree it writes into is the one the
+	// conversion just allocated — private to this execution, so nothing seeded here
+	// can reach the context the caller holds or another surface's data.
 	data := toLowercaseMap(e.scope.data)
 	if missingKey == missingKeyZero {
-		seedAbsentLeafKeys(data, refs)
+		gotmpl.SeedAbsentLeafKeys(data, refs)
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, data); err != nil {
 		return "", e.wrap(stageExecute, err)
 	}
 	return buf.String(), nil
-}
-
-// seedAbsentLeafKeys makes a read of an unset value render nothing, on the
-// surfaces whose policy is to tolerate an unset value at all.
-//
-// text/template's missingkey=zero resolves an absent key to the zero value of the
-// map's ELEMENT type, and every pillar reaches a template as a map[string]any —
-// the conversion below rebuilds each one that way whatever its declared element
-// type was. The zero value is therefore a nil interface, which the printer writes
-// as the literal text "<no value>" and printf "%s" writes as "%!s(<nil>)". Neither
-// is anything the author wrote, and both land in the emitted artifact. Inserting
-// an empty string at the key the template reads makes the read produce nothing
-// instead: the author declared the field optional in their own schema, so nothing
-// substituted for nothing is the unopinionated result, and a `default` pipe or an
-// `if` guard over the read behaves exactly as it did before, because an empty
-// string is as empty and as falsy as the unset value it replaces.
-//
-// Only a LEAF is seeded, and only where its parent chain ALREADY resolves to a
-// writable map. A read whose parent is absent fails the execution today —
-// text/template cannot descend through nothing — and that failure is load-bearing:
-// creating the parent would trade a loud halt for silence. A reference whose chain
-// does not already resolve is therefore left untouched, and so is a chain that
-// resolves to something other than a map.
-//
-// A reference of one segment names a root rather than a key and is left alone. The
-// roots come from the context type and are checked before this runs, so a name the
-// context does not define has already halted; a root the type defines but the
-// conversion dropped as empty is a container in every real use, and seeding it is
-// the parent-creation the paragraph above forbids.
-//
-// A reference the template ITERATES is left alone for the same reason from the
-// other direction: range needs a container where a value read needs a scalar, so
-// an empty string there fails the execution outright, while an absent reference
-// already iterates as nothing — which is the outcome an author ranging over an
-// optional list wants. Nothing to fix, so nothing is supplied.
-//
-// One consequence is worth knowing before it looks like a defect: the `optional`
-// helper reports a key as present once it has been seeded, so a template that
-// reads one key both through `optional` and as a dotted chain gets the empty
-// string rather than `optional`'s fallback for that key. Reading a key one way per
-// template keeps the two answers the same.
-//
-// The map this mutates is the fresh tree the conversion allocates on every call,
-// private to one execution, so nothing seeded here can reach the caller's data or
-// another surface's context.
-func seedAbsentLeafKeys(data any, refs []templateRootRef) {
-	root, ok := data.(map[string]any)
-	if !ok {
-		return
-	}
-	for _, ref := range refs {
-		if len(ref.Segs) < 2 || ref.Iterated {
-			continue
-		}
-		parent := root
-		for _, seg := range ref.Segs[:len(ref.Segs)-1] {
-			next, ok := parent[seg].(map[string]any)
-			if !ok || next == nil {
-				parent = nil
-				break
-			}
-			parent = next
-		}
-		if parent == nil {
-			continue
-		}
-		leaf := ref.Segs[len(ref.Segs)-1]
-		if _, present := parent[leaf]; !present {
-			parent[leaf] = ""
-		}
-	}
 }
 
 func (e templateEval) wrap(stage templateEvalStage, err error) error {
