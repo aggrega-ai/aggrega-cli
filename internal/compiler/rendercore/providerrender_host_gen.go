@@ -35,7 +35,7 @@ type RenderNodeInput struct {
 	ArtifactsProjection *ArtifactsProjection `json:"artifacts_projection,omitempty" yaml:"artifacts_projection,omitempty" cbor:"artifacts_projection,omitempty"`
 }
 
-// IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node carrying the per-node identity and the provenance the guest stamps onto every emitted manifest: its id, type, resolved recipe, values, feature attachments, outbound uses edges, boundary path, deployment wave, Recipe identity, component-id override, and build provenance. Source-file content is not carried here; it travels separately in the source projection. Every key set here has a fixed order — features and uses in author order, values in sorted key order — so the wire payload is byte-identical across runs of identical input.
+// IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node carrying the per-node identity and the provenance the guest stamps onto every emitted manifest: its id, type, resolved recipe, values, feature attachments, the sensitivity marking over its rendered keys, outbound uses edges, boundary path, deployment wave, Recipe identity, component-id override, and build provenance. Source-file content is not carried here; it travels separately in the source projection. Every key set here has a fixed order — features and uses in author order, values and the sensitivity marking in sorted key order — so the wire payload is byte-identical across runs of identical input.
 type IRNodeProjection struct {
 	// ID The node's absolute id within the topology graph.
 	ID string `json:"id" yaml:"id" cbor:"id"`
@@ -47,6 +47,8 @@ type IRNodeProjection struct {
 	Values types.OrderedMap[any] `json:"values,omitempty" yaml:"values,omitempty" cbor:"values,omitempty"`
 	// Features The node's feature attachments keyed by feature alias, carrying the same per-node feature-attachment shape the IR carries. Each entry carries the attachment's values, infra and inject mapping alongside its derived sensitivity marking, so a guest reads whether an attachment handles declared-sensitive material from the payload alone. Preserves author order so the payload is byte-identical across runs of identical input. Opaque at this schema layer; the guest reads the feature-entry shape through the IR wire contract.
 	Features types.OrderedMap[types.IRFeatureEntry] `json:"features,omitempty" yaml:"features,omitempty" cbor:"features,omitempty"`
+	// SensitiveRenderedKeys Rendered keys whose identity is recovered from a datum an author declared sensitive, each mapped to the declaration it inherited that sensitivity from. Travels host to guest on the render input — the opposite direction from the names a guest declares on the render output. What a key names follows the shape this payload carries: on a payload carrying the node's values it is one of that map's keys; on a payload carrying a workload it names an entry in the workload's own attachment maps, where the node's values are empty. A key is present only where the recovery is exact, joining a declaration to a rendered identity with nothing read out of the key's own text and no per-node or per-attachment marking spread across individual keys. A key a template invented is therefore absent, because no declaration names it: the output keys of a recipe's valuesMapping, and the content of an artifact, are template-authored, so neither yields a key here. Absence therefore states that no key's identity could be recovered, never that nothing on this payload carries sensitive material — a guest that reads an absent key as permission to display or emit a value in the clear has read it backwards. Keys arrive in sorted order, which is what makes the payload byte-identical across runs of identical input.
+	SensitiveRenderedKeys map[string]string `json:"sensitive_rendered_keys,omitempty" yaml:"sensitive_rendered_keys,omitempty" cbor:"sensitive_rendered_keys,omitempty"`
 	// Uses The node's outbound uses edges keyed by socket alias, each carrying the ordered target node ids bound to that socket. Preserves author order so the payload is byte-identical across runs of identical input.
 	Uses types.OrderedMap[[]string] `json:"uses,omitempty" yaml:"uses,omitempty" cbor:"uses,omitempty"`
 	// BoundaryPath The node's boundary path, stamped as the aggrega.ai/boundary-path annotation on every emitted manifest that carries a metadata block.
@@ -577,6 +579,31 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 	} else {
 		buf.Write(enc)
 	}
+	if len(t.SensitiveRenderedKeys) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"sensitive_rendered_keys\":")
+		{
+			keys := make([]string, 0, len(t.SensitiveRenderedKeys))
+			for k := range t.SensitiveRenderedKeys {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			buf.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				writeJSONString(&buf, k)
+				buf.WriteByte(':')
+				mv := t.SensitiveRenderedKeys[k]
+				writeJSONString(&buf, mv)
+			}
+			buf.WriteByte('}')
+		}
+	}
 	if !first {
 		buf.WriteByte(',')
 	}
@@ -717,6 +744,27 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 				if err := dec2.Decode(&t.Features); err != nil {
 					return err
 				}
+			}
+		case "sensitive_rendered_keys":
+			t.SensitiveRenderedKeys = make(map[string]string)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					mv = s
+				}
+				t.SensitiveRenderedKeys[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
 			}
 		case "uses":
 			if raw, err := readRaw(dec, data); err != nil {
@@ -4332,6 +4380,9 @@ func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
 	if t.LabelComponentID != "" {
 		n++
 	}
+	if len(t.SensitiveRenderedKeys) != 0 {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
 	dst = appendCBORTextString(dst, "id")
@@ -4425,6 +4476,22 @@ func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
 		dst = appendCBORTextString(dst, "label_component_id")
 		dst = appendCBORTextString(dst, t.LabelComponentID)
 	}
+	if len(t.SensitiveRenderedKeys) != 0 {
+		dst = appendCBORTextString(dst, "sensitive_rendered_keys")
+		{
+			keys := make([]string, 0, len(t.SensitiveRenderedKeys))
+			for k := range t.SensitiveRenderedKeys {
+				keys = append(keys, k)
+			}
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv := t.SensitiveRenderedKeys[k]
+				dst = appendCBORTextString(dst, mv)
+			}
+		}
+	}
 	return dst, nil
 }
 
@@ -4515,6 +4582,28 @@ func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
 					om.Set(mk, mv)
 				}
 				t.Features = om
+			}
+		case "sensitive_rendered_keys":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]string, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					m[mk] = mv
+				}
+				t.SensitiveRenderedKeys = m
 			}
 		case "uses":
 			{
