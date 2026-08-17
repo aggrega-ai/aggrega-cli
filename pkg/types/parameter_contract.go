@@ -38,11 +38,21 @@ type ParameterContract struct {
 	Properties      OrderedMap[any] `yaml:"properties,omitempty"`
 }
 
-// DecodeParameterContract reshapes a raw decoded Aggregate parameter entry
-// (the per-key value extracted from Aggregate.Spec.Parameters) into a
-// ParameterContract. The entry must be a typed-contract map matching the
-// compact-form vocabulary; bare-scalar entries are rejected with a
-// directed error pointing the author at the typed-contract syntax.
+// DecodeParameterContract reshapes one raw decoded parameter declaration
+// into a ParameterContract. The entry is either a top-level entry of
+// Aggregate.Spec.Parameters or one of that entry's sub-contracts — a
+// properties: child, an items: element shape, or a valuesType: value
+// shape — because a sub-contract carries the same typed shape as the
+// declaration containing it.
+//
+// The entry must be a typed-contract map matching the compact-form
+// vocabulary; a bare scalar is rejected with a directed error.
+//
+// The error names no level, and that is deliberate: every caller
+// already prefixes the level it was decoding, so naming one here would
+// misdirect an author whose outer declaration is correct and whose
+// sub-contract is not. For the same reason the suggested syntax carries
+// no leading key, which a sub-contract does not have.
 //
 // Returns an error when the entry is a scalar (rejected — author must
 // use typed-contract form) or when the entry is a map that fails
@@ -52,8 +62,8 @@ func DecodeParameterContract(entry any) (ParameterContract, error) {
 		return decodeTypedContract(m)
 	}
 	return ParameterContract{}, fmt.Errorf(
-		"Aggregate parameter declarations require the typed-contract form. " +
-			"Use 'key: { type: <type>, default: <value> }' instead of the bare-scalar shorthand.")
+		"the typed-contract form is required here. " +
+			"Use '{ type: <type>, default: <value> }' rather than the bare-scalar shorthand.")
 }
 
 // isParameterMap classifies a raw OrderedMap[any] entry as a typed-form
