@@ -50,18 +50,27 @@ const slotName = "audit"
 // attachment can make raise.
 const slotFillType = "core/proof-injector"
 
-// catalogWithASlotConstraint copies the fixture catalog into a temporary tree
-// and declares one attachment slot carrying the supplied label constraint on the
-// two component types the application's own components are declared with.
+// catalogDeclaringSlots copies the fixture catalog into a temporary tree and
+// gives the two component types the application's own components are declared
+// with the supplied attachment-slot schema.
 //
-// Two entities rather than one, and that is what the enumeration and
-// cancellation proofs below rest on: a slot axis whose every member sits on one
-// node cannot show a narrowed node axis, and a per-node walk stopped after the
-// first node is arithmetically indistinguishable from a complete one.
+// Two entities rather than one, and that is what every enumeration and
+// cancellation proof over the slot axis rests on: a slot axis whose every member
+// sits on one node cannot show a narrowed node axis, and a per-node walk stopped
+// after the first node is arithmetically indistinguishable from a complete one.
 //
-// The Feature that fills the slot is labelled here too, so one mechanism decides
-// both halves of the comparison the rule performs.
-func catalogWithASlotConstraint(t *testing.T, declaration string) string {
+// It is shared by the proofs of both rules keyed on a slot — the one about the
+// constraint a slot declares over its fill, and the one about a slot the entity
+// declares required — because the two need the same splice and differ only in what
+// the slots declare. A second copy of the copy-and-splice mechanism would agree
+// with this one on the day it was written and be free to drift afterwards, with
+// nothing comparing them.
+//
+// The body is the whole schema, slot keys included, indented to the depth those
+// keys sit at. A caller therefore reads the YAML it is writing, and a proof
+// needing more than one slot writes more than one rather than asking this helper
+// for a shape it decides.
+func catalogDeclaringSlots(t *testing.T, featuresSchemaBody string) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "catalog")
 	if err := os.CopyFS(root, os.DirFS(invocationCatalogPath)); err != nil {
@@ -70,9 +79,7 @@ func catalogWithASlotConstraint(t *testing.T, declaration string) string {
 
 	slot := "spec:\n" +
 		"  featuresSchema:\n" +
-		"    " + slotName + ":\n" +
-		"      required: false\n" +
-		"      selector: " + declaration + "\n"
+		featuresSchemaBody
 	for _, entity := range []string{"api-server.yaml", "web-ui.yaml"} {
 		path := filepath.Join(root, "base", "components", entity)
 		source, err := os.ReadFile(path)
@@ -87,6 +94,22 @@ func catalogWithASlotConstraint(t *testing.T, declaration string) string {
 			t.Fatalf("write %s: %v", entity, err)
 		}
 	}
+	return root
+}
+
+// catalogWithASlotConstraint declares the shared slot carrying the supplied label
+// constraint, and labels the Feature that fills it.
+//
+// The label lives here rather than in the shared splice above because it is one
+// half of the comparison THIS rule performs: the constraint and the labels it is
+// evaluated against are decided by one mechanism, so a proof cannot end up
+// asserting against a pairing nothing produced.
+func catalogWithASlotConstraint(t *testing.T, declaration string) string {
+	t.Helper()
+	root := catalogDeclaringSlots(t,
+		"    "+slotName+":\n"+
+			"      required: false\n"+
+			"      selector: "+declaration+"\n")
 
 	path := filepath.Join(root, "base", "features", "proof-injector.yaml")
 	source, err := os.ReadFile(path)

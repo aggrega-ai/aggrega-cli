@@ -54,21 +54,33 @@ var errSlotSelectorUnsatisfied = cerrors.Register("compiler-analyzer/slot-select
 // ErrRequiredSlotUnfilled is the ABI-stable sentinel for an attachment
 // slot a Component declares `required: true` that the node's final
 // attachment set leaves unbound — the slot analog of a missing required
-// uses socket, evaluated at Step 4 over the resolved set rather than over
-// an authored block.
+// uses socket, evaluated over the resolved set rather than over an authored
+// block.
 //
-// The stage is what makes the rule honest: an attachment contributed at a
+// It has one emission site, [RequiredAttachmentSlotBound], which raises it
+// through the framework over the presentation of the finalised graph. The
+// stage is what makes the rule honest: an attachment contributed at a
 // subsystem, boundary or Release scope binds the slot for every component
 // under that scope, so a slot is satisfied whether the deployment fills it
 // per-consumer or attaches once at a scope the consumers share. Only the
 // post-cascade set can see both shapes, and the check is a name-presence
 // test over it — it never inspects what the fill means.
 //
+// A finding carries the component type declaring the slot and the slot's own
+// name, in that order. The pair rather than the type alone is what makes two
+// findings about two slots on one instance say which binding point each is
+// about, because the surfaces that render a finding as a sentence do not carry
+// the locator that would otherwise separate them.
+//
 // It is deliberately distinct from ErrMissingRequiredFeature, which reports
 // an unsatisfied presence mandate. A mandate demands that SOME attachment
 // of a named type be present, at any name, with at-least-one cardinality; a
 // slot's `required` demands that ONE NAMED binding point be bound. Two
 // questions with two remediations, so two sentinels.
+//
+// It is equally distinct from ErrSlotSelectorUnsatisfied, which reports a fill
+// that fails the constraint the same slot declares. That question presupposes a
+// fill; this one is whether there is one at all.
 func ErrRequiredSlotUnfilled() error { return errRequiredSlotUnfilled }
 
 var errRequiredSlotUnfilled = cerrors.Register("compiler-analyzer/required-slot-unfilled", cerrors.Meta{

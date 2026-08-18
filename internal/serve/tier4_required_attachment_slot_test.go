@@ -104,9 +104,14 @@ func TestRunTier4Validation_AttachmentSlotDiagnosticsReachTheEditor(t *testing.T
 
 	result := validateBuffer(string(aggBytes))
 
-	// The unmet slot requirement: names the slot and the component type, and
-	// does NOT read as a shape complaint.
-	unbound := findDiagnostic(t, result.Diagnostics, "declares the attachment slot")
+	// The unmet slot requirement: found by the identity registered against the
+	// rule rather than by a sentence, so the discriminator survives a rewording
+	// of the diagnostic and fails when the rule stops reporting at all.
+	unbound := findDiagnostic(t, result.Diagnostics, "required attachment slot unfilled")
+	// Both coordinates a reader needs are in the text, because the editor
+	// renders the message and does not render the locator. Naming only the
+	// component type would leave two unbound slots on two instances of one type
+	// reading as the same sentence.
 	for _, want := range []string{`"root_password"`, `"example/slotted-db"`} {
 		if !containsSubstring(unbound.Message, want) {
 			t.Errorf("requirement diagnostic must name %s; got %q", want, unbound.Message)
@@ -121,6 +126,14 @@ func TestRunTier4Validation_AttachmentSlotDiagnosticsReachTheEditor(t *testing.T
 
 	// Positioning: the requirement lands on the component instance that leaves
 	// the slot unbound, not at file:1:1.
+	//
+	// The locator the finding carries names the slot under that component's
+	// attachment block, and the component leaves the slot unbound precisely by
+	// carrying no such key — so the document walk stops at the deepest key it
+	// does reach, which is the component. That is what this line asserts, and it
+	// is the same position the reading this replaced named directly. A component
+	// authoring an attachment block that merely lacks this slot would position
+	// one level deeper.
 	unboundLine := fixtureKeyLine(t, string(aggBytes), "unbound:")
 	if unbound.Line != unboundLine {
 		t.Errorf("requirement diagnostic at line %d; want the `unbound:` key at line %d (diagnostics: %v)",
@@ -142,7 +155,7 @@ func TestRunTier4Validation_AttachmentSlotDiagnosticsReachTheEditor(t *testing.T
 	}
 	shapeResult := validateBuffer(string(shapeBytes))
 	shape := findDiagnostic(t, shapeResult.Diagnostics, "does not conform to its declared slot shape")
-	if containsSubstring(shape.Message, "declares the attachment slot") {
+	if containsSubstring(shape.Message, "required attachment slot unfilled") {
 		t.Errorf("shape diagnostic must not read as an unmet requirement: %q", shape.Message)
 	}
 	if shape.Severity != "error" {

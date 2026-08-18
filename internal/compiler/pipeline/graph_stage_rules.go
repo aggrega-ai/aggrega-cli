@@ -123,6 +123,28 @@ func runGraphStageRules(
 	}
 	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
 
+	// Each attachment slot a node's component type declares required is bound by
+	// some attachment. It walks the same declared slot axis as the constraint
+	// rule above rather than the set the node ended up bound to, which is what
+	// lets the question be asked at all: a slot nothing binds is exactly the case
+	// this rule reports, so an axis built from the bindings would never present
+	// the subject the rule exists for. Binding is name presence in the merged set,
+	// so an attachment contributed at a scope the node inherits from binds the
+	// slot exactly as one written on the node does. The signal is read once per
+	// node, which is the granularity the traversal promises and the same one the
+	// reading beside it had.
+	violations, err = constraint.RunOnNodeSlots(
+		ctx.Err,
+		coordinates,
+		coordinates,
+		out.GraphView,
+		analyzer.RequiredAttachmentSlotBound,
+	)
+	if err != nil {
+		return err
+	}
+	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+
 	advisories, err := constraint.RunOnNodeAttachmentPillarLeaves(
 		ctx.Err,
 		coordinates,

@@ -341,6 +341,13 @@ var AttachmentRequirementWellFormed = constraint.Check[
 // A slot's requirement is not the presence mandate
 // [RequiredAttachmentTypeAttached] enforces. A mandate demands some attachment
 // of a named type at any name; a slot demands one named binding point be bound.
+//
+// It names the slot as well as the component type declaring it, which is the
+// shape its socket analogue already takes. Naming only the type would leave two
+// findings about two different slots on two instances of one type reading as the
+// same sentence, and the surfaces that render a finding as text do not all carry
+// the locator that separates them — so the slot's name is what makes each
+// finding say which binding point is unbound.
 var RequiredAttachmentSlotBound = constraint.Check[
 	constraint.GraphView,
 	constraint.NodeSlotSubject,
@@ -358,7 +365,7 @@ var RequiredAttachmentSlotBound = constraint.Check[
 		if slices.Contains(v.MergedAttachmentNames(s.NodeID()), s.SlotName()) {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(ErrRequiredSlotUnfilled(), componentType)}
+		return []constraint.Objection{s.Raise(ErrRequiredSlotUnfilled(), componentType, s.SlotName())}
 	},
 }
 
