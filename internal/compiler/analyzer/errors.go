@@ -33,6 +33,18 @@ var errSelectorViolation = cerrors.Register("compiler-analyzer/selector-violatio
 // Feature attached to fill it — the slot analog of a usesSchema socket
 // selector violation, evaluated against the attached Feature's labels at
 // Step 4.
+//
+// It has one emission site, [SlotFillSatisfiesSlotSelector], which raises it
+// through the framework over the presentation of the finalised graph. That is
+// why it separates a slot-fill violation from the two rules sharing
+// [ErrSelectorViolation]: a caller matching on identity alone already knows
+// which of the three label constraints went unsatisfied.
+//
+// The rule reports both an unsatisfied constraint and one the label matcher
+// cannot evaluate at all, under this one identity. What tells them apart is the
+// finding's own detail: the reason the constraint could not be evaluated is
+// carried as its last element, and its absence means the constraint was
+// evaluated and came out false.
 func ErrSlotSelectorUnsatisfied() error { return errSlotSelectorUnsatisfied }
 
 var errSlotSelectorUnsatisfied = cerrors.Register("compiler-analyzer/slot-selector-unsatisfied", cerrors.Meta{

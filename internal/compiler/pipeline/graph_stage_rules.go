@@ -103,6 +103,26 @@ func runGraphStageRules(
 	}
 	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
 
+	// The label constraint an attachment slot declares over what may fill it,
+	// evaluated once per slot each node's component type declares. The axis is
+	// the declared set rather than the bound one, so the rule is asked about a
+	// slot nothing binds as well as one something does — it ends on the unbound
+	// case without raising, and asking it is what keeps the question about the
+	// declaration rather than about what the node happened to end up with. The
+	// signal is read once per node, which is the granularity the traversal
+	// promises and the same one the reading beside it had.
+	violations, err = constraint.RunOnNodeSlots(
+		ctx.Err,
+		coordinates,
+		coordinates,
+		out.GraphView,
+		analyzer.SlotFillSatisfiesSlotSelector,
+	)
+	if err != nil {
+		return err
+	}
+	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+
 	advisories, err := constraint.RunOnNodeAttachmentPillarLeaves(
 		ctx.Err,
 		coordinates,

@@ -7,7 +7,7 @@
 // # Role
 //
 // Step 4 consumes the IR graph emitted by Step 3 (internal/compiler/ir)
-// and validates two classes of static contract:
+// and validates three classes of static contract:
 //
 //   - usesSchema selector rules on every edge — the target node's
 //     labels must satisfy the source-side selector string declared on
@@ -17,16 +17,22 @@
 //     the target node's labels must satisfy the Feature catalog
 //     entity's appliesTo / appliesToAnyOf constraints (AND across the
 //     two surfaces; an omitted constraint is vacuously satisfied).
+//   - featuresSchema selector rules on every attachment slot a component
+//     type declares — the labels of the Feature bound to the slot must
+//     satisfy the selector string the slot declares. A slot declaring no
+//     selector accepts any fill, and a slot nothing binds is a question for
+//     the required-slot rule rather than for this one.
 //
-// Both checks delegate label matching to pkg/selector, and both report on
-// [AnalysisResult].Errors, but neither is evaluated in this package. Each is
-// declared here — [EdgeTargetSatisfiesSocketSelector] and
-// [AttachmentSatisfiesFeatureApplicability] — and each is evaluated over a
+// All three delegate label matching to pkg/selector, and all three report on
+// [AnalysisResult].Errors, but none is evaluated in this package. Each is
+// declared here — [EdgeTargetSatisfiesSocketSelector],
+// [AttachmentSatisfiesFeatureApplicability] and
+// [SlotFillSatisfiesSlotSelector] — and each is evaluated over a
 // presentation of the finalised graph, which this package is not handed;
 // whatever holds that presentation invokes them and appends what they raised to
 // the same slice, through [ErrorsFromObjections]. So a reader looking for the
-// edge walk or the attachment walk that enforces them will not find one here,
-// and that is the arrangement rather than a gap.
+// edge walk, the attachment walk or the slot walk that enforces them will not
+// find one here, and that is the arrangement rather than a gap.
 //
 // # Outputs
 //
@@ -34,8 +40,11 @@
 //
 //   - Errors — every violation this package's own readings discovered, one
 //     [AnalysisError] per violation, joined by whatever the rules declared
-//     here raised once something invokes them. The Errors slice is the gate
-//     signal: a non-empty slice halts the pipeline before Step 5.
+//     here raised once something invokes them. What this package still reads
+//     for itself is the attachment-requirement pair: the presence mandates a
+//     component type declares, and the slots it declares required. The Errors
+//     slice is the gate signal: a non-empty slice halts the pipeline before
+//     Step 5.
 //   - Paths — the precalculated_paths array produced by cycle-safe
 //     DFS through the IR graph (see [PrecalculatedPath]).
 //   - PolicyInput — the [PolicyInput] payload destined for
@@ -68,4 +77,7 @@
 //   - Feature-applicability violations emerge in the order the graph holds
 //     its nodes and then its merged attachments, which is again the order
 //     the traversal invokes the rule in.
+//   - Slot-fill violations emerge in the order the graph holds its nodes and
+//     then in the order each node's component type declares its attachment
+//     slots, which is once more the order the traversal invokes the rule in.
 package analyzer
