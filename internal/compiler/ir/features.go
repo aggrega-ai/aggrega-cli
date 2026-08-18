@@ -163,6 +163,28 @@ const (
 	pillarInfra  = "infra"
 )
 
+// The coordinate prefix each authoring pillar contributes to a marked leaf's
+// path, so one list can carry leaves from both without a bare path being
+// ambiguous: a Feature may declare `password` in values and again in infra and
+// mean different data.
+//
+// Derived from the pillar names above rather than spelled out, because the
+// pillar name is the part that could drift and it already has exactly one home
+// here; the separator is coordinate punctuation, not a name.
+//
+// The render side carries its own pair for the same purpose — a values root and
+// a declared-slot root — and the near-duplication is deliberate rather than an
+// oversight. The two pairs describe different declaring blocks (the slot
+// declaration is a render-stage join and has no counterpart here; the infra
+// pillar has none there), they sit in packages with no import edge between them,
+// and each derives its shared member from its own package's pillar name. Do not
+// consolidate them into one home: that would mean adding a dependency, or a
+// package, to share a separator.
+const (
+	sensitiveLeafRootValues = pillarValues + "."
+	sensitiveLeafRootInfra  = pillarInfra + "."
+)
+
 // attachmentScope is the authoring scope one attachment contribution came
 // from. The per-node merge compares scopes so a same-instance-name contest
 // at one leaf resolves by where the contribution was authored rather than
@@ -986,7 +1008,7 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 // finalizeAttachmentFacts walks every IRFeatureEntry in the per-node result and
 // completes the facts about the attachment that are properties of declarations
 // rather than of the payload: the attached Feature's catalog labels and
-// annotations, which declared slot the attachment fills, and the two derived
+// annotations, which declared slot the attachment fills, and the three derived
 // sensitivity facts.
 //
 // It runs after the whole five-tier cascade has folded, for the same reason the
@@ -1015,6 +1037,16 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 //     attachment slot of the same name sensitive.
 //   - SensitiveInject — the merged inject delivery keys whose referenced
 //     provides key the Feature declares sensitive.
+//   - SensitiveAuthoredLeaves — the merged values and infra leaves the
+//     attachment authored a value at whose path the Feature declares sensitive.
+//
+// The three sensitivity facts sit at three units — one whole attachment, one
+// inject delivery key, one authored leaf — and each is computed from its own
+// inputs. None is derived from another, and in particular the per-attachment
+// answer is never spread down to the narrower units: it is true whenever the
+// Feature declares sensitivity anywhere, which says nothing about a specific
+// delivery key or a specific leaf, so spreading it would assert something false
+// about a datum an author left readable.
 //
 // The slot pairs with the attachment by NAME for both Binding and the slot half
 // of Sensitive: a deployment fills a slot by attaching a Feature under the
@@ -1028,6 +1060,15 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 // linter, a guest or a policy can reason about the entity in isolation;
 // intersecting with the carried values would make the same field sensitive in
 // one deployment and not another.
+//
+// SensitiveAuthoredLeaves does intersect, and the two are not in tension because
+// they are answers to different questions. Sensitive answers what the entity is,
+// which must not vary by deployment. SensitiveAuthoredLeaves answers where this
+// deployment put data, which varies by deployment necessarily — a leaf is named
+// there only because this attachment authored a value at it. Neither rule
+// belongs on the other field: intersecting inside Sensitive would make one
+// entity sensitive in one deployment and not another, and declining to intersect
+// in SensitiveAuthoredLeaves would name leaves that carry nothing.
 //
 // Every input is a declaration or a mapping the compiler itself built. No value
 // is inspected, and no meaning is read out of a name: the attachment's name is
@@ -1071,12 +1112,16 @@ func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyN
 
 		sensitive := declared.Any() || sensitiveSlots[name]
 		marked := deriveInjectSensitivity(entry.Inject, declared.Provides)
-		if sensitive || marked.Len() > 0 {
+		markedLeaves := deriveAuthoredSensitiveLeaves(entry, declared)
+		if sensitive || marked.Len() > 0 || len(markedLeaves) > 0 {
 			// A marked delivery key implies a sensitive provides declaration,
-			// which implies a sensitive attachment, so the second term guards a
-			// case the derivation above cannot produce rather than a live one.
+			// and a marked leaf implies a sensitive values or infra
+			// declaration; either implies a sensitive attachment. So the
+			// second and third terms guard cases the derivation above cannot
+			// produce rather than live ones.
 			entry.Sensitive = sensitive
 			entry.SensitiveInject = marked
+			entry.SensitiveAuthoredLeaves = markedLeaves
 		}
 		result.Features.Set(name, entry)
 	}
@@ -1149,6 +1194,51 @@ func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], 
 			out.Set(mechanism, marked)
 		}
 	}
+	return out
+}
+
+// deriveAuthoredSensitiveLeaves selects the leaves one merged attachment
+// authored a value at whose path the attachment's Feature declares sensitive,
+// returning each as its pillar-prefixed coordinate.
+//
+// The join is exact: an authored leaf's flat-dotted path equal to a declared
+// path. Both sides are already spelled the same way — a declared path is the
+// dotted property chain from the pillar root, and the flattening below produces
+// the same chain over the merged payload — so no normalisation stands between
+// them and a match is a match rather than a resemblance. Nothing reads a path's
+// own text and no value is inspected: whether the author wrote the material
+// itself at a marked leaf or a pointer to it somewhere else is not knowable
+// here, and is not what the marking claims.
+//
+// The payload is FLATTENED rather than read at its top level, which is
+// load-bearing. A pillar is a tree: a nested leaf lives inside a nested map, so
+// the pillar's own top-level keys name only the shallowest leaves. Comparing
+// declarations against those keys would match a top-level leaf and silently miss
+// every nested one, and silence is the wrong direction to fail in for this axis.
+//
+// The two pillars are collected in declaration order, values before infra, and
+// each pillar's leaves arrive in the order the merged payload holds them. That
+// is author order throughout — the payload is an order-preserving container, so
+// no sort is needed and none is applied. Sorting would replace an author order a
+// consumer can act on with one it cannot.
+//
+// Returns nil when the Feature declares no sensitive leaf in either pillar, or
+// when the attachment authored nothing at the ones it does. That is the honest
+// answer rather than an empty list: there is no marked leaf to name.
+func deriveAuthoredSensitiveLeaves(entry types.IRFeatureEntry, declared resolver.SensitiveLeaves) []string {
+	var out []string
+	collect := func(pillar types.OrderedMap[any], declaredLeaves map[string]bool, root string) {
+		if pillar.Len() == 0 || len(declaredLeaves) == 0 {
+			return
+		}
+		for _, leaf := range types.FlattenLeaves(pillar) {
+			if declaredLeaves[leaf.Path] {
+				out = append(out, root+leaf.Path)
+			}
+		}
+	}
+	collect(entry.Values, declared.Values, sensitiveLeafRootValues)
+	collect(entry.Infra, declared.Infra, sensitiveLeafRootInfra)
 	return out
 }
 

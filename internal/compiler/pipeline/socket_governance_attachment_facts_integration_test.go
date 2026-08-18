@@ -53,10 +53,19 @@ const (
 	governanceFactsAuthorAnnotation = "governance.example/review-ticket"
 )
 
-// loadGovernanceWire loads one variant of the governance-wire fixture — "both",
-// "no-free" or "no-byvalue" — returning the inputs and lookups RunPipeline
-// consumes. The variants share one catalog and one Manifest and differ only in
-// their Aggregate, which is what makes a deny/pass pair attributable.
+// loadGovernanceWire loads one variant of the governance-wire fixture —
+// "both", "no-free", "only-free", "no-marked-delivery" or "no-sensitive-datum" —
+// returning the inputs and lookups RunPipeline consumes. The variants share one
+// catalog and one Manifest and differ only in their Aggregate, which is what
+// makes a deny/pass pair attributable.
+//
+// The three that carry the sensitivity axis form a chain in which each step moves
+// exactly ONE variable, so a route can be attributed rather than inferred:
+// "both" marks a delivery key and authors a declared-sensitive leaf;
+// "no-marked-delivery" fills that delivery key from a public locator instead and
+// keeps the authored leaf; "no-sensitive-datum" then drops the value at that
+// leaf. Every one of the three keeps the per-attachment roll-up true, because
+// the roll-up reads the Feature's declarations and no variant touches those.
 func loadGovernanceWire(t *testing.T, variant string) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
 	t.Helper()
 	rel, err := resolver.LoadRelease(governanceWireDir + "release-" + variant + ".yaml")
@@ -185,14 +194,60 @@ func TestGovernanceSensitiveByValueDenyE2E(t *testing.T) {
 	}
 }
 
-// TestGovernanceSensitiveByValuePassE2E is the paired control: the same rule
-// over the fixture whose ONLY difference is that the delivery key fills from a
-// public locator instead of the declared-sensitive provides key. The attachment
-// is still sensitive at the roll-up, so a rule keyed on the roll-up rather than
-// on the delivery key would deny here and this control would fail.
+// TestGovernanceSensitiveByValueAuthoredLeafDenyE2E is the per-route probe for
+// the OTHER route the same rule covers: a declared-sensitive datum written into
+// the attachment's own authored payload rather than delivered through an inject
+// key. The fixture differs from the deny above in exactly one variable — its
+// delivery key fills from a public locator instead of the declared-sensitive
+// provides key — so no delivery key is marked and the only remaining offence is
+// the authored leaf.
+//
+// Two assertions carry the attribution. The verdict must NAME the authored leaf,
+// which it can only do by reading the per-leaf marking off the wire. And it must
+// NOT name a delivery key, which is what shows the two routes are reported
+// separately rather than folded into one message: a rule that fell back to the
+// delivery wording would satisfy a bare "did it halt" check and fail this.
+func TestGovernanceSensitiveByValueAuthoredLeafDenyE2E(t *testing.T) {
+	ctx := context.Background()
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-marked-delivery", "no-sensitive-by-value", analyzer.SeverityDeny)
+
+	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	if err == nil {
+		t.Fatalf("authored-leaf deny: expected a halt, got nil")
+	}
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
+		t.Fatalf("authored-leaf deny not errors.Is ErrPolicyViolation: %v", err)
+	}
+	msg := err.Error()
+	t.Logf("authored-leaf verdict halt:\n%s", msg)
+	for _, want := range []string{`attachment "credentials"`, `authored leaf "values.literalPassword"`} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("authored-leaf deny does not report %q, so the per-leaf marking did not reach the guest:\n%v", want, msg)
+		}
+	}
+	if strings.Contains(msg, "DATABASE_PASSWORD") {
+		t.Errorf("authored-leaf deny names a delivery key, but this fixture marks none; the two routes must be "+
+			"reported as the separate findings they are:\n%v", msg)
+	}
+	if !strings.Contains(msg, governanceFactsAuthorLabel+"=quarterly") {
+		t.Errorf("authored-leaf deny did not echo the author-declared label %q:\n%v", governanceFactsAuthorLabel, msg)
+	}
+}
+
+// TestGovernanceSensitiveByValuePassE2E is the paired control for both routes:
+// the same rule over the fixture whose ONLY difference from the authored-leaf
+// deny above is that no value is authored at the declared-sensitive leaf. Neither
+// route carries a declared-sensitive datum, so the build completes.
+//
+// The attachment is still sensitive at the per-attachment roll-up here — that
+// answer reads the Feature's declarations, which this fixture does not touch — so
+// a rule keyed on the roll-up rather than on the two per-datum markings would
+// deny here and this control would fail. That is the discrimination the control
+// exists for, and it is why the control is not simply an attachment with nothing
+// sensitive about it.
 func TestGovernanceSensitiveByValuePassE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-byvalue", "no-sensitive-by-value", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-sensitive-datum", "no-sensitive-by-value", analyzer.SeverityDeny)
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
@@ -344,8 +399,13 @@ func TestGovernanceAttachmentFactsObservedAtTheGuest(t *testing.T) {
 		// at all, and a host that sorted the set would produce the other one.
 		`"catalog_annotations":{"governance.example/review-ticket":"none","governance.example/data-residency":"eu-west"}`,
 		`"catalog_annotations":{"governance.example/review-ticket":"OPS-4417"}`,
+		// All three sensitivity units, observed at the point of arrival. The
+		// third is asserted with its pillar prefix, which is what distinguishes
+		// a coordinate a consumer can act on from a bare leaf name that two
+		// pillars could both claim.
 		`"sensitive":true`,
 		`"sensitive_inject":{"env":{"DATABASE_PASSWORD":"password"}}`,
+		`"sensitive_authored_leaves":["values.literalPassword"]`,
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the guest did not observe %s in its payload:\n%s", want, stderr)

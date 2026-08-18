@@ -1,7 +1,7 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
-  name: governance-wire-no-byvalue
+  name: governance-wire-no-marked-delivery
   version: "1.0.0"
 spec:
   components:
@@ -12,6 +12,14 @@ spec:
       features:
         credentials:
           type: feature.gov/db-credential
+          # literalPassword is retained deliberately, and it is what this
+          # variant isolates. The Feature declares that leaf sensitive, so
+          # authoring a value at it puts a declared-sensitive datum in the
+          # attachment's own payload — the authored-leaf route — while the
+          # delivery route below carries none. A policy denying on either
+          # route therefore still denies here, and NAMES the authored leaf
+          # rather than a delivery key, which is what shows the two routes
+          # are distinguished rather than folded together.
           values:
             secretName: db-creds
             literalPassword: by-value-plaintext
@@ -21,8 +29,9 @@ spec:
               # fills from the public locator `name` rather than from the
               # declared-sensitive `password`, so no delivery key is marked. The
               # delivery key's own name is left unchanged on purpose — moving it
-              # too would put two variables between the two documents and a
-              # by-value policy's pass here would no longer isolate the cause.
+              # too would put two variables between the two documents and the
+              # switch in which route a verdict names would no longer isolate
+              # the cause.
               - in: DATABASE_PASSWORD
                 from: name
         metrics:

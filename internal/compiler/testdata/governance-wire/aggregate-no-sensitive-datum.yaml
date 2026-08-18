@@ -1,0 +1,35 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: governance-wire-no-sensitive-datum
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: gov/app
+      values:
+        appName: demo
+      features:
+        credentials:
+          type: feature.gov/db-credential
+          # The ONE difference from aggregate-no-marked-delivery.yaml: no value
+          # is authored at literalPassword, the leaf the Feature declares
+          # sensitive. Only the unmarked locator remains, so neither route
+          # carries a declared-sensitive datum and a policy denying on either
+          # route must let this build through.
+          #
+          # The attachment stays sensitive at the per-attachment roll-up even
+          # so: that answer reads the Feature's DECLARATIONS, which are
+          # unchanged here. So a policy keyed on the roll-up instead of on the
+          # per-datum marking would deny this build, and this variant is what
+          # catches that.
+          values:
+            secretName: db-creds
+          inject:
+            env:
+              - in: DATABASE_PASSWORD
+                from: name
+        metrics:
+          type: feature.gov/telemetry
+          values:
+            endpoint: "http://collector:4318"

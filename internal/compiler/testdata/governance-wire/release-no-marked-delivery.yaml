@@ -1,11 +1,11 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
-  name: governance-wire-no-byvalue-release
+  name: governance-wire-no-marked-delivery-release
   environment: local
   version: "1.0.0"
 spec:
-  aggregate: governance-wire-no-byvalue
+  aggregate: governance-wire-no-marked-delivery
   manifest: governance-wire-manifest
   boundaries:
     cluster:

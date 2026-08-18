@@ -16,6 +16,7 @@ package compiler_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
@@ -145,14 +146,71 @@ func TestGovernanceWire_SensitivityAccompaniesTheFacts(t *testing.T) {
 		t.Errorf("%s: marked env key DATABASE_PASSWORD -> %q (present %v), want %q", governanceSlotAttachment, from, ok, "password")
 	}
 
+	// The third unit: the authored leaf. The attachment authors a value at
+	// literalPassword, which its Feature declares sensitive, and authors one at
+	// secretName, which it does not. Both are asserted, because a derivation
+	// that marked every authored leaf would satisfy the first assertion alone.
+	if got := credentials.SensitiveAuthoredLeaves; len(got) != 1 || got[0] != "values.literalPassword" {
+		t.Errorf("%s: sensitive_authored_leaves = %v, want exactly [values.literalPassword]", governanceSlotAttachment, got)
+	}
+
 	// The paired sibling: the free attachment's Feature declares nothing
-	// sensitive, so it carries neither fact.
+	// sensitive, so it carries none of the three facts.
 	metrics := governanceAttachment(t, result, governanceFreeAttachment)
 	if metrics.Sensitive {
 		t.Errorf("%s: sensitive = true, want false (its Feature declares no sensitive leaf)", governanceFreeAttachment)
 	}
 	if metrics.SensitiveInject.Len() != 0 {
 		t.Errorf("%s: sensitive_inject = %v, want empty", governanceFreeAttachment, metrics.SensitiveInject.Keys())
+	}
+	if len(metrics.SensitiveAuthoredLeaves) != 0 {
+		t.Errorf("%s: sensitive_authored_leaves = %v, want empty (its Feature declares no sensitive leaf)",
+			governanceFreeAttachment, metrics.SensitiveAuthoredLeaves)
+	}
+}
+
+// TestGovernanceWire_AuthoredLeafMarkingIsOmittedWhenNothingIsMarked proves the
+// per-leaf marking is absent from the WIRE BYTES, not merely empty in the Go
+// value, for an attachment that authors no declared-sensitive leaf.
+//
+// The assertion is on the marshalled JSON rather than on the field, because the
+// two can disagree: a field that is empty in Go still moves every committed
+// cross-language vector if the encoder emits it unconditionally. The key's
+// absence is what keeps an attachment whose Feature and slot declare nothing
+// carrying the bytes it carried before this axis existed.
+//
+// The positive half is asserted on the same bytes in the same run, so the check
+// cannot pass by the key being unreachable in both directions.
+func TestGovernanceWire_AuthoredLeafMarkingIsOmittedWhenNothingIsMarked(t *testing.T) {
+	t.Parallel()
+	const wireKey = `"sensitive_authored_leaves"`
+
+	marked := governanceAttachment(t, governanceWireBuild(t, "both"), governanceSlotAttachment)
+	markedBytes, err := json.Marshal(marked)
+	if err != nil {
+		t.Fatalf("marshal the marked attachment: %v", err)
+	}
+	if !strings.Contains(string(markedBytes), wireKey) {
+		t.Fatalf("the attachment that authors a declared-sensitive leaf does not carry %s on the wire, so the "+
+			"absence asserted below would prove nothing:\n%s", wireKey, markedBytes)
+	}
+
+	unmarked := governanceAttachment(t, governanceWireBuild(t, "no-sensitive-datum"), governanceSlotAttachment)
+	unmarkedBytes, err := json.Marshal(unmarked)
+	if err != nil {
+		t.Fatalf("marshal the unmarked attachment: %v", err)
+	}
+	if strings.Contains(string(unmarkedBytes), wireKey) {
+		t.Errorf("an attachment that authors no declared-sensitive leaf still carries %s on the wire; the key "+
+			"must be omitted entirely so an attachment declaring nothing carries unchanged bytes:\n%s",
+			wireKey, unmarkedBytes)
+	}
+	// The attachment is still sensitive at the roll-up here, so the omission
+	// above is the per-leaf answer being empty and not the whole axis dropping
+	// out of the payload.
+	if !unmarked.Sensitive {
+		t.Errorf("the no-sensitive-datum variant also cleared the per-attachment roll-up, so the omission above "+
+			"is not attributable to the per-leaf join: sensitive = %v, want true", unmarked.Sensitive)
 	}
 }
 
@@ -181,21 +239,47 @@ func TestGovernanceWire_ControlVariantsMoveOneVariableEach(t *testing.T) {
 		t.Errorf("no-free control lost the marked delivery key; it must move only the free-attachment variable")
 	}
 
-	// The by-value control: no delivery key is marked, and the free attachment
-	// the other policy judges is still present.
-	noByValue := governanceWireBuild(t, "no-byvalue")
-	noByValueCredentials := governanceAttachment(t, noByValue, governanceSlotAttachment)
-	if got := noByValueCredentials.SensitiveInject.Len(); got != 0 {
-		t.Errorf("no-byvalue control still marks %d delivery mechanism(s); it must mark none", got)
+	// The delivery-route variant: no delivery key is marked, the authored leaf
+	// the other route reads is untouched, and the free attachment a third
+	// policy judges is still present.
+	noMarkedDelivery := governanceWireBuild(t, "no-marked-delivery")
+	noMarkedDeliveryCredentials := governanceAttachment(t, noMarkedDelivery, governanceSlotAttachment)
+	if got := noMarkedDeliveryCredentials.SensitiveInject.Len(); got != 0 {
+		t.Errorf("no-marked-delivery variant still marks %d delivery mechanism(s); it must mark none", got)
 	}
-	if got := governanceAttachment(t, noByValue, governanceFreeAttachment).Binding; got != types.AttachmentBindingFree {
-		t.Errorf("no-byvalue control lost the free attachment (binding %q); it must move only the delivery variable", got)
+	if got := noMarkedDeliveryCredentials.SensitiveAuthoredLeaves; len(got) != 1 || got[0] != "values.literalPassword" {
+		t.Errorf("no-marked-delivery variant's authored-leaf marking = %v, want exactly [values.literalPassword]; "+
+			"it must move only the delivery variable, and the authored leaf is what makes the two routes separable", got)
+	}
+	if got := governanceAttachment(t, noMarkedDelivery, governanceFreeAttachment).Binding; got != types.AttachmentBindingFree {
+		t.Errorf("no-marked-delivery variant lost the free attachment (binding %q); it must move only the delivery variable", got)
 	}
 	// The attachment stays sensitive: the Feature's declared leaves are
 	// unchanged, and only the DELIVERY of sensitive material moved. A control
 	// that also cleared the roll-up would be testing two facts at once.
-	if !governanceAttachment(t, noByValue, governanceSlotAttachment).Sensitive {
-		t.Errorf("no-byvalue control also cleared the per-attachment roll-up; it must move only the delivery variable")
+	if !noMarkedDeliveryCredentials.Sensitive {
+		t.Errorf("no-marked-delivery variant also cleared the per-attachment roll-up; it must move only the delivery variable")
+	}
+
+	// The per-datum control: neither route carries a declared-sensitive datum,
+	// so a policy denying on either must pass. Exactly one variable separates it
+	// from the variant above — the absence of a value at the declared-sensitive
+	// leaf — and the roll-up stays true, which is what makes a policy keyed on
+	// the roll-up instead of on the per-datum marking visible here.
+	noSensitiveDatum := governanceWireBuild(t, "no-sensitive-datum")
+	noSensitiveDatumCredentials := governanceAttachment(t, noSensitiveDatum, governanceSlotAttachment)
+	if got := noSensitiveDatumCredentials.SensitiveInject.Len(); got != 0 {
+		t.Errorf("no-sensitive-datum control marks %d delivery mechanism(s); it must mark none", got)
+	}
+	if got := noSensitiveDatumCredentials.SensitiveAuthoredLeaves; len(got) != 0 {
+		t.Errorf("no-sensitive-datum control still marks authored leaves %v; it must mark none", got)
+	}
+	if !noSensitiveDatumCredentials.Sensitive {
+		t.Errorf("no-sensitive-datum control cleared the per-attachment roll-up; the roll-up reads the Feature's " +
+			"declarations, which this control does not touch, so clearing it would move a second variable")
+	}
+	if got := governanceAttachment(t, noSensitiveDatum, governanceFreeAttachment).Binding; got != types.AttachmentBindingFree {
+		t.Errorf("no-sensitive-datum control lost the free attachment (binding %q); it must move only the authored-leaf variable", got)
 	}
 }
 

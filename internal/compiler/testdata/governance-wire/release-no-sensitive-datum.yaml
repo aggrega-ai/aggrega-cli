@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: governance-wire-no-sensitive-datum-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: governance-wire-no-sensitive-datum
+  manifest: governance-wire-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        app: {}

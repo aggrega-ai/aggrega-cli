@@ -17,7 +17,7 @@ const IRKind = "IR"
 // of both. It is a distinct string type so the wire shape is unchanged (a plain
 // JSON string) while the value set is single-sourced here rather than re-spelled
 // as string literals across the IR builder. The ir-v1alpha1
-// attachment_entry.origin enum is the cross-language contract for the same
+// IRFeatureEntry.origin enum is the cross-language contract for the same
 // value set.
 type AttachmentOrigin string
 
@@ -324,23 +324,36 @@ type IREdge struct {
 // files re-marshal without spurious empty-field entries.
 //
 // ValuesProvenance and InfraProvenance carry per-leaf FieldProvenance
-// keyed by the same leaf names that appear in the Values / Infra
-// OrderedMaps. The maps populate at IR-build time during the per-
+// keyed by the flat-dotted leaf path from the pillar root — the whole
+// chain, so a nested leaf is keyed by its full path and not by any one
+// segment of it. That key set is NOT the key set of the Values / Infra
+// maps themselves: a pillar is a tree, so its own keys name only the
+// shallowest leaves. A consumer joins the two by flattening the pillar
+// first, which is what the IR builder and the inspect renderer both do
+// through FlattenLeaves, and what makes the two sequences align by
+// construction. The maps populate at IR-build time during the per-
 // pillar per-leaf merge; downstream consumers (inspect, lint) read
 // them to surface per-leaf origin markers and to warn when an explicit
 // contribution suppressed an annotation one.
 //
-// Sensitive and SensitiveInject are derived, not authored. Both are
-// computed at IR-build time from declarations alone — the attached
-// Feature's schema and the host Component's attachment-slot
-// declaration — over the merged attachment, after the whole attachment
-// cascade has folded. Neither inspects a value, and neither infers
-// meaning from a name: the attachment's name locates the slot it binds
-// through an exact lookup against the declared slot map, and nothing
-// is read out of the name itself. Both are absent from the wire when the
-// declarations that would populate them are absent, so an attachment
-// whose Feature and slot declare nothing carries the same bytes it
-// carried before the axis existed.
+// Sensitive, SensitiveInject and SensitiveAuthoredLeaves are derived,
+// not authored. All three are computed at IR-build time from
+// declarations alone — the attached Feature's schema and the host
+// Component's attachment-slot declaration — over the merged
+// attachment, after the whole attachment cascade has folded. None of
+// them inspects a value, and none infers meaning from a name: the
+// attachment's name locates the slot it binds through an exact lookup
+// against the declared slot map, and nothing is read out of the name
+// itself. All three are absent from the wire when the declarations
+// that would populate them are absent, so an attachment whose Feature
+// and slot declare nothing carries the same bytes it carried before
+// the axis existed.
+//
+// The three sit at three different units — one whole attachment, one
+// inject delivery key, one authored leaf — and each answers its own
+// question rather than sharpening the answer above it. None is
+// recoverable from either of the others, so a consumer reads the one
+// whose unit matches the question it is asking.
 type IRFeatureEntry struct {
 	Type            string `json:"type"`
 	ResolvedVersion string `json:"resolved_version"`
@@ -429,6 +442,48 @@ type IRFeatureEntry struct {
 	// delivery mechanism has no delivery key to mark, so the map is
 	// empty for it.
 	SensitiveInject OrderedMap[OrderedMap[string]] `json:"sensitive_inject,omitempty,omitzero"`
+	// SensitiveAuthoredLeaves names the leaves this attachment authors a
+	// value at that the attached Feature declares sensitive, each as the
+	// pillar-prefixed dotted path the authored datum occupies —
+	// "values.<path>" or "infra.<path>". Ordered as the attachment
+	// authored the leaves, the values pillar's before the infra pillar's —
+	// the same author order Values and Infra themselves carry, and what
+	// makes the wire bytes identical across runs of identical input. The
+	// encoding carries the order positionally and sorts nothing of its
+	// own, so the order this field is built in is the order a consumer
+	// reads.
+	//
+	// It intersects the declarations with what the attachment actually
+	// authored, and that is a deliberate difference from the leaf half of
+	// Sensitive, which does not intersect. The two answer different
+	// questions, so neither behaviour is the other's bug. Sensitive
+	// reports a property of the catalog entity plus the slot it fills, so
+	// a reader can reason about the entity in isolation and gets the same
+	// answer in every deployment. This field reports which data one
+	// deployment put where, which is deployment-specific by construction:
+	// a leaf appears here only because this attachment authored a value at
+	// it. Intersecting inside Sensitive would make one entity sensitive in
+	// one deployment and not another; declining to intersect here would
+	// name leaves that carry nothing.
+	//
+	// The join is exact or it does not happen — an authored leaf path
+	// equal to a path the Feature's schema declares sensitive. Nothing is
+	// read out of the path's own text, no value is inspected, and the
+	// per-attachment roll-up is never spread across individual leaves,
+	// which would assert something false about a leaf an author left
+	// readable.
+	//
+	// Empty when the attachment authors no leaf its Feature declares
+	// sensitive. Empty is not permission: it says that no authored leaf
+	// matched a declaration, never that the attachment carries nothing
+	// sensitive, and a consumer treating it as licence to display or emit
+	// a value in the clear has read it backwards. The marking is carried
+	// as part of the payload's contract rather than in response to any one
+	// consumer, so a policy that needs it can be written whenever the need
+	// arises instead of waiting for the payload to be widened first — a
+	// reader finding nothing that consumes it has therefore learnt a fact
+	// about today's consumers, not a reason to remove it.
+	SensitiveAuthoredLeaves []string `json:"sensitive_authored_leaves,omitempty"`
 }
 
 // FieldProvenance records the origin of one leaf in an IR feature
