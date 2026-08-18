@@ -4,6 +4,7 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -16,10 +17,20 @@ import (
 // node count even after cycle detection prunes back-edges.
 const maxPathsPerNode = 1000
 
-// calculatePaths enumerates the precalculated_paths array Step 4
+// calculatePaths enumerates the precalculated_paths array this stage
 // emits to the policy validator. From each node in the IR graph the
 // function performs a cycle-safe depth-first search, emitting one
 // [PrecalculatedPath] per acyclic path it discovers.
+//
+// It reads the caller's cancellation signal once per start node, as the
+// first statement of that loop, and returns the withdrawal without a
+// partial enumeration. That granularity is what the daemon's shutdown
+// drain relies on: enumeration is bounded per start node but the number
+// of start nodes is the graph's, so a large graph is where an
+// uninterruptible walk would be felt. A partial enumeration is not
+// returned because the policy payload is assembled from the whole of it,
+// and a payload built from a truncated walk would describe a graph the
+// compiler did not see.
 //
 // Contract for callers:
 //
@@ -44,7 +55,7 @@ const maxPathsPerNode = 1000
 //     current start node stops without emitting the current partial
 //     path; previously-emitted paths from that node remain. Total
 //     output is bounded by maxPathsPerNode * |start nodes|.
-func calculatePaths(graph *types.IRGraph) []PrecalculatedPath {
+func calculatePaths(ctx context.Context, graph *types.IRGraph) ([]PrecalculatedPath, error) {
 	adj := buildAdjacency(graph.Spec.Edges)
 	featuresByNode := collectFeatureTypes(graph)
 
@@ -54,6 +65,12 @@ func calculatePaths(graph *types.IRGraph) []PrecalculatedPath {
 	// Start DFS from each node in sorted order
 	nodeIDs := sortedNodeIDs(graph.Spec.Nodes)
 	for _, startNode := range nodeIDs {
+		// Read before the node is examined at all, so the count of reads is the
+		// count of start nodes entered and a walk that stopped is arithmetically
+		// distinguishable from one that finished and reported afterwards.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		neighbors := adj[startNode]
 		if len(neighbors) == 0 {
 			continue
@@ -63,7 +80,7 @@ func calculatePaths(graph *types.IRGraph) []PrecalculatedPath {
 		dfs(startNode, []string{startNode}, map[string]bool{startNode: true}, adj, featuresByNode, &paths, &pathCounter, &nodePaths)
 	}
 
-	return paths
+	return paths, nil
 }
 
 // dfs is calculatePaths's recursive worker. The visited map is

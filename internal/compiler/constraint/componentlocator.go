@@ -3,6 +3,29 @@
 
 package constraint
 
+import "strings"
+
+// AuthoredComponentName returns the name the author typed for a node, taken
+// from the identifier a flattened set keys it by.
+//
+// A node a sub-module contributes carries the contributing module's dotted
+// prefix ahead of its own name, and the separator is reserved to the compiler
+// rather than available to an author — so the segment after the last separator
+// is the name, and a node no module contributed is its own name entire.
+//
+// It is exported and lives here for the reason [ComponentSite] does: more than
+// one stage enumerates nodes, each stage's enumeration fills the authored name
+// of the instances it yields, and two derivations of one name would let a
+// locator built at one stage disagree with the same component's locator built
+// at another. The framework defines what the authored name of a node instance
+// means, so the framework derives it once and every enumeration reads it here.
+func AuthoredComponentName(nodeID string) string {
+	if i := strings.LastIndex(nodeID, "."); i >= 0 {
+		return nodeID[i+1:]
+	}
+	return nodeID
+}
+
 // componentAuthoredSegments returns the locator segments naming where a
 // component instance was authored.
 //

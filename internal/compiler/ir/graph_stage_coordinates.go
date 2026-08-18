@@ -5,7 +5,6 @@ package ir
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -143,7 +142,7 @@ func NewGraphStageCoordinates(
 		instance := constraint.NodeInstance{
 			ID:                   id,
 			SourceFile:           node.SourceFile,
-			AuthoredName:         authoredComponentName(id),
+			AuthoredName:         constraint.AuthoredComponentName(id),
 			SubsystemPath:        node.SubsystemPath,
 			SynthesizedSubsystem: node.SynthesizedSubsystem,
 		}
@@ -481,25 +480,6 @@ func (c *GraphStageCoordinates) aliasIsDerived(edge types.IREdge) bool {
 		return false
 	}
 	return len(socket.Compact) > 0
-}
-
-// authoredComponentName returns the name the author typed for a node, taken
-// from the identifier the flattened set keys it by.
-//
-// A node a sub-aggregate contributes carries the contributing module's dotted
-// prefix ahead of its own name, and the separator is reserved to the compiler
-// rather than available to an author — so the segment after the last separator
-// is the name, and a node no module contributed is its own name entire.
-//
-// The analyzer's hand-written readings derive the same name the same way for
-// their own locators. That near-duplicate is deliberate for now rather than an
-// oversight: those readings are removed once the rules beside them are invoked
-// through the framework, and the derivation retires with them onto this one.
-func authoredComponentName(nodeID string) string {
-	if i := strings.LastIndex(nodeID, "."); i >= 0 {
-		return nodeID[i+1:]
-	}
-	return nodeID
 }
 
 // The compiler holds this type to every axis the rules over this stage are

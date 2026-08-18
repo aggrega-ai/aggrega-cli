@@ -182,6 +182,40 @@ func (v *topologyView) ModuleContributedNodes(module string) []string {
 	return v.contributed[module]
 }
 
+// Nodes returns every component instance the flattened set holds, in the order
+// the composition produced them, each carrying the provenance a locator is built
+// from.
+//
+// The order is the flattened set's own rather than a sort, so a rule invoked
+// once per node reports in the order the authors wrote at every level, and the
+// nodes a module contributed appear where the composition placed them.
+//
+// The identifier is the one every keyed fact at this stage takes, and the
+// authored name beside it is the name the author typed — a component a module
+// contributed carries the module's prefix in the first and not in the second, so
+// the two cannot be collapsed. The authored name is derived by the framework
+// rather than here, so a component's locator built at this stage and the same
+// component's locator built at a later one cannot disagree.
+func (v *topologyView) Nodes() []constraint.NodeInstance {
+	if v.nodes.Len() == 0 {
+		return nil
+	}
+	out := make([]constraint.NodeInstance, 0, v.nodes.Len())
+	for id, node := range v.nodes.All() {
+		if node == nil {
+			continue
+		}
+		out = append(out, constraint.NodeInstance{
+			ID:                   id,
+			SourceFile:           node.SourceFile,
+			AuthoredName:         constraint.AuthoredComponentName(id),
+			SubsystemPath:        node.SubsystemPath,
+			SynthesizedSubsystem: node.SynthesizedSubsystem,
+		})
+	}
+	return out
+}
+
 // Modules returns every sub-module the composition brought in, in author order
 // with an importing module before the modules nested inside it, each carrying
 // the document that declared it.
@@ -206,6 +240,7 @@ func (v *topologyView) Modules() []constraint.AuthoredCoordinate {
 var (
 	_ constraint.TopologyView     = (*topologyView)(nil)
 	_ constraint.ModuleEnumerator = (*topologyView)(nil)
+	_ constraint.NodeEnumerator   = (*topologyView)(nil)
 )
 
 // newStageView builds the presentation of the composition this build produced,

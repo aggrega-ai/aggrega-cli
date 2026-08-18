@@ -423,7 +423,7 @@ func runStepsOneToFour(
 		// analyzer-only failures so Tier-4 callers can consume them as
 		// diagnostics. Build / irgraph callers convert AnalysisResult.Errors
 		// to the joined-error shape via RunPipeline's wrapper logic.
-		analysis, err := analyzer.AnalyzeContext(ctx, graph, catalogLookup)
+		analysis, err := analyzer.AnalyzeContext(ctx, graph)
 		if err != nil {
 			return err
 		}
@@ -664,6 +664,21 @@ func ResolveAndFlatten(
 				}
 			}
 			return fmt.Errorf("topology construction: %w", err)
+		}
+
+		// The rules declared over the flattened composition are invoked here,
+		// against the presentation and the enumeration that stage produced and
+		// carries. This is the site that holds both, and it sits beside the
+		// flattening rather than inside it so that the package producing the
+		// composition does not have to reach into the package a rule over it is
+		// declared in.
+		//
+		// It runs for every caller of this scope rather than on the build path
+		// alone, which is the same reason the checks before the render sit in one
+		// place: a rule asked on one consumer's path would let another report a
+		// clean verdict on a document the build rejects.
+		if err := runTopologyStageRules(ctx, topoResult); err != nil {
+			return err
 		}
 
 		return use(resolveResult, topoResult)

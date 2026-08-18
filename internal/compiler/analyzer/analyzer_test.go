@@ -73,7 +73,7 @@ func TestAnalyze_PathsCalculated(t *testing.T) {
 		},
 	}
 
-	result := Analyze(graph, analyzerCatalog())
+	result := Analyze(graph)
 	if len(result.Paths) < 2 {
 		t.Errorf("expected at least 2 paths, got %d", len(result.Paths))
 	}
@@ -106,7 +106,7 @@ func TestAnalyze_PolicyInputAssembled(t *testing.T) {
 		},
 	}
 
-	result := Analyze(graph, analyzerCatalog())
+	result := Analyze(graph)
 	if result.PolicyInput == nil {
 		t.Fatal("expected policy input")
 	}
@@ -131,7 +131,7 @@ func TestAnalyze_EmptyGraph(t *testing.T) {
 		},
 	}
 
-	result := Analyze(graph, analyzerCatalog())
+	result := Analyze(graph)
 	if len(result.Errors) != 0 {
 		t.Errorf("expected 0 errors, got %d", len(result.Errors))
 	}

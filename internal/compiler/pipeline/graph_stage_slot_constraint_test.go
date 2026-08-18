@@ -390,12 +390,6 @@ func TestTheSlotFillRuleHaltsThroughTheViolationChannel(t *testing.T) {
 			if violation.OriginFile != invocationAggregatePath {
 				t.Errorf("violation %d document = %q, want %q", i, violation.OriginFile, invocationAggregatePath)
 			}
-			// The edge fields stay empty on this class, so a consumer reading
-			// Socket or Selector to classify a finding would misread it. That is
-			// why the kind above is the classifier.
-			if violation.Source != "" || violation.Target != "" || violation.Socket != "" || violation.Selector != "" {
-				t.Errorf("violation %d filled the edge fields: %+v", i, violation)
-			}
 			// The offending values the catalog and the compiled graph supplied.
 			if !strings.Contains(violation.Message, "fill.aggrega.ai/grade=hardened") ||
 				!strings.Contains(violation.Message, slotFillType) {

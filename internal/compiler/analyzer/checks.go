@@ -44,27 +44,22 @@ import (
 // a rule — being able to stop or warn a build is — so the discriminator is the
 // absence of a predicate rather than the presence of graph access.
 //
-// The rules are declared here and the hand-written functions beside this file
-// still run. That is what a reader comparing the two should expect rather than
-// read as duplication left behind: a declaration is invoked where something
-// presents a view over the compilation products its stage names, and for every
-// rule here that reads the finalised graph, nothing presents one. The
-// declaration is what makes the placement computable; the invocation arrives
-// with the change that supplies the view those rules need, and the hand-written
-// form is removed by the change that no longer needs it.
+// Every rule here is invoked, and each is invoked at the point its own declared
+// facts complete rather than at one point serving all of them. Five read the
+// finalised graph and are invoked where that graph and its enumeration are both
+// in hand; one — [AttachmentRequirementWellFormed] — reads only facts complete
+// once the composition is flattened, and is invoked where that flattening's own
+// presentation is in hand, which is earlier. That difference is the declaration's
+// doing and not a wiring choice: a rule reading fewer facts completes sooner, so
+// an author hears about a broken declaration before anything downstream reasons
+// about what it declares.
 //
-// That is a statement about these declarations and not about the framework. A
-// view over an authored document is presented elsewhere, and a rule declared
-// there is invoked through it, so a reader must not read the paragraph above as
-// saying no view exists anywhere.
-//
-// One rule here is likewise not waiting on a view at all, and separating it
-// matters because it would otherwise be mistaken for the rest.
-// [AttachmentRequirementWellFormed] reads only facts complete once the
-// composition is flattened, and a presentation of those is already built where
-// the flattening happens, with rules invoked through it there. So what that rule
-// waits on is a site that invokes it against that presentation, not a view that
-// has yet to exist.
+// The consequence of the earlier point is worth stating rather than discovering.
+// A finding raised before the graph exists halts there, so a document carrying
+// one reports it alone and the findings the later rules would have raised for
+// that same document are not reached. That is the shape every check before the
+// graph already has, and the remedy for a broken declaration is in the catalog
+// rather than in the document the later rules are about.
 //
 // Where a rule evaluates an authored label constraint, the last element of its
 // detail is why that constraint could not be evaluated at all, and its absence
@@ -245,6 +240,14 @@ var SlotFillSatisfiesSlotSelector = constraint.Check[
 // [AttachmentRequirementWellFormed] instead. A broken declaration must never
 // read as a satisfied requirement, and it must not read as an absent
 // attachment either: the two have different remediations.
+//
+// It names the component type declaring the mandate as well as the type
+// demanded and the label the mandate carries, which is the shape its socket and
+// slot analogues already take. The declaring type is what tells an author which
+// declaration is making the demand, and the surfaces that render a finding as
+// text do not all carry the locator that would otherwise say so — so without it
+// two components demanding different types would still read alike wherever the
+// demanded type happened to match.
 var RequiredAttachmentTypeAttached = constraint.Check[
 	constraint.GraphView,
 	constraint.NodeSubject,
@@ -272,7 +275,7 @@ var RequiredAttachmentTypeAttached = constraint.Check[
 				continue
 			}
 			out = append(out, s.Raise(
-				resolver.ErrMissingRequiredFeature(), mandate.Key, mandate.Type, mandate.Label,
+				resolver.ErrMissingRequiredFeature(), componentType, mandate.Type, mandate.Label,
 			))
 		}
 		return out
@@ -297,6 +300,13 @@ var RequiredAttachmentTypeAttached = constraint.Check[
 // node set it reads a type from. A rule declaring an earlier view is still
 // readable at every later point, so this places the rule no later than it has
 // to be rather than moving where it may run.
+//
+// It names the component type carrying the broken declaration as well as the
+// annotation key and why that key cannot be evaluated. The type is what says
+// which catalog entity to correct, which the locator cannot: the locator names
+// the component instance that uses the type, and the instance is not where the
+// remedy is. The key is named separately from the type because one arm of the
+// fault is a key with no label at all, where nothing else identifies it.
 var AttachmentRequirementWellFormed = constraint.Check[
 	constraint.TopologyView,
 	constraint.NodeSubject,
@@ -314,7 +324,7 @@ var AttachmentRequirementWellFormed = constraint.Check[
 				continue
 			}
 			out = append(out, s.Raise(
-				ErrMalformedAttachmentRequirement(), mandate.Key, mandate.Malformed,
+				ErrMalformedAttachmentRequirement(), componentType, mandate.Key, mandate.Malformed,
 			))
 		}
 		return out

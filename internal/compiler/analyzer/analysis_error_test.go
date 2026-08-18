@@ -12,63 +12,48 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// TestAnalysisError_Error_FormatsSelectorViolation verifies that a
-// selector-class AnalysisError (Socket non-empty) formats as the
-// "<source> -> <target> (<socket>): <message>" shape the previous
-// stderr-print site emitted. Preserves operator-facing presentation.
-func TestAnalysisError_Error_FormatsSelectorViolation(t *testing.T) {
+// TestAnalysisError_Error_ReturnsTheRuleMessageVerbatim pins that the rendered
+// text is exactly what the rule said and nothing composed around it.
+//
+// It matters because two surfaces render a finding differently — an editor
+// positions it from the structured locator, a terminal prints the text — and a
+// composition here would put a coordinate in one of them and not the other. The
+// message is therefore the whole diagnostic, and where the finding is travels on
+// its own fields.
+func TestAnalysisError_Error_ReturnsTheRuleMessageVerbatim(t *testing.T) {
 	t.Parallel()
+	const message = `selector violation ("component.aggrega.ai/type=stateful-server", "frontend")`
 	e := analyzer.AnalysisError{
-		Source:   "frontend",
-		Target:   "backend",
-		Socket:   "apis",
-		Selector: "component.aggrega.ai/type=server",
-		Message:  "no matching component found",
+		Kind:       analyzer.AnalysisErrorLocated,
+		Message:    message,
+		OriginFile: "aggregate.yaml",
+		Field:      ".spec.components.backend.uses.databases",
 	}
-	got := e.Error()
-	for _, want := range []string{"frontend", "backend", "apis", "no matching component found"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("Error() output missing %q: %q", want, got)
-		}
+	if got := e.Error(); got != message {
+		t.Errorf("Error() = %q; want the rule's own message %q", got, message)
 	}
-	// Selector-shape uses the arrow:
-	if !strings.Contains(got, "->") {
-		t.Errorf("selector-violation Error() should contain arrow: %q", got)
+	// The locator is not folded into the text. A consumer walking the source
+	// document reads it off the field, and a consumer rendering the text gets
+	// exactly what the rule composed.
+	if strings.Contains(e.Error(), e.Field) {
+		t.Errorf("Error() folded the locator into the text: %q", e.Error())
 	}
 }
 
-// TestAnalysisError_Error_FormatsAppliesToViolation verifies the
-// appliesTo-class shape (Socket empty) formats as
-// "<source> attaches Feature <target>: <message>" — distinct from the
-// selector-class shape.
-func TestAnalysisError_Error_FormatsAppliesToViolation(t *testing.T) {
-	t.Parallel()
-	e := analyzer.AnalysisError{
-		Source:  "frontend",
-		Target:  "dns-resolver",
-		Socket:  "",
-		Message: "Feature constraint not met",
-	}
-	got := e.Error()
-	if !strings.Contains(got, "attaches Feature") {
-		t.Errorf("appliesTo Error() should contain 'attaches Feature': %q", got)
-	}
-	if strings.Contains(got, "->") {
-		t.Errorf("appliesTo Error() should not use arrow shape: %q", got)
-	}
-}
-
-// TestAnalysisError_ToCompilerError_RoutesToDeveloper verifies the
-// AnalysisError → CompilerError conversion always routes to
-// DeveloperError (selector and appliesTo violations are authoring-time
-// problems on the developer's Aggregate).
-func TestAnalysisError_ToCompilerError_RoutesToDeveloper(t *testing.T) {
+// TestAnalysisError_ToCompilerError_LocatedRoutesToDeveloper verifies the
+// conversion routes a rule's violation to DeveloperError and points the source
+// location at the document the finding is about.
+//
+// The pointer is the document rather than a node identifier, and that is the
+// property worth pinning: a caller acting on the pointer opens a file with it,
+// so a node identifier there names nothing on disk.
+func TestAnalysisError_ToCompilerError_LocatedRoutesToDeveloper(t *testing.T) {
 	t.Parallel()
 	e := &analyzer.AnalysisError{
-		Source:  "frontend",
-		Target:  "backend",
-		Socket:  "apis",
-		Message: "selector violation",
+		Kind:       analyzer.AnalysisErrorLocated,
+		Message:    "selector violation",
+		OriginFile: "workspace/aggregate.yaml",
+		Field:      ".spec.components.frontend.uses.apis",
 	}
 	ce := e.ToCompilerError()
 	if ce == nil {
@@ -77,32 +62,11 @@ func TestAnalysisError_ToCompilerError_RoutesToDeveloper(t *testing.T) {
 	if ce.Category != cerrors.DeveloperError {
 		t.Errorf("Category = %v, want %v", ce.Category, cerrors.DeveloperError)
 	}
-	if ce.Source.File != "frontend" {
-		t.Errorf("Source.File = %q, want %q (violating-node ID)", ce.Source.File, "frontend")
+	if ce.Source.File != "workspace/aggregate.yaml" {
+		t.Errorf("Source.File = %q, want the document the finding is about", ce.Source.File)
 	}
 	if !strings.Contains(ce.Message, "selector violation") {
 		t.Errorf("Message missing original violation text: %q", ce.Message)
-	}
-}
-
-// TestAnalysisError_ToCompilerError_AppliesToRoutesToDeveloper verifies an
-// appliesTo-shaped violation (Socket empty, no policy Kind) still routes to
-// DeveloperError — the Feature attachment is developer-authored on the
-// Aggregate.
-func TestAnalysisError_ToCompilerError_AppliesToRoutesToDeveloper(t *testing.T) {
-	t.Parallel()
-	e := &analyzer.AnalysisError{
-		Source:  "frontend",
-		Target:  "dns-resolver",
-		Socket:  "",
-		Message: "Feature constraint not met",
-	}
-	ce := e.ToCompilerError()
-	if ce == nil {
-		t.Fatal("ToCompilerError returned nil")
-	}
-	if ce.Category != cerrors.DeveloperError {
-		t.Errorf("Category = %v, want %v", ce.Category, cerrors.DeveloperError)
 	}
 }
 
@@ -111,6 +75,10 @@ func TestAnalysisError_ToCompilerError_AppliesToRoutesToDeveloper(t *testing.T) 
 // a governance rejection from an operator-attached policy plugin, not
 // a developer authoring mistake — while keeping its plugin-supplied message and
 // its ErrPolicyViolation sentinel recoverable via errors.Is.
+//
+// Its source pointer is empty, and that is the class's own shape rather than an
+// omission: a verdict is about the graph rather than about one document, so
+// naming a file would name one the verdict never read.
 func TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError(t *testing.T) {
 	t.Parallel()
 	e := &analyzer.AnalysisError{
@@ -124,6 +92,9 @@ func TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError(t *testing.T) {
 	}
 	if ce.Category != cerrors.PolicyError {
 		t.Errorf("Category = %v, want %v", ce.Category, cerrors.PolicyError)
+	}
+	if ce.Source.File != "" {
+		t.Errorf("Source.File = %q; a verdict names no document", ce.Source.File)
 	}
 	if !strings.Contains(ce.Message, "image must be digest-pinned") {
 		t.Errorf("Message missing plugin-supplied verdict text: %q", ce.Message)

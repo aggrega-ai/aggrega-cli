@@ -123,6 +123,28 @@ func runGraphStageRules(
 	}
 	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
 
+	// Each presence mandate a node's component type declares is satisfied by some
+	// attachment of the type it names. The satisfying set is the node's merged
+	// attachment names and each name's resolved type, so an attachment
+	// contributed at a scope the node inherits from satisfies a mandate exactly as
+	// one written on the node does — the authored block alone is empty for
+	// precisely the deployments that rely on sharing. A mandate whose declaration
+	// cannot be evaluated is not tested here: it is reported at the stage its own
+	// rule is asked at, so a broken declaration never reads as a satisfied
+	// requirement and never as an absent attachment either. The signal is read
+	// once per node, which is the granularity the traversal promises and the same
+	// one the reading beside it had.
+	violations, err = constraint.RunOnNodes(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		analyzer.RequiredAttachmentTypeAttached,
+	)
+	if err != nil {
+		return err
+	}
+	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+
 	// Each attachment slot a node's component type declares required is bound by
 	// some attachment. It walks the same declared slot axis as the constraint
 	// rule above rather than the set the node ended up bound to, which is what

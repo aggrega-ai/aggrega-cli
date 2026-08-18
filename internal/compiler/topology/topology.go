@@ -75,6 +75,20 @@ type TopologyResult struct {
 	// Nil when the build holds no resolve result, because the earlier stage's
 	// presentation is built from the documents that result carries.
 	StageView constraint.TopologyView
+
+	// StageCoordinates enumerates what a rule over this stage is invoked once
+	// per: the component instances the composition flattened.
+	//
+	// It is a second field over the same value rather than a second value. The
+	// presentation and the enumeration are one type here because both are read
+	// from the flattened set this stage produced, and one reading of one set is
+	// what keeps the coordinate a rule is invoked for and the facts it then
+	// reads from disagreeing. The field is typed as the axis so a caller reaches
+	// it without asserting: a presentation that stopped supplying the axis would
+	// stop compiling here rather than leaving a rule silently uninvoked.
+	//
+	// Nil under exactly the condition StageView is nil, and for the same reason.
+	StageCoordinates constraint.NodeEnumerator
 }
 
 // TopologyNode is one flattened node in the topology graph. Fields are
@@ -715,6 +729,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// consumer's nil check would pass and its first read would panic.
 	if stageView != nil {
 		result.StageView = stageView
+		result.StageCoordinates = stageView
 	}
 
 	if cfg.ResolveResult != nil {

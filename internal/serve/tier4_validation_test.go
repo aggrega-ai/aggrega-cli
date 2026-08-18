@@ -376,16 +376,12 @@ func TestAnalyzerErrorsToDiagnostics_FiltersCrossFileEntries(t *testing.T) {
 
 	errs := []analyzer.AnalysisError{
 		{
-			Source:     "web",
-			Target:     "api",
-			Socket:     "apis",
+			Kind:       analyzer.AnalysisErrorLocated,
 			Message:    "selector violation: in-file error",
 			OriginFile: validatedFile,
 		},
 		{
-			Source:     "data",
-			Target:     "core/db",
-			Socket:     "databases",
+			Kind:       analyzer.AnalysisErrorLocated,
 			Message:    "selector violation: cross-file error",
 			OriginFile: otherFile,
 		},
@@ -419,9 +415,7 @@ func TestAnalyzerErrorsToDiagnostics_BackfillsEmptyOriginFile(t *testing.T) {
 
 	errs := []analyzer.AnalysisError{
 		{
-			Source:  "web",
-			Target:  "api",
-			Socket:  "apis",
+			Kind:    analyzer.AnalysisErrorLocated,
 			Message: "selector violation: no OriginFile set by analyzer",
 			// OriginFile intentionally empty — matches today's
 			// analyzer behavior.
@@ -732,8 +726,8 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 			subMessages = append(subMessages, e.Message)
 			subLocators = append(subLocators, e.Field)
 		default:
-			t.Errorf("unexpected OriginFile on analyzer violation: %q (Source=%q); want %q or %q",
-				e.OriginFile, e.Source, wantRootRel, wantSubRel)
+			t.Errorf("unexpected OriginFile on analyzer violation: %q (at %q); want %q or %q",
+				e.OriginFile, e.Field, wantRootRel, wantSubRel)
 		}
 	}
 	if len(rootMessages) == 0 {

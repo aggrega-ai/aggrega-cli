@@ -94,9 +94,7 @@ spec:
 `
 	doc := parseYAML(t, content)
 	errs := []analyzer.AnalysisError{{
-		Source:     "api",
-		Target:     "cache",
-		Socket:     "databases",
+		Kind:       analyzer.AnalysisErrorLocated,
 		Message:    "selector violation",
 		OriginFile: file,
 		Field:      ".spec.components.api.uses.databases",
@@ -131,8 +129,7 @@ spec:
 `
 	doc := parseYAML(t, content)
 	errs := []analyzer.AnalysisError{{
-		Source:     "web",
-		Target:     "premium",
+		Kind:       analyzer.AnalysisErrorLocated,
 		Message:    "appliesTo violation",
 		OriginFile: file,
 		Field:      ".spec.components.web.features.premium",
@@ -184,9 +181,7 @@ spec:
 	// The analyzer emits an empty Field for the nested component; with no
 	// locator the diagnostic must land at file:1:1 with no end position.
 	errs := []analyzer.AnalysisError{{
-		Source:     "db",
-		Target:     "cache",
-		Socket:     "primary",
+		Kind:       analyzer.AnalysisErrorLocated,
 		Message:    "selector violation",
 		OriginFile: file,
 		Field:      "",

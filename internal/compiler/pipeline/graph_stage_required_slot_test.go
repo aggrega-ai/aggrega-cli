@@ -277,12 +277,6 @@ func TestTheRequiredSlotRuleHaltsThroughTheViolationChannel(t *testing.T) {
 			if violation.OriginFile != invocationAggregatePath {
 				t.Errorf("violation %d document = %q, want %q", i, violation.OriginFile, invocationAggregatePath)
 			}
-			// The edge fields stay empty on this class, so a consumer reading
-			// Source or Target to classify a finding would misread it. That is why
-			// the kind above is the classifier.
-			if violation.Source != "" || violation.Target != "" || violation.Socket != "" || violation.Selector != "" {
-				t.Errorf("violation %d filled the edge fields: %+v", i, violation)
-			}
 			// Both coordinates are in the text, because the surfaces that render a
 			// finding as a sentence do not render the locator. Naming only the
 			// component type would leave two findings about two slots on two

@@ -113,6 +113,18 @@ var errPolicyViolation = cerrors.Register("compiler-analyzer/policy-violation", 
 // feature — and an annotation value is an opaque string that no structural
 // validation upstream has checked, so a broken declaration must announce
 // itself as broken rather than as unsatisfied.
+//
+// It has one emission site, [AttachmentRequirementWellFormed], which raises it
+// through the framework. Its detail carries the component type whose
+// declaration is broken, the annotation key, and why that key cannot be
+// evaluated: the type is what names the entity to correct, which the locator
+// cannot, since the locator names the component instance that uses the type.
+//
+// A finding carrying it is raised earlier than one carrying its sibling — while
+// the composition is flattened rather than over the finalised graph — so it
+// reports as a resolve-shaped finding rather than through this package's own
+// violation shape. The sentinel is the same either way, which is what keeps a
+// caller matching on identity matching.
 func ErrMalformedAttachmentRequirement() error { return errMalformedAttachmentRequirement }
 
 var errMalformedAttachmentRequirement = cerrors.Register("compiler-analyzer/malformed-attachment-requirement", cerrors.Meta{

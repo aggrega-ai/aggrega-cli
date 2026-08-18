@@ -4,6 +4,7 @@
 package analyzer
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -26,7 +27,7 @@ func TestCalculatePaths_LinearChain(t *testing.T) {
 		},
 	}
 
-	paths := calculatePaths(graph)
+	paths := mustCalculatePaths(t, graph)
 	// a→b→c (full path), a→b (partial — no, b has outgoing so DFS continues)
 	// Actually: from a: a→b→c (c is terminal). from b: b→c.
 	if len(paths) != 2 {
@@ -58,7 +59,7 @@ func TestCalculatePaths_CyclicGraph(t *testing.T) {
 		},
 	}
 
-	paths := calculatePaths(graph)
+	paths := mustCalculatePaths(t, graph)
 	// a→b (b tries to go back to a, cycle — emits a→b)
 	// b→a (a tries to go back to b, cycle — emits b→a)
 	if len(paths) != 2 {
@@ -94,7 +95,7 @@ func TestCalculatePaths_Diamond(t *testing.T) {
 		},
 	}
 
-	paths := calculatePaths(graph)
+	paths := mustCalculatePaths(t, graph)
 	// From a: a→b→d, a→c→d
 	// From b: b→d
 	// From c: c→d
@@ -116,7 +117,7 @@ func TestCalculatePaths_NoEdges(t *testing.T) {
 		},
 	}
 
-	paths := calculatePaths(graph)
+	paths := mustCalculatePaths(t, graph)
 	if len(paths) != 0 {
 		t.Fatalf("expected 0 paths, got %d", len(paths))
 	}
@@ -147,7 +148,7 @@ func TestCalculatePaths_AttachedFeatures(t *testing.T) {
 		},
 	}
 
-	paths := calculatePaths(graph)
+	paths := mustCalculatePaths(t, graph)
 	if len(paths) != 1 {
 		t.Fatalf("expected 1 path, got %d", len(paths))
 	}
@@ -180,7 +181,7 @@ func TestCalculatePaths_DeterministicOrder(t *testing.T) {
 
 	var firstPathIDs []string
 	for i := 0; i < 10; i++ {
-		paths := calculatePaths(graph)
+		paths := mustCalculatePaths(t, graph)
 		ids := make([]string, len(paths))
 		for j, p := range paths {
 			ids[j] = p.Nodes[0] + "→" + p.Nodes[len(p.Nodes)-1]
@@ -212,11 +213,24 @@ func TestCalculatePaths_PathIDs(t *testing.T) {
 		},
 	}
 
-	paths := calculatePaths(graph)
+	paths := mustCalculatePaths(t, graph)
 	if len(paths) != 1 {
 		t.Fatalf("expected 1 path, got %d", len(paths))
 	}
 	if paths[0].PathID != "path_01" {
 		t.Errorf("path ID: %q", paths[0].PathID)
 	}
+}
+
+// mustCalculatePaths runs the enumeration under a caller that never withdraws
+// and fails the test if it reports one, so each proof below asserts on the
+// enumeration rather than restating the cancellation contract its own proof
+// covers.
+func mustCalculatePaths(t *testing.T, graph *types.IRGraph) []PrecalculatedPath {
+	t.Helper()
+	paths, err := calculatePaths(context.Background(), graph)
+	if err != nil {
+		t.Fatalf("enumeration over an uncancelled caller returned %v", err)
+	}
+	return paths
 }

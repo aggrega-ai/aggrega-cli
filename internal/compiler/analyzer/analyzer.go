@@ -5,36 +5,30 @@ package analyzer
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// AnalysisResult is the bundled output of [Analyze]. Its four fields
-// carry the artifacts produced by this stage's attachment-requirement checks,
-// its advisory lints, and its
-// precalculated_paths / policy-input assembly:
+// AnalysisResult is the bundled output of [Analyze]. Two of its fields carry
+// what this stage derives and two carry what is reported about it:
 //
-//   - Errors — every attachment-requirement violation discovered here, plus
-//     every violation a rule declared over the finalised graph raised, and
-//     any failed policy-socket verdict — the last two appended by whatever
-//     holds the presentation those rules read — one [AnalysisError] per
-//     violation.
-//     Build flow gates on len(Errors) > 0; see the package doc Pipeline
-//     Integration subsection for the gating semantics.
-//   - Warnings — one advisory string per finding from the lints, which
-//     never reach the Errors gate: a warning does not make the emitted
-//     output wrong, so a result carrying warnings and no errors
-//     proceeds.
 //   - Paths — the cycle-safe DFS enumeration of acyclic paths through
 //     the IR graph; see [calculatePaths] for the contract.
 //   - PolicyInput — the policy socket payload (always
 //     non-nil); see [PolicyInput] for the ABI shape. The
-//     pipeline marshals it to a configured policy plugin at Step 4.
+//     pipeline marshals it to a configured policy plugin.
+//   - Errors — one [AnalysisError] per violation: every violation a rule
+//     declared over the finalised graph raised, plus any failed policy-socket
+//     verdict. Both are appended by whatever holds the presentation those
+//     rules read, so this slice leaves [Analyze] empty and is filled before a
+//     caller reads it.
+//     Build flow gates on len(Errors) > 0; see the package doc Pipeline
+//     Integration subsection for the gating semantics.
+//   - Warnings — one advisory string per finding an advisory rule raised,
+//     appended by the same holder and never reaching the Errors gate: a
+//     warning does not make the emitted output wrong, so a result carrying
+//     warnings and no errors proceeds.
 type AnalysisResult struct {
 	Errors      []AnalysisError
 	Warnings    []string
@@ -42,110 +36,77 @@ type AnalysisResult struct {
 	PolicyInput *PolicyInput
 }
 
-// AnalysisErrorKind classifies an [AnalysisError] so [AnalysisError.Error]
-// composes the right message and consumers can branch on the class rather than
-// on which fields happen to be filled. The zero value is the edge-shaped class,
-// whose message is composed from the Source/Target/Socket fields;
-// [AnalysisErrorPolicy] marks a policy-socket verdict.
+// AnalysisErrorKind classifies an [AnalysisError] so a consumer branches on the
+// class rather than on which fields happen to be filled.
+//
+// Two classes are produced, and the difference between them is where the
+// finding's authoring site is: a rule over a compilation product carries one and
+// a policy verdict does not. Nothing else distinguishes them, because the
+// message is complete in both.
+//
+// The zero value names no class. It is not a class in its own right: a value
+// arriving without a kind is one a caller built without saying what it holds, so
+// it is treated as carrying no recoverable authoring site rather than as a
+// shape of its own.
 type AnalysisErrorKind string
 
 const (
-	// AnalysisErrorEdge is the zero-value, edge-shaped class, whose message
-	// [AnalysisError.Error] composes from the Source/Target/Socket fields.
-	//
-	// No reading populates it. Every violation this package produces names its
-	// class explicitly, and every rule declared over a later stage reports
-	// through [ErrorsFromObjections] as [AnalysisErrorLocated]; a value in this
-	// class is therefore one a caller constructed itself. It remains the zero
-	// value of the kind, so a caller that fills the fields below and names no
-	// kind still gets the composed shape.
-	AnalysisErrorEdge AnalysisErrorKind = ""
-
-	// AnalysisErrorPolicy marks a Step-4 policy verdict whose
-	// Message is already a complete, plugin-supplied diagnostic.
-	// [AnalysisError.Error] returns that Message verbatim rather than
-	// composing it from the edge fields, which a policy verdict does not
-	// carry.
+	// AnalysisErrorPolicy marks a policy-socket verdict whose Message is
+	// already a complete, plugin-supplied diagnostic. A verdict is about the
+	// graph as a whole rather than about one authoring key, so it carries no
+	// locator and no origin file.
 	AnalysisErrorPolicy AnalysisErrorKind = "policy"
-
-	// AnalysisErrorAttachmentRequirement marks a presence mandate the node
-	// does not satisfy: a declared required attachment type that no attachment
-	// satisfies, or a mandate whose declaration is itself malformed. The kind
-	// classifies the message SHAPE — the violation is per-node rather than
-	// per-edge, so [AnalysisError.Error] prefixes the node and returns the
-	// rest of the diagnostic verbatim instead of composing it from the edge
-	// fields. Which rule failed is carried by the Sentinel, not by the kind.
-	//
-	// The requirement a slot declares is a separate question with a separate
-	// sentinel, and it does not report in this kind: it is declared as
-	// [RequiredAttachmentSlotBound] and reports as [AnalysisErrorLocated],
-	// positioned on the slot's own authoring key.
-	AnalysisErrorAttachmentRequirement AnalysisErrorKind = "attachment-requirement"
 
 	// AnalysisErrorLocated marks a violation whose Message is already a
 	// complete diagnostic and whose authoring site is carried on Field and
-	// OriginFile rather than composed from the edge fields.
+	// OriginFile.
 	//
-	// It is the shape a rule reporting through [ErrorsFromObjections] takes.
-	// Such a rule names its subject by a locator, which positions the finding
-	// on the offending authoring key; the edge fields would have to be
-	// re-derived to be filled, and a value re-derived here could disagree with
-	// the one the rule read. So they stay empty and [AnalysisError.Error]
-	// returns the Message verbatim.
+	// It is the shape a rule reporting through [ErrorsFromObjections] takes,
+	// and it is the only shape a rule reports in here. Such a rule names its
+	// subject by a locator, which positions the finding on the offending
+	// authoring key, so the site travels as structured fields rather than
+	// inside the text — which is what lets a consumer walking the source
+	// document place the finding without parsing a sentence.
 	AnalysisErrorLocated AnalysisErrorKind = "located"
 )
 
-// AnalysisError is one violation discovered during Step 4. The struct
-// is shaped for edge-style violations and reused for per-node violations,
-// for policy-socket verdicts, and for violations a declared rule
-// raised; the fields carry slightly different semantics across the classes:
+// AnalysisError is one violation this stage reports. Its Message is always a
+// complete diagnostic, and the remaining fields say where the finding is, which
+// is the only thing that differs across the classes:
 //
-//   - Presence-mandate violations (Kind
-//     [AnalysisErrorAttachmentRequirement]): Source is the nodeID the
-//     mandate was evaluated against, Target is the mandate's label,
-//     Field and OriginFile position the finding, and
-//     Socket and Selector are empty.
-//   - Policy verdicts (Kind [AnalysisErrorPolicy]): Message is the
-//     complete diagnostic the policy plugin supplied (a rule
-//     failure), and the edge fields (Source/Target/Socket/Selector) are
-//     empty.
 //   - Violations a declared rule raised (Kind [AnalysisErrorLocated]):
-//     Message is the complete diagnostic, Field names the authoring key
-//     the finding is about, OriginFile names the document holding it, and
-//     the edge fields are empty. It is the shape every rule over the finalised
+//     Field names the authoring key the finding is about and OriginFile names
+//     the document holding it. It is the shape every rule over the finalised
 //     graph reports in — a socket's declared label constraint, the
 //     applicability a Feature declares over what it may attach to, the
-//     constraint an attachment slot declares over what may fill it, and the
-//     requirement that a slot declared required be bound at all.
+//     constraint an attachment slot declares over what may fill it, the
+//     requirement that a slot declared required be bound at all, and the
+//     presence mandate a component type declares.
+//   - Policy verdicts (Kind [AnalysisErrorPolicy]): the complete diagnostic the
+//     policy plugin supplied, with neither field populated — a verdict is about
+//     the graph rather than about one authoring key.
 //
-// Kind is what distinguishes the classes, and it is the only thing that
-// does. Socket presence is not a classifier: a violation about one
-// connection can arrive with the edge fields empty and its coordinates on
-// Field instead, so a caller reading Socket to decide what it is holding
-// would misread exactly that class. Socket and Selector are populated by no
-// reading at all; they stay on the struct for the composed shape
-// [AnalysisErrorEdge] describes.
+// Kind is what distinguishes the classes and it is the only thing that does.
+// The struct carries no coordinate fields of its own, and that is deliberate
+// rather than an omission: a rule names its subject by a locator, so filling a
+// node identifier or a socket name beside it would mean re-deriving coordinates
+// the rule did not supply, and a re-derived coordinate can disagree with what
+// the rule actually read.
 type AnalysisError struct {
-	// Kind classifies the violation. The zero value ([AnalysisErrorEdge])
-	// is an edge-shaped violation composed from the fields below;
-	// [AnalysisErrorPolicy] marks a policy-socket verdict whose Message is
-	// already complete; [AnalysisErrorLocated] marks one a declared rule
-	// raised.
-	Kind     AnalysisErrorKind
-	Source   string
-	Target   string
-	Socket   string
-	Selector string
-	Message  string
+	// Kind classifies the violation. [AnalysisErrorLocated] marks one a
+	// declared rule raised, carrying its authoring site on the two fields
+	// below; [AnalysisErrorPolicy] marks a policy-socket verdict, which
+	// carries neither. The zero value names no class and is treated as
+	// carrying no recoverable site.
+	Kind    AnalysisErrorKind
+	Message string
 	// OriginFile records the absolute filesystem path of the source file
-	// where the violating authoring lives. Populated by the validate
-	// passes from the IR graph's per-node SourceLocation when available;
-	// stays empty when the violation has no recoverable single-file
-	// origin (e.g., violations involving catalog entities loaded from
-	// multiple per-version files). Consumers that filter per-file
-	// diagnostics (the daemon's Tier-4 validation) drop entries whose
-	// OriginFile does not match the requested file; consumers that
-	// surface all diagnostics ignore the field.
+	// where the violating authoring lives. A rule's subject supplies it from
+	// the document its coordinate was authored in; it stays empty when the
+	// violation has no recoverable single-file origin. Consumers that filter
+	// per-file diagnostics (the daemon's editor-facing validation) drop
+	// entries whose OriginFile does not match the requested file; consumers
+	// that surface all diagnostics ignore the field.
 	OriginFile string
 	// Field is a mapping-style dotted locator naming the authoring site
 	// of the violation within OriginFile, e.g.
@@ -155,13 +116,10 @@ type AnalysisError struct {
 	// when the violation has no recoverable single-key locator; consumers
 	// fall back to file-level positioning.
 	//
-	// How deep the locator reaches depends on which reading produced the
-	// violation. A hand-assembled locator in this package addresses a
-	// top-level component only, so a component the author declared inside a
-	// subsystem yields an empty Field rather than a path naming the wrong
-	// authoring site. A locator a declared rule's subject carries names the
-	// subsystem the author declared, level by level, and then the component,
-	// so it positions such a violation rather than declining to.
+	// A locator a declared rule's subject carries names the subsystem the
+	// author declared, level by level, and then the component, so a violation
+	// about a component the author nested inside a subsystem is positioned
+	// rather than declined.
 	Field string
 	// Sentinel is the domain sentinel this violation wraps. ToCompilerError
 	// surfaces it as the CompilerError's inner error so callers can detect
@@ -172,74 +130,42 @@ type AnalysisError struct {
 	// does. Each of the two rules about an attachment slot carries its own
 	// sentinel — one for a fill that fails the slot's constraint, one for a
 	// required slot nothing binds — so identity separates them from the pair
-	// above and from each other.
+	// above and from each other, and the rule about a presence mandate a
+	// component type declares carries a third.
 	Sentinel error
 }
 
-// lastSegment returns the authored local component key from a flattened
-// node ID. Root-tier node IDs are the authored key already; sub-aggregate
-// node IDs are prefix-qualified (prefix + "." + name), so the authored key
-// is the segment after the final ".".
-func lastSegment(nodeID string) string {
-	if i := strings.LastIndex(nodeID, "."); i >= 0 {
-		return nodeID[i+1:]
-	}
-	return nodeID
-}
-
-// Error formats the violation as a single human-readable string. A policy
-// verdict (Kind [AnalysisErrorPolicy]) returns its Message verbatim — the
-// plugin already supplied a complete diagnostic — and so does a located
-// violation (Kind [AnalysisErrorLocated]), whose message a rule already
-// composed and whose site is carried on Field rather than in the text. A
-// presence-mandate violation
-// (Kind [AnalysisErrorAttachmentRequirement]) reads as "<node>: <message>",
-// naming the node the mandate was evaluated against. An edge-shaped violation
-// carrying a socket reads as "<source> -> <target> (<socket>): <message>"; one
-// without a socket reads as "<source> attaches Feature <target>: <message>".
-// Those two shapes are the only ones Socket presence tells apart, and both of
-// them carry the zero-value kind; every other class is identified by its kind.
+// Error returns the violation's Message.
 //
-// No reading produces either edge-shaped composition — see
-// [AnalysisErrorEdge] — so both branches serve a value a caller built. They are
-// the composition that value's fields describe, which is why they remain the
-// fall-through rather than an error.
+// It composes nothing, because there is nothing left to compose from: a policy
+// plugin supplies a complete diagnostic, and a rule's message is rendered once
+// at the conversion every reporting boundary shares. Where a finding is comes
+// back on Field and OriginFile rather than in the text, so a consumer places it
+// by walking the source document rather than by parsing a sentence — and a
+// surface that renders only the text is reading exactly what the rule said.
 func (e AnalysisError) Error() string {
-	if e.Kind == AnalysisErrorPolicy || e.Kind == AnalysisErrorLocated {
-		return e.Message
-	}
-	if e.Kind == AnalysisErrorAttachmentRequirement {
-		return fmt.Sprintf("%s: %s", e.Source, e.Message)
-	}
-	if e.Socket != "" {
-		return fmt.Sprintf("%s -> %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
-	}
-	return fmt.Sprintf("%s attaches Feature %s: %s", e.Source, e.Target, e.Message)
+	return e.Message
 }
 
-// ToCompilerError converts the analyzer violation into a *cerrors.CompilerError,
+// ToCompilerError converts the violation into a *cerrors.CompilerError,
 // choosing the category from the violation's Kind. A violation about one
 // connection's declared label constraint, one about the applicability a Feature
-// declares, one about the constraint an attachment slot declares over what
-// may fill it, and one about a required slot nothing binds are all
-// authoring-time problems on the developer's
-// Aggregate — the developer authored the uses-edge or the Feature attachment
-// that fails it, or left the slot unbound — so they route
-// to cerrors.DeveloperError. A policy verdict (Kind [AnalysisErrorPolicy]) is a
+// declares, one about the constraint an attachment slot declares over what may
+// fill it, one about a required slot nothing binds, and one about a presence
+// mandate no attachment satisfies are all authoring-time problems on the
+// developer's Aggregate — the developer authored the connection or the Feature
+// attachment that fails it, left the slot unbound, or did not attach the type
+// the component's own declaration demands — so they route to
+// cerrors.DeveloperError. A policy verdict (Kind [AnalysisErrorPolicy]) is a
 // governance rejection from an operator-attached policy plugin, not a
 // developer authoring mistake, so it routes to cerrors.PolicyError; the
 // remediation is to satisfy the enforced policy or reconsider its attachment,
 // not to edit the Aggregate.
 //
-// The source pointer is read from whichever field the violation's class
-// actually populates, and the two classes populate different ones. A violation
-// a declared rule raised (Kind [AnalysisErrorLocated]) carries the document its
-// finding is about on OriginFile and no node ID at all, so the pointer names
-// that document. Every other class carries the violating node's ID on Source
-// and that is the most-specific locator those readings produce, so the pointer
-// names it. Reading one field for both would leave one class pointing nowhere,
-// and the class it left empty would be the one carrying a real path. A policy
-// verdict populates neither, so its pointer is message-only.
+// The source pointer names the document a finding is about, which only the
+// located class knows: a rule's subject carries the file its coordinate was
+// authored in, and a policy verdict is about the graph rather than a document,
+// so its pointer is message-only.
 //
 // Finer-grained positions within the document — line and column — are not
 // composed here. The authoring key a violation is about is carried on Field,
@@ -252,21 +178,15 @@ func (e AnalysisError) Error() string {
 // The socket-constraint and Feature-applicability rules carry
 // ErrSelectorViolation, the slot-fill rule carries
 // ErrSlotSelectorUnsatisfied, the required-slot rule carries
-// ErrRequiredSlotUnfilled, and policy verdicts carry ErrPolicyViolation.
+// ErrRequiredSlotUnfilled, the presence-mandate rule carries
+// ErrMissingRequiredFeature, and policy verdicts carry ErrPolicyViolation.
 // When Sentinel is nil the inner chain is empty.
 func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 	category := cerrors.DeveloperError
-	switch {
-	case e.Kind == AnalysisErrorPolicy:
+	if e.Kind == AnalysisErrorPolicy {
 		category = cerrors.PolicyError
-	case errors.Is(e.Sentinel, ErrMalformedAttachmentRequirement()):
-		// The broken declaration is on the Component catalog entity, so the
-		// remediation belongs to whoever authors the catalog — unlike an
-		// unsatisfied mandate, which the Aggregate's author resolves by
-		// attaching the feature.
-		category = cerrors.CatalogError
 	}
-	pointer := e.Source
+	var pointer string
 	if e.Kind == AnalysisErrorLocated {
 		pointer = e.OriginFile
 	}
@@ -277,25 +197,6 @@ func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 		nil,
 		e.Sentinel,
 	)
-}
-
-// sourceFileFor returns the SourceFile recorded on the IR node named
-// nodeID. Returns "" when the graph carries no node by that name (a
-// defensive case that shouldn't surface in production — every analyzer
-// emission site is gated upstream by a successful Nodes.Get for the
-// same nodeID) or when the node was authored without recoverable
-// provenance (synthetic test IR). Empty results route through the
-// daemon's backfill, preserving today's "surface to validated file"
-// semantics for unknown-provenance entries.
-func sourceFileFor(graph *types.IRGraph, nodeID string) string {
-	if graph == nil {
-		return ""
-	}
-	node, ok := graph.Spec.Nodes.Get(nodeID)
-	if !ok {
-		return ""
-	}
-	return node.SourceFile
 }
 
 // PrecalculatedPath is one acyclic path through the IR graph,
@@ -318,34 +219,30 @@ type PrecalculatedPath struct {
 	AttachedFeatures []string `json:"attached_features"`
 }
 
-// Analyze executes Step 4 of the compiler pipeline. It returns a
-// non-nil [AnalysisResult] populated with:
+// Analyze derives what the finalised graph makes available to the surfaces
+// downstream of it. It returns a non-nil [AnalysisResult] populated with:
 //
-//  1. Presence-mandate errors from validateRequiredAttachmentTypes.
-//  2. Precalculated paths from calculatePaths.
-//  3. The PolicyInput payload from assemblePolicyInput.
+//  1. Precalculated paths from [calculatePaths].
+//  2. The PolicyInput payload from assemblePolicyInput.
 //
-// Four violation classes a reader will look for here are absent, and they are
-// absent for the same reason the advisory below is. The label constraint a
-// dependency socket declares over what may satisfy it is declared as
-// [EdgeTargetSatisfiesSocketSelector]; the applicability a Feature declares over
-// what it may attach to is declared as
-// [AttachmentSatisfiesFeatureApplicability]; the label constraint an
-// attachment slot declares over what may fill it is declared as
-// [SlotFillSatisfiesSlotSelector]; and the requirement that a slot declared
-// required be bound at all is declared as [RequiredAttachmentSlotBound]. All
-// four are evaluated over the
-// presentation of the finalised graph, which this function is not handed and
-// does not build — a presentation has one producer, and building a second one
-// here would give one fact two answers. Their violations are appended to the
-// same Errors slice by whatever holds that presentation, so a caller reading
-// that slice still reads one stream and the gate below still sees them.
+// It evaluates no rule, and that is the shape rather than a gap. Every rule
+// whose facts are complete at this point is declared as a value the framework
+// invokes — the label constraint a dependency socket declares over what may
+// satisfy it is [EdgeTargetSatisfiesSocketSelector], the applicability a Feature
+// declares over what it may attach to is
+// [AttachmentSatisfiesFeatureApplicability], the label constraint an attachment
+// slot declares over what may fill it is [SlotFillSatisfiesSlotSelector], the
+// requirement that a slot declared required be bound at all is
+// [RequiredAttachmentSlotBound], the presence mandate a component type declares
+// is [RequiredAttachmentTypeAttached], and the annotation-override advisory is
+// [OverriddenAnnotationAdvisory]. Each is evaluated over the presentation of the
+// finalised graph, which this function is not handed and does not build — a
+// presentation has one producer, and building a second one here would give one
+// fact two answers.
 //
-// It populates no advisory warnings, and the omission is where a reader is
-// most likely to expect one. The annotation-override advisory is declared as
-// [OverriddenAnnotationAdvisory] and is invoked over that same presentation. So
-// AnalysisResult.Warnings is empty from here and is filled by whatever holds
-// it; a caller reading it still reads one stream.
+// So AnalysisResult.Errors and AnalysisResult.Warnings are both empty from here
+// and are filled by whatever holds that presentation. A caller reading either
+// still reads one stream, and the gate below still sees what a rule raised.
 //
 // Build flow gates on len(result.Errors) > 0 before invoking the render.
 // AnalysisResult.Paths and AnalysisResult.PolicyInput are computed
@@ -354,43 +251,34 @@ type PrecalculatedPath struct {
 // proceeds and the warnings are surfaced to the operator alongside the build.
 // See the package doc Pipeline Integration subsection for their downstream
 // consumption status.
-func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *AnalysisResult {
+func Analyze(graph *types.IRGraph) *AnalysisResult {
 	// Background context never cancels, so the discarded error is always
 	// nil; callers that participate in cancellation use AnalyzeContext.
-	result, _ := AnalyzeContext(context.Background(), graph, catalogLookup)
+	result, _ := AnalyzeContext(context.Background(), graph)
 	return result
 }
 
-// AnalyzeContext is Analyze with cooperative cancellation:
-// validateRequiredAttachmentTypes, the one reading this function still runs,
-// checks ctx.Err() per node, so a long analysis over a large graph can be
-// interrupted (e.g. by the daemon's shutdown drain). It returns a non-nil error
-// only when ctx is cancelled mid-analysis; analyzer violations remain in the
-// result's Errors slice as structured data, never as the function-level error,
-// and a cancelled analysis returns no result at all rather than a truncated one.
-// Analyze is the background-context convenience wrapper.
+// AnalyzeContext is Analyze with cooperative cancellation: the path enumeration
+// reads ctx.Err() once per start node, so a long derivation over a large graph
+// can be interrupted (e.g. by the daemon's shutdown drain). It returns a non-nil
+// error only when ctx is cancelled mid-derivation, and a cancelled derivation
+// returns no result at all rather than a truncated one — the policy payload is
+// assembled from the whole enumeration, so a partial one would describe a graph
+// the compiler did not see. Analyze is the background-context convenience
+// wrapper.
 //
-// The catalog is taken and no longer read. Nothing this function still runs
-// consults it: the reading it retains answers a node's presence mandates from
-// the node's own record, and every rule that reached the catalog is now declared
-// and invoked elsewhere. The parameter stays until the last of those readings
-// goes, so the signature moves once rather than at each removal.
-func AnalyzeContext(ctx context.Context, graph *types.IRGraph, _ resolver.CatalogLookup) (*AnalysisResult, error) {
-	// Presence mandates — each requiredType annotation a node's Component
-	// declares is satisfied by some attachment of that type.
-	errs, err := validateRequiredAttachmentTypes(ctx, graph)
+// Enumeration is what carries the signal because enumeration is what takes the
+// time: it walks from every node in the graph, and the per-start-node cap bounds
+// each walk without bounding how many there are.
+func AnalyzeContext(ctx context.Context, graph *types.IRGraph) (*AnalysisResult, error) {
+	paths, err := calculatePaths(ctx, graph)
 	if err != nil {
 		return nil, err
 	}
 
-	// DFS path calculation.
-	paths := calculatePaths(graph)
-
-	// Assemble policy input.
 	policyInput := assemblePolicyInput(graph, paths)
 
 	return &AnalysisResult{
-		Errors:      errs,
 		Paths:       paths,
 		PolicyInput: policyInput,
 	}, nil

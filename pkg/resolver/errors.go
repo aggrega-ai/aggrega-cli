@@ -203,6 +203,14 @@ var errGuardEntityViewInconsistency = cerrors.Register("resolver/guard-entity-vi
 // ErrMissingRequiredFeature wraps a component whose declared catalog type
 // carries a presence mandate — a features.aggrega.ai/requiredType.<label>
 // annotation — that no attachment in the node's final set satisfies.
+//
+// It is declared here and raised from the package that holds the rule, which is
+// the one point in the compilation where both halves of the question are in
+// hand: the mandate the catalog entity declares, and the attachment set the node
+// ends up with once every scope has folded. The finding's detail carries the
+// component type declaring the mandate, the type it demands and the label it
+// carries, so a finding says which declaration made the demand as well as what
+// would satisfy it.
 func ErrMissingRequiredFeature() error { return errMissingRequiredFeature }
 
 var errMissingRequiredFeature = cerrors.Register("resolver/missing-required-feature", cerrors.Meta{

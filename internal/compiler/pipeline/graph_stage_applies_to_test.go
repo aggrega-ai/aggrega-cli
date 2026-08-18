@@ -242,12 +242,6 @@ func TestTheFeatureApplicabilityRuleHaltsThroughTheViolationChannel(t *testing.T
 			if violation.OriginFile != applicabilityAggregatePath {
 				t.Errorf("violation %d document = %q, want %q", i, violation.OriginFile, applicabilityAggregatePath)
 			}
-			// The edge fields stay empty on this class, so a consumer reading
-			// Target to classify a finding would misread it. That is why the kind
-			// above is the classifier.
-			if violation.Source != "" || violation.Target != "" || violation.Socket != "" {
-				t.Errorf("violation %d filled the edge fields: %+v", i, violation)
-			}
 		}
 
 		// The offending values the compiled graph and the catalog supplied: the

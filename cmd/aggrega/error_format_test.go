@@ -226,13 +226,13 @@ func TestFormatCompilerError_TranslationCategory_RendersViaCompilerError(t *test
 func TestFormatCompilerError_AnalysisError_RendersAsDeveloper(t *testing.T) {
 	t.Parallel()
 	ae := &analyzer.AnalysisError{
-		Source:  "frontend",
-		Target:  "backend",
-		Socket:  "apis",
-		Message: "no matching component",
+		Kind:       analyzer.AnalysisErrorLocated,
+		Message:    "no matching component on socket \"apis\"",
+		OriginFile: "aggregate.yaml",
+		Field:      ".spec.components.frontend.uses.apis",
 	}
 	got := formatCompilerError(ae)
-	for _, want := range []string{"[DEVELOPER_ERROR]", "frontend", "no matching component"} {
+	for _, want := range []string{"[DEVELOPER_ERROR]", "aggregate.yaml", "no matching component"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\n--- got ---\n%s", want, got)
 		}

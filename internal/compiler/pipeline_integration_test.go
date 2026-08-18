@@ -210,7 +210,7 @@ func runPipeline(t *testing.T, agg *types.Aggregate) (*types.IRGraph, *analyzer.
 		t.Fatalf("ir.BuildIR: %v", err)
 	}
 
-	analysis := analyzer.Analyze(graph, catalog)
+	analysis := analyzer.Analyze(graph)
 	return graph, analysis
 }
 

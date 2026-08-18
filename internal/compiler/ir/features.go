@@ -93,10 +93,10 @@ type leafOwner struct {
 // point at which the two could come to differ.
 func componentOwnSite(topoNode *topology.TopologyNode, nodeID string) constraint.AuthoredSite {
 	if topoNode == nil {
-		return constraint.ComponentSite(authoredComponentName(nodeID), "", false)
+		return constraint.ComponentSite(constraint.AuthoredComponentName(nodeID), "", false)
 	}
 	return constraint.ComponentSite(
-		authoredComponentName(nodeID),
+		constraint.AuthoredComponentName(nodeID),
 		topoNode.SubsystemPath,
 		topoNode.SynthesizedSubsystem,
 	)

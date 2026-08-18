@@ -15,9 +15,8 @@ import (
 )
 
 // TestRunTier4Validation_RequiredAttachmentTypeDiagnosticsReachTheEditor drives
-// the daemon's aggrega/validate over a fixture whose two root components each
-// pull in a Component that declares a presence mandate — one unmet, one
-// malformed — and pins that BOTH reach the editor as positioned diagnostics.
+// the daemon's aggrega/validate over the presence-mandate fixture and pins that
+// each of the two classes reaches the editor as a positioned diagnostic.
 //
 // The two classes are asserted separately on purpose. A malformed declaration
 // must not be reported as an unmet requirement, and an unmet requirement must
@@ -25,12 +24,112 @@ import (
 // and collapsing them would let a typo in the catalog read as a deployment that
 // simply forgot an attachment.
 //
+// 🔴 They are asserted over SEPARATE documents, and that is a property of the
+// product rather than of the test. A malformed declaration is reported as soon as
+// the composition is assembled, which is earlier than the point the unmet
+// requirement is read at, and the earlier report halts — so a document carrying
+// both reports only the malformed one. Asserting both against one document would
+// therefore assert something the product does not do. Each leg declares the one
+// component whose class it is about.
+//
 // Positioning is asserted, not just presence. Each diagnostic must land on the
 // component-instance key that pulled the declaring type in — not at the head of
 // the file — because a diagnostic the editor cannot point at is not usable in
 // the editor.
 func TestRunTier4Validation_RequiredAttachmentTypeDiagnosticsReachTheEditor(t *testing.T) {
 	t.Parallel()
+
+	// The instance each leg declares, and nothing else, so the class under
+	// assertion is the only one the document can produce.
+	const unmetOnly = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-required-attachment-type
+  version: "1.0.0"
+spec:
+  components:
+    unmonitored:
+      type: example/needs-exporter
+`
+	const malformedOnly = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-required-attachment-type
+  version: "1.0.0"
+spec:
+  components:
+    broken:
+      type: example/broken-requirement
+`
+
+	t.Run("an unmet mandate reaches the editor positioned on its instance", func(t *testing.T) {
+		t.Parallel()
+		diags, aggBytes := validateMandateFixture(t, unmetOnly)
+
+		// The registered wording of the sentinel the rule carries, not a
+		// composed sentence: a discriminator on the sentinel's own text survives
+		// a rewording of the values beside it.
+		unmet := findDiagnostic(t, diags, "missing required feature")
+		for _, want := range []string{`"example/needs-exporter"`, `"example/exporter"`, `"monitoring"`} {
+			if !containsSubstring(unmet.Message, want) {
+				t.Errorf("unmet diagnostic must name %s; got %q", want, unmet.Message)
+			}
+		}
+		if containsSubstring(unmet.Message, "malformed") {
+			t.Errorf("unmet diagnostic must not read as malformed: %q", unmet.Message)
+		}
+		if unmet.Severity != "error" {
+			t.Errorf("unmet diagnostic severity = %q; want error", unmet.Severity)
+		}
+		wantLine := fixtureKeyLine(t, aggBytes, "unmonitored:")
+		if unmet.Line != wantLine {
+			t.Errorf("unmet diagnostic at line %d; want the `unmonitored:` key at line %d (diagnostics: %v)",
+				unmet.Line, wantLine, diagMessages(diags))
+		}
+		if unmet.Line == 1 {
+			t.Error("a mandate diagnostic positioned at file:1:1 is not usable in the editor")
+		}
+	})
+
+	t.Run("a malformed declaration reaches the editor positioned on its instance", func(t *testing.T) {
+		t.Parallel()
+		diags, aggBytes := validateMandateFixture(t, malformedOnly)
+
+		malformed := findDiagnostic(t, diags, "malformed attachment requirement")
+		if containsSubstring(malformed.Message, "missing required feature") {
+			t.Errorf("malformed diagnostic must not read as an unmet requirement: %q", malformed.Message)
+		}
+		// It names the catalog entity to correct and the annotation key, which is
+		// what the remedy needs; the offending instance is the POSITION rather
+		// than a word in the text.
+		for _, want := range []string{`"example/broken-requirement"`, "features.aggrega.ai/requiredType.monitoring"} {
+			if !containsSubstring(malformed.Message, want) {
+				t.Errorf("malformed diagnostic must name %s; got %q", want, malformed.Message)
+			}
+		}
+		if malformed.Severity != "error" {
+			t.Errorf("malformed diagnostic severity = %q; want error", malformed.Severity)
+		}
+		wantLine := fixtureKeyLine(t, aggBytes, "broken:")
+		if malformed.Line != wantLine {
+			t.Errorf("malformed diagnostic at line %d; want the `broken:` key at line %d (diagnostics: %v)",
+				malformed.Line, wantLine, diagMessages(diags))
+		}
+		if malformed.Line == 1 {
+			t.Error("a mandate diagnostic positioned at file:1:1 is not usable in the editor")
+		}
+	})
+}
+
+// validateMandateFixture copies the presence-mandate fixture into a temporary
+// workspace, replaces its aggregate with the supplied document, and drives the
+// daemon's validate over it.
+//
+// The catalog and the deployment come from the committed fixture so the entities
+// under test are the real ones; only the aggregate is substituted, because which
+// class a document can produce is decided by which component it declares.
+func validateMandateFixture(t *testing.T, aggregate string) ([]Diagnostic, string) {
+	t.Helper()
 	tmp := t.TempDir()
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -55,6 +154,9 @@ func TestRunTier4Validation_RequiredAttachmentTypeDiagnosticsReachTheEditor(t *t
 		if err := os.WriteFile(dst, data, 0o644); err != nil {
 			t.Fatalf("write fixture %s: %v", rel, err)
 		}
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "aggregate.yaml"), []byte(aggregate), 0o644); err != nil {
+		t.Fatalf("write aggregate: %v", err)
 	}
 
 	releasePath := filepath.Join(tmp, "release.yaml")
@@ -96,47 +198,7 @@ func TestRunTier4Validation_RequiredAttachmentTypeDiagnosticsReachTheEditor(t *t
 	if len(result.Diagnostics) == 0 {
 		t.Fatal("expected diagnostics from the mandate fixture; got none")
 	}
-
-	// The unmet mandate: names the requirement's label and the required type,
-	// and does NOT read as a malformed declaration.
-	unmet := findDiagnostic(t, result.Diagnostics, "requires an attachment of type")
-	for _, want := range []string{`"example/exporter"`, `"monitoring"`, "unmonitored"} {
-		if !containsSubstring(unmet.Message, want) {
-			t.Errorf("unmet diagnostic must name %s; got %q", want, unmet.Message)
-		}
-	}
-	if containsSubstring(unmet.Message, "malformed") {
-		t.Errorf("unmet diagnostic must not read as malformed: %q", unmet.Message)
-	}
-	if unmet.Severity != "error" {
-		t.Errorf("unmet diagnostic severity = %q; want error", unmet.Severity)
-	}
-
-	// The malformed declaration: a distinct diagnostic that does NOT read as an
-	// unsatisfied requirement.
-	malformed := findDiagnostic(t, result.Diagnostics, "malformed attachment requirement in annotation")
-	if containsSubstring(malformed.Message, "requires an attachment of type") {
-		t.Errorf("malformed diagnostic must not read as an unmet requirement: %q", malformed.Message)
-	}
-	if !containsSubstring(malformed.Message, "broken") {
-		t.Errorf("malformed diagnostic must name the offending instance: %q", malformed.Message)
-	}
-
-	// Positioning: each diagnostic lands on its component-instance key rather
-	// than at file:1:1.
-	unmetLine := fixtureKeyLine(t, string(aggBytes), "unmonitored:")
-	if unmet.Line != unmetLine {
-		t.Errorf("unmet diagnostic at line %d; want the `unmonitored:` key at line %d (diagnostics: %v)",
-			unmet.Line, unmetLine, diagMessages(result.Diagnostics))
-	}
-	brokenLine := fixtureKeyLine(t, string(aggBytes), "broken:")
-	if malformed.Line != brokenLine {
-		t.Errorf("malformed diagnostic at line %d; want the `broken:` key at line %d (diagnostics: %v)",
-			malformed.Line, brokenLine, diagMessages(result.Diagnostics))
-	}
-	if unmet.Line == 1 || malformed.Line == 1 {
-		t.Error("a mandate diagnostic positioned at file:1:1 is not usable in the editor")
-	}
+	return result.Diagnostics, string(aggBytes)
 }
 
 // findDiagnostic returns the single diagnostic whose message contains needle,
