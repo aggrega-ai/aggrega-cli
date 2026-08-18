@@ -112,7 +112,19 @@ func (p provenance) Raise(sentinel error, detail ...string) Objection {
 //
 // leaf becomes the objection's first detail value as well as the last part of
 // its locator, so a reader of the detail and a reader of the locator cannot be
-// told two different things about which element the objection is about.
+// told two different things about which element the objection is about. The
+// detail carries it whole, because that is the value the rule names; the locator
+// carries it as one segment per key, because that is what a position is.
+//
+// leaf arrives already spelled in the locator's own dialect, so a rule reporting
+// a key several levels down inside a payload hands over one dotted value rather
+// than separate segments. It is split back into those segments here, which is
+// what keeps the locator a path the authored document can be walked by. The cost
+// is stated rather than hidden: a leaf that is itself ONE key containing the
+// separator cannot be expressed through this call, because the joining already
+// happened in the caller and nothing in the joined string records where the key
+// boundaries were. A rule holding such a key names the element in its detail and
+// positions at the owner, with [Subject.Raise].
 //
 // A subject with no authored locator gets none from this either. An element
 // inside a site the source file does not name has nothing to be named relative
@@ -123,13 +135,27 @@ func (p provenance) RaiseAt(sentinel error, leaf string, detail ...string) Objec
 	if p.locator == "" {
 		return o
 	}
+	keys := strings.Split(leaf, locatorSeparator)
 	// Assembled from a copy: appending onto the subject's own segments could
 	// write into the array a sibling subject reads.
-	within := make([]string, 0, len(p.segments)+1)
+	within := make([]string, 0, len(p.segments)+len(keys))
 	within = append(within, p.segments...)
-	o.locator = authoredLocator(append(within, leaf)...)
+	o.locator = authoredLocator(append(within, keys...)...)
 	return o
 }
+
+// locatorSeparator is what the locator dialect separates its segments with.
+//
+// It is declared rather than spelled at each use because the join below and the
+// addressability rule below it are two readings of one fact: the segment a join
+// would render indistinguishable from two segments is exactly the segment that
+// contains this.
+//
+// It is deliberately not shared with the separators [scopeNesting] carries. Those
+// say how the compiler composed one axis's path, this says how a locator is
+// spelled, and the two agreeing on a character today does not make them one fact
+// — a change to either must be free to leave the other alone.
+const locatorSeparator = "."
 
 // authoredLocator joins segments the author actually typed into the dotted
 // locator dialect, and is the only place a locator is assembled — so a
@@ -139,28 +165,63 @@ func (p provenance) RaiseAt(sentinel error, leaf string, detail ...string) Objec
 // what a consumer recovering a position splits on when it walks the authored
 // document.
 //
+// # The guarantee: one locator has exactly one reading
+//
+// Splitting a locator on the separator yields exactly the segments it was built
+// from, so the path it names is the path the authored document spells. Nothing
+// else in the dialect distinguishes a segment boundary from a separator inside a
+// segment, which is why the guarantee is enforced here rather than described: an
+// authored key may itself contain the separator — an artifact's output name is a
+// filename, a file mechanism delivers into a mount path, and a deployment
+// addresses a composed component by the qualified identifier the composition
+// gave it — and joining such a key in would produce a string that reads equally
+// as one key or as two.
+//
+// So a segment carrying the separator, and every segment after it, contributes
+// nothing: the locator names the deepest site that is addressable and stops
+// there. That trades depth for truth, and it is the cheaper side of the trade
+// for two reasons. A consumer walking the authored document already stops at
+// exactly that key, because the segment it would descend by is not a key the
+// document holds — so the position a reader is taken to does not move. And a
+// reader who is given the container is a reader who can find the entry inside
+// it, while a reader given a path that resolves nowhere has to work out which of
+// its segments was never a key.
+//
+// A locator is a position and not an identifier, which is why the dropped value
+// is not spelled here in some escaped form. The element's own name reaches the
+// reader as a coordinate the subject carries and as the detail a rule raises
+// with — the same division [RunOnBoundaryProviderPaths] draws for a value that
+// is legitimate as a coordinate and refused as a segment.
+//
 // It returns the empty string when no authored segment remains, which is the
 // mechanical form of not inventing a locator: a container the compiler
 // synthesized contributes no segment, so a subject reached only through
 // synthesized containers has nothing to name and its locator stays empty
 // rather than naming a path the source file does not contain. An empty segment
-// is dropped for the same reason.
+// is dropped for the same reason — dropped and not stopped at, because an
+// unauthored container has a nameable site beneath it while an unaddressable
+// key does not.
 //
-// Three hand-assembled locator builders exist elsewhere in the compiler today,
-// each raising for one violation class. They are the shape this replaces, and
-// they are left in place deliberately until the checks that use them are
-// written against this framework: unifying them ahead of that would leave the
-// framework unexercised and the call sites still hand-assembling.
+// Hand-assembled locator builders exist elsewhere in the compiler today, each
+// raising for one violation class. They are the shape this replaces, and they
+// are left in place deliberately until the checks that use them are written
+// against this framework: unifying them ahead of that would leave the framework
+// unexercised and the call sites still hand-assembling. Their number is not
+// stated, because it falls by one with each such check and a stated count would
+// go stale while still reading as current.
 func authoredLocator(segments ...string) string {
 	authored := make([]string, 0, len(segments))
 	for _, s := range segments {
 		if s == "" {
 			continue
 		}
+		if strings.Contains(s, locatorSeparator) {
+			break
+		}
 		authored = append(authored, s)
 	}
 	if len(authored) == 0 {
 		return ""
 	}
-	return "." + strings.Join(authored, ".")
+	return locatorSeparator + strings.Join(authored, locatorSeparator)
 }

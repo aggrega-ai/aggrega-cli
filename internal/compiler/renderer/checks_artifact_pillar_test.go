@@ -124,12 +124,23 @@ var artifactPillarNodes = []struct {
 	workloadPresent bool
 	sourceDeclared  bool
 
-	// objections is every record this node alone must raise, as source file,
-	// locator and detail. It is per node and not pooled across nodes on purpose:
-	// a locator carries no node coordinate, so two nodes raising the same row
-	// produce identical records — and the comparison below tests presence rather
-	// than multiplicity, so a pooled expectation could not see a node that
-	// objected when it should have been silent. Per node, silence is checkable.
+	// objections is every record this node alone must raise, as artifact, source
+	// file, locator and detail.
+	//
+	// The artifact comes first and comes from the subject the framework invoked
+	// the rule with, because the locator cannot supply it. A locator is a
+	// position: it names the deepest site the author actually wrote, and an entry
+	// whose output name is a filename is not separately addressable — so every
+	// entry in this block positions at the block itself. Carrying the name is what
+	// keeps the record per entry; without it, two entries objecting about one
+	// pillar produce byte-identical records, and a rule that raised one of them
+	// twice and the other never would satisfy both comparisons below.
+	//
+	// It is per node and not pooled across nodes on purpose: a record carries no
+	// node coordinate either, so two nodes raising the same row produce identical
+	// records — and the comparison below tests presence rather than multiplicity,
+	// so a pooled expectation could not see a node that objected when it should
+	// have been silent. Per node, silence is checkable.
 	objections []string
 }{
 	{
@@ -138,12 +149,12 @@ var artifactPillarNodes = []struct {
 		// — which is what states that the value reports every offending reference
 		// rather than stopping at the first.
 		objections: []string{
-			"recipes/app.yaml|.spec.artifacts.reads-workload.yaml|.workload",
-			"recipes/app.yaml|.spec.artifacts.reads-workload-leaf.yaml|.workload.containers",
-			"recipes/app.yaml|.spec.artifacts.reads-source.yaml|.source",
-			"recipes/app.yaml|.spec.artifacts.reads-source-leaf.yaml|.source.version",
-			"recipes/app.yaml|.spec.artifacts.reads-both.yaml|.workload",
-			"recipes/app.yaml|.spec.artifacts.reads-both.yaml|.source",
+			"reads-workload.yaml|recipes/app.yaml|.spec.artifacts|.workload",
+			"reads-workload-leaf.yaml|recipes/app.yaml|.spec.artifacts|.workload.containers",
+			"reads-source.yaml|recipes/app.yaml|.spec.artifacts|.source",
+			"reads-source-leaf.yaml|recipes/app.yaml|.spec.artifacts|.source.version",
+			"reads-both.yaml|recipes/app.yaml|.spec.artifacts|.source",
+			"reads-both.yaml|recipes/app.yaml|.spec.artifacts|.workload",
 		},
 	},
 	{
@@ -159,7 +170,7 @@ var artifactPillarNodes = []struct {
 		// usual-pair bodies are opaque text and only the body written in the
 		// alternate pair is read at all.
 		objections: []string{
-			"recipes/app.yaml|.spec.artifacts.alternate-pair-read.yaml|.workload",
+			"alternate-pair-read.yaml|recipes/app.yaml|.spec.artifacts|.workload",
 		},
 	},
 }
@@ -246,9 +257,11 @@ func TestTheArtifactPillarRuleObjectsInBothDirections(t *testing.T) {
 	totalInvoked := 0
 	for _, n := range artifactPillarNodes {
 		invoked := 0
+		var raised []artifactObjection
 		single := artifactFixtureFor(n.id)
 		got, err := constraint.RunOnNodeArtifacts(nil, single, single, facts,
-			countingArtifactCheck(ArtifactPillarDeclared, &invoked))
+			countingArtifactCheck(
+				attributedArtifactCheck(ArtifactPillarDeclared, &raised), &invoked))
 		if err != nil {
 			t.Errorf("the traversal over node %q's artifacts returned %v with no cancellation signal "+
 				"supplied; want no error — a stopped walk hands back a short objection set, which is "+
@@ -264,7 +277,18 @@ func TestTheArtifactPillarRuleObjectsInBothDirections(t *testing.T) {
 				"from a rule that ran and approved.", invoked, n.id, want)
 		}
 
-		records := objectionRecords(got)
+		// The records are built from what the wrapper saw at invocation rather than
+		// from the traversal's return, so the two are held level here: a traversal
+		// that dropped or added an objection on the way back would otherwise be
+		// invisible to every comparison below.
+		if len(raised) != len(got) {
+			t.Errorf("node %q: the rule raised %d objection(s) at invocation while the traversal "+
+				"returned %d.\nCONSEQUENCE: the attributed set compared below is then not the set "+
+				"a consumer receives, so the comparison speaks for neither.",
+				n.id, len(raised), len(got))
+		}
+
+		records := artifactObjectionRecords(raised)
 		if missing, unexpected := setDifference(n.objections, records); len(missing) > 0 || len(unexpected) > 0 {
 			t.Errorf("the declared rule raised the wrong objections over node %q.\n"+
 				"not raised: %v\nraised and not expected: %v\n"+
@@ -407,20 +431,29 @@ func TestTheArtifactPillarRuleAndTheHandWrittenPreCheckAgree(t *testing.T) {
 
 	stub := newArtifactPillarFactStub()
 
-	// The declared side is run one node at a time, because an objection's locator
-	// carries no node coordinate: the nodes share one artifact set, so a single
-	// walk's objections could not be attributed back to a node. Running each
-	// node's own walk is what makes the comparison per entry.
+	// The declared side is run one node at a time, because an objection carries no
+	// node coordinate: the nodes share one artifact set, so a single walk's
+	// objections could not be attributed back to a node. Running each node's own
+	// walk is what makes the comparison per node.
+	//
+	// Within a node the entry comes from the subject the framework invoked the rule
+	// with, never from the objection's locator. A locator is a position, and an
+	// artifact entry whose output name is a filename is not separately addressable,
+	// so every entry in the block positions at the block: keying this map on a
+	// locator collapses every refused entry onto one key, and each of the others
+	// then reads as "the declared value did not refuse it" — which is a statement
+	// about the key, not about the rule.
 	perNodeDeclared := map[string]bool{}
 	for _, n := range artifactPillarNodes {
+		var raised []artifactObjection
 		single := artifactFixtureFor(n.id)
-		objections, err := constraint.RunOnNodeArtifacts(nil, single, single,
-			constraint.HydratedView(stub), ArtifactPillarDeclared)
-		if err != nil {
+		if _, err := constraint.RunOnNodeArtifacts(nil, single, single,
+			constraint.HydratedView(stub),
+			attributedArtifactCheck(ArtifactPillarDeclared, &raised)); err != nil {
 			t.Fatalf("node %q artifact traversal: %v", n.id, err)
 		}
-		for _, o := range objections {
-			perNodeDeclared[factKey(n.id, o.Locator())] = true
+		for _, r := range raised {
+			perNodeDeclared[factKey(n.id, r.artifact)] = true
 		}
 	}
 
@@ -441,7 +474,7 @@ func TestTheArtifactPillarRuleAndTheHandWrittenPreCheckAgree(t *testing.T) {
 			// the declared value leaves to evaluation, so the comparison is on the
 			// pillar verdict alone rather than on any error.
 			handRefused := handWritten != nil && errors.Is(handWritten, ErrArtifactPillarNotDeclared())
-			declRefused := perNodeDeclared[factKey(n.id, ".spec.artifacts."+name)]
+			declRefused := perNodeDeclared[factKey(n.id, name)]
 			compared++
 			if handRefused != declRefused {
 				t.Errorf("node %q artifact %q: the hand-written pre-check refused=%v while the "+
@@ -461,6 +494,57 @@ func TestTheArtifactPillarRuleAndTheHandWrittenPreCheckAgree(t *testing.T) {
 	// verdict would print "both forms agree" underneath the errors proving they
 	// do not.
 	t.Logf("compared %d artifact entries across %d nodes", compared, len(artifactPillarNodes))
+}
+
+// artifactObjection is one raised objection together with the artifact the
+// framework invoked the rule over.
+//
+// The pairing is captured at invocation rather than recovered from the objection
+// afterwards because nothing an objection carries identifies the entry: its
+// locator is a position, and an artifact entry whose output name is a filename is
+// not separately addressable, so every entry in the block positions at the block.
+// Recovering the entry from the locator would be reading an identity out of a
+// coordinate that does not carry one — the confusion this pairing exists to end.
+type artifactObjection struct {
+	artifact  string
+	objection constraint.Objection
+}
+
+// attributedArtifactCheck wraps a declared value so every objection it raises is
+// recorded against the artifact the traversal invoked it over.
+//
+// It copies the sentinel and the severity from the declaration rather than
+// restating them, so a value whose sentinel changed is still the value under test.
+func attributedArtifactCheck(
+	declared constraint.Check[constraint.HydratedView, constraint.NodeArtifactSubject],
+	raised *[]artifactObjection,
+) constraint.Check[constraint.HydratedView, constraint.NodeArtifactSubject] {
+	return constraint.Check[constraint.HydratedView, constraint.NodeArtifactSubject]{
+		Sentinel: declared.Sentinel,
+		Severity: declared.Severity,
+		Run: func(v constraint.HydratedView, s constraint.NodeArtifactSubject) []constraint.Objection {
+			out := declared.Run(v, s)
+			for _, o := range out {
+				*raised = append(*raised, artifactObjection{artifact: s.ArtifactName(), objection: o})
+			}
+			return out
+		},
+	}
+}
+
+// artifactObjectionRecords flattens attributed objections in the order they were
+// raised, each as the artifact the rule was invoked over followed by what the
+// framework and the rule said.
+//
+// It delegates the second half to the shared flattener rather than restating the
+// format, so a record here and a record in a sibling suite cannot drift apart in
+// everything but the identity this one prepends.
+func artifactObjectionRecords(raised []artifactObjection) []string {
+	out := make([]string, 0, len(raised))
+	for _, r := range raised {
+		out = append(out, r.artifact+"|"+objectionRecord(r.objection))
+	}
+	return out
 }
 
 // countingArtifactCheck wraps a declared value so a traversal's invocation count

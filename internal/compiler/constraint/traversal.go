@@ -63,6 +63,14 @@ import "strings"
 //     see authoredSiteSegments. An attachment's configuration leaf is the case:
 //     it is assembled from every scope reaching its node, so which of them wrote
 //     any one leaf is settled by the fold and by nothing the traversal can see.
+//
+// Each shape below states the locator it builds as a template, and every one of
+// them is bounded by the same rule: a segment has to be a key the dialect can
+// address, so an authored key that itself contains the separator ends the locator
+// at its container. The rule and what it costs a reader live with the assembly, at
+// authoredLocator, rather than being restated per shape — the shapes whose names
+// the authoring surface constrains to separator-free text are exact as written,
+// and the two that name a filename or a mount path say so where they are declared.
 
 // The authoring keys the locator dialect names. They are the keys the author
 // actually writes, so they are declared once here rather than spelled at each
@@ -196,6 +204,34 @@ func nestedScopeSegments(nesting scopeNesting, scopePath string, tail ...string)
 		out = append(out, nesting.containerKey, level)
 	}
 	return append(out, tail...)
+}
+
+// pillarLeafPathSeparator is what a configuration pillar's leaf path is composed
+// with: the dialect the pillar tree is read and written through keys a leaf by a
+// flat dotted path, with one part per level of the pillar's nesting.
+//
+// It is spelled here rather than taken from the locator's own separator. The two
+// agree on a character and answer different questions — one is how a leaf path
+// was composed, the other how a locator is written — so a change to either must
+// be free to leave the other alone.
+const pillarLeafPathSeparator = "."
+
+// pillarLeafSegments returns the segments one configuration leaf contributes:
+// one per level of the leaf's own path.
+//
+// A leaf names a path into its pillar and not a single key, so handing it over
+// whole would offer the locator assembly one segment standing for several keys —
+// and that assembly refuses a segment it cannot tell from several, because a
+// locator has to have exactly one reading. Splitting it here is what keeps the
+// depth the leaf genuinely names: every level is a key the document spells, one
+// under the next, so the locator stays a path the document can be walked by.
+//
+// This is the one place a value reaching locator assembly is a path rather than a
+// key. Every other coordinate the traversals contribute is a single authored key,
+// which is why the split belongs at this site instead of in the assembly: only
+// the site that knows which of the two it holds can say so.
+func pillarLeafSegments(leafPath string) []string {
+	return strings.Split(leafPath, pillarLeafPathSeparator)
 }
 
 // runOverNodes is the one place the node nesting lives. Most enumerated kinds
@@ -463,6 +499,13 @@ func RunOnNodeMechanisms[V View](
 // order.
 //
 // The locator is .spec.components.<name>.inject.<mechanism>.<key>.
+//
+// What <key> spells is the mechanism's own business — an environment variable
+// name under one, a mount path under another — so it is one of the two coordinates
+// that can carry the dialect's separator. A key that does carries it as ONE
+// authored key, which the dialect cannot address, so the locator names the
+// mechanism's block and the key reaches the author as the subject's coordinate and
+// as the detail a rule raises with.
 func RunOnNodeMechanismDeliveryKeys[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -629,10 +672,11 @@ func RunOnNodeAttachmentPillarLeaves[V View](
 				for _, leaf := range leaves.AttachmentPillarLeaves(node.ID, attachment, pillar.Value) {
 					var segments []string
 					if named {
-						segments = authoredSiteSegments(
-							nesting, leaf.Site,
-							authoredKeyFeatures, attachment, pillar.Value, leaf.Value,
+						tail := append(
+							[]string{authoredKeyFeatures, attachment, pillar.Value},
+							pillarLeafSegments(leaf.Value)...,
 						)
+						segments = authoredSiteSegments(nesting, leaf.Site, tail...)
 					}
 					out = append(out, newNodeAttachmentPillarLeafSubject(
 						pillar.SourceFile, node.ID, attachment, pillar.Value, leaf.Value,
@@ -813,6 +857,13 @@ func RunOnBoundaryAttachmentPipelineSteps[V View](
 // authored key, so for that form the two are one value; an entry supplied by an
 // imported file resolves to that file's base name, and one supplied by a library
 // bundle resolves to a name per file the bundle holds.
+//
+// An output name is a filename, so on this axis the name ordinarily carries the
+// dialect's separator — and it carries it as ONE authored key, which the dialect
+// cannot address. The locator then names the artifacts block and stops, so a rule
+// over this kind names the entry in its detail: the block says where to look and
+// only the detail can say which entry inside it, since the position is a path and
+// a filename is a name.
 func RunOnNodeArtifacts[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,

@@ -278,6 +278,28 @@ func TestAuthoredLocatorDialectAndTheEmptyRule(t *testing.T) {
 			segments: []string{"spec", "", "components", "web"},
 			want:     ".spec.components.web",
 		},
+		{
+			// A key carrying the separator cannot be joined in without the result
+			// reading equally as two keys, so the locator names the deepest site
+			// that can be walked to and stops. The row after it is what makes the
+			// difference from the empty rule visible: an unauthored container is
+			// dropped and the walk continues, because a nameable site remains
+			// beneath it; an unaddressable key ends the locator, because nothing
+			// beneath it can be named relative to a key that cannot be reached.
+			name:     "a key carrying the separator ends the locator at its container",
+			segments: []string{"spec", "artifacts", "policy.yaml"},
+			want:     ".spec.artifacts",
+		},
+		{
+			name:     "everything after an unaddressable key is dropped with it",
+			segments: []string{"spec", "components", "web.api", "uses", "database"},
+			want:     ".spec.components",
+		},
+		{
+			name:     "a leading unaddressable key leaves no locator at all",
+			segments: []string{"a.b", "components"},
+			want:     "",
+		},
 	}
 
 	for _, tc := range cases {
