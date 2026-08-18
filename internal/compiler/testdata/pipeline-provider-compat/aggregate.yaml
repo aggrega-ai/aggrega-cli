@@ -19,3 +19,17 @@ spec:
           type: feature.example/request-guard
           values:
             label: "guarded"
+    # A second component in the same boundary as api. It is here so the boundary
+    # that carries an attachment holds more than one component: an attachment
+    # written on the boundary reaches both, so a count taken over one boundary and
+    # one component could not tell a reading that asks about the boundary's
+    # attachment once from one that asks about it per component.
+    #
+    # It carries no attachment of its own and its Recipe declares no pipeline. The
+    # step plugin every pipeline here names emits files under fixed names, so a
+    # second pipeline writing into this boundary would collide on the output path
+    # rather than exercising anything. What this component contributes is the
+    # second appearance of the boundary's own attachment, which is the whole point
+    # of it.
+    cache:
+      type: core/store

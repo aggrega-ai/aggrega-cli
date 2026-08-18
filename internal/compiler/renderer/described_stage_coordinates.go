@@ -1,0 +1,280 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package renderer
+
+import (
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
+
+// GraphCoordinates is the node and attachment enumeration the finalised graph
+// carries, as the described stage consumes it.
+//
+// The described stage takes it rather than deriving it. Both axes are settled
+// once the graph is finalised — the node set is what the composition produced,
+// and a node's attachment set is what the whole attachment cascade folded to —
+// so deriving either here would be a second answer to a question the build has
+// already answered, free to disagree with the one every earlier rule was invoked
+// over.
+type GraphCoordinates interface {
+	constraint.NodeEnumerator
+	constraint.AttachmentEnumerator
+}
+
+// describedStageCoordinates derives the coordinates the described stage adds to
+// the ones the finalised graph already carries: the steps of each pipeline a
+// build declares, the boundary set, and the attachments each boundary declares
+// on itself.
+//
+// It extends the graph stage's enumeration rather than restating it, the way a
+// stage's presentation extends the presentation below it. The node axis and the
+// per-node attachment axis are promoted from the enumeration the compilation
+// produced; what is derived here is exactly what that enumeration does not
+// reach.
+//
+// Every axis returns a deterministic order and each states which. A pipeline's
+// steps keep the order the entity declares them in; the boundary set keeps the
+// deployment's own order, enclosing scope before the scopes nested inside it;
+// a boundary's attachments keep the order that boundary declares them in. No
+// axis here ranges a plain Go map.
+//
+// The pipelines are read through the same binding the render resolves entities
+// with, so a pipeline enumerated here is the pipeline the render runs. A step
+// coordinate carries the entity that declares it rather than the document the
+// attachment was written in: that entity is what an author edits to change the
+// step.
+type describedStageCoordinates struct {
+	GraphCoordinates
+
+	// graph is the finalised graph, read for the attachment-to-FeatureRecipe
+	// binding — the same thing the presentation reads it for.
+	graph *types.IRGraph
+
+	// recipes is the Recipe bound to each node, as the render resolved it. It is
+	// held rather than looked up again so a node's own pipeline is enumerated
+	// from the binding the render will execute.
+	recipes map[string]*types.Recipe
+
+	// recipeLookup resolves an attachment to the FeatureRecipe it binds, by the
+	// same instance-plus-type key the render resolves attachments with.
+	recipeLookup RecipeLookup
+
+	// release is the deployment document. The boundary set is read from it and
+	// not from the graph's projection of boundary attachments: that projection
+	// records a boundary only once something is attached at it, so an axis over
+	// it would be narrower than the boundary set a rule is asked about, and it
+	// would narrow silently — a boundary it dropped contributes no subject, so
+	// nothing would fail.
+	release *types.Release
+
+	// releaseFile positions a boundary coordinate at the document the boundary
+	// was declared in.
+	releaseFile string
+}
+
+// newDescribedStageCoordinates derives the described stage's coordinates over
+// the products a render holds.
+//
+// It returns nil when the graph or the enumeration it extends is absent. An
+// enumeration built from nothing would present every rule an empty subject set,
+// and a rule invoked zero times reports exactly what a rule invoked and
+// satisfied reports — so a caller checks for nil rather than being handed a
+// value that answers emptily.
+func newDescribedStageCoordinates(
+	graph *types.IRGraph,
+	graphCoordinates GraphCoordinates,
+	recipes map[string]*types.Recipe,
+	recipeLookup RecipeLookup,
+	resolved *resolver.ResolveResult,
+) *describedStageCoordinates {
+	if graph == nil || graphCoordinates == nil {
+		return nil
+	}
+	c := &describedStageCoordinates{
+		GraphCoordinates: graphCoordinates,
+		graph:            graph,
+		recipes:          recipes,
+		recipeLookup:     recipeLookup,
+	}
+	if resolved != nil {
+		c.release = resolved.Release
+		c.releaseFile = resolved.ReleasePath
+	}
+	return c
+}
+
+// PipelineSteps returns the steps of a node's own Recipe pipeline, in the order
+// that Recipe declares them, identified by the identifier each step declares.
+//
+// The Recipe is the one the render bound to the node, keyed by the identity the
+// composed graph gives it — so a component a sub-module contributed is reached
+// here exactly as the facts about it are reached. An enumeration keyed by the
+// name a root document typed would hold no entry for such a component and would
+// present its steps to no rule.
+func (c *describedStageCoordinates) PipelineSteps(node string) []constraint.AuthoredCoordinate {
+	recipe, held := c.recipes[node]
+	if !held || recipe == nil {
+		return nil
+	}
+	return stepCoordinatesOf(recipe.Spec.Pipeline, recipe.Metadata.Name)
+}
+
+// AttachmentPipelineSteps returns the steps of the pipeline one attachment's
+// FeatureRecipe carries on a node, in the order that FeatureRecipe declares
+// them.
+func (c *describedStageCoordinates) AttachmentPipelineSteps(
+	node string, attachment string,
+) []constraint.AuthoredCoordinate {
+	fr, held := c.attachmentFeatureRecipe(node, attachment)
+	if !held {
+		return nil
+	}
+	return stepCoordinatesOf(fr.Spec.Pipeline, fr.Metadata.Name)
+}
+
+// Boundaries returns every boundary the deployment declares, at every depth,
+// enclosing scope before the scopes nested inside it.
+//
+// A scope normalization synthesized carries no path of its own and contributes
+// none: the operator declared no such scope, so a coordinate naming one would
+// name a key the document does not contain.
+func (c *describedStageCoordinates) Boundaries() []constraint.AuthoredCoordinate {
+	var out []constraint.AuthoredCoordinate
+	c.walkBoundaries(func(path string, _ types.Boundary) {
+		out = append(out, constraint.AuthoredCoordinate{Value: path, SourceFile: c.releaseFile})
+	})
+	return out
+}
+
+// BoundaryAttachments returns the attachments one boundary declares on itself,
+// in the order the deployment declares them.
+func (c *describedStageCoordinates) BoundaryAttachments(boundary string) []string {
+	var out []string
+	c.walkBoundaries(func(path string, b types.Boundary) {
+		if path == boundary {
+			out = b.Features.Keys()
+		}
+	})
+	return out
+}
+
+// BoundaryAttachmentPipelineSteps returns the steps of the pipeline one
+// boundary-scope attachment's FeatureRecipe carries, in the order that
+// FeatureRecipe declares them.
+func (c *describedStageCoordinates) BoundaryAttachmentPipelineSteps(
+	boundary string, attachment string,
+) []constraint.AuthoredCoordinate {
+	fr, held := c.boundaryAttachmentFeatureRecipe(boundary, attachment)
+	if !held {
+		return nil
+	}
+	return stepCoordinatesOf(fr.Spec.Pipeline, fr.Metadata.Name)
+}
+
+// walkBoundaries visits every declared boundary with the path it is named by,
+// descending into nested scopes, in the deployment's own order.
+func (c *describedStageCoordinates) walkBoundaries(visit func(path string, b types.Boundary)) {
+	if c.release == nil {
+		return
+	}
+	rel := types.NormalizeRelease(c.release).Release()
+	if rel == nil {
+		return
+	}
+	var walk func(path string, b types.Boundary)
+	walk = func(path string, b types.Boundary) {
+		if !b.Synthesized {
+			visit(path, b)
+		}
+		for name, child := range b.Boundaries.All() {
+			next := name
+			if path != "" {
+				next = path + "/" + name
+			}
+			walk(next, child)
+		}
+	}
+	for name, b := range rel.Spec.Boundaries.All() {
+		start := name
+		if b.Synthesized {
+			start = ""
+		}
+		walk(start, b)
+	}
+}
+
+// attachmentFeatureRecipe resolves the FeatureRecipe one attachment binds on a
+// node, through the same binding and the same instance-plus-type key the render
+// resolves attachments with.
+func (c *describedStageCoordinates) attachmentFeatureRecipe(
+	node string, attachment string,
+) (*types.FeatureRecipe, bool) {
+	if c.recipeLookup.FeatureRecipe == nil {
+		return nil, false
+	}
+	entries, held := c.graph.Spec.FeatureValuesMapping.Get(node)
+	if !held {
+		return nil, false
+	}
+	entry, held := entries.Get(attachment)
+	if !held {
+		return nil, false
+	}
+	fr, found := c.recipeLookup.FeatureRecipe(attachment, entry.Type)
+	if !found || fr == nil {
+		return nil, false
+	}
+	return fr, true
+}
+
+// boundaryAttachmentFeatureRecipe resolves the FeatureRecipe one boundary-scope
+// attachment binds, through the same binding the render resolves it with.
+func (c *describedStageCoordinates) boundaryAttachmentFeatureRecipe(
+	boundary string, attachment string,
+) (*types.FeatureRecipe, bool) {
+	if c.recipeLookup.FeatureRecipe == nil {
+		return nil, false
+	}
+	feats, held := c.graph.Spec.BoundaryFeatures.Get(boundary)
+	if !held {
+		return nil, false
+	}
+	feat, held := feats.Get(attachment)
+	if !held {
+		return nil, false
+	}
+	fr, found := c.recipeLookup.FeatureRecipe(attachment, feat.Type)
+	if !found || fr == nil {
+		return nil, false
+	}
+	return fr, true
+}
+
+// stepCoordinatesOf presents a declared pipeline as the coordinate shape the
+// step traversals take, keeping the order the document declares.
+func stepCoordinatesOf(steps []types.PipelineStep, sourceFile string) []constraint.AuthoredCoordinate {
+	if len(steps) == 0 {
+		return nil
+	}
+	out := make([]constraint.AuthoredCoordinate, 0, len(steps))
+	for _, s := range steps {
+		out = append(out, constraint.AuthoredCoordinate{Value: s.ID, SourceFile: sourceFile})
+	}
+	return out
+}
+
+// The enumeration is held to every axis the described stage's rules are keyed
+// by, so an axis that stops being satisfied fails to compile here rather than at
+// the invocation that needed it.
+var (
+	_ describedStageAxes                                  = (*describedStageCoordinates)(nil)
+	_ constraint.NodeEnumerator                           = (*describedStageCoordinates)(nil)
+	_ constraint.AttachmentEnumerator                     = (*describedStageCoordinates)(nil)
+	_ constraint.PipelineStepEnumerator                   = (*describedStageCoordinates)(nil)
+	_ constraint.AttachmentPipelineStepEnumerator         = (*describedStageCoordinates)(nil)
+	_ constraint.BoundaryEnumerator                       = (*describedStageCoordinates)(nil)
+	_ constraint.BoundaryAttachmentEnumerator             = (*describedStageCoordinates)(nil)
+	_ constraint.BoundaryAttachmentPipelineStepEnumerator = (*describedStageCoordinates)(nil)
+)

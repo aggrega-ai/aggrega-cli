@@ -5,9 +5,12 @@ package renderer
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -37,27 +40,36 @@ import (
 // What this stage adds is what a self-report carries and what the entity binding
 // the plugin declares, and nothing that was complete before them.
 //
-// # Every plugin fact is read through the retention the render shares
+// # Every plugin fact is read through one retention
 //
 // A step plugin's self-report is a pure function of its bytes, so two readers of
 // one plugin cannot legitimately be told different things. The accessors below
-// therefore read it through the same retention the pipeline executor reads — one
-// accessor, one value per plugin, for the whole render — rather than describing a
-// plugin a second time for this presentation. Nothing is described until an
-// accessor asks, so presenting this stage loads no plugin on its own.
+// therefore read it through the render's own retention — one value per plugin for
+// the whole render, reached through the single descriptor seam — rather than
+// describing a plugin a second time for this presentation. Nothing is described
+// until an accessor asks, so presenting this stage loads no plugin on its own.
 //
 // The provider facts read the provider engine's own retained self-report through
 // the same optional interfaces the render path reads them through, for the same
 // reason.
 //
-// # An unloadable plugin answers as one that declared nothing
+// # A plugin the host could not ask is not a plugin that declared nothing
 //
 // A fact accessor returns a value and never an error, so a plugin the host cannot
 // resolve, load or describe is answered with the zero value of the fact asked
-// for. That is indistinguishable from a plugin that declared nothing, and
-// deliberately so at this layer: the load failure itself is not this stage's
-// finding, and it is reported in full by the path that loads the guest in order
-// to run it, which reaches every plugin a build actually uses.
+// for — which reads exactly like a plugin that declared nothing. The two are
+// different facts and only one of them is a declaration: an empty compatibility
+// list is a claim its author made, while an unobtainable self-report is the
+// absence of any claim at all. A rule handed the second as if it were the first
+// refuses a step on the strength of something nobody said.
+//
+// So this value keeps the zero-value answer AND records the reads it could not
+// answer. The record is what its caller halts on, in preference to whatever a
+// rule raised from the same read: the failure the host met is the finding, and a
+// verdict reached over a declaration nothing ever read is not. That record is
+// read through [describedView.selfReportRefusal], which is addressed to the
+// caller invoking the rules and to nothing else — it is not a fact, because no
+// author declared it.
 //
 // # Values are handed over uncopied
 //
@@ -89,17 +101,26 @@ type describedView struct {
 	// attachment names the document the render actually bound.
 	recipeLookup RecipeLookup
 
-	// descriptors is the render's retention of step-plugin self-reports, shared
-	// with the pipeline executor.
-	descriptors *stepDescriptorMemo
+	// describe reads one step's plugin self-report through the render's retention,
+	// so a plugin several steps or several nodes name is described once for the
+	// whole render.
+	describe StepDescriber
 
-	// lookup resolves a plugin URI to its verified bytes. The retention takes it
-	// per read rather than holding one, so it is supplied here.
+	// lookup resolves a plugin URI to its verified bytes. It is held as well as
+	// bound into describe because a render given no resolution resolves nothing at
+	// all, and every plugin fact answers from nothing there — which this value is
+	// what tells.
 	lookup pluginpath.Lookup
 
 	// engineFactory resolves a provider binding to the engine that renders it,
 	// which carries that provider's own retained self-report.
 	engineFactory EngineFactory
+
+	// refusals records the plugin self-reports the accessors below asked for and
+	// could not obtain. It is a value rather than a pointer so every presentation
+	// has one without a constructor supplying it: a nil record would put the
+	// swallow back, silently, in exactly the reads it exists to keep.
+	refusals selfReportRefusals
 }
 
 // newDescribedView presents what every plugin a render reaches has reported
@@ -142,7 +163,7 @@ func newDescribedView(
 		graph:         graph,
 		recipes:       recipes,
 		recipeLookup:  recipeLookup,
-		descriptors:   descriptors,
+		describe:      stepDescriberOver(descriptors, lookup),
 		lookup:        lookup,
 		engineFactory: engineFactory,
 	}
@@ -218,6 +239,20 @@ func (v *describedView) AttachmentRenderingProvider(node string, attachment stri
 		return ""
 	}
 	return ProviderEngineKind(fr.Spec.Capability)
+}
+
+// AttachmentExecutionScope returns the scope one attachment's bound
+// FeatureRecipe declares its resource generation runs at, empty when it declares
+// none.
+//
+// An attachment with no bound FeatureRecipe answers empty, which is the same
+// answer a FeatureRecipe stating no scope gives: both generate per component.
+func (v *describedView) AttachmentExecutionScope(node string, attachment string) string {
+	fr, ok := v.attachmentFeatureRecipe(node, attachment)
+	if !ok {
+		return ""
+	}
+	return fr.Spec.ExecutionScope
 }
 
 // AttachmentStepPluginCompatibleCapabilities returns the provider capabilities
@@ -393,16 +428,25 @@ func (v *describedView) boundaryAttachmentFeatureRecipe(
 }
 
 // stepDescriptor returns the retained self-report of the plugin the named step
-// runs, and whether one was obtained. A step the pipeline does not declare, and
-// a plugin that cannot be resolved, loaded or described, both report false.
+// runs, and whether one was obtained.
 //
 // It reads through the render's shared retention, so a plugin already described
 // for a step that ran crosses to no guest here.
 //
-// A render wired with no plugin resolution reports false for every step. That
-// configuration validates each pipeline without running it, so no plugin is
-// resolved anywhere in the build and there is no self-report to present — the
-// same answer an unloadable plugin gives, for the same reason.
+// Three situations report false and they are not the same situation, which is
+// why only one of them is recorded:
+//
+//   - A render wired with no plugin resolution reports false for every step.
+//     That configuration validates each pipeline without running it, so no plugin
+//     is resolved anywhere in the build and there is no self-report to present.
+//   - A step the pipeline does not declare reports false because there is no
+//     plugin to ask about at all.
+//   - A plugin the host could not resolve, load or describe reports false having
+//     been asked and having failed, and that failure is recorded on the
+//     presentation. It is the one arm where something went wrong rather than
+//     there being nothing to say, and the record is what lets the caller halt on
+//     the failure instead of on a rule's verdict over the zero value returned
+//     here.
 func (v *describedView) stepDescriptor(
 	steps []types.PipelineStep, step string,
 ) (wasm.PluginDescriptor, bool) {
@@ -413,11 +457,85 @@ func (v *describedView) stepDescriptor(
 	if !ok {
 		return wasm.PluginDescriptor{}, false
 	}
-	desc, err := v.descriptors.descriptor(v.ctx, entry.Plugin, v.lookup)
+	desc, err := v.describe(v.ctx, entry)
 	if err != nil {
+		v.refusals.record(entry, err)
 		return wasm.PluginDescriptor{}, false
 	}
 	return desc, true
+}
+
+// selfReportRefusal returns the first plugin self-report this presentation was
+// asked for and could not obtain, nil when every read it received was answered.
+//
+// It is unexported and stands outside the fact contract because it is not a
+// fact: no author declared it, no rule reads it, and it says what the host could
+// not do rather than what a document says. Its one reader is the site that
+// invokes the rules over this presentation, which is the only place that can
+// halt on the failure rather than on a verdict reached without the declaration
+// the failure withheld.
+func (v *describedView) selfReportRefusal() error { return v.refusals.refusal() }
+
+// selfReportRefusals records the plugin self-reports a presentation was asked
+// for and could not obtain.
+//
+// It keeps the FIRST one alone. The first is the earliest in the traversal order
+// the rules are invoked in, which is fixed for a given input, so the halt a
+// build produces for one broken plugin is fixed too. Keeping the whole set would
+// report one unreachable plugin once per step that names it, where there is one
+// thing wrong and one thing to repair.
+//
+// Reads are serialised for the same reason the retention beneath them is: two
+// readers of one plugin may race on a cold read, and the record must name one of
+// them rather than tear between both.
+type selfReportRefusals struct {
+	mu    sync.Mutex
+	first error
+}
+
+// record notes that the plugin the given step names was asked what it declares
+// and did not answer. A later refusal is dropped rather than replacing the one
+// held, so the value a caller reads does not depend on how far a walk got after
+// the first failure.
+func (r *selfReportRefusals) record(step types.PipelineStep, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.first != nil {
+		return
+	}
+	r.first = selfReportUnreadableErr(step, err)
+}
+
+// refusal returns the recorded failure, nil when nothing was refused.
+func (r *selfReportRefusals) refusal() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.first
+}
+
+// selfReportUnreadableErr is the Loud Guardrail for a pipeline step whose plugin
+// the host could not ask what it declares. A plugin's `describe()` self-report
+// is what states which providers its step is compatible with and what each of
+// its exports operates on, so a step whose plugin cannot be asked can be neither
+// admitted nor refused on any of it — and reporting it as a plugin that declared
+// nothing would name the wrong fault and hide the real one.
+//
+// It names the step and the plugin, and carries the host's own failure beneath
+// it: the resolution, load or `describe()` error is the cause and is what the
+// author acts on. It registers no condition of its own, because the cause
+// already carries one and a second name for one failure is a second thing to
+// keep in step.
+//
+// It names no component, and that is the honest position rather than a missing
+// one. A plugin's self-report is a pure function of its bytes and is read once
+// per plugin for the whole render, so a plugin the host cannot ask is unaskable
+// for every step and every component that names it — naming one of them would
+// present a build-wide fault as one component's, and it would name whichever
+// component the walk happened to reach first.
+func selfReportUnreadableErr(step types.PipelineStep, err error) error {
+	return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{},
+		fmt.Sprintf("pipeline step %q: plugin %q did not report what it declares, so whether the step may run cannot be decided",
+			step.ID, step.Plugin))
 }
 
 // scopeOf returns the declared scope of the export the named step dispatches to.
@@ -507,3 +625,8 @@ func pipelineStepByID(steps []types.PipelineStep, step string) (types.PipelineSt
 }
 
 var _ constraint.DescribedView = (*describedView)(nil)
+
+// The presentation is held to the record its caller reads, so an accessor that
+// stops recording what it could not answer fails to compile here rather than
+// leaving the caller reading an absence it cannot tell from a clean read.
+var _ selfReportRefusalReporter = (*describedView)(nil)

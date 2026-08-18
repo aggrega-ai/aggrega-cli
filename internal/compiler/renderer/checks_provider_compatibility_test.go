@@ -46,6 +46,11 @@ type providerFactStub struct {
 	attachProvider         map[string]string
 	boundaryAttachProvider map[string]string
 
+	// attachExecutionScope is keyed by the same pair attachProvider is, and
+	// answers empty for an attachment the fixture leaves out — which is the same
+	// answer a FeatureRecipe stating no scope gives.
+	attachExecutionScope map[string]string
+
 	// The per-step facts, keyed by each site's own coordinates.
 	nodeStepScope     map[string]string
 	nodeStepCaps      map[string][]string
@@ -75,6 +80,10 @@ func (s providerFactStub) StepExportScope(node, step string) string {
 
 func (s providerFactStub) StepPluginCompatibleCapabilities(node, step string) []string {
 	return s.nodeStepCaps[factKey(node, step)]
+}
+
+func (s providerFactStub) AttachmentExecutionScope(node, attachment string) string {
+	return s.attachExecutionScope[factKey(node, attachment)]
 }
 
 func (s providerFactStub) AttachmentStepExportScope(node, attachment, step string) string {
@@ -142,11 +151,23 @@ func newProviderSiteFixture() providerSiteFixture {
 		ID: "web", SourceFile: "aggregate.yaml", AuthoredName: "web",
 		SubsystemPath: "default", SynthesizedSubsystem: true,
 	}
+	// A second component the same boundary holds. The boundary's own attachment
+	// reaches both, which is what makes a count over the attachment axis able to
+	// tell a reading that asks about that attachment once from one that asks about
+	// it per component.
+	cache := constraint.NodeInstance{
+		ID: "cache", SourceFile: "aggregate.yaml", AuthoredName: "cache",
+		SubsystemPath: "default", SynthesizedSubsystem: true,
+	}
 	return providerSiteFixture{
-		nodes:      []constraint.NodeInstance{web},
+		nodes:      []constraint.NodeInstance{web, cache},
 		boundaries: []constraint.AuthoredCoordinate{{Value: "prod", SourceFile: "release.yaml"}},
+		// The merged set each component carries: its own attachment where it has
+		// one, plus the attachment the boundary declares, which every component the
+		// boundary holds carries.
 		attachments: map[string][]string{
-			factKey("web"): {"tls"},
+			factKey("web"):   {"tls", "audit"},
+			factKey("cache"): {"audit"},
 		},
 		boundaryAttach: map[string][]string{
 			factKey("prod"): {"audit"},
@@ -168,6 +189,14 @@ func newProviderSiteFixture() providerSiteFixture {
 				{Value: "host_ok", SourceFile: "featurerecipes/tls.yaml"},
 				{Value: "host_bad", SourceFile: "featurerecipes/tls.yaml"},
 			},
+			// One authored pipeline, reached through two components because both
+			// carry the attachment the boundary declares.
+			factKey("web", "audit"): {
+				{Value: "own_bad", SourceFile: "featurerecipes/audit.yaml"},
+			},
+			factKey("cache", "audit"): {
+				{Value: "own_bad", SourceFile: "featurerecipes/audit.yaml"},
+			},
 		},
 		boundaryPipe: map[string][]constraint.AuthoredCoordinate{
 			factKey("prod", "audit"): {
@@ -180,8 +209,12 @@ func newProviderSiteFixture() providerSiteFixture {
 func newProviderFactStub() providerFactStub {
 	return providerFactStub{
 		// The node renders through helm; its attachment renders through compose.
-		nodeProvider:           map[string]string{factKey("web"): "helm"},
-		attachProvider:         map[string]string{factKey("web", "tls"): "compose"},
+		nodeProvider: map[string]string{factKey("web"): "helm"},
+		attachProvider: map[string]string{
+			factKey("web", "tls"):     "compose",
+			factKey("web", "audit"):   "terraform",
+			factKey("cache", "audit"): "terraform",
+		},
 		boundaryAttachProvider: map[string]string{factKey("prod", "audit"): "terraform"},
 
 		nodeStepScope: map[string]string{
@@ -198,10 +231,19 @@ func newProviderFactStub() providerFactStub {
 			factKey("web", "host_unreachable"): nil,
 		},
 
+		// The attachment the boundary declares carries the boundary scope; the
+		// component's own attachment carries none, which is the ordinary case.
+		attachExecutionScope: map[string]string{
+			factKey("web", "audit"):   executionScopeBoundary,
+			factKey("cache", "audit"): executionScopeBoundary,
+		},
+
 		attachStepScope: map[string]string{
-			factKey("web", "tls", "own_ok"):   types.ScopeOwn,
-			factKey("web", "tls", "host_ok"):  types.ScopeHost,
-			factKey("web", "tls", "host_bad"): types.ScopeHost,
+			factKey("web", "tls", "own_ok"):      types.ScopeOwn,
+			factKey("web", "tls", "host_ok"):     types.ScopeHost,
+			factKey("web", "tls", "host_bad"):    types.ScopeHost,
+			factKey("web", "audit", "own_bad"):   types.ScopeOwn,
+			factKey("cache", "audit", "own_bad"): types.ScopeOwn,
 		},
 		attachStepCaps: map[string][]string{
 			// Matched against the attachment's own provider, compose.
@@ -211,6 +253,10 @@ func newProviderFactStub() providerFactStub {
 			// what proves the two arms read two different facts.
 			factKey("web", "tls", "host_ok"):  {"helm"},
 			factKey("web", "tls", "host_bad"): {"compose"},
+			// The boundary-declared attachment's step is refused wherever it is
+			// asked, so any component this rule does report it for shows up.
+			factKey("web", "audit", "own_bad"):   {"nothing"},
+			factKey("cache", "audit", "own_bad"): {"nothing"},
 		},
 
 		boundaryStepScope: map[string]string{
@@ -267,16 +313,21 @@ func TestTheProviderCompatibilityRuleReachesEveryAuthoredPipeline(t *testing.T) 
 			objections: []string{"recipes/web.yaml|.spec.pipeline.own_bad|helm"},
 		},
 		{
-			// Three steps. own_ok passes against the ATTACHMENT's provider while
-			// host_ok passes against the HOST NODE's — the two arms read two
-			// different facts, and host_bad's objection naming helm rather than
-			// compose is what proves the host arm read the node-keyed one.
+			// Five steps enumerated: three on the component's own attachment, plus
+			// the boundary-declared attachment's one step reached once through each
+			// of the two components that carry it. own_ok passes against the
+			// ATTACHMENT's provider while host_ok passes against the HOST NODE's —
+			// the two arms read two different facts, and host_bad's objection naming
+			// helm rather than compose is what proves the host arm read the
+			// node-keyed one. The two boundary-declared subjects raise nothing
+			// because the rule ends on an attachment carrying the boundary scope;
+			// that is asserted on its own below, by name and by count.
 			site: "attachment FeatureRecipe pipeline",
 			run: func(count *int) ([]constraint.Objection, error) {
 				return constraint.RunOnNodeAttachmentPipelineSteps(nil, fixture, fixture, fixture, facts,
 					countingCheck(AttachmentPipelineStepProviderCompatible, count))
 			},
-			invoked:    3,
+			invoked:    5,
 			objections: []string{"featurerecipes/tls.yaml|.spec.pipeline.host_bad|tls,helm"},
 		},
 		{
@@ -435,4 +486,156 @@ func TestTheProviderCompatibilityRuleReadsNoUndeclaredFact(t *testing.T) {
 		BoundaryAttachmentPipelineStepProviderCompatible); err != nil {
 		t.Fatalf("boundary pipeline traversal: %v", err)
 	}
+}
+
+// TestTheAttachmentRuleIsNotInvokedForABoundaryDeclaredAttachment is the named
+// enumeration assertion for the boundary-scope skip.
+//
+// An attachment whose FeatureRecipe declares the boundary scope is evaluated once
+// for the boundary that holds it, and it appears in the merged attachment set of
+// every component that boundary holds. So the rule over a component's attachments
+// is presented one authored step once per component that inherited it, on top of
+// the report the boundary-rooted rule makes over the same step. The skip is what
+// brings the declared set into line with the single evaluation.
+//
+// # Why a cross-check green could not stand in for this
+//
+// Two readings asked about fewer things agree about fewer things and raise
+// nothing, which is indistinguishable from a satisfied rule. So the property is
+// asserted by COUNT and by NAME over an input where every step is refused: the
+// subjects the traversal presents are enumerated, and what the rule reports is
+// compared against the names it should report and the names it should not.
+//
+// # The guards, and why each is fatal
+//
+// A count over a degenerate corpus proves nothing, so three conditions abort
+// rather than fail: an axis holding one subject cannot show a difference between
+// one report and several; a boundary-declared attachment sitting on one node
+// makes "once per component" and "once" the same number; and a corpus where
+// nothing is refused makes every count zero.
+func TestTheAttachmentRuleIsNotInvokedForABoundaryDeclaredAttachment(t *testing.T) {
+	t.Parallel()
+
+	fixture := newProviderSiteFixture()
+	stub := newProviderFactStub()
+	facts := constraint.DescribedView(stub)
+
+	const declaredAtBoundary = "audit"
+
+	// GUARD 1 — the boundary-declared attachment must sit on more than one node.
+	var carrying []string
+	for _, node := range fixture.Nodes() {
+		for _, attachment := range fixture.Attachments(node.ID) {
+			if attachment == declaredAtBoundary {
+				carrying = append(carrying, node.ID)
+			}
+		}
+	}
+	if len(carrying) < 2 {
+		t.Fatalf("the attachment %q is carried by %v; this assertion needs it on more than one node, "+
+			"or reporting it once and reporting it per component are the same number",
+			declaredAtBoundary, carrying)
+	}
+
+	// GUARD 2 — the axis must present more than one subject.
+	var presented, ownSubjects, boundarySubjects []string
+	for _, node := range fixture.Nodes() {
+		for _, attachment := range fixture.Attachments(node.ID) {
+			for _, step := range fixture.AttachmentPipelineSteps(node.ID, attachment) {
+				subject := node.ID + "/" + attachment + "/" + step.Value
+				presented = append(presented, subject)
+				if attachment == declaredAtBoundary {
+					boundarySubjects = append(boundarySubjects, subject)
+				} else {
+					ownSubjects = append(ownSubjects, subject)
+				}
+			}
+		}
+	}
+	if len(presented) < 2 {
+		t.Fatalf("the attachment-step axis presents %d subject(s); a count over it cannot discriminate", len(presented))
+	}
+	if len(boundarySubjects) < 2 || len(ownSubjects) < 1 {
+		t.Fatalf("the axis presents %d boundary-declared subject(s) and %d of the components' own; "+
+			"the assertion needs both sides populated", len(boundarySubjects), len(ownSubjects))
+	}
+
+	// GUARD 3 — every boundary-declared subject must be refused when it IS asked,
+	// or the absence of a report below says only that nothing was wrong.
+	//
+	// The control reads the same rule with the scope fact answering empty, which is
+	// what a FeatureRecipe stating no scope reports. It must report every one of
+	// them.
+	control := stub
+	control.attachExecutionScope = map[string]string{}
+	controlObjections, err := constraint.RunOnNodeAttachmentPipelineSteps(
+		nil, fixture, fixture, fixture, constraint.DescribedView(control),
+		AttachmentPipelineStepProviderCompatible,
+	)
+	if err != nil {
+		t.Fatalf("control traversal: %v", err)
+	}
+	controlReported := reportedAttachments(controlObjections)
+	if got := countReported(controlReported, declaredAtBoundary); got != len(boundarySubjects) {
+		t.Fatalf("the control reported the boundary-declared attachment %d time(s) over %d subject(s); "+
+			"without one report per subject there is no duplicate for the skip to remove",
+			got, len(boundarySubjects))
+	}
+
+	// THE ASSERTION. With the scope fact answering, the rule reports the
+	// components' own attachments and none of the boundary-declared subjects.
+	objections, err := constraint.RunOnNodeAttachmentPipelineSteps(
+		nil, fixture, fixture, fixture, facts,
+		AttachmentPipelineStepProviderCompatible,
+	)
+	if err != nil {
+		t.Fatalf("traversal: %v", err)
+	}
+	reported := reportedAttachments(objections)
+	if got := countReported(reported, declaredAtBoundary); got != 0 {
+		t.Errorf("the rule reported the boundary-declared attachment %d time(s); want 0.\n"+
+			"reported: %v", got, reported)
+	}
+	if len(objections) != len(controlObjections)-len(boundarySubjects) {
+		t.Errorf("the rule raised %d objection(s); want %d — the control's %d less the %d "+
+			"boundary-declared subjects the skip removes",
+			len(objections), len(controlObjections)-len(boundarySubjects),
+			len(controlObjections), len(boundarySubjects))
+	}
+	// The component's own attachment is still reported, so the skip removed the
+	// inherited subjects and nothing else.
+	if countReported(reported, "tls") == 0 {
+		t.Errorf("the rule stopped reporting the component's own attachment; reported: %v", reported)
+	}
+	t.Logf("attachment-step axis presented %d subject(s) — %d of the components' own, %d inherited from "+
+		"the boundary across %v; the rule reported %d objection(s) against the control's %d",
+		len(presented), len(ownSubjects), len(boundarySubjects), carrying,
+		len(objections), len(controlObjections))
+}
+
+// reportedAttachments names the attachment each objection was raised about, in
+// the order they were raised. The attachment is the objection's first detail
+// element at this site, which is where the rule puts it.
+func reportedAttachments(objections []constraint.Objection) []string {
+	out := make([]string, 0, len(objections))
+	for _, o := range objections {
+		detail := o.Detail()
+		if len(detail) == 0 {
+			out = append(out, "")
+			continue
+		}
+		out = append(out, detail[0])
+	}
+	return out
+}
+
+// countReported counts how many objections named one attachment.
+func countReported(reported []string, attachment string) int {
+	n := 0
+	for _, name := range reported {
+		if name == attachment {
+			n++
+		}
+	}
+	return n
 }

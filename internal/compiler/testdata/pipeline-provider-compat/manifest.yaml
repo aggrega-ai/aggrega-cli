@@ -6,6 +6,11 @@ metadata:
 spec:
   mappings:
     components:
+      # The instance tier names one component's Recipe directly, so the second
+      # component in the attached boundary binds a pipeline-less Recipe while
+      # every other component of its type keeps the pipeline-carrying one.
+      name:
+        cache: helm-cache-synthesized:1.0.0
       type:
         core/server: helm-server-synthesized:1.0.0
         core/store: helm-store-synthesized:1.0.0

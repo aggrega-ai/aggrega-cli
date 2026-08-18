@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -505,8 +506,15 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoTheRequiredSlotWalk(t *test
 		}
 		return catalogLookup.Component(componentType)
 	}
+	// The enumeration is a product the phase carries, and the catalog lookup it
+	// reads is inside it — so the watched lookup has to reach it there. Rebuilding
+	// the enumeration over the same graph and the same presentation changes nothing
+	// a rule is asked; it changes only which lookup answers the slot axis.
+	out.GraphCoordinates = ir.NewGraphStageCoordinates(
+		out.IRGraph, out.GraphView, watched, releaseFileOf(out.ResolveResult), out.AttachmentSites,
+	)
 
-	if err := runGraphStageRules(withdrawn, out, watched); !errors.Is(err, context.Canceled) {
+	if err := runGraphStageRules(withdrawn, out); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the graph-stage rules returned %v for a caller that withdrew, want the withdrawal", err)
 	}
 	if lookups != nodes+1 {

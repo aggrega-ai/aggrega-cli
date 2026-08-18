@@ -120,7 +120,7 @@ func TestRunNodePipeline_RoutesThroughProviderCodec(t *testing.T) {
 		"marker" /* ownProvider */, "", /* no host */
 		renderctx.RenderContext{}, &types.TemplateContext{},
 		selectCodec(factory, "marker", 2), selectCodec(factory, "", 2),
-		cannedInvoker(t, frp.FRPStepOutput{}), describerFor("own", []string{"marker"}), "node")
+		cannedInvoker(t, frp.FRPStepOutput{}), "node")
 	if err != nil {
 		t.Fatalf("runNodePipelineWithInvoker: %v", err)
 	}

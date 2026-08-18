@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-cache-synthesized
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/store
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      cache:
+        image: cache:latest
+        ports:
+          db: 6379
+    services:
+      db:
+        type: ClusterIP
+        ports:
+          db: 6379
+  # No pipeline. This Recipe exists so a second component can share a boundary
+  # with one whose Recipe does carry a pipeline: the step plugin emits files
+  # under fixed names, so two component pipelines writing into one boundary
+  # would collide on the output path rather than exercising anything. The
+  # component still carries an attachment whose FeatureRecipe declares a
+  # pipeline, which is the axis the proofs over this boundary read.

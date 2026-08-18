@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -172,160 +172,76 @@ func errOf(t *testing.T, describe StepDescriber, step types.PipelineStep) error 
 	return err
 }
 
-// TestPipelineEmitsIdenticalBytesWithAndWithoutRetention drives one real
-// multi-step pipeline over a real guest twice — once through the per-site read
-// that preceded retention, once through the retained one — and compares what
-// each emitted. It is the byte-identity half of the retention claim, measured
-// on both arms in one run.
+// TestStepDescriptorRetentionSpansTheWholeRender proves the retention carries
+// across the readers a render actually has, rather than only within one read.
 //
-// The corpus is asserted non-empty before it is compared: two empty emissions
-// are trivially identical, so a comparison that could pass on nothing would
-// prove nothing.
-func TestPipelineEmitsIdenticalBytesWithAndWithoutRetention(t *testing.T) {
+// The readers are the presentation's accessors: what a plugin declares is read
+// once per step and per node, and a plugin several of them name is described once
+// for the whole render only because they share one retained set. It drives the
+// presentation twice under two node identities, once with the set shared and once
+// with each presentation retaining on its own, and compares the crossings each
+// arrangement costs.
+//
+// The reduction is the point and the equality of what each read returned is what
+// makes it safe: a reduction bought by answering differently would be a defect
+// wearing a smaller number.
+func TestStepDescriptorRetentionSpansTheWholeRender(t *testing.T) {
 	lookup := refPluginLookup(t)
 	t.Parallel()
 
-	// Several steps naming one plugin is the shape the retention changes: the
-	// unretained arm describes the plugin once per step, the retained arm once.
-	steps := []types.PipelineStep{
-		{ID: "patch-a", Plugin: "frp-step-patch-rust.wasm", Function: "step"},
-		{ID: "patch-b", Plugin: "frp-step-patch-rust.wasm", Function: "step"},
-		{ID: "patch-c", Plugin: "frp-step-patch-rust.wasm", Function: "step"},
+	const plugin = "frp-step-patch-rust.wasm"
+	recipes := map[string]*types.Recipe{
+		"node-a": {Spec: types.RecipeSpec{Pipeline: []types.PipelineStep{{ID: "patch", Plugin: plugin, Function: "step"}}}},
+		"node-b": {Spec: types.RecipeSpec{Pipeline: []types.PipelineStep{{ID: "patch", Plugin: plugin, Function: "step"}}}},
 	}
 
-	run := func(describe StepDescriber, crossings *int64, countedLookup pluginpath.Lookup) pipelineResult {
-		t.Helper()
-		own := []EmittedFile{{Name: "bundle.yaml", Origin: EmitOriginWorkload, Body: []byte(multiDocOwn)}}
-		codec := newStockYAMLCodec(2)
-		res, err := runNodePipelineWithInvoker(
-			context.Background(), steps, own, nil, false, "helm", "",
-			renderctx.RenderContext{}, &types.TemplateContext{},
-			codec, codec,
-			newStepInvoker(countedLookup), describe, "node",
-		)
-		if err != nil {
-			t.Fatalf("pipeline run: %v", err)
-		}
-		return res
-	}
-
-	var unretainedCrossings int64
-	unretainedLookup := countingLookup(lookup, &unretainedCrossings)
-	before := run(unretainedDescriber(unretainedLookup), &unretainedCrossings, unretainedLookup)
-
-	var retainedCrossings int64
-	retainedLookup := countingLookup(lookup, &retainedCrossings)
-	after := run(stepDescriberOver(newStepDescriptorMemo(), retainedLookup), &retainedCrossings, retainedLookup)
-
-	// Anti-needle: a parity of two empty emissions must not be able to pass.
-	if len(before.Own) == 0 {
-		t.Fatal("the pre-retention arm emitted no files; there is nothing to compare")
-	}
-	var emittedBytes int
-	for _, f := range before.Own {
-		emittedBytes += len(f.Body)
-	}
-	if emittedBytes == 0 {
-		t.Fatal("the pre-retention arm emitted only empty files; there is nothing to compare")
-	}
-	t.Logf("compared %d emitted file(s), %d byte(s) total", len(before.Own), emittedBytes)
-
-	if len(before.Own) != len(after.Own) {
-		t.Fatalf("emitted file count moved: %d before, %d after", len(before.Own), len(after.Own))
-	}
-	for i := range before.Own {
-		if before.Own[i].Name != after.Own[i].Name {
-			t.Fatalf("emitted file %d renamed: %q before, %q after", i, before.Own[i].Name, after.Own[i].Name)
-		}
-		if string(before.Own[i].Body) != string(after.Own[i].Body) {
-			t.Fatalf("emitted bytes of %q are not identical across the two arms", before.Own[i].Name)
-		}
-	}
-	if !reflect.DeepEqual(before.HostPatched, after.HostPatched) {
-		t.Fatal("host-scope modifications are not identical across the two arms")
-	}
-	if !reflect.DeepEqual(before.Warnings, after.Warnings) {
-		t.Fatal("warnings are not identical across the two arms")
-	}
-
-	// Both arms ran the same steps through the same invoker, so the difference
-	// between the two counts is the describe crossings the retention removed.
-	if retainedCrossings >= unretainedCrossings {
-		t.Fatalf("retention did not reduce crossings over the pipeline: retained %d, unretained %d",
-			retainedCrossings, unretainedCrossings)
-	}
-	t.Logf("crossings over %d steps: %d unretained, %d retained", len(steps), unretainedCrossings, retainedCrossings)
-}
-
-// TestStepDescriptorRetentionSpansSeparatePipelineRuns proves the retention
-// carries across independent pipeline runs rather than only within one, which is
-// the property the render depends on: the sites that run a node's pipeline and
-// the site that replays a deferred one are separate calls, and they collapse to
-// one crossing only because they are handed the same retained set.
-//
-// It drives the executor twice under two node identities, once with the set
-// shared and once with each call left to retain on its own, and compares the
-// crossings each arrangement costs.
-func TestStepDescriptorRetentionSpansSeparatePipelineRuns(t *testing.T) {
-	lookup := refPluginLookup(t)
-	t.Parallel()
-
-	steps := []types.PipelineStep{{ID: "patch", Plugin: "frp-step-patch-rust.wasm", Function: "step"}}
-
-	runTwice := func(shared *stepDescriptorMemo) (int64, []pipelineResult) {
+	readBoth := func(shared *stepDescriptorMemo) (int64, [][]string) {
 		t.Helper()
 		var crossings int64
 		counted := countingLookup(lookup, &crossings)
-		var out []pipelineResult
+		var declared [][]string
 		for _, nodeID := range []string{"node-a", "node-b"} {
-			own := []EmittedFile{{Name: "bundle.yaml", Origin: EmitOriginWorkload, Body: []byte(multiDocOwn)}}
-			res, err := runNodePipeline(
-				context.Background(), steps, own, nil, false, "helm", "",
-				renderctx.RenderContext{}, &types.TemplateContext{}, 2,
-				counted, shared, nil, nodeID,
+			retention := shared
+			if retention == nil {
+				retention = newStepDescriptorMemo()
+			}
+			view := newDescribedView(
+				context.Background(), &types.IRGraph{}, stubGraphFacts{},
+				recipes, RecipeLookup{}, retention, counted, nil,
 			)
-			if err != nil {
-				t.Fatalf("pipeline run for %q: %v", nodeID, err)
+			if view == nil {
+				t.Fatal("the presentation was not built; there is nothing to read")
 			}
-			out = append(out, res)
+			declared = append(declared, view.StepPluginCompatibleCapabilities(nodeID, "patch"))
 		}
-		return crossings, out
+		return crossings, declared
 	}
 
-	perCall, perCallOut := runTwice(nil)
-	sharedCrossings, sharedOut := runTwice(newStepDescriptorMemo())
+	perPresentation, perOut := readBoth(nil)
+	sharedCrossings, sharedOut := readBoth(newStepDescriptorMemo())
 
-	if sharedCrossings >= perCall {
-		t.Fatalf("sharing the retained set across runs did not reduce crossings: shared %d, per-call %d",
-			sharedCrossings, perCall)
-	}
-	t.Logf("crossings across two pipeline runs: %d retaining per call, %d sharing one set", perCall, sharedCrossings)
-
-	// The two arrangements must still emit the same bytes, or the reduction was
-	// bought by rendering something different.
-	if len(perCallOut) != len(sharedOut) {
-		t.Fatalf("run count differs: %d vs %d", len(perCallOut), len(sharedOut))
-	}
-	var compared int
-	for i := range perCallOut {
-		if len(perCallOut[i].Own) == 0 {
-			t.Fatalf("run %d emitted no files; there is nothing to compare", i)
-		}
-		if len(perCallOut[i].Own) != len(sharedOut[i].Own) {
-			t.Fatalf("run %d emitted %d file(s) per call and %d sharing", i, len(perCallOut[i].Own), len(sharedOut[i].Own))
-		}
-		for j := range perCallOut[i].Own {
-			if string(perCallOut[i].Own[j].Body) != string(sharedOut[i].Own[j].Body) {
-				t.Fatalf("run %d file %q: emitted bytes differ between the two arrangements", i, perCallOut[i].Own[j].Name)
-			}
-			compared++
+	// Anti-needle: a comparison of two empty answers must not be able to pass.
+	for i, got := range perOut {
+		if len(got) == 0 {
+			t.Fatalf("read %d reported no declared target; the crossing counts describe nothing", i)
 		}
 	}
-	if compared == 0 {
-		t.Fatal("no emitted file was compared; the parity assertion proves nothing")
+	if !reflect.DeepEqual(perOut, sharedOut) {
+		t.Fatalf("the two arrangements reported different declared targets: %v vs %v", perOut, sharedOut)
 	}
-	t.Logf("compared %d emitted file(s) across the two arrangements", compared)
+	if sharedCrossings >= perPresentation {
+		t.Fatalf("sharing the retained set across the render did not reduce crossings: shared %d, per presentation %d",
+			sharedCrossings, perPresentation)
+	}
+	t.Logf("crossings for one plugin read at two nodes: %d retaining per presentation, %d sharing one set",
+		perPresentation, sharedCrossings)
 }
+
+// stubGraphFacts stands in for the presentation the graph finalisation produces,
+// which the presentation under test embeds and these proofs never read from. It
+// carries no value behind the interface, so a read of it panics here rather than
+// answering a zero value.
+type stubGraphFacts struct{ constraint.GraphView }
 
 // populatedDescriptor is a self-report with every field carrying content,
 // including every slice, pointer and raw message the shape offers. The

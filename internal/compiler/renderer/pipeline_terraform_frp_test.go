@@ -111,7 +111,7 @@ func TestPipelineTerraformFrp_ByteFaithfulTwoPatches(t *testing.T) {
 		own, nil, false, "terraform", "",
 		renderctx.RenderContext{}, &types.TemplateContext{},
 		newStockYAMLCodec(2), newStockYAMLCodec(2),
-		cannedInvoker(t, out), describerFor("own", []string{"terraform"}), "node")
+		cannedInvoker(t, out), "node")
 	if err != nil {
 		t.Fatalf("expected a clean run; got halt: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestPipelineTerraformFrp_NativeHCLOpaqueHalts(t *testing.T) {
 		own, nil, false, "terraform", "",
 		renderctx.RenderContext{}, &types.TemplateContext{},
 		newStockYAMLCodec(2), newStockYAMLCodec(2),
-		cannedInvoker(t, out), describerFor("own", []string{"terraform"}), "node")
+		cannedInvoker(t, out), "node")
 	if err == nil {
 		t.Fatalf("expected halt for PATCH against a native-HCL opaque body; got nil")
 	}

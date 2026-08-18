@@ -423,7 +423,7 @@ func TestTheSocketConstraintRuleStopsPartwayOnACancelledWalk(t *testing.T) {
 // traversals read is the caller's own, threaded through the function the build
 // invokes them from — not one supplied at a proof's convenience.
 func TestTheGraphStageRulesReadTheCallersCancellationSignal(t *testing.T) {
-	out, catalogLookup := compileWorkspace(t, workspaceFixture{
+	out, _ := compileWorkspace(t, workspaceFixture{
 		aggregatePath: invocationAggregatePath,
 		releasePath:   invocationReleasePath,
 		manifestPath:  invocationManifestPath,
@@ -437,7 +437,7 @@ func TestTheGraphStageRulesReadTheCallersCancellationSignal(t *testing.T) {
 
 	withdrawn, withdraw := context.WithCancel(context.Background())
 	withdraw()
-	if err := runGraphStageRules(withdrawn, out, catalogLookup); !errors.Is(err, context.Canceled) {
+	if err := runGraphStageRules(withdrawn, out); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the graph-stage rules returned %v for a caller that withdrew, want the withdrawal", err)
 	}
 	if after := len(out.Analysis.Errors); after != before {

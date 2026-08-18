@@ -427,6 +427,18 @@ var PipelineStepProviderCompatible = constraint.Check[
 // Its detail names the attachment and the provider. The locator names the
 // authored step inside the FeatureRecipe, which is the document to edit, and
 // neither the attachment that bound it nor the selected provider appears there.
+//
+// # The attachments this rule is not about
+//
+// An attachment whose FeatureRecipe declares the boundary scope is evaluated
+// once for the boundary that holds it, not once for each component carrying it —
+// and it still appears in every one of those components' merged attachment sets,
+// because that set is what a component carries rather than where the attachment
+// was written. So the rule ends on such an attachment without reading anything
+// further: the pipeline it names runs on the boundary's surface, where the rule
+// rooted at a boundary asks this same question once. Reading the scope is what
+// keeps one authored step from being reported once per component that inherited
+// it.
 var AttachmentPipelineStepProviderCompatible = constraint.Check[
 	constraint.DescribedView,
 	constraint.NodeAttachmentPipelineStepSubject,
@@ -437,6 +449,9 @@ var AttachmentPipelineStepProviderCompatible = constraint.Check[
 		v constraint.DescribedView,
 		s constraint.NodeAttachmentPipelineStepSubject,
 	) []constraint.Objection {
+		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) == executionScopeBoundary {
+			return nil
+		}
 		provider := v.AttachmentRenderingProvider(s.NodeID(), s.AttachmentName())
 		if v.AttachmentStepExportScope(s.NodeID(), s.AttachmentName(), s.StepID()) == types.ScopeHost {
 			provider = v.NodeRenderingProvider(s.NodeID())
@@ -489,6 +504,16 @@ var AttachmentPipelineStepProviderCompatible = constraint.Check[
 // The remedies are the ones the condition admits: give the attachment's own
 // output a provider that does not merge, address the component's documents
 // instead, or drop the step.
+//
+// # The attachments this rule is not about
+//
+// An attachment whose FeatureRecipe declares the boundary scope is evaluated
+// once for the boundary that holds it, and its own output is written under that
+// boundary rather than as a contribution to any component's dispatch group. The
+// component's provider therefore decides nothing about where such an
+// attachment's own documents stand, and the rule ends on it — the condition
+// below would otherwise refuse a step that has a target, on the strength of a
+// component whose merge the attachment never joins.
 var AttachmentPipelineStepOwnScopeHasAMergedTarget = constraint.Check[
 	constraint.DescribedView,
 	constraint.NodeAttachmentPipelineStepSubject,
@@ -499,6 +524,9 @@ var AttachmentPipelineStepOwnScopeHasAMergedTarget = constraint.Check[
 		v constraint.DescribedView,
 		s constraint.NodeAttachmentPipelineStepSubject,
 	) []constraint.Objection {
+		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) == executionScopeBoundary {
+			return nil
+		}
 		if v.AttachmentStepExportScope(
 			s.NodeID(), s.AttachmentName(), s.StepID(),
 		) == types.ScopeHost {

@@ -330,6 +330,19 @@ type stepsOneToFourOutput struct {
 	// Nil when either product is absent.
 	GraphView constraint.GraphView
 
+	// GraphCoordinates is the enumeration the finalised graph carries: the node
+	// set, the connections, each node's merged attachment set, and the axes a
+	// rule at this stage is invoked once per.
+	//
+	// It is built here for the reason the presentation beside it is, and it is
+	// carried rather than rebuilt by each consumer: the rules at this stage and
+	// the rules over what the render's plugins report are invoked over the same
+	// node and attachment axes, and a second derivation of either would be free
+	// to disagree with the one the earlier rules were invoked over.
+	//
+	// Nil when either product the enumeration reads is absent.
+	GraphCoordinates *ir.GraphStageCoordinates
+
 	// AssertionErr carries the first failing Component or Feature assertion, or
 	// nil when every assertion passed. It is produced inside runStepsOneToFour
 	// rather than by each consumer, because the rule's inputs — the finalised IR
@@ -414,6 +427,20 @@ func runStepsOneToFour(
 		// producing a second answer to facts this one already answers.
 		out.GraphView = ir.NewGraphView(graph, topoResult.StageView)
 
+		// The enumeration of the same graph, built beside the presentation
+		// because it reads that presentation for the axes a fact already names.
+		// The deployment's file comes from the resolve result, which already
+		// carries it so downstream phases can build source locations without
+		// re-discovering it. The per-leaf sites come from the fold that produced
+		// them rather than being recovered here: which scope's contribution won
+		// any one leaf is settled while the cascade folds, and re-running that
+		// precedence would be a second answer to a question the build already
+		// answered.
+		out.GraphCoordinates = ir.NewGraphStageCoordinates(
+			graph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
+			out.AttachmentSites,
+		)
+
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -436,7 +463,7 @@ func runStepsOneToFour(
 		// graph and the catalog and would have to build a second presentation of
 		// its own to ask a rule anything, and one fact with two producers is two
 		// answers free to disagree.
-		if err := runGraphStageRules(ctx, out, catalogLookup); err != nil {
+		if err := runGraphStageRules(ctx, out); err != nil {
 			return err
 		}
 
@@ -1036,6 +1063,20 @@ func RunPipeline(
 			// renderer invokes it once per node as the loop completes. It writes
 			// only to a diagnostic sink, so rendered output is unaffected.
 			NodeProgress: opts.NodeProgress,
+		}
+		// The enumeration of the finalised graph, forwarded for the reason the
+		// presentation beside it is: the rules over what the render's plugins
+		// report are invoked once per node and once per attachment, and those are
+		// the axes the rules already invoked at the graph stage walked. One
+		// enumeration reaches both, so neither can be asked about coordinates the
+		// other was not.
+		//
+		// It is assigned only when one was produced, so an absent enumeration
+		// reads as absent to the render. Assigned unconditionally it would arrive
+		// as a present value that answers nothing, which is the state a rule
+		// cannot tell from a satisfied one.
+		if stepsOut.GraphCoordinates != nil {
+			rendererInput.GraphCoordinates = stepsOut.GraphCoordinates
 		}
 		if rendererInput.PluginPathLookup == nil {
 			rendererInput.PluginPathLookup = buildEntityPluginLookup(inputs, catalogLookup)

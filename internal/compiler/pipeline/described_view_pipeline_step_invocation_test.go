@@ -521,25 +521,21 @@ func TestThePipelineStepAxesComeFromTheCompiledBuild(t *testing.T) {
 
 // TestTheProviderCompatibilityRulesAreInvokedOverTheCompiledBuild invokes each of
 // the three rules through the framework's traversal over the presentation the
-// render published, and reads its verdict against the verdict of the hand-written
-// reading that runs today on the same input.
+// render published, and states what each was invoked over.
 //
-// The hand-written reading is called directly rather than through the build,
-// because a build it refuses publishes no presentation to ask a rule about: the
-// render returns an error and no result. Both readings are handed the same steps,
-// the same providers and the same plugin self-report — the last through the same
-// descriptor seam the executor binds — so what they disagree about is a property
-// of the two readings and not of what either was told.
+// The build the fixture compiles is one the rules admit, and the render completed
+// — so this is the admission half: each rule is asked about every step the build
+// really declares, over the presentation the build really published, and raises
+// nothing. The refusal half is the proof below it, and the two together are what
+// keeps either from passing on a rule that answers one way whatever it is asked.
 func TestTheProviderCompatibilityRulesAreInvokedOverTheCompiledBuild(t *testing.T) {
 	build := buildStepFixture(t)
 	view := build.result.DescribedView
 	if view == nil {
 		t.Fatal("the render published no presentation of what its plugins report; nothing can be invoked through it")
 	}
-	describe := renderer.NewStepDescriber(build.lookup)
-	ctx := context.Background()
 
-	t.Run("a node's own pipeline: both readings admit the build", func(t *testing.T) {
+	t.Run("a node's own pipeline is admitted at every enumerated step", func(t *testing.T) {
 		visited := 0
 		for _, node := range build.coordinates.Nodes() {
 			visited += len(build.axes.PipelineSteps(node.ID))
@@ -559,23 +555,11 @@ func TestTheProviderCompatibilityRulesAreInvokedOverTheCompiledBuild(t *testing.
 			t.Fatalf("rule raised %d objection(s) over a build the render admitted: %v", len(objections), objections)
 		}
 
-		// The same reading the build performed, on the same input, called directly.
-		for _, node := range build.coordinates.Nodes() {
-			recipe := recipeOfNode(build.out.IRGraph, build.recipeLookup, node.ID)
-			if recipe == nil || len(recipe.Spec.Pipeline) == 0 {
-				continue
-			}
-			if twin := renderer.EnforceProviderCompatibility(
-				ctx, recipe.Spec.Pipeline, view.NodeRenderingProvider(node.ID), "", describe, node.ID,
-			); twin != nil {
-				t.Errorf("the hand-written reading refused node %q, which the rule admitted: %v", node.ID, twin)
-			}
-		}
-		t.Logf("rule invoked over %d step(s) across %d component(s); both readings admit the build",
+		t.Logf("rule invoked over %d step(s) across %d component(s); every one admitted",
 			visited, len(build.coordinates.Nodes()))
 	})
 
-	t.Run("an attachment's pipeline: both readings admit the build", func(t *testing.T) {
+	t.Run("an attachment's pipeline is admitted at every enumerated step", func(t *testing.T) {
 		visited := 0
 		for _, node := range build.coordinates.Nodes() {
 			for _, attachment := range build.coordinates.Attachments(node.ID) {
@@ -597,27 +581,10 @@ func TestTheProviderCompatibilityRulesAreInvokedOverTheCompiledBuild(t *testing.
 			t.Fatalf("rule raised %d objection(s) over a build the render admitted: %v", len(objections), objections)
 		}
 
-		for _, node := range build.coordinates.Nodes() {
-			for _, attachment := range build.coordinates.Attachments(node.ID) {
-				fr, held := build.axes.attachmentFeatureRecipe(node.ID, attachment)
-				if !held || len(fr.Spec.Pipeline) == 0 {
-					continue
-				}
-				if twin := renderer.EnforceProviderCompatibility(
-					ctx, fr.Spec.Pipeline,
-					view.AttachmentRenderingProvider(node.ID, attachment),
-					view.NodeRenderingProvider(node.ID),
-					describe, node.ID,
-				); twin != nil {
-					t.Errorf("the hand-written reading refused attachment %q on %q, which the rule admitted: %v",
-						attachment, node.ID, twin)
-				}
-			}
-		}
-		t.Logf("rule invoked over %d attachment step(s); both readings admit the build", visited)
+		t.Logf("rule invoked over %d attachment step(s); every one admitted", visited)
 	})
 
-	t.Run("a boundary attachment's pipeline: both readings admit the build", func(t *testing.T) {
+	t.Run("a boundary attachment's pipeline is admitted at every enumerated step", func(t *testing.T) {
 		visited := 0
 		for _, boundary := range build.axes.Boundaries() {
 			for _, attachment := range build.axes.BoundaryAttachments(boundary.Value) {
@@ -639,72 +606,62 @@ func TestTheProviderCompatibilityRulesAreInvokedOverTheCompiledBuild(t *testing.
 			t.Fatalf("rule raised %d objection(s) over a build the render admitted: %v", len(objections), objections)
 		}
 
-		for _, boundary := range build.axes.Boundaries() {
-			for _, attachment := range build.axes.BoundaryAttachments(boundary.Value) {
-				fr, held := build.axes.boundaryAttachmentFeatureRecipe(boundary.Value, attachment)
-				if !held || len(fr.Spec.Pipeline) == 0 {
-					continue
-				}
-				// A boundary attachment stands against no component, so the reading
-				// is given no host provider — the same argument the render gives it.
-				if twin := renderer.EnforceProviderCompatibility(
-					ctx, fr.Spec.Pipeline,
-					view.BoundaryAttachmentRenderingProvider(boundary.Value, attachment),
-					"", describe, boundary.Value,
-				); twin != nil {
-					t.Errorf("the hand-written reading refused boundary attachment %q at %q, which the rule admitted: %v",
-						attachment, boundary.Value, twin)
-				}
-			}
-		}
-		t.Logf("rule invoked over %d boundary-attachment step(s); both readings admit the build", visited)
+		t.Logf("rule invoked over %d boundary-attachment step(s); every one admitted", visited)
 	})
 
-	t.Run("one authored step reaches two rules where the build evaluates it once", func(t *testing.T) {
-		// A divergence measured rather than predicted, and pinned here because it is
-		// invisible from either rule's own declaration.
-		//
+	t.Run("one authored step reaches two axes, and the scope fact decides which rule answers", func(t *testing.T) {
 		// An attachment declared at a boundary reaches every component that boundary
 		// holds, so it appears in each of those components' merged attachment sets.
-		// The rule over a component's attachments is therefore invoked for it, and
-		// the rule over a boundary's attachments is invoked for the same authored
-		// step as well — two invocations of two rules over one authored line. The
-		// build evaluates it once: the pipeline of an attachment declared at a
-		// boundary runs on the boundary's own path, and the per-component path skips
-		// it rather than running it again.
+		// Both axes therefore present the same authored step — the per-component one
+		// through every component that inherited the attachment, the boundary-rooted
+		// one once.
 		//
-		// It over-reports nothing on this build, because both readings admit the step.
-		// On a step the readings refuse it would be reported twice where the build
-		// halts once. Narrowing it needs the rule over a component's attachments to
-		// be able to tell that an attachment was declared at a boundary, and no fact
-		// at this stage says so — which is why this is pinned rather than fixed.
+		// The build evaluates it once: the pipeline of an attachment whose
+		// FeatureRecipe declares the boundary scope runs on the boundary's own path,
+		// and the per-component path ends on it. The rule over a component's
+		// attachments reads that same scope and ends on it too, so the declared set
+		// reports the step once rather than once per component. This asserts the
+		// shared reach — which is real and is what makes the scope read necessary —
+		// and that the scope fact answers the boundary scope on every appearance.
 		const declaredAtBoundary = "boundary-guard"
-		attachments := build.coordinates.Attachments("api")
-		if !slices.Contains(attachments, declaredAtBoundary) {
-			t.Fatalf("the component's merged attachment set is %v; the double reach this pins is gone", attachments)
+		carrying := 0
+		for _, node := range build.coordinates.Nodes() {
+			if !slices.Contains(build.coordinates.Attachments(node.ID), declaredAtBoundary) {
+				continue
+			}
+			carrying++
+			if got := view.AttachmentExecutionScope(node.ID, declaredAtBoundary); got != "boundary" {
+				t.Errorf("the scope of %q as %q carries it = %q, want the boundary scope",
+					declaredAtBoundary, node.ID, got)
+			}
+		}
+		if carrying < 2 {
+			t.Fatalf("the attachment %q is carried by %d component(s); the shared reach this asserts needs more than one",
+				declaredAtBoundary, carrying)
 		}
 		viaComponent := build.axes.AttachmentPipelineSteps("api", declaredAtBoundary)
 		viaBoundary := build.axes.BoundaryAttachmentPipelineSteps("main", declaredAtBoundary)
 		if len(viaComponent) == 0 || !slices.Equal(stepIDs(viaComponent), stepIDs(viaBoundary)) {
 			t.Errorf("the same authored step reaches the two axes as %v and %v", stepIDs(viaComponent), stepIDs(viaBoundary))
 		}
+		t.Logf("the authored step %v is presented through %d component(s) and once at its boundary; "+
+			"the scope fact reports the boundary scope at every appearance",
+			stepIDs(viaBoundary), carrying)
 	})
 }
 
-// TestTheProviderCompatibilityRulesRefuseWhatTheHandWrittenReadingRefuses reads
-// both verdicts on an input each refuses, and records where they differ.
+// TestTheProviderCompatibilityRuleRefusesAnUndeclaredProvider reads the rule's
+// verdict on a build whose step is matched against a provider its plugin does not
+// declare, and states where the finding lands.
 //
-// The refused input is a provider the step's plugin does not declare
-// compatibility with. It is supplied to BOTH readings identically — as the
-// argument the hand-written reading takes, and as the one fact the presentation
-// answers differently — so neither side is told anything the other is not. Every
-// other value each reads is the one the real build produced, the plugin's own
-// self-report included.
-func TestTheProviderCompatibilityRulesRefuseWhatTheHandWrittenReadingRefuses(t *testing.T) {
+// The refused input cannot be reached through a completed render: the build halts
+// on the same mismatch, so it publishes no presentation to ask a rule about. One
+// fact — the provider rendering the node's own documents — is therefore
+// substituted; every other value the rule reads is the one the real build
+// produced, the plugin's own self-report above all.
+func TestTheProviderCompatibilityRuleRefusesAnUndeclaredProvider(t *testing.T) {
 	build := buildStepFixture(t)
 	view := build.result.DescribedView
-	describe := renderer.NewStepDescriber(build.lookup)
-	ctx := context.Background()
 
 	// A provider no step plugin in this build declares. It is derived from what the
 	// build reports rather than chosen blind: the assertion below fails if the
@@ -723,16 +680,6 @@ func TestTheProviderCompatibilityRulesRefuseWhatTheHandWrittenReadingRefuses(t *
 		t.Fatalf("the step's plugin declares %q; the refusal below would not follow from the mismatch", foreign)
 	}
 
-	twin := renderer.EnforceProviderCompatibility(
-		ctx, recipe.Spec.Pipeline, foreign, "", describe, "api",
-	)
-	if twin == nil {
-		t.Fatal("the hand-written reading admitted a provider the plugin does not declare; the comparison would be vacuous")
-	}
-	if !errors.Is(twin, renderer.ErrPluginProviderIncompatible()) {
-		t.Errorf("the hand-written verdict does not carry the incompatibility condition: %v", twin)
-	}
-
 	var substituted constraint.DescribedView = stepProviderSubstituted{
 		DescribedView: view, provider: foreign,
 	}
@@ -744,7 +691,7 @@ func TestTheProviderCompatibilityRulesRefuseWhatTheHandWrittenReadingRefuses(t *
 		t.Fatalf("traversal: %v", err)
 	}
 	if len(objections) == 0 {
-		t.Fatal("the rule admitted an input the hand-written reading refuses")
+		t.Fatal("the rule admitted a step matched against a provider its plugin does not declare")
 	}
 	for _, o := range objections {
 		if !errors.Is(o.Sentinel(), renderer.ErrPluginProviderIncompatible()) {
@@ -752,19 +699,16 @@ func TestTheProviderCompatibilityRulesRefuseWhatTheHandWrittenReadingRefuses(t *
 		}
 	}
 
-	// DIVERGENCE, one: the hand-written reading is fail-fast and returns one error
-	// however many steps mismatch; the rule is invoked once per step and reports
-	// each. On a one-step pipeline the counts coincide, so the shape is asserted on
-	// the rule's own arity against the pipeline rather than on the two agreeing.
+	// The rule is invoked once per step and reports each, so its arity is asserted
+	// against the pipeline rather than against a fixed number: a one-step pipeline
+	// would make one-per-step and one-in-total the same count.
 	if len(objections) != len(recipe.Spec.Pipeline) {
 		t.Errorf("rule raised %d objection(s) over a %d-step pipeline, want one per step",
 			len(objections), len(recipe.Spec.Pipeline))
 	}
 
-	// DIVERGENCE, two: what each names. The rule positions its finding on the
-	// authored step inside the document that declares it and names the provider in
-	// the detail; the hand-written reading has no subject to take a position from
-	// and names the plugin in its message instead.
+	// Where the finding lands: on the authored step inside the document that
+	// declares it, naming the provider it was matched against in the detail.
 	for _, o := range objections {
 		if o.Locator() == "" {
 			t.Error("objection carries no locator; it cannot be positioned on the authored step")
@@ -776,27 +720,26 @@ func TestTheProviderCompatibilityRulesRefuseWhatTheHandWrittenReadingRefuses(t *
 			t.Errorf("objection detail = %v, want the provider that was matched against %q", detail, foreign)
 		}
 	}
-	t.Logf("rule raised %d objection(s) at locator %q in %q naming %q; the hand-written reading returned one verdict: %v",
-		len(objections), objections[0].Locator(), objections[0].SourceFile(), foreign, twin)
+	t.Logf("rule raised %d objection(s) at locator %q in %q naming %q",
+		len(objections), objections[0].Locator(), objections[0].SourceFile(), foreign)
 }
 
-// TestTheOwnScopeMergedTargetRuleMatchesTheHandWrittenReading invokes the rule
-// over an attachment's own-scope step against a component whose documents are
-// merged, and reads its verdict against the verdict the hand-written reading
-// reaches on the same shape.
+// TestTheOwnScopeMergedTargetRuleRefusesAStepWithNoTarget invokes the rule over an
+// attachment's own-scope step against a component whose documents are merged.
 //
-// This is the finding the three compatibility rules do not carry. The reading
-// that runs today refuses such a step with a cause-naming condition of its own,
-// deliberately, so that the build does not instead report a compatibility claim
-// against a provider name that is not there. The compatibility rules have no such
-// branch, and the assertion below pins that: on this input the compatibility rule
-// over the same coordinate raises nothing at all, so without this rule the
-// declared set would be silent where the build halts.
-func TestTheOwnScopeMergedTargetRuleMatchesTheHandWrittenReading(t *testing.T) {
+// This is the finding the three compatibility rules do not carry, and it is why
+// four rules stand over these axes rather than three. An attachment's own output
+// is written under its own position as discrete files whichever provider the
+// component uses, so a step addressing that output against a component whose
+// provider folds its dispatch group into one document has nothing to address by
+// the time it runs.
+//
+// The assertion at the end is what pins the division of labour: on this same input
+// the compatibility rule over the same coordinate raises nothing at all, so
+// without this rule the declared set would be silent where the build halts.
+func TestTheOwnScopeMergedTargetRuleRefusesAStepWithNoTarget(t *testing.T) {
 	build := buildStepFixture(t)
 	view := build.result.DescribedView
-	describe := renderer.NewStepDescriber(build.lookup)
-	ctx := context.Background()
 
 	const node, attachment = "api", "request-guard"
 	fr, held := build.axes.attachmentFeatureRecipe(node, attachment)
@@ -827,32 +770,9 @@ func TestTheOwnScopeMergedTargetRuleMatchesTheHandWrittenReading(t *testing.T) {
 		if len(objections) != 0 {
 			t.Fatalf("rule raised %d objection(s) over a build the render admitted: %v", len(objections), objections)
 		}
-		// And the reading that runs admits the same shape, given the arguments the
-		// build gives it for a component whose documents are not merged.
-		if twin := renderer.EnforceProviderCompatibility(
-			ctx, fr.Spec.Pipeline,
-			view.AttachmentRenderingProvider(node, attachment),
-			view.NodeRenderingProvider(node), describe, node,
-		); twin != nil {
-			t.Errorf("the hand-written reading refused a build the render admitted: %v", twin)
-		}
 	})
 
-	t.Run("both readings refuse an own-scope step against merged documents", func(t *testing.T) {
-		// The hand-written reading, given exactly what the build gives it for this
-		// shape: the attachment's pipeline defers whole, and the deferral carries no
-		// provider for the attachment's own documents because those documents are
-		// never merged. So the own-scope step arrives with nothing to address.
-		twin := renderer.EnforceProviderCompatibility(
-			ctx, fr.Spec.Pipeline, "", view.NodeRenderingProvider(node), describe, node,
-		)
-		if twin == nil {
-			t.Fatal("the hand-written reading admitted an own-scope step with no target; the comparison would be vacuous")
-		}
-		if !errors.Is(twin, renderer.ErrPipelinePatchPreAssembly()) {
-			t.Errorf("the hand-written verdict does not carry the no-merged-target condition: %v", twin)
-		}
-
+	t.Run("it refuses an own-scope step against merged documents", func(t *testing.T) {
 		var merged constraint.DescribedView = stepAssemblySubstituted{
 			DescribedView: view, assembly: wasm.BoundaryAssemblyMerge,
 		}
@@ -891,8 +811,8 @@ func TestTheOwnScopeMergedTargetRuleMatchesTheHandWrittenReading(t *testing.T) {
 		if len(silent) != 0 {
 			t.Errorf("the compatibility rule now raises %v on this input; the division of labour between the two rules has moved", silent)
 		}
-		t.Logf("both readings refuse; the rule raised %d objection(s) at %q in %q, the hand-written reading returned: %v",
-			len(objections), objections[0].Locator(), objections[0].SourceFile(), twin)
+		t.Logf("the rule raised %d objection(s) at %q in %q; the compatibility rule over the same coordinate raised none",
+			len(objections), objections[0].Locator(), objections[0].SourceFile())
 	})
 }
 

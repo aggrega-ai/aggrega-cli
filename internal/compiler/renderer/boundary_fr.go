@@ -52,6 +52,17 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// executionScopeBoundary is the value a FeatureRecipe's spec.executionScope
+// carries when its resource generation runs once for the boundary that holds
+// the attachment rather than once for each component carrying it.
+//
+// It is a named constant because the same value decides two things that must
+// not be able to disagree: which surface the render dispatches the attachment
+// to, and which surface the rules over that attachment's pipeline are asked
+// about. A second spelling of the string would let the render evaluate an
+// attachment once while a rule reported on it per component.
+const executionScopeBoundary = "boundary"
+
 // boundaryFRKey identifies a (boundary_path, FR-instance) tuple for
 // boundary-scope FR deduplication and provides storage. The boundary path
 // is the slash-separated traversal path to the boundary that holds the FR
@@ -388,9 +399,9 @@ func dispatchBoundaryScopeFR(
 		}
 		renderCtx := buildBoundaryFRRenderCtx(key.BoundaryPath, parameters, boundaryAnnotations)
 		// own provider is the boundary-scope FR's own engine kind (version pin
-		// stripped — codec + compatibility key on the kind); a boundary-scope FR
-		// has no single host component (host nil), so hostProvider is empty.
-		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Capability), "", renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, input.stepDescriptors, engineFactory, frNodeCtx.NodeID)
+		// stripped — the codec keys on the kind); a boundary-scope FR has no
+		// single host component (host nil), so hostProvider is empty.
+		pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, emitted, nil, false, ProviderEngineKind(fr.Spec.Capability), "", renderCtx, frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, frNodeCtx.NodeID)
 		if perr != nil {
 			return perr
 		}
@@ -493,7 +504,7 @@ func PrepopulateBoundaryScopeProvides(
 	for boundaryPath, feats := range graph.Spec.BoundaryFeatures.All() {
 		for instName, bf := range feats.All() {
 			fr, ok := recipeLookup.FeatureRecipe(instName, bf.Type)
-			if !ok || fr.Spec.ExecutionScope != "boundary" {
+			if !ok || fr.Spec.ExecutionScope != executionScopeBoundary {
 				continue
 			}
 			cacheKey := fr.Metadata.Name + ":" + fr.Metadata.Version

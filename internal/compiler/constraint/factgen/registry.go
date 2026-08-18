@@ -2263,6 +2263,34 @@ var facts = []factDecl{
 			"bound FeatureRecipe renders through no provider.",
 	},
 	{
+		Name:        "attachment-execution-scope",
+		Stage:       "described",
+		SourceField: "types.FeatureRecipeSpec.ExecutionScope",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "AttachmentExecutionScope is the scope one attachment's bound " +
+			"FeatureRecipe declares its resource generation runs at, empty when " +
+			"it declares none.\n\nAn attachment whose FeatureRecipe declares the " +
+			"boundary scope is evaluated once for the boundary that holds it, " +
+			"however many components that boundary holds; every other attachment " +
+			"is evaluated once for the component carrying it. So the value " +
+			"decides which of two surfaces an attachment's own pipeline runs on, " +
+			"and a rule over that pipeline reads it to be asked about the surface " +
+			"the attachment actually runs on rather than about every component " +
+			"the attachment reached.\n\nIt is keyed by the node as well as the " +
+			"attachment because the attachment set a node carries is the merged " +
+			"one: an attachment written at a boundary appears in the set of every " +
+			"component that boundary holds, and the coordinate that names one of " +
+			"those appearances is the node together with the attachment.\n\n" +
+			"Emptiness is a real answer and is the ordinary one: a FeatureRecipe " +
+			"that states no scope generates per component, which is also what an " +
+			"attachment with no bound FeatureRecipe amounts to.",
+	},
+	{
 		Name:        "attachment-step-plugin-compatible-capabilities",
 		Stage:       "described",
 		SourceField: "wasm.PluginDescriptor.Capabilities",

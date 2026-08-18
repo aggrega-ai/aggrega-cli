@@ -29,6 +29,9 @@ spec:
         api:
           infra:
             replicas: 1
+        cache:
+          infra:
+            replicas: 1
     store:
       directory: ./dist/store
       components:

@@ -41,7 +41,7 @@ import (
 // provider is the assembler provider rendering the merged documents (the node's
 // own provider — for compose, also the host provider of every attached
 // component-scope FeatureRecipe in this dispatch group). It drives codec
-// selection and the per-scope compatibility check on replay.
+// selection on replay.
 func replayDeferredPatches(
 	ctx context.Context,
 	boundaryFiles map[string]AssembledFile,
@@ -80,10 +80,6 @@ func replayDeferredPatches(
 
 	codec := selectCodec(engineFactory, provider, input.YAMLIndent)
 	invoke := newStepInvoker(lookup)
-	// The replay reads the same retained self-reports the per-node passes filled,
-	// so a plugin already described during the per-node work is not described
-	// again here.
-	describe := stepDescriberOver(input.stepDescriptors, lookup)
 
 	var warnings []string
 	for _, rec := range ordered {
@@ -98,8 +94,8 @@ func replayDeferredPatches(
 		// patching the wrong root. For an assembler node the own and host roots
 		// are the same merged document set, so each scope's write-back keys into
 		// boundaryFiles by the same document name. The per-scope provider drives
-		// codec selection and the compatibility check; hostIsAssembler is false
-		// because assembly produced discrete documents.
+		// codec selection; hostIsAssembler is false because assembly produced
+		// discrete documents.
 		var own, host []EmittedFile
 		ownProvider, hostProvider := "", ""
 		if rec.OwnProvider != "" {
@@ -117,7 +113,7 @@ func replayDeferredPatches(
 			ownProvider, hostProvider,
 			rec.RenderCtx, rec.WithCtx,
 			codec, codec,
-			invoke, describe,
+			invoke,
 			rec.NodeID,
 		)
 		if err != nil {

@@ -46,10 +46,25 @@ func mixedScopeComposeFixtureInput(t *testing.T) pipelinetest.Input {
 // mixed-scope-compose fixture and asserts the build halts with the scope-
 // specific own-on-assembler diagnostic rather than the bare provider-
 // incompatibility report. A component-scope FeatureRecipe's own output is
-// emitted as discrete fragment files and is never assembled, so its deferred
-// own-scope pipeline step has no merged own document to patch after assembly —
-// a Loud Guardrail that must name the real cause and the remedies in user
-// terms, not surface an empty-provider compatibility claim.
+// emitted as discrete fragment files and is never assembled, so its own-scope
+// pipeline step has no merged own document to patch — a Loud Guardrail that must
+// point the author at the step to change and not surface an empty-provider
+// compatibility claim.
+//
+// # What moved in the diagnostic, and what this asserts instead
+//
+// The finding is now reported by the declared rule over an attachment's own-scope
+// pipeline steps, ahead of the render, rather than by a hand-written reading
+// inside the post-assembly replay. Its sentinel is the same and it still halts.
+// What changed is where it points and what it says: it is positioned on the
+// authored step inside the FeatureRecipe that declares it and names the
+// attachment, where the reading it replaced named the node as a file and carried
+// the cause and the remedies as prose in its message.
+//
+// So the position assertions below are new and are stronger than the message they
+// replace — the reading it replaced could not satisfy them — and the prose
+// assertions are gone because the product no longer emits that prose. The
+// fixture is unchanged.
 func TestMixedScopeCompose_OwnStepHaltsWithClearDiagnostic(t *testing.T) {
 	in := mixedScopeComposeFixtureInput(t)
 	t.Parallel()
@@ -65,18 +80,18 @@ func TestMixedScopeCompose_OwnStepHaltsWithClearDiagnostic(t *testing.T) {
 		t.Errorf("expected the halt to match ErrPipelinePatchPreAssembly; got:\n%v", err)
 	}
 
-	// The message names the real cause (FeatureRecipe own output emitted as
-	// discrete fragment files and never assembled) and a remedy. cerrors.Wrap
-	// renders only the outer frame in Error(); the inner cause surfaces to the
-	// user through the CLI's chain renderer, so the assertion walks the chain.
-	if !chainContains(err, "own-scope pipeline step") {
-		t.Errorf("halt message does not name the own-scope pipeline step; got:\n%v", err)
+	// It is positioned on the authored own-scope step inside the FeatureRecipe that
+	// declares it — the entity the author edits to change the step — and names the
+	// attachment that bound it. cerrors.Wrap renders only the outer frame in
+	// Error(), so the assertion walks the chain.
+	if !chainContains(err, ".spec.pipeline.inject_into_own") {
+		t.Errorf("halt does not point at the authored own-scope step; got:\n%v", err)
 	}
-	if !chainContains(err, "discrete fragment files and is never assembled") {
-		t.Errorf("halt message does not name the FR-own-unassembled cause; got:\n%v", err)
+	if !chainContains(err, "guardrail-mixed-patcher-compose") {
+		t.Errorf("halt does not name the FeatureRecipe that declares the step; got:\n%v", err)
 	}
-	if !chainContains(err, "Remedy:") {
-		t.Errorf("halt message does not offer a remedy; got:\n%v", err)
+	if !chainContains(err, `"guardrail"`) {
+		t.Errorf("halt does not name the attachment that bound the pipeline; got:\n%v", err)
 	}
 
 	// It must NOT surface the bare provider-incompatibility report whose empty
@@ -89,7 +104,8 @@ func TestMixedScopeCompose_OwnStepHaltsWithClearDiagnostic(t *testing.T) {
 	}
 
 	// And it must NOT be the generic absent-target diagnostic — that path is
-	// unreachable for this corner (the pre-walk compatibility gate fires first).
+	// unreachable for this corner, because the rule over an attachment's own-scope
+	// steps reports before any node's walk runs.
 	if errors.Is(err, renderer.ErrPipelineTargetNotEmitted()) {
 		t.Errorf("halt should not be the generic ErrPipelineTargetNotEmitted; got:\n%v", err)
 	}

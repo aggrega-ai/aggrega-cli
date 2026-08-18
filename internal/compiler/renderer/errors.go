@@ -484,15 +484,14 @@ var errPipelineHostScopeUnavailable = cerrors.Register("compiler-renderer/pipeli
 // has no merged target to defer to and halts here). EMIT is additive and runs
 // per-node for every provider, so it is never gated by this guardrail.
 //
-// It also fires from the post-assembly replay's pre-walk compatibility gate
-// for an own-scope step in a deferred host-only record: a component-scope
-// FeatureRecipe whose host is an assembler defers its whole pipeline, but the
-// FeatureRecipe's own output is never assembled, so the deferral records no
-// own provider. An own-scope step in that record (a mixed own + host pipeline)
-// has no merged own document to patch after assembly; the gate halts here with
-// a cause-naming message rather than reporting an empty-provider compatibility
-// claim. The remedy is to target a non-assembler provider for the
-// FeatureRecipe's own output, move the step to /host, or remove it.
+// It also carries the finding a rule over an attachment's own-scope pipeline
+// steps reports: an attachment's own output is written under its own position as
+// discrete files whichever provider the component uses, so a step addressing that
+// output against a component whose provider folds its dispatch group into one
+// document has nothing to address by the time it runs. That is reported once the
+// build knows what every plugin and provider declares, ahead of any node's walk.
+// The remedy is to target a non-assembler provider for the FeatureRecipe's own
+// output, move the step to /host, or remove it.
 func ErrPipelinePatchPreAssembly() error { return errPipelinePatchPreAssembly }
 
 var errPipelinePatchPreAssembly = cerrors.Register("compiler-renderer/pipeline-patch-pre-assembly", cerrors.Meta{
@@ -507,9 +506,15 @@ var errPipelinePatchPreAssembly = cerrors.Register("compiler-renderer/pipeline-p
 // similar provider"; running the plugin against an unlisted provider risks a
 // wrong patch, so the build halts loudly rather than proceeding. An empty or
 // absent set declares no compatibility claim, so it matches no provider and
-// every step that uses the plugin halts here. The check is pre-invoke (read
-// from describe(), which is itself a guest call, before the walk invokes any
-// step) and matches provider names exactly.
+// every step that uses the plugin halts here. A plugin the host could not ask
+// does NOT halt here: an unobtainable `describe()` self-report is the absence of
+// a claim rather than an empty one, and such a step halts with the resolution,
+// load or `describe()` failure itself, which is the thing to repair. It is
+// reported once the build knows what every plugin declares about itself — reading
+// a self-report is itself a guest call, so what the report precedes is the walk
+// that invokes a step — and provider names are matched exactly. A step is
+// reported once per authored step rather than once per build, so an author sees
+// every offending step of a pipeline in one build.
 // Category: CATALOG_ERROR.
 func ErrPluginProviderIncompatible() error { return errPluginProviderIncompatible }
 

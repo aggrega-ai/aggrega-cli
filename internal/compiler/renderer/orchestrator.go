@@ -467,6 +467,26 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		input.stepDescriptors, input.PluginPathLookup, engineFactory,
 	)
 
+	// The rules declared over that presentation are invoked here, against the
+	// coordinates the finalised graph carries extended by the ones this stage
+	// adds. It is the first point holding both, and it is before the node walk
+	// on purpose: every rule here decides whether a pipeline step may run at
+	// all, so asking after the walk would report on a step that had already run.
+	//
+	// The enumeration is checked for absence here rather than inside: an absent
+	// one held behind the axis interface is a present value that answers nothing,
+	// and a rule invoked zero times reports exactly what a rule that ran and
+	// approved reports.
+	if describedAxes := newDescribedStageCoordinates(
+		graph, input.GraphCoordinates, nodeRecipes, recipeLookup, input.ResolveResult,
+	); describedAxes != nil {
+		if err := runDescribedStageRules(
+			ctx, result.DescribedView, describedAxes, input.PluginPathLookup != nil,
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	// Pass 1: per node, resolve locals then provides. The locals travel with the
 	// provides so every downstream reader — Step 5b assertions and Phase B.0 —
 	// consumes one evaluation rather than repeating it.
@@ -913,7 +933,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Resolve engine for this node's provider via factory. The factory
 		// receives the full binding (version pin included) so it can resolve the
 		// pinned provider-rendering plugin; every other consumer below keys on the
-		// bare engine kind (dispatch grouping, path segment, codec, compatibility).
+		// bare engine kind (dispatch grouping, path segment, codec, and the
+		// provider a declared rule matches a pipeline step's plugin against).
 		providerRef := ""
 		providerName := ""
 		if recipe != nil {
@@ -1224,7 +1245,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			} else {
 				// own provider is this node's recipe provider; a Recipe step has no
 				// host scope (host nil), so hostProvider is empty.
-				pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, input.stepDescriptors, engineFactory, nodeID)
+				pres, perr := runNodePipeline(ctx, recipe.Spec.Pipeline, state.EmittedFiles, nil, false, providerName, "", renderCtx, tmplCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 				if perr != nil {
 					return nil, perr
 				}

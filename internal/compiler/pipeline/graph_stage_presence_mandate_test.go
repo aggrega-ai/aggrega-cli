@@ -466,7 +466,7 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoThePresenceMandateWalk(t *t
 
 	// The aggregate offends the connection-constraint rule, which this site runs
 	// FIRST, as well as carrying the mandate this walk reports. See the bound above.
-	out, catalogLookup := compileMandateWorkspace(
+	out, _ := compileMandateWorkspace(
 		t, unsatisfiedMandate, misdirectTheDatabaseSocket(t, readAggregate(t)))
 	nodes := out.IRGraph.Spec.Nodes.Len()
 	edges := len(out.IRGraph.Spec.Edges)
@@ -499,7 +499,7 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoThePresenceMandateWalk(t *t
 	// A fresh analysis, so what is read below is what this invocation appended
 	// rather than what the compile already had.
 	out.Analysis = &analyzer.AnalysisResult{}
-	err := runGraphStageRules(signal, out, catalogLookup)
+	err := runGraphStageRules(signal, out)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v; want the caller's withdrawal", err)
 	}

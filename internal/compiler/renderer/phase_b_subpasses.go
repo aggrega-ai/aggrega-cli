@@ -429,7 +429,7 @@ func phaseB6(
 	for seqIndex, item := range attachmentRenderSequence(tmplCtx, featureRefs, nodeAttachments, state.AttachmentProvides) {
 		fr := item.FR
 
-		if fr.Spec.ExecutionScope == "boundary" && boundaryFRState != nil {
+		if fr.Spec.ExecutionScope == executionScopeBoundary && boundaryFRState != nil {
 			// Walk up from the component's boundary path to find the
 			// ANCESTOR boundary that holds this FR-instance attachment
 			// (the IR builder's Tier-4 propagation may have inherited
@@ -532,8 +532,11 @@ func phaseB6(
 				// Record the FR's pipeline for post-assembly replay. The host
 				// node and provider are stamped here; the orchestrator adds the
 				// host-node author-order key. HostProvider drives the host-scope
-				// codec + compatibility check on replay; OwnProvider is empty —
-				// this record carries no replayable own scope (see above).
+				// codec on replay; OwnProvider is empty — this record carries no
+				// replayable own scope (see above). An own-scope step in such a
+				// record has no merged document to address, and the rule over an
+				// attachment's own-scope steps against a merging component reports
+				// it before this render reaches here.
 				deferred = append(deferred, DeferredPatch{
 					Steps:             fr.Spec.Pipeline,
 					WithCtx:           &frCtx,
@@ -545,9 +548,9 @@ func phaseB6(
 				})
 			} else {
 				// own provider is the FR's own engine kind (version pin stripped —
-				// codec + compatibility key on the kind); host provider is the host
-				// component's recipe engine kind (threaded in from the orchestrator).
-				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, input.stepDescriptors, engineFactory, nodeID)
+				// the codec keys on the kind); host provider is the host component's
+				// recipe engine kind (threaded in from the orchestrator).
+				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 				if perr != nil {
 					return nil, nil, nil, perr
 				}

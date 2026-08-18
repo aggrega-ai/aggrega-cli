@@ -9,7 +9,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -43,27 +42,19 @@ import (
 func runGraphStageRules(
 	ctx context.Context,
 	out *stepsOneToFourOutput,
-	catalogLookup resolver.CatalogLookup,
 ) error {
 	// An absent presentation or an absent graph is an internal inconsistency
 	// rather than a document the author can fix: this scope built both a moment
 	// ago. It is reported rather than skipped, because a rule that never ran
 	// reports exactly what a rule that ran and approved reports, and nothing
 	// downstream could tell the two apart.
-	// The deployment's file comes from the resolve result, which already carries
-	// it so downstream phases can build source locations without re-discovering
-	// it. One axis needs it: an attachment's infrastructure configuration is
-	// authored on the deployment and nowhere else, so a finding about one of its
-	// leaves is positioned in that document rather than in the node's.
-	// The per-leaf sites come from the fold that produced them rather than being
-	// recovered here. Which scope's contribution won any one leaf of an
-	// attachment is settled while the cascade folds, and re-running that
-	// precedence at this point would be a second answer to a question the build
-	// already answered — free to disagree with the bytes it produced.
-	coordinates := ir.NewGraphStageCoordinates(
-		out.IRGraph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
-		out.AttachmentSites,
-	)
+	//
+	// The enumeration is taken from the phase output rather than derived here.
+	// It is built where the graph and its presentation are both first in hand,
+	// and the rules over what the render's plugins report are invoked over the
+	// same node and attachment axes — so one derivation serves both and neither
+	// can be asked about coordinates the other was not.
+	coordinates := out.GraphCoordinates
 	if coordinates == nil {
 		return fmt.Errorf(
 			"graph-stage rules: the compilation produced no presentation of the finalised graph to invoke them against")

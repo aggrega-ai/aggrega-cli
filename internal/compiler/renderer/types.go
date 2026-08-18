@@ -118,18 +118,29 @@ type RendererInput struct {
 	// would answer every earlier fact from nothing.
 	GraphView constraint.GraphView
 
+	// GraphCoordinates is the node and attachment enumeration the finalised
+	// graph carries. The render does not derive it: both axes are settled once
+	// the graph is finalised, so it travels here for the rules declared over
+	// this render's own products to be invoked over the same coordinates every
+	// earlier rule was invoked over.
+	//
+	// nil leaves those rules uninvoked, which is the honest outcome: an
+	// enumeration assembled here instead would present a rule coordinates the
+	// facts were not keyed by.
+	GraphCoordinates GraphCoordinates
+
 	// stepDescriptors retains each pipeline-step plugin's describe() self-report
 	// for the whole render, so a plugin several steps or several nodes name is
-	// described once rather than once per site. RenderAll installs it, and every
-	// site that runs or replays a pipeline reads it from here — the input travels
-	// to all of them already, so the retention reaches them without a seam of its
-	// own.
+	// described once rather than once per reader. RenderAll installs it and the
+	// presentation of what every plugin reports about itself reads through it —
+	// the rules over that presentation ask about every step the build declares,
+	// so one retention is what keeps a plugin several of them name from being
+	// described several times.
 	//
 	// It is unexported because it is the render's own working state rather than
 	// anything a caller supplies: an input built elsewhere leaves it unset, and
-	// the pipeline executor then retains within each call instead of across the
-	// render. Nothing is described until a step asks, so installing it loads no
-	// plugin.
+	// the presentation is then not built at all. Nothing is described until a
+	// reader asks, so installing it loads no plugin.
 	stepDescriptors *stepDescriptorMemo
 
 	// hydrated retains, per node, a projection of the mid-render state that node

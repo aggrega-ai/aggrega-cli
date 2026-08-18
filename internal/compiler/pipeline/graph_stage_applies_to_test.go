@@ -439,7 +439,7 @@ func TestTheFeatureApplicabilityRuleStopsPartwayOnACancelledWalk(t *testing.T) {
 // findings instead of stopping.
 func TestTheGraphStageRulesThreadTheCallersSignalIntoTheApplicabilityWalk(t *testing.T) {
 	fixture := applicabilityWorkspace(applicabilityCatalogPath)
-	out, catalogLookup := compileWorkspace(t, fixture,
+	out, _ := compileWorkspace(t, fixture,
 		retypeTheAttachingComponent(t, bytesOf(t, applicabilityAggregatePath)))
 
 	if len(out.IRGraph.Spec.Edges) != 0 {
@@ -453,7 +453,7 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoTheApplicabilityWalk(t *tes
 
 	withdrawn, withdraw := context.WithCancel(context.Background())
 	withdraw()
-	if err := runGraphStageRules(withdrawn, out, catalogLookup); !errors.Is(err, context.Canceled) {
+	if err := runGraphStageRules(withdrawn, out); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the graph-stage rules returned %v for a caller that withdrew, want the withdrawal", err)
 	}
 	if after := len(out.Analysis.Errors); after != before {
