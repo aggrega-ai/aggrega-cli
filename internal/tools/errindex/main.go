@@ -13,17 +13,25 @@
 //
 //	go run ./internal/tools/errindex -out ../aggrega-docs
 //	go run ./internal/tools/errindex -out ../aggrega-docs -gaps
+//	go run ./internal/tools/errindex -out ../aggrega-docs -claims
 //	go run ./internal/tools/errindex -index
 //
 // The module's `make docs` target invokes the first form. It writes only inside
 // the region its markers delimit; every other byte of the page is curated prose
 // and survives untouched.
 //
-// Every -out run also reports how many declared halting conditions no entry on
-// the halting-conditions page names. That count is a warn tier: it never changes
-// the exit code, because not every condition needs a user-facing entry. Add
-// -gaps to name them, which is the form to reach for when the count has moved
-// and you want to know what moved it.
+// Every -out run also reports two counts over the halting-conditions page: how
+// many declared halting conditions no entry names, and how many entries do not
+// quote the message the condition they cover registers. The first asks whether a
+// condition is documented at all; the second asks whether what its entry says
+// matches what the build actually reports, which is the sentence a reader acts
+// on.
+//
+// Both are warn tiers: neither changes the exit code, because not every
+// condition needs a user-facing entry and an entry legitimately reframes the text
+// a condition registers. Add -gaps or -claims to name the members of either
+// count — the form to reach for when a count has moved and you want to know what
+// moved it.
 package main
 
 import (
@@ -47,6 +55,7 @@ func main() {
 	out := flag.String("out", "", "path to the documentation tree whose sentinel reference to refresh")
 	index := flag.Bool("index", false, "print the identity index as tab-separated records and write nothing")
 	gaps := flag.Bool("gaps", false, "name every declared halting condition no entry on the halting-conditions page covers")
+	claims := flag.Bool("claims", false, "name every entry on the halting-conditions page whose prose does not quote the message the condition it covers registers")
 	flag.Parse()
 
 	if (*out == "") == !*index {
@@ -82,10 +91,18 @@ func main() {
 
 	// The coverage declarations are read and checked before anything is
 	// written, so a correspondence that resolves to nothing never leaves a
-	// half-refreshed tree behind it. The gap report itself is printed after the
-	// write, where it reads as a note about the tree rather than as a reason
-	// the write failed.
-	covered, err := resolveCoverage(ids, *out)
+	// half-refreshed tree behind it. The warn reports themselves are printed
+	// after the write, where they read as notes about the tree rather than as a
+	// reason the write failed.
+	//
+	// The page is read once here and the same segmentation feeds both tiers. Two
+	// reads would be two states of one file, and the tier reading the second
+	// would be reporting against a page the other never saw.
+	entries, err := readEntries(*out)
+	if err != nil {
+		fail(err)
+	}
+	covered, err := resolveCoverage(ids, entries, *out)
 	if err != nil {
 		fail(err)
 	}
@@ -105,10 +122,12 @@ func main() {
 		fmt.Println("unchanged", page)
 	}
 
-	// The gap tier reports and never fails, so it goes to stderr and leaves the
-	// exit code alone: a condition with no user-facing entry is a note for
-	// whoever maintains that page, not a reason to refuse the build.
+	// Both warn tiers report and neither fails, so they go to stderr and leave
+	// the exit code alone: a condition with no user-facing entry, and an entry
+	// that reframes the text its condition registers, are notes for whoever
+	// maintains that page rather than reasons to refuse the build.
 	reportGaps(os.Stderr, ids, covered, *gaps)
+	reportClaims(os.Stderr, ids, entries, *claims)
 }
 
 func fail(err error) {

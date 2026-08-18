@@ -7,6 +7,7 @@ import (
 	"go/build/constraint"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -326,6 +327,25 @@ func fixtureIdentities(t *testing.T) []Identity {
 	return ids
 }
 
+// resolveIn reads the page in docsRoot and resolves its declarations, which is
+// the order the generator performs them in: one read, one segmentation, then
+// every tier over the same entries.
+func resolveIn(t *testing.T, ids []Identity, docsRoot string) (map[string]bool, error) {
+	t.Helper()
+	return resolveCoverage(ids, entriesIn(t, docsRoot), docsRoot)
+}
+
+// entriesIn reads and segments the halting-conditions page written into
+// docsRoot.
+func entriesIn(t *testing.T, docsRoot string) []pageEntry {
+	t.Helper()
+	entries, err := readEntries(docsRoot)
+	if err != nil {
+		t.Fatalf("readEntries: %v", err)
+	}
+	return entries
+}
+
 func TestResolveCoverage_CreditsAReExportToTheIdentityItForwardsTo(t *testing.T) {
 	t.Parallel()
 	// The anchor names the re-export, which is the name a caller was told to
@@ -339,7 +359,7 @@ func TestResolveCoverage_CreditsAReExportToTheIdentityItForwardsTo(t *testing.T)
 
 Prose.
 `)
-	covered, err := resolveCoverage(fixtureIdentities(t), root)
+	covered, err := resolveIn(t, fixtureIdentities(t), root)
 	if err != nil {
 		t.Fatalf("resolveCoverage: %v", err)
 	}
@@ -373,7 +393,7 @@ func TestResolveCoverage_RefusesADeclarationThatResolvesToNothing(t *testing.T) 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			root := haltsPageIn(t, "# Halts\n\n### Entry\n\n<!-- covers: "+tc.anchor+" -->\n")
-			_, err := resolveCoverage(fixtureIdentities(t), root)
+			_, err := resolveIn(t, fixtureIdentities(t), root)
 			if err == nil {
 				t.Fatalf("resolveCoverage accepted %q", tc.anchor)
 			}
@@ -390,7 +410,7 @@ func TestResolveCoverage_RefusesAPageWithNoAnchors(t *testing.T) {
 	// output, so the moved-marker case is reported as the instrument failure it
 	// is rather than served as a full set of gaps.
 	root := haltsPageIn(t, "# Halts\n\n### Entry\n\nProse with no anchor at all.\n")
-	if _, err := resolveCoverage(fixtureIdentities(t), root); err == nil {
+	if _, err := resolveIn(t, fixtureIdentities(t), root); err == nil {
 		t.Fatal("resolveCoverage accepted a page carrying no anchor")
 	} else if !strings.Contains(err.Error(), "the anchor form or the page layout moved") {
 		t.Errorf("error does not report an instrument failure: %v", err)
@@ -401,7 +421,7 @@ func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
 	t.Parallel()
 	root := haltsPageIn(t, "# Halts\n\n### Entry\n\n<!-- covers: pkg/other.ErrPlain, pkg/other.ErrOwn -->\n")
 	ids := fixtureIdentities(t)
-	covered, err := resolveCoverage(ids, root)
+	covered, err := resolveIn(t, ids, root)
 	if err != nil {
 		t.Fatalf("resolveCoverage: %v", err)
 	}
@@ -443,6 +463,294 @@ func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
 	}
 	if !strings.Contains(s, "-gaps") {
 		t.Errorf("summary does not say how to see the list:\n%s", s)
+	}
+}
+
+func TestProseWords_TreatsTypographyAsASeparatorAndNothingElse(t *testing.T) {
+	t.Parallel()
+	// A message and the prose quoting it are authored on different surfaces, so
+	// they differ in typography routinely and in wording only when one of them
+	// has drifted. Each pair below must compare equal for the tier's count to
+	// mean drift rather than punctuation.
+	same := []struct {
+		name, a, b string
+	}{
+		{"case", "Two Contributors", "two contributors"},
+		{"backticks and emphasis", "the `uses:` block", "the **uses:** block"},
+		{"wrapped whitespace", "a plain\n   condition", "a plain condition"},
+		{"dash width", "input-kind origins", "input—kind origins"},
+		{"en dash and hyphen", "input–kind", "input-kind"},
+		{"quotation curl", "the kind’s schema", "the kind's schema"},
+		{"trailing punctuation", "no dots.", "no dots"},
+		{"a colon inside a name", "locals: entry", "locals entry"},
+	}
+	for _, tc := range same {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got, want := proseWords(tc.a), proseWords(tc.b); !slices.Equal(got, want) {
+				t.Errorf("%q and %q read as different word sequences: %v vs %v", tc.a, tc.b, got, want)
+			}
+		})
+	}
+
+	// The other direction is what keeps the comparison worth making: a changed
+	// word is a changed sequence.
+	if slices.Equal(proseWords("write the same path"), proseWords("emit at the same path")) {
+		t.Error("a reworded phrase read as the same word sequence")
+	}
+}
+
+func TestQuotesRun_RequiresTheWholeSequenceInOrder(t *testing.T) {
+	t.Parallel()
+	have := proseWords("Recipe `<name>`: validation error — rule 1: valuesMapping requires source. declare a source")
+	for _, tc := range []struct {
+		name, want string
+		found      bool
+	}{
+		{name: "a contiguous run", want: "rule 1: valuesMapping requires source", found: true},
+		{name: "a run the prose splits", want: "recipe rule 1", found: false},
+		{name: "the right words reordered", want: "source requires valuesMapping", found: false},
+		{name: "a word the prose does not carry", want: "rule 1: valuesMapping demands source", found: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := quotesRun(have, proseWords(tc.want)); got != tc.found {
+				t.Errorf("quotesRun(%q) = %v, want %v", tc.want, got, tc.found)
+			}
+		})
+	}
+}
+
+func TestClaimsIn_CountsAnEntryWhoseProseDoesNotQuoteTheRegisteredMessage(t *testing.T) {
+	t.Parallel()
+	// The first entry quotes its condition's message in the frame the build
+	// emits; the second describes its condition without carrying what the build
+	// reports, which is the drift this tier exists to see.
+	root := haltsPageIn(t, "# Halts\n\n"+
+		"### Something plain went wrong\n\n"+
+		"<!-- covers: pkg/thing.ErrPlain -->\n\n"+
+		"Emitted message:\n> thing: a plain condition: fix the thing\n\n"+
+		"### The block is not shaped right\n\n"+
+		"<!-- covers: pkg/thing.ErrQuoted -->\n\n"+
+		"Emitted message:\n> thing: the block cannot be read\n")
+
+	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	if len(unreadable) != 0 {
+		t.Fatalf("comparisons that did not happen: %v", unreadable)
+	}
+	if compared != 2 {
+		t.Errorf("compared %d claims, want 2", compared)
+	}
+	if len(unquoted) != 1 {
+		t.Fatalf("counted %d entries, want 1: %+v", len(unquoted), unquoted)
+	}
+	if unquoted[0].Handle != "pkg/thing.ErrQuoted" {
+		t.Errorf("named %s rather than the entry that does not quote its message", unquoted[0].Handle)
+	}
+	if unquoted[0].Heading != "The block is not shaped right" {
+		t.Errorf("named the heading %q rather than the entry's own", unquoted[0].Heading)
+	}
+}
+
+func TestClaimsIn_DoesNotPassAnEntryOnProseBelongingToAnother(t *testing.T) {
+	t.Parallel()
+	// One condition covered by two entries, because it is met in two ways. The
+	// entry that quotes the message passes; the entry that does not is counted
+	// even though the words sit elsewhere on the page. Crediting the condition
+	// once would let the second entry read as verified while describing nothing.
+	root := haltsPageIn(t, "# Halts\n\n"+
+		"### The block is malformed as authored\n\n"+
+		"<!-- covers: pkg/thing.ErrQuoted -->\n\n"+
+		"Emitted message:\n> the `uses:` block is malformed\n\n"+
+		"### The block is malformed after a merge\n\n"+
+		"<!-- covers: pkg/thing.ErrQuoted -->\n\n"+
+		"The merge produced something unreadable.\n")
+
+	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	if len(unreadable) != 0 {
+		t.Fatalf("comparisons that did not happen: %v", unreadable)
+	}
+	if compared != 2 {
+		t.Errorf("compared %d claims, want 2 — the unit is the pair, not the condition", compared)
+	}
+	if len(unquoted) != 1 || unquoted[0].Heading != "The block is malformed after a merge" {
+		t.Fatalf("the entry lacking the message was not the one counted: %+v", unquoted)
+	}
+}
+
+func TestClaimsIn_ReadsASubsectionAsAnEntryOfItsOwn(t *testing.T) {
+	t.Parallel()
+	// The page nests entries under a shared heading, so a subsection's claim is
+	// checked against the subsection alone. A flat split at one heading level
+	// would hand both siblings the same prose, and either sibling would then pass
+	// on the other's text.
+	root := haltsPageIn(t, "# Halts\n\n"+
+		"### Shape rules\n\n"+
+		"Rules a Recipe has to satisfy.\n\n"+
+		"#### Rule one\n\n"+
+		"<!-- covers: pkg/thing.ErrPlain -->\n\n"+
+		"Emitted message:\n> a plain condition\n\n"+
+		"#### Rule two\n\n"+
+		"<!-- covers: pkg/thing.ErrQuoted -->\n\n"+
+		"Emitted message:\n> something else entirely\n")
+
+	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	if len(unreadable) != 0 {
+		t.Fatalf("comparisons that did not happen: %v", unreadable)
+	}
+	if compared != 2 {
+		t.Errorf("compared %d claims, want 2", compared)
+	}
+	if len(unquoted) != 1 || unquoted[0].Heading != "Rule two" {
+		t.Fatalf("a sibling subsection passed on its neighbour's prose: %+v", unquoted)
+	}
+}
+
+func TestClaimsIn_CreditsAReExportWithTheMessageItForwardsTo(t *testing.T) {
+	t.Parallel()
+	// A re-export registers no message of its own, so the text an entry has to
+	// quote is the one the identity it forwards to registers. Naming either
+	// handle has to compare against the same words.
+	root := haltsPageIn(t, "# Halts\n\n"+
+		"### Something plain went wrong\n\n"+
+		"<!-- covers: pkg/other.ErrPlain -->\n\n"+
+		"Emitted message:\n> a plain condition\n")
+
+	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	if len(unreadable) != 0 {
+		t.Fatalf("comparisons that did not happen: %v", unreadable)
+	}
+	if compared != 1 || len(unquoted) != 0 {
+		t.Fatalf("compared %d and counted %d; a re-export's entry did not read against its origin's message: %+v",
+			compared, len(unquoted), unquoted)
+	}
+}
+
+func TestClaimsIn_ReportsADeclarationItCouldNotPlaceRatherThanSkippingIt(t *testing.T) {
+	t.Parallel()
+	// A declaration no heading opens has no entry prose to read, so no
+	// comparison is possible. Dropping it would leave the tier comparing fewer
+	// claims than the page declares and reporting nothing, which reads exactly
+	// like a page with nothing wrong.
+	root := haltsPageIn(t, "<!-- covers: pkg/thing.ErrPlain -->\n\n# Halts\n\nProse.\n")
+
+	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	if compared != 0 || len(unquoted) != 0 {
+		t.Errorf("a declaration with no entry was compared anyway: compared=%d counted=%+v", compared, unquoted)
+	}
+	if len(unreadable) != 1 || !strings.Contains(unreadable[0], "pkg/thing.ErrPlain") {
+		t.Fatalf("the unplaceable declaration was not reported: %v", unreadable)
+	}
+	if !strings.Contains(unreadable[0], "no heading opens") {
+		t.Errorf("the report does not say why the comparison was impossible: %q", unreadable[0])
+	}
+
+	// And it reaches the writer whether or not the enumeration was asked for,
+	// because it is the instrument failing rather than a note about the page.
+	var b strings.Builder
+	reportClaims(&b, fixtureIdentities(t), entriesIn(t, root), false)
+	if !strings.Contains(b.String(), "could not be compared") {
+		t.Errorf("the summary form hides a comparison that did not happen:\n%s", b.String())
+	}
+}
+
+func TestReportClaims_CountsAlwaysAndEnumeratesOnRequest(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, "# Halts\n\n"+
+		"### Something plain went wrong\n\n"+
+		"<!-- covers: pkg/thing.ErrPlain -->\n\n"+
+		"Emitted message:\n> a plain condition\n\n"+
+		"### The block is not shaped right\n\n"+
+		"<!-- covers: pkg/thing.ErrQuoted -->\n\n"+
+		"Emitted message:\n> the block cannot be read\n")
+	ids := fixtureIdentities(t)
+	entries := entriesIn(t, root)
+
+	var listed strings.Builder
+	reportClaims(&listed, ids, entries, true)
+	got := listed.String()
+	if !strings.Contains(got, "WARN: 1 of 2 entry claims") {
+		t.Errorf("header does not report the derived counts:\n%s", got)
+	}
+	if !strings.Contains(got, "pkg/thing.ErrQuoted") {
+		t.Errorf("the enumeration omits the entry counted:\n%s", got)
+	}
+	// The registered message is printed beside the entry, because deciding
+	// whether an entry drifted or is reframing means seeing the text it was
+	// meant to carry.
+	if !strings.Contains(got, "the `uses:` block is malformed") {
+		t.Errorf("the enumeration omits the registered message:\n%s", got)
+	}
+
+	// The summary form is what the routine build prints: the same counts, no
+	// entry named, and the way to see the list.
+	var summary strings.Builder
+	reportClaims(&summary, ids, entries, false)
+	s := summary.String()
+	if !strings.Contains(s, "WARN: 1 of 2 entry claims") {
+		t.Errorf("summary does not report the derived counts:\n%s", s)
+	}
+	if strings.Contains(s, "pkg/thing.ErrQuoted") {
+		t.Errorf("summary enumerates entries unasked:\n%s", s)
+	}
+	if !strings.Contains(s, "-claims") {
+		t.Errorf("summary does not say how to see the list:\n%s", s)
+	}
+}
+
+func TestReportClaims_SaysSoWhenEveryEntryQuotesItsMessage(t *testing.T) {
+	t.Parallel()
+	// A clean page has to read as a clean page rather than as silence, so the
+	// count is printed either way.
+	root := haltsPageIn(t, "# Halts\n\n"+
+		"### Something plain went wrong\n\n"+
+		"<!-- covers: pkg/thing.ErrPlain -->\n\n"+
+		"Emitted message:\n> A PLAIN CONDITION.\n")
+	var b strings.Builder
+	reportClaims(&b, fixtureIdentities(t), entriesIn(t, root), false)
+	if got := b.String(); !strings.Contains(got, "WARN: none — all 1 entry claims") {
+		t.Errorf("a clean page does not report its own count:\n%s", got)
+	}
+}
+
+func TestHeadingLevel_ReadsOnlyAMarkerASpaceFollows(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		line string
+		want int
+	}{
+		{"# Halts", 1},
+		{"#### Rule one", 4},
+		{"####### too deep", 0},
+		{"#NoSpace", 0},
+		{"#", 0},
+		{"", 0},
+		{"Prose mentioning # a marker", 0},
+	} {
+		if got := headingLevel(tc.line); got != tc.want {
+			t.Errorf("headingLevel(%q) = %d, want %d", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestReadEntries_DoesNotReadAFencedSampleAsAHeading(t *testing.T) {
+	t.Parallel()
+	// A code sample is the one place a line may open with the heading marker
+	// while opening no heading. Reading one as a heading would split the page at
+	// a boundary no reader sees, and every claim after it would be compared
+	// against the wrong prose.
+	root := haltsPageIn(t, "# Halts\n\n"+
+		"### Something plain went wrong\n\n"+
+		"<!-- covers: pkg/thing.ErrPlain -->\n\n"+
+		"```yaml\n# a comment, not a heading\nvalues: {}\n```\n\n"+
+		"Emitted message:\n> a plain condition\n")
+
+	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	if len(unreadable) != 0 {
+		t.Fatalf("comparisons that did not happen: %v", unreadable)
+	}
+	if compared != 1 || len(unquoted) != 0 {
+		t.Fatalf("a fenced sample split the entry: compared=%d counted=%+v", compared, unquoted)
 	}
 }
 
