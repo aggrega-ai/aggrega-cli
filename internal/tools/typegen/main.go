@@ -297,6 +297,30 @@ var frpGuestNeutralVocabulary = map[string]string{
 	"DocumentScope":           "string",
 }
 
+// frpHostVocabulary maps the FRP schema's container and diagnostic annotations to
+// the host realization: the order-preserving types.OrderedMap (qualified, since
+// the host codec lands in the feature-recipe-pipeline package) so the host wire is
+// byte-deterministic across runs of identical input (the determinism contract),
+// and the shared diagnostic at renderctx.Diagnostic (the host realization of the
+// single generated diagnostic shape). The render context carries its real host
+// spelling verbatim, so it needs no entry.
+//
+// The document-root scope resolves to a plain string on both sides of this wire,
+// and deliberately so. The codec classifies a value by the spelling of its Go
+// type, so a distinct named type over a string is a spelling it cannot place: it
+// falls back to carrying the value opaquely, which puts a quoted JSON fragment on
+// the binary wire where the other side expects a plain text string. Sharing one
+// spelling with the guest is what keeps the two ends of this wire able to read
+// each other. The closed vocabulary itself is not lost — the two values are named
+// constants in the pipeline package, single-sourced from the Plugin entity's scope
+// vocabulary.
+var frpHostVocabulary = map[string]string{
+	"OrderedMap[Unit]": "types.OrderedMap[Unit]",
+	"OrderedMap[any]":  "types.OrderedMap[any]",
+	"Diagnostic":       "renderctx.Diagnostic",
+	"DocumentScope":    "string",
+}
+
 // mutatorGuestVocabulary maps the mutator schema's host container spellings to
 // the neutral guest vocabulary: the order-preserving host containers become
 // plain maps (the guest reads a map; key order on the wire is the host's
@@ -518,6 +542,13 @@ var codecTargets = map[string]codecTarget{
 		vocabulary:       frpGuestNeutralVocabulary,
 		lang:             "ts",
 		externalDefTypes: []string{"Diagnostic"},
+	},
+	"frp_host_gen.go": {
+		schema:     schemas.WasmFrpStepV1alpha1,
+		schemaFile: "wasm-frp-step-v1alpha1.schema.json",
+		pkg:        "featurerecipe_pipeline",
+		vocabulary: frpHostVocabulary,
+		helpers:    true, // the host feature-recipe-pipeline codec is alone in its package
 	},
 
 	// Shared diagnostic — guest codecs into aggrega-abi (Go/Rust/TS). The single
@@ -1293,6 +1324,15 @@ type codecField struct {
 	goType   string
 	required bool
 	desc     string
+	// schemaType is the node's declared JSON Schema `type`, kept beside the
+	// resolved Go type because the two answer different questions. The Go type is
+	// a name, and a name alone does not reveal the kind underneath it: a field
+	// annotated with a named scalar type resolves to a spelling the omit logic
+	// cannot classify, while the schema still says plainly that the value is a
+	// string. Carrying the declared type lets the omit decision fall back on the
+	// kind when the name is unclassifiable, instead of emitting the field
+	// unconditionally and contradicting its own omitempty tag.
+	schemaType string
 }
 
 // resolveCodecFields resolves a def node's properties into codec field
@@ -1309,11 +1349,12 @@ func resolveCodecFields(n schemaNode, vocab map[string]string) []codecField {
 	for _, p := range n.props {
 		field := pascal(p.name)
 		fields = append(fields, codecField{
-			field:    field,
-			key:      p.name,
-			goType:   goType(p.node, field, vocab),
-			required: required[p.name],
-			desc:     p.node.Description,
+			field:      field,
+			key:        p.name,
+			goType:     goType(p.node, field, vocab),
+			required:   required[p.name],
+			desc:       p.node.Description,
+			schemaType: p.node.Type,
 		})
 	}
 	return fields
@@ -1353,7 +1394,7 @@ func emitMarshal(b *strings.Builder, typeName string, fields []codecField, defTy
 	b.WriteString("\tbuf.WriteByte('{')\n")
 	b.WriteString("\tfirst := true\n")
 	for _, f := range fields {
-		guard := omitGuard("t."+f.field, f.goType)
+		guard := omitGuard("t."+f.field, f.goType, f.schemaType)
 		if !f.required && guard != "" {
 			fmt.Fprintf(b, "\tif %s {\n", guard)
 			emitMarshalField(b, f, "\t\t", defTypes)
@@ -1464,7 +1505,21 @@ func emitEncodeAnyFallback(b *strings.Builder, src, indent string) {
 // semantics instead, so the field is omitted when empty rather than emitted as
 // an empty map. An empty string means the type carries no omitempty notion (the
 // field is always emitted).
-func omitGuard(expr, goType string) string {
+//
+// schemaType is the field's declared JSON Schema type, consulted only when the
+// Go type's spelling classifies as nothing. That case is reached by a field
+// annotated with a named type — a scope vocabulary declared as its own string
+// type, say — whose kind is invisible in its name while the schema states it
+// outright. Falling back on the declared kind is what keeps such a field's
+// emission agreeing with the omitempty tag emitted beside it; without the
+// fallback the field is emitted unconditionally, which silently contradicts its
+// own tag and puts an empty value on the wire the reference encoder omits. The
+// fallback deliberately stops at the kinds the schema names unambiguously: a
+// declared object may be realized as either a map, whose emptiness omitempty
+// sees, or a struct, whose emptiness it does not, so an object keeps the
+// unconditional emission that is correct for the struct case, and a genuine map
+// is already classified by its own spelling above.
+func omitGuard(expr, goType, schemaType string) string {
 	// An order-preserving container is a struct value, so encoding/json's
 	// omitempty is a no-op on it: emptiness has to be asked of the type. IsZero
 	// is the method omitzero dispatches to, so guarding on it omits exactly the
@@ -1496,6 +1551,16 @@ func omitGuard(expr, goType string) string {
 		return "len(" + expr + ") != 0"
 	case strings.HasPrefix(goType, "*"):
 		return expr + " != nil"
+	}
+	switch schemaType {
+	case "string":
+		return expr + ` != ""`
+	case "integer", "number":
+		return expr + " != 0"
+	case "boolean":
+		return expr + " != false"
+	case "array":
+		return "len(" + expr + ") != 0"
 	default:
 		return ""
 	}

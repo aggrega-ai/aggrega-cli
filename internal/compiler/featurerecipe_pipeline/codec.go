@@ -11,45 +11,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// Unit is one addressable piece a provider's emitted output carves into. A
-// provider's output is split into ordered units by a Codec; the guest
-// content-selects a unit and echoes its token as a patch root, and the
-// host applies returned patches and reassembles the output by token.
-//
-// A unit is the hybrid view of one piece of output:
-//
-//   - Token is the opaque positional address the codec assigns — the
-//     emitted filename for a single-document file, or "<filename>#<ordinal>"
-//     (file order) when one file carries several documents. The guest treats
-//     it as opaque: it content-selects a unit and echoes the token, never
-//     parsing it.
-//   - Bytes is the unit's original bytes, the reassembly source. Reassembly
-//     is byte-faithful by construction: untouched bytes are re-joined from
-//     this verbatim.
-//   - MediaType is the unit's content type ("application/yaml" for the stock
-//     YAML codec), so the guest knows what it is looking at.
-//   - Tree is the unit's RFC-6902-addressable normalized view when the codec
-//     produced one, or absent (nil) when it did not. A unit with a Tree is
-//     structured — a PATCH target. A unit with no Tree is opaque: it is still
-//     handed to the guest, tagged with MediaType and Bytes so the guest's
-//     view of the output is complete, and it is a SELECT and EMIT target, but
-//     it is not an RFC-6902 PATCH target — a PATCH against an opaque unit
-//     halts loudly. What counts as structured is the codec's call (the codec
-//     produced a Tree), not a fixed parser-accepted test.
-//
-// Every field is a serializable payload (string, []byte, json.RawMessage):
-// the unit is a Wasm-ABI-shaped value that crosses the host/guest boundary
-// without carrying any rich in-process type.
-type Unit struct {
-	Token     string          `json:"token"`
-	Bytes     []byte          `json:"bytes,omitempty"`
-	MediaType string          `json:"media_type,omitempty"`
-	Tree      json.RawMessage `json:"tree,omitempty"`
-}
-
 // Structured reports whether the unit carries an RFC-6902-addressable tree
-// view and is therefore a PATCH target. A unit with no tree is opaque: a
-// SELECT/EMIT target, never a PATCH target.
+// view and is therefore a PATCH target.
+//
+// A unit with a tree is structured. A unit with no tree is opaque: it is still
+// handed to the guest, tagged with its media type and bytes so the guest's view
+// of the output is complete, and it is a SELECT and EMIT target — but it is not
+// an RFC-6902 PATCH target, and a PATCH addressed at one halts loudly rather
+// than being silently dropped. What counts as structured is the [Codec]'s call
+// — the codec produced a tree — not a fixed parser-accepted test.
 func (u Unit) Structured() bool { return u.Tree != nil }
 
 // PatchedUnit is one unit a pipeline step changed, handed to a Codec's

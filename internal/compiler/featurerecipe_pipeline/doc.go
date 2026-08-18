@@ -33,6 +33,21 @@
 // output stays reproducible; the runtime controller does the fetching at
 // deploy time.
 //
+// A pipeline step is a distinct guest contract from the mutator socket, and the
+// two are easy to conflate because both hand a plugin a graph-shaped payload and
+// take patches back. The mutator runs once over the whole topology graph and
+// returns opaque label patches; a pipeline step runs per inline `pipeline:` entry
+// declared in a Recipe or FeatureRecipe, receives the keyed document set plus its
+// step input, and returns key-addressed RFC 6902 patches alongside side effects
+// and diagnostics. Different attachment point, different payload.
+//
+// Their patch surfaces are deliberately not unified either. A mutator's patches
+// are an opaque slice the host pipes through; a pipeline step's are structured
+// operations naming a target document by scope and key, because the apply engine
+// applies them and restores the document set by snapshot when a step fails — so
+// the operations have to be legible to the host that applies them, where a
+// mutator's do not. Two guest contracts, two shapes, on purpose.
+//
 // This package also owns the runtime that speaks the ABI. [Walk] builds the
 // keyed document set, evaluates each step's `with` (and its optional `when`
 // gate), dispatches each Wasm guest, applies the returned patches to the

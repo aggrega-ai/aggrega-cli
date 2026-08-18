@@ -146,6 +146,9 @@ var codecTargetPaths = map[string][]string{
 	"linter_host_gen.go": {"..", "..", "..", "pkg", "validator"},
 	// The host provider render codec is committed inside aggrega-cli's rendercore package.
 	"providerrender_host_gen.go": {"..", "..", "compiler", "rendercore"},
+	// The host feature-recipe-pipeline step codec is committed inside aggrega-cli's
+	// featurerecipe_pipeline package.
+	"frp_host_gen.go": {"..", "..", "compiler", "featurerecipe_pipeline"},
 }
 
 // TestTargetPathsNameRegisteredTargets checks the two path tables in the

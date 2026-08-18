@@ -71,7 +71,7 @@ type AppliedOps struct {
 	Host map[string][]JSONPatchOp
 }
 
-func (a *AppliedOps) record(scope DocumentScope, key string, op JSONPatchOp) {
+func (a *AppliedOps) record(scope, key string, op JSONPatchOp) {
 	switch scope {
 	case DocumentScopeHost:
 		if a.Host == nil {
@@ -412,7 +412,7 @@ func ApplyPatches(docs *DocumentSet, ops []JSONPatchOp) error {
 // component-scope FeatureRecipe attached to a host) is the caller's concern;
 // here an addressed-but-empty host root simply yields an absent-target on
 // Get.
-func scopeRoot(docs *DocumentSet, scope DocumentScope) (*types.OrderedMap[Unit], error) {
+func scopeRoot(docs *DocumentSet, scope string) (*types.OrderedMap[Unit], error) {
 	switch scope {
 	case DocumentScopeOwn:
 		return &docs.Own, nil

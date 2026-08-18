@@ -133,13 +133,13 @@ func emitCBOREncode(b *strings.Builder, typeName string, sorted []codecField, de
 
 	nRequired := 0
 	for _, f := range sorted {
-		if f.required || omitGuard("t."+f.field, f.goType) == "" {
+		if f.required || omitGuard("t."+f.field, f.goType, f.schemaType) == "" {
 			nRequired++
 		}
 	}
 	fmt.Fprintf(b, "\tn := %d\n", nRequired)
 	for _, f := range sorted {
-		guard := omitGuard("t."+f.field, f.goType)
+		guard := omitGuard("t."+f.field, f.goType, f.schemaType)
 		if !f.required && guard != "" {
 			fmt.Fprintf(b, "\tif %s {\n\t\tn++\n\t}\n", guard)
 		}
@@ -157,7 +157,7 @@ func emitCBOREncode(b *strings.Builder, typeName string, sorted []codecField, de
 		b.WriteString("\tvar err error\n")
 	}
 	for _, f := range sorted {
-		guard := omitGuard("t."+f.field, f.goType)
+		guard := omitGuard("t."+f.field, f.goType, f.schemaType)
 		if !f.required && guard != "" {
 			fmt.Fprintf(b, "\tif %s {\n", guard)
 			emitCBOREncodeKV(b, f, "\t\t", defTypes)

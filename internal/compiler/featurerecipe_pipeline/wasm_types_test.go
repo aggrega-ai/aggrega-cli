@@ -4,6 +4,7 @@
 package featurerecipe_pipeline_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"reflect"
@@ -97,7 +98,7 @@ func sampleFRPStepInput(t *testing.T) frp.FRPStepInput {
 				SideEffects: []frp.SideEffect{
 					{
 						Kind: "emit_crd",
-						CRD:  json.RawMessage(`{"apiVersion":"secrets.aggrega.ai/v1alpha1","kind":"VaultSecretFetch","metadata":{"name":"payments-db"}}`),
+						Crd:  json.RawMessage(`{"apiVersion":"secrets.aggrega.ai/v1alpha1","kind":"VaultSecretFetch","metadata":{"name":"payments-db"}}`),
 					},
 				},
 			},
@@ -131,7 +132,7 @@ func sampleFRPStepOutput() frp.FRPStepOutput {
 		SideEffects: []frp.SideEffect{
 			{
 				Kind: "emit_crd",
-				CRD:  json.RawMessage(`{"apiVersion":"secrets.aggrega.ai/v1alpha1","kind":"VaultSecretFetch","metadata":{"name":"payments-db"}}`),
+				Crd:  json.RawMessage(`{"apiVersion":"secrets.aggrega.ai/v1alpha1","kind":"VaultSecretFetch","metadata":{"name":"payments-db"}}`),
 			},
 			{
 				Kind:  "emit_file",
@@ -204,11 +205,19 @@ func TestFRPStepOutput_RoundTrip(t *testing.T) {
 // TestJSONPatchOp_AllSixOps asserts every RFC 6902 operation round-trips
 // through the JSONPatchOp shape — add, remove, replace, move, copy, test —
 // each addressed to its target document by scope and key.
+//
+// The round-trip is asserted as idempotence over the wire bytes rather than as
+// Go value equality, because the two are not the same claim and only the first
+// is the one that matters here. An operand is an arbitrary JSON fragment the
+// guest authored, and the wire decode preserves a numeric one as its exact
+// decimal text rather than narrowing it to a float — so a value-equality
+// assertion would have to be written against whichever Go numeric shape the
+// decode happens to produce, and would pass just as readily on a decode that
+// silently reformatted the operand. Comparing the re-marshalled bytes pins the
+// property the guest contract actually owes: what the step emitted is what the
+// host applies, digit for digit.
 func TestJSONPatchOp_AllSixOps(t *testing.T) {
 	t.Parallel()
-	// JSON-native value types (float64, string, bool) so the round-trip
-	// is value-equal: an int operand would decode back as float64 and
-	// fail DeepEqual for a reason unrelated to the ABI shape.
 	ops := []frp.JSONPatchOp{
 		{Scope: frp.DocumentScopeOwn, Key: "a.yaml", Op: "add", Path: "/a", Value: float64(1)},
 		{Scope: frp.DocumentScopeOwn, Key: "a.yaml", Op: "remove", Path: "/b"},
@@ -221,18 +230,67 @@ func TestJSONPatchOp_AllSixOps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var round []frp.JSONPatchOp
-	if err := json.Unmarshal(first, &round); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if !reflect.DeepEqual(ops, round) {
-		t.Errorf("six-op round-trip inequality:\n  before: %+v\n  after:  %+v", ops, round)
-	}
 	// All six op strings, plus the scope/key target address, reach the
 	// wire intact.
 	const want = `[{"scope":"own","key":"a.yaml","op":"add","path":"/a","value":1},{"scope":"own","key":"a.yaml","op":"remove","path":"/b"},{"scope":"own","key":"a.yaml","op":"replace","path":"/c","value":"x"},{"scope":"host","key":"b.yaml","op":"move","path":"/d","from":"/e"},{"scope":"host","key":"b.yaml","op":"copy","path":"/f","from":"/g"},{"scope":"host","key":"b.yaml","op":"test","path":"/h","value":true}]`
 	if string(first) != want {
 		t.Errorf("six-op wire mismatch:\n  want: %s\n  got:  %s", want, first)
+	}
+
+	var round []frp.JSONPatchOp
+	if err := json.Unmarshal(first, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(round) != len(ops) {
+		t.Fatalf("round-trip dropped operations: got %d, want %d", len(round), len(ops))
+	}
+	for i := range ops {
+		if round[i].Scope != ops[i].Scope || round[i].Key != ops[i].Key ||
+			round[i].Op != ops[i].Op || round[i].Path != ops[i].Path || round[i].From != ops[i].From {
+			t.Errorf("operation %d lost an addressing field:\n  before: %+v\n  after:  %+v", i, ops[i], round[i])
+		}
+	}
+	again, err := json.Marshal(round)
+	if err != nil {
+		t.Fatalf("re-marshal: %v", err)
+	}
+	if !bytes.Equal(first, again) {
+		t.Errorf("six-op round-trip is not idempotent:\n  first: %s\n  again: %s", first, again)
+	}
+
+	// The numeric operand's exact decimal text survives the decode. Pinned
+	// explicitly because it is the half a byte-compare of the re-marshal cannot
+	// attribute: a decode that narrowed the operand to a float would still
+	// re-emit "1" here, and would silently reformat an operand a float cannot
+	// hold exactly.
+	num, ok := round[0].Value.(json.Number)
+	if !ok {
+		t.Fatalf("numeric operand decoded as %T, want a value carrying its exact decimal text", round[0].Value)
+	}
+	if num.String() != "1" {
+		t.Errorf("numeric operand text = %q, want %q", num.String(), "1")
+	}
+}
+
+// TestJSONPatchOp_PreservesHighPrecisionOperand is the needle behind the
+// exact-text claim above. A 19-digit integer operand exceeds float64's exact
+// integer range, so a decode that narrowed the operand would re-emit a
+// different number — the assertion below fails on that decode and passes only
+// on one that carries the digits through.
+func TestJSONPatchOp_PreservesHighPrecisionOperand(t *testing.T) {
+	t.Parallel()
+
+	const wire = `{"scope":"own","key":"a.yaml","op":"add","path":"/a","value":9007199254740993}`
+	var op frp.JSONPatchOp
+	if err := json.Unmarshal([]byte(wire), &op); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	again, err := json.Marshal(op)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(again) != wire {
+		t.Errorf("high-precision operand did not survive the round-trip:\n  want: %s\n  got:  %s", wire, again)
 	}
 }
 
@@ -343,7 +401,7 @@ func TestJSONPatchOp_Omitempty(t *testing.T) {
 func TestSideEffect_Omitempty(t *testing.T) {
 	t.Parallel()
 
-	crd := frp.SideEffect{Kind: "emit_crd", CRD: json.RawMessage(`{"kind":"VaultSecretFetch"}`)}
+	crd := frp.SideEffect{Kind: "emit_crd", Crd: json.RawMessage(`{"kind":"VaultSecretFetch"}`)}
 	rawCRD, err := json.Marshal(crd)
 	if err != nil {
 		t.Fatalf("marshal emit_crd: %v", err)

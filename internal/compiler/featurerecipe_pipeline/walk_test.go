@@ -70,7 +70,7 @@ func (s *scriptedInvoker) invoke(_ context.Context, step types.PipelineStep, pay
 	return json.Marshal(out)
 }
 
-func patch(scope DocumentScope, key, op, path string, value any) JSONPatchOp {
+func patch(scope string, key, op, path string, value any) JSONPatchOp {
 	return JSONPatchOp{Scope: scope, Key: key, Op: op, Path: path, Value: value}
 }
 

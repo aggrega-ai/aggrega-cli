@@ -880,7 +880,7 @@ func sideEffectBytes(se frp.SideEffect, nodeID string, idx int) ([]byte, error) 
 		}
 		return []byte(se.File.Content), nil
 	case "emit_crd":
-		return se.CRD, nil
+		return se.Crd, nil
 	default:
 		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("node %q: pipeline: unknown side-effect kind %q", nodeID, se.Kind), nil, nil)

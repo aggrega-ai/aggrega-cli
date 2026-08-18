@@ -27,6 +27,7 @@ package main
 //go:generate go run . ../../../../aggrega-abi/typescript/src/cbor_gen.ts
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/frp_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/frp_gen.rs
+//go:generate go run . ../../compiler/featurerecipe_pipeline/frp_host_gen.go
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/describe_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/describe_gen.rs
 //go:generate go run . ../../wasm/describe_host_gen.go
