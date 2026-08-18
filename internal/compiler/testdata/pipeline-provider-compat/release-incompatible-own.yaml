@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: pipeline-provider-compat-incompatible-own-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest-incompatible-own.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      features:
+        boundary-guard:
+          type: feature.example/boundary-guard
+          infra:
+            note: "wide"
+      components:
+        api:
+          infra:
+            replicas: 1
+        cache:
+          infra:
+            replicas: 1
+    store:
+      directory: ./dist/store
+      components:
+        data.main-db:
+          infra:
+            replicas: 1
+    spare:
+      directory: ./dist/spare

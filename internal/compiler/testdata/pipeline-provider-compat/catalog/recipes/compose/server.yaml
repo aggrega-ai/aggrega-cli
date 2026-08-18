@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: compose-server-synthesized
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/server
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      server:
+        image: server:latest
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+  # Deliberately NO pipeline of its own. Compose folds a dispatch group's
+  # per-component fragments into one document, and this Recipe is bound so that
+  # the component an attachment is attached to renders through such a provider —
+  # which is what leaves the attachment's own-scope step with nothing to address.
+  # A pipeline here would add a second, unrelated finding to the same build and
+  # the halt would no longer say which condition produced it.

@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: pipeline-provider-compat-merged-target-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      name:
+        cache: helm-cache-synthesized:1.0.0
+      type:
+        # The one binding that differs from the admitted deployment: the
+        # component carrying the attachment renders through a provider that
+        # folds its dispatch group into a single document.
+        core/server: compose-server-synthesized:1.0.0
+        core/store: helm-store-synthesized:1.0.0
+    features:
+      # Unchanged from the admitted deployment. The attachment keeps a provider
+      # its step plugin declares, so the compatibility rule stays silent here and
+      # the merged-target finding is the only one the build can raise.
+      type:
+        feature.example/request-guard: request-guard-patcher:1.0.0
+        feature.example/boundary-guard: boundary-guard-patcher:1.0.0

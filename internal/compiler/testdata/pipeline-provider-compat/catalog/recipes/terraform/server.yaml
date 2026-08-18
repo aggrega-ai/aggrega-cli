@@ -1,0 +1,42 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: terraform-server-synthesized
+  version: "1.0.0"
+spec:
+  capability: terraform
+  implements: core/server
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      server:
+        image: server:latest
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+  # The pipeline the helm-capability Recipe beside this one declares, naming the
+  # same step plugin, with a second entry added. Each step addresses this
+  # component's own documents, so each is matched against the provider THIS
+  # Recipe declares — and that provider is one the step plugin does not declare
+  # compatibility with. Binding this Recipe instead of its sibling is the single
+  # authored difference that turns an admitted build into a refused one.
+  #
+  # There are TWO steps rather than one so that "a finding per authored step" is
+  # distinguishable from "a finding for the component": with one step the two
+  # would be the same count and an implementation reporting once per component
+  # would satisfy the assertion. Neither step ever runs — the refusal is reported
+  # before any component is rendered — so the two writing under one output name
+  # collides with nothing.
+  pipeline:
+    - id: annotate_own_output
+      plugin: pipeline-step/patch:1.0.0
+      function: step
+    - id: annotate_own_output_again
+      plugin: pipeline-step/patch:1.0.0
+      function: step

@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: pipeline-provider-compat-incompatible-own-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      name:
+        cache: helm-cache-synthesized:1.0.0
+      type:
+        # The one binding that differs from the manifest beside this: the
+        # component's own documents are rendered by a provider the step plugin
+        # its Recipe's pipeline names declares no compatibility with.
+        core/server: terraform-server-synthesized:1.0.0
+        core/store: helm-store-synthesized:1.0.0
+    features:
+      # The attachment bindings are the ones the admitted deployment uses, so
+      # the attachment pipelines stay compatible and the only finding the build
+      # can raise is the one about the component's own pipeline.
+      type:
+        feature.example/request-guard: request-guard-patcher:1.0.0
+        feature.example/boundary-guard: boundary-guard-patcher:1.0.0

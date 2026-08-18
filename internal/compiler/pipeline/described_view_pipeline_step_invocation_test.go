@@ -7,13 +7,15 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -26,16 +28,49 @@ import (
 // declares one, and an attachment declared at a boundary whose FeatureRecipe
 // declares one. Before it, the third of those existed nowhere in the tree at all,
 // so a rule over it could be invoked and would report on nothing.
+//
+// # Three deployments over one Aggregate, each differing in one binding
+//
+// The Aggregate, the attachments, their FeatureRecipes and the step plugin are
+// the same documents in all three. What moves between them is which Recipe the
+// component type binds, and that single authored difference is what each proof
+// turns on.
+//
+// The first is admitted: every step's plugin declares the provider rendering the
+// documents that step addresses. The second binds a Recipe whose declared
+// provider the step plugin does not list, so the build halts on the
+// compatibility condition. The third binds a Recipe whose provider folds its
+// dispatch group into one document, so an attachment's own-scope step has no
+// discrete document left to address and the build halts on that condition
+// instead.
+//
+// Each refusing deployment was arranged so exactly ONE of the four declared
+// rules raises. That is not tidiness: the render reports a single finding as
+// itself and joins several under an envelope carrying no position of its own, so
+// a build raising two unrelated findings could not have either one's position
+// read.
 const (
 	stepAggregatePath = "../../../internal/compiler/testdata/pipeline-provider-compat/aggregate.yaml"
 	stepReleasePath   = "../../../internal/compiler/testdata/pipeline-provider-compat/release.yaml"
 	stepManifestPath  = "../../../internal/compiler/testdata/pipeline-provider-compat/manifest.yaml"
 	stepCatalogPath   = "../../../internal/compiler/testdata/pipeline-provider-compat/catalog"
 
+	// The deployment whose component renders through a provider the step plugin
+	// its own Recipe's pipeline names declares no compatibility with. Its build
+	// halts, and the finding names that provider.
+	stepIncompatibleOwnManifestPath = "../../../internal/compiler/testdata/pipeline-provider-compat/manifest-incompatible-own.yaml"
+	stepIncompatibleOwnReleasePath  = "../../../internal/compiler/testdata/pipeline-provider-compat/release-incompatible-own.yaml"
+
+	// The deployment whose component renders through a provider that folds its
+	// dispatch group into a single document. Its build halts on the attachment's
+	// own-scope step, which has no discrete document to address.
+	stepMergedTargetManifestPath = "../../../internal/compiler/testdata/pipeline-provider-compat/manifest-merged-target.yaml"
+	stepMergedTargetReleasePath  = "../../../internal/compiler/testdata/pipeline-provider-compat/release-merged-target.yaml"
+
 	// The plugin every pipeline in the fixture names, and the artifact behind it.
-	// Its own self-report declares compatibility with the provider the fixture's
-	// entities declare, so an admitted build is admitted because the declaration
-	// matches rather than because nothing was read.
+	// Its own self-report declares compatibility with the provider the admitted
+	// deployment's entities declare, so an admitted build is admitted because the
+	// declaration matches rather than because nothing was read.
 	stepPluginURI      = "pipeline-step/patch:1.0.0"
 	stepPluginArtifact = "frp-step-patch-rust.wasm"
 
@@ -43,40 +78,70 @@ const (
 	// graph gives it. Spelled here so a fixture that stopped contributing it fails
 	// loudly rather than leaving a proof asserting nothing.
 	contributedNode = "data.main-db"
+
+	// The coordinates the refusal proofs are positioned at. Spelled here so a
+	// fixture that stopped carrying them fails loudly rather than leaving a proof
+	// asserting nothing.
+	stepNode           = "api"
+	stepAttachment     = "request-guard"
+	stepAttachmentStep = "annotate_attachment_output"
 )
 
-// stepBuild is one compiled and rendered fixture, with everything both readings
-// of provider compatibility need to be asked the same question.
+// stepBuild is one compiled and rendered deployment of the fixture, together
+// with the render's own error rather than a failure — so a proof about a build
+// the render refuses can read that refusal.
 type stepBuild struct {
 	out           *stepsOneToFourOutput
 	catalogLookup resolver.CatalogLookup
 	recipeLookup  renderer.RecipeLookup
 	lookup        pluginpath.Lookup
 	result        *renderer.RenderResult
-	coordinates   *ir.GraphStageCoordinates
+	renderErr     error
+	coordinates   renderer.GraphCoordinates
 	axes          stepAxes
 }
 
-// buildStepFixture compiles the fixture, resolves its pipeline-step plugin
-// through the real resolution cascade, and renders it.
+// buildStepFixture compiles one deployment of the fixture, resolves its
+// pipeline-step plugin through the real resolution cascade, and renders it the
+// way the production spine renders: through the same provider dispatch, with the
+// plugin resolution wired, and with the enumeration the finalised graph carries
+// handed to the render.
 //
-// The plugin resolution is the part that cannot be left out. A render wired with
-// no resolution runs no pipeline and describes no plugin, so the reading under
-// comparison never executes and the presentation answers every plugin fact with
-// its zero value — a state in which both readings agree on silence and the
-// comparison certifies nothing.
-func buildStepFixture(t *testing.T) stepBuild {
+// Three things here cannot be left out, and each of them silently empties a
+// proof over this build when it is:
+//
+// The enumeration is what makes the rules run at all. The render invokes the
+// rules declared over what its plugins report about themselves only when it is
+// given the finalised graph's enumeration. A render without it asks nothing and
+// completes over a workspace those rules refuse, leaving a refusal observable
+// only by re-asking beside the render; with it, the halt a refused build returns
+// IS the rule's verdict.
+//
+// The plugin resolution is what makes the answers real. A render wired with no
+// resolution runs no pipeline and describes no plugin, so the presentation
+// answers every plugin fact with its zero value — and the rules are not invoked
+// over such a build at all, precisely because an unread self-report and a plugin
+// declaring nothing are indistinguishable.
+//
+// The provider dispatch has to be the build's own rather than a stand-in,
+// because two of the facts these rules read are the provider guest's own claims
+// about itself. A stand-in engine that makes no assembly claim answers the empty
+// string, which is neither of the two answers a proof needs to tell apart.
+func buildStepFixture(t *testing.T, manifestPath, releasePath string) stepBuild {
 	t.Helper()
 
 	catalogPath := stageStepPlugin(t)
 	out, catalogLookup := compileWorkspace(t, workspaceFixture{
 		aggregatePath: stepAggregatePath,
-		releasePath:   stepReleasePath,
-		manifestPath:  stepManifestPath,
+		releasePath:   releasePath,
+		manifestPath:  manifestPath,
 		catalogPath:   catalogPath,
 	}, bytesOf(t, stepAggregatePath))
+	if out.GraphCoordinates == nil {
+		t.Fatal("the compilation produced no enumeration of the finalised graph; the render would invoke no rule over it")
+	}
 
-	manifest, err := resolver.LoadManifest(stepManifestPath)
+	manifest, err := resolver.LoadManifest(manifestPath)
 	if err != nil {
 		t.Fatalf("load manifest: %v", err)
 	}
@@ -93,10 +158,7 @@ func buildStepFixture(t *testing.T) stepBuild {
 		Inputs{WorkspaceConfig: workspaceconfig.Default()}, catalogLookup,
 	)
 
-	result, err := renderStepFixture(out, catalogLookup, recipeLookup, lookup)
-	if err != nil {
-		t.Fatalf("render: %+v", err)
-	}
+	result, renderErr := renderStepFixture(t, out, catalogLookup, recipeLookup, lookup)
 
 	var release *types.Release
 	if out.ResolveResult != nil {
@@ -108,33 +170,82 @@ func buildStepFixture(t *testing.T) stepBuild {
 		recipeLookup:  recipeLookup,
 		lookup:        lookup,
 		result:        result,
-		coordinates:   coordinatesOf(t, out, catalogLookup),
+		renderErr:     renderErr,
+		coordinates:   out.GraphCoordinates,
 		axes: stepAxes{
 			graph:        out.IRGraph,
 			recipeLookup: recipeLookup,
 			release:      release,
-			releaseFile:  stepReleasePath,
+			releaseFile:  releasePath,
 		},
 	}
 }
 
-// renderStepFixture renders the compiled fixture with the plugin resolution
-// wired, and returns the render's own error rather than failing, so a proof about
-// a build the render refuses can read that refusal.
+// renderStepFixture renders the compiled deployment with the plugin resolution
+// wired, the finalised graph's enumeration supplied, and the build's own provider
+// dispatch — and returns the render's own error rather than failing, so a proof
+// about a build the render refuses can read that refusal.
 func renderStepFixture(
+	t *testing.T,
 	out *stepsOneToFourOutput,
 	catalogLookup resolver.CatalogLookup,
 	recipeLookup renderer.RecipeLookup,
 	lookup pluginpath.Lookup,
 ) (*renderer.RenderResult, error) {
-	return renderer.RenderAll(context.Background(), renderer.RendererInput{
+	t.Helper()
+
+	ctx := context.Background()
+	sharedLoader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
+	factory, providerVersion, closeEngines := enginefactory.NewHybrid(catalogLookup, lookup, sharedLoader)
+	t.Cleanup(func() { _ = closeEngines(ctx) })
+
+	return renderer.RenderAll(ctx, renderer.RendererInput{
 		Graph:            out.IRGraph,
 		GraphView:        out.GraphView,
+		GraphCoordinates: out.GraphCoordinates,
 		FeatureOrder:     out.FeatureOrder,
 		ResolveResult:    out.ResolveResult,
 		CatalogLookup:    catalogLookup,
 		PluginPathLookup: lookup,
-	}, recipeLookup, describedRenderFactory)
+		ProviderVersion:  providerVersion,
+	}, recipeLookup, factory)
+}
+
+// stepFindings collects every categorised diagnostic a halt carries, walking both
+// a single wrapped cause and a joined set of them.
+//
+// The render reports one finding as itself and joins several under an envelope
+// whose own position is empty, so a proof that reads a position off the halt has
+// to reach the members either way. Reading them structurally rather than
+// searching the rendered text is the other half: a categorised diagnostic renders
+// only its own frame in Error, so a string search over the halt reports nothing
+// whichever shape the chain has.
+func stepFindings(err error) []*cerrors.CompilerError {
+	var out []*cerrors.CompilerError
+	var walk func(error)
+	walk = func(e error) {
+		if e == nil {
+			return
+		}
+		if joined, isMulti := e.(interface{ Unwrap() []error }); isMulti {
+			for _, member := range joined.Unwrap() {
+				walk(member)
+			}
+			return
+		}
+		var finding *cerrors.CompilerError
+		if !errors.As(e, &finding) {
+			return
+		}
+		// An envelope over a joined set carries no position of its own; it is
+		// the members beneath it that are positioned.
+		if finding.Source.Locator != "" || finding.Source.File != "" {
+			out = append(out, finding)
+		}
+		walk(finding.Wrap)
+	}
+	walk(err)
+	return out
 }
 
 // stageStepPlugin stages this file's fixture catalog with its step plugin's
@@ -157,20 +268,25 @@ func artifactReferenceOf(t *testing.T, cat *catalog.Catalog, uri string) string 
 	return entity.ArtifactReference()
 }
 
-// stepAxes supplies the axes the three provider-compatibility rules are invoked
-// once per that no production enumeration answers.
+// stepAxes is a second, independent account of the axes the step rules are
+// invoked once per: a pipeline's steps, the boundary set, and a boundary's own
+// attachments.
+//
+// The render derives these axes itself and is what the rules are invoked over in
+// production, so this is deliberately NOT the thing under test — it is the
+// cross-check against it. Keeping a separate account is the point: a proof that
+// stated what the enumeration contains by asking the enumeration would agree with
+// itself whatever the enumeration did, so the set each axis is asserted to hold
+// is spelled out here and read from the compiled products directly. Anyone
+// tempted to collapse the two into one reader would remove the only thing that
+// can disagree.
 //
 // The node axis and the per-node attachment axis are NOT here: the compilation
-// itself enumerates both, and taking them from anywhere else would present the
-// rules a coordinate set the facts were not keyed by. What is here is what the
-// production enumerations do not reach — a pipeline's steps, the boundary set,
-// and a boundary's own attachments — and each is read from the product the
+// itself enumerates both, the facts are keyed by what it produced, and taking
+// them from anywhere else would present the rules a coordinate set the facts were
+// not keyed by. Each axis that IS here is read from the same product the
 // presentation reads the matching fact from, so a rule is invoked for exactly the
 // coordinates it can then be told something about.
-//
-// Nothing here should be read as a production enumeration. Supplying these axes
-// in production is separate work; these exist so the rules can be asked the same
-// question the reading they stand beside is asked.
 type stepAxes struct {
 	// graph is the finalised graph, read for the attachment-to-FeatureRecipe
 	// binding, which is what the presentation reads it for too.
@@ -374,7 +490,10 @@ var (
 // correct reading from one blind to a component no root document declares is
 // asserted by name.
 func TestThePipelineStepAxesComeFromTheCompiledBuild(t *testing.T) {
-	build := buildStepFixture(t)
+	build := buildStepFixture(t, stepManifestPath, stepReleasePath)
+	if build.renderErr != nil {
+		t.Fatalf("the render refused a build this proof needs completed: %+v", build.renderErr)
+	}
 
 	t.Run("a node's own pipeline is enumerated for every component the graph holds", func(t *testing.T) {
 		if got := build.axes.PipelineSteps("api"); !stepIDsEqual(got, []string{"annotate_own_output"}) {
@@ -504,11 +623,14 @@ func TestThePipelineStepAxesComeFromTheCompiledBuild(t *testing.T) {
 // nothing. The refusal half is the proof below it, and the two together are what
 // keeps either from passing on a rule that answers one way whatever it is asked.
 func TestTheProviderCompatibilityRulesAreInvokedOverTheCompiledBuild(t *testing.T) {
-	build := buildStepFixture(t)
-	view := build.result.DescribedView
-	if view == nil {
+	build := buildStepFixture(t, stepManifestPath, stepReleasePath)
+	if build.renderErr != nil {
+		t.Fatalf("the render refused a build this proof needs completed: %+v", build.renderErr)
+	}
+	if build.result == nil || build.result.DescribedView == nil {
 		t.Fatal("the render published no presentation of what its plugins report; nothing can be invoked through it")
 	}
+	view := build.result.DescribedView
 
 	t.Run("a node's own pipeline is admitted at every enumerated step", func(t *testing.T) {
 		visited := 0
@@ -625,118 +747,196 @@ func TestTheProviderCompatibilityRulesAreInvokedOverTheCompiledBuild(t *testing.
 	})
 }
 
-// TestTheProviderCompatibilityRuleRefusesAnUndeclaredProvider reads the rule's
-// verdict on a build whose step is matched against a provider its plugin does not
-// declare, and states where the finding lands.
+// TestTheProviderCompatibilityRuleRefusesAnUndeclaredProvider reads the halt a
+// real build returns when a component's own pipeline step is matched against a
+// provider its plugin does not declare.
 //
-// The refused input cannot be reached through a completed render: the build halts
-// on the same mismatch, so it publishes no presentation to ask a rule about. One
-// fact — the provider rendering the node's own documents — is therefore
-// substituted; every other value the rule reads is the one the real build
-// produced, the plugin's own self-report above all.
+// # Nothing is substituted here
+//
+// The rule runs inside the render, ahead of the component walk, so a build
+// carrying the refused shape halts and publishes no presentation — and the halt
+// IS the verdict, read from a compilation of authored documents with every fact
+// the build itself produced. The deployment differs from the admitted one in a
+// single binding: which Recipe the component type binds, and therefore which
+// provider renders the component's own documents.
+//
+// # Why the finding is attributable, and why it is not the halt itself
+//
+// The provider the deployment names is one the step plugin does not declare, and
+// the plugin's declared set is read off the build and asserted — so a plugin that
+// came to declare that provider fails this proof rather than making it vacuous.
+//
+// The step plugin declares the provider the ATTACHMENT on the same component
+// renders through, which is what makes the finding say which documents' provider
+// the step was matched against: it must name the component's own provider and
+// must not name the attachment's. A rule that raised for any reason at all would
+// satisfy "the build halts" and could not satisfy that.
+//
+// # Why the refused pipeline carries two steps
+//
+// A finding per authored step and a finding per component are the same count on a
+// one-step pipeline, so the arity claim would hold for an implementation that
+// reported once per component. The refused Recipe declares two steps and the
+// locators are asserted as a SET, which separates them and names whichever is
+// missing.
 func TestTheProviderCompatibilityRuleRefusesAnUndeclaredProvider(t *testing.T) {
-	build := buildStepFixture(t)
-	view := build.result.DescribedView
+	build := buildStepFixture(t, stepIncompatibleOwnManifestPath, stepIncompatibleOwnReleasePath)
 
-	// A provider no step plugin in this build declares. It is derived from what the
-	// build reports rather than chosen blind: the assertion below fails if the
-	// plugin ever comes to declare it, so the refusal cannot become vacuous.
-	const foreign = "no-such-provider"
-	recipe := recipeOfNode(build.out.IRGraph, build.recipeLookup, "api")
+	recipe := recipeOfNode(build.out.IRGraph, build.recipeLookup, stepNode)
 	if recipe == nil || len(recipe.Spec.Pipeline) == 0 {
-		t.Fatal("the fixture's component declares no pipeline; there is nothing to refuse")
+		t.Fatalf("the compilation bound no pipeline-carrying Recipe to %q; there is nothing to refuse", stepNode)
 	}
-	step := recipe.Spec.Pipeline[0]
-	declared := view.StepPluginCompatibleCapabilities("api", step.ID)
-	if len(declared) == 0 {
-		t.Fatal("the presentation reports no declared provider for the step; a refusal would not be attributable")
+	fr, held := build.axes.attachmentFeatureRecipe(stepNode, stepAttachment)
+	if !held || fr == nil {
+		t.Fatalf("the compilation bound no FeatureRecipe to attachment %q on %q", stepAttachment, stepNode)
 	}
-	if slices.Contains(declared, foreign) {
-		t.Fatalf("the step's plugin declares %q; the refusal below would not follow from the mismatch", foreign)
-	}
+	nodeProvider := renderer.ProviderEngineKind(recipe.Spec.Capability)
+	attachmentProvider := renderer.ProviderEngineKind(fr.Spec.Capability)
 
-	var substituted constraint.DescribedView = stepProviderSubstituted{
-		DescribedView: view, provider: foreign,
-	}
-	objections, err := constraint.RunOnNodePipelineSteps(
-		nil, singleNode(build.coordinates, "api"), build.axes, substituted,
-		renderer.PipelineStepProviderCompatible,
-	)
-	if err != nil {
-		t.Fatalf("traversal: %v", err)
-	}
-	if len(objections) == 0 {
-		t.Fatal("the rule admitted a step matched against a provider its plugin does not declare")
-	}
-	for _, o := range objections {
-		if !errors.Is(o.Sentinel(), renderer.ErrPluginProviderIncompatible()) {
-			t.Errorf("objection sentinel = %v, want the incompatibility condition", o.Sentinel())
+	t.Run("the exercise contains two own-addressed steps whose provider the plugin does not declare", func(t *testing.T) {
+		// The enumeration, stated as a set rather than a count: a count is
+		// satisfied by the wrong coordinate as readily as the right one.
+		enumerated := stepIDs(build.axes.PipelineSteps(stepNode))
+		want := []string{"annotate_own_output", "annotate_own_output_again"}
+		if !slices.Equal(enumerated, want) {
+			t.Fatalf("the component's own pipeline enumerates as %v; want %v", enumerated, want)
 		}
-	}
+		if nodeProvider == "" {
+			t.Fatal("the component reports no provider; the rule ends on that and would raise nothing")
+		}
+		if attachmentProvider == nodeProvider {
+			t.Fatalf("the component and its attachment both render through %q; a finding naming it would not say which was read",
+				nodeProvider)
+		}
+		t.Logf("two own-addressed steps %v: the component renders through %q and its attachment through %q",
+			want, nodeProvider, attachmentProvider)
+	})
 
-	// The rule is invoked once per step and reports each, so its arity is asserted
-	// against the pipeline rather than against a fixed number: a one-step pipeline
-	// would make one-per-step and one-in-total the same count.
-	if len(objections) != len(recipe.Spec.Pipeline) {
-		t.Errorf("rule raised %d objection(s) over a %d-step pipeline, want one per step",
-			len(objections), len(recipe.Spec.Pipeline))
-	}
+	t.Run("the build halts once per authored step, naming the component's provider", func(t *testing.T) {
+		if build.renderErr == nil {
+			t.Fatal("the render admitted a step matched against a provider its plugin does not declare")
+		}
+		if !errors.Is(build.renderErr, renderer.ErrPluginProviderIncompatible()) {
+			t.Fatalf("the halt does not carry the incompatibility condition: %+v", build.renderErr)
+		}
+		// The one condition the halt must NOT carry. Every other declared rule
+		// over these axes is satisfied by this deployment, so a second sentinel
+		// here would mean the refusal is not attributable to this one.
+		if errors.Is(build.renderErr, renderer.ErrPipelinePatchPreAssembly()) {
+			t.Errorf("the halt also carries the no-merged-target condition; the refusal is not attributable: %+v",
+				build.renderErr)
+		}
 
-	// Where the finding lands: on the authored step inside the document that
-	// declares it, naming the provider it was matched against in the detail.
-	for _, o := range objections {
-		if o.Locator() == "" {
-			t.Error("objection carries no locator; it cannot be positioned on the authored step")
+		findings := stepFindings(build.renderErr)
+		if len(findings) != len(authoredOwnSteps(build)) {
+			t.Fatalf("the halt carries %d positioned finding(s) over a %d-step pipeline; want one per step",
+				len(findings), len(authoredOwnSteps(build)))
 		}
-		if o.SourceFile() == "" {
-			t.Error("objection names no source file")
+
+		// A set difference rather than a count, so a finding landing twice on one
+		// step and never on the other is named rather than absorbed.
+		positioned := map[string]int{}
+		for _, finding := range findings {
+			// Where an author fixes it: the authored step inside the entity that
+			// declares it, which is neither the Aggregate nor the deployment.
+			if finding.Source.File != recipe.Metadata.Name {
+				t.Errorf("finding positioned in %q; want the entity that declares the step, %q",
+					finding.Source.File, recipe.Metadata.Name)
+			}
+			positioned[finding.Source.Locator]++
+
+			// The attribution. The step was matched against the component's own
+			// provider, so the finding names that one and not the attachment's.
+			if !strings.Contains(finding.Message, `"`+nodeProvider+`"`) {
+				t.Errorf("finding %q does not name the component's provider %q", finding.Message, nodeProvider)
+			}
+			if strings.Contains(finding.Message, `"`+attachmentProvider+`"`) {
+				t.Errorf("finding %q names the attachment's provider %q; it was matched against the wrong documents' provider",
+					finding.Message, attachmentProvider)
+			}
 		}
-		if detail := o.Detail(); len(detail) == 0 || detail[0] != foreign {
-			t.Errorf("objection detail = %v, want the provider that was matched against %q", detail, foreign)
+		for _, step := range authoredOwnSteps(build) {
+			locator := ".spec.pipeline." + step
+			if got := positioned[locator]; got != 1 {
+				t.Errorf("the halt positions %d finding(s) at %q; want exactly one", got, locator)
+			}
 		}
-	}
-	t.Logf("rule raised %d objection(s) at locator %q in %q naming %q",
-		len(objections), objections[0].Locator(), objections[0].SourceFile(), foreign)
+		t.Logf("the build halted with %d finding(s) in %q, one per authored step, naming %q",
+			len(findings), recipe.Metadata.Name, nodeProvider)
+	})
 }
 
-// TestTheOwnScopeMergedTargetRuleRefusesAStepWithNoTarget invokes the rule over an
-// attachment's own-scope step against a component whose documents are merged.
+// authoredOwnSteps is the component's own authored step set, read from the same
+// axis the rule is invoked over so an assertion against it cannot drift from what
+// the build enumerates.
+func authoredOwnSteps(build stepBuild) []string {
+	return stepIDs(build.axes.PipelineSteps(stepNode))
+}
+
+// TestTheOwnScopeMergedTargetRuleRefusesAStepWithNoTarget reads the halt a real
+// build returns when an attachment's own-scope pipeline step stands against a
+// component whose provider folds its dispatch group into one document.
 //
 // This is the finding the three compatibility rules do not carry, and it is why
 // four rules stand over these axes rather than three. An attachment's own output
 // is written under its own position as discrete files whichever provider the
 // component uses, so a step addressing that output against a component whose
-// provider folds its dispatch group into one document has nothing to address by
-// the time it runs.
+// provider merges its dispatch group has nothing to address by the time it runs.
 //
-// The assertion at the end is what pins the division of labour: on this same input
-// the compatibility rule over the same coordinate raises nothing at all, so
-// without this rule the declared set would be silent where the build halts.
+// # Nothing is substituted in either direction
+//
+// The two facts the rule pairs are the step's declared scope, which is the
+// plugin's own self-report, and how the component's provider assembles a dispatch
+// group, which is the provider guest's own self-report. Both are read from the
+// build through the presentation the render published, and the deployment decides
+// the second by binding a different Recipe — the merging provider in the refusal,
+// the non-merging one in the admission — so each direction is a compilation of
+// authored documents rather than a value chosen here.
+//
+// That is what makes the admission attributable as well as the refusal. A build
+// rendered through a stand-in provider makes no assembly claim at all and answers
+// the empty string, which is not "does not merge": an admission read from it would
+// hold for a rule that never read the fact.
+//
+// # Why the division of labour is asserted on the halt itself
+//
+// The reason this rule exists rather than a branch on the compatibility rule is
+// that the compatibility rule is silent on this input. Asserting that the halt
+// carries THIS condition and does not carry the compatibility one says it over the
+// whole declared set at once: had any other rule raised, its sentinel would be in
+// the halt and the finding count would exceed the authored step count.
 func TestTheOwnScopeMergedTargetRuleRefusesAStepWithNoTarget(t *testing.T) {
-	build := buildStepFixture(t)
-	view := build.result.DescribedView
-
-	const node, attachment = "api", "request-guard"
-	fr, held := build.axes.attachmentFeatureRecipe(node, attachment)
-	if !held || len(fr.Spec.Pipeline) == 0 {
-		t.Fatalf("the fixture's attachment %q on %q declares no pipeline; there is nothing to judge", attachment, node)
-	}
-	steps := build.axes.AttachmentPipelineSteps(node, attachment)
-	if len(steps) == 0 {
-		t.Fatal("the axis enumerates no step; a verdict would certify nothing")
-	}
-	if scope := view.AttachmentStepExportScope(node, attachment, steps[0].Value); scope == types.ScopeHost {
-		t.Fatalf("the step addresses the component's documents rather than the attachment's; this rule is about the latter")
-	}
-
 	t.Run("it admits a build whose component's documents are not merged", func(t *testing.T) {
-		// The fact this rule turns on, read off the real build before anything is
-		// chosen: this component's provider does not merge, so nothing is refused.
-		if assembly := view.ProviderBoundaryAssembly(node); assembly == wasm.BoundaryAssemblyMerge {
-			t.Fatalf("the fixture's provider reports %q; the admission below would not be attributable", assembly)
+		build := buildStepFixture(t, stepManifestPath, stepReleasePath)
+		if build.renderErr != nil {
+			t.Fatalf("the render refused a build this proof needs completed: %+v", build.renderErr)
 		}
+		if build.result == nil || build.result.DescribedView == nil {
+			t.Fatal("the render published no presentation of what its plugins report")
+		}
+		view := build.result.DescribedView
+
+		steps := build.axes.AttachmentPipelineSteps(stepNode, stepAttachment)
+		if !slices.Equal(stepIDs(steps), []string{stepAttachmentStep}) {
+			t.Fatalf("the attachment's pipeline enumerates as %v; want the one step its FeatureRecipe declares, %q",
+				stepIDs(steps), stepAttachmentStep)
+		}
+		if scope := view.AttachmentStepExportScope(stepNode, stepAttachment, stepAttachmentStep); scope == types.ScopeHost {
+			t.Fatalf("the step addresses the component's documents rather than the attachment's; this rule is about the latter")
+		}
+
+		// The fact this rule turns on, read off the real build: this component's
+		// provider declares that it does NOT merge. The assertion is against that
+		// claim by name rather than against "not merge", because a provider making
+		// no claim at all also satisfies the negative form.
+		assembly := view.ProviderBoundaryAssembly(stepNode)
+		if assembly != wasm.BoundaryAssemblyNone {
+			t.Fatalf("the component's provider reports the assembly claim %q; want %q — the admission below is attributable only against a real claim",
+				assembly, wasm.BoundaryAssemblyNone)
+		}
+
 		objections, err := constraint.RunOnNodeAttachmentPipelineSteps(
-			nil, singleNode(build.coordinates, node), build.coordinates, build.axes, view,
+			nil, singleNode(build.coordinates, stepNode), build.coordinates, build.axes, view,
 			renderer.AttachmentPipelineStepOwnScopeHasAMergedTarget,
 		)
 		if err != nil {
@@ -745,93 +945,78 @@ func TestTheOwnScopeMergedTargetRuleRefusesAStepWithNoTarget(t *testing.T) {
 		if len(objections) != 0 {
 			t.Fatalf("rule raised %d objection(s) over a build the render admitted: %v", len(objections), objections)
 		}
+		t.Logf("the component's provider reports %q and the attachment's own-scope step %q is admitted",
+			assembly, stepAttachmentStep)
 	})
 
-	t.Run("it refuses an own-scope step against merged documents", func(t *testing.T) {
-		var merged constraint.DescribedView = stepAssemblySubstituted{
-			DescribedView: view, assembly: wasm.BoundaryAssemblyMerge,
+	t.Run("the build halts on an own-scope step against merged documents", func(t *testing.T) {
+		build := buildStepFixture(t, stepMergedTargetManifestPath, stepMergedTargetReleasePath)
+
+		fr, held := build.axes.attachmentFeatureRecipe(stepNode, stepAttachment)
+		if !held || fr == nil {
+			t.Fatalf("the compilation bound no FeatureRecipe to attachment %q on %q", stepAttachment, stepNode)
 		}
-		objections, err := constraint.RunOnNodeAttachmentPipelineSteps(
-			nil, singleNode(build.coordinates, node), singleAttachment(attachment), build.axes, merged,
-			renderer.AttachmentPipelineStepOwnScopeHasAMergedTarget,
-		)
-		if err != nil {
-			t.Fatalf("traversal: %v", err)
-		}
-		if len(objections) != len(steps) {
-			t.Fatalf("rule raised %d objection(s) over %d own-scope step(s), want one per step", len(objections), len(steps))
-		}
-		for _, o := range objections {
-			if !errors.Is(o.Sentinel(), renderer.ErrPipelinePatchPreAssembly()) {
-				t.Errorf("objection sentinel = %v, want the no-merged-target condition", o.Sentinel())
-			}
-			if o.Locator() == "" || o.SourceFile() == "" {
-				t.Error("objection carries no position; it cannot be pointed at the authored step")
-			}
-			if detail := o.Detail(); len(detail) == 0 || detail[0] != attachment {
-				t.Errorf("objection detail = %v, want the attachment %q", detail, attachment)
-			}
+		steps := build.axes.AttachmentPipelineSteps(stepNode, stepAttachment)
+		if !slices.Equal(stepIDs(steps), []string{stepAttachmentStep}) {
+			t.Fatalf("the attachment's pipeline enumerates as %v; want the one step its FeatureRecipe declares, %q",
+				stepIDs(steps), stepAttachmentStep)
 		}
 
-		// The reason this rule exists rather than a branch on the compatibility
-		// rule: on this same input the compatibility rule raises nothing, so the
-		// declared set without this rule is silent where the build halts.
-		silent, err := constraint.RunOnNodeAttachmentPipelineSteps(
-			nil, singleNode(build.coordinates, node), singleAttachment(attachment), build.axes, merged,
-			renderer.AttachmentPipelineStepProviderCompatible,
-		)
-		if err != nil {
-			t.Fatalf("traversal: %v", err)
+		// The half of the condition the deployment moves, and the half it does not.
+		// The component's provider merges; the attachment still renders through a
+		// provider its step plugin declares, which is what leaves the compatibility
+		// rule silent and this one the only rule that can raise.
+		recipe := recipeOfNode(build.out.IRGraph, build.recipeLookup, stepNode)
+		if recipe == nil {
+			t.Fatalf("the compilation bound no Recipe to %q; the component would render no documents", stepNode)
 		}
-		if len(silent) != 0 {
-			t.Errorf("the compatibility rule now raises %v on this input; the division of labour between the two rules has moved", silent)
+		nodeProvider := renderer.ProviderEngineKind(recipe.Spec.Capability)
+		attachmentProvider := renderer.ProviderEngineKind(fr.Spec.Capability)
+		if nodeProvider == attachmentProvider {
+			t.Fatalf("the component and its attachment both render through %q; the two halves of the condition are not separable here",
+				nodeProvider)
 		}
-		t.Logf("the rule raised %d objection(s) at %q in %q; the compatibility rule over the same coordinate raised none",
-			len(objections), objections[0].Locator(), objections[0].SourceFile())
+
+		if build.renderErr == nil {
+			t.Fatal("the render admitted an own-scope step standing against a component whose provider merges its dispatch group")
+		}
+		if !errors.Is(build.renderErr, renderer.ErrPipelinePatchPreAssembly()) {
+			t.Fatalf("the halt does not carry the no-merged-target condition: %+v", build.renderErr)
+		}
+
+		// The division of labour, read off the halt: the compatibility rule is
+		// silent on this input, so without this rule the declared set would report
+		// nothing where the build stops.
+		if errors.Is(build.renderErr, renderer.ErrPluginProviderIncompatible()) {
+			t.Errorf("the halt also carries the incompatibility condition; the division of labour between the two rules has moved: %+v",
+				build.renderErr)
+		}
+
+		findings := stepFindings(build.renderErr)
+		if len(findings) != len(steps) {
+			t.Fatalf("the halt carries %d positioned finding(s) over %d own-scope step(s); want one per step",
+				len(findings), len(steps))
+		}
+		finding := findings[0]
+
+		// Where an author fixes it: the authored step inside the FeatureRecipe that
+		// declares it — not the document the attachment was written in, and not the
+		// Recipe whose provider merges.
+		if finding.Source.File != fr.Metadata.Name {
+			t.Errorf("finding positioned in %q; want the entity that declares the step, %q",
+				finding.Source.File, fr.Metadata.Name)
+		}
+		if wantLocator := ".spec.pipeline." + stepAttachmentStep; finding.Source.Locator != wantLocator {
+			t.Errorf("finding positioned at %q; want the authored step %q", finding.Source.Locator, wantLocator)
+		}
+		if !strings.Contains(finding.Message, `"`+stepAttachment+`"`) {
+			t.Errorf("finding %q does not name the attachment that bound the pipeline", finding.Message)
+		}
+
+		t.Logf("the component renders through %q and its attachment through %q; the build halted at %q in %q with %q",
+			nodeProvider, attachmentProvider, finding.Source.Locator, finding.Source.File, finding.Message)
 	})
 }
-
-// singleAttachment narrows the attachment axis to one name, so a proof about one
-// attachment's steps is not also a proof about every other attachment the node
-// carries.
-type singleAttachment string
-
-func (a singleAttachment) Attachments(_ string) []string { return []string{string(a)} }
-
-// stepAssemblySubstituted answers how the provider rendering a component's own
-// documents combines its dispatch group's output with a chosen value, and leaves
-// every other fact to the presentation the render published.
-//
-// It exists for the same reason its sibling below does: the shape the rule refuses
-// is one the reading that runs today halts the build on, so a build carrying it
-// publishes no result. Substituting the one value keeps every other fact the real
-// render produced — the step's declared scope above all, which is the other half
-// of the condition — and the same shape is handed to the hand-written reading
-// through the arguments the deferral gives it.
-type stepAssemblySubstituted struct {
-	constraint.DescribedView
-	assembly string
-}
-
-func (v stepAssemblySubstituted) ProviderBoundaryAssembly(_ string) string { return v.assembly }
-
-// stepProviderSubstituted answers the provider rendering a component's own
-// documents with a chosen value and leaves every other fact to the presentation
-// the render published.
-//
-// It exists because the input the rule is there to refuse is exactly an input
-// whose render never completes: the hand-written reading halts the build on the
-// same mismatch, so a build carrying one publishes no result and there is no
-// presentation to read the rule's verdict from. Substituting the one value keeps
-// every other fact the real render produced — the plugin's own declared providers
-// above all — and that value is handed to the hand-written reading as its own
-// argument, so the two are compared on one input rather than on two.
-type stepProviderSubstituted struct {
-	constraint.DescribedView
-	provider string
-}
-
-func (v stepProviderSubstituted) NodeRenderingProvider(_ string) string { return v.provider }
 
 // stepIDs projects enumerated coordinates to the identifiers they carry.
 func stepIDs(coordinates []constraint.AuthoredCoordinate) []string {
@@ -847,8 +1032,3 @@ func stepIDs(coordinates []constraint.AuthoredCoordinate) []string {
 func stepIDsEqual(coordinates []constraint.AuthoredCoordinate, want []string) bool {
 	return slices.Equal(stepIDs(coordinates), want)
 }
-
-// The scope constant both readings compare an export against is one value rather
-// than two, so this assertion is a compile-time statement that the two readings
-// cannot disagree about what "the host documents" means.
-var _ = map[bool]struct{}{wasm.ScopeHost == types.ScopeHost: {}}
