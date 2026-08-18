@@ -1,0 +1,36 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: compose-api-server-synthesized
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/compute/api-server
+  # The same component type the chart-sourced Recipe implements, rendered by a
+  # different provider from a synthesized workload rather than from chart source.
+  # A Manifest binds one or the other, so a deployment chooses which provider
+  # renders this component's own documents without the Aggregate changing.
+  #
+  # That choice is what a pipeline step addressing the host component's documents
+  # is matched against. A step declares the provider capabilities it was tested
+  # against, and a step that patches chart source is compatible with neither the
+  # provider that emits templated manifests nor the one that emits service
+  # definitions — so binding this Recipe under an attachment carrying such a step
+  # halts the build, naming this provider.
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      server:
+        image: api-server:latest
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}

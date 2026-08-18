@@ -6,8 +6,6 @@ package pipeline
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 
@@ -15,7 +13,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -140,34 +137,12 @@ func renderStepFixture(
 	}, recipeLookup, describedRenderFactory)
 }
 
-// stageStepPlugin copies the fixture catalog into a directory this test owns and
-// writes the step plugin's artifact beside its own entity, which is how the
-// resolution cascade finds a binary the repository does not ship inside the
-// catalog. It returns the copied catalog's path.
-//
-// It copies rather than writing into the fixture because the fixture on disk is
-// read by every proof here and has to keep producing what each expects.
+// stageStepPlugin stages this file's fixture catalog with its step plugin's
+// artifact written beside the plugin's own entity, and returns the copied
+// catalog's path.
 func stageStepPlugin(t *testing.T) string {
 	t.Helper()
-	staged := filepath.Join(t.TempDir(), "catalog")
-	copyDir(t, stepCatalogPath, staged)
-
-	cat, err := catalog.LoadAll("", staged)
-	if err != nil {
-		t.Fatalf("load the copied catalog: %v", err)
-	}
-	dirs := cat.PluginColocatedDirs()
-	artifact := pluginpath.PluginLeaf(stepPluginURI)
-	dir, held := dirs[artifactReferenceOf(t, cat, stepPluginURI)]
-	if !held {
-		t.Fatalf("the copied catalog indexes no plugin entity for %q (indexed: %v)", stepPluginURI, dirs)
-	}
-	if err := os.WriteFile(
-		filepath.Join(dir, artifact), wasmtest.EnsureFixtureBytes(t, stepPluginArtifact), 0o644,
-	); err != nil {
-		t.Fatalf("stage %q beside its entity: %v", stepPluginArtifact, err)
-	}
-	return staged
+	return stageColocatedStepPlugin(t, stepCatalogPath, stepPluginURI, stepPluginArtifact)
 }
 
 // artifactReferenceOf reads the artifact reference one Plugin entity declares,

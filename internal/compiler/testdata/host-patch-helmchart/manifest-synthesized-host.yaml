@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: host-patch-helmchart-synthesized-host-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      # The host component renders through a provider that emits service
+      # definitions from a synthesized workload, so its own documents are not the
+      # chart source the attachment's pipeline step patches.
+      type:
+        core/compute/api-server: compose-api-server-synthesized:1.0.0
+    features:
+      # The attachment binding is the one the other Manifest beside this uses, so
+      # the only difference between the two deployments is which provider renders
+      # the host component's own documents.
+      type:
+        feature.myco/guardrail: guardrail-host-patcher:1.0.0
