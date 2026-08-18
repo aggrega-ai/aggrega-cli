@@ -95,10 +95,11 @@ func TestValidateFeatureRecipe_HelmChartInlineArtifacts_Passes(t *testing.T) {
 	}
 }
 
-// The supported composed helm-chart path: source + {$import:} (file-import)
-// artifacts passes at load — the engine injects the imported file into the
-// chart's templates/ directory. This pins that the rule rejects only inline
-// artifacts, not the composed file-import path.
+// The composed helm-chart path: source + {$import:} (file-import) artifacts
+// passes at load — at render the imported file is injected into the chart's
+// templates/ directory. This pins that the file-import form loads cleanly; with
+// the inline sibling above, the pair pins that both authored forms are accepted
+// and that neither is singled out at load.
 func TestValidateFeatureRecipe_HelmChartImportArtifacts_Passes(t *testing.T) {
 	t.Parallel()
 	fr := newFeatureRecipe("helm-chart")

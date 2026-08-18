@@ -118,12 +118,12 @@ func TestValidateRecipe_Rule5_NoInputKind_Fails(t *testing.T) {
 	}
 }
 
-// Rule 6 (artifact basename collision) is structurally impossible at
-// load: Artifacts is a single OrderedMap keyed by output filename, and
-// yaml.v3's OrderedMap unmarshal collapses duplicates last-wins. The
-// Rule 6 call site stays declared in validator/recipe_validate.go for
-// future collision classes (e.g., source-output basename vs artifacts
-// entry names).
+// A duplicate-entry collision cannot arise at load: Artifacts is a single
+// OrderedMap keyed by entry name, and yaml.v3's OrderedMap unmarshal collapses
+// duplicates last-wins, so two entries with one name never both reach a
+// validator. Output-filename collisions are a different class — an entry's
+// output name is its key only for the inline form — and they are detected at
+// emission rather than here.
 
 // ----- Helm-chart provider: inline artifacts accepted -----
 
