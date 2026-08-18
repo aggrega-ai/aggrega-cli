@@ -167,10 +167,10 @@ func TestThePresenceMandateRuleHaltsThroughTheViolationChannel(t *testing.T) {
 			if violation.OriginFile != invocationAggregatePath {
 				t.Errorf("violation %d document = %q, want %q", i, violation.OriginFile, invocationAggregatePath)
 			}
-			// All three coordinates are in the text, because the surfaces that
-			// render a finding as a sentence do not render the locator. Without
-			// the declaring type, two components demanding one type would read
-			// as the same string.
+			// All three coordinates are in the text, because the editor renders
+			// the message and recovers position as a range rather than reading
+			// the locator as words. Without the declaring type, two components
+			// demanding one type would read as the same string there.
 			for _, want := range []string{wantTypes[i], mandateType, mandateLabel} {
 				if !strings.Contains(violation.Message, want) {
 					t.Errorf("violation %d message does not name %q: %q", i, want, violation.Message)

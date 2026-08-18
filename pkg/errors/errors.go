@@ -59,26 +59,57 @@ const (
 // ".values.port". The dual meaning is deliberate; a caller that has only a
 // field locator should pass it rather than leave the pointer empty.
 //
+// Locator is for the caller that has BOTH halves: a document in File and the
+// authoring key within that document. It is a dotted key such as
+// ".spec.components.checkout.uses.databases", never a line or a column. Where
+// only one half is in hand there is nothing to separate and File carries it, so
+// this field stays empty and the rendering is unchanged; it exists because
+// folding a key into File would displace the path a reader opens the file with,
+// and a single string cannot be both without one of them losing.
+//
 // Line and Column are 1-based positions when available and zero when the
 // pointer is file-level only, which is always the case for a logical
 // identifier.
 type SourceLocation struct {
-	File   string
-	Line   int
-	Column int
+	File    string
+	Locator string
+	Line    int
+	Column  int
 }
 
 // String formats the source location for human consumption: "path:line:col"
 // when both Line and Column are non-zero, "path:line" when only Line is set,
 // "path" when both are zero.
+//
+// A non-empty Locator is appended to that position after the word "at", so the
+// pair reads as one position and a reader can see where the document ends and
+// the key begins. The two are joined by a word rather than run together because
+// a locator opens with a separator of its own, and concatenating them yields one
+// string that reads as a single file name with a nonsense extension. Where the
+// position is empty the locator stands alone rather than being prefixed by a
+// separator with nothing before it.
+//
+// This is the one place a position is composed, so every surface that names one
+// names it in the same shape. An empty Locator returns exactly what the file,
+// line and column alone produce, which is what keeps a caller that supplies no
+// locator rendering byte-identically.
 func (s SourceLocation) String() string {
+	var position string
 	switch {
 	case s.Line > 0 && s.Column > 0:
-		return fmt.Sprintf("%s:%d:%d", s.File, s.Line, s.Column)
+		position = fmt.Sprintf("%s:%d:%d", s.File, s.Line, s.Column)
 	case s.Line > 0:
-		return fmt.Sprintf("%s:%d", s.File, s.Line)
+		position = fmt.Sprintf("%s:%d", s.File, s.Line)
 	default:
-		return s.File
+		position = s.File
+	}
+	switch {
+	case s.Locator == "":
+		return position
+	case position == "":
+		return s.Locator
+	default:
+		return position + " at " + s.Locator
 	}
 }
 

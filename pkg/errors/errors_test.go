@@ -11,6 +11,77 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
+// TestSourceLocation_String_ComposesAPosition pins every cell of the grid
+// SourceLocation.String() decides over, because the two axes interact: a
+// document with a line and a column is one shape, an authoring key within a
+// document is another, and either half may arrive on its own.
+//
+// The rows carrying no locator are the load-bearing half. They are what bounds
+// the change to the surfaces that supply one: a caller passing no locator must
+// render exactly the bytes it rendered before the field existed, so every such
+// row here is the pre-existing shape asserted unchanged rather than a new
+// expectation.
+func TestSourceLocation_String_ComposesAPosition(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range []struct {
+		name string
+		in   cerrors.SourceLocation
+		want string
+	}{
+		// No locator: every one of these is the shape this produced before a
+		// locator could be carried at all.
+		{
+			"a document alone reads as the document",
+			cerrors.SourceLocation{File: "recipes/api.yaml"},
+			"recipes/api.yaml",
+		},
+		{
+			"a document with a line reads as document and line",
+			cerrors.SourceLocation{File: "recipes/api.yaml", Line: 12},
+			"recipes/api.yaml:12",
+		},
+		{
+			"a document with a line and a column reads as all three",
+			cerrors.SourceLocation{File: "recipes/api.yaml", Line: 12, Column: 3},
+			"recipes/api.yaml:12:3",
+		},
+		{
+			"a column with no line does not reach the reading",
+			cerrors.SourceLocation{File: "recipes/api.yaml", Column: 3},
+			"recipes/api.yaml",
+		},
+		{
+			"a pointer carrying nothing has no position at all",
+			cerrors.SourceLocation{},
+			"",
+		},
+		// A locator, which is the axis the located class supplies.
+		{
+			"a document and an authoring key read as the key inside the document",
+			cerrors.SourceLocation{File: "workspace/aggregate.yaml", Locator: ".spec.components.checkout"},
+			"workspace/aggregate.yaml at .spec.components.checkout",
+		},
+		{
+			"an authoring key with no document stands alone",
+			cerrors.SourceLocation{Locator: ".spec.components.checkout"},
+			".spec.components.checkout",
+		},
+		{
+			"a line and a column keep their place before the authoring key",
+			cerrors.SourceLocation{File: "workspace/aggregate.yaml", Locator: ".spec.parameters.port", Line: 12, Column: 3},
+			"workspace/aggregate.yaml:12:3 at .spec.parameters.port",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := c.in.String(); got != c.want {
+				t.Errorf("String() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 func TestCompilerError_Error_FormatWithSource(t *testing.T) {
 	t.Parallel()
 	e := cerrors.New(

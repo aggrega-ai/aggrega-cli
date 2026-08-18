@@ -267,6 +267,68 @@ func TestFormatCompilerError_ErrorsJoin_RendersAll(t *testing.T) {
 	}
 }
 
+// TestFormatCompilerError_LocatedFindings_DistinguishTwoComponentsOfOneType
+// pins that two components sharing a component type and failing one rule over
+// the finalised graph do not render the same bytes.
+//
+// Such a rule names its subject by a locator and puts the *declaring type* in
+// the message — not the instance — so two components of that type produce one
+// message about one document. The locator is then the only thing that differs
+// between the two findings, which makes it the only thing that can tell an
+// author which of the two components to open.
+//
+// The assertion is on the rendered bytes rather than on the locator field being
+// populated, and the distinction is the whole point: the field can be populated
+// while the bytes a reader sees are identical, which is exactly the state this
+// guards against.
+func TestFormatCompilerError_LocatedFindings_DistinguishTwoComponentsOfOneType(t *testing.T) {
+	t.Parallel()
+	// One message and one document for both findings, composed the way the
+	// presence-mandate rule composes them: the registered wording, then the
+	// declaring component type, the demanded type and the mandate's label —
+	// none of which names the component instance.
+	const message = `missing required feature: attach a Feature of the required type to the component ` +
+		`("core/compute/api-server", "core/observability/monitoring", "monitoring")`
+	const document = "workspace/aggregate.yaml"
+	const firstKey = ".spec.components.checkout"
+	const secondKey = ".spec.components.inventory"
+
+	findings := []analyzer.AnalysisError{
+		{Kind: analyzer.AnalysisErrorLocated, Message: message, OriginFile: document, Field: firstKey},
+		{Kind: analyzer.AnalysisErrorLocated, Message: message, OriginFile: document, Field: secondKey},
+	}
+
+	// The composition the build performs before the command line renders it:
+	// each violation converts, and the set is joined.
+	errs := make([]error, len(findings))
+	for i := range findings {
+		errs[i] = findings[i].ToCompilerError()
+	}
+	got := formatCompilerError(stderrors.Join(errs...))
+	t.Logf("rendered reading for two components of one type:\n%s", got)
+
+	blocks := strings.Split(got, "\n---\n")
+	if len(blocks) != 2 {
+		t.Fatalf("want two findings separated by the join rule; got %d\n--- got ---\n%s", len(blocks), got)
+	}
+	if blocks[0] == blocks[1] {
+		t.Errorf("two components of one type rendered byte-identically, so the reading names neither of them\n--- got ---\n%s", got)
+	}
+	// Each finding names the authoring key its own author has to open.
+	for i, want := range []string{firstKey, secondKey} {
+		if !strings.Contains(blocks[i], want) {
+			t.Errorf("finding %d does not name its authoring key %q\n--- got ---\n%s", i, want, blocks[i])
+		}
+	}
+	// The document survives beside the key rather than being displaced by it:
+	// an author opens a file with the one and finds the fault with the other.
+	for i := range blocks {
+		if !strings.Contains(blocks[i], document) {
+			t.Errorf("finding %d dropped the document it is about\n--- got ---\n%s", i, blocks[i])
+		}
+	}
+}
+
 // TestFormatCompilerError_ErrorsJoin_MixedTypes verifies the multi-error
 // branch handles a Join'd chain of mixed structured types (CompilerError +
 // ResolverError + a Recipe shape-rule failure). Each sub-error converts via

@@ -162,15 +162,23 @@ func (e AnalysisError) Error() string {
 // remediation is to satisfy the enforced policy or reconsider its attachment,
 // not to edit the Aggregate.
 //
-// The source pointer names the document a finding is about, which only the
-// located class knows: a rule's subject carries the file its coordinate was
-// authored in, and a policy verdict is about the graph rather than a document,
-// so its pointer is message-only.
+// The source pointer names where a finding is, which only the located class
+// knows: a rule's subject carries the file its coordinate was authored in and
+// the authoring key within it, so both travel on the pointer — the file as the
+// path a reader opens and the locator as the key to look at once open. A policy
+// verdict is about the graph rather than a document, so its pointer is
+// message-only.
+//
+// The locator is put on the pointer rather than folded into the message, and
+// that is what keeps two findings apart: a rule names the declaring type in its
+// text rather than the instance, so two components of one type failing one rule
+// carry the same message about the same document and the locator is the only
+// thing that differs. It also stays on Field, unchanged, for a consumer that
+// walks the parsed document to a range instead of reading a sentence.
 //
 // Finer-grained positions within the document — line and column — are not
-// composed here. The authoring key a violation is about is carried on Field,
-// and turning a key into a line needs the parsed document, which a consumer
-// walking source holds and this conversion does not.
+// composed here, because turning a key into a line needs the parsed document,
+// which a consumer walking source holds and this conversion does not.
 //
 // The CompilerError wraps e.Sentinel as its inner error, so a violation
 // class is detectable with errors.Is at the pipeline boundary (the build
@@ -186,13 +194,13 @@ func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 	if e.Kind == AnalysisErrorPolicy {
 		category = cerrors.PolicyError
 	}
-	var pointer string
+	var pointer cerrors.SourceLocation
 	if e.Kind == AnalysisErrorLocated {
-		pointer = e.OriginFile
+		pointer = cerrors.SourceLocation{File: e.OriginFile, Locator: e.Field}
 	}
 	return cerrors.New(
 		category,
-		cerrors.SourceLocation{File: pointer},
+		pointer,
 		e.Error(),
 		nil,
 		e.Sentinel,

@@ -5,6 +5,7 @@ package analyzer
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // ErrorsFromObjections renders what a check raised into the violation shape
@@ -100,28 +101,24 @@ func AdvisoriesFromObjections(objections []constraint.Objection) []string {
 	return out
 }
 
-// advisoryPosition composes the file and the authored locator an objection
-// carries into the position an advisory names, or returns empty when it carries
+// advisoryPosition renders the position an advisory names from the file and the
+// authored locator an objection carries, and returns empty when it carries
 // neither.
 //
-// Either half may be absent on its own — a finding about an element whose
-// authored site this stage cannot name still knows the file, and a synthetic
-// graph carries a locator and no file — so each is emitted when it is there
-// rather than both being conditioned on one of them.
+// It exists because of what an advisory is rather than because of how a position
+// is composed: a warning is a plain string with no field to carry a locator, so
+// its position has to reach the reader inside the text. A violation on the other
+// side of this boundary has a structured pointer to put the same two halves on,
+// which is why only this side needs a string at all.
 //
-// The two are joined by a word rather than run together. A locator opens with a
-// separator of its own, so concatenating the pair yields one string that reads
-// as a single file name with a nonsense extension, and a reader cannot see
-// where the document ends and the key begins. The joining word is the one the
-// product's other positioned diagnostics already use, so one shape names a
-// position everywhere it is named.
+// The composition itself is not done here. [cerrors.SourceLocation] holds it,
+// including the reason the two halves are joined by a word rather than run
+// together and the handling for either half being absent on its own — a finding
+// about an element whose authored site this stage cannot name still knows the
+// file, and a synthetic graph carries a locator and no file. Composing it a
+// second time here would let a warning's position drift from the shape every
+// other positioned diagnostic uses, and the two agreeing today is exactly what
+// would hide that drift.
 func advisoryPosition(sourceFile, locator string) string {
-	switch {
-	case sourceFile != "" && locator != "":
-		return sourceFile + " at " + locator
-	case sourceFile != "":
-		return sourceFile
-	default:
-		return locator
-	}
+	return cerrors.SourceLocation{File: sourceFile, Locator: locator}.String()
 }

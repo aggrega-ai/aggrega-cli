@@ -42,18 +42,22 @@ func TestAnalysisError_Error_ReturnsTheRuleMessageVerbatim(t *testing.T) {
 
 // TestAnalysisError_ToCompilerError_LocatedRoutesToDeveloper verifies the
 // conversion routes a rule's violation to DeveloperError and points the source
-// location at the document the finding is about.
+// location at both halves of where the finding is — the document and the
+// authoring key within it.
 //
-// The pointer is the document rather than a node identifier, and that is the
-// property worth pinning: a caller acting on the pointer opens a file with it,
-// so a node identifier there names nothing on disk.
+// The document stays on its own half of the pointer rather than being folded in
+// with the key, and that is the property worth pinning: a caller acting on the
+// pointer opens a file with it, so a pointer carrying anything that is not a path
+// names nothing on disk. The key travels beside it, which is what lets the
+// reading name a component at all.
 func TestAnalysisError_ToCompilerError_LocatedRoutesToDeveloper(t *testing.T) {
 	t.Parallel()
+	const locator = ".spec.components.frontend.uses.apis"
 	e := &analyzer.AnalysisError{
 		Kind:       analyzer.AnalysisErrorLocated,
 		Message:    "selector violation",
 		OriginFile: "workspace/aggregate.yaml",
-		Field:      ".spec.components.frontend.uses.apis",
+		Field:      locator,
 	}
 	ce := e.ToCompilerError()
 	if ce == nil {
@@ -65,8 +69,21 @@ func TestAnalysisError_ToCompilerError_LocatedRoutesToDeveloper(t *testing.T) {
 	if ce.Source.File != "workspace/aggregate.yaml" {
 		t.Errorf("Source.File = %q, want the document the finding is about", ce.Source.File)
 	}
+	if ce.Source.Locator != locator {
+		t.Errorf("Source.Locator = %q, want the authoring key the rule named %q", ce.Source.Locator, locator)
+	}
+	// The reading a terminal shows names both halves as one position.
+	if got, want := ce.Source.String(), "workspace/aggregate.yaml at "+locator; got != want {
+		t.Errorf("source pointer reads as %q, want %q", got, want)
+	}
 	if !strings.Contains(ce.Message, "selector violation") {
 		t.Errorf("Message missing original violation text: %q", ce.Message)
+	}
+	// The locator is still on the violation's own field after the conversion.
+	// A consumer walking the parsed document to a range reads it there, and it
+	// would have no range to compute from if the conversion had moved it.
+	if e.Field != locator {
+		t.Errorf("the conversion disturbed the violation's locator field: %q", e.Field)
 	}
 }
 
@@ -95,6 +112,9 @@ func TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError(t *testing.T) {
 	}
 	if ce.Source.File != "" {
 		t.Errorf("Source.File = %q; a verdict names no document", ce.Source.File)
+	}
+	if ce.Source.Locator != "" {
+		t.Errorf("Source.Locator = %q; a verdict is about the graph, not about one authoring key", ce.Source.Locator)
 	}
 	if !strings.Contains(ce.Message, "image must be digest-pinned") {
 		t.Errorf("Message missing plugin-supplied verdict text: %q", ce.Message)

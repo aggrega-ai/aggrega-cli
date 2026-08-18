@@ -277,10 +277,11 @@ func TestTheRequiredSlotRuleHaltsThroughTheViolationChannel(t *testing.T) {
 			if violation.OriginFile != invocationAggregatePath {
 				t.Errorf("violation %d document = %q, want %q", i, violation.OriginFile, invocationAggregatePath)
 			}
-			// Both coordinates are in the text, because the surfaces that render a
-			// finding as a sentence do not render the locator. Naming only the
-			// component type would leave two findings about two slots on two
-			// instances of one type reading as the same string.
+			// Both coordinates are in the text, because the editor renders the
+			// message and recovers position as a range rather than reading the
+			// locator as words. Naming only the component type would leave two
+			// findings about two slots on two instances of one type reading as
+			// the same string there.
 			if !strings.Contains(violation.Message, wantTypes[i]) ||
 				!strings.Contains(violation.Message, slotName) {
 				t.Errorf("violation %d names neither the declaring component type nor the slot: %q", i, violation.Message)
