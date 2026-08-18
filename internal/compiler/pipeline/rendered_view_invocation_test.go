@@ -108,6 +108,25 @@ func (v renderedContentSubstituted) AssembledFileContent(_ string, _ string, _ s
 	return v.content
 }
 
+// renderedArtifactContentSubstituted answers one artifact's projected bytes with
+// chosen content and leaves every other fact to the presentation the render
+// published.
+//
+// It is a sibling of the value above rather than a parameter on it, and both exist
+// for the same reason: the input a rule about a surviving marker is there to refuse
+// is one whose render does not complete, so no presentation is published to read it
+// from. They substitute different facts, and one value substituting either would
+// have to be told which — a switch that could be set wrongly and would then leave a
+// rule reading real bytes while the test believed it was reading chosen ones.
+type renderedArtifactContentSubstituted struct {
+	constraint.RenderedView
+	content []byte
+}
+
+func (v renderedArtifactContentSubstituted) ArtifactProjectionContent(_ string, _ string) []byte {
+	return v.content
+}
+
 // aNodeThatProjectedArtifacts returns a node whose render actually projected at
 // least one artifact, read from the presentation rather than from the documents,
 // so the assertions below read facts the build produced.
@@ -343,5 +362,102 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		}
 		t.Logf("the name-set fact enumerated %d artifact(s) across %d node(s), each read through the published presentation",
 			visited, len(coordinates.Nodes()))
+	})
+
+	t.Run("the artifact content fact drives a real traversal", func(t *testing.T) {
+		// The content fact is the one this stage declares that a rule reads for its
+		// verdict rather than for its subject set, so it is invoked here over the same
+		// production axis the name-set assertion above uses. Both facts being read
+		// through one presentation is what makes the axis and the verdict one set: a
+		// rule invoked for an artifact it cannot then read would be silent, and silence
+		// is indistinguishable from approval.
+		out, catalogLookup, recipeLookup := hydratedFixture(t)
+		res := renderCompiledFixtureHydrated(t, out, catalogLookup, recipeLookup)
+		if res.RenderedView == nil {
+			t.Fatal("the render published no presentation")
+		}
+		coordinates := coordinatesOf(t, out, catalogLookup)
+		artifacts := projectedArtifactAxisOver(t, res, out.IRGraph, recipeLookup)
+
+		visited := 0
+		for _, n := range coordinates.Nodes() {
+			for _, entry := range artifacts.Artifacts(n.ID) {
+				visited++
+				// Every subject the axis presents must be answerable by the fact the
+				// predicate reads. This is the containment a narrowed axis breaks
+				// without raising anything, so it is asserted rather than inferred from
+				// the rule's silence below.
+				if len(res.RenderedView.ArtifactProjectionContent(n.ID, entry.Value)) == 0 {
+					t.Errorf("ArtifactProjectionContent(%q, %q) answers nothing for a subject the axis presented", n.ID, entry.Value)
+				}
+			}
+		}
+		if visited == 0 {
+			t.Fatal("the axis presented no artifact; a finding from the traversal would certify nothing")
+		}
+
+		objections, err := constraint.RunOnNodeArtifacts(
+			context.Background().Err, coordinates, artifacts, res.RenderedView,
+			renderer.ArtifactCrossBoundaryLinkPlaceholderResolved,
+		)
+		if err != nil {
+			t.Fatalf("traversal: %v", err)
+		}
+
+		// The render completed, so the scan that runs today admitted every assembled
+		// file this build carries — and an artifact's bytes are part of what was
+		// assembled. The rule reading those same bytes earlier, through the
+		// presentation, must admit them too.
+		if len(objections) != 0 {
+			t.Fatalf("rule raised %d objection(s) over a build the render admitted: %v", len(objections), objections)
+		}
+		t.Logf("rule invoked over %d artifact(s) across %d node(s); no objection, agreeing with the render",
+			visited, len(coordinates.Nodes()))
+	})
+
+	t.Run("the same rule raises on artifact bytes the render refuses", func(t *testing.T) {
+		out, catalogLookup, recipeLookup := hydratedFixture(t)
+		res := renderCompiledFixtureHydrated(t, out, catalogLookup, recipeLookup)
+		if res.RenderedView == nil {
+			t.Fatal("the render published no presentation")
+		}
+		coordinates := coordinatesOf(t, out, catalogLookup)
+		artifacts := projectedArtifactAxisOver(t, res, out.IRGraph, recipeLookup)
+
+		visited := 0
+		for _, n := range coordinates.Nodes() {
+			visited += len(artifacts.Artifacts(n.ID))
+		}
+		if visited == 0 {
+			t.Fatal("the axis presented no artifact")
+		}
+
+		offending := []byte("wired: " + rendercore.CrossBoundaryLinkSentinelPrefix + "api/host\n")
+		var substituted constraint.RenderedView = renderedArtifactContentSubstituted{
+			RenderedView: res.RenderedView, content: offending,
+		}
+		raised, err := constraint.RunOnNodeArtifacts(
+			context.Background().Err, coordinates, artifacts, substituted,
+			renderer.ArtifactCrossBoundaryLinkPlaceholderResolved,
+		)
+		if err != nil {
+			t.Fatalf("traversal: %v", err)
+		}
+		if len(raised) != visited {
+			t.Fatalf("rule raised %d objection(s) over %d artifact(s) carrying an unresolved marker, want %d",
+				len(raised), visited, visited)
+		}
+		for _, o := range raised {
+			// The same condition the assembled-output scan names, which is what makes
+			// this an earlier report of an existing finding rather than a second thing
+			// for an author to learn.
+			if !errors.Is(o.Sentinel(), renderer.ErrOrphanCrossBoundaryLinkSentinel()) {
+				t.Errorf("objection sentinel = %v, want the unresolved cross-boundary marker condition", o.Sentinel())
+			}
+			if detail := o.Detail(); len(detail) != 2 {
+				t.Errorf("objection detail = %v, want the node and the artifact name", detail)
+			}
+		}
+		t.Logf("rule raised %d objection(s), one per artifact the production axis presented", len(raised))
 	})
 }
