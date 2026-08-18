@@ -55,7 +55,7 @@ func localsFeatureRecipe(tmpl string) *types.FeatureRecipe {
 func selfInjectValue(tmpl string) error {
 	inject := types.InjectPipe{}
 	si := &types.InjectBlock{Env: map[string]any{"BAD": map[string]any{"value": tmpl}}}
-	_, err := ExecutePass2a(&inject, si, "api", types.OrderedMap[string]{}, SelfInjectContext{})
+	err := ExecutePass2a(&inject, si, "api", types.OrderedMap[string]{}, SelfInjectContext{})
 	return err
 }
 

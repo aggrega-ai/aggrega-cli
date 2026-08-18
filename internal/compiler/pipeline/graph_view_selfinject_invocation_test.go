@@ -5,10 +5,12 @@ package pipeline
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -30,6 +32,31 @@ const (
 		"        env:\n" +
 		"          - in: UI_MODE\n" +
 		"            value: \"dark\"\n"
+
+	backEndAnchor = "    backend:\n      type: core/compute/api-server\n"
+
+	// Two keys under the mechanism the front end's type admits, plus one under a
+	// mechanism that type admits only once the catalog copy below adds it. The
+	// shape matters to the enumeration proof: the axis has to hold more than one
+	// key, more than one mechanism and more than one component, or an axis
+	// narrowed to a single subject would satisfy every assertion over it.
+	frontEndTwoMechanismSelfInject = "      inject:\n" +
+		"        env:\n" +
+		"          - in: UI_MODE\n" +
+		"            value: \"dark\"\n" +
+		"          - in: UI_THEME\n" +
+		"            value: \"slate\"\n" +
+		"        ssm_param:\n" +
+		"          - in: DB_ARN\n" +
+		"            value: \"param/db\"\n"
+
+	// One key on a second component, so the enumerated set spans more than one
+	// component. Without it every subject sits on one node, and a rule invoked
+	// per node would be indistinguishable from one invoked per key.
+	backEndSelfInject = "      inject:\n" +
+		"        env:\n" +
+		"          - in: LOG_LEVEL\n" +
+		"            value: \"debug\"\n"
 
 	// The same key declared for itself AND delivered by connections an
 	// attachment projected. The projection is what puts the collision beyond
@@ -158,61 +185,52 @@ func TestTheInjectionAxesComeFromTheCompiledGraph(t *testing.T) {
 	})
 }
 
-// TestTheSelfInjectCollisionRuleIsInvokedOverTheCompiledGraph invokes the rule
-// through the framework's traversal over the presentation and the enumeration the
-// pipeline itself built, and reads its verdict against the verdict of the
-// hand-written reading that runs today over the same graph.
+// TestTheSelfInjectCollisionRuleIsInvokedOverTheCompiledGraph reads the rule's
+// verdict off the production path — the pre-render phases as the build runs
+// them — on a document it admits and on a document it refuses.
 //
-// The two are compared over one compiled document rather than reasoned about, and
-// the hand-written reading is called directly: comparing against the path that
-// runs would compare the rule with whatever that path did, which for the
-// document below is nothing at all.
+// The verdict is read from the analysis the phases publish rather than from a
+// traversal this test drives, because that is the whole claim: the rule is asked
+// during a compilation, and what it raises reaches the slice the build halts on.
+// A traversal driven from here would prove the rule computes the right answer
+// and say nothing about whether anything asks it.
+//
+// The reading this replaced ran inside the render walk and returned the first
+// collision it found for one component. It is gone, and both differences it made
+// are asserted below rather than described: the position moves from the
+// component identifier alone to the authored key, and the count moves from one
+// to one per delivering connection.
 func TestTheSelfInjectCollisionRuleIsInvokedOverTheCompiledGraph(t *testing.T) {
-	t.Run("it admits what the hand-written reading admits", func(t *testing.T) {
-		out, catalogLookup := compileSpliced(t, invocationCatalogPath, uncollidingSelfInject)
-		coordinates := coordinatesOf(t, out, catalogLookup)
+	t.Run("a document carrying no collision reaches the render", func(t *testing.T) {
+		out, _ := compileSpliced(t, invocationCatalogPath, uncollidingSelfInject)
 
-		// The traversal must actually visit something. A subject set that came
-		// back empty would report no objection and read exactly like a rule that
-		// ran and approved, so the count is measured before the verdict is read.
+		// The axis must actually visit something. A subject set that came back
+		// empty would raise nothing and read exactly like a rule that ran and
+		// approved, so the count is measured before the verdict is read.
 		visited := 0
-		for _, node := range coordinates.Nodes() {
-			for _, mechanism := range coordinates.Mechanisms(node.ID) {
-				visited += len(coordinates.DeliveryKeys(node.ID, mechanism))
+		for _, node := range out.GraphCoordinates.Nodes() {
+			for _, mechanism := range out.GraphCoordinates.Mechanisms(node.ID) {
+				visited += len(out.GraphCoordinates.DeliveryKeys(node.ID, mechanism))
 			}
 		}
 		if visited == 0 {
-			t.Fatal("the traversal would visit no delivery key; a verdict from it would certify nothing")
+			t.Fatal("the axis holds no delivery key; a verdict over it would certify nothing")
 		}
-
-		objections, err := constraint.RunOnNodeMechanismDeliveryKeys(
-			nil, coordinates, coordinates, coordinates, out.GraphView,
-			renderer.SelfInjectKeyNotDeliveredByAnEdge,
-		)
-		if err != nil {
-			t.Fatalf("traversal: %v", err)
+		if len(out.Analysis.Errors) != 0 {
+			t.Fatalf("the phases reported %d finding(s) on a document carrying no collision: %v",
+				len(out.Analysis.Errors), out.Analysis.Errors)
 		}
-		if len(objections) != 0 {
-			t.Fatalf("rule raised %d objection(s) on a document carrying no collision: %v", len(objections), objections)
-		}
-		if twin := renderer.CheckSelfInjectCollisions(
-			map[string]map[string]string{"env": {"UI_MODE": "dark"}},
-			out.IRGraph.Spec.Edges, "frontend",
-		); twin != nil {
-			t.Fatalf("the hand-written reading refused a document the rule admitted: %v", twin)
-		}
-		t.Logf("rule invoked over %d delivery key(s); both readings admit the document", visited)
+		t.Logf("rule asked about %d delivery key(s) during the compilation; the document is admitted", visited)
 	})
 
-	t.Run("it refuses what the hand-written reading refuses", func(t *testing.T) {
+	t.Run("a key a projected connection also delivers halts the compilation before the render", func(t *testing.T) {
 		catalog := projectedSocketCatalog(t)
-		out, catalogLookup := compileSpliced(t, catalog, projectedCollisionSelfInject)
-		coordinates := coordinatesOf(t, out, catalogLookup)
+		out, _ := compileSpliced(t, catalog, projectedCollisionSelfInject)
 
 		// The connections that collide are the ones an attachment projected, so
 		// the compilation must actually carry them. A fixture whose projection
-		// stopped arriving would leave both readings with nothing to find and
-		// both would agree on silence.
+		// stopped arriving would leave the rule with nothing to find, and the
+		// silence would read as a rule that ran and approved.
 		projected := 0
 		for _, edge := range out.IRGraph.Spec.Edges {
 			if edge.Source == "frontend" && edge.OriginFeature != "" {
@@ -223,59 +241,34 @@ func TestTheSelfInjectCollisionRuleIsInvokedOverTheCompiledGraph(t *testing.T) {
 			t.Fatalf("the compilation carries %d projected connection(s) on the front end, want 2", projected)
 		}
 
-		objections, err := constraint.RunOnNodeMechanismDeliveryKeys(
-			nil, coordinates, coordinates, coordinates, out.GraphView,
-			renderer.SelfInjectKeyNotDeliveredByAnEdge,
-		)
-		if err != nil {
-			t.Fatalf("traversal: %v", err)
-		}
-		twin := renderer.CheckSelfInjectCollisions(
-			map[string]map[string]string{"env": {"PROJECTED_KEY": "from-self"}},
-			out.IRGraph.Spec.Edges, "frontend",
-		)
-
-		// Both readings refuse. That is the equivalence being proven; the
-		// differences below are differences in how each reports, measured rather
-		// than tuned away.
-		if len(objections) == 0 {
-			t.Fatal("the rule admitted a document the hand-written reading refuses")
-		}
-		if twin == nil {
-			t.Fatal("the hand-written reading admitted the document; the comparison would be vacuous")
-		}
-		if !errors.Is(twin, renderer.ErrSelfInjectKeyCollision()) {
-			t.Errorf("hand-written verdict does not carry the collision condition: %v", twin)
-		}
-		for _, objection := range objections {
-			if !errors.Is(objection.Sentinel(), renderer.ErrSelfInjectKeyCollision()) {
-				t.Errorf("objection sentinel = %v, want the collision condition", objection.Sentinel())
-			}
+		// One finding per delivering connection, which is the count the reading
+		// this replaced could not produce: it returned the first collision and
+		// stopped. Asserted by count so the change is pinned rather than noted.
+		if len(out.Analysis.Errors) != projected {
+			t.Fatalf("the phases reported %d finding(s), want one per colliding connection (%d): %v",
+				len(out.Analysis.Errors), projected, out.Analysis.Errors)
 		}
 
-		// DIVERGENCE, one: the hand-written reading collapses every colliding
-		// connection into one report and the rule raises one per connection. The
-		// rule's shape is the deliberate one — an author wiring the same key
-		// through two dependencies is told about both — and the collapse is a
-		// property of returning a single error.
-		if len(objections) != 2 {
-			t.Errorf("rule raised %d objection(s), want one per colliding connection (2)", len(objections))
-		}
-
-		// DIVERGENCE, two: the sockets reach the reader in different orders. The
-		// hand-written reading sorts by (mechanism, key, socket) and reports the
-		// first; the rule reports in the order the graph holds the connections,
-		// which is the order the traversal invokes it in. On this document the
-		// two happen to coincide, so the assertion is on the rule's own order
-		// against the graph rather than on the two agreeing.
 		var sockets []string
-		for _, objection := range objections {
-			detail := objection.Detail()
-			if len(detail) != 1 {
-				t.Fatalf("objection detail = %v, want exactly the socket it collides through", detail)
+		for i, finding := range out.Analysis.Errors {
+			if !errors.Is(finding.Sentinel, renderer.ErrSelfInjectKeyCollision()) {
+				t.Errorf("finding %d carries %v, want the collision condition", i, finding.Sentinel)
 			}
-			sockets = append(sockets, detail[0])
+			// The position the reading this replaced could not reach: it named the
+			// component identifier in the file slot and carried no locator at all,
+			// so an editor placed every one of its findings at the head of the
+			// document.
+			if finding.Field != ".spec.components.frontend.inject.env.PROJECTED_KEY" {
+				t.Errorf("finding %d is positioned at %q, want the authored key", i, finding.Field)
+			}
+			if finding.OriginFile != invocationAggregatePath {
+				t.Errorf("finding %d names document %q, want %q", i, finding.OriginFile, invocationAggregatePath)
+			}
+			sockets = append(sockets, socketNamedBy(t, finding.Message))
 		}
+
+		// The order the findings reach the reader is the order the graph holds the
+		// connections, which is the order the traversal invokes the rule in.
 		var graphOrder []string
 		for _, edge := range out.IRGraph.Spec.Edges {
 			if edge.Source != "frontend" || edge.OriginFeature == "" {
@@ -284,31 +277,201 @@ func TestTheSelfInjectCollisionRuleIsInvokedOverTheCompiledGraph(t *testing.T) {
 			graphOrder = append(graphOrder, edge.Socket)
 		}
 		if !slices.Equal(sockets, graphOrder) {
-			t.Errorf("objections name sockets %v; the graph holds the connections as %v", sockets, graphOrder)
+			t.Errorf("findings name sockets %v; the graph holds the connections as %v", sockets, graphOrder)
 		}
-
-		// DIVERGENCE, three: the locator. The rule positions its finding on the
-		// authoring key the subject stands for, which is the entry the author
-		// edits; the hand-written reading positions its own on the node, having
-		// no subject to take a position from.
-		for _, objection := range objections {
-			if objection.Locator() == "" {
-				t.Error("objection carries no locator; it cannot be positioned on the authoring key")
-			}
-			if objection.SourceFile() == "" {
-				t.Error("objection names no source file")
-			}
-		}
-		t.Logf("rule raised %d objection(s) at locator %q in %q, naming sockets %v; the hand-written reading returned one collapsed verdict: %v",
-			len(objections), objections[0].Locator(), objections[0].SourceFile(), sockets, twin)
-
-		// DIVERGENCE, four, and the one that motivates the rule: the reading that
-		// runs BEFORE the composition finds nothing here. Its own search is the
-		// component's own dependency block, which names neither projected
-		// connection — so this compilation reached the graph at all, and a
-		// collision arriving through an attachment is seen only at this stage.
-		t.Log("the pre-composition reading admitted this document: the compilation reached the graph stage")
+		t.Logf("the compilation reported %d finding(s) at %q in %q, naming sockets %v",
+			len(out.Analysis.Errors), out.Analysis.Errors[0].Field, out.Analysis.Errors[0].OriginFile, sockets)
 	})
+}
+
+// TestTheSelfInjectCollisionRuleIsAskedAboutEveryAuthoredDeliveryKey is the
+// named enumeration assertion for the axis the rule is invoked over.
+//
+// It exists because an agreement between two readings cannot see a narrowed
+// axis: a narrower axis asks every reading about fewer subjects, they agree on
+// the ones they are asked about, and nothing is raised — which is exactly what a
+// satisfied rule looks like. So the subjects are recorded as the traversal
+// invokes the rule and compared against the document as authored, by identity
+// rather than by count alone.
+//
+// The recording check stands in for the rule, and the enumeration it walks is
+// the one the compilation itself built and handed to the real invocation, so
+// what is measured here is the set that invocation is asked about.
+func TestTheSelfInjectCollisionRuleIsAskedAboutEveryAuthoredDeliveryKey(t *testing.T) {
+	out, _ := compileWith(t,
+		customMechanismCatalog(t),
+		splice{anchor: frontEndAnchor, addition: frontEndTwoMechanismSelfInject},
+		splice{anchor: backEndAnchor, addition: backEndSelfInject},
+	)
+
+	var asked []string
+	recorder := constraint.Check[constraint.GraphView, constraint.NodeMechanismDeliveryKeySubject]{
+		Sentinel: renderer.ErrSelfInjectKeyCollision(),
+		Severity: constraint.SeverityFatal,
+		Run: func(
+			_ constraint.GraphView, s constraint.NodeMechanismDeliveryKeySubject,
+		) []constraint.Objection {
+			asked = append(asked, s.NodeID()+" "+s.MechanismName()+" "+s.DeliveryKey())
+			return nil
+		},
+	}
+	if _, err := constraint.RunOnNodeMechanismDeliveryKeys(
+		nil, out.GraphCoordinates, out.GraphCoordinates, out.GraphCoordinates,
+		out.GraphView, recorder,
+	); err != nil {
+		t.Fatalf("traversal: %v", err)
+	}
+
+	// The two guards that stop this assertion passing on an axis narrow enough to
+	// be vacuous. Both are fatal: a one-subject axis and an axis whose every
+	// subject sits on one component each satisfy an identity comparison against
+	// themselves while proving nothing about the rule's reach.
+	if len(asked) <= 1 {
+		t.Fatalf("the rule was asked about %d subject(s); an axis this narrow satisfies any assertion over it: %v",
+			len(asked), asked)
+	}
+	components := map[string]struct{}{}
+	mechanisms := map[string]struct{}{}
+	for _, subject := range asked {
+		parts := strings.Fields(subject)
+		components[parts[0]] = struct{}{}
+		mechanisms[parts[1]] = struct{}{}
+	}
+	if len(components) <= 1 {
+		t.Fatalf("every subject sits on one component (%v); a rule invoked once per component would look identical", asked)
+	}
+	if len(mechanisms) <= 1 {
+		t.Fatalf("every subject sits on one mechanism (%v); a rule invoked once per component would look identical", asked)
+	}
+
+	// The identity of the set, written from the document rather than from the
+	// axis, so an axis that stopped presenting one of these fails here.
+	want := []string{
+		"backend env LOG_LEVEL",
+		"frontend env UI_MODE",
+		"frontend env UI_THEME",
+		"frontend ssm_param DB_ARN",
+	}
+	sorted := slices.Clone(asked)
+	slices.Sort(sorted)
+	if !slices.Equal(sorted, want) {
+		t.Errorf("the rule was asked about %v, want exactly the keys the document declares %v", sorted, want)
+	}
+
+	// A mechanism outside the three the block names as fields is presented on the
+	// same footing as those three. It is asserted here because it is the only
+	// place the property is now observable: the reading this rule replaced took
+	// the resolved keys of every mechanism, custom ones included, and the
+	// equivalent claim about the axis is what carries that coverage forward.
+	if got := out.GraphCoordinates.Mechanisms("frontend"); !slices.Equal(got, []string{"env", "ssm_param"}) {
+		t.Errorf("Mechanisms(%q) = %v, want the field mechanism then the custom one", "frontend", got)
+	}
+	if got := out.GraphCoordinates.DeliveryKeys("frontend", "ssm_param"); !slices.Equal(got, []string{"DB_ARN"}) {
+		t.Errorf("DeliveryKeys(%q, %q) = %v, want the key the custom mechanism delivers", "frontend", "ssm_param", got)
+	}
+	t.Logf("the rule was asked about %d subject(s) across %d component(s) and %d mechanism(s): %v",
+		len(asked), len(components), len(mechanisms), asked)
+
+	t.Run("a withdrawn signal stops the walk partway rather than at the end", func(t *testing.T) {
+		// The property is that the walk STOPS, not that an error comes back
+		// afterwards, and the two are indistinguishable from the returned error
+		// alone. So the subjects are counted: the walk must cover the components up
+		// to and including the first one carrying a subject, and none after it.
+		nodes := out.GraphCoordinates.Nodes()
+		total := 0
+		for _, node := range nodes {
+			for _, mechanism := range out.GraphCoordinates.Mechanisms(node.ID) {
+				total += len(out.GraphCoordinates.DeliveryKeys(node.ID, mechanism))
+			}
+		}
+
+		var reachable []string
+		stopAfter := 0
+		for i, node := range nodes {
+			for _, mechanism := range out.GraphCoordinates.Mechanisms(node.ID) {
+				for _, key := range out.GraphCoordinates.DeliveryKeys(node.ID, mechanism) {
+					reachable = append(reachable, node.ID+" "+mechanism+" "+key)
+				}
+			}
+			if len(reachable) > 0 {
+				stopAfter = i
+				break
+			}
+		}
+		if len(reachable) == 0 || len(reachable) >= total {
+			t.Fatalf("the walk would cover %d of %d subject(s) before the signal turns; a stop here proves nothing",
+				len(reachable), total)
+		}
+
+		reads := 0
+		withdrawn := constraint.Cancellation(func() error {
+			reads++
+			if reads > stopAfter+1 {
+				return context.Canceled
+			}
+			return nil
+		})
+
+		var visited []string
+		counting := constraint.Check[constraint.GraphView, constraint.NodeMechanismDeliveryKeySubject]{
+			Sentinel: renderer.ErrSelfInjectKeyCollision(),
+			Severity: constraint.SeverityFatal,
+			Run: func(
+				_ constraint.GraphView, s constraint.NodeMechanismDeliveryKeySubject,
+			) []constraint.Objection {
+				visited = append(visited, s.NodeID()+" "+s.MechanismName()+" "+s.DeliveryKey())
+				return nil
+			},
+		}
+		objections, err := constraint.RunOnNodeMechanismDeliveryKeys(
+			withdrawn, out.GraphCoordinates, out.GraphCoordinates, out.GraphCoordinates,
+			out.GraphView, counting,
+		)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("walk returned %v, want the withdrawn signal's own error", err)
+		}
+		if len(objections) != 0 {
+			t.Errorf("a withdrawn walk returned %d objection(s); a truncated set reads as a complete verdict",
+				len(objections))
+		}
+		if !slices.Equal(visited, reachable) {
+			t.Errorf("the walk visited %v, want it to stop after the first component carrying a subject %v",
+				visited, reachable)
+		}
+		t.Logf("the walk visited %d of %d subject(s) and read the signal %d time(s) before stopping",
+			len(visited), total, reads)
+	})
+}
+
+// socketNamedBy reads the socket a finding's message quotes.
+//
+// The message is composed from the condition's registered text and the values the
+// rule supplied, each quoted — so the quoted span is the socket and reading it
+// back is how the order the findings arrive in is compared against the graph's.
+func socketNamedBy(t *testing.T, message string) string {
+	t.Helper()
+	open := strings.Index(message, `"`)
+	if open < 0 {
+		t.Fatalf("finding %q quotes no value; it cannot name the connection it collides through", message)
+	}
+	rest := message[open+1:]
+	close := strings.Index(rest, `"`)
+	if close < 0 {
+		t.Fatalf("finding %q has an unterminated quoted value", message)
+	}
+	return rest[:close]
+}
+
+// customMechanismCatalog copies the fixture catalog and admits one mechanism
+// outside the three the injection block names as fields on the front end's type,
+// since a component may only deliver through a mechanism its type admits.
+func customMechanismCatalog(t *testing.T) string {
+	t.Helper()
+	catalog := copyCatalog(t)
+	spliceInFile(t, filepath.Join(catalog, "base/components/web-ui.yaml"),
+		"  inject: [\"env\"]\n",
+		"  inject: [\"env\", \"ssm_param\"]\n")
+	return catalog
 }
 
 // compileSpliced compiles the fixture workspace with one fragment spliced into
@@ -321,9 +484,31 @@ func compileSpliced(
 	t *testing.T, catalogPath string, fragment string,
 ) (*stepsOneToFourOutput, resolver.CatalogLookup) {
 	t.Helper()
+	if fragment == "" {
+		return compileWith(t, catalogPath)
+	}
+	return compileWith(t, catalogPath, splice{anchor: frontEndAnchor, addition: fragment})
+}
+
+// splice is one addition to the fixture, named by the anchor it is written after.
+type splice struct {
+	anchor   string
+	addition string
+}
+
+// compileWith compiles the fixture workspace with each addition written after
+// its anchor, against the catalog given.
+//
+// It takes a set rather than one fragment because a proof about how many
+// subjects a rule is asked about needs them spread across more than one
+// component, and a single-anchor splice can only reach one.
+func compileWith(
+	t *testing.T, catalogPath string, splices ...splice,
+) (*stepsOneToFourOutput, resolver.CatalogLookup) {
+	t.Helper()
 	aggregate := readAggregate(t)
-	if fragment != "" {
-		aggregate = spliceBytes(t, aggregate, frontEndAnchor, frontEndAnchor+fragment)
+	for _, s := range splices {
+		aggregate = spliceBytes(t, aggregate, s.anchor, s.anchor+s.addition)
 	}
 	return compileWorkspace(t, workspaceFixture{
 		aggregatePath: invocationAggregatePath,

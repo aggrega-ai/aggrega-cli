@@ -107,12 +107,11 @@ func TestExecutePass2a_LiteralEnvMechanism(t *testing.T) {
 	selfInject := &types.InjectBlock{
 		Env: map[string]string{"K1": "literal-value"},
 	}
-	got, err := ExecutePass2a(inject, selfInject, "node-1", types.OrderedMap[string]{}, SelfInjectContext{})
-	if err != nil {
+	if err := ExecutePass2a(inject, selfInject, "node-1", types.OrderedMap[string]{}, SelfInjectContext{}); err != nil {
 		t.Fatalf("literal env: %v", err)
 	}
-	if got["env"]["K1"] != "literal-value" {
-		t.Errorf("env literal not set; got %v", got)
+	if got, _ := inject.Env.Get("K1"); got != "literal-value" {
+		t.Errorf("env literal not set; the pipe carries %v", inject.Env.Keys())
 	}
 }
 
@@ -121,8 +120,7 @@ func TestExecutePass2a_LiteralEnvMechanism(t *testing.T) {
 func TestProcessSelfInjectMechanism_NilRaw(t *testing.T) {
 	t.Parallel()
 	pipe := &types.OrderedMap[string]{}
-	selfKeys := map[string]map[string]string{}
-	if err := processSelfInjectMechanism(pipe, "env", nil, types.OrderedMap[string]{}, SelfInjectContext{}, selfKeys); err != nil {
+	if err := processSelfInjectMechanism(pipe, "env", nil, types.OrderedMap[string]{}, SelfInjectContext{}); err != nil {
 		t.Errorf("nil raw should not error: %v", err)
 	}
 }
@@ -147,24 +145,6 @@ func TestResolveSelfInjectEntry_LiteralAndValueAndFrom(t *testing.T) {
 	_, _ = resolveSelfInjectEntry("K", selfInjectEntry{value: "literal-tmpl"}, "env", types.OrderedMap[string]{}, SelfInjectContext{
 		Values: types.OrderedMap[any]{},
 	})
-}
-
-// TestCheckSelfInjectCollisions_CollisionViaEdge pins the collision-
-// detected path: an edge whose Inject mechanism + key collides with a
-// self-inject entry.
-func TestCheckSelfInjectCollisions_CollisionViaEdge(t *testing.T) {
-	t.Parallel()
-	selfKeys := map[string]map[string]string{
-		"env": {"SHARED": "from-self"},
-	}
-	edge := types.IREdge{Source: "node-1", Target: "tgt", Socket: "s"}
-	var envInject types.OrderedMap[string]
-	envInject.Set("SHARED", "from-uses")
-	edge.Inject.Set("env", envInject)
-	err := CheckSelfInjectCollisions(selfKeys, []types.IREdge{edge}, "node-1")
-	if err == nil {
-		t.Errorf("collision should fail")
-	}
 }
 
 // TestBuildInjectAll_AggregatesEnvFileArg pins the consolidation: env

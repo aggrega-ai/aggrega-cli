@@ -9,6 +9,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -39,6 +40,17 @@ import (
 //
 // The rules are invoked in the order the readings beside them run, so the order
 // a caller sees findings in does not depend on which reading produced them.
+//
+// # A rule's declaring package does not fix where it runs
+//
+// The rules invoked here are declared in more than one package, and which package
+// holds a declaration says nothing about which scope invokes it: a rule runs at
+// the stage of the presentation it declares, and every rule declaring the
+// finalised graph's presentation belongs here whatever package its condition is
+// registered in. One of them is declared beside the render's own readings for
+// that reason alone — the condition it reports is registered there — and it is
+// invoked from here because the facts it reads are complete the moment the graph
+// is final, which is before anything renders.
 func runGraphStageRules(
 	ctx context.Context,
 	out *stepsOneToFourOutput,
@@ -152,6 +164,33 @@ func runGraphStageRules(
 		coordinates,
 		out.GraphView,
 		analyzer.RequiredAttachmentSlotBound,
+	)
+	if err != nil {
+		return err
+	}
+	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+
+	// No delivery key a component declares for itself is also delivered by one of
+	// that component's own dependency connections, evaluated once per key the
+	// component's own injection block delivers. The axis is that block as the
+	// finalised graph carries it, keyed by the identity the graph gives the
+	// component — which is what lets the question be asked of a component a
+	// sub-aggregate contributed: the equivalent reading earlier in the build is
+	// answered from the application's own documents and holds no entry for such a
+	// component, and a rule presented no subject reports exactly what a rule
+	// invoked and satisfied reports. The connections the answer reads are the
+	// graph's own, so a key delivered through a connection an attachment
+	// projected is in range here and is out of range earlier, where the only
+	// connections in hand are the ones the component's author wrote. The signal
+	// is read once per component, which is the granularity the traversal
+	// promises.
+	violations, err = constraint.RunOnNodeMechanismDeliveryKeys(
+		ctx.Err,
+		coordinates,
+		coordinates,
+		coordinates,
+		out.GraphView,
+		renderer.SelfInjectKeyNotDeliveredByAnEdge,
 	)
 	if err != nil {
 		return err

@@ -33,36 +33,40 @@ type SelfInjectContextBlock struct {
 	Annotations *types.AnnotationBuckets `json:"annotations,omitempty"`
 }
 
-// ExecutePass2a resolves component-level self-inject for one node.
-// Called before Pass 2b (uses-inject resolution).
+// ExecutePass2a resolves the component-level injection block one node's author
+// wrote into that node's injection pipe, before the pipe is rehydrated from what
+// the node's dependencies provide.
 //
-// For each mechanism in SelfInject:
+// For each mechanism the block declares:
 //   - Compact form (string values) → treated as literals
 //   - Verbose form with from: → resolved from own provides
 //   - Verbose form with value: → evaluated as Go template with restricted context
+//
+// The resolved keys are observable on the pipe it populates and are returned
+// nowhere. Whether one of them is also delivered by a dependency connection is
+// not this function's question: that is a rule over the finalised graph, asked of
+// the block as authored rather than of the values resolution produced, and asked
+// before the render begins.
 func ExecutePass2a(
 	inject *types.InjectPipe,
 	selfInject *types.InjectBlock,
 	nodeID string,
 	ownProvides types.OrderedMap[string],
 	siCtx SelfInjectContext,
-) (map[string]map[string]string, error) {
+) error {
 	if selfInject == nil {
-		return nil, nil
+		return nil
 	}
-
-	// Track which keys were set by self-inject for collision detection
-	selfKeys := map[string]map[string]string{} // mechanism → key → value
 
 	// Process each mechanism
-	if err := processSelfInjectMechanism(&inject.Env, "env", selfInject.Env, ownProvides, siCtx, selfKeys); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+	if err := processSelfInjectMechanism(&inject.Env, "env", selfInject.Env, ownProvides, siCtx); err != nil {
+		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
-	if err := processSelfInjectMechanism(&inject.File, "file", selfInject.File, ownProvides, siCtx, selfKeys); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+	if err := processSelfInjectMechanism(&inject.File, "file", selfInject.File, ownProvides, siCtx); err != nil {
+		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
-	if err := processSelfInjectMechanism(&inject.Arg, "arg", selfInject.Arg, ownProvides, siCtx, selfKeys); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+	if err := processSelfInjectMechanism(&inject.Arg, "arg", selfInject.Arg, ownProvides, siCtx); err != nil {
+		return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
 
 	// A mechanism the component names that is not one of the three typed ones
@@ -76,8 +80,8 @@ func ExecutePass2a(
 		if !ok {
 			dest = types.OrderedMap[string]{}
 		}
-		if err := processSelfInjectMechanism(&dest, mech, raw, ownProvides, siCtx, selfKeys); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+		if err := processSelfInjectMechanism(&dest, mech, raw, ownProvides, siCtx); err != nil {
+			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 		}
 		inject.Additional.Set(mech, dest)
 	}
@@ -85,103 +89,7 @@ func ExecutePass2a(
 	// Rebuild .all
 	inject.All = buildInjectAll(*inject)
 
-	return selfKeys, nil
-}
-
-// CheckSelfInjectCollisions detects self-inject vs uses-inject delivery key
-// collisions visible at the static authoring layer: selfKeys (component-level
-// inject author keys) compared against uses-inject keys derived from the
-// node's outgoing edges in the IR graph. Halt-always policy: presence in both
-// sources is sufficient signal regardless of value equality —
-// presence in both sources is sufficient signal regardless of value equality;
-// authors resolve by removing one source.
-//
-// A second detection layer is anticipated for template-expanded keys
-// (delivery keys produced by self-inject value: template evaluation that may
-// collide with uses-inject hydrated keys at render time). That layer is not
-// yet wired; this function's scope is the static authoring layer only.
-//
-// FR-interception (FeatureRecipe injectMapping overwriting a developer-
-// declared key) is explicitly NOT a collision (interception by design,
-// governed by the 5-Tier Onion Model's last-wins semantics) — that path is
-// structurally below this function (Phase A overlay merge happens in
-// merge.go::DeepMergeInjectStructured, which this function does not touch).
-// The collision check is invoked by the renderer orchestrator after Pass 2b
-// (RehydrateInjectFromProvides) and before Phase A; Phase A's overwrites are
-// not observable from this function's inputs by construction.
-//
-// Returns the first collision wrapped via cerrors.Wrap with DeveloperError
-// category. Multiple collisions on the same node sort by (mechanism,
-// deliveryKey, usesSocket) for deterministic emission across runs of the
-// same input.
-func CheckSelfInjectCollisions(selfKeys map[string]map[string]string, usesEdges []types.IREdge, nodeID string) error {
-	if len(selfKeys) == 0 {
-		return nil
-	}
-
-	// Collect static uses-inject (mechanism, deliveryKey, socket) tuples
-	// from edges sourced at this node.
-	type usesEntry struct {
-		socket string
-	}
-	usesByKey := map[string]map[string][]usesEntry{} // mechanism → deliveryKey → []usesEntry
-	for _, edge := range usesEdges {
-		if edge.Source != nodeID || edge.Inject.Len() == 0 {
-			continue
-		}
-		for mech, mechMap := range edge.Inject.All() {
-			if _, ok := usesByKey[mech]; !ok {
-				usesByKey[mech] = map[string][]usesEntry{}
-			}
-			for key := range mechMap.All() {
-				usesByKey[mech][key] = append(usesByKey[mech][key], usesEntry{socket: edge.Socket})
-			}
-		}
-	}
-
-	type collision struct {
-		mechanism, deliveryKey, usesSocket string
-	}
-	var collisions []collision
-	for mech, keys := range selfKeys {
-		mechUses, ok := usesByKey[mech]
-		if !ok {
-			continue
-		}
-		for key := range keys {
-			entries, present := mechUses[key]
-			if !present {
-				continue
-			}
-			for _, entry := range entries {
-				collisions = append(collisions, collision{mechanism: mech, deliveryKey: key, usesSocket: entry.socket})
-			}
-		}
-	}
-	if len(collisions) == 0 {
-		return nil
-	}
-
-	// Multi-level sort for deterministic emission across runs:
-	// (mechanism, deliveryKey, usesSocket).
-	sort.Slice(collisions, func(i, j int) bool {
-		if collisions[i].mechanism != collisions[j].mechanism {
-			return collisions[i].mechanism < collisions[j].mechanism
-		}
-		if collisions[i].deliveryKey != collisions[j].deliveryKey {
-			return collisions[i].deliveryKey < collisions[j].deliveryKey
-		}
-		return collisions[i].usesSocket < collisions[j].usesSocket
-	})
-
-	first := collisions[0]
-	return cerrors.Wrap(
-		fmt.Errorf("%w: delivery key %q in mechanism %q declared by both component-level self-inject and uses-level cross-inject (uses socket %q)",
-			ErrSelfInjectKeyCollision(), first.deliveryKey, first.mechanism, first.usesSocket),
-		cerrors.DeveloperError,
-		cerrors.SourceLocation{File: nodeID},
-		fmt.Sprintf("node %q self-inject vs uses-inject collision", nodeID),
-	)
+	return nil
 }
 
 func processSelfInjectMechanism(
@@ -190,7 +98,6 @@ func processSelfInjectMechanism(
 	raw any,
 	ownProvides types.OrderedMap[string],
 	siCtx SelfInjectContext,
-	selfKeys map[string]map[string]string,
 ) error {
 	if raw == nil {
 		return nil
@@ -214,11 +121,6 @@ func processSelfInjectMechanism(
 			return err
 		}
 		dest.Set(key, resolved)
-
-		if selfKeys[mechName] == nil {
-			selfKeys[mechName] = map[string]string{}
-		}
-		selfKeys[mechName][key] = resolved
 	}
 
 	return nil
