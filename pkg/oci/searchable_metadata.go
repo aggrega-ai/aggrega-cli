@@ -125,3 +125,26 @@ func (m SearchableMetadata) Annotations() (map[string]string, error) {
 	}
 	return a, nil
 }
+
+// PluginSearchableMetadata projects a Plugin entity onto the facets a plugin
+// publish stamps: the entity's summary, the Plugin kind, the socket type it
+// implements, and the capabilities it declares. It is the one home for that
+// mapping: every site that needs to know which annotations a publish of a given
+// entity lands reads it from here, so a facet added to the projection reaches
+// them all at once and no site can answer differently.
+//
+// Two facets are left zero on purpose rather than by omission. A Plugin entity's
+// metadata declares no category and no label map, so neither has a source on this
+// kind at all; Annotations omits an empty facet, so neither renders a key.
+//
+// The kind is the fixed value Plugin rather than the entity's own kind field, so
+// a value assembled in memory — one that never round-tripped through a parsed
+// document — still projects the kind the publish location is derived from.
+func PluginSearchableMetadata(p types.Plugin) SearchableMetadata {
+	return SearchableMetadata{
+		Description:  p.Metadata.Description,
+		Kind:         "Plugin",
+		PluginType:   p.Metadata.PluginType,
+		Capabilities: p.DeclaredCapabilities(),
+	}
+}

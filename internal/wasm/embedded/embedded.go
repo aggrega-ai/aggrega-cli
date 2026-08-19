@@ -13,8 +13,9 @@
 // Wasm is large), regenerated from guest source by `go generate` rather than
 // tracked in git, so a fresh checkout has none until a build runs — decompressed
 // once at init into the registry, keyed by the plugin's bare identity
-// (`<socket>/<name>`) — the same identity a Plugin entity's metadata.name
-// carries. Keying on the bare identity, not a content digest and not a
+// (`<socket>/<name>`) — the same identity a Plugin entity derives from its
+// pluginType and name. Keying on the bare identity, not a content digest and not
+// a
 // host-qualified location, means the embed tier resolves the built-ins offline
 // and independently of the configured registry, and a rebuild of the embedded
 // bytes does not perturb the lookup key: the reference digest is derived from the
@@ -67,8 +68,8 @@ import (
 var pluginFS embed.FS
 
 // The bare identity every embedded plugin registers under is derived from its
-// manifest row (`{socket}/{name}`) — the same identity a Plugin entity's
-// metadata.name carries. The reference digest is derived from the decompressed
+// manifest row (`{socket}/{name}`) — the same identity a Plugin entity derives
+// from its pluginType and name. The reference digest is derived from the decompressed
 // bytes on demand where a caller needs it, never stored in the key, so a rebuild
 // of a guest does not perturb the lookup.
 //

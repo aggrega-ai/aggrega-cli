@@ -6,6 +6,7 @@ package oci_test
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -191,5 +192,73 @@ func assertAnnotation(t *testing.T, got map[string]string, key, want string) {
 	t.Helper()
 	if got[key] != want {
 		t.Errorf("annotation %q = %q; want %q", key, got[key], want)
+	}
+}
+
+// TestPluginSearchableMetadataProjectsTheEntity pins the plugin facet projection
+// that a publish and the checks over an embedded plugin both read: each populated
+// facet comes from the entity, and each facet left zero is one a Plugin entity has
+// no source for.
+//
+// The last assertion is structural rather than a list. Every facet the projection
+// does not name is required to be zero, so a facet it starts populating cannot be
+// added without landing here — which is the only place the addition is visible. A
+// hand-written list of the facets it populates would drift from the projection
+// exactly as quietly as a second copy of the projection itself would.
+func TestPluginSearchableMetadataProjectsTheEntity(t *testing.T) {
+	t.Parallel()
+
+	// Distinct values per facet, so no assertion below can pass by reading the
+	// wrong one, and a capability list with two entries so the joined rendering is
+	// exercised over more than a single element.
+	entity := types.Plugin{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "Plugin",
+		Metadata: types.PluginMetadata{
+			Name:        "compose",
+			Version:     "1.2.3",
+			PluginType:  "provider",
+			Description: "Renders workloads into Compose services.",
+		},
+		Spec: types.PluginSpec{
+			AbiVersion: "v1alpha1",
+			Provider:   &types.PluginProvider{Capabilities: []string{"compose", "podman-compose"}},
+		},
+	}
+
+	md := oci.PluginSearchableMetadata(entity)
+
+	if md.Description != entity.Metadata.Description {
+		t.Errorf("Description = %q; want the entity's summary %q", md.Description, entity.Metadata.Description)
+	}
+	if md.Kind != "Plugin" {
+		t.Errorf("Kind = %q; want %q", md.Kind, "Plugin")
+	}
+	if md.PluginType != entity.Metadata.PluginType {
+		t.Errorf("PluginType = %q; want the socket the entity implements, %q", md.PluginType, entity.Metadata.PluginType)
+	}
+	if !reflect.DeepEqual(md.Capabilities, entity.DeclaredCapabilities()) {
+		t.Errorf("Capabilities = %#v; want the entity's declared list %#v", md.Capabilities, entity.DeclaredCapabilities())
+	}
+	// Read through the same renderer a publish uses, so the projection is shown to
+	// produce a stampable map rather than only the right field values.
+	ann := mustAnnotations(t, md)
+	assertAnnotation(t, ann, oci.AnnotationKind, "Plugin")
+	assertAnnotation(t, ann, oci.AnnotationPluginType, "provider")
+	assertAnnotation(t, ann, oci.AnnotationCapabilities, "compose,podman-compose")
+
+	projected := map[string]bool{"Description": true, "Kind": true, "PluginType": true, "Capabilities": true}
+	mv := reflect.ValueOf(md)
+	for i := range mv.NumField() {
+		name := mv.Type().Field(i).Name
+		if projected[name] {
+			if mv.Field(i).IsZero() {
+				t.Errorf("facet %q is asserted above but the fixture left it zero, so that assertion compared two zero values and passed vacuously", name)
+			}
+			continue
+		}
+		if !mv.Field(i).IsZero() {
+			t.Errorf("facet %q is populated by the projection but nothing here states where it comes from; assert its source, or leave it zero if a Plugin entity has none", name)
+		}
 	}
 }

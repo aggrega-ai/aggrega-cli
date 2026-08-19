@@ -139,18 +139,16 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	reference := buildPushReference(registry, "Plugin", entity.Metadata.PluginType, name)
 
 	// Searchable catalog annotations, sourced from the entity as pushed (never a
-	// re-invoked describe()), built once and stamped identically onto the digest
-	// preview and the real push. A plugin's metadata carries neither a category
-	// label nor a label map, so both facets are left empty. Building them once is
-	// load-bearing: the previewed digest is signed and compared by the
+	// re-invoked describe()) through the single plugin facet projection, built once
+	// and stamped identically onto the digest preview and the real push. Building
+	// them once is load-bearing: the previewed digest is signed and compared by the
 	// immutability guard, so the preview must stamp exactly the annotations the
-	// push will.
-	annotations, err := oci.SearchableMetadata{
-		Description:  entity.Metadata.Description,
-		Kind:         "Plugin",
-		PluginType:   entity.Metadata.PluginType,
-		Capabilities: entity.DeclaredCapabilities(),
-	}.Annotations()
+	// push will. Routing through the projection is load-bearing for a second
+	// reason: which facets a plugin publish stamps is then a single statement, so a
+	// check that the artifact a binary carries is the artifact a publish of it
+	// produces can assert against what this push really sends rather than against a
+	// restatement of it.
+	annotations, err := oci.PluginSearchableMetadata(entity).Annotations()
 	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", name, err)
 	}
