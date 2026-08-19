@@ -122,6 +122,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -208,14 +209,45 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 // always present: a client must never have to tell "no source" apart from "the
 // other layer", which is why it is stamped at each layer's own boundary rather
 // than at the construction sites.
+//
+// Code carries the code of the condition the entry reports, so a client
+// recognises the condition without matching Message. It is the string that
+// condition is registered under, so it is the value a Go consumer of the same
+// failure reads with errors.CodeOf. The wire name is the one a
+// machine-matchable code independent of the message already carries on the
+// other structured surfaces here — the publishing linter's findings and the
+// plugin diagnostic shape — so one concept keeps one spelling across them.
+//
+// It is absent when the failure behind the entry names no such condition, which
+// is a fact about that failure rather than a gap: a buffer no YAML parser will
+// read, and a stage that reports a failure without naming a condition, have
+// none to report. So a client treats the key as optional and branches on it
+// only when it is there — the same posture the end-position keys ask for.
+//
+// It is not the numeric code on a JSON-RPC error envelope, which names a state
+// of the workspace rather than a condition and travels on a different object.
 type Diagnostic struct {
 	Line      int    `json:"line"`
 	Column    int    `json:"column"`
 	Severity  string `json:"severity"`
 	Message   string `json:"message"`
+	Code      string `json:"code,omitempty"`
 	Source    string `json:"source"`
 	EndLine   int    `json:"end_line,omitempty"`
 	EndColumn int    `json:"end_column,omitempty"`
+}
+
+// diagnosticCode returns the code of the condition err's chain names, or the
+// empty string when the chain names none.
+//
+// CodeOf's second return is deliberately dropped here rather than at each caller.
+// On this wire the empty string and the omitted key are the same statement — the
+// entry names no condition — so a boolean beside it would carry nothing a client
+// could act on, and a per-site choice about it is a choice eleven construction
+// sites would each have to make the same way.
+func diagnosticCode(err error) string {
+	code, _ := cerrors.CodeOf(err)
+	return code
 }
 
 // The two layer sources. DiagnosticSourceSemantic covers everything the

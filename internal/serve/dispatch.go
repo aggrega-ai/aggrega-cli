@@ -43,10 +43,27 @@ type jsonRPCResponse struct {
 // line/column. See errorData (errors_data.go) for the schema. When
 // nil, omitempty drops the field from the wire and the client falls
 // back to file-level positioning.
+//
+// cause is the error Message was rendered from, kept beside the
+// rendered text so a caller that turns this envelope into something
+// richer than a string still has the failure itself in hand — the
+// condition a diagnostic reports its code from, for one. Rendering an
+// error to text is one-way, so a caller that is handed only the text
+// cannot recover what the failure was; carrying the error alongside is
+// what keeps that open.
+//
+// It is unexported, so it never travels: the wire shape of an error
+// envelope is exactly the three tagged fields above. Code stays the
+// only code on this object and is the numeric JSON-RPC one, which
+// names a state of the workspace rather than a condition of the
+// toolchain. A site that renders no error, or that holds none, leaves
+// cause nil, and a reader treats nil as nothing to report rather than
+// as an omission.
 type jsonRPCError struct {
 	Code    int        `json:"code"`
 	Message string     `json:"message"`
 	Data    *errorData `json:"data,omitempty"`
+	cause   error
 }
 
 // readMessage parses one Content-Length-framed JSON-RPC message from r.

@@ -66,10 +66,13 @@ func (s *sealed) Error() string { return s.message }
 // two carry their stability independently: the accessor can be renamed or moved
 // without disturbing the code a condition was registered under.
 //
-// It is reached from Go, through CodeOf or the CodedError interface, and from
-// there only. No emitted diagnostic carries it today — the printed output is the
-// category prefix, the source location and the message text — so a consumer that
-// does not link this package recognises conditions by their message instead.
+// It is reached from Go through CodeOf or the CodedError interface, and from
+// outside Go on the structured diagnostic the compiler-as-service daemon
+// publishes, where it travels as a field of its own. That is what the separate
+// identifier buys a consumer that does not link this package: it reads the code
+// rather than recognising a condition by the wording of its message. What
+// `aggrega` prints on a terminal is unchanged — the category prefix, the source
+// location and the message text.
 func (s *sealed) ErrorCode() string { return s.code }
 
 // CodedError is an error that reports the code of the halting condition it

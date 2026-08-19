@@ -136,6 +136,9 @@ func (s *Server) envelopeDiagnosticsForBuffer(file string, content []byte, doc *
 		return nil, false
 	}
 	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
+	// One rejection, one condition: every finding beneath it reports the same
+	// code, and what separates them is the key each one points at.
+	code := diagnosticCode(envErr)
 	var diags []Diagnostic
 	for _, f := range leafmostFindings(envErr.Findings) {
 		// The path is resolved through the same walk the envelope's own
@@ -161,6 +164,7 @@ func (s *Server) envelopeDiagnosticsForBuffer(file string, content []byte, doc *
 			EndColumn: endCol,
 			Severity:  "error",
 			Message:   string(kind) + " document violates its envelope schema: " + f.Message,
+			Code:      code,
 		})
 	}
 	return diags, true

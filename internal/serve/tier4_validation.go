@@ -83,12 +83,16 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	resolved, envelope := s.resolveReleaseClosure(view, s.activeReleasePath, nil)
 	if envelope != nil {
 		// Closure-level failure (catalog load, Release/Manifest load,
-		// Aggregate read) — Tier-D fall-back at file:1:1.
+		// Aggregate read) — Tier-D fall-back at file:1:1. The code comes off
+		// the envelope's cause rather than off its Message: the message is
+		// rendered text, and the condition the failure names is only reachable
+		// through the failure itself.
 		return []Diagnostic{{
 			Line:     1,
 			Column:   1,
 			Severity: "error",
 			Message:  "Dependencies: " + envelope.Message,
+			Code:     diagnosticCode(envelope.cause),
 		}}
 	}
 
@@ -137,6 +141,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Column:   1,
 			Severity: "error",
 			Message:  fmt.Sprintf("Dependencies: catalog extends: %v", vr.ClosureExtendsErrors[0]),
+			Code:     diagnosticCode(vr.ClosureExtendsErrors[0]),
 		}}
 	}
 
@@ -150,6 +155,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Column:   1,
 			Severity: "error",
 			Message:  "Dependencies: " + s.skipContext(view, vr.PillarError.Error()),
+			Code:     diagnosticCode(vr.PillarError),
 		}}
 	}
 
@@ -182,6 +188,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Column:   1,
 			Severity: "error",
 			Message:  tier4PhaseErrorMessage(vr.RunErr),
+			Code:     diagnosticCode(vr.RunErr),
 		})
 	}
 
@@ -213,6 +220,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Column:   1,
 			Severity: "error",
 			Message:  "Dependencies: " + ferr.Error(),
+			Code:     diagnosticCode(ferr),
 		})
 	}
 
@@ -225,6 +233,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Column:   1,
 			Severity: "error",
 			Message:  "Dependencies: input-kind: " + e.Error(),
+			Code:     diagnosticCode(e),
 		})
 	}
 
@@ -276,7 +285,12 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 			EndLine:   endLine,
 			EndColumn: endCol,
 			Severity:  "error",
-			Message:   "Dependencies: " + errs[i].Error(),
+			// The code comes off Sentinel rather than off the entry: an
+			// AnalysisError reports its own Message and does not unwrap to the
+			// condition it names, so a chain walk over the entry itself finds
+			// nothing to report.
+			Message: "Dependencies: " + errs[i].Error(),
+			Code:    diagnosticCode(errs[i].Sentinel),
 		})
 	}
 	return out
@@ -309,6 +323,7 @@ func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, do
 		EndColumn: endCol,
 		Severity:  severity,
 		Message:   ve.Message,
+		Code:      diagnosticCode(ve),
 	}
 }
 

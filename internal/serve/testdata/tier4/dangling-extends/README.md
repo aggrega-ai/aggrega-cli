@@ -13,15 +13,15 @@ subtree so the daemon's lazy lookup finds the broken Component.
 This fixture documents the diagnostic shape the daemon produces
 when the lazy-lookup encounters a dangling extends. Today's
 shape: Tier-D fall-back at file:1:1 with a message prefixed
-`"Dependencies: "` and mentioning `extends`. The emission flows
-through `runTier4Validation`'s resolveReleaseClosure-envelope
-branch (the outer `resolveReleaseClosure` short-circuits the
-catalog-load failure into a `*jsonRPCError` envelope), so the
-message does NOT contain the `"catalog load:"` substring that
-would identify the alternate catalog-load branch. The per-
-Component position is stderr-logged by the lazy lookup but not
-propagated to the daemon's response shape. See the test's godoc
-for the full path trace.
+`"Dependencies: catalog extends: "`. The closure resolution
+SUCCEEDS on this fixture — the broken Component resolves and only
+its declared parent is missing — so the emission comes from the
+closure-scoped extends gate, which walks the resolved closure,
+and not from the closure-level envelope branch ahead of it. The
+`"catalog extends: "` prefix is what tells the two apart. The
+per-Component position is stderr-logged by the lazy lookup but
+not propagated to the daemon's response shape. See the test's
+godoc for the full path trace.
 
 Used by `TestRunTier4Validation_DanglingExtendsFallsBackToTierD` in
 `tier4_validation_test.go`.

@@ -445,25 +445,22 @@ func TestAnalyzerErrorsToDiagnostics_BackfillsEmptyOriginFile(t *testing.T) {
 // than a sub-file position-mapped diagnostic.
 //
 // The path empirically traced: the validate request enters
-// runTier4Validation; the first call site is
-// s.resolveReleaseClosure(s.activeReleasePath). resolveReleaseClosure
-// internally calls s.resolveRecipeCatalog(); the catalog loads
-// successfully but cat.ResolveAllExtends() returns at least one
-// *validator.ValidationError; resolveRecipeCatalog wraps the slice
-// as fmt.Errorf("catalog extends: N resolution error(s)");
-// resolveReleaseClosure re-wraps as *jsonRPCError{Code:
-// errEntityNotResolvable, Message: <wrapped string>} and returns
-// that envelope to runTier4Validation; runTier4Validation's
-// resolveReleaseClosure-envelope branch emits Diagnostic{Line:1,
-// Column:1, Message: "Dependencies: " + envelope.Message}. The
-// downstream resolveRecipeCatalog branch (which would prefix
-// "Dependencies: catalog load: ...") is never reached on this path
-// because resolveReleaseClosure already short-circuited the
-// failure. The absence of the "catalog load:" substring is
-// asserted below to pin which fall-back branch fires — without
-// it, both Tier-D branches in runTier4Validation produce messages
-// matching "Dependencies: " and "extends", and the test would not
-// disambiguate.
+// runTier4Validation, which resolves the Release closure first. That
+// resolution SUCCEEDS on this fixture — the broken Component resolves,
+// and only its declared parent is missing — so the closure-level
+// envelope branch does not fire. The failure surfaces one step later,
+// from the closure-scoped extends gate: compilerops.Validate walks the
+// resolved closure, cat.ResolveAllExtends() returns at least one
+// *validator.ValidationError, and the gate reports them in
+// ClosureExtendsErrors. That branch emits Diagnostic{Line:1, Column:1,
+// Message: "Dependencies: catalog extends: " + first error}.
+//
+// The "catalog extends: " prefix is asserted below to pin which
+// fall-back branch fires: every Tier-D branch produces a message
+// matching "Dependencies: " and this fixture's error text mentions
+// extends whichever branch reports it, so without the prefix the
+// assertions would not disambiguate. That prefix has exactly one
+// emitting site in this package, which is what makes it a locator.
 //
 // Position recovery for the per-Component ValidationError is not
 // available at the daemon's pipeline boundary: the lazy-lookup
@@ -564,21 +561,16 @@ func TestRunTier4Validation_DanglingExtendsFallsBackToTierD(t *testing.T) {
 	if !containsSubstring(d.Message, "extends") {
 		t.Errorf("Message should mention extends; got %q", d.Message)
 	}
-	// Pin which Tier-D branch fires. runTier4Validation has two
-	// Tier-D fall-back paths producing similar messages: the
-	// resolveReleaseClosure-envelope path ("Dependencies: <envelope.Message>")
-	// and the resolveRecipeCatalog-error path ("Dependencies: catalog load: <err>").
-	// The dangling-extends class flows through the resolveReleaseClosure-
-	// envelope path because resolveReleaseClosure internally invokes
-	// resolveRecipeCatalog and short-circuits the catalog-load failure;
-	// the outer runTier4Validation never reaches its own catalog-load
-	// branch. The "catalog load:" substring would only appear if that
-	// outer branch fired — its absence pins the emission site. If this
-	// assertion ever fails because "catalog load:" appears, the
-	// emission site has moved and the test's godoc trace needs to be
-	// revised to match.
-	if containsSubstring(d.Message, "catalog load:") {
-		t.Errorf("expected resolveReleaseClosure-envelope Tier-D branch (absence of \"catalog load:\" substring); got %q", d.Message)
+	// Pin which Tier-D branch fires. Every Tier-D fall-back prefixes
+	// "Dependencies: " and this fixture's error text mentions extends
+	// whichever branch reports it, so the assertions above do not on their
+	// own say where the diagnostic came from. The "catalog extends: "
+	// prefix does: it is emitted from the closure-scoped extends gate's
+	// branch and from nowhere else in this package. If this assertion ever
+	// fails, the emission site has moved and the godoc trace above needs
+	// to be revised to match.
+	if !containsSubstring(d.Message, "catalog extends: ") {
+		t.Errorf("expected the closure-scoped extends gate's Tier-D branch (\"catalog extends: \" prefix); got %q", d.Message)
 	}
 }
 

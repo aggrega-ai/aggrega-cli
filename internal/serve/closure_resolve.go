@@ -36,6 +36,13 @@ import (
 // envelope as a stderr-logged warning and skips drift verification;
 // the next handleIrGraph retries.
 //
+// The envelope carries the failure it was rendered from as well as the
+// rendered text, because rendering is one-way and a caller that maps
+// the envelope onto a diagnostic needs the failure to report the
+// condition behind it. Every stage of the resolution wraps whatever
+// refused, so the condition a closure-level failure names is reachable
+// through the envelope at each of the returns below.
+//
 // The load-stage failures populate Data.File with the Release document whose
 // load failed — File names the source document a failure is about, and nothing
 // else; a lockfile-scoped failure names its lockfile in Data.Lockfile instead,
@@ -74,12 +81,14 @@ func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath str
 			return nil, &jsonRPCError{
 				Code:    errEntityNotResolvable,
 				Message: s.skipContext(view, cerr.Error()),
+				cause:   cerr,
 			}
 		}
 		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: cerr.Error(),
 			Data:    newErrorData(releasePath, 0, 0),
+			cause:   cerr,
 		}
 	}
 	if lf != nil {
@@ -87,6 +96,7 @@ func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath str
 			return nil, &jsonRPCError{
 				Code:    errEntityNotResolvable,
 				Message: s.skipContext(view, rerr.Error()),
+				cause:   rerr,
 			}
 		}
 	}
