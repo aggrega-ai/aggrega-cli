@@ -31,7 +31,8 @@ var errArtifactEntryShape = cerrors.Register("types/artifact-entry-shape", cerro
 //     path; IsLibraryImport returns false. A relative path is anchored to
 //     the declaring entity's own directory when the catalog loads the
 //     entity, so what Import carries downstream of a catalog load is
-//     absolute.
+//     absolute, while AuthoredImport still carries the relative path as
+//     written.
 //   - Mode 3 (library import): a YAML map of exactly one key
 //     `$import: <Library>#/artifacts/<entry>`, a host-less bare-name
 //     reference into an ArtifactsLibrary bundle (the version is supplied
@@ -44,12 +45,25 @@ var errArtifactEntryShape = cerrors.Register("types/artifact-entry-shape", cerro
 // schema rejects it via a `not: pattern` constraint on the `$import:` value
 // and the consumption site rejects it via HasOCIPrefix.
 //
+// AuthoredImport carries the `$import:` value exactly as it appears in the
+// document the entry was read from, and no path resolution rewrites it.
+// Import is the value to open; AuthoredImport is the value to show, so a
+// reader is shown the reference they wrote rather than one whose leading
+// directories describe wherever the catalog happens to sit. Reading it
+// needs no test of which mode is in play: a file import yields the authored
+// path, a library import yields the authored identity reference, and an
+// inline entry yields "" because there is no `$import:` to carry. For an
+// entry decoded from a document that empty value has exactly one meaning,
+// because AuthoredImport is empty precisely when Import is, and an entry
+// carrying no import has no reference to show.
+//
 // The owning Recipe.Spec.Artifacts is an OrderedMap[ArtifactEntry]
 // keyed by output filename. File-loaded entries derive their map-key
 // name from the input path's basename.
 type ArtifactEntry struct {
-	Inline string `json:"-" yaml:"-"`
-	Import string `json:"-" yaml:"-"`
+	Inline         string `json:"-" yaml:"-"`
+	Import         string `json:"-" yaml:"-"`
+	AuthoredImport string `json:"-" yaml:"-"`
 }
 
 // IsEmpty reports whether neither mode is populated.
@@ -107,10 +121,13 @@ func (a *ArtifactEntry) UnmarshalYAML(node *yaml.Node) error {
 	}
 	a.Inline = inline
 	a.Import = importTarget
+	a.AuthoredImport = importTarget
 	return nil
 }
 
-// MarshalYAML emits the populated mode via marshalImportable.
+// MarshalYAML emits the populated mode via marshalImportable. The emitted
+// `$import:` value is Import, so re-marshalling an entry whose path a catalog
+// load resolved emits the resolved path rather than the authored one.
 func (a ArtifactEntry) MarshalYAML() (any, error) {
 	return marshalImportable(a.Inline, a.Import)
 }

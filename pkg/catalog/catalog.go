@@ -1135,17 +1135,8 @@ func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
 	}
 	e.Spec.Workload.Import = workloadTarget
 
-	for _, name := range e.Spec.Artifacts.Keys() {
-		entry, _ := e.Spec.Artifacts.Get(name)
-		target, err := resolveImportPath(path, entry.Import, entry)
-		if err != nil {
-			return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe artifact %q $import target %q", name, entry.Import))
-		}
-		if target == entry.Import {
-			continue
-		}
-		entry.Import = target
-		e.Spec.Artifacts.Set(name, entry)
+	if err := resolveArtifactImports(path, "Recipe", &e.Spec.Artifacts); err != nil {
+		return types.Recipe{}, err
 	}
 	return e, nil
 }
@@ -1196,11 +1187,37 @@ func resolveAgainstEntityDir(entityPath, authored string) (string, error) {
 	return filepath.Abs(filepath.Join(filepath.Dir(entityPath), authored))
 }
 
+// resolveArtifactImports rewrites each artifacts entry's `$import:` target
+// against the directory of the entity file that declared it, in place and in
+// author order. An entry whose target the resolution hands back unchanged is
+// left alone rather than rewritten to itself.
+//
+// Recipe and FeatureRecipe expose the same artifacts surface and resolve it
+// identically, so the rewrite has one home and cannot come to differ between
+// the two kinds. The kind argument names the entity in the failure, so each
+// caller's diagnostic reads as its own.
+func resolveArtifactImports(entityPath, kind string, artifacts *types.OrderedMap[types.ArtifactEntry]) error {
+	for _, name := range artifacts.Keys() {
+		entry, _ := artifacts.Get(name)
+		target, err := resolveImportPath(entityPath, entry.Import, entry)
+		if err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: entityPath}, fmt.Sprintf("resolve %s artifact %q $import target %q", kind, name, entry.Import))
+		}
+		if target == entry.Import {
+			continue
+		}
+		entry.Import = target
+		artifacts.Set(name, entry)
+	}
+	return nil
+}
+
 // parseFeatureRecipeEntity is the FeatureRecipe analogue of parseRecipeEntity:
-// unmarshal, kind-check, and the relative-source rewrite. FeatureRecipes carry
-// no ValidateRecipe shape pass and no artifacts surface, so the body is the
-// Recipe parse minus those two steps. Self-wraps its failures like
-// parseRecipeEntity.
+// envelope gate, unmarshal, kind-check, the load-time shape rules
+// (validator.ValidateFeatureRecipe), and the same relative-source and
+// relative-`$import` rewrites against the entity file's own directory. Both
+// kinds route their artifacts rewrite through resolveArtifactImports, so the
+// two cannot drift. Self-wraps its failures like parseRecipeEntity.
 func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindFeatureRecipe, data, path); eerr != nil {
 		return types.FeatureRecipe{}, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
@@ -1234,17 +1251,8 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 	}
 	e.Spec.Workload.Import = workloadTarget
 
-	for _, name := range e.Spec.Artifacts.Keys() {
-		entry, _ := e.Spec.Artifacts.Get(name)
-		target, err := resolveImportPath(path, entry.Import, entry)
-		if err != nil {
-			return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe artifact %q $import target %q", name, entry.Import))
-		}
-		if target == entry.Import {
-			continue
-		}
-		entry.Import = target
-		e.Spec.Artifacts.Set(name, entry)
+	if err := resolveArtifactImports(path, "FeatureRecipe", &e.Spec.Artifacts); err != nil {
+		return types.FeatureRecipe{}, err
 	}
 	return e, nil
 }

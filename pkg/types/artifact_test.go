@@ -37,6 +37,11 @@ func TestArtifactEntry_RoundTripInline(t *testing.T) {
 	if entry.Import != "" {
 		t.Errorf("expected Import empty; got %q", entry.Import)
 	}
+	// An inline entry carries no `$import:` at all, so there is no authored
+	// reference to keep.
+	if entry.AuthoredImport != "" {
+		t.Errorf("expected AuthoredImport empty; got %q", entry.AuthoredImport)
+	}
 }
 
 // TestArtifactEntry_RoundTripImport pins mode 2: {$import: <path>}.
@@ -59,6 +64,9 @@ func TestArtifactEntry_RoundTripImport(t *testing.T) {
 	}
 	if entry.Import != "./extras/policy.yaml" {
 		t.Errorf("expected Import = './extras/policy.yaml'; got %q", entry.Import)
+	}
+	if entry.AuthoredImport != "./extras/policy.yaml" {
+		t.Errorf("expected AuthoredImport = './extras/policy.yaml'; got %q", entry.AuthoredImport)
 	}
 	out, err := yaml.Marshal(&w)
 	if err != nil {
