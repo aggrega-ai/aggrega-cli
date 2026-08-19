@@ -338,7 +338,7 @@ func TestPhaseB3_NoArtifacts_NoError(t *testing.T) {
 // the EmittedFile.Name carries the full path the orchestrator has already
 // prefixed. So the collision detector groups by the full Name including
 // subpath — which means features/x/deployment.yaml ≠ features/y/deployment.yaml,
-// and rule 7 correctly does NOT fire.
+// and the filename-collision rule correctly does NOT fire.
 func TestPhaseB5_NoCollision_FeaturesUnderSubPath(t *testing.T) {
 	t.Parallel()
 	r := minimalRecipe("test")
@@ -354,7 +354,7 @@ func TestPhaseB5_NoCollision_FeaturesUnderSubPath(t *testing.T) {
 }
 
 // Verifies that a true cross-origin collision at boundary root produces a
-// rule 7 catalog failure.
+// filename-collision catalog failure.
 func TestPhaseB5_CrossOriginCollision_Fails(t *testing.T) {
 	t.Parallel()
 	r := minimalRecipe("test")
@@ -378,8 +378,9 @@ func TestPhaseB5_CrossOriginCollision_Fails(t *testing.T) {
 }
 
 // Verifies that within-origin duplication (e.g., two artifacts entries with
-// the same name) is NOT caught by rule 7 — that's rule 6's domain at load
-// time. B.5 only fires on cross-origin collisions.
+// the same name) is NOT caught by the filename-collision rule — two entries
+// under one key are refused when the document is decoded. B.5 only fires on
+// cross-origin collisions.
 func TestPhaseB5_WithinOriginDuplication_NoRule7(t *testing.T) {
 	t.Parallel()
 	r := minimalRecipe("test")
@@ -390,7 +391,8 @@ func TestPhaseB5_WithinOriginDuplication_NoRule7(t *testing.T) {
 	}
 
 	if err := phaseB5(state); err != nil {
-		t.Errorf("within-origin duplication is rule 6's domain at load time; rule 7 must not fire, got %v", err)
+		t.Errorf("within-origin duplication is refused when the document is decoded; the "+
+			"filename-collision rule must not fire, got %v", err)
 	}
 }
 

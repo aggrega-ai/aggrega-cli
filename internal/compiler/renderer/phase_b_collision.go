@@ -13,11 +13,12 @@ import (
 )
 
 // detectFilenameCollisions walks state.EmittedFiles and groups by Name.
-// Any name with EmittedFiles from more than one Origin produces a rule 7
-// CATALOG_ERROR matching the reserved sentinel format. Within-origin
-// duplicates (e.g., two artifacts: entries with the same name; engine
-// emitting the same file twice) are NOT rule 7 violations — those classes
-// are caught by rule 6 (load-time) or by engine-internal logic.
+// Any name with EmittedFiles from more than one Origin produces a
+// filename-collision CATALOG_ERROR matching the reserved sentinel format.
+// Within-origin duplicates (e.g., two artifacts: entries with the same name;
+// engine emitting the same file twice) are NOT filename-collision violations
+// — two artifacts: entries under one key are refused when the document is
+// decoded, and the remaining classes are caught by engine-internal logic.
 //
 // Findings are sorted alphabetically by filename for output stability.
 // Multiple cross-origin collisions in one Recipe produce one validation
@@ -29,9 +30,9 @@ func detectFilenameCollisions(state *PhaseBState) error {
 
 	// Group origins per filename. Using a sorted-set deduplicates origins
 	// that contributed multiple files with the same name (rare; e.g., two
-	// artifacts: entries pointing to the same output filename — that case
-	// is rule 6's domain and surfaces at load time, but defensive
-	// deduplication here keeps the rule 7 message focused on cross-origin
+	// artifacts: entries pointing to the same output filename — that case is
+	// refused when the document is decoded, but defensive deduplication here
+	// keeps the filename-collision message focused on cross-origin
 	// collisions).
 	originsByName := map[string]map[EmitOrigin]struct{}{}
 	for _, f := range state.EmittedFiles {
@@ -81,7 +82,7 @@ func detectFilenameCollisions(state *PhaseBState) error {
 		Name:       state.RecipeName,
 		Version:    state.RecipeVersion,
 		Path:       state.RecipePath,
-		Rule:       "7",
+		Rule:       "filename-collision",
 		Suggestion: strings.Join(details, "; "),
 		Err:        validator.ErrRecipeRule7(),
 	})

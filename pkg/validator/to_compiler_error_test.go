@@ -35,7 +35,7 @@ func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 				Name:       "my-recipe",
 				Version:    "1.0.0",
 				Path:       "/path/to/recipe.yaml",
-				Rule:       "1",
+				Rule:       "values-mapping",
 				Suggestion: "declare a source: pointer alongside valuesMapping",
 				Err:        tc.sentinel,
 			})
@@ -57,7 +57,7 @@ func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 			}
 			for _, want := range []string{
 				tc.wantReference,
-				"rule 1",
+				"rule values-mapping",
 				"at /path/to/recipe.yaml",
 				"declare a source: pointer alongside valuesMapping",
 			} {

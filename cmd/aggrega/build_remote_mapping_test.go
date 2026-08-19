@@ -137,7 +137,8 @@ spec:
 	chartDir := filepath.Join(root, "charts", "server")
 	writeMinimalChart(t, chartDir)
 	// Sourced Recipe: a local chart source paired with a valuesMapping that imports
-	// the MappingLibrary entry (rule 1: valuesMapping requires source).
+	// the MappingLibrary entry (the values-mapping rule: valuesMapping requires
+	// source).
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:

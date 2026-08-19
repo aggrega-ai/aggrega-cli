@@ -7,17 +7,19 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// Recipe-validation sentinels. The numbered rules are general Recipe shape
-// rules from chapter 16; the eval-provider constraint is provider-specific and
-// covers the eval mode's mathematical-evaluation-only contract.
+// Recipe-validation sentinels. The general shape rules constrain how a Recipe
+// composes its input kinds; the eval-provider constraint is provider-specific
+// and covers the eval mode's mathematical-evaluation-only contract. Each rule
+// is named by what it constrains, and that name is the identifier the
+// diagnostic prints and the reference documentation heads its entry with.
 //
-// Rules surfaced at Recipe load time: 1, 5.
+// Shape rules surfaced at Recipe load time: values-mapping and input-kinds.
 // The workload-requires-provider-workloadSchema constraint is enforced at
 // render time by the central input-kind gate (a synthesised Recipe bound to a
 // provider with no workload-synthesis capability halts loudly there).
-// Rule 7 is enforced at emission time (filename collision detection) and is
-// reserved here so the load-time validator and the emission-time detector
-// share an error shape.
+// The filename-collision rule is enforced at emission time (collision across
+// input-kind origins) and is reserved here so the load-time validator and the
+// emission-time detector share an error shape.
 //
 // Every rule here reports through NewShapeRuleError, so a Recipe failure is a
 // *ValidationError whatever stage detected it.
@@ -50,8 +52,8 @@ var errRecipeRule7 = cerrors.Register("validator/recipe-filename-collision-acros
 // ErrRecipeEvalProviderConstraint: the eval provider executes formatting
 // in-memory and has no rendering surface; declaring source/workload/
 // artifacts on an eval Recipe is rejected. The eval carve-out also
-// exempts the Recipe from rule 5 — eval Recipes legitimately declare
-// only `provides:` and have zero input kinds.
+// exempts the Recipe from the input-kinds rule — eval Recipes legitimately
+// declare only `provides:` and have zero input kinds.
 func ErrRecipeEvalProviderConstraint() error { return errRecipeEvalProviderConstraint }
 
 var errRecipeEvalProviderConstraint = cerrors.Register("validator/recipe-eval-provider-constraint", cerrors.Meta{

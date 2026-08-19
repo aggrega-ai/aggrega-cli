@@ -17,19 +17,19 @@ import (
 // Recipe is admitted to the catalog map. Returns a *ValidationError against
 // the Recipe kind (or nil on pass).
 //
-// Rules enforced here: 1, 5 (chapter 16), plus the eval-provider constraint.
-// The workload-requires-provider-workloadSchema constraint is enforced at
-// render time by the central input-kind gate (a synthesised Recipe bound to a
-// provider that does not implement workload synthesis halts loudly there).
-// Rule 7 (cross-input-kind filename collision) is enforced at emission time by
-// feature rendering.
+// Rules enforced here: values-mapping and input-kinds, plus the eval-provider
+// constraint. The workload-requires-provider-workloadSchema constraint is
+// enforced at render time by the central input-kind gate (a synthesised Recipe
+// bound to a provider that does not implement workload synthesis halts loudly
+// there). The filename-collision rule (a collision across input-kind origins)
+// is enforced at emission time by feature rendering.
 //
 // The eval-provider carve-out is two-sided:
 //
 //  1. Reject non-empty source / workload / artifacts (eval has no rendering
 //     surface).
-//  2. Exempt eval Recipes from rule 5 (a Recipe declaring only `provides:`
-//     is legitimate eval-mode authoring).
+//  2. Exempt eval Recipes from the input-kinds rule (a Recipe declaring only
+//     `provides:` is legitimate eval-mode authoring).
 //
 // What is deliberately NOT checked: the contents of `source:`. Whether a source
 // is present is a shape question and is answered here; what its keys mean is
@@ -72,9 +72,9 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 }
 
 // validateRecipeEvalProvider enforces the eval-provider constraint: input-kind
-// fields must be empty. Rule 5 is intentionally skipped here — an eval Recipe
-// declaring zero input kinds is legitimate (it provides values without
-// rendering anything).
+// fields must be empty. The input-kinds rule is intentionally skipped here —
+// an eval Recipe declaring zero input kinds is legitimate (it provides values
+// without rendering anything).
 func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
 	var declared []string
 	if !sourceIsEmpty(r.Spec.Source) {
@@ -207,7 +207,8 @@ func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) err
 	return nil
 }
 
-// validateRecipeRule1: valuesMapping requires source.
+// validateRecipeRule1 enforces the values-mapping rule: valuesMapping requires
+// source.
 //
 // Sourced-mode authoring presents a Source pointer alongside a values overlay.
 // A Recipe with valuesMapping but no Source has no chart/module to overlay
@@ -224,13 +225,14 @@ func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
 		Name:       r.Metadata.Name,
 		Version:    r.Metadata.Version,
 		Path:       sourcePath,
-		Rule:       "1",
+		Rule:       "values-mapping",
 		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
 		Err:        ErrRecipeRule1(),
 	})
 }
 
-// validateRecipeRule5: at least one input kind must be present.
+// validateRecipeRule5 enforces the input-kinds rule: at least one input kind
+// must be present.
 //
 // The three input kinds (any one suffices):
 //
@@ -254,7 +256,7 @@ func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 		Name:       r.Metadata.Name,
 		Version:    r.Metadata.Version,
 		Path:       sourcePath,
-		Rule:       "5",
+		Rule:       "input-kinds",
 		Suggestion: "declare one of: source (with valuesMapping), workload, artifacts",
 		Err:        ErrRecipeRule5(),
 	})

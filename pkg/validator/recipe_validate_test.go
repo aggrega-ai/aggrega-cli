@@ -27,7 +27,7 @@ func newRecipe(provider string) *types.Recipe {
 	}
 }
 
-// ----- Rule 1: valuesMapping requires source -----
+// ----- The values-mapping rule: valuesMapping requires source -----
 
 func TestValidateRecipe_Rule1_ValuesMappingWithSource_Passes(t *testing.T) {
 	t.Parallel()
@@ -73,11 +73,11 @@ func TestValidateRecipe_SourceWithoutValuesMapping_Passes(t *testing.T) {
 	}
 }
 
-// Rule 3 is encoded structurally in WorkloadTemplate's content-shape
-// dispatch: the type admits either inline content or {$import:},
-// never both. No load-time rule check is needed.
+// The one-source-per-workload rule is encoded structurally in
+// WorkloadTemplate's content-shape dispatch: the type admits either inline
+// content or {$import:}, never both. No load-time rule check is needed.
 
-// ----- Rule 5: at least one input kind -----
+// ----- The input-kinds rule: at least one input kind -----
 
 func TestValidateRecipe_Rule5_HasSourceAndValuesMapping_Passes(t *testing.T) {
 	t.Parallel()
@@ -204,11 +204,12 @@ func TestValidateRecipe_Eval_RejectsArtifacts(t *testing.T) {
 
 func TestValidateRecipe_ErrorMessage_NamesEntityRuleAndLocation(t *testing.T) {
 	t.Parallel()
-	// Use rule 5 to trip the validator (rule 1 isn't currently active on this path).
+	// Use the input-kinds rule to trip the validator (values-mapping isn't
+	// currently active on this path).
 	// Every Recipe shape rule reports through one shape; this test asserts the
 	// format contract independent of which rule fires.
 	r := newRecipe("helm")
-	// Bare Recipe (no input kinds) → rule 5 fires.
+	// Bare Recipe (no input kinds) → the input-kinds rule fires.
 	err := validator.ValidateRecipe(r, tFile)
 	if err == nil {
 		t.Fatal("expected error")
@@ -228,7 +229,7 @@ func TestValidateRecipe_ErrorMessage_NamesEntityRuleAndLocation(t *testing.T) {
 	if !strings.Contains(msg, tFile) {
 		t.Errorf("message must contain file path: %q", msg)
 	}
-	if !strings.Contains(msg, "rule 5") {
+	if !strings.Contains(msg, "rule input-kinds") {
 		t.Errorf("message must name the rule: %q", msg)
 	}
 }

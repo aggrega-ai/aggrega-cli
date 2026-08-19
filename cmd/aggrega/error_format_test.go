@@ -122,7 +122,7 @@ func TestFormatCompilerError_CatalogCategory_RendersRecipeShapeRule(t *testing.T
 		Name:    "my-recipe",
 		Version: "1.0.0",
 		Path:    "/path/to/recipe.yaml",
-		Rule:    "1",
+		Rule:    "values-mapping",
 		Err:     validator.ErrRecipeRule1(),
 	})
 	got := formatCompilerError(rve)
@@ -130,7 +130,7 @@ func TestFormatCompilerError_CatalogCategory_RendersRecipeShapeRule(t *testing.T
 		"[CATALOG_ERROR]",
 		"/path/to/recipe.yaml",
 		validator.ErrRecipeRule1().Error(),
-		"rule 1",
+		"rule values-mapping",
 		"Recipe my-recipe:1.0.0",
 	} {
 		if !strings.Contains(got, want) {
@@ -152,7 +152,7 @@ func TestFormatCompilerError_CatalogCategory_RendersFeatureRecipeShapeRule(t *te
 		Name:    "my-featurerecipe",
 		Version: "1.0.0",
 		Path:    "/path/to/featurerecipe.yaml",
-		Rule:    "1",
+		Rule:    "values-mapping",
 		Err:     validator.ErrFeatureRecipeRule1(),
 	})
 	got := formatCompilerError(fre)

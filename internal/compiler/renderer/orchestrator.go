@@ -1173,7 +1173,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// node.
 
 		// Phase B.5 — filename collision detection across input-kind
-		// origins (rule 7). Collisions can surface across EmitOriginSource
+		// origins. Collisions can surface across EmitOriginSource
 		// and EmitOriginWorkload contributions (when a Recipe declares both
 		// source: and workload:); EmitOriginArtifacts* contributions land
 		// when the artifacts render path ships.
@@ -1219,7 +1219,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// returns them separately and merges them into the dispatch map), so
 		// the own set here is exactly the node's own output. The pipeline
 		// applies /own PATCHes and appends /own EMITs as EmitOriginPipeline
-		// files; re-running the rule-7 collision detector catches a pipeline
+		// files; re-running the filename-collision detector catches a pipeline
 		// EMIT clashing with a rendered filename.
 		//
 		// Own-on-assembler: when this node's own provider is an assembler

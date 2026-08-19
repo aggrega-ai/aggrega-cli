@@ -94,9 +94,9 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 // phaseB1 evaluates Recipe.Spec.ValuesMapping as a Go template against the
 // post–Phase-A inject pipe, populating state.ResolvedValues — the values
 // dictionary the provider engine consumes via engine.Render in the sourced
-// render path. valuesMapping requires a source (rule 1, enforced at load), so
-// a Recipe reaching B.1 with a non-empty ValuesMapping always also declares a
-// source.
+// render path. valuesMapping requires a source (the values-mapping rule,
+// enforced at load), so a Recipe reaching B.1 with a non-empty ValuesMapping
+// always also declares a source.
 func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 1
@@ -328,11 +328,11 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 }
 
 // phaseB5 detects filename collisions across input-kind origins on
-// state.EmittedFiles. Cross-origin collisions produce a
-// a rule-7 validation failure (the reserved rule-7 sentinel format).
-// Within-origin collisions are caught by other rules (rule 6 at load time
-// for duplicate artifacts: entry keys; engine-internal logic for duplicate
-// sourced output).
+// state.EmittedFiles. Cross-origin collisions produce a filename-collision
+// validation failure (the reserved sentinel format). Within-origin collisions
+// are caught elsewhere: duplicate artifacts: entry keys are refused when the
+// document is decoded, and engine-internal logic covers duplicate sourced
+// output.
 //
 // Implementation lives in phase_b_collision.go's detectFilenameCollisions.
 func phaseB5(state *PhaseBState) error {

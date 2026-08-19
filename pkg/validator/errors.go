@@ -160,8 +160,9 @@ type ShapeRuleViolation struct {
 	// locator, so it is what the rendered diagnostic's source pointer reads.
 	Path string
 	// Rule identifies the violated rule the way the entity's reference
-	// documentation names it — a number for the numbered shape rules, a word
-	// for the named ones. Optional: omitted from the message when empty.
+	// documentation names it — a kebab-case word or short phrase naming what
+	// the rule constrains, never a position in a list. Optional: omitted from
+	// the message when empty.
 	Rule string
 	// Suggestion is the rule-specific advice for satisfying it.
 	Suggestion string

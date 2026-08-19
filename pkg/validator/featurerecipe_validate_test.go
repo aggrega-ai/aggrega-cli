@@ -38,7 +38,7 @@ func TestValidateFeatureRecipe_InjectOnly_Passes(t *testing.T) {
 	}
 }
 
-// Rule 1: valuesMapping requires source.
+// The values-mapping rule: valuesMapping requires source.
 func TestValidateFeatureRecipe_Rule1_ValuesMappingWithoutSource_Fails(t *testing.T) {
 	t.Parallel()
 	fr := newFeatureRecipe("helm")

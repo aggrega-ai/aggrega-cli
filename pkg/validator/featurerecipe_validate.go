@@ -20,7 +20,7 @@ import (
 // implements) is a legitimate pure-wiring binding — it renders nothing; its
 // effect is the uses-edge the Feature it implements carries. An inject-only
 // FeatureRecipe is likewise valid. So there is no at-least-one-input-kind rule
-// here, unlike Recipe rule 5.
+// here, unlike a Recipe's input-kinds rule.
 //
 // The workload-requires-provider-workloadSchema constraint is enforced at
 // render time by the central input-kind gate (a synthesised FeatureRecipe
@@ -55,7 +55,8 @@ var errFeatureRecipeEvalProviderConstraint = cerrors.Register("validator/feature
 // Returns a *ValidationError against the FeatureRecipe kind (or nil on pass).
 //
 // Two rules: the eval-provider carve-out (reject render input-kind fields —
-// eval has no rendering surface) and rule 1 (valuesMapping requires source).
+// eval has no rendering surface) and values-mapping (valuesMapping requires
+// source).
 // There is deliberately no at-least-one-input-kind rule: a FeatureRecipe may
 // be pure-wiring (provider + implements only) or inject-only.
 func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
@@ -71,8 +72,9 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 	return nil
 }
 
-// validateFeatureRecipeRule1: valuesMapping requires source. A FeatureRecipe
-// with valuesMapping but no source has no chart/module to overlay values onto.
+// validateFeatureRecipeRule1 enforces the values-mapping rule: valuesMapping
+// requires source. A FeatureRecipe with valuesMapping but no source has no
+// chart/module to overlay values onto.
 func validateFeatureRecipeRule1(fr *types.FeatureRecipe, sourcePath string) error {
 	if fr.Spec.ValuesMapping.IsEmpty() {
 		return nil
@@ -85,7 +87,7 @@ func validateFeatureRecipeRule1(fr *types.FeatureRecipe, sourcePath string) erro
 		Name:       fr.Metadata.Name,
 		Version:    fr.Metadata.Version,
 		Path:       sourcePath,
-		Rule:       "1",
+		Rule:       "values-mapping",
 		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
 		Err:        ErrFeatureRecipeRule1(),
 	})
