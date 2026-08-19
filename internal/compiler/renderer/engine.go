@@ -38,7 +38,7 @@ type Provider interface {
 // The implementation returns the diagnostics the provider raised. An error
 // return is an infrastructure failure (the guest could not run); a nil error
 // with diagnostics is a completed check whose findings the caller routes by
-// severity — an error-severity diagnostic halts the build (ErrProviderNodeInputInvalid,
+// severity — a halt-severity diagnostic halts the build (ErrProviderNodeInputInvalid,
 // naming the node and provider), a warning or info diagnostic surfaces to the
 // build result without changing rendered output. An engine that does not
 // advertise the capability returns no diagnostics and no error, so the gate is a
@@ -357,16 +357,16 @@ type SubChartProjection struct {
 }
 
 // SplitDiagnostics partitions a provider guest's diagnostics by severity into
-// the human-readable messages of its error-severity entries and the messages of
-// its warning- and info-severity entries, each list in the guest's emission
+// the human-readable messages of its halt-severity entries and the messages of
+// its warn- and info-severity entries, each list in the guest's emission
 // order. It is the single classification the render, assemble, and input-validation
 // surfaces share, so a diagnostic's severity means the same thing on every
-// provider-socket crossing: "error" halts, anything else advises. An entry with
+// provider-socket crossing: "halt" stops the build, anything else advises. An entry with
 // an unrecognized severity is treated as an advisory (non-halting) so a guest
 // cannot halt the build with a severity the host does not model.
 func SplitDiagnostics(diags []Diagnostic) (errs []string, advisories []string) {
 	for _, d := range diags {
-		if d.Severity == "error" {
+		if d.Severity == "halt" {
 			errs = append(errs, d.Message)
 			continue
 		}

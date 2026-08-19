@@ -38,7 +38,7 @@ func settingsPolicyInputs(t *testing.T, settings map[string]any) (pipeline.Input
 
 // TestPolicySocketSettingsConformE2E proves a conforming with.settings passes the
 // host's schema validation, the build succeeds, and the guest read the typed
-// value: its audit verdict echoes max_replicas, proving the setting flowed
+// value: its info verdict echoes max_replicas, proving the setting flowed
 // through as the declared integer.
 func TestPolicySocketSettingsConformE2E(t *testing.T) {
 	ctx := context.Background()

@@ -31,7 +31,7 @@ const SensitiveByValueCode = "sensitive-by-value"
 // the key lands in (for example "env" or "file"); deliveryKey is the key itself.
 // The caller attaches the location naming the component and the target.
 //
-// The diagnostic is warning-severity and out-of-band: the build succeeds and
+// The diagnostic is warn-severity and out-of-band: the build succeeds and
 // the rendered bytes are unchanged. Delivering a literal is frequently the only
 // thing a target accepts, and a whole family of attachments exists to do
 // exactly that, so this reports a fact about how the value travels rather than
@@ -40,7 +40,7 @@ const SensitiveByValueCode = "sensitive-by-value"
 // a compiler default.
 func SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
-		Severity:  "warning",
+		Severity:  "warn",
 		Code:      SensitiveByValueCode,
 		SourceRef: deliveryKey,
 		Message: fmt.Sprintf(

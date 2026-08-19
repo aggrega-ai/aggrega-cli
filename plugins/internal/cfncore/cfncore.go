@@ -200,7 +200,7 @@ func NormalizeSourced(files []SourcedFile, rootIsDir bool) ([]SourcedFile, error
 // interprets nothing beyond the template's syntactic shape — it does not resolve
 // intrinsics, evaluate conditions, contact AWS, or run any CloudFormation toolchain;
 // it confirms the template parses. A template that fails to parse yields an
-// error-severity diagnostic naming the file, which halts the build at the host's
+// halt-severity diagnostic naming the file, which halts the build at the host's
 // input gate. An empty result means every template parsed cleanly.
 // templateParseCode is the machine-matchable code every diagnostic reporting a
 // CloudFormation template that failed to parse carries.
@@ -214,7 +214,7 @@ func ValidateSourced(files []SourcedFile, rootIsDir bool) []renderctx.Diagnostic
 		}
 		if _, err := normalizeTemplateBytes(f.Content); err != nil {
 			diags = append(diags, renderctx.Diagnostic{
-				Severity: "error",
+				Severity: "halt",
 				Code:     templateParseCode,
 				Message:  fmt.Sprintf("sourced CloudFormation template %q failed to parse: %v", f.Path, err),
 				Location: &renderctx.DiagnosticLocation{Kind: "cloudformation", URI: f.Path},

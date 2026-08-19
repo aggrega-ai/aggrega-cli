@@ -180,7 +180,7 @@ fn value_set_is_only_secret(rest: &str) -> bool {
 fn finding(slot_name: &str, selector: &str) -> Diagnostic {
     Diagnostic {
         rule_id: RULE_ID.to_string(),
-        severity: "warning".to_string(),
+        severity: "warn".to_string(),
         message: format!(
             "attachment slot {slot_name:?} pins {KIND_LABEL} to {SECRET_KIND:?} in its selector \
              ({selector:?}) but does not declare sensitive: true. Only a secret-kind Feature can \

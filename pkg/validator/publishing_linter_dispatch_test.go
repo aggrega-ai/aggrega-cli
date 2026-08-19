@@ -128,8 +128,8 @@ func TestDispatchClassifiesComponentPatch(t *testing.T) {
 	if findings[0].RuleID != "schema-evolution" {
 		t.Errorf("rule_id: got %q; want schema-evolution", findings[0].RuleID)
 	}
-	if findings[0].Severity != "error" {
-		t.Errorf("severity: got %q; want error", findings[0].Severity)
+	if findings[0].Severity != "halt" {
+		t.Errorf("severity: got %q; want halt", findings[0].Severity)
 	}
 }
 
@@ -250,7 +250,7 @@ func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 // TestDispatchAnnotationPrefixViolation pins the reserved-prefix
 // rule end-to-end through the actual .wasm: a Component carrying a
 // bare aggrega.ai/ annotation key surfaces as an annotation-prefix
-// finding with severity "error".
+// finding with severity "halt".
 func TestDispatchAnnotationPrefixViolation(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 	proposed := json.RawMessage(`{
@@ -274,8 +274,8 @@ func TestDispatchAnnotationPrefixViolation(t *testing.T) {
 	if findings[0].RuleID != "annotation-prefix" {
 		t.Errorf("rule_id: got %q; want annotation-prefix", findings[0].RuleID)
 	}
-	if findings[0].Severity != "error" {
-		t.Errorf("severity: got %q; want error", findings[0].Severity)
+	if findings[0].Severity != "halt" {
+		t.Errorf("severity: got %q; want halt", findings[0].Severity)
 	}
 	if !strings.Contains(findings[0].Message, "aggrega.ai/custom-flag") {
 		t.Errorf("message should name the offending key; got %q", findings[0].Message)
@@ -285,7 +285,7 @@ func TestDispatchAnnotationPrefixViolation(t *testing.T) {
 // TestDispatchNameShapeViolation pins the per-kind name-shape rule
 // end-to-end through the actual .wasm: a Component with a name that
 // does not match the three-segment kebab-case pattern surfaces as a
-// name-shape finding with severity "error".
+// name-shape finding with severity "halt".
 func TestDispatchNameShapeViolation(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 	proposed := json.RawMessage(`{
@@ -313,7 +313,7 @@ func TestDispatchNameShapeViolation(t *testing.T) {
 
 // TestDispatchDynamicRefsViolation pins the dynamic-refs rule
 // end-to-end: a SchemaLibrary entry containing $dynamicAnchor
-// surfaces as a dynamic-refs finding with severity "error".
+// surfaces as a dynamic-refs finding with severity "halt".
 func TestDispatchDynamicRefsViolation(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 	proposed := json.RawMessage(`{
@@ -335,8 +335,8 @@ func TestDispatchDynamicRefsViolation(t *testing.T) {
 	if findings[0].RuleID != "dynamic-refs" {
 		t.Errorf("rule_id: got %q; want dynamic-refs", findings[0].RuleID)
 	}
-	if findings[0].Severity != "error" {
-		t.Errorf("severity: got %q; want error", findings[0].Severity)
+	if findings[0].Severity != "halt" {
+		t.Errorf("severity: got %q; want halt", findings[0].Severity)
 	}
 }
 
@@ -369,7 +369,7 @@ func TestDispatchIdOverridesViolation(t *testing.T) {
 // TestDispatchCategoryViolation pins the category-matches-directory
 // rule end-to-end: a Component whose path under core/<category>/
 // disagrees with its component.aggrega.ai/category label surfaces as
-// a category-matches-directory finding with severity "error".
+// a category-matches-directory finding with severity "halt".
 func TestDispatchCategoryViolation(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 	proposed := json.RawMessage(`{
@@ -394,8 +394,8 @@ func TestDispatchCategoryViolation(t *testing.T) {
 	if findings[0].RuleID != "category-matches-directory" {
 		t.Errorf("rule_id: got %q; want category-matches-directory", findings[0].RuleID)
 	}
-	if findings[0].Severity != "error" {
-		t.Errorf("severity: got %q; want error", findings[0].Severity)
+	if findings[0].Severity != "halt" {
+		t.Errorf("severity: got %q; want halt", findings[0].Severity)
 	}
 	if !strings.Contains(findings[0].Message, "compute") ||
 		!strings.Contains(findings[0].Message, "datastore") {

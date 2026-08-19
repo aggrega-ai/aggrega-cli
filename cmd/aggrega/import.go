@@ -209,7 +209,7 @@ type importOptions struct {
 // importer draws on to obtain its parsed source tree, surfaces the importer's
 // diagnostics, and writes the drafted files either to standard output or to
 // disk. It returns an error
-// when the importer raised an error-severity diagnostic, so a mapping the
+// when the importer raised a halt-severity diagnostic, so a mapping the
 // importer could not complete surfaces as a non-zero exit even though any
 // partial files it produced are still written.
 func runImport(ctx context.Context, res importersocket.ImporterResolver, load importersocket.ImporterLoader, parserRes parsersocket.ParserResolver, parserLoad parsersocket.ParserLoader, source []byte, opts importOptions) error {
@@ -284,13 +284,13 @@ func reportImportDiagnostics(w io.Writer, diags []abi.Diagnostic) {
 }
 
 // importDiagnosticsError returns a non-nil error when any diagnostic is of
-// error severity, so the command exits non-zero on an import the importer
+// halt severity, so the command exits non-zero on an import the importer
 // could not complete. The diagnostics themselves are already surfaced on
 // stderr by reportImportDiagnostics; this only governs the exit outcome.
 func importDiagnosticsError(diags []abi.Diagnostic) error {
 	for _, d := range diags {
-		if d.Severity == "error" {
-			return errors.New("import raised one or more error-severity diagnostics; see the messages above")
+		if d.Severity == "halt" {
+			return errors.New("import raised one or more halt-severity diagnostics; see the messages above")
 		}
 	}
 	return nil

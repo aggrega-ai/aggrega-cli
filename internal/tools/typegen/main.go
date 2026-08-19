@@ -199,6 +199,37 @@ var enumSources = map[string]enumSource{
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
 		doc:        abiVersionEnumDoc,
 	},
+
+	// Diagnostic severity — the shared diagnostic's severity is declared as a
+	// closed three-member enum on the diagnostic schema, so the schema is the one
+	// place the vocabulary is written and the Go/Rust/TS consts below are
+	// generated from it. Every socket that carries a diagnostic reports from this
+	// one set, and the compiler re-exports these consts rather than declaring its
+	// own copies.
+	"diagnostic_enums_gen.go": {
+		schema:     schemas.WasmDiagnosticV1alpha1,
+		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		pkg:        "abi",
+		fields:     []string{"severity"},
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		doc:        diagnosticSeverityEnumDoc,
+	},
+	"diagnostic_enums_gen.rs": {
+		schema:     schemas.WasmDiagnosticV1alpha1,
+		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		fields:     []string{"severity"},
+		lang:       "rust",
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		doc:        diagnosticSeverityEnumDoc,
+	},
+	"diagnostic_enums_gen.ts": {
+		schema:     schemas.WasmDiagnosticV1alpha1,
+		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		fields:     []string{"severity"},
+		lang:       "ts",
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		doc:        diagnosticSeverityEnumDoc,
+	},
 }
 
 // abiVersionEnumDoc is the shared file-level doc for the three plugin-ABI-version
@@ -225,6 +256,25 @@ const abiVersionEnumDoc = "This const is the plugin ABI version, generated from 
 	"It is unrelated to the IR payload's schema version, which travels in an IR\n" +
 	"graph's provenance and versions the graph shape rather than the plugin ABI.\n" +
 	"The two spell the same string today and are separate vocabularies."
+
+// diagnosticSeverityEnumDoc is the shared file-level doc for the three
+// diagnostic-severity enum targets, so the Go/Rust/TS files carry one
+// explanation.
+const diagnosticSeverityEnumDoc = "These consts are the single source of the shared diagnostic's severity wire\n" +
+	"vocabulary, closed to the three values every Wasm socket reports from: halt\n" +
+	"stops the build and names what to fix, warn surfaces alongside a build that\n" +
+	"still completes, and info records the observation and leaves the build outcome\n" +
+	"unchanged. Generated into Go, Rust, and TypeScript from one schema so a guest\n" +
+	"and the host name the same three values.\n" +
+	"\n" +
+	"The compiler re-exports these consts under its own analyzer vocabulary rather\n" +
+	"than declaring copies of the literals, so the value a guest writes and the\n" +
+	"value the host routes on have one home.\n" +
+	"\n" +
+	"A diagnostic's severity is distinct from the editor-protocol severity the\n" +
+	"language server publishes and from the deprecation-marker severity a registry\n" +
+	"marker carries: those are separate vocabularies on separate boundaries, and a\n" +
+	"value crossing between them is translated rather than copied."
 
 // hostfuncErrorEnumDoc is the shared file-level doc for the three host-function
 // error-code enum targets, so the Go/Rust/TS files carry one explanation.

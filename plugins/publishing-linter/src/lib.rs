@@ -61,7 +61,7 @@ pub fn describe() -> FnResult<String> {
 /// `lint_rules` is the plugin's rule-evaluation entry point. Dispatches
 /// on `LinterInput.rule_id` to the appropriate rule's classifier and
 /// returns its findings inside a `LinterOutput`. Unknown rule_ids
-/// produce a single `unknown_rule` finding with severity `"error"` and
+/// produce a single `unknown_rule` finding with severity `"halt"` and
 /// no classification — the graceful-degradation pattern that lets
 /// later rules register without re-versioning the plugin's exported
 /// surface.
@@ -82,7 +82,7 @@ pub fn lint_rules(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
         }
         other => vec![Diagnostic {
             rule_id: "unknown_rule".to_string(),
-            severity: "error".to_string(),
+            severity: "halt".to_string(),
             message: format!("rule_id {other:?} not implemented at this plugin version"),
             ..Default::default()
         }],

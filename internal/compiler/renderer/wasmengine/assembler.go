@@ -188,18 +188,18 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	// Fold guest-emitted warnings into the assemble output's diagnostics as
-	// warning-severity entries, mirroring the render surface, so both guest
+	// warn-severity entries, mirroring the render surface, so both guest
 	// advisory channels reach the caller through one list. Drained before the
 	// deferred Close.
 	for _, w := range plugin.DrainWarnings() {
-		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: "warning", Message: w})
+		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: "warn", Message: w})
 	}
 	return out, nil
 }
 
 // surfaceAssembleDiagnostics routes a boundary assembler's diagnostics: warning-
 // and info-severity entries go to the dispatch group's warning sink (nil-safe,
-// each prefixed with the boundary path), and error-severity entries are joined
+// each prefixed with the boundary path), and halt-severity entries are joined
 // into a returned error naming the boundary. Warnings never affect emitted bytes.
 func surfaceAssembleDiagnostics(boundaryPath string, diags []renderer.Diagnostic, sink func(string)) error {
 	errs, advisories := renderer.SplitDiagnostics(diags)

@@ -388,7 +388,7 @@ func TestNormalizeSourcedTemplateDeterministic(t *testing.T) {
 }
 
 // TestValidateSourcedMalformedHalts asserts a malformed sourced template produces one
-// error-severity diagnostic naming the offending file, so the build halts loudly
+// halt-severity diagnostic naming the offending file, so the build halts loudly
 // rather than proceeding to a later render failure.
 func TestValidateSourcedMalformedHalts(t *testing.T) {
 	files := []SourcedFile{
@@ -398,8 +398,8 @@ func TestValidateSourcedMalformedHalts(t *testing.T) {
 	if len(diags) != 1 {
 		t.Fatalf("expected exactly one diagnostic for a malformed template, got %d: %+v", len(diags), diags)
 	}
-	if diags[0].Severity != "error" {
-		t.Fatalf("diagnostic severity = %q, want error", diags[0].Severity)
+	if diags[0].Severity != "halt" {
+		t.Fatalf("diagnostic severity = %q, want halt", diags[0].Severity)
 	}
 	// Asserted as a literal on purpose. Comparing against templateParseCode would
 	// pass for any value that constant happened to hold, which is exactly the

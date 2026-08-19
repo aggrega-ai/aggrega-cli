@@ -38,7 +38,7 @@ var nullTree = json.RawMessage("null")
 func errorOutput(message string) abi.ParseOutput {
 	return abi.ParseOutput{
 		Tree:        cloneRaw(nullTree),
-		Diagnostics: []abi.Diagnostic{{Severity: "error", Message: message}},
+		Diagnostics: []abi.Diagnostic{{Severity: "halt", Message: message}},
 	}
 }
 

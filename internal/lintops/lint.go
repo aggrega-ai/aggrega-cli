@@ -140,7 +140,7 @@ func pluginIsCore(coordinate string) bool {
 }
 
 // RunEntity runs the publishing-discipline linter over one catalog entity. In
-// default mode the rules run at warning severity over local content without
+// default mode the rules run at warn severity over local content without
 // consulting any registry. With PrePublish the previous registry version is
 // fetched and the schema-evolution classification is compared against the
 // proposed version bump; a mismatch halts. It writes the findings report to
@@ -316,8 +316,8 @@ func RunEntity(cfg Config) error {
 func downgradeRuleToWarning(findings []abi.Diagnostic, ruleID string) []abi.Diagnostic {
 	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
-		if f.RuleID == ruleID && f.Severity == "error" {
-			f.Severity = "warning"
+		if f.RuleID == ruleID && f.Severity == "halt" {
+			f.Severity = "warn"
 		}
 		out[i] = f
 	}
@@ -655,8 +655,8 @@ func aggregateFindings(perRule [][]abi.Diagnostic) []abi.Diagnostic {
 func downgradeToWarning(findings []abi.Diagnostic) []abi.Diagnostic {
 	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
-		if f.Severity == "error" {
-			f.Severity = "warning"
+		if f.Severity == "halt" {
+			f.Severity = "warn"
 		}
 		out[i] = f
 	}
@@ -664,13 +664,13 @@ func downgradeToWarning(findings []abi.Diagnostic) []abi.Diagnostic {
 }
 
 // downgradeFirstPublicationToWarning maps the schema-evolution rule's
-// classification finding to warning severity for the first-publication case.
+// classification finding to warn severity for the first-publication case.
 // Other rules' findings stay at whatever severity they had.
 func downgradeFirstPublicationToWarning(findings []abi.Diagnostic) []abi.Diagnostic {
 	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
-		if f.RuleID == "schema-evolution" && f.Severity == "error" {
-			f.Severity = "warning"
+		if f.RuleID == "schema-evolution" && f.Severity == "halt" {
+			f.Severity = "warn"
 		}
 		out[i] = f
 	}
@@ -678,11 +678,11 @@ func downgradeFirstPublicationToWarning(findings []abi.Diagnostic) []abi.Diagnos
 }
 
 // printFindings writes each finding to diagOut (os.Stderr in production) in a
-// stable format and returns true when at least one finding is severity=error.
+// stable format and returns true when at least one finding is severity=halt.
 func printFindings(findings []abi.Diagnostic, diagOut io.Writer) bool {
 	halted := false
 	for _, f := range findings {
-		if f.Severity == "error" {
+		if f.Severity == "halt" {
 			halted = true
 		}
 		fmt.Fprintf(diagOut, "[%s] %s: %s\n", f.Severity, f.RuleID, f.Message)
@@ -693,7 +693,7 @@ func printFindings(findings []abi.Diagnostic, diagOut io.Writer) bool {
 func countErrors(findings []abi.Diagnostic) int {
 	n := 0
 	for _, f := range findings {
-		if f.Severity == "error" {
+		if f.Severity == "halt" {
 			n++
 		}
 	}

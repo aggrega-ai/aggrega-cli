@@ -95,7 +95,7 @@ func TestLoadAndDescribePublishingLinter(t *testing.T) {
 	if f.RuleID != "name-shape" {
 		t.Errorf("finding rule_id: got %q want %q", f.RuleID, "name-shape")
 	}
-	if f.Severity != "error" {
+	if f.Severity != "halt" {
 		t.Errorf("finding severity: got %q want %q", f.Severity, "error")
 	}
 

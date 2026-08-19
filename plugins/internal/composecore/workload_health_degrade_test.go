@@ -47,8 +47,8 @@ func healthDiagnosticsAt(t *testing.T, w *types.Workload, coordinate string) []s
 		if d.SourceRef != coordinate {
 			continue
 		}
-		if d.Severity != "warning" {
-			t.Errorf("severity = %q, want warning", d.Severity)
+		if d.Severity != "warn" {
+			t.Errorf("severity = %q, want warn", d.Severity)
 		}
 		if d.Code != rendercore.UnsupportedFieldCode {
 			t.Errorf("code = %q, want %q", d.Code, rendercore.UnsupportedFieldCode)

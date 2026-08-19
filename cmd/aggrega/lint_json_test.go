@@ -87,12 +87,15 @@ func TestLintJSONEmitsFindingFields(t *testing.T) {
 	}
 
 	// Severity counts are derived from the findings, so they cannot disagree.
+	// This switch deliberately re-derives them rather than calling the production
+	// helper: an independent second reading is what makes the comparison able to
+	// fail, so the duplication is the point and must not be unified away.
 	var errs, warns int
 	for _, f := range report.Findings {
 		switch f.Severity {
-		case "error":
+		case "halt":
 			errs++
-		case "warning":
+		case "warn":
 			warns++
 		}
 	}

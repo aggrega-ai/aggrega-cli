@@ -32,7 +32,7 @@ use crate::rules::schema_library_walker::visit_schemas_recursive;
 /// `classify` walks every entry under `spec.schemas` and descends
 /// into sub-schema positions via the shared walker. Each visited
 /// node is checked for `$id`; one finding per occurrence. `rule_id:
-/// "id-overrides"`, `severity: "error"`, no classification.
+/// "id-overrides"`, `severity: "halt"`, no classification.
 ///
 /// Returns an empty vector when the per-workspace flag
 /// `allow_id_overrides` is true OR when no entry carries an
@@ -55,7 +55,7 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
                 };
                 findings.push(Diagnostic {
                     rule_id: "id-overrides".to_string(),
-                    severity: "error".to_string(),
+                    severity: "halt".to_string(),
                     message: format!(
                         "SchemaLibrary entry {entry_name:?} declares an explicit $id{location}; \
                          the platform owns each entry's host-less canonical identity \

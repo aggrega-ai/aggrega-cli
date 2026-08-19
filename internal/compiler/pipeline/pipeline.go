@@ -1144,8 +1144,8 @@ func RunPipeline(
 		// Render-verdict governance role. Config-driven off the render-verdict
 		// attachments in WorkspaceConfig.Plugins.Governance — a no-op when
 		// unconfigured, and it runs those attachments over the rendered artifacts
-		// (path-sorted). A deny verdict returns a build-halting error carrying
-		// ErrPolicyViolation; warn / audit verdicts are non-halting diagnostics. A
+		// (path-sorted). A halt verdict returns a build-halting error carrying
+		// ErrPolicyViolation; warn / info verdicts are non-halting diagnostics. A
 		// verdict role never mutates the rendered artifacts.
 		if err := runRenderPolicySocket(ctx, inputs, catalogLookup, renderResult.Files); err != nil {
 			return err

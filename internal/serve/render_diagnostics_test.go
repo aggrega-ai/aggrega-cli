@@ -4,10 +4,14 @@
 package serve
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
 func layeredServer() *Server {
@@ -161,5 +165,76 @@ func TestDiagnosticSource_BothLayersInOnePayload(t *testing.T) {
 		if d.Message == "render" && d.Source != "aggrega-build" {
 			t.Errorf("render-layer source = %q, want aggrega-build (the layer overrides)", d.Source)
 		}
+	}
+}
+
+// TestEditorSeverity_TranslatesTheTwoVocabularies is the guard on the one place a
+// severity crosses from the plugin wire to the editor wire. The two vocabularies
+// are deliberately separate — the plugin wire reports halt/warn/info, the editor
+// wire error/warning/info — and this bridge is the only site that converts one
+// into the other, so a copy in place of a translation would show a render
+// advisory in the editor as an error with nothing reporting it.
+//
+// The plugin-wire inputs are the generated consts rather than literals, so a
+// future change to the closed set fails here instead of silently falling through
+// to the default arm.
+func TestEditorSeverity_TranslatesTheTwoVocabularies(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		pluginWire string
+		wantEditor string
+	}{
+		{"halt becomes the editor error tier", abi.SeverityHalt, "error"},
+		{"warn becomes the editor warning tier", abi.SeverityWarn, "warning"},
+		{"info is spelled the same on both wires", abi.SeverityInfo, "info"},
+		{"a severity the plugin wire does not declare surfaces visibly", "not-a-severity", "error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := editorSeverity(tc.pluginWire); got != tc.wantEditor {
+				t.Errorf("editorSeverity(%q) = %q; want %q", tc.pluginWire, got, tc.wantEditor)
+			}
+		})
+	}
+
+	// Every member of the closed plugin-wire set maps to an editor severity the
+	// extension's own normalizer recognizes. A new member added to the schema
+	// without a case here would land on the default arm and be reported as an
+	// error, so the set is walked rather than spot-checked.
+	editorTiers := map[string]bool{"error": true, "warning": true, "info": true}
+	for _, s := range []string{abi.SeverityHalt, abi.SeverityWarn, abi.SeverityInfo} {
+		if !editorTiers[editorSeverity(s)] {
+			t.Errorf("plugin-wire severity %q maps to %q, which is not an editor severity tier", s, editorSeverity(s))
+		}
+	}
+}
+
+// TestPublishRenderDiagnostics_TranslatesRatherThanCopies drives the bridge end to
+// end: a plugin-wire advisory goes in and the published editor entry must carry the
+// editor wire's own spelling, not the plugin wire's. It reads the published layer
+// rather than the helper, so a future refactor that bypasses the translation at the
+// construction site fails here.
+func TestPublishRenderDiagnostics_TranslatesRatherThanCopies(t *testing.T) {
+	t.Parallel()
+	// The bridge publishes a notification on its way out, so it runs under the
+	// production serializer path rather than a bypass. The assertion reads the
+	// published layer; the notification bytes are incidental here.
+	s := layeredServer()
+	var out bytes.Buffer
+	ctx, flush := serializerContext(t, &out)
+	const file = "/w/aggregate.yaml"
+
+	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{
+		{Severity: abi.SeverityWarn, Message: "values.legacyPort is deprecated"},
+	})
+	flush()
+
+	got := s.snapshotDiagnostics(file)
+	if len(got) != 1 {
+		t.Fatalf("published %d diagnostics; want 1", len(got))
+	}
+	if got[0].Severity != "warning" {
+		t.Errorf("published severity = %q; want the editor wire's %q (a copy of the plugin wire's %q is the defect)",
+			got[0].Severity, "warning", abi.SeverityWarn)
 	}
 }

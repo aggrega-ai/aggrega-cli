@@ -45,8 +45,8 @@ func TestUnmountedVolume_PersistentDiagnosed(t *testing.T) {
 		t.Fatalf("got %d diagnostics for volumes.data, want 1 (all: %+v)", len(got), diags)
 	}
 	d := got[0]
-	if d.Severity != "warning" {
-		t.Errorf("severity = %q, want warning", d.Severity)
+	if d.Severity != "warn" {
+		t.Errorf("severity = %q, want warn", d.Severity)
 	}
 	if d.Code != rendercore.UnsupportedFieldCode {
 		t.Errorf("code = %q, want %q", d.Code, rendercore.UnsupportedFieldCode)

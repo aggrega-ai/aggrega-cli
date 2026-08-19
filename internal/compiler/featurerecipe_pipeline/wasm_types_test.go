@@ -142,7 +142,7 @@ func sampleFRPStepOutput() frp.FRPStepOutput {
 		},
 		Diagnostics: []renderer.Diagnostic{
 			{
-				Severity: "warning",
+				Severity: "warn",
 				Code:     "deprecated-mount",
 				Message:  "the kv v1 mount is deprecated",
 				Location: &renderer.DiagnosticLocation{

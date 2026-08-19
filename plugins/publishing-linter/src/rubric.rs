@@ -52,7 +52,7 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     let (verdict, message) = classify_one(input);
     vec![Diagnostic {
         rule_id: "schema-evolution".to_string(),
-        severity: "error".to_string(),
+        severity: "halt".to_string(),
         classification: verdict,
         message,
         ..Default::default()

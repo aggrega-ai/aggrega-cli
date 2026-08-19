@@ -63,7 +63,7 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
         if is_bare_aggrega_ai(key) && !WELL_KNOWN_ANNOTATIONS.contains(&key.as_str()) {
             findings.push(Diagnostic {
                 rule_id: "annotation-prefix".to_string(),
-                severity: "error".to_string(),
+                severity: "halt".to_string(),
                 message: format!(
                     "annotation key {key:?} uses the reserved bare aggrega.ai/ prefix; \
                      this prefix is reserved for platform-native annotations. Use a sub-prefix \
@@ -76,7 +76,7 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
         if is_feature_aggrega_ai(key) && entity_kind != "Feature" {
             findings.push(Diagnostic {
                 rule_id: "annotation-prefix".to_string(),
-                severity: "error".to_string(),
+                severity: "halt".to_string(),
                 message: format!(
                     "annotation key {key:?} uses the feature.aggrega.ai/ prefix on entity kind {entity_kind:?}; \
                      this prefix is reserved for Feature-scoped conventions. \

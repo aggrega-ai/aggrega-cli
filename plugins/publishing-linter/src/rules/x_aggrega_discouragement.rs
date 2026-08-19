@@ -14,8 +14,8 @@
 //! tool-assist benefits the layer provides.
 //!
 //! Build-time peer: `aggrega-cli/pkg/validator/discourage_direct_x_aggrega.go`
-//! flags the same construct at warning severity during
-//! `aggrega build`. This Wasm rule mirrors the semantics at error
+//! flags the same construct at warn severity during
+//! `aggrega build`. This Wasm rule mirrors the semantics at halt
 //! severity for `aggrega lint --pre-publish`. One logical rule, two
 //! implementations; equivalence pinned by the Go-side test at
 //! `aggrega-cli/pkg/validator/x_aggrega_equivalence_test.go`. Both
@@ -73,7 +73,7 @@ fn collect_x_aggrega_occurrences(
                     // containing spaces.
                     findings.push(Diagnostic {
                         rule_id: "x-aggrega-discouragement".to_string(),
-                        severity: "error".to_string(),
+                        severity: "halt".to_string(),
                         message: format!(
                             "entity \"{entity_name}\" authors {key} at <{child_pointer}> in schema content; \
                              recommended path is {recommended}"

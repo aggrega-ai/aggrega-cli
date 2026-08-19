@@ -321,7 +321,7 @@ var errHostInLibraryImport = cerrors.Register("compiler-renderer/host-in-library
 
 // ErrProviderNodeInputInvalid is the Loud Guardrail halt a provider
 // engine raises when its optional input-validation export reports an
-// error-severity diagnostic for a node's resolved input before render
+// halt-severity diagnostic for a node's resolved input before render
 // dispatch. The wrapping chain at the emission site names the offending
 // node, the provider, and the guest's diagnostic message, so the operator
 // sees which node failed the provider's structural check and why. Warning-

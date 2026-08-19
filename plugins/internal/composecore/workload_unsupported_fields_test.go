@@ -103,8 +103,8 @@ func TestUnsupportedField_PerAuthoredField(t *testing.T) {
 					continue
 				}
 				got = append(got, d.SourceRef)
-				if d.Severity != "warning" {
-					t.Errorf("%s: severity = %q, want warning", tc.field, d.Severity)
+				if d.Severity != "warn" {
+					t.Errorf("%s: severity = %q, want warn", tc.field, d.Severity)
 				}
 				if d.Code != rendercore.UnsupportedFieldCode {
 					t.Errorf("%s: code = %q, want %q", tc.field, d.Code, rendercore.UnsupportedFieldCode)
@@ -166,8 +166,8 @@ func TestUnsupportedField_ReplicasWarnsOnAnAuthoredDefaultValue(t *testing.T) {
 				t.Fatalf("got %d replicas diagnostics, want %d (all: %+v)", len(got), tc.want, diags)
 			}
 			for _, d := range got {
-				if d.Severity != "warning" {
-					t.Errorf("severity = %q, want warning", d.Severity)
+				if d.Severity != "warn" {
+					t.Errorf("severity = %q, want warn", d.Severity)
 				}
 				if d.Code != rendercore.UnsupportedFieldCode {
 					t.Errorf("code = %q, want %q", d.Code, rendercore.UnsupportedFieldCode)
@@ -369,8 +369,8 @@ func TestUnsupportedField_EphemeralSizeLimit(t *testing.T) {
 		t.Fatalf("got %d diagnostics at %s, want 1 (all: %+v)", len(got), coordinate, diags)
 	}
 	d := got[0]
-	if d.Severity != "warning" {
-		t.Errorf("severity = %q, want warning", d.Severity)
+	if d.Severity != "warn" {
+		t.Errorf("severity = %q, want warn", d.Severity)
 	}
 	if d.Code != rendercore.UnsupportedFieldCode {
 		t.Errorf("code = %q, want %q", d.Code, rendercore.UnsupportedFieldCode)
@@ -577,8 +577,8 @@ func TestUnsupportedField_AttachmentAsEnvPartial(t *testing.T) {
 	}
 
 	for _, d := range diags {
-		if d.Severity != "warning" {
-			t.Errorf("%s: severity = %q, want warning", d.SourceRef, d.Severity)
+		if d.Severity != "warn" {
+			t.Errorf("%s: severity = %q, want warn", d.SourceRef, d.Severity)
 		}
 		if d.Code != rendercore.UnsupportedFieldCode {
 			t.Errorf("%s: code = %q, want %q", d.SourceRef, d.Code, rendercore.UnsupportedFieldCode)

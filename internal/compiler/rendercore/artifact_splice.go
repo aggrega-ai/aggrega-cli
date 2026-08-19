@@ -25,7 +25,7 @@ const ArtifactProvenanceSkippedCode = "artifact-provenance-skipped"
 // non-empty warning straight through and never names the code itself.
 func ArtifactProvenanceSkippedDiagnostic(warning string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
-		Severity: "warning",
+		Severity: "warn",
 		Code:     ArtifactProvenanceSkippedCode,
 		Message:  warning,
 	}

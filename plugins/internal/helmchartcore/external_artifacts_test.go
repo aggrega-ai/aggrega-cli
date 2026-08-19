@@ -222,7 +222,7 @@ spec:
 // helm-chart's [[ ]] host-template delimiters leave the {{ }} untouched, so the
 // bytes reach the guest verbatim; there the file does not survive the pre-render
 // YAML round-trip, so provenance injection is skipped and the guest emits a
-// warning-severity diagnostic. Before the diagnostic channel was plumbed this
+// warn-severity diagnostic. Before the diagnostic channel was plumbed this
 // warning was silently swallowed; the test fails if it does not surface.
 func TestHelmChartArtifactsImport_ProvenanceSkipWarningSurfaces(t *testing.T) {
 	t.Parallel()

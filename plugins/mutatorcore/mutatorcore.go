@@ -181,7 +181,7 @@ func taggerMapping(sources []abi.MutatorSource) (map[string]string, error) {
 func yamlTree(src abi.MutatorSource) (json.RawMessage, error) {
 	out := parsercore.ParseYAML([]byte(src.Content))
 	for _, d := range out.Diagnostics {
-		if d.Severity == "error" {
+		if d.Severity == "halt" {
 			return nil, fmt.Errorf("parse source %q: %s", src.Path, d.Message)
 		}
 	}

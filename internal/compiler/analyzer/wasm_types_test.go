@@ -91,7 +91,7 @@ func TestPolicyOutput_RoundTrip(t *testing.T) {
 	fixture := abi.PolicyOutput{
 		Results: []abi.Diagnostic{
 			{
-				Severity:       analyzer.SeverityDeny,
+				Severity:       analyzer.SeverityHalt,
 				Message:        "version-floor: payments-db must run resolved_version >= 15.0.0; got 14.9.0",
 				Code:           "VER-001",
 				RuleID:         "version-floor",
@@ -100,7 +100,7 @@ func TestPolicyOutput_RoundTrip(t *testing.T) {
 				Location:       &abi.Location{KeyPath: "spec.version", URI: "payments-db/values.yaml", Line: 12, Kind: "rendered-artifact"},
 				Suggest:        "raise the pinned version to 15.0.0 or later",
 			},
-			{Severity: analyzer.SeverityAudit, Message: "soc2-required-labels: payments tier carries soc2 annotation"},
+			{Severity: analyzer.SeverityInfo, Message: "soc2-required-labels: payments tier carries soc2 annotation"},
 		},
 	}
 

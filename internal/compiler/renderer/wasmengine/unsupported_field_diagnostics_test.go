@@ -13,7 +13,7 @@ import (
 // TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass proves the render-node
 // diagnostic router sends the unsupported-field class to the structured
 // unsupported-field sink (attributed to the node and provider), routes other advisories
-// to the free-form warning sink, and joins error-severity diagnostics into a
+// to the free-form warning sink, and joins halt-severity diagnostics into a
 // returned error.
 func TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass(t *testing.T) {
 	t.Parallel()
@@ -26,9 +26,9 @@ func TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass(t *testing.T) {
 		UnsupportedFieldSink: func(d renderer.Diagnostic) { unsupportedFields = append(unsupportedFields, d) },
 	}
 	diags := []renderer.Diagnostic{
-		{Severity: "warning", Code: renderer.UnsupportedFieldCode, SourceRef: "scheduling",
+		{Severity: "warn", Code: renderer.UnsupportedFieldCode, SourceRef: "scheduling",
 			Message: `target "compose" does not support scheduling and omitted it`},
-		{Severity: "warning", Message: "some other advisory"},
+		{Severity: "warn", Message: "some other advisory"},
 		{Severity: "info", Message: "an info note"},
 	}
 
@@ -59,9 +59,9 @@ func TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass(t *testing.T) {
 	}
 }
 
-// TestSurfaceNodeDiagnostics_ErrorSeverityHalts proves an error-severity
+// TestSurfaceNodeDiagnostics_HaltSeverityStops proves a halt-severity
 // diagnostic is joined into a returned error (build-halting), not routed to a sink.
-func TestSurfaceNodeDiagnostics_ErrorSeverityHalts(t *testing.T) {
+func TestSurfaceNodeDiagnostics_HaltSeverityStops(t *testing.T) {
 	t.Parallel()
 	nodeCtx := renderer.NodeRenderContext{
 		NodeID:               "api",
@@ -69,8 +69,8 @@ func TestSurfaceNodeDiagnostics_ErrorSeverityHalts(t *testing.T) {
 		WarningSink:          func(string) {},
 		UnsupportedFieldSink: func(renderer.Diagnostic) {},
 	}
-	diags := []renderer.Diagnostic{{Severity: "error", Message: "boom"}}
+	diags := []renderer.Diagnostic{{Severity: "halt", Message: "boom"}}
 	if err := (&Engine{}).surfaceNodeDiagnostics(nodeCtx, diags); err == nil {
-		t.Fatal("expected an error for an error-severity diagnostic, got nil")
+		t.Fatal("expected an error for a halt-severity diagnostic, got nil")
 	}
 }

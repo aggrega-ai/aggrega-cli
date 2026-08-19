@@ -216,7 +216,7 @@ func TestGovernanceWire_AuthoredLeafMarkingIsOmittedWhenNothingIsMarked(t *testi
 
 // TestGovernanceWire_ControlVariantsMoveOneVariableEach proves each control
 // fixture differs from the baseline in exactly the fact its paired policy
-// judges, so a policy's deny-then-pass comparison isolates one cause. Without
+// judges, so a policy's halt-then-pass comparison isolates one cause. Without
 // this, a control that changed two facts would let a passing build be
 // attributed to the wrong one.
 func TestGovernanceWire_ControlVariantsMoveOneVariableEach(t *testing.T) {
@@ -262,7 +262,7 @@ func TestGovernanceWire_ControlVariantsMoveOneVariableEach(t *testing.T) {
 	}
 
 	// The per-datum control: neither route carries a declared-sensitive datum,
-	// so a policy denying on either must pass. Exactly one variable separates it
+	// so a policy halting on either must pass. Exactly one variable separates it
 	// from the variant above — the absence of a value at the declared-sensitive
 	// leaf — and the roll-up stays true, which is what makes a policy keyed on
 	// the roll-up instead of on the per-datum marking visible here.

@@ -205,7 +205,7 @@ func TestWalk_ErrorDiagnosticHalts(t *testing.T) {
 	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 	inv := newScripted()
 	inv.outputs["s1"] = FRPStepOutput{Diagnostics: []renderctx.Diagnostic{
-		{Severity: "error", Code: "bad", Message: "guest refused"},
+		{Severity: "halt", Code: "bad", Message: "guest refused"},
 	}}
 
 	// strict

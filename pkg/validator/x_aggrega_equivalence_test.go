@@ -25,7 +25,7 @@ import (
 // equivalence comparison: entity URI, the offending key, and the
 // RFC 6901 JSON Pointer locating it within the entity schema.
 // Severity field intentionally omitted — the Go walker emits at
-// warning severity (via log.Printf); the Wasm rule emits at error
+// warn severity (via log.Printf); the Wasm rule emits at halt
 // severity (via Diagnostic.Severity); the divergence is by
 // design and is normalised out of the equivalence comparison.
 type xAggregaFinding struct {

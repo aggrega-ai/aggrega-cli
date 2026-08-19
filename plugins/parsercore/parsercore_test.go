@@ -113,12 +113,12 @@ func TestParsers_MalformedYieldsDiagnostic(t *testing.T) {
 			}
 			hasError := false
 			for _, d := range out.Diagnostics {
-				if d.Severity == "error" {
+				if d.Severity == "halt" {
 					hasError = true
 				}
 			}
 			if !hasError {
-				t.Fatalf("malformed %s produced no error-severity diagnostic: %+v", tc.name, out.Diagnostics)
+				t.Fatalf("malformed %s produced no halt-severity diagnostic: %+v", tc.name, out.Diagnostics)
 			}
 			if tc.wantNullTree && string(out.Tree) != "null" {
 				t.Fatalf("malformed %s tree = %s; want null", tc.name, out.Tree)

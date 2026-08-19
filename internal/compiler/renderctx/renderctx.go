@@ -75,8 +75,8 @@ type BoundaryContext struct {
 // couple unrelated surfaces. Diagnostic here is the Wasm-plugin ABI
 // diagnostic and only that.
 //
-// Severity is an open string so each socket keeps its own vocabulary.
-// Message is the human-readable text. Location, when present, pins the
+// Severity is one of the three values every socket shares — halt, warn,
+// or info. Message is the human-readable text. Location, when present, pins the
 // diagnostic to a source position via [DiagnosticLocation]. The
 // socket-specific Code, RuleID, Classification, SourceRef, and Suggest
 // fields are populated by the sockets that use them and omitted otherwise.

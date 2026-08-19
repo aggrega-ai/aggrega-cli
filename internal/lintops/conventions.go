@@ -111,7 +111,7 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 // lintConventionsFiles runs the structural publishing-linter rules (the default
 // rule set minus schema-evolution — that rule needs a previous registry version
 // and stays single-entity, --pre-publish only) over each entity file in paths, at
-// warning severity, using the workspace's configured linter plugin and
+// warn severity, using the workspace's configured linter plugin and
 // publishing-discipline policy defaults. It is the shared core of the
 // whole-catalog and release-scoped conventions passes: both resolve a set of
 // entity files, then hand them here, reusing the same per-entity dispatch the

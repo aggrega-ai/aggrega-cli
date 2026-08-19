@@ -113,7 +113,7 @@ func TestEmbeddedParsers_Deterministic(t *testing.T) {
 
 // TestEmbeddedParsers_MalformedYieldsDiagnostic proves a malformed source drives
 // the embedded guest to report a diagnostic rather than crash: the run completes
-// and the output carries an error-severity diagnostic.
+// and the output carries a halt-severity diagnostic.
 func TestEmbeddedParsers_MalformedYieldsDiagnostic(t *testing.T) {
 	cat := embeddedParserCatalog()
 	load := embeddedParserLoader()
@@ -124,7 +124,7 @@ func TestEmbeddedParsers_MalformedYieldsDiagnostic(t *testing.T) {
 	}
 	hasError := false
 	for _, d := range out.Diagnostics {
-		if d.Severity == "error" {
+		if d.Severity == "halt" {
 			hasError = true
 		}
 	}

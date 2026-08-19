@@ -29,9 +29,9 @@ import (
 // because a payload dump shows only that fields exist — it cannot show that a
 // policy can be written against them.
 //
-// Each deny is paired with a pass over a control fixture that moves exactly one
+// Each halt is paired with a pass over a control fixture that moves exactly one
 // variable, so a halt is attributable. A policy that rejected everything would
-// satisfy every deny assertion here and fail every paired pass.
+// satisfy every halt assertion here and fail every paired pass.
 
 const (
 	governanceWireDir       = "../../../internal/compiler/testdata/governance-wire/"
@@ -70,7 +70,7 @@ const (
 // "both", "no-free", "only-free", "no-marked-delivery" or "no-sensitive-datum" —
 // returning the inputs and lookups RunPipeline consumes. The variants share one
 // catalog and one Manifest and differ only in their Aggregate, which is what
-// makes a deny/pass pair attributable.
+// makes a halt/pass pair attributable.
 //
 // The three that carry the sensitivity axis form a chain in which each step moves
 // exactly ONE variable, so a route can be attributed rather than inferred:
@@ -134,30 +134,30 @@ func governanceFactsInputs(t *testing.T, variant, rule, severity string) (pipeli
 
 // TestGovernanceFreeAttachmentDenyE2E proves an operator can forbid free-form
 // attachment: the guest reads the declaration-origin marker off the wire, finds
-// the attachment that fills no declared slot, and denies. The halt names the
+// the attachment that fills no declared slot, and halts. The halt names the
 // attachment, its type and the marker value, so the verdict could not have been
 // emitted without reading them.
 func TestGovernanceFreeAttachmentDenyE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "no-free-attachments", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "no-free-attachments", analyzer.SeverityHalt)
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("free-attachment deny: expected a halt, got nil")
+		t.Fatalf("free-attachment halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("free-attachment deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("free-attachment halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
 	t.Logf("free-attachment verdict halt:\n%s", msg)
 	for _, want := range []string{`attachment "metrics"`, `feature.gov/telemetry`, `binding "free"`} {
 		if !strings.Contains(msg, want) {
-			t.Errorf("free-attachment deny does not report %q:\n%v", want, msg)
+			t.Errorf("free-attachment halt does not report %q:\n%v", want, msg)
 		}
 	}
 	// The label the compiler has no reason to know, quoted back by the guest.
 	if !strings.Contains(msg, governanceFactsAuthorLabel+"=never") {
-		t.Errorf("free-attachment deny did not echo the author-declared label %q, so the labels did not reach the guest verbatim:\n%v",
+		t.Errorf("free-attachment halt did not echo the author-declared label %q, so the labels did not reach the guest verbatim:\n%v",
 			governanceFactsAuthorLabel, msg)
 	}
 }
@@ -168,7 +168,7 @@ func TestGovernanceFreeAttachmentDenyE2E(t *testing.T) {
 // one that rejects everything.
 func TestGovernanceFreeAttachmentPassE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-free", "no-free-attachments", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-free", "no-free-attachments", analyzer.SeverityHalt)
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
@@ -181,36 +181,36 @@ func TestGovernanceFreeAttachmentPassE2E(t *testing.T) {
 
 // TestGovernanceSensitiveByValueDenyE2E proves an operator can refuse what the
 // compiler only warns about: the guest reads the per-delivery-key sensitivity
-// marking and denies the build that delivers declared-sensitive material to a
+// marking and halts the build that delivers declared-sensitive material to a
 // by-value delivery key. The halt names the mechanism, the delivery key and the
 // provides key the marking came from.
 func TestGovernanceSensitiveByValueDenyE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "no-sensitive-by-value", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "no-sensitive-by-value", analyzer.SeverityHalt)
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("sensitive-by-value deny: expected a halt, got nil")
+		t.Fatalf("sensitive-by-value halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("sensitive-by-value deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("sensitive-by-value halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
 	t.Logf("sensitive-by-value verdict halt:\n%s", msg)
 	for _, want := range []string{`attachment "credentials"`, `env key "DATABASE_PASSWORD"`, `provides key "password"`} {
 		if !strings.Contains(msg, want) {
-			t.Errorf("sensitive-by-value deny does not report %q:\n%v", want, msg)
+			t.Errorf("sensitive-by-value halt does not report %q:\n%v", want, msg)
 		}
 	}
 	if !strings.Contains(msg, governanceFactsAuthorLabel+"=quarterly") {
-		t.Errorf("sensitive-by-value deny did not echo the author-declared label %q:\n%v", governanceFactsAuthorLabel, msg)
+		t.Errorf("sensitive-by-value halt did not echo the author-declared label %q:\n%v", governanceFactsAuthorLabel, msg)
 	}
 }
 
 // TestGovernanceSensitiveByValueAuthoredLeafDenyE2E is the per-route probe for
 // the OTHER route the same rule covers: a declared-sensitive datum written into
 // the attachment's own authored payload rather than delivered through an inject
-// key. The fixture differs from the deny above in exactly one variable — its
+// key. The fixture differs from the halt above in exactly one variable — its
 // delivery key fills from a public locator instead of the declared-sensitive
 // provides key — so no delivery key is marked and the only remaining offence is
 // the authored leaf.
@@ -226,57 +226,57 @@ func TestGovernanceSensitiveByValueDenyE2E(t *testing.T) {
 // is why the pair of leaves is the fixture rather than a single one. The
 // attachment writes a value at secretName as well, which the Feature declares
 // nothing about; a marking that reached past the declarations would name it, the
-// build would be denied over material its author left readable, and every
+// build would be halted over material its author left readable, and every
 // presence assertion above would still be satisfied. Marking too widely is the
 // failure with no cheap undo — it declares public data secret and then refuses
 // builds that should pass — so the verdict has to show the unmarked leaf staying
 // unmarked in the same breath as it names the marked one.
 func TestGovernanceSensitiveByValueAuthoredLeafDenyE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-marked-delivery", "no-sensitive-by-value", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-marked-delivery", "no-sensitive-by-value", analyzer.SeverityHalt)
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("authored-leaf deny: expected a halt, got nil")
+		t.Fatalf("authored-leaf halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("authored-leaf deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("authored-leaf halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
 	t.Logf("authored-leaf verdict halt:\n%s", msg)
 	for _, want := range []string{`attachment "credentials"`, `authored leaf "` + governanceFactsDeclaredLeaf + `"`} {
 		if !strings.Contains(msg, want) {
-			t.Errorf("authored-leaf deny does not report %q, so the per-leaf marking did not reach the guest:\n%v", want, msg)
+			t.Errorf("authored-leaf halt does not report %q, so the per-leaf marking did not reach the guest:\n%v", want, msg)
 		}
 	}
 	if strings.Contains(msg, governanceFactsUndeclaredLeaf) {
-		t.Errorf("authored-leaf deny names %q, a leaf this attachment authors a value at but the Feature declares "+
+		t.Errorf("authored-leaf halt names %q, a leaf this attachment authors a value at but the Feature declares "+
 			"nothing about; the marking joins declaration to declaration, so a verdict reaching this leaf means the "+
 			"marking was applied more widely than any author asked for:\n%v", governanceFactsUndeclaredLeaf, msg)
 	}
 	if strings.Contains(msg, "DATABASE_PASSWORD") {
-		t.Errorf("authored-leaf deny names a delivery key, but this fixture marks none; the two routes must be "+
+		t.Errorf("authored-leaf halt names a delivery key, but this fixture marks none; the two routes must be "+
 			"reported as the separate findings they are:\n%v", msg)
 	}
 	if !strings.Contains(msg, governanceFactsAuthorLabel+"=quarterly") {
-		t.Errorf("authored-leaf deny did not echo the author-declared label %q:\n%v", governanceFactsAuthorLabel, msg)
+		t.Errorf("authored-leaf halt did not echo the author-declared label %q:\n%v", governanceFactsAuthorLabel, msg)
 	}
 }
 
 // TestGovernanceSensitiveByValuePassE2E is the paired control for both routes:
 // the same rule over the fixture whose ONLY difference from the authored-leaf
-// deny above is that no value is authored at the declared-sensitive leaf. Neither
+// halt above is that no value is authored at the declared-sensitive leaf. Neither
 // route carries a declared-sensitive datum, so the build completes.
 //
 // The attachment is still sensitive at the per-attachment roll-up here — that
 // answer reads the Feature's declarations, which this fixture does not touch — so
 // a rule keyed on the roll-up rather than on the two per-datum markings would
-// deny here and this control would fail. That is the discrimination the control
+// halt here and this control would fail. That is the discrimination the control
 // exists for, and it is why the control is not simply an attachment with nothing
 // sensitive about it.
 func TestGovernanceSensitiveByValuePassE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-sensitive-datum", "no-sensitive-by-value", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-sensitive-datum", "no-sensitive-by-value", analyzer.SeverityHalt)
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
@@ -295,25 +295,25 @@ func TestGovernanceSensitiveByValuePassE2E(t *testing.T) {
 // judgement is the label's and not a reflex that fires on any attachment.
 func TestGovernanceSecretKindFromLabelsDenyE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "deny-secret-kind", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "deny-secret-kind", analyzer.SeverityHalt)
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("secret-kind deny: expected a halt, got nil")
+		t.Fatalf("secret-kind halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("secret-kind deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("secret-kind halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
 	t.Logf("secret-kind verdict halt:\n%s", msg)
 	if !strings.Contains(msg, `attachment "credentials"`) {
-		t.Errorf("secret-kind deny does not name the credential attachment:\n%v", msg)
+		t.Errorf("secret-kind halt does not name the credential attachment:\n%v", msg)
 	}
 	if strings.Contains(msg, `attachment "metrics"`) {
-		t.Errorf("secret-kind deny fired on the attachment that declares no family label:\n%v", msg)
+		t.Errorf("secret-kind halt fired on the attachment that declares no family label:\n%v", msg)
 	}
 	if !strings.Contains(msg, "feature.aggrega.ai/kind=secret") {
-		t.Errorf("secret-kind deny does not report the label it judged:\n%v", msg)
+		t.Errorf("secret-kind halt does not report the label it judged:\n%v", msg)
 	}
 }
 
@@ -323,7 +323,7 @@ func TestGovernanceSecretKindFromLabelsDenyE2E(t *testing.T) {
 // rule is reading the label rather than objecting to attachment as such.
 func TestGovernanceSecretKindPassesWithoutTheFamilyLabelE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "only-free", "deny-secret-kind", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "only-free", "deny-secret-kind", analyzer.SeverityHalt)
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
@@ -338,7 +338,7 @@ func TestGovernanceSecretKindPassesWithoutTheFamilyLabelE2E(t *testing.T) {
 // FEATURE by its catalog annotations, which is the half of the catalog metadata
 // the wire previously carried for a Component and not for a Feature. The guest
 // reads an annotation in a namespace the compiler has no knowledge of, finds the
-// attachment whose review is outstanding, and denies. The halt names the
+// attachment whose review is outstanding, and halts. The halt names the
 // attachment and the annotation key and value it judged by, so the verdict could
 // not have been emitted without reading them.
 //
@@ -347,32 +347,32 @@ func TestGovernanceSecretKindPassesWithoutTheFamilyLabelE2E(t *testing.T) {
 // value would name it too. Its absence from the message is asserted.
 func TestGovernanceCatalogAnnotationDenyE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "deny-unreviewed-attachment", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "deny-unreviewed-attachment", analyzer.SeverityHalt)
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("catalog-annotation deny: expected a halt, got nil")
+		t.Fatalf("catalog-annotation halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("catalog-annotation deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("catalog-annotation halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
 	t.Logf("catalog-annotation verdict halt:\n%s", msg)
 	if !strings.Contains(msg, `attachment "credentials"`) {
-		t.Errorf("catalog-annotation deny does not name the attachment whose review is outstanding:\n%v", msg)
+		t.Errorf("catalog-annotation halt does not name the attachment whose review is outstanding:\n%v", msg)
 	}
 	if strings.Contains(msg, `attachment "metrics"`) {
-		t.Errorf("catalog-annotation deny fired on the attachment whose review is complete, so it is keyed on the annotation's presence rather than its value:\n%v", msg)
+		t.Errorf("catalog-annotation halt fired on the attachment whose review is complete, so it is keyed on the annotation's presence rather than its value:\n%v", msg)
 	}
 	if !strings.Contains(msg, governanceFactsAuthorAnnotation+"=none") {
-		t.Errorf("catalog-annotation deny did not report the author-declared annotation %q it judged, so the annotations did not reach the guest verbatim:\n%v",
+		t.Errorf("catalog-annotation halt did not report the author-declared annotation %q it judged, so the annotations did not reach the guest verbatim:\n%v",
 			governanceFactsAuthorAnnotation, msg)
 	}
 	// The labels-driven half of the same wire is unaffected: every verdict this
 	// suite asserts on also echoes an author-declared LABEL, so a change that
 	// broke the labels carry would show here as well as in its own tests.
 	if !strings.Contains(msg, governanceFactsAuthorLabel+"=quarterly") {
-		t.Errorf("catalog-annotation deny did not echo the author-declared label %q:\n%v", governanceFactsAuthorLabel, msg)
+		t.Errorf("catalog-annotation halt did not echo the author-declared label %q:\n%v", governanceFactsAuthorLabel, msg)
 	}
 }
 
@@ -382,7 +382,7 @@ func TestGovernanceCatalogAnnotationDenyE2E(t *testing.T) {
 // reading the annotation's value rather than objecting to attachment as such.
 func TestGovernanceCatalogAnnotationPassesWhenReviewedE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "only-free", "deny-unreviewed-attachment", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "only-free", "deny-unreviewed-attachment", analyzer.SeverityHalt)
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
@@ -395,14 +395,14 @@ func TestGovernanceCatalogAnnotationPassesWhenReviewedE2E(t *testing.T) {
 
 // TestGovernanceAttachmentFactsObservedAtTheGuest dumps, from inside the guest,
 // every fact each attachment carried on the wire. It is the payload evidence
-// read at the point of arrival rather than at the point of assembly: an audit
+// read at the point of arrival rather than at the point of assembly: an info
 // verdict cannot report a field the guest did not receive.
 func TestGovernanceAttachmentFactsObservedAtTheGuest(t *testing.T) {
 	ctx := context.Background()
 
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
-		inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "observe", analyzer.SeverityAudit)
+		inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "observe", analyzer.SeverityInfo)
 		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
 			t.Fatalf("observe run: unexpected halt: %v", err)
@@ -456,7 +456,7 @@ func TestGovernanceVerdictMovesNoRenderedByte(t *testing.T) {
 
 	// A rule that finds nothing to object to, so the build completes with the
 	// guest in the pipeline.
-	withGuest, buildLookup2, recipeLookup2, subAgg2 := governanceFactsInputs(t, "both", "observe", analyzer.SeverityAudit)
+	withGuest, buildLookup2, recipeLookup2, subAgg2 := governanceFactsInputs(t, "both", "observe", analyzer.SeverityInfo)
 	guested, err := pipeline.RunPipeline(ctx, withGuest, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("build with the governance attachment: %v", err)

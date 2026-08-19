@@ -6,6 +6,7 @@ package analyzer
 import (
 	"encoding/json"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -46,14 +47,19 @@ type PolicySource struct {
 	Content string `json:"content"`
 }
 
-// SeverityDeny, SeverityWarn, and SeverityAudit are the three verdict
-// severities a fired policy verdict may carry: deny halts the build, warn flags
-// the verdict and lets the build proceed, audit records the verdict without
-// affecting the build outcome.
+// SeverityHalt, SeverityWarn, and SeverityInfo are the three severities a fired
+// policy verdict may carry: halt stops the build, warn flags the verdict and lets
+// the build proceed, info records the verdict without affecting the build
+// outcome.
+//
+// They are re-exports of the generated [abi] consts, so the vocabulary has one
+// home: the shared diagnostic schema declares the closed set, the generated
+// Go/Rust/TypeScript codecs publish it to guests, and the compiler routes on the
+// same three values a guest writes.
 const (
-	SeverityDeny  = "deny"
-	SeverityWarn  = "warn"
-	SeverityAudit = "audit"
+	SeverityHalt = abi.SeverityHalt
+	SeverityWarn = abi.SeverityWarn
+	SeverityInfo = abi.SeverityInfo
 )
 
 // RenderPolicyInput is the JSON payload the render stage hands to a

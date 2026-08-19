@@ -65,10 +65,10 @@ Three invocation shapes, mirroring validate:
 Without an entity argument, lint runs the structural conventions rules
 over every catalog entity found under the catalog directories. With
 --release it runs them over the entities that Release's closure reaches.
-In both, findings are advisory (warning severity) and never halt.
+In both, findings are advisory (warn severity) and never halt.
 
 With an entity path, lint runs the publishing-linter rule set against
-that one entity. In default mode the rules run at warning severity over
+that one entity. In default mode the rules run at warn severity over
 local content without consulting any registry. With --pre-publish the
 previous registry version is fetched and the schema-evolution
 classification is compared against the proposed version bump; mismatches

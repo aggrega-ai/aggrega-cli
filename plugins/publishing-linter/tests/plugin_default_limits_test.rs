@@ -39,7 +39,7 @@ fn warns_when_runtime_block_absent() {
     let findings = plugin_default_limits::classify(&input);
     assert_eq!(findings.len(), 1, "expected one warning, got {findings:?}");
     assert_eq!(findings[0].rule_id, "plugin-default-limits");
-    assert_eq!(findings[0].severity, "warning");
+    assert_eq!(findings[0].severity, "warn");
     assert!(
         findings[0].classification.is_empty(),
         "advisory finding carries no classification"
@@ -57,7 +57,7 @@ fn warns_when_runtime_present_but_caps_absent() {
     let findings = plugin_default_limits::classify(&input);
     assert_eq!(findings.len(), 1, "expected one warning, got {findings:?}");
     assert_eq!(findings[0].rule_id, "plugin-default-limits");
-    assert_eq!(findings[0].severity, "warning");
+    assert_eq!(findings[0].severity, "warn");
 }
 
 #[test]

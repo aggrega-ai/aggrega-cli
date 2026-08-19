@@ -515,12 +515,12 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	// Fold any guest-emitted warnings (aggrega_emit_warning host function) into
-	// the output's diagnostics as warning-severity entries, so the two guest
+	// the output's diagnostics as warn-severity entries, so the two guest
 	// advisory channels — structured output diagnostics and the emit-warning host
 	// function — reach the caller through one list. Drained here, before the
 	// deferred Close, so nothing is lost when the instance is torn down.
 	for _, w := range plugin.DrainWarnings() {
-		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: "warning", Message: w})
+		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: "warn", Message: w})
 	}
 	return out, nil
 }
@@ -551,15 +551,15 @@ func (e *Engine) verifyRenderDeterminism(ctx context.Context, plugin *wasm.Plugi
 }
 
 // surfaceNodeDiagnostics routes a provider guest's render/synthesis diagnostics:
-// warning- and info-severity entries go to the node's warning sink (nil-safe,
-// each prefixed with the node and provider identity), and error-severity entries
+// warn- and info-severity entries go to the node's warning sink (nil-safe,
+// each prefixed with the node and provider identity), and halt-severity entries
 // are joined into a returned render error naming the node and provider. Warnings
 // never affect emitted bytes, so a node's rendered output is byte-identical
 // whether or not a sink is attached.
 func (e *Engine) surfaceNodeDiagnostics(nodeCtx renderer.NodeRenderContext, diags []renderer.Diagnostic) error {
 	var errs []string
 	for _, d := range diags {
-		if d.Severity == "error" {
+		if d.Severity == "halt" {
 			errs = append(errs, d.Message)
 			continue
 		}
@@ -662,7 +662,7 @@ func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, n
 // reusable_instance, or a fresh instance the returned release closes otherwise. It
 // decodes the validate wire shape — a diagnostics-only payload with no files.
 // Guest-emitted warnings are folded into the returned diagnostics as
-// warning-severity entries.
+// warn-severity entries.
 func (e *Engine) invokeValidate(ctx context.Context, export string, input renderer.RenderNodeInput, sourceRoot string) ([]renderer.Diagnostic, error) {
 	desc, err := e.describe()
 	if err != nil {
@@ -695,7 +695,7 @@ func (e *Engine) invokeValidate(ctx context.Context, export string, input render
 	}
 	diags := out.Diagnostics
 	for _, w := range plugin.DrainWarnings() {
-		diags = append(diags, renderer.Diagnostic{Severity: "warning", Message: w})
+		diags = append(diags, renderer.Diagnostic{Severity: "warn", Message: w})
 	}
 	return diags, nil
 }

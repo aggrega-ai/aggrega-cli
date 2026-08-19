@@ -21,8 +21,8 @@ import (
 // Error()/ToCompilerError() rather than through the edge-shaped composition.
 func TestPolicyVerdictErrors_FiredVerdictsBecomeErrors(t *testing.T) {
 	out := abi.PolicyOutput{Results: []abi.Diagnostic{
-		{Severity: analyzer.SeverityDeny, Message: "rule B: prod boundary requires an owner label"},
-		{Severity: analyzer.SeverityDeny, Message: "rule C: image must be digest-pinned"},
+		{Severity: analyzer.SeverityHalt, Message: "rule B: prod boundary requires an owner label"},
+		{Severity: analyzer.SeverityHalt, Message: "rule C: image must be digest-pinned"},
 	}}
 
 	errs := policyVerdictErrors("oci://registry.example/policy/house-rules", out)
@@ -66,7 +66,7 @@ func TestPolicyVerdictErrors_EmptyResultsIsEmpty(t *testing.T) {
 // the same decode boundary a real guest's bytes cross, which is where the values
 // were being discarded.
 const policyVerdictWireFixture = `{"results":[{` +
-	`"severity":"deny",` +
+	`"severity":"halt",` +
 	`"message":"image must be digest-pinned",` +
 	`"code":"PROD-014",` +
 	`"rule_id":"no-floating-tags",` +
@@ -92,7 +92,7 @@ func TestPolicyVerdictWire_EveryFieldReachesTheHost(t *testing.T) {
 	got := out.Results[0]
 
 	for _, c := range []struct{ field, got, want string }{
-		{"severity", got.Severity, analyzer.SeverityDeny},
+		{"severity", got.Severity, analyzer.SeverityHalt},
 		{"message", got.Message, "image must be digest-pinned"},
 		{"code", got.Code, "PROD-014"},
 		{"rule_id", got.RuleID, "no-floating-tags"},
@@ -124,7 +124,7 @@ func TestPolicyVerdictWire_EveryFieldReachesTheHost(t *testing.T) {
 // TestPolicyVerdictWire_EveryFieldIsRendered proves the fields a verdict carries
 // beyond severity and message are read rather than merely decoded. A value that
 // arrives at the host and is then never surfaced is the same loss one stage
-// later, so the deny halt, the warn diagnostic, and the audit record are each
+// later, so the halt, the warn diagnostic, and the info record are each
 // asserted to carry every one of them.
 func TestPolicyVerdictWire_EveryFieldIsRendered(t *testing.T) {
 	var out abi.PolicyOutput
@@ -135,12 +135,12 @@ func TestPolicyVerdictWire_EveryFieldIsRendered(t *testing.T) {
 
 	errs := policyVerdictErrors("oci://registry.example/policy/house-rules", out)
 	if len(errs) != 1 {
-		t.Fatalf("expected one error for the fired deny verdict, got %d", len(errs))
+		t.Fatalf("expected one error for the fired halt verdict, got %d", len(errs))
 	}
 	surfaces := map[string]string{
-		"deny halt":     errs[0].Error(),
+		"halt":          errs[0].Error(),
 		"warn":          policyWarnMessage("oci://registry.example/policy/house-rules", verdict),
-		"audit":         policyVerdictDetail(verdict),
+		"info":          policyVerdictDetail(verdict),
 		"detail suffix": policyVerdictDetail(verdict),
 	}
 	want := []string{
@@ -164,7 +164,7 @@ func TestPolicyVerdictWire_EveryFieldIsRendered(t *testing.T) {
 
 	// A verdict carrying only severity and message renders with no detail suffix,
 	// so the existing verdict text is unchanged by the addition.
-	lean := abi.Diagnostic{Severity: analyzer.SeverityDeny, Message: "plain"}
+	lean := abi.Diagnostic{Severity: analyzer.SeverityHalt, Message: "plain"}
 	if detail := policyVerdictDetail(lean); detail != "" {
 		t.Errorf("a verdict with no optional fields rendered a detail suffix: %q", detail)
 	}

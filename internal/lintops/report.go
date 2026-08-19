@@ -177,9 +177,9 @@ func NewReport(findings []Finding, entitiesChecked int) Report {
 	}
 	for _, f := range findings {
 		switch f.Severity {
-		case "error":
+		case "halt":
 			r.Summary.Errors++
-		case "warning":
+		case "warn":
 			r.Summary.Warnings++
 		}
 	}

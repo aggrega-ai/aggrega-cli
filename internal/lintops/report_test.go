@@ -20,7 +20,7 @@ func TestFindingFromCarriesTextVerbatim(t *testing.T) {
 	t.Parallel()
 	const msg = "  metadata.name \"BadName\" does not match\nthe documented pattern  "
 	got := FindingFrom(abi.Diagnostic{
-		Severity: "warning",
+		Severity: "warn",
 		Message:  msg,
 		RuleID:   "name-shape",
 	}, "component.yaml")
@@ -28,7 +28,7 @@ func TestFindingFromCarriesTextVerbatim(t *testing.T) {
 	if got.Message != msg {
 		t.Errorf("message was altered on the way into the payload:\n got:  %q\n want: %q", got.Message, msg)
 	}
-	if got.Severity != "warning" || got.RuleID != "name-shape" {
+	if got.Severity != "warn" || got.RuleID != "name-shape" {
 		t.Errorf("severity/ruleId not carried: %+v", got)
 	}
 	if got.Location == nil || got.Location.File != "component.yaml" {
@@ -47,7 +47,7 @@ func TestFindingFromCarriesTextVerbatim(t *testing.T) {
 func TestFindingFromCarriesSpanPosition(t *testing.T) {
 	t.Parallel()
 	got := FindingFrom(abi.Diagnostic{
-		Severity: "error",
+		Severity: "halt",
 		Message:  "located",
 		RuleID:   "some-rule",
 		Location: &abi.Location{
@@ -81,7 +81,7 @@ func TestFindingFromCarriesSpanPosition(t *testing.T) {
 func TestFindingFromInventsNoPosition(t *testing.T) {
 	t.Parallel()
 	got := FindingFrom(abi.Diagnostic{
-		Severity: "warning",
+		Severity: "warn",
 		Message:  "unlocated",
 		RuleID:   "some-rule",
 	}, "component.yaml")
@@ -109,7 +109,7 @@ func TestFindingFromInventsNoPosition(t *testing.T) {
 func TestFindingFromDocumentLineWithoutSpan(t *testing.T) {
 	t.Parallel()
 	got := FindingFrom(abi.Diagnostic{
-		Severity: "warning",
+		Severity: "warn",
 		Message:  "structurally located",
 		Location: &abi.Location{Line: 12, KeyPath: "spec.schema"},
 	}, "component.yaml")
@@ -127,9 +127,9 @@ func TestFindingFromDocumentLineWithoutSpan(t *testing.T) {
 func TestNewReportSummaryAgreesWithFindings(t *testing.T) {
 	t.Parallel()
 	r := NewReport([]Finding{
-		{Severity: "error", Message: "a"},
-		{Severity: "warning", Message: "b"},
-		{Severity: "warning", Message: "c"},
+		{Severity: "halt", Message: "a"},
+		{Severity: "warn", Message: "b"},
+		{Severity: "warn", Message: "c"},
 	}, 2)
 
 	if r.Summary.Findings != 3 || r.Summary.Errors != 1 || r.Summary.Warnings != 2 {
@@ -159,7 +159,7 @@ func TestReportEmitsEmptyListNotNull(t *testing.T) {
 func TestCollectorNilIsInert(t *testing.T) {
 	t.Parallel()
 	var c *FindingCollector
-	c.Add([]abi.Diagnostic{{Severity: "error", Message: "x"}}, "f.yaml")
+	c.Add([]abi.Diagnostic{{Severity: "halt", Message: "x"}}, "f.yaml")
 	c.Entities(3)
 	if c.Reached() {
 		t.Error("a nil collector must never report having been reached")
@@ -198,8 +198,8 @@ func TestCollectorReachedDistinguishesCleanRunFromNoRun(t *testing.T) {
 func TestCollectorAttributesFindingsPerFile(t *testing.T) {
 	t.Parallel()
 	c := &FindingCollector{}
-	c.Add([]abi.Diagnostic{{Severity: "warning", Message: "first"}}, "a.yaml")
-	c.Add([]abi.Diagnostic{{Severity: "warning", Message: "second"}}, "b.yaml")
+	c.Add([]abi.Diagnostic{{Severity: "warn", Message: "first"}}, "a.yaml")
+	c.Add([]abi.Diagnostic{{Severity: "warn", Message: "second"}}, "b.yaml")
 	c.Entities(2)
 
 	r := c.Report()

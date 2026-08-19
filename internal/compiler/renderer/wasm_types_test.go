@@ -100,7 +100,7 @@ func sampleRenderNodeOutput(t *testing.T) renderer.RenderNodeOutput {
 		},
 		Diagnostics: []renderer.Diagnostic{
 			{
-				Severity: "warning",
+				Severity: "warn",
 				Code:     "deprecated-field",
 				Message:  "values.legacyPort is deprecated",
 				Location: &renderer.DiagnosticLocation{
@@ -244,7 +244,7 @@ func TestDiagnostic_OmitemptyAndRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	minimal := renderer.Diagnostic{
-		Severity: "error",
+		Severity: "halt",
 		Code:     "missing-required",
 		Message:  "values.image is required",
 	}
@@ -252,7 +252,7 @@ func TestDiagnostic_OmitemptyAndRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal minimal: %v", err)
 	}
-	const wantMinimal = `{"severity":"error","message":"values.image is required","code":"missing-required"}`
+	const wantMinimal = `{"severity":"halt","message":"values.image is required","code":"missing-required"}`
 	if string(raw) != wantMinimal {
 		t.Errorf("omitempty did not drop optional fields:\n  want: %s\n  got:  %s", wantMinimal, raw)
 	}

@@ -49,7 +49,7 @@
 // returns. It confirms the module's HCL is well-formed and nothing more,
 // resolving no variables, evaluating no expressions, contacting no provider, and
 // running no Terraform toolchain. A file that does not parse yields an
-// error-severity diagnostic, which halts the build; what the configuration means
+// halt-severity diagnostic, which halts the build; what the configuration means
 // once it does parse is the runtime's concern.
 //
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o terraform-provider.wasm ./plugins/terraform-provider
@@ -291,7 +291,7 @@ func validateTerraformModule(proj *aggrega.SourceProjection) []renderctx.Diagnos
 }
 
 // convertHCLDiagnostics maps HCL parse diagnostics to the shared Wasm-plugin
-// diagnostic shape, preserving order. An HCL error becomes an error-severity
+// diagnostic shape, preserving order. An HCL error becomes a halt-severity
 // diagnostic (which halts the build at the host's input-kind gate); any other
 // HCL diagnostic becomes a warning. The summary and detail are joined into the
 // human-readable message, and the file position — when HCL pins one — travels in
@@ -306,9 +306,9 @@ func convertHCLDiagnostics(hd hcl.Diagnostics) []renderctx.Diagnostic {
 	}
 	out := make([]renderctx.Diagnostic, 0, len(hd))
 	for _, d := range hd {
-		severity := "warning"
+		severity := "warn"
 		if d.Severity == hcl.DiagError {
-			severity = "error"
+			severity = "halt"
 		}
 		msg := d.Summary
 		if d.Detail != "" {

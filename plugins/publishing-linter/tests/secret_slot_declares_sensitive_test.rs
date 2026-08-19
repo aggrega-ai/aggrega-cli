@@ -16,7 +16,7 @@
 //!  - The marker present, absent, false, and non-boolean.
 //!  - Slots without a selector, entities without slots, and entity kinds
 //!    that declare no slots.
-//!  - The finding's severity is `warning`, so the rule never halts.
+//!  - The finding's severity is `warn`, so the rule never halts.
 //!  - Both slot-declaring entity kinds.
 
 mod common;
@@ -40,8 +40,8 @@ fn classify(kind: &str, slots: Value) -> Vec<String> {
         .map(|f| {
             assert_eq!(f.rule_id, "secret-slot-declares-sensitive");
             assert_eq!(
-                f.severity, "warning",
-                "the rule is advisory; a non-warning severity would halt a pre-publish run"
+                f.severity, "warn",
+                "the rule is advisory; a non-warn severity would halt a pre-publish run"
             );
             f.message
         })

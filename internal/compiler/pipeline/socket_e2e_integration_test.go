@@ -439,30 +439,30 @@ func observePolicyInputs(t *testing.T, severity string) (pipeline.Inputs, resolv
 	return inputs, buildLookup, recipeLookup, subAgg, srcPath, srcContent
 }
 
-// TestPolicySocketSeverityDenyE2E proves a deny verdict halts the build loudly
+// TestPolicySocketSeverityHaltE2E proves a halt verdict halts the build loudly
 // (carrying ErrPolicyViolation) AND that the attachment's sources reached the
 // guest as base names: the halt message carries the base-name path and the
 // content length the guest observed, and never the absolute host path.
-func TestPolicySocketSeverityDenyE2E(t *testing.T) {
+func TestPolicySocketSeverityHaltE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg, srcPath, srcContent := observePolicyInputs(t, analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg, srcPath, srcContent := observePolicyInputs(t, analyzer.SeverityHalt)
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("deny verdict: expected a halt, got nil")
+		t.Fatalf("halt verdict: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("deny halt not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, `path="policy.def"`) {
-		t.Errorf("deny halt does not carry the base-name source path:\n%v", msg)
+		t.Errorf("halt does not carry the base-name source path:\n%v", msg)
 	}
 	if want := "content-length=" + strconv.Itoa(len(srcContent)); !strings.Contains(msg, want) {
-		t.Errorf("deny halt does not carry the observed content length %q:\n%v", want, msg)
+		t.Errorf("halt does not carry the observed content length %q:\n%v", want, msg)
 	}
 	if strings.Contains(msg, srcPath) {
-		t.Errorf("deny halt leaked the absolute host source path %q (paths must be base names):\n%v", srcPath, msg)
+		t.Errorf("halt leaked the absolute host source path %q (paths must be base names):\n%v", srcPath, msg)
 	}
 }
 
@@ -497,31 +497,31 @@ func TestPolicySocketSeverityWarnE2E(t *testing.T) {
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
 
-// TestPolicySocketSeverityAuditE2E proves an audit verdict records under a
-// distinct "audit:" label, lets the build proceed, and does not perturb output.
-func TestPolicySocketSeverityAuditE2E(t *testing.T) {
+// TestPolicySocketSeverityInfoE2E proves an info verdict records under a
+// distinct "info:" label, lets the build proceed, and does not perturb output.
+func TestPolicySocketSeverityInfoE2E(t *testing.T) {
 	ctx := context.Background()
 
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
-		inputs, buildLookup, recipeLookup, subAgg, _, _ := observePolicyInputs(t, analyzer.SeverityAudit)
+		inputs, buildLookup, recipeLookup, subAgg, _, _ := observePolicyInputs(t, analyzer.SeverityInfo)
 		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
-			t.Fatalf("audit verdict: unexpected halt: %v", err)
+			t.Fatalf("info verdict: unexpected halt: %v", err)
 		}
 		res = r
 	})
 	if res == nil || len(res.Artifacts) == 0 {
-		t.Fatalf("audit build produced no artifacts")
+		t.Fatalf("info build produced no artifacts")
 	}
-	if !strings.Contains(stderr, "audit:") {
-		t.Errorf("audit verdict did not record under the distinct audit label:\n%s", stderr)
+	if !strings.Contains(stderr, "info:") {
+		t.Errorf("info verdict did not record under the distinct info label:\n%s", stderr)
 	}
 
-	inputs2, buildLookup2, recipeLookup2, subAgg2, _, _ := observePolicyInputs(t, analyzer.SeverityAudit)
+	inputs2, buildLookup2, recipeLookup2, subAgg2, _, _ := observePolicyInputs(t, analyzer.SeverityInfo)
 	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
-		t.Fatalf("audit verdict (second build): %v", err)
+		t.Fatalf("info verdict (second build): %v", err)
 	}
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
@@ -544,22 +544,22 @@ func renderPolicyInputs(t *testing.T, severity string) (pipeline.Inputs, resolve
 }
 
 // TestRenderStagePolicySocketDenyE2E proves a render-stage policy plugin runs
-// AFTER render over the artifacts payload and can halt the build: its deny
-// verdict halts loudly with ErrPolicyViolation, and the message proves the guest
-// saw the rendered artifacts (a non-zero artifact count).
+// AFTER render over the artifacts payload and can halt the build: its halt
+// verdict stops the build loudly with ErrPolicyViolation, and the message proves
+// the guest saw the rendered artifacts (a non-zero artifact count).
 func TestRenderStagePolicySocketDenyE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := renderPolicyInputs(t, analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := renderPolicyInputs(t, analyzer.SeverityHalt)
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("render-stage deny: expected a halt, got nil")
+		t.Fatalf("render-stage halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("render-stage deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("render-stage halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	if !strings.Contains(err.Error(), "render stage saw") {
-		t.Errorf("render-stage deny message does not prove the guest saw artifacts:\n%v", err)
+		t.Errorf("render-stage halt message does not prove the guest saw artifacts:\n%v", err)
 	}
 	// The guest must have seen at least one artifact.
 	if strings.Contains(err.Error(), "render stage saw 0 artifact(s)") {
@@ -567,31 +567,31 @@ func TestRenderStagePolicySocketDenyE2E(t *testing.T) {
 	}
 }
 
-// TestRenderStagePolicySocketAuditE2E proves a render-stage audit verdict records
+// TestRenderStagePolicySocketInfoE2E proves a render-stage info verdict records
 // and the build proceeds to produce artifacts, with byte-identical output.
-func TestRenderStagePolicySocketAuditE2E(t *testing.T) {
+func TestRenderStagePolicySocketInfoE2E(t *testing.T) {
 	ctx := context.Background()
 
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
-		inputs, buildLookup, recipeLookup, subAgg := renderPolicyInputs(t, analyzer.SeverityAudit)
+		inputs, buildLookup, recipeLookup, subAgg := renderPolicyInputs(t, analyzer.SeverityInfo)
 		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
-			t.Fatalf("render-stage audit: unexpected halt: %v", err)
+			t.Fatalf("render-stage info: unexpected halt: %v", err)
 		}
 		res = r
 	})
 	if res == nil || len(res.Artifacts) == 0 {
-		t.Fatalf("render-stage audit build produced no artifacts")
+		t.Fatalf("render-stage info build produced no artifacts")
 	}
-	if !strings.Contains(stderr, "audit:") || !strings.Contains(stderr, "render stage saw") {
-		t.Errorf("render-stage audit did not record on stderr:\n%s", stderr)
+	if !strings.Contains(stderr, "info:") || !strings.Contains(stderr, "render stage saw") {
+		t.Errorf("render-stage info did not record on stderr:\n%s", stderr)
 	}
 
-	inputs2, buildLookup2, recipeLookup2, subAgg2 := renderPolicyInputs(t, analyzer.SeverityAudit)
+	inputs2, buildLookup2, recipeLookup2, subAgg2 := renderPolicyInputs(t, analyzer.SeverityInfo)
 	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
-		t.Fatalf("render-stage audit (second build): %v", err)
+		t.Fatalf("render-stage info (second build): %v", err)
 	}
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
@@ -628,22 +628,22 @@ func governanceMultiroleInputs(t *testing.T, irSeverity, renderSeverity string) 
 // governance engine attached at all four roles on ONE build. It also greens the
 // positive half of the failing-first proof — a single guest serving both a
 // transform and a verdict role, build succeeds — which the retired plugin-type
-// identity guard used to make impossible. With both verdict roles at audit
+// identity guard used to make impossible. With both verdict roles at info
 // severity the build proceeds, and every role's effect is observed on the one
 // build: the label-transform proof label is on every node; the
 // annotation-transform injection expanded into a synthetic Feature visible in
 // rendered output carrying the host-stamped injected-by provenance; and both the
-// ir-verdict and render-verdict roles recorded their audit verdict on stderr (two
+// ir-verdict and render-verdict roles recorded their info verdict on stderr (two
 // emissions, one per verdict role). Output is byte-identical across two runs.
 func TestGovernanceEngineAllFourRolesE2E(t *testing.T) {
 	ctx := context.Background()
 
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
-		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityAudit, analyzer.SeverityAudit)
+		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityInfo, analyzer.SeverityInfo)
 		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
-			t.Fatalf("one engine at all four roles (verdicts audit): unexpected halt: %v", err)
+			t.Fatalf("one engine at all four roles (verdicts info): unexpected halt: %v", err)
 		}
 		res = r
 	})
@@ -704,15 +704,15 @@ func TestGovernanceEngineAllFourRolesE2E(t *testing.T) {
 		t.Errorf("injected feature not visible in rendered output (no artifact carries %q)", proofInjectMarker)
 	}
 
-	// Both verdict roles ran on this one build: the ir-verdict role's audit AND
-	// the render-verdict role's audit each recorded the guest's message on
+	// Both verdict roles ran on this one build: the ir-verdict role's info AND
+	// the render-verdict role's info each recorded the guest's message on
 	// stderr — two emissions, one per verdict role.
 	if got := strings.Count(stderr, governanceMultiroleVerdictMsg); got != 2 {
 		t.Errorf("expected the verdict message on stderr twice (ir-verdict + render-verdict), got %d:\n%s", got, stderr)
 	}
 
 	// Determinism: a second build of identical input is byte-identical.
-	inputs2, buildLookup2, recipeLookup2, subAgg2 := governanceMultiroleInputs(t, analyzer.SeverityAudit, analyzer.SeverityAudit)
+	inputs2, buildLookup2, recipeLookup2, subAgg2 := governanceMultiroleInputs(t, analyzer.SeverityInfo, analyzer.SeverityInfo)
 	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
 		t.Fatalf("four-role build (second run): %v", err)
@@ -721,57 +721,57 @@ func TestGovernanceEngineAllFourRolesE2E(t *testing.T) {
 }
 
 // TestGovernanceEngineAllFourRolesIRVerdictHaltsE2E proves the ir-verdict facet
-// of the four-role engine halts the build: with the ir-verdict attachment at deny
+// of the four-role engine halts the build: with the ir-verdict attachment at halt
 // the build halts at the IR stage with ErrPolicyViolation, before render — so the
-// render-verdict role (at audit) never records its verdict on stderr.
+// render-verdict role (at info) never records its verdict on stderr.
 func TestGovernanceEngineAllFourRolesIRVerdictHaltsE2E(t *testing.T) {
 	ctx := context.Background()
 	var err error
 	stderr := captureStderr(t, func() {
-		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityDeny, analyzer.SeverityAudit)
+		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityHalt, analyzer.SeverityInfo)
 		_, err = pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	})
 	if err == nil {
-		t.Fatalf("ir-verdict deny: expected a halt, got nil")
+		t.Fatalf("ir-verdict halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("ir-verdict deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("ir-verdict halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	if !strings.Contains(err.Error(), governanceMultiroleVerdictMsg) {
 		t.Errorf("ir-verdict halt does not carry the guest verdict message:\n%v", err)
 	}
-	// The halt is at the IR stage, before render: the render-verdict audit never
+	// The halt is at the IR stage, before render: the render-verdict info never
 	// ran, so no verdict message reached stderr.
 	if strings.Contains(stderr, governanceMultiroleVerdictMsg) {
-		t.Errorf("ir-verdict deny should halt before render; render-verdict audit must not have run:\n%s", stderr)
+		t.Errorf("ir-verdict halt should halt before render; render-verdict info must not have run:\n%s", stderr)
 	}
 }
 
 // TestGovernanceEngineAllFourRolesRenderVerdictHaltsE2E proves the render-verdict
-// facet of the four-role engine halts the build: with the ir-verdict at audit
+// facet of the four-role engine halts the build: with the ir-verdict at info
 // (which lets the build proceed and records on stderr) and the render-verdict at
-// deny, the build passes the IR stage and halts at render with ErrPolicyViolation
+// halt, the build passes the IR stage and halts at render with ErrPolicyViolation
 // — proving the render-verdict role, not the ir-verdict role, produced the halt.
 func TestGovernanceEngineAllFourRolesRenderVerdictHaltsE2E(t *testing.T) {
 	ctx := context.Background()
 	var err error
 	stderr := captureStderr(t, func() {
-		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityAudit, analyzer.SeverityDeny)
+		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityInfo, analyzer.SeverityHalt)
 		_, err = pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	})
 	if err == nil {
-		t.Fatalf("render-verdict deny: expected a halt, got nil")
+		t.Fatalf("render-verdict halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("render-verdict deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("render-verdict halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	if !strings.Contains(err.Error(), governanceMultiroleVerdictMsg) {
 		t.Errorf("render-verdict halt does not carry the guest verdict message:\n%v", err)
 	}
-	// The build passed the IR stage (the ir-verdict audit recorded on stderr) and
+	// The build passed the IR stage (the ir-verdict info recorded on stderr) and
 	// halted at render — so the halt came from the render-verdict role.
 	if !strings.Contains(stderr, governanceMultiroleVerdictMsg) {
-		t.Errorf("render-verdict deny should run after a passing ir-verdict audit; the ir-verdict audit did not record:\n%s", stderr)
+		t.Errorf("render-verdict halt should run after a passing ir-verdict info; the ir-verdict info did not record:\n%s", stderr)
 	}
 }
 

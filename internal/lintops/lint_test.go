@@ -143,7 +143,7 @@ func TestLintPrePublishMatrixComponent(t *testing.T) {
 
 // TestLintDefaultModeEmitsWarnings pins the default-mode disposition:
 // no --pre-publish, no registry consultation, every rule's finding
-// downgraded to warning severity.
+// downgraded to warn severity.
 func TestLintDefaultModeEmitsWarnings(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
 	yaml := []byte(`apiVersion: aggrega.ai/v1alpha1

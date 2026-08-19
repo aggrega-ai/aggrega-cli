@@ -69,28 +69,28 @@ const missingGovernanceLabel = "governance.example/reviewed"
 const presentGovernanceLabel = "component.aggrega.ai/type"
 
 // TestGraphRuleIRVerdictDenyE2E proves an IR-stage verdict derived from the graph
-// the guest reads: with a required label no node carries, the guest denies and
+// the guest reads: with a required label no node carries, the guest halts and
 // the halt names the offending node and the missing label — proving the guest
 // inspected the graph rather than emitting a constant.
 func TestGraphRuleIRVerdictDenyE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityHalt)
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("graph-rule deny: expected a halt, got nil")
+		t.Fatalf("graph-rule halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("graph-rule deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("graph-rule halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
 	// The nodes sort backend < data.main-db < frontend, so backend is the first
 	// offender named — proving the guest walked the actual graph.
 	if !strings.Contains(msg, `node "backend"`) {
-		t.Errorf("graph-rule deny does not name the first offending node:\n%v", msg)
+		t.Errorf("graph-rule halt does not name the first offending node:\n%v", msg)
 	}
 	if !strings.Contains(msg, missingGovernanceLabel) {
-		t.Errorf("graph-rule deny does not name the missing required label %q:\n%v", missingGovernanceLabel, msg)
+		t.Errorf("graph-rule halt does not name the missing required label %q:\n%v", missingGovernanceLabel, msg)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestGraphRuleIRVerdictDenyE2E(t *testing.T) {
 // emits no verdict and the build produces artifacts.
 func TestGraphRuleIRVerdictSatisfiedE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, presentGovernanceLabel, analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, presentGovernanceLabel, analyzer.SeverityHalt)
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
@@ -139,31 +139,31 @@ func TestGraphRuleIRVerdictWarnE2E(t *testing.T) {
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
 
-// TestGraphRuleIRVerdictAuditE2E proves an audit verdict from the graph rule
-// records under the audit label and the build proceeds, byte-identical.
-func TestGraphRuleIRVerdictAuditE2E(t *testing.T) {
+// TestGraphRuleIRVerdictInfoE2E proves an info verdict from the graph rule
+// records under the info label and the build proceeds, byte-identical.
+func TestGraphRuleIRVerdictInfoE2E(t *testing.T) {
 	ctx := context.Background()
 
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
-		inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityAudit)
+		inputs, buildLookup, recipeLookup, subAgg := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityInfo)
 		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
-			t.Fatalf("graph-rule audit: unexpected halt: %v", err)
+			t.Fatalf("graph-rule info: unexpected halt: %v", err)
 		}
 		res = r
 	})
 	if res == nil || len(res.Artifacts) == 0 {
-		t.Fatalf("graph-rule audit build produced no artifacts")
+		t.Fatalf("graph-rule info build produced no artifacts")
 	}
-	if !strings.Contains(stderr, "audit:") || !strings.Contains(stderr, missingGovernanceLabel) {
-		t.Errorf("graph-rule audit did not record the graph detail on stderr:\n%s", stderr)
+	if !strings.Contains(stderr, "info:") || !strings.Contains(stderr, missingGovernanceLabel) {
+		t.Errorf("graph-rule info did not record the graph detail on stderr:\n%s", stderr)
 	}
 
-	inputs2, buildLookup2, recipeLookup2, subAgg2 := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityAudit)
+	inputs2, buildLookup2, recipeLookup2, subAgg2 := graphRuleInputs(t, missingGovernanceLabel, analyzer.SeverityInfo)
 	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
-		t.Fatalf("graph-rule audit (second build): %v", err)
+		t.Fatalf("graph-rule info (second build): %v", err)
 	}
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
@@ -174,27 +174,27 @@ const renderContentForbiddenToken = "apiVersion"
 
 // TestContentRuleRenderVerdictDenyE2E proves a render-stage verdict derived from
 // the rendered content the guest reads: with a token every manifest carries, the
-// guest denies and the halt names the offending artifact and the token — proving
+// guest halts and the halt names the offending artifact and the token — proving
 // the guest read the rendered content.
 func TestContentRuleRenderVerdictDenyE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityHalt)
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("content-rule deny: expected a halt, got nil")
+		t.Fatalf("content-rule halt: expected a halt, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("content-rule deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("content-rule halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, renderContentForbiddenToken) {
-		t.Errorf("content-rule deny does not name the forbidden token %q:\n%v", renderContentForbiddenToken, msg)
+		t.Errorf("content-rule halt does not name the forbidden token %q:\n%v", renderContentForbiddenToken, msg)
 	}
 	// The artifacts sort by path, so the first offender named is deterministic —
 	// proving the guest read a real rendered artifact's content.
 	if !strings.Contains(msg, `artifact "dist/backend/helm/app-config.yaml"`) {
-		t.Errorf("content-rule deny does not name the first offending artifact:\n%v", msg)
+		t.Errorf("content-rule halt does not name the first offending artifact:\n%v", msg)
 	}
 }
 
@@ -203,7 +203,7 @@ func TestContentRuleRenderVerdictDenyE2E(t *testing.T) {
 // artifacts.
 func TestContentRuleRenderVerdictSatisfiedE2E(t *testing.T) {
 	ctx := context.Background()
-	inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, "token-that-appears-in-no-rendered-artifact-xyz", analyzer.SeverityDeny)
+	inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, "token-that-appears-in-no-rendered-artifact-xyz", analyzer.SeverityHalt)
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err != nil {
@@ -243,31 +243,31 @@ func TestContentRuleRenderVerdictWarnE2E(t *testing.T) {
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
 
-// TestContentRuleRenderVerdictAuditE2E proves an audit verdict from the content
-// rule records under the audit label and the build proceeds, byte-identical.
-func TestContentRuleRenderVerdictAuditE2E(t *testing.T) {
+// TestContentRuleRenderVerdictInfoE2E proves an info verdict from the content
+// rule records under the info label and the build proceeds, byte-identical.
+func TestContentRuleRenderVerdictInfoE2E(t *testing.T) {
 	ctx := context.Background()
 
 	var res *pipeline.Result
 	stderr := captureStderr(t, func() {
-		inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityAudit)
+		inputs, buildLookup, recipeLookup, subAgg := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityInfo)
 		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err != nil {
-			t.Fatalf("content-rule audit: unexpected halt: %v", err)
+			t.Fatalf("content-rule info: unexpected halt: %v", err)
 		}
 		res = r
 	})
 	if res == nil || len(res.Artifacts) == 0 {
-		t.Fatalf("content-rule audit build produced no artifacts")
+		t.Fatalf("content-rule info build produced no artifacts")
 	}
-	if !strings.Contains(stderr, "audit:") || !strings.Contains(stderr, renderContentForbiddenToken) {
-		t.Errorf("content-rule audit did not record the content detail on stderr:\n%s", stderr)
+	if !strings.Contains(stderr, "info:") || !strings.Contains(stderr, renderContentForbiddenToken) {
+		t.Errorf("content-rule info did not record the content detail on stderr:\n%s", stderr)
 	}
 
-	inputs2, buildLookup2, recipeLookup2, subAgg2 := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityAudit)
+	inputs2, buildLookup2, recipeLookup2, subAgg2 := contentRuleInputs(t, renderContentForbiddenToken, analyzer.SeverityInfo)
 	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
 	if err != nil {
-		t.Fatalf("content-rule audit (second build): %v", err)
+		t.Fatalf("content-rule info (second build): %v", err)
 	}
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
@@ -281,7 +281,7 @@ const proofChainLabel = "proof.aggrega/touched"
 // input, both attaching the graph rule keyed to the stamped label:
 //   - with the label-transform attached, the rule finds the label on every node
 //     and the build succeeds;
-//   - with the label-transform detached, the rule finds no label and denies,
+//   - with the label-transform detached, the rule finds no label and halts,
 //     naming the label — proving the label crossed the transform->verdict boundary.
 //
 // The attached build is byte-identical across two runs (determinism holds with
@@ -293,7 +293,7 @@ func TestLabelTransformToVerdictChainE2E(t *testing.T) {
 		refs := []workspaceconfig.PluginRef{{
 			URI:  "proof://policy-graph-rule",
 			Role: plugintype.RoleIRVerdict,
-			With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"required_label": proofChainLabel, "severity": analyzer.SeverityDeny}},
+			With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"required_label": proofChainLabel, "severity": analyzer.SeverityHalt}},
 		}}
 		if withLabelTransform {
 			refs = append([]workspaceconfig.PluginRef{{URI: "proof://mutator", Role: plugintype.RoleLabelTransform}}, refs...)
@@ -321,19 +321,19 @@ func TestLabelTransformToVerdictChainE2E(t *testing.T) {
 		t.Fatalf("chain (attached) produced no artifacts")
 	}
 
-	// Detached: no stamped label; the rule denies naming the label.
+	// Detached: no stamped label; the rule halts naming the label.
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 	inputs.WorkspaceConfig.Plugins.Governance = attach(false)
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, lookup)
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 	if err == nil {
-		t.Fatalf("chain (label-transform detached): expected a deny halt (no stamped label), got nil")
+		t.Fatalf("chain (label-transform detached): expected a halt (no stamped label), got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("chain detached halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	if !strings.Contains(err.Error(), proofChainLabel) {
-		t.Errorf("chain detached deny does not name the label the verdict turned on %q:\n%v", proofChainLabel, err)
+		t.Errorf("chain detached halt does not name the label the verdict turned on %q:\n%v", proofChainLabel, err)
 	}
 
 	// Determinism: the attached build is byte-identical across two runs.

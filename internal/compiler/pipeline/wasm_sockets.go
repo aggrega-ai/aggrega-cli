@@ -243,8 +243,8 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 			switch r.Severity {
 			case analyzer.SeverityWarn:
 				analysis.Warnings = append(analysis.Warnings, policyWarnMessage(ref.URI, r))
-			case analyzer.SeverityAudit:
-				emitPolicyAudit(ref.URI, r)
+			case analyzer.SeverityInfo:
+				emitPolicyInfo(ref.URI, r)
 			}
 		}
 	}
@@ -255,10 +255,10 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 // RenderAll: for each configured policy plugin that declares the render stage,
 // it hands the plugin the rendered artifacts (path-sorted into a canonical
 // order) plus the attachment's own sources and settings, and routes the returned
-// verdicts by severity. deny halts the build loudly — the runner returns a joined
+// verdicts by severity. halt stops the build loudly — the runner returns a joined
 // error built from the same policyVerdictErrors → ToCompilerError conversion the
 // IR-stage gate uses, so the halt carries ErrPolicyViolation exactly as an
-// IR-stage deny does. warn and audit print to the diagnostic sink and the build
+// IR-stage halt does. warn and info print to the diagnostic sink and the build
 // proceeds. An IR-stage or stage-absent plugin is skipped here (it ran at the IR
 // stage). An unconfigured socket is a no-op. A resolution, load, source-read, or
 // output-unmarshal failure halts the build loudly (a misconfigured attachment is
@@ -274,7 +274,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		return fmt.Errorf("render-verdict: %w", err)
 	}
 
-	var denyErrs []analyzer.AnalysisError
+	var haltErrs []analyzer.AnalysisError
 	for _, ref := range refs {
 		export := policyExport(ref)
 		resolved, err := lookup(ref.URI)
@@ -307,22 +307,22 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		if err := wasm.GuestReturnedError(export, po.Error); err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
-		denyErrs = append(denyErrs, policyVerdictErrors(ref.URI, po)...)
+		haltErrs = append(haltErrs, policyVerdictErrors(ref.URI, po)...)
 		for _, r := range po.Results {
 			switch r.Severity {
 			case analyzer.SeverityWarn:
 				fmt.Fprintf(os.Stderr, "  warning: %s\n", policyWarnMessage(ref.URI, r))
-			case analyzer.SeverityAudit:
-				emitPolicyAudit(ref.URI, r)
+			case analyzer.SeverityInfo:
+				emitPolicyInfo(ref.URI, r)
 			}
 		}
 	}
-	if len(denyErrs) == 0 {
+	if len(haltErrs) == 0 {
 		return nil
 	}
-	errs := make([]error, len(denyErrs))
-	for i := range denyErrs {
-		errs[i] = denyErrs[i].ToCompilerError()
+	errs := make([]error, len(haltErrs))
+	for i := range haltErrs {
+		errs[i] = haltErrs[i].ToCompilerError()
 	}
 	return stderrors.Join(errs...)
 }
@@ -512,10 +512,10 @@ func parserSeam(inputs Inputs, catalogLookup resolver.CatalogLookup) (parsersock
 }
 
 // policyVerdictErrors converts a policy plugin's output into one AnalysisError
-// per DENY verdict, in plugin-emitted order. Only fired verdicts appear in the
-// output, and only a deny verdict halts the build — warn and audit verdicts are
+// per HALT verdict, in plugin-emitted order. Only fired verdicts appear in the
+// output, and only a halt verdict stops the build — warn and info verdicts are
 // handled by the socket runner as non-halting diagnostics — so a result set with
-// no deny verdict adds nothing and the build proceeds. Each error carries the
+// no halt verdict adds nothing and the build proceeds. Each error carries the
 // AnalysisErrorPolicy kind (so its message renders verbatim) and the
 // ErrPolicyViolation sentinel (so the build error is errors.Is-recoverable), and
 // its message names the rejecting plugin, the plugin-supplied verdict message,
@@ -526,7 +526,7 @@ func parserSeam(inputs Inputs, catalogLookup resolver.CatalogLookup) (parsersock
 func policyVerdictErrors(pluginURI string, po abi.PolicyOutput) []analyzer.AnalysisError {
 	var errs []analyzer.AnalysisError
 	for _, r := range po.Results {
-		if r.Severity != analyzer.SeverityDeny {
+		if r.Severity != analyzer.SeverityHalt {
 			continue
 		}
 		errs = append(errs, analyzer.AnalysisError{
@@ -544,11 +544,17 @@ func policyWarnMessage(pluginURI string, r abi.Diagnostic) string {
 	return fmt.Sprintf("policy plugin %q warning: %s%s", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r))
 }
 
-// emitPolicyAudit records an audit verdict to the diagnostic sink under a
-// distinct "audit:" label, in plugin-emitted order, with zero effect on the
+// emitPolicyInfo records an info verdict to the diagnostic sink under a
+// distinct "info:" label, in plugin-emitted order, with zero effect on the
 // build outcome.
-func emitPolicyAudit(pluginURI string, r abi.Diagnostic) {
-	fmt.Fprintf(os.Stderr, "  audit: policy plugin %q: %s%s\n", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r))
+//
+// For an info verdict that label is the severity's own wire value, so a reader
+// sees the word the plugin sent. That holds of this label rather than of the
+// routes generally: each route's printed label is its own literal, so a label
+// cannot be read off the severity that selected it, nor the severity off the
+// label.
+func emitPolicyInfo(pluginURI string, r abi.Diagnostic) {
+	fmt.Fprintf(os.Stderr, "  info: policy plugin %q: %s%s\n", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r))
 }
 
 // policyVerdictDetail renders the optional fields a fired verdict carried beside
@@ -556,8 +562,8 @@ func emitPolicyAudit(pluginURI string, r abi.Diagnostic) {
 // verdict — empty when the verdict carried none, so a verdict that sets only
 // severity and message renders exactly as it always has.
 //
-// It is the single detail renderer all three verdict surfaces share (the deny
-// halt, the warn diagnostic, and the audit record), so a verdict's detail reads
+// It is the single detail renderer all three verdict surfaces share (the halt,
+// the warn diagnostic, and the info record), so a verdict's detail reads
 // identically whichever severity routed it. Fields emit in a fixed order and are
 // labelled by the wire key that carried them, so the rendering is deterministic
 // and a reader can trace each value back to the field the plugin populated. A

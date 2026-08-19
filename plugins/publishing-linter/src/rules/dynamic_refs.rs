@@ -35,7 +35,7 @@ use crate::rules::schema_library_walker::visit_schemas_recursive;
 /// into JSON Schema 2020-12 sub-schema positions via the shared
 /// walker. Each visited node is checked for `$dynamicAnchor` or
 /// `$dynamicRef`; one finding per occurrence. `rule_id:
-/// "dynamic-refs"`, `severity: "error"`, no classification.
+/// "dynamic-refs"`, `severity: "halt"`, no classification.
 ///
 /// Returns an empty vector when the per-workspace flag
 /// `allow_dynamic_refs` is true OR when no offending construct is
@@ -59,7 +59,7 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
                     };
                     findings.push(Diagnostic {
                         rule_id: "dynamic-refs".to_string(),
-                        severity: "error".to_string(),
+                        severity: "halt".to_string(),
                         message: format!(
                             "SchemaLibrary entry {entry_name:?} uses forbidden keyword {key:?}{location}; \
                              the platform's compile-time $ref expansion cannot resolve \

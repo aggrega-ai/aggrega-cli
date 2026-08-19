@@ -89,7 +89,7 @@ func assertMutatorOutput(t *testing.T, outputBytes []byte, langSuffix string) {
 
 // assertPolicyValidatorOutput parses the policy plugin's
 // output bytes, asserts there are exactly two fired verdicts, and that
-// the severity pattern is deny-then-audit in that order. The fixture's
+// the severity pattern is halt-then-info in that order. The fixture's
 // contract is constant across languages; the assertion is shared.
 func assertPolicyValidatorOutput(t *testing.T, outputBytes []byte) {
 	t.Helper()
@@ -105,11 +105,11 @@ func assertPolicyValidatorOutput(t *testing.T, outputBytes []byte) {
 	if len(out.Results) != 2 {
 		t.Fatalf("expected exactly two results from the fixture; got %d (output: %q)", len(out.Results), string(outputBytes))
 	}
-	if out.Results[0].Severity != "deny" {
-		t.Errorf("expected results[0].severity=deny; got %q (message: %s)", out.Results[0].Severity, out.Results[0].Message)
+	if out.Results[0].Severity != "halt" {
+		t.Errorf("expected results[0].severity=halt; got %q (message: %s)", out.Results[0].Severity, out.Results[0].Message)
 	}
-	if out.Results[1].Severity != "audit" {
-		t.Errorf("expected results[1].severity=audit; got %q (message: %s)", out.Results[1].Severity, out.Results[1].Message)
+	if out.Results[1].Severity != "info" {
+		t.Errorf("expected results[1].severity=info; got %q (message: %s)", out.Results[1].Severity, out.Results[1].Message)
 	}
 }
 

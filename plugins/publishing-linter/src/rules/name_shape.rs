@@ -60,7 +60,7 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
         Err(e) => {
             return vec![Diagnostic {
                 rule_id: "name-shape".to_string(),
-                severity: "error".to_string(),
+                severity: "halt".to_string(),
                 message: format!("name-shape rule: regex compile failure: {e}"),
                 ..Default::default()
             }];
@@ -73,7 +73,7 @@ pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
 
     vec![Diagnostic {
         rule_id: "name-shape".to_string(),
-        severity: "error".to_string(),
+        severity: "halt".to_string(),
         message: format!(
             "metadata.name {name:?} does not match the documented pattern for {} entities ({pattern})",
             input.entity_kind

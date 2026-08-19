@@ -22,11 +22,11 @@ const UnsupportedFieldCode = "unsupported-field"
 // target is the target's user-facing name (for example "compose"); field is the
 // authored schema field name (for example "scheduling", "runtimeClassName", or
 // an extended-resource key such as "nvidia.com/gpu"), never a Go field name. The
-// diagnostic is warning-severity and out-of-band: it never affects the rendered
+// diagnostic is warn-severity and out-of-band: it never affects the rendered
 // bytes. The target constructs one per authored-and-dropped field.
 func UnsupportedFieldDiagnostic(target, field string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
-		Severity:  "warning",
+		Severity:  "warn",
 		Code:      UnsupportedFieldCode,
 		SourceRef: field,
 		Message:   fmt.Sprintf("target %q does not support %s and omitted it", target, field),
@@ -40,10 +40,10 @@ func UnsupportedFieldDiagnostic(target, field string) renderctx.Diagnostic {
 // the field becomes in the target (for example "per-replica volume templating is
 // not available and the volume degrades to a shared persistent volume"). It
 // shares UnsupportedFieldCode with the full-omission diagnostic so the same
-// suppress filter covers both, and is likewise warning-severity and out-of-band.
+// suppress filter covers both, and is likewise warn-severity and out-of-band.
 func PartialSupportDiagnostic(target, field, reducedTo string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
-		Severity:  "warning",
+		Severity:  "warn",
 		Code:      UnsupportedFieldCode,
 		SourceRef: field,
 		Message:   fmt.Sprintf("target %q does not fully support %s; %s", target, field, reducedTo),

@@ -1927,9 +1927,9 @@ func gateInputKind(nodeID, providerName string, engine Provider, hasSource, hasW
 }
 
 // routeNodeInputDiagnostics splits a provider's per-node input-validation
-// diagnostics by severity: warning- and info-severity entries go to the node's
+// diagnostics by severity: warn- and info-severity entries go to the node's
 // warning sink (nil-safe; the orchestrator wires it to result.Warnings), and
-// error-severity entries halt the build with the ErrProviderNodeInputInvalid
+// halt-severity entries halt the build with the ErrProviderNodeInputInvalid
 // Loud Guardrail, naming the node, the provider, and the guest's messages.
 // Warnings never affect emitted bytes. The component render path and the
 // FeatureRecipe render path share this routing, so a provider's input check

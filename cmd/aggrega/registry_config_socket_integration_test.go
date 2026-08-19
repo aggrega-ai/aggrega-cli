@@ -278,11 +278,11 @@ func assertPluginAbsentFromLock(t *testing.T, lf *lockfile.Lockfile, socketName 
 // TestIntegration_ConfigSocketPluginPinning_RoundTrip proves the publish → pull →
 // pin → hermetic-build-load round-trip for a plugin attached at a workspace-level
 // CONFIG socket. Three arms exercise the mutator socket, the policy socket
-// (deny and admit), and both sockets pinned in one pull:
+// (halt and admit), and both sockets pinned in one pull:
 //
 //   - mutator: the pulled mutator guest loads from its pin at build and its label
 //     injection is observable in the rendered artifact.
-//   - policy_deny: the pulled policy guest loads from its pin and its deny verdict
+//   - policy_deny: the pulled policy guest loads from its pin and its halt verdict
 //     halts the build with ErrPolicyViolation carrying the guest's message.
 //   - both_sockets: a mutator AND an admitting policy attached together are BOTH
 //     pinned on both axes by one pull, and BOTH load-and-run at one build — the
@@ -292,7 +292,7 @@ func assertPluginAbsentFromLock(t *testing.T, lf *lockfile.Lockfile, socketName 
 // asserts the pins, then builds under the hermetic default posture (auto_pull on,
 // complete lockfile). The build's own plugin resolution wires NO OCI puller
 // (buildPluginResolver), so each socket guest resolves through the pinned cache —
-// a green build is a genuine load-from-pin, and a policy deny is a genuine execute.
+// a green build is a genuine load-from-pin, and a policy halt is a genuine execute.
 func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 	// Resolve the committed .wasm fixtures BEFORE any chdir (umbrella-root
 	// discovery walks up from cwd); a clean skip only if the toolchain is absent.
@@ -380,13 +380,13 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 
 		err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if err == nil {
-			t.Fatal("build SUCCEEDED with a denying policy socket; the pulled policy guest did not halt the build")
+			t.Fatal("build SUCCEEDED with a halting policy socket; the pulled policy guest did not halt the build")
 		}
 		if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 			t.Fatalf("policy halt not errors.Is ErrPolicyViolation: %v", err)
 		}
 		// Attributability: the halt carries the guest's own verdict message, so the
-		// deny came from the pulled policy guest executing, not an unrelated fault.
+		// halt came from the pulled policy guest executing, not an unrelated fault.
 		const wantMsg = "fixture rule B: deliberate fail for end-to-end coverage"
 		if !strings.Contains(err.Error(), wantMsg) {
 			t.Errorf("policy halt does not carry the guest verdict message %q:\n%v", wantMsg, err)

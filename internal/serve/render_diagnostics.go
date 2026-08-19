@@ -6,6 +6,7 @@ package serve
 import (
 	"context"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
@@ -22,6 +23,12 @@ import (
 //
 // The text is rendered through the render package's own formatter, so an
 // advisory reads identically in the editor and in a terminal build.
+//
+// The severity is translated rather than copied: a render advisory arrives on the
+// plugin wire, whose severities are halt/warn/info, and leaves on the editor wire,
+// whose severities are error/warning/info. The two vocabularies serve different
+// boundaries and are deliberately separate, so this is the one place a value
+// crosses between them.
 func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diags []renderer.Diagnostic) {
 	byFile := map[string][]Diagnostic{}
 	if file != "" && len(diags) > 0 {
@@ -30,7 +37,7 @@ func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diag
 			mapped = append(mapped, Diagnostic{
 				Line:     1,
 				Column:   1,
-				Severity: d.Severity,
+				Severity: editorSeverity(d.Severity),
 				Message:  renderer.RenderDiagnosticText(d),
 			})
 		}
@@ -38,5 +45,23 @@ func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diag
 	}
 	for _, f := range s.setRenderDiagnostics(byFile) {
 		_ = s.publishDiagnostics(ctx, f)
+	}
+}
+
+// editorSeverity translates a plugin-wire diagnostic severity into the editor
+// wire's own severity. halt is the plugin wire's build-stopping severity and
+// error is the editor wire's, warn maps to warning, and info is spelled the same
+// on both. A value the plugin wire does not declare maps to the editor's error
+// tier, so an unmodelled severity surfaces visibly instead of being downgraded.
+func editorSeverity(pluginSeverity string) string {
+	switch pluginSeverity {
+	case abi.SeverityHalt:
+		return "error"
+	case abi.SeverityWarn:
+		return "warning"
+	case abi.SeverityInfo:
+		return "info"
+	default:
+		return "error"
 	}
 }

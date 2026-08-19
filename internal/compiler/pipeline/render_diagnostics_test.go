@@ -13,7 +13,7 @@ import (
 
 func unsupportedFieldDiag() renderer.Diagnostic {
 	return renderer.Diagnostic{
-		Severity: "warning",
+		Severity: "warn",
 		Code:     renderer.UnsupportedFieldCode,
 		Message:  `target "compose" does not support scheduling and omitted it`,
 		Location: &renderer.DiagnosticLocation{URI: "api", Kind: "compose"},

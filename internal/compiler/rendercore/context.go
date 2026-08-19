@@ -92,7 +92,7 @@ type NodeRenderContext struct {
 	// node (clamped to [2,9], default 2). Forwarded from RendererInput.
 	YAMLIndent int
 	// WarningSink, when non-nil, receives the non-fatal advisories a provider
-	// engine raises while rendering this node — the warning- and info-severity
+	// engine raises while rendering this node — the warn- and info-severity
 	// diagnostics the guest returns in its render output, plus any guest-emitted
 	// warnings. The orchestrator wires it to the build result's warnings stream;
 	// engines nil-check it before calling. Warnings never affect emitted bytes,
@@ -101,7 +101,7 @@ type NodeRenderContext struct {
 	WarningSink func(string)
 	// UnsupportedFieldSink, when non-nil, receives the unsupported-field advisories a
 	// provider engine raises while rendering this node — the structured
-	// warning-severity diagnostics reporting an authored field the target could
+	// warn-severity diagnostics reporting an authored field the target could
 	// not honor. It is routed separately from WarningSink so a display surface can
 	// suppress the unsupported-field class alone by its stable code while other render
 	// warnings still surface, and so the structured diagnostics stay

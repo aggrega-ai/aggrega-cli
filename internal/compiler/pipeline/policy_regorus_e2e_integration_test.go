@@ -153,7 +153,7 @@ func TestRegorusPolicyUnsupportedBuiltinFaultsE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("unsupported-builtin policy: expected a halt, got nil (silent pass is the exact failure this guards)")
 	}
-	// It must NOT be a policy verdict: an unevaluable policy is a fault, not a deny.
+	// It must NOT be a policy verdict: an unevaluable policy is a fault, not a halt verdict.
 	if errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("unsupported-builtin halt was routed as a policy verdict (ErrPolicyViolation); it must be a build fault:\n%v", err)
 	}

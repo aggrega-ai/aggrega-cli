@@ -93,7 +93,7 @@ func (a *AppliedOps) record(scope, key string, op JSONPatchOp) {
 // effects and threads a record of preceding steps forward.
 //
 // Failure is strict by default. A step failure — a guest trap or invoke
-// fault, a malformed step output, an error-severity diagnostic, a patch
+// fault, a malformed step output, a halt-severity diagnostic, a patch
 // targeting an absent document, or a patch the apply engine rejects —
 // restores the pre-step snapshot and returns the error, halting the walk.
 // A step declaring Optional instead soft-fails: a loud warning is appended
@@ -159,7 +159,7 @@ func Walk(
 
 		// Non-error diagnostics surface regardless of the step's outcome.
 		for _, d := range stepDiags {
-			if d.Severity != "error" {
+			if d.Severity != "halt" {
 				warnings = append(warnings, d)
 			}
 		}
@@ -175,7 +175,7 @@ func Walk(
 			// declared contract.
 			if step.Optional && !errors.Is(err, ErrPipelineContractViolation()) {
 				warnings = append(warnings, renderctx.Diagnostic{
-					Severity: "warning",
+					Severity: "warn",
 					Code:     stepSkippedCode,
 					Message:  fmt.Sprintf("optional pipeline step %q skipped: %v", step.ID, err),
 				})
@@ -267,7 +267,7 @@ func runStep(
 	}
 
 	for _, d := range out.Diagnostics {
-		if d.Severity == "error" {
+		if d.Severity == "halt" {
 			return nil, out.Diagnostics, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) error diagnostic: %s", ErrPipelineStepFailed(), step.ID, index, d.Message)
 		}
 	}

@@ -23,7 +23,7 @@ var errPipelineTargetAbsent = cerrors.Register("compiler-featurerecipe-pipeline/
 
 // ErrPipelineStepFailed is the walk's umbrella sentinel for a step that
 // failed for any reason other than an absent patch target — a guest trap,
-// a malformed step output, an error-severity diagnostic, a malformed
+// a malformed step output, a halt-severity diagnostic, a malformed
 // document in the set, or a patch the apply engine rejected. The
 // underlying cause is wrapped with %w so a caller can still match the
 // specific engine error (for example jsonpatch.ErrTestFailed) through it.

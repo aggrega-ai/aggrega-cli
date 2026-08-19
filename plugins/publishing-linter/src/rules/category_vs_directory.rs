@@ -108,7 +108,7 @@ fn derive_core_category(path: &str) -> Option<String> {
 fn finding(message: String) -> Diagnostic {
     Diagnostic {
         rule_id: "category-matches-directory".to_string(),
-        severity: "error".to_string(),
+        severity: "halt".to_string(),
         message,
         ..Default::default()
     }

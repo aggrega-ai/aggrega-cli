@@ -370,23 +370,23 @@ func TestRenderPolicyHCL_DenyReadsTree(t *testing.T) {
 		t.Fatalf("expected a policy halt for an absent required resource type, got nil")
 	}
 	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
-		t.Fatalf("render-policy HCL deny not errors.Is ErrPolicyViolation: %v", err)
+		t.Fatalf("render-policy HCL halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
 	for _, want := range []string{"absent from parsed HCL tree", "aws_s3_bucket"} {
 		if !strings.Contains(msg, want) {
-			t.Errorf("deny message missing %q (guest did not read the tree structure):\n%v", want, msg)
+			t.Errorf("halt message missing %q (guest did not read the tree structure):\n%v", want, msg)
 		}
 	}
 	if strings.Contains(msg, "saw no parsed HCL tree") {
 		t.Fatalf("guest received no tree; the render-policy seam did not populate it:\n%v", msg)
 	}
-	t.Logf("render-policy HCL deny verdict: %s", msg)
+	t.Logf("render-policy HCL halt verdict: %s", msg)
 }
 
 // TestRenderPolicyHCL_AllowReadsTree proves the same guest lets the build proceed
 // when the required resource type is present in the parsed tree, and that the
-// audit verdict it records echoes the resource types it read out of the tree —
+// info verdict it records echoes the resource types it read out of the tree —
 // the pass-side proof that the guest genuinely consumed the parsed structure.
 func TestRenderPolicyHCL_AllowReadsTree(t *testing.T) {
 	ctx := context.Background()
@@ -399,12 +399,12 @@ func TestRenderPolicyHCL_AllowReadsTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected the build to proceed for a present required resource type, got halt: %v", err)
 	}
-	for _, want := range []string{"audit:", "aws_s3_bucket", "present"} {
+	for _, want := range []string{"info:", "aws_s3_bucket", "present"} {
 		if !strings.Contains(stderr, want) {
-			t.Errorf("audit verdict missing %q (guest did not read the tree structure):\n%s", want, stderr)
+			t.Errorf("info verdict missing %q (guest did not read the tree structure):\n%s", want, stderr)
 		}
 	}
-	t.Logf("render-policy HCL audit verdict (stderr): %s", strings.TrimSpace(stderr))
+	t.Logf("render-policy HCL info verdict (stderr): %s", strings.TrimSpace(stderr))
 }
 
 // TestRenderPolicyHCL_ParsedTreeVerbatim shows the exact tree the render-policy
@@ -434,10 +434,10 @@ func TestRenderPolicyHCL_ParsedTreeVerbatim(t *testing.T) {
 }
 
 // captureRenderPolicyStderr redirects os.Stderr for the duration of fn and
-// returns everything written to it. The render-policy runner emits audit
-// verdicts to os.Stderr, so a proof that the guest recorded a tree-derived audit
-// reads the captured text. It mutates a process global, so its callers do not run
-// in parallel.
+// returns everything written to it. The render-policy runner emits info
+// verdicts to os.Stderr, so a proof that the guest recorded a tree-derived
+// verdict reads the captured text. It mutates a process global, so its callers
+// do not run in parallel.
 func captureRenderPolicyStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	orig := os.Stderr
