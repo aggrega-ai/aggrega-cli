@@ -296,6 +296,10 @@ func emitPlacementTable(c chain, kinds []kind, shares []tupleShare) ([]byte, err
 		return nil, err
 	}
 
+	if err := writeCallerCoverageSection(&b, c); err != nil {
+		return nil, err
+	}
+
 	b.WriteString("## The view stages\n\n")
 	b.WriteString("Stages nest by interface embedding, so their order is a compile-time fact. The\n")
 	b.WriteString("chain is asserted linear at generation time: a stage extending nothing when\n")

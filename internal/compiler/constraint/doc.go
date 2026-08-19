@@ -14,7 +14,7 @@
 //
 // That absence is the mechanism. Where a check runs follows from the facts it
 // declared, because a view exposes exactly the facts complete at one point in
-// the compilation and the views embed one another; which callers exercise it
+// the compilation and the views embed one another; which callers can reach it
 // follows from that same point; and what it iterates follows from its subject.
 // A field asserting any of the three could disagree with the value derived from
 // the declaration, and the disagreement would be visible to nobody.

@@ -181,6 +181,7 @@ func report(w *os.File, out string) {
 	fmt.Fprintf(w, "factgen: %d facts over %d stages, keyed by %d subject kinds\n",
 		len(facts), len(c.order), len(kinds))
 	reportInvocationInstrument(w)
+	reportCallerInstrument(w)
 	if len(shares) == 0 {
 		fmt.Fprintln(w, "factgen: no two facts share a (stage, source carrier, subject) tuple")
 		return

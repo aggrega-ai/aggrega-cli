@@ -6,9 +6,6 @@ package main
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -51,10 +48,40 @@ import (
 // disagree and the disagreement is the signal rather than a silent undercount.
 //
 // It reads every Go file the tree carries, whatever build constraints that file
-// declares, and excludes only test files and the directories a census never
-// walks. Reading past build constraints is the safe direction for this question:
-// a check invoked only under some build is still invoked, and a scan that
-// honoured the current build's constraints would answer "not enforced" for it.
+// declares, and excludes test files, the directories a census never walks, and
+// the packages nothing outside a test imports. Reading past build constraints is
+// the safe direction for this question: a check invoked only under some build is
+// still invoked, and a scan that honoured the current build's constraints would
+// answer "not enforced" for it.
+//
+// # Why a test-support package is excluded, and how that exclusion is drawn
+//
+// A file-suffix criterion alone counts a test-support package as production,
+// because such a package's files carry no test suffix — they must not, or no
+// test could import them. That is harmless for the check census, which
+// attributes names at traversal call sites and finds none there, and it is not
+// harmless for the caller read beside it, which is keyed off calls into the
+// compiler and would report a harness among the surfaces a user reaches.
+//
+// The exclusion is drawn structurally rather than by name or by path: a package
+// is test support when at least one file imports it and every importing file is
+// a test file. A naming convention would be weaker — a package whose name merely
+// ends in the same letters as the convention would be excluded on a spelling —
+// and a path list is a second copy of what the import graph already states.
+//
+// The alternative signal, a non-test file importing the standard testing
+// package, was measured against this tree and rejected: it excludes a genuine
+// production package, because production code legitimately branches on whether
+// it is running inside a test binary. The import-graph criterion leaves such a
+// package in, since production files import it.
+//
+// What the chosen criterion would wrongly exclude, stated rather than left to be
+// found: a production package that nothing has imported yet outside a test, and
+// a package reached only through a mechanism no import records — a build-tag
+// variant compiled in another configuration, or a binary invoking it as a
+// subprocess. Both would be reported as absent surfaces rather than as wrong
+// ones, and a package imported by nothing at all is deliberately NOT excluded,
+// so a command's own entry package stays in.
 
 // declaredCheck is one check value the tree declares, and whether anything
 // invokes it.
@@ -174,46 +201,12 @@ var (
 )
 
 func walkInvocationState() (invocationState, error) {
-	root, err := moduleRoot()
+	m, err := readModuleSource()
 	if err != nil {
 		return invocationState{}, err
 	}
-
-	fset := token.NewFileSet()
-	type parsedFile struct {
-		dir  string
-		file *ast.File
-	}
-	var parsed []parsedFile
-	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		switch {
-		case err != nil:
-			return err
-		case d.IsDir():
-			if skipCensusDir(path, root, d.Name()) {
-				return fs.SkipDir
-			}
-			return nil
-		case !strings.HasSuffix(path, ".go"), strings.HasSuffix(path, "_test.go"):
-			return nil
-		}
-		f, perr := parser.ParseFile(fset, path, nil, 0)
-		if perr != nil {
-			// A file this read cannot parse is skipped rather than fatal: the read
-			// is a census and not a compiler, and a tree mid-edit must not turn
-			// generation red for a reason unrelated to the registry.
-			return nil
-		}
-		rel, rerr := filepath.Rel(root, filepath.Dir(path))
-		if rerr != nil {
-			return rerr
-		}
-		parsed = append(parsed, parsedFile{dir: filepath.ToSlash(rel), file: f})
-		return nil
-	})
-	if walkErr != nil {
-		return invocationState{}, fmt.Errorf("walk %s: %w", root, walkErr)
-	}
+	root := m.Root
+	parsed := m.Files
 
 	state := invocationState{FilesRead: len(parsed)}
 	if state.FilesRead == 0 {
@@ -229,13 +222,13 @@ func walkInvocationState() (invocationState, error) {
 	entries := map[string]bool{}
 	frameworkDirs := map[string]bool{}
 	for _, p := range parsed {
-		for _, decl := range p.file.Decls {
+		for _, decl := range p.File.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Recv != nil || !strings.HasPrefix(fn.Name.Name, traversalEntryPrefix) {
 				continue
 			}
 			entries[fn.Name.Name] = true
-			frameworkDirs[p.dir] = true
+			frameworkDirs[p.Dir] = true
 		}
 	}
 	if len(entries) == 0 {
@@ -253,13 +246,17 @@ func walkInvocationState() (invocationState, error) {
 	state.Entries = sorted(keysOf(entries))
 
 	for _, p := range parsed {
-		inFramework := frameworkDirs[p.dir]
-		state.Checks = append(state.Checks, declaredChecksIn(p.dir, p.file)...)
+		inFramework := frameworkDirs[p.Dir]
+		state.Checks = append(state.Checks, declaredChecksIn(p.Dir, p.File)...)
 		if inFramework {
-			state.FrameworkSites += countTraversalCalls(p.file, entries)
+			state.FrameworkSites += countTraversalCalls(p.File, entries)
 			continue
 		}
-		state.Sites = append(state.Sites, traversalCallSites(fset, root, p.file, entries)...)
+		sites, cerr := traversalCallSites(p, entries)
+		if cerr != nil {
+			return invocationState{}, cerr
+		}
+		state.Sites = append(state.Sites, sites...)
 	}
 	if len(state.Checks) == 0 {
 		return invocationState{}, fmt.Errorf(
@@ -361,39 +358,6 @@ func countTraversalCalls(file *ast.File, entries map[string]bool) int {
 		return true
 	})
 	return n
-}
-
-// traversalCallSites returns each call to a traversal entry within one file,
-// together with the check the call names where that is a name at the call site.
-func traversalCallSites(fset *token.FileSet, root string, file *ast.File, entries map[string]bool) []invocationSite {
-	var out []invocationSite
-	ast.Inspect(file, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		// The called function's own name, with any package qualifier and any
-		// explicit type arguments stripped, so the framework's unqualified call
-		// and an importing package's qualified one read the same.
-		entry := baseIdent(call.Fun)
-		if !entries[entry] {
-			return true
-		}
-		// Every traversal entry takes the check last, which is what lets the check
-		// be read without resolving the signature: the argument in that position is
-		// the check by the framework's own shape.
-		var named string
-		if n := len(call.Args); n > 0 {
-			named = baseIdent(call.Args[n-1])
-		}
-		file := fset.Position(call.Pos()).Filename
-		if rel, err := filepath.Rel(root, file); err == nil {
-			file = filepath.ToSlash(rel)
-		}
-		out = append(out, invocationSite{Entry: entry, File: file, Check: named})
-		return true
-	})
-	return out
 }
 
 // baseIdent is the identifier an expression ultimately names, reached through a

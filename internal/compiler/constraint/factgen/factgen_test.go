@@ -649,7 +649,10 @@ func run() { _ = doSomething(nil) }
 				t.Errorf("declared checks:\n got %+v\nwant %+v", gotChecks, tc.wantChecks)
 			}
 
-			gotSites := traversalCallSites(fset, "", file, entries)
+			gotSites, err := traversalCallSites(sourceFile{Dir: "d", Path: "d/f.go", File: file}, entries)
+			if err != nil {
+				t.Fatalf("read the traversal call sites: %v", err)
+			}
 			if !reflect.DeepEqual(gotSites, tc.wantSites) {
 				t.Errorf("production sites:\n got %+v\nwant %+v", gotSites, tc.wantSites)
 			}
