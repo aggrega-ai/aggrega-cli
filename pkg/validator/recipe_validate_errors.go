@@ -25,15 +25,15 @@ import (
 // ErrRecipeRule1: valuesMapping requires source.
 func ErrRecipeRule1() error { return errRecipeRule1 }
 
-var errRecipeRule1 = cerrors.Register("validator/recipe-rule-1", cerrors.Meta{
-	Message: "recipe rule 1: valuesMapping requires source",
+var errRecipeRule1 = cerrors.Register("validator/recipe-values-mapping-requires-source", cerrors.Meta{
+	Message: "Recipe: valuesMapping requires source",
 })
 
 // ErrRecipeRule5: at least one input kind must be present.
 func ErrRecipeRule5() error { return errRecipeRule5 }
 
-var errRecipeRule5 = cerrors.Register("validator/recipe-rule-5", cerrors.Meta{
-	Message: "recipe rule 5: at least one input kind required",
+var errRecipeRule5 = cerrors.Register("validator/recipe-no-input-kind", cerrors.Meta{
+	Message: "Recipe: at least one input kind required",
 })
 
 // ErrRecipeRule7: emission-time filename collision across input-kind
@@ -43,8 +43,8 @@ var errRecipeRule5 = cerrors.Register("validator/recipe-rule-5", cerrors.Meta{
 // emission-time detector report the same failure shape.
 func ErrRecipeRule7() error { return errRecipeRule7 }
 
-var errRecipeRule7 = cerrors.Register("validator/recipe-rule-7", cerrors.Meta{
-	Message: "recipe rule 7: filename collision across input-kind origins at emission",
+var errRecipeRule7 = cerrors.Register("validator/recipe-filename-collision-across-input-kinds", cerrors.Meta{
+	Message: "Recipe: filename collision across input-kind origins at emission",
 })
 
 // ErrRecipeEvalProviderConstraint: the eval provider executes formatting

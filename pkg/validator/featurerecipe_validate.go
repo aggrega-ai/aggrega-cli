@@ -31,8 +31,8 @@ import (
 // ErrFeatureRecipeRule1: valuesMapping requires source.
 func ErrFeatureRecipeRule1() error { return errFeatureRecipeRule1 }
 
-var errFeatureRecipeRule1 = cerrors.Register("validator/feature-recipe-rule-1", cerrors.Meta{
-	Message: "featurerecipe rule 1: valuesMapping requires source",
+var errFeatureRecipeRule1 = cerrors.Register("validator/feature-recipe-values-mapping-requires-source", cerrors.Meta{
+	Message: "FeatureRecipe: valuesMapping requires source",
 })
 
 // ErrFeatureRecipeEvalProviderConstraint: the eval provider executes
