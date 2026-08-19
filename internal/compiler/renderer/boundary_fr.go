@@ -389,11 +389,11 @@ func dispatchBoundaryScopeFR(
 	// rather than derived from the synthetic node ID above: that string joins the
 	// same two values with separators neither of them is constrained to exclude, so
 	// splitting it back is not a recoverable operation. The retention it records
-	// into is the render's own, reached through the state of whichever component
-	// node dispatched this FR — one value for the whole render, so which node that
-	// was does not select it.
+	// into and the presentation its declared rule reads are both the render's own,
+	// reached through the state of whichever component node dispatched this FR — one
+	// of each for the whole render, so which node that was does not select either.
 	emitted, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "",
-		state.hydrated.attachmentOnBoundary(key.BoundaryPath, frInstance),
+		state.hydrated.attachmentOnBoundary(state.hydratedFacts, key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 	if err != nil {
 		return err

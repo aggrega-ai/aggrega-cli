@@ -4,9 +4,12 @@
 package renderer
 
 import (
+	"fmt"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -319,19 +322,27 @@ func (h *hydratedProjections) recordedNodes() int {
 	return len(h.byNode)
 }
 
-// attachmentRecorder records what one attachment's render reached, under the
-// carrier that attachment was declared against.
+// attachmentCarrier is everything one attachment's render does under the carrier
+// that attachment was declared against: what it records, and what the rule
+// declared over that carrier's facts is asked about.
 //
 // It exists because the render path that produces those values is one path
 // reached from two carriers: the same function renders an attachment declared on
 // a node and one declared at a boundary, and it cannot tell which from anything
 // it holds. The node identity it carries is the HOST component's for the first
 // and a composite marker built for dispatch uniqueness for the second, so neither
-// is the carrier. Handing that path a recorder its caller built is what supplies
-// the carrier without the path having to decide it — and it makes writing a
+// is the carrier. Handing that path a carrier its caller built is what supplies
+// the identity without the path having to decide it — and it makes writing a
 // boundary-rooted identity into a node-rooted key impossible rather than merely
 // unintended.
-type attachmentRecorder interface {
+//
+// Recording and reading are one value rather than two, and that is the point
+// rather than a convenience. A render given the recording but not the presentation
+// would record facts nothing is then asked about, which is a rule invoked zero
+// times — indistinguishable from a rule that ran and approved, and green under
+// every determinism and byte-identity proof over the same build. One value cannot
+// be half-supplied.
+type attachmentCarrier interface {
 	// recordPillars reduces one attachment render's completed mid-render state to
 	// the projection that outlives it.
 	recordPillars(state *PhaseBState)
@@ -340,39 +351,129 @@ type attachmentRecorder interface {
 	// of this attachment's FeatureRecipe, under the output name that entry
 	// resolves to.
 	recordArtifactTemplate(outputName, text string)
+
+	// readableFacts reports the presentation a rule over this carrier reads, and
+	// refuses a presentation standing over no retention. Every carrier gets it
+	// from the inputs it embeds.
+	readableFacts(findingFile, outputName string) (constraint.HydratedView, error)
+
+	// nodeAttachmentPillarKey reports the node-rooted key this carrier is, and
+	// false for a carrier rooted elsewhere.
+	nodeAttachmentPillarKey() (nodeAttachmentKey, bool)
+
+	// boundaryAttachmentPillarKey reports the boundary-rooted key this carrier is,
+	// and false for a carrier rooted elsewhere.
+	boundaryAttachmentPillarKey() (boundaryAttachmentKey, bool)
 }
 
-// nodeAttachmentRecorder records against the carrier of an attachment declared on
-// a node.
-type nodeAttachmentRecorder struct {
+// The two key reports above are a pair of narrow questions rather than one method
+// that invokes the carrier's rule, and the reason is what the framework's own
+// coverage read can see.
+//
+// That read resolves a call to a declaration and follows nothing through a value —
+// not a method on a receiver, and not an interface. A rule invoked behind either is
+// therefore attributed to no calling surface, so the placement table would report
+// it as invoked and reachable from nowhere, with no row saying which rule was
+// missing. Asking the carrier which key it is, and naming both traversals in one
+// function the walk calls directly, keeps the invocation legible to the instrument
+// whose whole subject is where a rule is enforced.
+//
+// Each carrier answers exactly one of the two, and a carrier answering neither is
+// refused loudly where the pair is read rather than passing as nothing to check.
+
+// attachmentCarrierInputs are the two products every carrier works through: the
+// retention it records into, and the presentation over that retention a rule
+// reads.
+//
+// They are held together because they are one arrangement: the walk that records
+// a carrier's facts is exactly the walk that may read them, and a carrier holding
+// one without the other is what the guard below refuses.
+type attachmentCarrierInputs struct {
+	// into is the render's own retention, shared by every carrier of that render.
 	into *hydratedProjections
-	key  nodeAttachmentKey
+
+	// facts presents that retention as named facts. nil for a render that
+	// published no presentation, which is what a caller assembling its own input
+	// reaches.
+	facts constraint.HydratedView
 }
 
-// boundaryAttachmentRecorder records against the carrier of an attachment
-// declared at a boundary.
-type boundaryAttachmentRecorder struct {
-	into *hydratedProjections
-	key  boundaryAttachmentKey
+// readableFacts reports the presentation a carrier's rule reads, and refuses the
+// one arrangement that would let such a rule admit every entry it was asked about.
+//
+// The two absences are different questions, on the same reading the node's own
+// value states about its own pair. An absent presentation says this render
+// published none, which is an ordinary outcome: the rule is skipped and the
+// hand-written reading beside it does the work. An absent retention beneath a
+// PRESENT presentation is not an outcome but a broken arrangement — the
+// presentation would answer every entry's text with the empty string, the rule
+// would collect no reference from it, and it would admit every template it was
+// asked about. That is why it halts rather than returning nothing: silence is
+// indistinguishable from approval to any reader downstream.
+//
+// The condition is unreachable while the retention and the presentation are
+// installed together at the one site that builds a carrier; the halt is what makes
+// that an enforced guarantee rather than an arrangement a later change could
+// quietly undo. Its wording says the fault is the compiler's rather than the
+// author's, because the halt carries a catalog category and no category attributes
+// a fault to the compiler reaching a check without its inputs.
+func (i attachmentCarrierInputs) readableFacts(
+	findingFile, outputName string,
+) (constraint.HydratedView, error) {
+	if i.facts == nil {
+		return nil, nil
+	}
+	if i.into == nil {
+		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+			fmt.Sprintf("artifact %q could not be checked against the pillars the FeatureRecipe "+
+				"declares — internal error: the check's inputs were incomplete. This is a fault in "+
+				"the compiler rather than in the FeatureRecipe, so there is nothing to correct in "+
+				"the catalog", outputName), nil, nil)
+	}
+	return i.facts, nil
 }
 
-// attachmentOnNode returns the seam recording what one attachment's render on a
-// node reaches. A nil set yields a seam that records nothing, which is the state
-// of a render whose caller assembled its own input.
-func (h *hydratedProjections) attachmentOnNode(node, attachment string) attachmentRecorder {
-	return nodeAttachmentRecorder{into: h, key: nodeAttachmentKey{node: node, attachment: attachment}}
+// nodeAttachmentCarrier is the carrier of an attachment declared on a node.
+type nodeAttachmentCarrier struct {
+	attachmentCarrierInputs
+	key nodeAttachmentKey
 }
 
-// attachmentOnBoundary returns the seam recording what one boundary-scope
-// attachment's render reaches.
-func (h *hydratedProjections) attachmentOnBoundary(boundary, attachment string) attachmentRecorder {
-	return boundaryAttachmentRecorder{
-		into: h,
-		key:  boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+// boundaryAttachmentCarrier is the carrier of an attachment declared at a
+// boundary.
+type boundaryAttachmentCarrier struct {
+	attachmentCarrierInputs
+	key boundaryAttachmentKey
+}
+
+// attachmentOnNode returns the carrier of one attachment's render on a node,
+// reading and recording through this render's retention and the presentation over
+// it.
+//
+// A nil set yields a carrier that records nothing, which is the state of a render
+// whose caller assembled its own input; so does a nil presentation, and the two
+// are separate conditions the carrier keeps apart.
+func (h *hydratedProjections) attachmentOnNode(
+	facts constraint.HydratedView, node, attachment string,
+) attachmentCarrier {
+	return nodeAttachmentCarrier{
+		attachmentCarrierInputs: attachmentCarrierInputs{into: h, facts: facts},
+		key:                     nodeAttachmentKey{node: node, attachment: attachment},
 	}
 }
 
-func (r nodeAttachmentRecorder) recordPillars(state *PhaseBState) {
+// attachmentOnBoundary returns the carrier of one boundary-scope attachment's
+// render.
+func (h *hydratedProjections) attachmentOnBoundary(
+	facts constraint.HydratedView, boundary, attachment string,
+) attachmentCarrier {
+	return boundaryAttachmentCarrier{
+		attachmentCarrierInputs: attachmentCarrierInputs{into: h, facts: facts},
+		key:                     boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	}
+}
+
+func (r nodeAttachmentCarrier) recordPillars(state *PhaseBState) {
 	h := r.into
 	if h == nil || state == nil {
 		return
@@ -386,7 +487,7 @@ func (r nodeAttachmentRecorder) recordPillars(state *PhaseBState) {
 	p.AttachmentParsedWorkloadPresent = workloadPresent
 }
 
-func (r nodeAttachmentRecorder) recordArtifactTemplate(outputName, text string) {
+func (r nodeAttachmentCarrier) recordArtifactTemplate(outputName, text string) {
 	h := r.into
 	if h == nil {
 		return
@@ -396,7 +497,7 @@ func (r nodeAttachmentRecorder) recordArtifactTemplate(outputName, text string) 
 	h.nodeAttachmentEntry(r.key).AttachmentArtifactTemplateText.Set(outputName, text)
 }
 
-func (r boundaryAttachmentRecorder) recordPillars(state *PhaseBState) {
+func (r boundaryAttachmentCarrier) recordPillars(state *PhaseBState) {
 	h := r.into
 	if h == nil || state == nil {
 		return
@@ -410,7 +511,7 @@ func (r boundaryAttachmentRecorder) recordPillars(state *PhaseBState) {
 	p.BoundaryAttachmentParsedWorkloadPresent = workloadPresent
 }
 
-func (r boundaryAttachmentRecorder) recordArtifactTemplate(outputName, text string) {
+func (r boundaryAttachmentCarrier) recordArtifactTemplate(outputName, text string) {
 	h := r.into
 	if h == nil {
 		return
@@ -418,6 +519,26 @@ func (r boundaryAttachmentRecorder) recordArtifactTemplate(outputName, text stri
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.boundaryAttachmentEntry(r.key).BoundaryAttachmentArtifactTemplateText.Set(outputName, text)
+}
+
+// nodeAttachmentPillarKey reports this carrier's own key.
+func (r nodeAttachmentCarrier) nodeAttachmentPillarKey() (nodeAttachmentKey, bool) {
+	return r.key, true
+}
+
+// boundaryAttachmentPillarKey reports that this carrier is not boundary-rooted.
+func (r nodeAttachmentCarrier) boundaryAttachmentPillarKey() (boundaryAttachmentKey, bool) {
+	return boundaryAttachmentKey{}, false
+}
+
+// nodeAttachmentPillarKey reports that this carrier is not node-rooted.
+func (r boundaryAttachmentCarrier) nodeAttachmentPillarKey() (nodeAttachmentKey, bool) {
+	return nodeAttachmentKey{}, false
+}
+
+// boundaryAttachmentPillarKey reports this carrier's own key.
+func (r boundaryAttachmentCarrier) boundaryAttachmentPillarKey() (boundaryAttachmentKey, bool) {
+	return r.key, true
 }
 
 // nodeAttachmentEntry returns the entry one carrier's values are recorded into,

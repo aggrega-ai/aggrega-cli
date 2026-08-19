@@ -283,12 +283,13 @@ var ProvidesTemplateSelfContained = constraint.Check[
 	},
 }
 
-// The two pillar roots an artifact template may only read when its Recipe
-// supplies them. They are declared once and read by both forms of the rule —
-// the value below and the hand-written pre-check that still runs — because the
-// roots ARE the rule's subject: a copy in each site would agree today and would
-// be the thing that silently diverges if a pillar were ever renamed, since a
-// stale spelling matches nothing and the check goes quiet rather than failing.
+// The two pillar roots an artifact template may only read when the document
+// carrying it supplies them. They are declared once and read by every form of the
+// rule — the three declared values below and the hand-written pre-check that still
+// runs — because the roots ARE the rule's subject: a copy in each site would agree
+// today and would be the thing that silently diverges if a pillar were ever
+// renamed, since a stale spelling matches nothing and the check goes quiet rather
+// than failing.
 const (
 	pillarRefWorkload = ".workload"
 	pillarRefSource   = ".source"
@@ -328,6 +329,90 @@ func recipeSourceDeclared(recipe *types.Recipe) bool {
 	default:
 		return true
 	}
+}
+
+// The artifact-pillar rule, declared once per artifacts block the rule governs.
+//
+// One rule, three values, and the reason is the type rather than the rule: a
+// check carries exactly one subject type parameter, and three separately
+// authored artifacts blocks are three subject kinds — a component's own Recipe,
+// the FeatureRecipe an attachment binds on a node, and the FeatureRecipe a
+// boundary-scope attachment binds. An artifact's output name is chosen
+// independently in each of those documents and is meaningful only together with
+// the block it was written in, so one value over one kind would govern one of the
+// three while reading as though it governed the rule.
+//
+// The predicate has ONE body, [artifactPillarObjections], and each value supplies
+// its own four facts and its own subject to it. The three would otherwise carry
+// the same reference collection, the same two conditions and the same reporting
+// three times over — copies that agree today, where the agreement is what hides
+// the next change to what counts as a reference or to how a finding reads.
+//
+// What differs between the three is only where the facts are keyed, and that
+// difference is the whole point of there being three: a FeatureRecipe's entries
+// flow through the same artifacts walk as a node's own, under the host
+// component's node identity, so a value reading node-keyed facts about them would
+// answer from the host's pillars while reading the attachment's template.
+
+// artifactPillarSubject is what the predicate needs of the subject it was invoked
+// over: the artifact, and the ability to raise a finding against it.
+//
+// It is a constraint over the three subject kinds rather than a concrete type
+// because each check carries one subject type parameter, so the values differ in
+// their subject even where their predicate does not.
+type artifactPillarSubject interface {
+	constraint.Subject
+	ArtifactName() string
+}
+
+// artifactPillarObjections is the one body of the artifact-pillar predicate: it
+// collects the references one artifact template makes, read with the pair that
+// template is read with, and reports every reference reaching for a pillar the
+// document carrying the entry does not supply.
+//
+// The four values arrive as arguments rather than being read here, because
+// reading them is precisely the part that differs between the three values
+// declared over this predicate: each keys its facts by its own coordinates, and a
+// predicate reaching for a view would have to know which.
+//
+// carrierDetail is what the calling value adds to the objection after the
+// artifact — the attachment, where the entry belongs to one. It is a positional
+// argument rather than a variadic so a value cannot omit it silently; a node's
+// own artifacts block supplies none.
+//
+// A template that does not parse is not this predicate's finding: evaluation
+// reports the parse error against the same entry, so refusing it here as well
+// would report one authoring fault twice.
+func artifactPillarObjections[S artifactPillarSubject](
+	s S,
+	delims constraint.ArtifactTemplateDelimiters,
+	templateText string,
+	workloadDeclared, sourceDeclared bool,
+	carrierDetail []constraint.DetailValue,
+) []constraint.Objection {
+	refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(
+		templateText, delims.Left, delims.Right,
+	)
+	if err != nil {
+		return nil
+	}
+	var out []constraint.Objection
+	for _, ref := range refs {
+		switch {
+		case !workloadDeclared && pillarRefMatches(ref, pillarRefWorkload):
+		case !sourceDeclared && pillarRefMatches(ref, pillarRefSource):
+		default:
+			continue
+		}
+		detail := []constraint.DetailValue{
+			constraint.Uncaptioned(ref),
+			constraint.Captioned("artifact", s.ArtifactName()),
+		}
+		out = append(out, s.RaiseWith(
+			ErrArtifactPillarNotDeclared(), append(detail, carrierDetail...)...,
+		))
+	}
+	return out
 }
 
 // ArtifactPillarDeclared reports each reference an artifact template makes to a
@@ -400,30 +485,99 @@ var ArtifactPillarDeclared = constraint.Check[
 		v constraint.HydratedView,
 		s constraint.NodeArtifactSubject,
 	) []constraint.Objection {
-		delims := v.ProviderArtifactTemplateDelimiters(s.NodeID())
-		refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(
-			v.ArtifactTemplateText(s.NodeID(), s.ArtifactName()), delims.Left, delims.Right,
+		return artifactPillarObjections(
+			s,
+			v.ProviderArtifactTemplateDelimiters(s.NodeID()),
+			v.ArtifactTemplateText(s.NodeID(), s.ArtifactName()),
+			v.ParsedNodeWorkloadPresent(s.NodeID()),
+			v.ResolvedNodeSourceDeclared(s.NodeID()),
+			nil,
 		)
-		if err != nil {
-			return nil
-		}
-		workloadDeclared := v.ParsedNodeWorkloadPresent(s.NodeID())
-		sourceDeclared := v.ResolvedNodeSourceDeclared(s.NodeID())
-		var out []constraint.Objection
-		for _, ref := range refs {
-			switch {
-			case !workloadDeclared && pillarRefMatches(ref, pillarRefWorkload):
-			case !sourceDeclared && pillarRefMatches(ref, pillarRefSource):
-			default:
-				continue
-			}
-			out = append(out, s.RaiseWith(
-				ErrArtifactPillarNotDeclared(),
-				constraint.Uncaptioned(ref),
-				constraint.Captioned("artifact", s.ArtifactName()),
-			))
-		}
-		return out
+	},
+}
+
+// AttachmentArtifactPillarDeclared reports each reference an artifact template
+// the FeatureRecipe one attachment binds on a node makes to a configuration
+// pillar that FeatureRecipe does not carry.
+//
+// Every reading the value above sets out applies here over a different document:
+// the pillars are readable only where the FeatureRecipe supplies them, a
+// reference of one segment renders the literal placeholder while a deeper one
+// fails evaluation, and the source arm reads whether a source survived
+// resolution rather than whether one was authored.
+//
+// Each of its four facts is keyed by the attachment as well as by the node, and
+// that is what makes the verdict the attachment's rather than the host's. The
+// render of an attachment walks the same producers under the HOST component's
+// node identity, so a fact keyed by the node alone would answer about the host's
+// pillars while the template being read is the attachment's — admitting a
+// reference the FeatureRecipe never supplied wherever the host happens to supply
+// it, and refusing a legitimate one wherever the host does not. The delimiter
+// pair is keyed per attachment for the same reason: the attachment's
+// FeatureRecipe declares its own capability, so the provider reading its entries
+// is independently authored from the one reading the node's.
+//
+// Its detail names the offending expression, the artifact, and the attachment.
+// The attachment is what the locator cannot carry — the locator names the
+// artifacts block inside the FeatureRecipe, which is the document an author
+// edits, and a node may carry several attachments whose blocks are separate
+// documents — so the objection says which one.
+var AttachmentArtifactPillarDeclared = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeAttachmentArtifactSubject,
+]{
+	Sentinel: ErrArtifactPillarNotDeclared(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeAttachmentArtifactSubject,
+	) []constraint.Objection {
+		return artifactPillarObjections(
+			s,
+			v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName()),
+			v.AttachmentArtifactTemplateText(s.NodeID(), s.AttachmentName(), s.ArtifactName()),
+			v.AttachmentParsedWorkloadPresent(s.NodeID(), s.AttachmentName()),
+			v.AttachmentResolvedSourceDeclared(s.NodeID(), s.AttachmentName()),
+			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
+		)
+	},
+}
+
+// BoundaryAttachmentArtifactPillarDeclared reports each reference an artifact
+// template the FeatureRecipe one boundary-scope attachment binds makes to a
+// configuration pillar that FeatureRecipe does not carry.
+//
+// It is the same question the two values above ask, rooted where such an
+// attachment is declared. A boundary-scope attachment is written once on a
+// boundary and reaches every component the boundary holds, so its facts are keyed
+// by the boundary rather than by any component: keyed by a node, one authored
+// entry would be asked about once per component the boundary holds, and not at
+// all for a boundary holding none.
+//
+// Its detail names the offending expression, the artifact, and the attachment, on
+// the reading the node-carried form follows: the locator names the artifacts
+// block inside the FeatureRecipe and carries neither the boundary nor the
+// attachment.
+var BoundaryAttachmentArtifactPillarDeclared = constraint.Check[
+	constraint.HydratedView,
+	constraint.BoundaryAttachmentArtifactSubject,
+]{
+	Sentinel: ErrArtifactPillarNotDeclared(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.BoundaryAttachmentArtifactSubject,
+	) []constraint.Objection {
+		return artifactPillarObjections(
+			s,
+			v.BoundaryAttachmentProviderArtifactTemplateDelimiters(s.BoundaryPath(), s.AttachmentName()),
+			v.BoundaryAttachmentArtifactTemplateText(
+				s.BoundaryPath(), s.AttachmentName(), s.ArtifactName(),
+			),
+			v.BoundaryAttachmentParsedWorkloadPresent(s.BoundaryPath(), s.AttachmentName()),
+			v.BoundaryAttachmentResolvedSourceDeclared(s.BoundaryPath(), s.AttachmentName()),
+			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
+		)
 	},
 }
 

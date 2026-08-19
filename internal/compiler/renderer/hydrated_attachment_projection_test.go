@@ -143,8 +143,42 @@ func carrierText(kind, site string) string {
 	return "kind: " + kind + "\nsite: " + site + "\n"
 }
 
-// carrierLookup binds the host component and the three attachments, each to a
-// document declaring its own capability and its own pillars.
+// carrierArtifactBlocks are the artifacts blocks the fixture's four render sites
+// declare, one per site.
+//
+// They are a parameter rather than a literal inside the lookup because more than
+// one proof drives this fixture and each needs its own entries: the retention
+// proofs want four admitting blocks, and a proof of what the declared rule refuses
+// wants one site's entry to name a pillar that site does not carry. One lookup
+// taking the blocks keeps the four sites' capabilities, pillars and identities in
+// one place, which is what the proofs depend on being identical between them.
+type carrierArtifactBlocks struct {
+	host   types.OrderedMap[types.ArtifactEntry]
+	mon    types.OrderedMap[types.ArtifactEntry]
+	logs   types.OrderedMap[types.ArtifactEntry]
+	bridge types.OrderedMap[types.ArtifactEntry]
+}
+
+// carrierAdmittingArtifacts are the blocks every site admits: the shared output
+// name plus one name of the site's own, neither reading any pillar.
+func carrierAdmittingArtifacts() carrierArtifactBlocks {
+	return carrierArtifactBlocks{
+		host:   carrierArtifacts(carrierHostArtifactName, "host"),
+		mon:    carrierArtifacts(carrierMonArtifactName, "mon"),
+		logs:   carrierArtifacts(carrierLogsArtifactName, "logs"),
+		bridge: carrierArtifacts(carrierBoundaryArtifact, "bridge"),
+	}
+}
+
+// carrierLookup binds the host component and the three attachments over the
+// admitting artifacts blocks.
+func carrierLookup() RecipeLookup {
+	return carrierLookupWithArtifacts(carrierAdmittingArtifacts())
+}
+
+// carrierLookupWithArtifacts binds the host component and the three attachments,
+// each to a document declaring its own capability and its own pillars, over the
+// given artifacts blocks.
 //
 //	site                     source   workload
 //	host node's own Recipe    yes       no
@@ -155,7 +189,7 @@ func carrierText(kind, site string) string {
 // The host disagrees with every attachment on at least one pillar, and the two
 // node-carried attachments disagree with each other on both — so an answer read
 // from the wrong carrier is a different answer rather than the same one.
-func carrierLookup() RecipeLookup {
+func carrierLookupWithArtifacts(blocks carrierArtifactBlocks) RecipeLookup {
 	return RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType != "core/compute/api-server" {
@@ -169,7 +203,7 @@ func carrierLookup() RecipeLookup {
 					Capability: carrierHostCapability,
 					Implements: "core/compute/api-server",
 					Source:     "./host-chart",
-					Artifacts:  carrierArtifacts(carrierHostArtifactName, "host"),
+					Artifacts:  blocks.host,
 				},
 			}, true
 		},
@@ -182,7 +216,7 @@ func carrierLookup() RecipeLookup {
 						Capability: carrierMonCapability,
 						Implements: carrierMonFeatureType,
 						Workload:   types.WorkloadTemplate{Inline: carrierWorkload},
-						Artifacts:  carrierArtifacts(carrierMonArtifactName, "mon"),
+						Artifacts:  blocks.mon,
 					},
 				}, true
 			case carrierLogsFeatureType:
@@ -192,7 +226,7 @@ func carrierLookup() RecipeLookup {
 						Capability: carrierLogsCapability,
 						Implements: carrierLogsFeatureType,
 						Source:     "./logs-chart",
-						Artifacts:  carrierArtifacts(carrierLogsArtifactName, "logs"),
+						Artifacts:  blocks.logs,
 					},
 				}, true
 			case carrierBoundaryFeatureType:
@@ -203,7 +237,7 @@ func carrierLookup() RecipeLookup {
 						Implements:     carrierBoundaryFeatureType,
 						ExecutionScope: "boundary",
 						Workload:       types.WorkloadTemplate{Inline: carrierWorkload},
-						Artifacts:      carrierArtifacts(carrierBoundaryArtifact, "bridge"),
+						Artifacts:      blocks.bridge,
 					},
 				}, true
 			}

@@ -128,10 +128,22 @@ func buildArtifactsProjection(
 		//
 		// It stands BESIDE the pre-check rather than replacing it. The two keep
 		// different halves: this reports every offending reference in the template,
-		// the pre-check returns on the first and keeps the parse-error arm; and the
-		// pre-check keeps its pillar arms because this walk is also reached by a
-		// FeatureRecipe render, which contributes no subject here.
+		// while the pre-check returns on the first and keeps the parse-error arm.
 		if err := runArtifactPillarRule(cancelled, state, outputName); err != nil {
+			return err
+		}
+		// The same question over the carrier this render was reached from. This walk
+		// is reached by two renders — a node's own Recipe, and the render an
+		// attachment's or a boundary-scope FeatureRecipe carries — and the entry
+		// belongs to exactly one of them, so the two lines are exclusive rather than
+		// cumulative: a node's own state holds the node presentation and no carrier,
+		// an attachment's render the carrier and no node presentation.
+		//
+		// It is a separate line rather than a wider node axis because the facts are
+		// keyed differently: an attachment's entries flow through here under the HOST
+		// component's node identity, so a fact keyed by the node alone would answer
+		// about the host's pillars while reading the attachment's template.
+		if err := runAttachmentArtifactPillarRule(cancelled, state, outputName); err != nil {
 			return err
 		}
 		if err := preCheckArtifactPillars(state, outputName, tmplText, leftDelim, rightDelim); err != nil {

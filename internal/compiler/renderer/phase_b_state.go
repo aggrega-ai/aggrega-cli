@@ -196,9 +196,16 @@ type PhaseBState struct {
 	// render carries is the host's on one carrier and a composite marker built for
 	// dispatch uniqueness on the other, and neither names the attachment.
 	//
+	// It carries the presentation over that retention as well as the retention
+	// itself, so the walk that records an attachment's facts is the walk that can
+	// read them back. That is one value rather than two deliberately: a render
+	// given the recording and not the presentation would record facts nothing is
+	// then asked about, which is a rule invoked zero times and green under every
+	// proof over the same build.
+	//
 	// nil records nothing, which is the state of a node's own render and of a
 	// render whose caller assembled its own input.
-	attachmentHydrated attachmentRecorder
+	attachmentHydrated attachmentCarrier
 
 	// hydratedFacts presents, as named facts, the state a node reaches before its
 	// artifact bytes exist. It is carried here so the rule declared over those
@@ -213,10 +220,11 @@ type PhaseBState struct {
 	//
 	// It is unexported and, like the retention, is set only for a node's own
 	// base-Recipe state. An attachment's render builds its own state and receives
-	// neither, so the rule contributes no finding there and the pre-check beside
-	// it remains that path's pillar enforcement. The two absences are one
-	// arrangement and are set together for that reason: a walk that records the
-	// facts must also be able to read them.
+	// neither, so the value declared over node-keyed facts contributes no finding
+	// there — the values declared over that render's own carrier do, reading the
+	// presentation the carrier holds. The two absences are one arrangement and are
+	// set together for that reason: a walk that records the facts must also be
+	// able to read them.
 	hydratedFacts constraint.HydratedView
 
 	// artifacts is the render's retained set of per-node artifact projections,

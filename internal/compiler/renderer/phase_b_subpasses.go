@@ -494,9 +494,10 @@ func phaseB6(
 		// The carrier is (this node, this attachment). Both coordinates are needed:
 		// two attachments on one node carry independently authored documents, and
 		// nothing makes one's output names distinct from the other's or from the
-		// node's own.
+		// node's own. It carries this render's presentation too, so the rule declared
+		// over the carrier's facts can be asked inside the walk that records them.
 		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Instance,
-			state.hydrated.attachmentOnNode(nodeID, item.Instance),
+			state.hydrated.attachmentOnNode(state.hydratedFacts, nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 		if err != nil {
 			return nil, nil, nil, err
@@ -729,12 +730,13 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // component callers flatten them under features/<instance>/, while the
 // boundary-scope caller routes them by the Intermediate flag.
 //
-// hydrated is the seam this render records its mid-render state through, supplied
-// by the caller because the carrier is the caller's own knowledge and cannot be
-// recovered here: this function is reached from a per-component site and from a
-// boundary-scope one, and the node identity it is handed is the host component's
-// on the first and a composite dispatch marker on the second. A nil seam records
-// nothing.
+// hydrated is the carrier this render records its mid-render state through, and
+// the carrier whose declared rule is asked about each artifact entry it projects.
+// It is supplied by the caller because the carrier is the caller's own knowledge
+// and cannot be recovered here: this function is reached from a per-component site
+// and from a boundary-scope one, and the node identity it is handed is the host
+// component's on the first and a composite dispatch marker on the second. A nil
+// carrier records nothing and asks nothing.
 func renderFeatureRecipeFiles(
 	ctx context.Context,
 	frEngine Provider,
@@ -744,7 +746,7 @@ func renderFeatureRecipeFiles(
 	frValues map[string]any,
 	resolvedSrc any,
 	instanceLabel string,
-	hydrated attachmentRecorder,
+	hydrated attachmentCarrier,
 	slots types.OrderedMap[types.AttachmentSlot],
 	workloadLibs map[string]types.WorkloadLibrary,
 	artifactsLibs map[string]types.ArtifactsLibrary,
@@ -802,10 +804,12 @@ func renderFeatureRecipeFiles(
 		},
 	}
 	state := NewPhaseBState(synth, frNodeCtx.NodeID, frNodeCtx.BoundaryPath, "")
-	// The carrier this render records against. It is set instead of the per-node
-	// retention a component render carries, never beside it: the passes below walk
-	// the same producers under the node identity above, so recording through the
-	// node retention would file this attachment's values under the host component.
+	// The carrier this render records against and is checked under. It is set
+	// instead of the per-node retention a component render carries, never beside it:
+	// the passes below walk the same producers under the node identity above, so
+	// recording through the node retention would file this attachment's values under
+	// the host component — and the rule reading them would answer from the host's
+	// pillars while reading this FeatureRecipe's template.
 	state.attachmentHydrated = hydrated
 	// The FR workload flows through the same phaseB2 resolveWorkloadText as a
 	// base Recipe; a workload library `$import` resolves against this set. The

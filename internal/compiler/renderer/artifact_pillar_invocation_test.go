@@ -91,9 +91,15 @@ const (
 	invocationOffendingBody = "kind: Offender\nchart: {{ .source.chart }}\n"
 )
 
-// invocationRecord is what the rule was invoked over, in invocation order.
+// invocationRecord is what a value was invoked over, in invocation order.
 type invocationRecord struct {
-	node     string
+	node string
+
+	// attachment is empty for the value declared over a node's own Recipe, and
+	// carries the attachment for the value declared over the carrier an
+	// attachment's FeatureRecipe is reached through.
+	attachment string
+
 	artifact string
 }
 
@@ -133,6 +139,56 @@ func recordArtifactPillarInvocations(t *testing.T) func() []invocationRecord {
 		},
 	}
 	t.Cleanup(func() { renderer.ArtifactPillarDeclared = declared })
+
+	return func() []invocationRecord {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make([]invocationRecord, 0, len(seen))
+		for _, r := range seen {
+			if strings.HasPrefix(r.artifact, invocationPrefix) {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+}
+
+// recordAttachmentArtifactPillarInvocations is the same instrument for the value
+// declared over the carrier an attachment's FeatureRecipe is reached through on a
+// node.
+//
+// It is a second function rather than a widening of the one above because the two
+// wrap different package-level declarations, and because the assertions above are
+// about what the node's OWN value was invoked over — folding an attachment's
+// invocations into that record would make the enumeration there report entries the
+// node's Recipe never declared.
+//
+// The caller must not run in parallel with itself.
+func recordAttachmentArtifactPillarInvocations(t *testing.T) func() []invocationRecord {
+	t.Helper()
+
+	var (
+		mu   sync.Mutex
+		seen []invocationRecord
+	)
+	declared := renderer.AttachmentArtifactPillarDeclared
+	renderer.AttachmentArtifactPillarDeclared = constraint.Check[
+		constraint.HydratedView, constraint.NodeAttachmentArtifactSubject,
+	]{
+		Sentinel: declared.Sentinel,
+		Severity: declared.Severity,
+		Run: func(
+			v constraint.HydratedView, s constraint.NodeAttachmentArtifactSubject,
+		) []constraint.Objection {
+			mu.Lock()
+			seen = append(seen, invocationRecord{
+				node: s.NodeID(), attachment: s.AttachmentName(), artifact: s.ArtifactName(),
+			})
+			mu.Unlock()
+			return declared.Run(v, s)
+		},
+	}
+	t.Cleanup(func() { renderer.AttachmentArtifactPillarDeclared = declared })
 
 	return func() []invocationRecord {
 		mu.Lock()
@@ -215,12 +271,14 @@ func artifactSet(pairs ...[2]string) types.OrderedMap[types.ArtifactEntry] {
 // approved looks like. Two refused axis designs have already been planted as
 // needles on this surface and both left an agreement assertion green.
 //
-// It is also the proof that the FeatureRecipe path contributes no subject. The
-// feature's entry flows through the same walk, under the same node identity, and
-// differs only in that its render installs no retention and no presentation over
-// one — so an invocation over it would be indistinguishable from the host's in
-// every coordinate the subject carries, and the only thing that can show its
-// absence is the recorded set.
+// It is also the proof that the FeatureRecipe path contributes no subject to THIS
+// value. The feature's entry flows through the same walk, under the same node
+// identity, and differs only in which carrier its render records against and reads
+// through — so an invocation over it here would be indistinguishable from the
+// host's in every coordinate this subject carries, and the only thing that can show
+// its absence is the recorded set. What that entry does reach is the value declared
+// over the attachment's own carrier, which carries the attachment as a coordinate
+// and is asserted separately.
 //
 // It does not run in parallel: it replaces a package-level declaration.
 func TestTheArtifactPillarRuleIsInvokedOncePerArtifactANodesOwnRecipeProjects(t *testing.T) {
@@ -377,19 +435,26 @@ func TestTheArtifactPillarRuleHaltsTheBuildOnANodesOwnRecipe(t *testing.T) {
 	t.Logf("DIAGNOSTIC WALK — node's own Recipe, AFTER: invoked over %v; halt = %s", names, msg)
 }
 
-// TestTheFeatureCarriedArtifactIsStillRefusedByThePreCheck is the coverage proof
-// for the path the declared rule does not reach.
+// TestTheFeatureCarriedArtifactIsRefusedByTheDeclaredRule is the coverage proof
+// for the path the node's own value does not reach.
 //
-// The rule contributes no subject for a FeatureRecipe-carried entry, so if the
-// pre-check's pillar arms were removed as dead the same authoring fault would
-// render a placeholder into the output or halt with wording naming only the first
-// hop — with no error, no failing test, and nothing in any diff to say the
-// enforcement had gone. This asserts the refusal is still there, and reads the
-// pre-check's own wording so the two paths' diagnostics are both on the record.
+// A FeatureRecipe's entries flow through the same artifacts walk as the host's own,
+// under the host component's node identity, so the value declared over node-keyed
+// facts contributes no subject for one of them — and must not, because those facts
+// would answer about the host. The value declared over the attachment's own carrier
+// is what reaches them, and this reads the halt an author is handed to say which of
+// the readings over this condition produced it.
 //
-// It does not run in parallel: it replaces a package-level declaration.
-func TestTheFeatureCarriedArtifactIsStillRefusedByThePreCheck(t *testing.T) {
-	recorded := recordArtifactPillarInvocations(t)
+// The wording is the whole discriminator, and there are three of them here: the
+// registered sentence with the offending expression and the artifact, which only a
+// declared value produces; the attachment, which no other reading names; and the
+// absence of the hand-written pre-check's sentence, which is what turns "the build
+// still fails" into "this mechanism refused it".
+//
+// It does not run in parallel: it replaces package-level declarations.
+func TestTheFeatureCarriedArtifactIsRefusedByTheDeclaredRule(t *testing.T) {
+	recordedOwn := recordArtifactPillarInvocations(t)
+	recordedAttachment := recordAttachmentArtifactPillarInvocations(t)
 
 	input := invocationInput(t)
 	lookup := invocationLookup(
@@ -399,7 +464,89 @@ func TestTheFeatureCarriedArtifactIsStillRefusedByThePreCheck(t *testing.T) {
 
 	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err == nil {
-		t.Fatal("a FeatureRecipe artifact naming an undeclared pillar was admitted; want a halt from the pre-check")
+		t.Fatal("a FeatureRecipe artifact naming an undeclared pillar was admitted; want a halt")
+	}
+	if !errors.Is(err, renderer.ErrArtifactPillarNotDeclared()) {
+		t.Fatalf("the halt does not carry the undeclared-pillar condition: %+v", err)
+	}
+
+	msg := cerrors.CauseChain(err)
+	for _, want := range []string{
+		"artifact template references a pillar the Recipe does not declare",
+		`".source.chart"`,
+		`artifact "` + invocationOffendingEntry + `"`,
+		`attachment "mon"`,
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the halt does not carry %q, so it is not the declared rule's finding.\n"+
+				"full halt: %s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "but Recipe declares no source:") {
+		t.Errorf("the halt carries the hand-written pre-check's wording, so the declared rule did "+
+			"not refuse this input first.\nfull halt: %s", msg)
+	}
+
+	// ANTI-NEEDLE: the halt must have come from an invoked value.
+	attachmentInvocations := recordedAttachment()
+	if len(attachmentInvocations) == 0 {
+		t.Fatal("the value declared over the attachment's carrier was invoked zero times, so the " +
+			"halt above came from somewhere else")
+	}
+	var sawOffender bool
+	for _, r := range attachmentInvocations {
+		if r.artifact == invocationOffendingEntry && r.attachment == "mon" {
+			sawOffender = true
+		}
+	}
+	if !sawOffender {
+		t.Errorf("the value was invoked over %v, which does not include the offending entry %q under "+
+			"attachment %q", attachmentInvocations, invocationOffendingEntry, "mon")
+	}
+
+	// And the node's own value was NOT invoked over it: the facts keyed by the node
+	// alone do not cover an entry a FeatureRecipe carries, which is the whole reason
+	// there is a second value.
+	for _, r := range recordedOwn() {
+		if r.artifact == invocationOffendingEntry {
+			t.Errorf("the node's own value was invoked over the FeatureRecipe-carried entry %q; "+
+				"the facts it reads are keyed by the node alone and would answer about the host",
+				r.artifact)
+		}
+	}
+
+	t.Logf("DIAGNOSTIC WALK — FeatureRecipe-carried, refused by the declared rule: invoked over %v; "+
+		"halt = %s", attachmentInvocations, msg)
+}
+
+// TestTheFeatureCarriedArtifactIsRefusedByThePreCheckWithNoPresentationPublished is
+// the other reading of the same input, and it is what keeps the hand-written
+// pre-check's pillar arms on the record.
+//
+// The two readings are separated by the one thing that decides which runs: whether
+// the render published the mid-render presentation a declared value reads. A build
+// assembled without it reaches neither declared value — the node's own has no
+// presentation, and the attachment's carrier is handed none — so the pre-check is
+// what refuses, and its wording is read here so both diagnostics stay measured
+// rather than inferred.
+//
+// It does not run in parallel: it replaces package-level declarations.
+func TestTheFeatureCarriedArtifactIsRefusedByThePreCheckWithNoPresentationPublished(t *testing.T) {
+	recordedOwn := recordArtifactPillarInvocations(t)
+	recordedAttachment := recordAttachmentArtifactPillarInvocations(t)
+
+	// monitoringFeatureInput carries no graph-stage presentation, so the render
+	// publishes no mid-render one for either declared value to read.
+	input := monitoringFeatureInput(t)
+	lookup := invocationLookup(
+		artifactSet([2]string{invocationHostEntries[0], invocationPlainBody}),
+		artifactSet([2]string{invocationOffendingEntry, invocationOffendingBody}),
+	)
+
+	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
+	if err == nil {
+		t.Fatal("a FeatureRecipe artifact naming an undeclared pillar was admitted; want a halt from " +
+			"the pre-check")
 	}
 	if !errors.Is(err, renderer.ErrArtifactPillarNotDeclared()) {
 		t.Fatalf("the halt does not carry the undeclared-pillar condition: %+v", err)
@@ -412,16 +559,22 @@ func TestTheFeatureCarriedArtifactIsStillRefusedByThePreCheck(t *testing.T) {
 		t.Errorf("the halt does not carry the pre-check's wording %q.\nfull halt: %s", want, msg)
 	}
 
-	// And the declared rule was NOT invoked over it — the whole reason the
-	// pre-check's arms are load-bearing here.
-	for _, r := range recorded() {
+	// Neither declared value ran, which is what makes the refusal above the
+	// pre-check's rather than a second reading of the same input.
+	for _, r := range recordedOwn() {
 		if r.artifact == invocationOffendingEntry {
-			t.Errorf("the rule was invoked over the FeatureRecipe-carried entry %q; "+
-				"the retention is deliberately absent on that render", r.artifact)
+			t.Errorf("the node's own value was invoked over %q in a build that published no "+
+				"presentation", r.artifact)
+		}
+	}
+	for _, r := range recordedAttachment() {
+		if r.artifact == invocationOffendingEntry {
+			t.Errorf("the attachment carrier's value was invoked over %q in a build that published "+
+				"no presentation", r.artifact)
 		}
 	}
 
-	t.Logf("DIAGNOSTIC WALK — FeatureRecipe-carried, BEFORE and AFTER (unchanged): halt = %s", msg)
+	t.Logf("DIAGNOSTIC WALK — FeatureRecipe-carried, no presentation published: halt = %s", msg)
 }
 
 // invocationTwoOffencesBody names TWO pillars the Recipe does not declare, in one
@@ -435,11 +588,11 @@ const invocationTwoOffencesBody = "kind: Offender\nchart: {{ .source.chart }}\nr
 // the change's diagnostic effect is recorded from.
 //
 // The two readings are separated on the same build by the one thing that decides
-// which runs: whether the render published the mid-render presentation the rule
-// reads. A build that publishes it reaches the rule first; a build assembled
-// without the presentation beneath it reaches the pre-check, which is also what
-// every FeatureRecipe-carried entry reaches. So both columns are measured from a
-// real build over the same Recipe, the same entry and the same template text
+// which runs: whether the render published the mid-render presentation a declared
+// value reads. A build that publishes it reaches the declared value first; a build
+// assembled without it reaches the pre-check, which is the state a caller
+// assembling its own input leaves every carrier in. So both columns are measured
+// from a real build over the same Recipe, the same entry and the same template text
 // rather than inferred from a format string.
 //
 // It does not run in parallel: it replaces a package-level declaration.
@@ -451,10 +604,10 @@ func TestTheArtifactPillarDiagnosticCountAndWordingOnBothReadings(t *testing.T) 
 	}
 	feature := artifactSet([2]string{invocationFeatureEntry, invocationFeatureBody})
 
-	// The reading the pre-check gives. The presentation the rule reads is absent,
-	// so the rule contributes no subject — the same state every FeatureRecipe
-	// render is in, reached here on the node's own path so the two columns differ
-	// in the reading and in nothing else.
+	// The reading the pre-check gives. The presentation a declared value reads is
+	// absent, so no declared value contributes a subject on any carrier of this
+	// build; the column is taken on the node's own path so the two differ in the
+	// reading and in nothing else.
 	before := monitoringFeatureInput(t)
 	_, errBefore := renderer.RenderAll(context.Background(), before, invocationLookup(hostArtifacts(), feature), testHelmFactory(t))
 	if errBefore == nil {
@@ -512,7 +665,7 @@ func TestTheArtifactPillarDiagnosticCountAndWordingOnBothReadings(t *testing.T) 
 	}
 
 	t.Logf("DIAGNOSTIC WALK — ArtifactPillarDeclared, one entry naming two undeclared pillars.\n"+
-		"  BEFORE (pre-check, and still the FeatureRecipe path): 1 reference named\n    %s\n"+
+		"  BEFORE (pre-check, where no presentation was published): 1 reference named\n    %s\n"+
 		"  AFTER  (declared rule, node's own Recipe): 2 references named\n    %s",
 		msgBefore, msgAfter)
 }
