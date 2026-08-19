@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
@@ -26,10 +27,10 @@ func TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass(t *testing.T) {
 		UnsupportedFieldSink: func(d renderer.Diagnostic) { unsupportedFields = append(unsupportedFields, d) },
 	}
 	diags := []renderer.Diagnostic{
-		{Severity: "warn", Code: renderer.UnsupportedFieldCode, SourceRef: "scheduling",
+		{Severity: abi.SeverityWarn, Code: renderer.UnsupportedFieldCode, SourceRef: "scheduling",
 			Message: `target "compose" does not support scheduling and omitted it`},
-		{Severity: "warn", Message: "some other advisory"},
-		{Severity: "info", Message: "an info note"},
+		{Severity: abi.SeverityWarn, Message: "some other advisory"},
+		{Severity: abi.SeverityInfo, Message: "an info note"},
 	}
 
 	e := &Engine{}
@@ -69,7 +70,7 @@ func TestSurfaceNodeDiagnostics_HaltSeverityStops(t *testing.T) {
 		WarningSink:          func(string) {},
 		UnsupportedFieldSink: func(renderer.Diagnostic) {},
 	}
-	diags := []renderer.Diagnostic{{Severity: "halt", Message: "boom"}}
+	diags := []renderer.Diagnostic{{Severity: abi.SeverityHalt, Message: "boom"}}
 	if err := (&Engine{}).surfaceNodeDiagnostics(nodeCtx, diags); err == nil {
 		t.Fatal("expected an error for a halt-severity diagnostic, got nil")
 	}

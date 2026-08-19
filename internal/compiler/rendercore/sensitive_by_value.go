@@ -6,6 +6,7 @@ package rendercore
 import (
 	"fmt"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 )
 
@@ -40,7 +41,7 @@ const SensitiveByValueCode = "sensitive-by-value"
 // a compiler default.
 func SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
-		Severity:  "warn",
+		Severity:  abi.SeverityWarn,
 		Code:      SensitiveByValueCode,
 		SourceRef: deliveryKey,
 		Message: fmt.Sprintf(

@@ -6,6 +6,7 @@ package rendercore
 import (
 	"fmt"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 )
 
@@ -26,7 +27,7 @@ const UnsupportedFieldCode = "unsupported-field"
 // bytes. The target constructs one per authored-and-dropped field.
 func UnsupportedFieldDiagnostic(target, field string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
-		Severity:  "warn",
+		Severity:  abi.SeverityWarn,
 		Code:      UnsupportedFieldCode,
 		SourceRef: field,
 		Message:   fmt.Sprintf("target %q does not support %s and omitted it", target, field),
@@ -43,7 +44,7 @@ func UnsupportedFieldDiagnostic(target, field string) renderctx.Diagnostic {
 // suppress filter covers both, and is likewise warn-severity and out-of-band.
 func PartialSupportDiagnostic(target, field, reducedTo string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
-		Severity:  "warn",
+		Severity:  abi.SeverityWarn,
 		Code:      UnsupportedFieldCode,
 		SourceRef: field,
 		Message:   fmt.Sprintf("target %q does not fully support %s; %s", target, field, reducedTo),

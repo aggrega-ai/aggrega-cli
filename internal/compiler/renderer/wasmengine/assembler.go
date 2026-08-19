@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -187,12 +188,15 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 	if err := wasm.GuestReturnedError(export, out.Error); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
+	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export, out.Diagnostics); err != nil {
+		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
+	}
 	// Fold guest-emitted warnings into the assemble output's diagnostics as
 	// warn-severity entries, mirroring the render surface, so both guest
 	// advisory channels reach the caller through one list. Drained before the
 	// deferred Close.
 	for _, w := range plugin.DrainWarnings() {
-		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: "warn", Message: w})
+		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: abi.SeverityWarn, Message: w})
 	}
 	return out, nil
 }

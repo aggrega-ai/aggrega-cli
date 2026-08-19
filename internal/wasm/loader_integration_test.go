@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
@@ -105,10 +106,10 @@ func assertPolicyValidatorOutput(t *testing.T, outputBytes []byte) {
 	if len(out.Results) != 2 {
 		t.Fatalf("expected exactly two results from the fixture; got %d (output: %q)", len(out.Results), string(outputBytes))
 	}
-	if out.Results[0].Severity != "halt" {
+	if out.Results[0].Severity != abi.SeverityHalt {
 		t.Errorf("expected results[0].severity=halt; got %q (message: %s)", out.Results[0].Severity, out.Results[0].Message)
 	}
-	if out.Results[1].Severity != "info" {
+	if out.Results[1].Severity != abi.SeverityInfo {
 		t.Errorf("expected results[1].severity=info; got %q (message: %s)", out.Results[1].Severity, out.Results[1].Message)
 	}
 }

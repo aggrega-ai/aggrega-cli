@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -25,7 +26,7 @@ const ArtifactProvenanceSkippedCode = "artifact-provenance-skipped"
 // non-empty warning straight through and never names the code itself.
 func ArtifactProvenanceSkippedDiagnostic(warning string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
-		Severity: "warn",
+		Severity: abi.SeverityWarn,
 		Code:     ArtifactProvenanceSkippedCode,
 		Message:  warning,
 	}

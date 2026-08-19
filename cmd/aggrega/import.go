@@ -289,7 +289,7 @@ func reportImportDiagnostics(w io.Writer, diags []abi.Diagnostic) {
 // stderr by reportImportDiagnostics; this only governs the exit outcome.
 func importDiagnosticsError(diags []abi.Diagnostic) error {
 	for _, d := range diags {
-		if d.Severity == "halt" {
+		if d.Severity == abi.SeverityHalt {
 			return errors.New("import raised one or more halt-severity diagnostics; see the messages above")
 		}
 	}

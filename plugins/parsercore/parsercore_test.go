@@ -113,7 +113,7 @@ func TestParsers_MalformedYieldsDiagnostic(t *testing.T) {
 			}
 			hasError := false
 			for _, d := range out.Diagnostics {
-				if d.Severity == "halt" {
+				if d.Severity == abi.SeverityHalt {
 					hasError = true
 				}
 			}

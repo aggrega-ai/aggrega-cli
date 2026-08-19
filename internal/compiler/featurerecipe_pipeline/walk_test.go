@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/jsonpatch"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -48,7 +49,13 @@ func opaqueMap(pairs ...string) types.OrderedMap[Unit] {
 // payloads it received so a test can inspect what the walk handed the
 // guest. A step id absent from outputs returns an empty output.
 type scriptedInvoker struct {
-	outputs  map[string]FRPStepOutput
+	outputs map[string]FRPStepOutput
+	// raw scripts a step's reply as the guest's own wire bytes rather than as a Go
+	// value the host marshals. It is what lets a test put a value on the wire that
+	// the host's own types would never produce — an undeclared severity, say — so
+	// the decode boundary is exercised with what a real guest could send. A step
+	// present in raw wins over one present in outputs.
+	raw      map[string][]byte
 	fail     map[string]error // step id -> invoke error
 	received map[string][]byte
 }
@@ -56,6 +63,7 @@ type scriptedInvoker struct {
 func newScripted() *scriptedInvoker {
 	return &scriptedInvoker{
 		outputs:  map[string]FRPStepOutput{},
+		raw:      map[string][]byte{},
 		fail:     map[string]error{},
 		received: map[string][]byte{},
 	}
@@ -65,6 +73,9 @@ func (s *scriptedInvoker) invoke(_ context.Context, step types.PipelineStep, pay
 	s.received[step.ID] = payload
 	if err, ok := s.fail[step.ID]; ok {
 		return nil, err
+	}
+	if b, ok := s.raw[step.ID]; ok {
+		return b, nil
 	}
 	out := s.outputs[step.ID]
 	return json.Marshal(out)
@@ -205,7 +216,7 @@ func TestWalk_ErrorDiagnosticHalts(t *testing.T) {
 	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
 	inv := newScripted()
 	inv.outputs["s1"] = FRPStepOutput{Diagnostics: []renderctx.Diagnostic{
-		{Severity: "halt", Code: "bad", Message: "guest refused"},
+		{Severity: abi.SeverityHalt, Code: "bad", Message: "guest refused"},
 	}}
 
 	// strict
@@ -399,5 +410,83 @@ func TestWalk_GuestReportedErrorMatchesHostTaxonomy(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "could not resolve the chart") {
 		t.Errorf("err = %v, want the message to carry the guest's own reason", err)
+	}
+}
+
+// TestWalk_UnknownDiagnosticSeverityHalts is the arbiter for the closed severity
+// set at the pipeline's guest boundary: a step whose returned diagnostic carries
+// a severity the shared diagnostic contract does not declare halts the walk,
+// naming the plugin, the export, and the offending value — rather than being
+// skipped by every routing arm, coerced to a default, or downgraded because the
+// step happened to be optional.
+//
+// The needle travels as the guest's wire bytes, not as a Go value the host built,
+// so the halt is proved at the boundary a real guest's output crosses.
+func TestWalk_UnknownDiagnosticSeverityHalts(t *testing.T) {
+	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	inv := newScripted()
+	inv.raw["s1"] = []byte(`{"diagnostics":[{"severity":"critical","message":"a value no socket declares"}]}`)
+
+	step := types.PipelineStep{ID: "s1", Plugin: "oci://registry.example/policy/house-rules", Function: "render_chart"}
+
+	_, err := Walk(context.Background(), docs, []types.PipelineStep{step},
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+	if err == nil {
+		t.Fatal("an undeclared severity was accepted; want a halt")
+	}
+	if !errors.Is(err, wasm.ErrWasmDiagnosticSeverity()) {
+		t.Errorf("err = %v, want it to wrap the undeclared-severity sentinel", err)
+	}
+	for _, want := range []string{
+		"oci://registry.example/policy/house-rules", // the plugin
+		`"render_chart"`,                                     // the export
+		`"critical"`,                                         // the offending value
+		abi.SeverityHalt, abi.SeverityWarn, abi.SeverityInfo, // what it should have been
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("halt message does not name %q:\n  %v", want, err)
+		}
+	}
+
+	// Optional must not swallow it: an unroutable severity is a violated output
+	// contract, which halts regardless of the flag.
+	optional := step
+	optional.Optional = true
+	if _, err := Walk(context.Background(), docs, []types.PipelineStep{optional},
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval); err == nil {
+		t.Error("an optional step downgraded an undeclared severity to a warning; want a halt")
+	}
+}
+
+// TestWalk_DeclaredDiagnosticSeverityPasses is the other half of the needle: the
+// guard admits every severity the contract declares, so closing the set costs a
+// conforming guest nothing. The advisory severities surface as warnings and the
+// build proceeds; the halting one halts through the diagnostic path rather than
+// through the severity guard.
+func TestWalk_DeclaredDiagnosticSeverityPasses(t *testing.T) {
+	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+
+	for _, sev := range []string{abi.SeverityWarn, abi.SeverityInfo} {
+		inv := newScripted()
+		inv.raw["s1"] = []byte(`{"diagnostics":[{"severity":"` + sev + `","message":"heads up"}]}`)
+		res, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
+			inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+		if err != nil {
+			t.Fatalf("severity %q: Walk returned %v; a declared severity must pass the guard", sev, err)
+		}
+		if len(res.Warnings) != 1 {
+			t.Errorf("severity %q: surfaced %d advisories, want 1", sev, len(res.Warnings))
+		}
+	}
+
+	inv := newScripted()
+	inv.raw["s1"] = []byte(`{"diagnostics":[{"severity":"` + abi.SeverityHalt + `","message":"guest refused"}]}`)
+	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+	if err == nil {
+		t.Fatal("the halting severity did not halt")
+	}
+	if errors.Is(err, wasm.ErrWasmDiagnosticSeverity()) {
+		t.Errorf("the halting severity was refused by the severity guard rather than routed: %v", err)
 	}
 }

@@ -15,10 +15,11 @@ package constraint
 //
 // This is deliberately its own vocabulary rather than a reuse of one the
 // compiler already carries. The others each belong to a boundary — an
-// artifact's deprecation marker, a tolerant lockfile load, a policy guest's
-// verdict on the wire, a plugin diagnostic whose severity is an open string so
-// that each socket keeps its own — and they differ from one another because the
-// boundaries do. A check sits at no boundary: it runs in-process over the
+// artifact's deprecation marker, a tolerant lockfile load, the editor protocol
+// the language server publishes on, and the plugin diagnostic every Wasm socket
+// shares, whose severity is a closed set the shared diagnostic contract declares
+// and the socket boundary enforces — and they differ from one another because
+// the boundaries do. A check sits at no boundary: it runs in-process over the
 // compilation's own product and hands back an objection the framework converts
 // for whichever surface reads it. Binding a check's declaration to a wire
 // vocabulary would couple it to a surface it never reaches.

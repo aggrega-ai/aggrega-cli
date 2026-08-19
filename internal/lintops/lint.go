@@ -308,16 +308,17 @@ func RunEntity(cfg Config) error {
 	return nil
 }
 
-// downgradeRuleToWarning maps Error → Warning for findings whose RuleID matches
-// the given id. Used for the schema-evolution rule when the proposed bump
-// satisfies its classification verdict; the rule emits Error severity to convey
-// the classification, but the halt-on-error logic requires downgrading once the
-// bump is verified compatible.
+// downgradeRuleToWarning re-severitizes findings whose RuleID matches the given
+// id from the halting severity to the advisory one. Used for the
+// schema-evolution rule when the proposed bump satisfies its classification
+// verdict: the rule reports at the halting severity to convey the
+// classification, and once the bump is verified compatible the finding is an
+// advisory rather than a reason to stop.
 func downgradeRuleToWarning(findings []abi.Diagnostic, ruleID string) []abi.Diagnostic {
 	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
-		if f.RuleID == ruleID && f.Severity == "halt" {
-			f.Severity = "warn"
+		if f.RuleID == ruleID && f.Severity == abi.SeverityHalt {
+			f.Severity = abi.SeverityWarn
 		}
 		out[i] = f
 	}
@@ -640,8 +641,8 @@ func buildRuleInputs(
 	return inputs
 }
 
-// aggregateFindings flattens per-rule [][]LinterFinding slices into a single
-// ordered list, preserving rule-iteration order.
+// aggregateFindings flattens the per-rule finding slices into a single ordered
+// list, preserving rule-iteration order.
 func aggregateFindings(perRule [][]abi.Diagnostic) []abi.Diagnostic {
 	var all []abi.Diagnostic
 	for _, findings := range perRule {
@@ -650,27 +651,28 @@ func aggregateFindings(perRule [][]abi.Diagnostic) []abi.Diagnostic {
 	return all
 }
 
-// downgradeToWarning maps every error finding to a warning. Default mode (no
-// --pre-publish) treats every rule's output as informational.
+// downgradeToWarning re-severitizes every halting finding to the advisory
+// severity. Default mode (no --pre-publish) treats every rule's output as
+// informational.
 func downgradeToWarning(findings []abi.Diagnostic) []abi.Diagnostic {
 	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
-		if f.Severity == "halt" {
-			f.Severity = "warn"
+		if f.Severity == abi.SeverityHalt {
+			f.Severity = abi.SeverityWarn
 		}
 		out[i] = f
 	}
 	return out
 }
 
-// downgradeFirstPublicationToWarning maps the schema-evolution rule's
-// classification finding to warn severity for the first-publication case.
-// Other rules' findings stay at whatever severity they had.
+// downgradeFirstPublicationToWarning re-severitizes the schema-evolution rule's
+// classification finding to the advisory severity for the first-publication
+// case. Other rules' findings stay at whatever severity they had.
 func downgradeFirstPublicationToWarning(findings []abi.Diagnostic) []abi.Diagnostic {
 	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
-		if f.RuleID == "schema-evolution" && f.Severity == "halt" {
-			f.Severity = "warn"
+		if f.RuleID == "schema-evolution" && f.Severity == abi.SeverityHalt {
+			f.Severity = abi.SeverityWarn
 		}
 		out[i] = f
 	}
@@ -682,7 +684,7 @@ func downgradeFirstPublicationToWarning(findings []abi.Diagnostic) []abi.Diagnos
 func printFindings(findings []abi.Diagnostic, diagOut io.Writer) bool {
 	halted := false
 	for _, f := range findings {
-		if f.Severity == "halt" {
+		if f.Severity == abi.SeverityHalt {
 			halted = true
 		}
 		fmt.Fprintf(diagOut, "[%s] %s: %s\n", f.Severity, f.RuleID, f.Message)
@@ -693,7 +695,7 @@ func printFindings(findings []abi.Diagnostic, diagOut io.Writer) bool {
 func countErrors(findings []abi.Diagnostic) int {
 	n := 0
 	for _, f := range findings {
-		if f.Severity == "halt" {
+		if f.Severity == abi.SeverityHalt {
 			n++
 		}
 	}

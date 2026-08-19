@@ -412,8 +412,8 @@ func TestPluginDefaultLimits(t *testing.T) {
 		if f == nil {
 			t.Fatal("expected a plugin-default-limits finding; got none")
 		}
-		if f.Severity != "warn" {
-			t.Errorf("severity: got %q; want %q", f.Severity, "warn")
+		if f.Severity != abi.SeverityWarn {
+			t.Errorf("severity: got %q; want %q", f.Severity, abi.SeverityWarn)
 		}
 	})
 

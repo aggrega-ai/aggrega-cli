@@ -139,5 +139,8 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 	if err := wasm.GuestReturnedError(wasm.ImportExport, io.Error); err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("importer %q: %w", plugin.Coordinate(), err)
 	}
+	if err := wasm.GuestDiagnosticSeverities(plugin.Coordinate(), wasm.ImportExport, io.Diagnostics); err != nil {
+		return abi.ImportOutput{}, err
+	}
 	return io, nil
 }

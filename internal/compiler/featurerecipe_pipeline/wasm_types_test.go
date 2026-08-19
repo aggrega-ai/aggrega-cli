@@ -13,6 +13,7 @@ import (
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -142,7 +143,7 @@ func sampleFRPStepOutput() frp.FRPStepOutput {
 		},
 		Diagnostics: []renderer.Diagnostic{
 			{
-				Severity: "warn",
+				Severity: abi.SeverityWarn,
 				Code:     "deprecated-mount",
 				Message:  "the kv v1 mount is deprecated",
 				Location: &renderer.DiagnosticLocation{

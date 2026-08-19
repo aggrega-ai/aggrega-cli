@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -47,7 +48,7 @@ func healthDiagnosticsAt(t *testing.T, w *types.Workload, coordinate string) []s
 		if d.SourceRef != coordinate {
 			continue
 		}
-		if d.Severity != "warn" {
+		if d.Severity != abi.SeverityWarn {
 			t.Errorf("severity = %q, want warn", d.Severity)
 		}
 		if d.Code != rendercore.UnsupportedFieldCode {

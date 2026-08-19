@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
@@ -358,15 +359,22 @@ type SubChartProjection struct {
 
 // SplitDiagnostics partitions a provider guest's diagnostics by severity into
 // the human-readable messages of its halt-severity entries and the messages of
-// its warn- and info-severity entries, each list in the guest's emission
-// order. It is the single classification the render, assemble, and input-validation
+// its warn- and info-severity entries, each list in the guest's emission order.
+// It is the single classification the render, assemble, and input-validation
 // surfaces share, so a diagnostic's severity means the same thing on every
-// provider-socket crossing: "halt" stops the build, anything else advises. An entry with
-// an unrecognized severity is treated as an advisory (non-halting) so a guest
-// cannot halt the build with a severity the host does not model.
+// provider-socket crossing: the halting severity stops the build, and the two
+// advisory severities advise.
+//
+// The severity a diagnostic carries is drawn from a closed set the shared
+// diagnostic contract declares, and a guest that returns anything outside it
+// halts at the socket boundary — see [wasm.GuestDiagnosticSeverities], which
+// every socket calls as it decodes a guest's output. So the non-halting branch
+// here covers the two advisory severities and nothing else: this classification
+// never has to decide what an unroutable value means, because such a value never
+// reaches it.
 func SplitDiagnostics(diags []Diagnostic) (errs []string, advisories []string) {
 	for _, d := range diags {
-		if d.Severity == "halt" {
+		if d.Severity == abi.SeverityHalt {
 			errs = append(errs, d.Message)
 			continue
 		}

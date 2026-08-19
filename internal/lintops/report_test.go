@@ -20,7 +20,7 @@ func TestFindingFromCarriesTextVerbatim(t *testing.T) {
 	t.Parallel()
 	const msg = "  metadata.name \"BadName\" does not match\nthe documented pattern  "
 	got := FindingFrom(abi.Diagnostic{
-		Severity: "warn",
+		Severity: abi.SeverityWarn,
 		Message:  msg,
 		RuleID:   "name-shape",
 	}, "component.yaml")
@@ -28,7 +28,7 @@ func TestFindingFromCarriesTextVerbatim(t *testing.T) {
 	if got.Message != msg {
 		t.Errorf("message was altered on the way into the payload:\n got:  %q\n want: %q", got.Message, msg)
 	}
-	if got.Severity != "warn" || got.RuleID != "name-shape" {
+	if got.Severity != abi.SeverityWarn || got.RuleID != "name-shape" {
 		t.Errorf("severity/ruleId not carried: %+v", got)
 	}
 	if got.Location == nil || got.Location.File != "component.yaml" {
@@ -47,7 +47,7 @@ func TestFindingFromCarriesTextVerbatim(t *testing.T) {
 func TestFindingFromCarriesSpanPosition(t *testing.T) {
 	t.Parallel()
 	got := FindingFrom(abi.Diagnostic{
-		Severity: "halt",
+		Severity: abi.SeverityHalt,
 		Message:  "located",
 		RuleID:   "some-rule",
 		Location: &abi.Location{
@@ -81,7 +81,7 @@ func TestFindingFromCarriesSpanPosition(t *testing.T) {
 func TestFindingFromInventsNoPosition(t *testing.T) {
 	t.Parallel()
 	got := FindingFrom(abi.Diagnostic{
-		Severity: "warn",
+		Severity: abi.SeverityWarn,
 		Message:  "unlocated",
 		RuleID:   "some-rule",
 	}, "component.yaml")
@@ -109,7 +109,7 @@ func TestFindingFromInventsNoPosition(t *testing.T) {
 func TestFindingFromDocumentLineWithoutSpan(t *testing.T) {
 	t.Parallel()
 	got := FindingFrom(abi.Diagnostic{
-		Severity: "warn",
+		Severity: abi.SeverityWarn,
 		Message:  "structurally located",
 		Location: &abi.Location{Line: 12, KeyPath: "spec.schema"},
 	}, "component.yaml")
@@ -127,9 +127,9 @@ func TestFindingFromDocumentLineWithoutSpan(t *testing.T) {
 func TestNewReportSummaryAgreesWithFindings(t *testing.T) {
 	t.Parallel()
 	r := NewReport([]Finding{
-		{Severity: "halt", Message: "a"},
-		{Severity: "warn", Message: "b"},
-		{Severity: "warn", Message: "c"},
+		{Severity: abi.SeverityHalt, Message: "a"},
+		{Severity: abi.SeverityWarn, Message: "b"},
+		{Severity: abi.SeverityWarn, Message: "c"},
 	}, 2)
 
 	if r.Summary.Findings != 3 || r.Summary.Errors != 1 || r.Summary.Warnings != 2 {
@@ -159,7 +159,7 @@ func TestReportEmitsEmptyListNotNull(t *testing.T) {
 func TestCollectorNilIsInert(t *testing.T) {
 	t.Parallel()
 	var c *FindingCollector
-	c.Add([]abi.Diagnostic{{Severity: "halt", Message: "x"}}, "f.yaml")
+	c.Add([]abi.Diagnostic{{Severity: abi.SeverityHalt, Message: "x"}}, "f.yaml")
 	c.Entities(3)
 	if c.Reached() {
 		t.Error("a nil collector must never report having been reached")
@@ -198,8 +198,8 @@ func TestCollectorReachedDistinguishesCleanRunFromNoRun(t *testing.T) {
 func TestCollectorAttributesFindingsPerFile(t *testing.T) {
 	t.Parallel()
 	c := &FindingCollector{}
-	c.Add([]abi.Diagnostic{{Severity: "warn", Message: "first"}}, "a.yaml")
-	c.Add([]abi.Diagnostic{{Severity: "warn", Message: "second"}}, "b.yaml")
+	c.Add([]abi.Diagnostic{{Severity: abi.SeverityWarn, Message: "first"}}, "a.yaml")
+	c.Add([]abi.Diagnostic{{Severity: abi.SeverityWarn, Message: "second"}}, "b.yaml")
 	c.Entities(2)
 
 	r := c.Report()
@@ -209,5 +209,52 @@ func TestCollectorAttributesFindingsPerFile(t *testing.T) {
 	if r.Findings[0].Location.File != "a.yaml" || r.Findings[1].Location.File != "b.yaml" {
 		t.Errorf("findings not attributed to their files in walk order: %+v, %+v",
 			r.Findings[0].Location, r.Findings[1].Location)
+	}
+}
+
+// TestNewReportCountsEverySeverity is the arbiter for clause "no finding is
+// counted nowhere": the summary carries one count per severity the shared
+// diagnostic contract declares, so the three counts sum to the finding total for
+// any mix. Before the third count existed an informational finding incremented
+// only the total — visible in the list and invisible in the summary — and the gap
+// between the two was silent.
+func TestNewReportCountsEverySeverity(t *testing.T) {
+	t.Parallel()
+	r := NewReport([]Finding{
+		{Severity: abi.SeverityHalt, Message: "a"},
+		{Severity: abi.SeverityWarn, Message: "b"},
+		{Severity: abi.SeverityWarn, Message: "c"},
+		{Severity: abi.SeverityInfo, Message: "d"},
+		{Severity: abi.SeverityInfo, Message: "e"},
+		{Severity: abi.SeverityInfo, Message: "f"},
+	}, 1)
+
+	if r.Summary.Errors != 1 {
+		t.Errorf("errors = %d; want 1", r.Summary.Errors)
+	}
+	if r.Summary.Warnings != 2 {
+		t.Errorf("warnings = %d; want 2", r.Summary.Warnings)
+	}
+	if r.Summary.Infos != 3 {
+		t.Errorf("infos = %d; want 3", r.Summary.Infos)
+	}
+	if sum := r.Summary.Errors + r.Summary.Warnings + r.Summary.Infos; sum != r.Summary.Findings {
+		t.Errorf("counts sum to %d but the run produced %d findings; a finding is counted nowhere", sum, r.Summary.Findings)
+	}
+}
+
+// TestReportSummaryPublishesEverySeverityCount pins that each count reaches the
+// structured surface a caller reads, so a consumer counting by severity does not
+// have to re-walk the findings list to recover the one the summary omitted.
+func TestReportSummaryPublishesEverySeverityCount(t *testing.T) {
+	t.Parallel()
+	enc, err := json.Marshal(NewReport([]Finding{{Severity: abi.SeverityInfo, Message: "note"}}, 1))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, want := range []string{`"errors":0`, `"warnings":0`, `"infos":1`, `"findings":1`} {
+		if !strings.Contains(string(enc), want) {
+			t.Errorf("structured report is missing %s:\n  %s", want, enc)
+		}
 	}
 }

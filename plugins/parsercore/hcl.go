@@ -39,7 +39,7 @@ func ParseHCL(src []byte) abi.ParseOutput {
 	tree := convertHCLBody(body, src)
 	raw, err := marshalDeterministic(tree)
 	if err != nil {
-		out.Diagnostics = append(out.Diagnostics, abi.Diagnostic{Severity: "halt", Message: "encode parsed tree: " + err.Error()})
+		out.Diagnostics = append(out.Diagnostics, abi.Diagnostic{Severity: abi.SeverityHalt, Message: "encode parsed tree: " + err.Error()})
 		return out
 	}
 	out.Tree = raw
@@ -159,9 +159,9 @@ func hclDiagnostics(diags hcl.Diagnostics) []abi.Diagnostic {
 	}
 	out := make([]abi.Diagnostic, 0, len(diags))
 	for _, d := range diags {
-		severity := "warn"
+		severity := abi.SeverityWarn
 		if d.Severity == hcl.DiagError {
-			severity = "halt"
+			severity = abi.SeverityHalt
 		}
 		message := d.Summary
 		if d.Detail != "" {

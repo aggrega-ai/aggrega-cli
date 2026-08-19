@@ -61,11 +61,22 @@ type Report struct {
 // ReportSummary counts a run's findings by severity. EntitiesChecked is the
 // number of entity files the run covered: one for a single-entity run, and the
 // resolved file set's size for a whole-catalog or Release-closure run.
+//
+// There is one count per severity the shared diagnostic contract declares, so
+// Errors, Warnings and Infos sum to Findings for any run. A summary carrying a
+// count per severity is the only shape that cannot report a finding as
+// uncounted: a summary that named a subset of the severities would leave the
+// findings carrying the rest visible in the list and invisible in the counts,
+// and the gap between the two would be silent.
 type ReportSummary struct {
 	EntitiesChecked int `json:"entitiesChecked"`
 	Findings        int `json:"findings"`
-	Errors          int `json:"errors"`
-	Warnings        int `json:"warnings"`
+	// Errors counts the findings at the halting severity, Warnings those at the
+	// advisory severity that surfaces alongside a completed run, and Infos those
+	// at the severity that records an observation without affecting the outcome.
+	Errors   int `json:"errors"`
+	Warnings int `json:"warnings"`
+	Infos    int `json:"infos"`
 }
 
 // FindingFrom projects one plugin diagnostic onto the shared finding shape,
@@ -164,6 +175,13 @@ func (c *FindingCollector) Report() Report {
 // NewReport assembles a report over findings gathered across entitiesChecked
 // entity files, deriving the severity counts from the findings themselves so the
 // summary cannot disagree with the list it summarizes.
+//
+// Every severity the shared diagnostic contract declares has its own arm, so a
+// finding always increments exactly one count. There is no arm for anything
+// else, and none is needed: a finding's severity arrives either from a guest
+// output the socket boundary already checked against the contract (see
+// [github.com/aggrega-ai/aggrega-cli/internal/wasm.GuestDiagnosticSeverities])
+// or from this package's own re-severitizing, which writes the declared consts.
 func NewReport(findings []Finding, entitiesChecked int) Report {
 	if findings == nil {
 		findings = []Finding{}
@@ -177,10 +195,12 @@ func NewReport(findings []Finding, entitiesChecked int) Report {
 	}
 	for _, f := range findings {
 		switch f.Severity {
-		case "halt":
+		case abi.SeverityHalt:
 			r.Summary.Errors++
-		case "warn":
+		case abi.SeverityWarn:
 			r.Summary.Warnings++
+		case abi.SeverityInfo:
+			r.Summary.Infos++
 		}
 	}
 	return r

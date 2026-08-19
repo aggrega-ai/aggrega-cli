@@ -83,6 +83,9 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterI
 	if err := wasm.GuestReturnedError(export, output.Error); err != nil {
 		return nil, fmt.Errorf("publishing_linter: %w", err)
 	}
+	if err := wasm.GuestDiagnosticSeverities(spec.Name, export, output.Findings); err != nil {
+		return nil, fmt.Errorf("publishing_linter: %w", err)
+	}
 	return output.Findings, nil
 }
 
@@ -139,6 +142,9 @@ func DispatchPublishingLinterBatch(spec wasm.PluginSpec, export string, inputs [
 			return nil, fmt.Errorf("publishing_linter: unmarshal output[%d]: %w", i, err)
 		}
 		if err := wasm.GuestReturnedError(export, output.Error); err != nil {
+			return nil, fmt.Errorf("publishing_linter: input[%d]: %w", i, err)
+		}
+		if err := wasm.GuestDiagnosticSeverities(spec.Name, export, output.Findings); err != nil {
 			return nil, fmt.Errorf("publishing_linter: input[%d]: %w", i, err)
 		}
 		results = append(results, output.Findings)

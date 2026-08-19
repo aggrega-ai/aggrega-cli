@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/truthy"
@@ -159,7 +160,7 @@ func Walk(
 
 		// Non-error diagnostics surface regardless of the step's outcome.
 		for _, d := range stepDiags {
-			if d.Severity != "halt" {
+			if d.Severity != abi.SeverityHalt {
 				warnings = append(warnings, d)
 			}
 		}
@@ -175,7 +176,7 @@ func Walk(
 			// declared contract.
 			if step.Optional && !errors.Is(err, ErrPipelineContractViolation()) {
 				warnings = append(warnings, renderctx.Diagnostic{
-					Severity: "warn",
+					Severity: abi.SeverityWarn,
 					Code:     stepSkippedCode,
 					Message:  fmt.Sprintf("optional pipeline step %q skipped: %v", step.ID, err),
 				})
@@ -266,8 +267,19 @@ func runStep(
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed(), step.ID, index, gerr)
 	}
 
+	// A severity the shared diagnostic contract does not declare is a violated
+	// output contract rather than a soft step outcome, so it carries
+	// ErrPipelineContractViolation and halts the walk even for an Optional step —
+	// the same standing a step whose returned outputs fail the declared output
+	// schema has. Optional tolerates a step that could not do its job; it does not
+	// tolerate output the host cannot route.
+	if serr := wasm.GuestDiagnosticSeverities(step.Plugin, step.Function, out.Diagnostics); serr != nil {
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w: %w",
+			ErrPipelineStepFailed(), step.ID, index, serr, ErrPipelineContractViolation())
+	}
+
 	for _, d := range out.Diagnostics {
-		if d.Severity == "halt" {
+		if d.Severity == abi.SeverityHalt {
 			return nil, out.Diagnostics, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) error diagnostic: %s", ErrPipelineStepFailed(), step.ID, index, d.Message)
 		}
 	}

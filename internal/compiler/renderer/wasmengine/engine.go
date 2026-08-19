@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -514,13 +515,16 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 	if err := wasm.GuestReturnedError(export, out.Error); err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
+	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export, out.Diagnostics); err != nil {
+		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: %w", err)
+	}
 	// Fold any guest-emitted warnings (aggrega_emit_warning host function) into
 	// the output's diagnostics as warn-severity entries, so the two guest
 	// advisory channels — structured output diagnostics and the emit-warning host
 	// function — reach the caller through one list. Drained here, before the
 	// deferred Close, so nothing is lost when the instance is torn down.
 	for _, w := range plugin.DrainWarnings() {
-		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: "warn", Message: w})
+		out.Diagnostics = append(out.Diagnostics, renderer.Diagnostic{Severity: abi.SeverityWarn, Message: w})
 	}
 	return out, nil
 }
@@ -559,7 +563,7 @@ func (e *Engine) verifyRenderDeterminism(ctx context.Context, plugin *wasm.Plugi
 func (e *Engine) surfaceNodeDiagnostics(nodeCtx renderer.NodeRenderContext, diags []renderer.Diagnostic) error {
 	var errs []string
 	for _, d := range diags {
-		if d.Severity == "halt" {
+		if d.Severity == abi.SeverityHalt {
 			errs = append(errs, d.Message)
 			continue
 		}
@@ -693,9 +697,12 @@ func (e *Engine) invokeValidate(ctx context.Context, export string, input render
 	if err := wasm.GuestReturnedError(export, out.Error); err != nil {
 		return nil, fmt.Errorf("wasmengine: %w", err)
 	}
+	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export, out.Diagnostics); err != nil {
+		return nil, fmt.Errorf("wasmengine: %w", err)
+	}
 	diags := out.Diagnostics
 	for _, w := range plugin.DrainWarnings() {
-		diags = append(diags, renderer.Diagnostic{Severity: "warn", Message: w})
+		diags = append(diags, renderer.Diagnostic{Severity: abi.SeverityWarn, Message: w})
 	}
 	return diags, nil
 }

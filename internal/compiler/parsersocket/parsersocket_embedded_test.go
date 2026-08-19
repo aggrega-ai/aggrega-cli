@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -124,7 +125,7 @@ func TestEmbeddedParsers_MalformedYieldsDiagnostic(t *testing.T) {
 	}
 	hasError := false
 	for _, d := range out.Diagnostics {
-		if d.Severity == "halt" {
+		if d.Severity == abi.SeverityHalt {
 			hasError = true
 		}
 	}

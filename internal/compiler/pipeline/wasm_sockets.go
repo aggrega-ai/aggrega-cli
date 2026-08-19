@@ -238,6 +238,9 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		if err := wasm.GuestReturnedError(export, po.Error); err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
+		if err := wasm.GuestDiagnosticSeverities(ref.URI, export, po.Results); err != nil {
+			return fmt.Errorf("ir-verdict: %w", err)
+		}
 		analysis.Errors = append(analysis.Errors, policyVerdictErrors(ref.URI, po)...)
 		for _, r := range po.Results {
 			switch r.Severity {
@@ -306,6 +309,9 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		}
 		if err := wasm.GuestReturnedError(export, po.Error); err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
+		}
+		if err := wasm.GuestDiagnosticSeverities(ref.URI, export, po.Results); err != nil {
+			return fmt.Errorf("render-verdict: %w", err)
 		}
 		haltErrs = append(haltErrs, policyVerdictErrors(ref.URI, po)...)
 		for _, r := range po.Results {

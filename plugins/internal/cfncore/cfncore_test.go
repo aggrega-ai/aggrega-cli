@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 )
 
 // fragmentBucket is a sourced-style fragment: a bucket resource plus a provides
@@ -398,7 +400,7 @@ func TestValidateSourcedMalformedHalts(t *testing.T) {
 	if len(diags) != 1 {
 		t.Fatalf("expected exactly one diagnostic for a malformed template, got %d: %+v", len(diags), diags)
 	}
-	if diags[0].Severity != "halt" {
+	if diags[0].Severity != abi.SeverityHalt {
 		t.Fatalf("diagnostic severity = %q, want halt", diags[0].Severity)
 	}
 	// Asserted as a literal on purpose. Comparing against templateParseCode would

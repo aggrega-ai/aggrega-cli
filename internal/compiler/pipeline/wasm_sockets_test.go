@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
 // TestPolicyVerdictErrors_FiredVerdictsBecomeErrors proves the results→errors
@@ -66,6 +67,8 @@ func TestPolicyVerdictErrors_EmptyResultsIsEmpty(t *testing.T) {
 // the same decode boundary a real guest's bytes cross, which is where the values
 // were being discarded.
 const policyVerdictWireFixture = `{"results":[{` +
+	// Spelled literally: this fixture is the guest's wire bytes, so it must name
+	// the encoded value rather than borrow the const the host decodes with.
 	`"severity":"halt",` +
 	`"message":"image must be digest-pinned",` +
 	`"code":"PROD-014",` +
@@ -203,6 +206,66 @@ func TestPluginRefName(t *testing.T) {
 	for in, want := range cases {
 		if got := pluginRefName(in); got != want {
 			t.Errorf("pluginRefName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// undeclaredSeverityVerdictWireFixture is the guest-shaped JSON a policy plugin
+// would return for a fired verdict carrying a severity the shared diagnostic
+// contract does not declare. It is raw wire bytes rather than a Go literal for
+// the same reason the fixture above is: the host's own vocabulary cannot produce
+// this value, so only the decode boundary can introduce it.
+//
+// The severity is spelled literally because the point of the fixture is that the
+// value is NOT one of the declared consts.
+const undeclaredSeverityVerdictWireFixture = `{"results":[{` +
+	`"severity":"critical",` +
+	`"message":"image must be digest-pinned"` +
+	`}]}`
+
+// TestPolicyVerdict_UndeclaredSeverityIsRefusedRatherThanAllowed is the arbiter
+// for the governance surface. It records both halves of the condition this guard
+// exists for.
+//
+// First the exposure: a verdict whose severity is undeclared is invisible to
+// every routing path the runners have. The halting path skips it, because it
+// selects the halting severity and this is not it; and neither advisory arm
+// matches it either. On a governance surface those three misses compose into an
+// allow — a verdict the plugin raised, reported nowhere, on a build that
+// completes.
+//
+// Then the closure: the check both runners now perform as they decode a guest's
+// output refuses this value outright, naming the plugin and the value, so the
+// build halts loudly instead of proceeding as though nothing fired.
+func TestPolicyVerdict_UndeclaredSeverityIsRefusedRatherThanAllowed(t *testing.T) {
+	var out abi.PolicyOutput
+	if err := json.Unmarshal([]byte(undeclaredSeverityVerdictWireFixture), &out); err != nil {
+		t.Fatalf("decode guest verdict: %v", err)
+	}
+	if len(out.Results) != 1 {
+		t.Fatalf("decoded %d verdicts, want 1", len(out.Results))
+	}
+	got := out.Results[0]
+
+	// The exposure, asserted rather than described.
+	if errs := policyVerdictErrors("oci://registry.example/policy/house-rules", out); len(errs) != 0 {
+		t.Errorf("the halting path claimed this verdict; the exposure this guard covers has changed shape: %v", errs)
+	}
+	if got.Severity == analyzer.SeverityWarn || got.Severity == analyzer.SeverityInfo {
+		t.Fatalf("fixture severity %q is a declared advisory; the fixture no longer carries an undeclared value", got.Severity)
+	}
+
+	// The closure.
+	err := wasm.GuestDiagnosticSeverities("oci://registry.example/policy/house-rules", "evaluate", out.Results)
+	if err == nil {
+		t.Fatal("an undeclared verdict severity was accepted; a governance surface must not model the unroutable as an allow")
+	}
+	if !errors.Is(err, wasm.ErrWasmDiagnosticSeverity()) {
+		t.Errorf("err = %v, want it to wrap the undeclared-severity sentinel", err)
+	}
+	for _, want := range []string{"oci://registry.example/policy/house-rules", `"critical"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal does not name %q:\n  %v", want, err)
 		}
 	}
 }

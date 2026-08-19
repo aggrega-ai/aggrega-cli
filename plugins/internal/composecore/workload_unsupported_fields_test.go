@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -103,7 +104,7 @@ func TestUnsupportedField_PerAuthoredField(t *testing.T) {
 					continue
 				}
 				got = append(got, d.SourceRef)
-				if d.Severity != "warn" {
+				if d.Severity != abi.SeverityWarn {
 					t.Errorf("%s: severity = %q, want warn", tc.field, d.Severity)
 				}
 				if d.Code != rendercore.UnsupportedFieldCode {
@@ -166,7 +167,7 @@ func TestUnsupportedField_ReplicasWarnsOnAnAuthoredDefaultValue(t *testing.T) {
 				t.Fatalf("got %d replicas diagnostics, want %d (all: %+v)", len(got), tc.want, diags)
 			}
 			for _, d := range got {
-				if d.Severity != "warn" {
+				if d.Severity != abi.SeverityWarn {
 					t.Errorf("severity = %q, want warn", d.Severity)
 				}
 				if d.Code != rendercore.UnsupportedFieldCode {
@@ -369,7 +370,7 @@ func TestUnsupportedField_EphemeralSizeLimit(t *testing.T) {
 		t.Fatalf("got %d diagnostics at %s, want 1 (all: %+v)", len(got), coordinate, diags)
 	}
 	d := got[0]
-	if d.Severity != "warn" {
+	if d.Severity != abi.SeverityWarn {
 		t.Errorf("severity = %q, want warn", d.Severity)
 	}
 	if d.Code != rendercore.UnsupportedFieldCode {
@@ -577,7 +578,7 @@ func TestUnsupportedField_AttachmentAsEnvPartial(t *testing.T) {
 	}
 
 	for _, d := range diags {
-		if d.Severity != "warn" {
+		if d.Severity != abi.SeverityWarn {
 			t.Errorf("%s: severity = %q, want warn", d.SourceRef, d.Severity)
 		}
 		if d.Code != rendercore.UnsupportedFieldCode {

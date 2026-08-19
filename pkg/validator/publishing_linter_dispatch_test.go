@@ -14,6 +14,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -128,7 +129,7 @@ func TestDispatchClassifiesComponentPatch(t *testing.T) {
 	if findings[0].RuleID != "schema-evolution" {
 		t.Errorf("rule_id: got %q; want schema-evolution", findings[0].RuleID)
 	}
-	if findings[0].Severity != "halt" {
+	if findings[0].Severity != abi.SeverityHalt {
 		t.Errorf("severity: got %q; want halt", findings[0].Severity)
 	}
 }
@@ -274,7 +275,7 @@ func TestDispatchAnnotationPrefixViolation(t *testing.T) {
 	if findings[0].RuleID != "annotation-prefix" {
 		t.Errorf("rule_id: got %q; want annotation-prefix", findings[0].RuleID)
 	}
-	if findings[0].Severity != "halt" {
+	if findings[0].Severity != abi.SeverityHalt {
 		t.Errorf("severity: got %q; want halt", findings[0].Severity)
 	}
 	if !strings.Contains(findings[0].Message, "aggrega.ai/custom-flag") {
@@ -335,7 +336,7 @@ func TestDispatchDynamicRefsViolation(t *testing.T) {
 	if findings[0].RuleID != "dynamic-refs" {
 		t.Errorf("rule_id: got %q; want dynamic-refs", findings[0].RuleID)
 	}
-	if findings[0].Severity != "halt" {
+	if findings[0].Severity != abi.SeverityHalt {
 		t.Errorf("severity: got %q; want halt", findings[0].Severity)
 	}
 }
@@ -394,7 +395,7 @@ func TestDispatchCategoryViolation(t *testing.T) {
 	if findings[0].RuleID != "category-matches-directory" {
 		t.Errorf("rule_id: got %q; want category-matches-directory", findings[0].RuleID)
 	}
-	if findings[0].Severity != "halt" {
+	if findings[0].Severity != abi.SeverityHalt {
 		t.Errorf("severity: got %q; want halt", findings[0].Severity)
 	}
 	if !strings.Contains(findings[0].Message, "compute") ||
@@ -434,7 +435,7 @@ func TestDispatchCategoryViolationSuppressedByPolicy(t *testing.T) {
 
 // TestDispatchPublishingLinterBatch pins the batch dispatcher: a
 // single plugin load + N rule invocations. Each input
-// returns its own []LinterFinding in input order.
+// returns its own findings in input order.
 func TestDispatchPublishingLinterBatch(t *testing.T) {
 	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
 	proposed := json.RawMessage(`{

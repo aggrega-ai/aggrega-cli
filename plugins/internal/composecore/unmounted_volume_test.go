@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -45,7 +46,7 @@ func TestUnmountedVolume_PersistentDiagnosed(t *testing.T) {
 		t.Fatalf("got %d diagnostics for volumes.data, want 1 (all: %+v)", len(got), diags)
 	}
 	d := got[0]
-	if d.Severity != "warn" {
+	if d.Severity != abi.SeverityWarn {
 		t.Errorf("severity = %q, want warn", d.Severity)
 	}
 	if d.Code != rendercore.UnsupportedFieldCode {

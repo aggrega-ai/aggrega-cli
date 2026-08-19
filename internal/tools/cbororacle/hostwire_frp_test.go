@@ -218,8 +218,8 @@ func TestHostGuestWireParity_FRPStep(t *testing.T) {
 func TestHostGuestWireParity_FRPDiagnosticCarry(t *testing.T) {
 	t.Parallel()
 
-	hostOut := frp.FRPStepOutput{Diagnostics: []renderctx.Diagnostic{{Severity: "warn", Message: "heads up"}}}
-	guestOut := abi.FRPStepOutput{Diagnostics: []abi.Diagnostic{{Severity: "warn", Message: "heads up"}}}
+	hostOut := frp.FRPStepOutput{Diagnostics: []renderctx.Diagnostic{{Severity: abi.SeverityWarn, Message: "heads up"}}}
+	guestOut := abi.FRPStepOutput{Diagnostics: []abi.Diagnostic{{Severity: abi.SeverityWarn, Message: "heads up"}}}
 
 	hostCBOR, err := hostOut.EncodeCBOR()
 	if err != nil {
@@ -307,7 +307,7 @@ func TestHostGuestWireParity_FRPConditionalMapHeadMatchesBody(t *testing.T) {
 			populated: frp.FRPStepOutput{
 				Patches:     []frp.JSONPatchOp{{Scope: frp.DocumentScopeOwn, Key: "k", Op: "add", Path: "/a"}},
 				SideEffects: []frp.SideEffect{{Kind: "emit_file"}},
-				Diagnostics: []renderctx.Diagnostic{{Severity: "warn", Message: "m"}},
+				Diagnostics: []renderctx.Diagnostic{{Severity: abi.SeverityWarn, Message: "m"}},
 				Outputs:     anyMap,
 				Error:       "boom",
 			},

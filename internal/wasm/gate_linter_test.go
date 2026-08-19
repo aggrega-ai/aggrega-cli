@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
@@ -95,8 +96,8 @@ func TestLoadAndDescribePublishingLinter(t *testing.T) {
 	if f.RuleID != "name-shape" {
 		t.Errorf("finding rule_id: got %q want %q", f.RuleID, "name-shape")
 	}
-	if f.Severity != "halt" {
-		t.Errorf("finding severity: got %q want %q", f.Severity, "error")
+	if f.Severity != abi.SeverityHalt {
+		t.Errorf("finding severity: got %q want %q", f.Severity, abi.SeverityHalt)
 	}
 
 	// An export the descriptor does not declare is refused before the

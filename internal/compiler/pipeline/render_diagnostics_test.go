@@ -8,12 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
 func unsupportedFieldDiag() renderer.Diagnostic {
 	return renderer.Diagnostic{
-		Severity: "warn",
+		Severity: abi.SeverityWarn,
 		Code:     renderer.UnsupportedFieldCode,
 		Message:  `target "compose" does not support scheduling and omitted it`,
 		Location: &renderer.DiagnosticLocation{URI: "api", Kind: "compose"},

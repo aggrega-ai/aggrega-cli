@@ -61,6 +61,7 @@ import (
 	"errors"
 	"strings"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -306,9 +307,9 @@ func convertHCLDiagnostics(hd hcl.Diagnostics) []renderctx.Diagnostic {
 	}
 	out := make([]renderctx.Diagnostic, 0, len(hd))
 	for _, d := range hd {
-		severity := "warn"
+		severity := abi.SeverityWarn
 		if d.Severity == hcl.DiagError {
-			severity = "halt"
+			severity = abi.SeverityHalt
 		}
 		msg := d.Summary
 		if d.Detail != "" {

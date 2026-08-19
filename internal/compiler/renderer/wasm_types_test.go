@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -100,7 +101,7 @@ func sampleRenderNodeOutput(t *testing.T) renderer.RenderNodeOutput {
 		},
 		Diagnostics: []renderer.Diagnostic{
 			{
-				Severity: "warn",
+				Severity: abi.SeverityWarn,
 				Code:     "deprecated-field",
 				Message:  "values.legacyPort is deprecated",
 				Location: &renderer.DiagnosticLocation{
@@ -244,7 +245,7 @@ func TestDiagnostic_OmitemptyAndRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	minimal := renderer.Diagnostic{
-		Severity: "halt",
+		Severity: abi.SeverityHalt,
 		Code:     "missing-required",
 		Message:  "values.image is required",
 	}
@@ -252,13 +253,17 @@ func TestDiagnostic_OmitemptyAndRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal minimal: %v", err)
 	}
+	// The severity is spelled literally here on purpose: this golden asserts the
+	// encoded wire bytes, and a golden built from the same const the encoder reads
+	// would agree with any spelling that const took and so prove nothing about the
+	// wire. Keep it literal, and keep it in step with the shared contract.
 	const wantMinimal = `{"severity":"halt","message":"values.image is required","code":"missing-required"}`
 	if string(raw) != wantMinimal {
 		t.Errorf("omitempty did not drop optional fields:\n  want: %s\n  got:  %s", wantMinimal, raw)
 	}
 
 	full := renderer.Diagnostic{
-		Severity: "info",
+		Severity: abi.SeverityInfo,
 		Code:     "style",
 		Message:  "consider naming the port",
 		Location: &renderer.DiagnosticLocation{Kind: "values", URI: "core/web-service", KeyPath: "values.port", Line: 9},

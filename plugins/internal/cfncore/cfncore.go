@@ -59,6 +59,7 @@ import (
 	"strconv"
 	"strings"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -214,7 +215,7 @@ func ValidateSourced(files []SourcedFile, rootIsDir bool) []renderctx.Diagnostic
 		}
 		if _, err := normalizeTemplateBytes(f.Content); err != nil {
 			diags = append(diags, renderctx.Diagnostic{
-				Severity: "halt",
+				Severity: abi.SeverityHalt,
 				Code:     templateParseCode,
 				Message:  fmt.Sprintf("sourced CloudFormation template %q failed to parse: %v", f.Path, err),
 				Location: &renderctx.DiagnosticLocation{Kind: "cloudformation", URI: f.Path},

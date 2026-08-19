@@ -6,6 +6,7 @@ package wasm
 import (
 	"fmt"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -122,6 +123,63 @@ func GuestReturnedError(export, msg string) error {
 		return nil
 	}
 	return fmt.Errorf("call %q: %w: %s", export, ErrWasmGuestError(), msg)
+}
+
+// ErrWasmDiagnosticSeverity indicates that a guest plugin returned a diagnostic
+// whose severity is not one of the values the shared diagnostic contract
+// declares. The contract closes the severity to a fixed set — halt stops the
+// build and names what to fix, warn surfaces alongside a build that still
+// completes, info records the observation and leaves the build outcome
+// unchanged — and a value outside that set is a plugin the host cannot route.
+//
+// It halts rather than being coerced to a default, and the reason is not
+// tidiness. A host that silently skipped an unroutable severity would treat it
+// as "nothing to do", which on a governance surface reads as an allow: a verdict
+// the plugin raised would pass the build without ever being reported. Coercing
+// it to the halting value would instead reject a build on a value nobody chose.
+// Both are silent, and the contract is stated precisely so neither is necessary:
+// the value is wrong, the host says so, and the plugin author fixes it.
+//
+// The wrapping error names the plugin, the export it was called through, the
+// offending value, and the values the contract declares, so an author sees which
+// plugin emitted what and what it should have emitted instead.
+func ErrWasmDiagnosticSeverity() error { return errWasmDiagnosticSeverity }
+
+var errWasmDiagnosticSeverity = cerrors.Register("wasm/wasm-diagnostic-severity", cerrors.Meta{
+	Message: "wasm: guest plugin returned a diagnostic whose severity the contract does not declare",
+})
+
+// GuestDiagnosticSeverities checks every diagnostic a guest returned against the
+// severities the shared diagnostic contract declares, returning an error
+// wrapping ErrWasmDiagnosticSeverity for the first entry outside the set and nil
+// when every entry is inside it (the success case, including an empty list).
+//
+// This is the one home for that decision. Every socket that decodes a
+// diagnostic-carrying guest output calls it right after decoding — beside the
+// GuestReturnedError call that checks the same output's error field — so the two
+// guest-envelope contract checks run at the same boundary and a diagnostic that
+// reaches any routing site downstream is one the host can route. Putting the
+// decision here rather than at each routing site is what keeps the routing sites
+// from disagreeing with one another about what an unroutable value means, and it
+// is also the only layer where the plugin's identity is still in hand: a
+// diagnostic that has been projected onto a report or joined into a build result
+// no longer knows which plugin raised it.
+//
+// plugin identifies the guest for the message — whatever identity the calling
+// socket knows it by, which is the same identity that socket's other failures
+// name. export is the guest function the output came back from.
+func GuestDiagnosticSeverities(plugin, export string, diags []abi.Diagnostic) error {
+	for i, d := range diags {
+		switch d.Severity {
+		case abi.SeverityHalt, abi.SeverityWarn, abi.SeverityInfo:
+			continue
+		}
+		return fmt.Errorf(
+			"plugin %q call %q: %w: diagnostic %d has severity %q; the declared severities are %q, %q and %q",
+			plugin, export, ErrWasmDiagnosticSeverity(), i, d.Severity,
+			abi.SeverityHalt, abi.SeverityWarn, abi.SeverityInfo)
+	}
+	return nil
 }
 
 // ErrWasmContractMismatch indicates that a catalog Plugin entity's
