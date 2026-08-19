@@ -271,7 +271,7 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 			nil, nil)
 	}
 	leftDelim, rightDelim := emitter.ArtifactTemplateDelimiters()
-	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, leftDelim, rightDelim)
+	proj, err := buildArtifactsProjection(ctx.Err, tmplCtx, state, nodeCtx, leftDelim, rightDelim)
 	if err != nil {
 		return err
 	}

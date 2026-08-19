@@ -143,7 +143,7 @@ data:
   greeting: hello
 `})
 
-	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err != nil {
 		t.Fatalf("buildArtifactsProjection: %v", err)
 	}
@@ -186,7 +186,7 @@ metadata:
 	resetArtifacts(state)
 	state.Recipe.Spec.Artifacts.Set("whatever-key", types.ArtifactEntry{Import: p})
 
-	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err != nil {
 		t.Fatalf("buildArtifactsProjection: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestBuildArtifactsProjection_ImportPinVerify(t *testing.T) {
 	state.Recipe.Spec.Artifacts.Set("policy", types.ArtifactEntry{Import: p})
 	// A matching pin renders without complaint.
 	state.Recipe.Spec.ArtifactDigests = []types.ArtifactDigest{{Name: "policy", Digest: digest.ContentDigest(body)}}
-	if _, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}"); err != nil {
+	if _, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}"); err != nil {
 		t.Fatalf("matching pin should render: %v", err)
 	}
 
@@ -223,7 +223,7 @@ func TestBuildArtifactsProjection_ImportPinVerify(t *testing.T) {
 	if err := os.WriteFile(p, []byte("kind: NetworkPolicy\nmetadata:\n  name: allow-all\n"), 0o644); err != nil {
 		t.Fatalf("tamper: %v", err)
 	}
-	_, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err == nil {
 		t.Fatalf("tampered import rendered without halting; expected a loud halt")
 	}
@@ -257,7 +257,7 @@ metadata:
 data: {}
 `})
 
-	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err != nil {
 		t.Fatalf("buildArtifactsProjection: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestBuildArtifactsProjection_MixedOrder(t *testing.T) {
 	state.Recipe.Spec.Artifacts.Set("inline-cm.yaml", types.ArtifactEntry{Inline: "kind: ConfigMap\n"})
 	state.Recipe.Spec.Artifacts.Set("external.yaml", types.ArtifactEntry{Import: p})
 
-	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err != nil {
 		t.Fatalf("buildArtifactsProjection: %v", err)
 	}
@@ -321,7 +321,7 @@ spec:
   image: {{ (index .workload.containers "main").image }}
 `})
 
-	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err != nil {
 		t.Fatalf("buildArtifactsProjection: %v", err)
 	}
@@ -344,7 +344,7 @@ data:
   chart: {{ .source.chart }}
 `})
 
-	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err != nil {
 		t.Fatalf("buildArtifactsProjection: %v", err)
 	}
@@ -364,7 +364,7 @@ spec:
   port: {{ .workload.containers.main.ports.web }}
 `})
 
-	_, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err == nil {
 		t.Fatal("expected CATALOG_ERROR for .workload reference with no workload declared")
 	}
@@ -391,7 +391,7 @@ metadata:
   name: {{ .context.instance_id
 `})
 
-	_, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err == nil {
 		t.Fatal("expected CATALOG_ERROR for malformed Go template syntax")
 	}
@@ -425,7 +425,7 @@ data:
 	resetArtifacts(state)
 	state.Recipe.Spec.Artifacts.Set("mixed.yaml", types.ArtifactEntry{Import: p})
 
-	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "[[", "]]")
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "[[", "]]")
 	if err != nil {
 		t.Fatalf("buildArtifactsProjection: %v", err)
 	}
@@ -799,7 +799,7 @@ func TestBuildArtifactsProjection_ShippedMariadbRdsBodyResolves(t *testing.T) {
 	state := NewPhaseBState(r, "prod-mariadb", "production", "recipe.yaml")
 	state.Recipe.Spec.Artifacts.Set("main.tf", types.ArtifactEntry{Inline: shippedMariadbRdsBody})
 
-	proj, err := buildArtifactsProjection(tmplCtx, state, NodeRenderContext{NodeID: "prod-mariadb"}, "{{", "}}")
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, NodeRenderContext{NodeID: "prod-mariadb"}, "{{", "}}")
 	if err != nil {
 		t.Fatalf("buildArtifactsProjection on shipped body: %v", err)
 	}

@@ -841,6 +841,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// neither.
 		state.hydrated = input.hydrated
 		state.artifacts = input.artifacts
+		// The presentation over the first of those retentions travels with it, so
+		// the rule declared over the mid-render facts can be asked about an entry
+		// inside the same walk that records it. It is set here rather than derived
+		// at the asking site because it is built once for the whole render, above,
+		// and holds the retention by pointer — so one presentation answers every
+		// node from what the walk has recorded by then.
+		//
+		// It is set beside the retention deliberately: the walk that records the
+		// facts is exactly the walk that may read them, and separating the two
+		// would let a state record facts nothing can then be asked about, which
+		// reads as a rule that ran and approved.
+		state.hydratedFacts = result.HydratedView
 		// The state's copy is the authoritative set for this node: a Phase B
 		// sub-pass records the workload display decision onto it, and a capture
 		// reading a copy taken earlier would show a document the decision said to

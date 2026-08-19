@@ -46,7 +46,7 @@ func TestBuildArtifactsProjection_FlatHappyPath(t *testing.T) {
 	state.Recipe.Spec.Artifacts.Set("notes.txt", types.ArtifactEntry{
 		Inline: "plain text content\n",
 	})
-	proj, err := buildArtifactsProjection(&types.TemplateContext{}, state, NodeRenderContext{NodeID: "n"}, "{{", "}}")
+	proj, err := buildArtifactsProjection(nil, &types.TemplateContext{}, state, NodeRenderContext{NodeID: "n"}, "{{", "}}")
 	if err != nil {
 		t.Fatalf("happy: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestBuildArtifactsProjection_PillarPrecheckError(t *testing.T) {
 	t.Parallel()
 	state := &PhaseBState{Recipe: &types.Recipe{}}
 	state.Recipe.Spec.Artifacts.Set("f.yaml", types.ArtifactEntry{Inline: "{{ .workload.x }}"})
-	_, err := buildArtifactsProjection(&types.TemplateContext{}, state, NodeRenderContext{}, "{{", "}}")
+	_, err := buildArtifactsProjection(nil, &types.TemplateContext{}, state, NodeRenderContext{}, "{{", "}}")
 	if err == nil {
 		t.Errorf("missing-pillar reference should fail")
 	}

@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -77,7 +78,14 @@ type ArtifactsEmitter interface {
 // origin records which form the entry took so a guest that rejects one form can
 // halt on it. Two outputs resolving to the same filename halt loudly with
 // ErrArtifactOutputCollision.
+//
+// cancelled is the caller's own cancellation signal, read by the traversal that
+// asks the rule declared over this stage's facts about each entry, so a walk over
+// a Recipe declaring many artifacts stops when the caller asks it to rather than
+// running to completion and reporting afterwards. A nil signal is an
+// uncancellable walk, which is what a caller assembling its own input gets.
 func buildArtifactsProjection(
+	cancelled constraint.Cancellation,
 	tmplCtx *types.TemplateContext,
 	state *PhaseBState,
 	nodeCtx NodeRenderContext,
@@ -107,6 +115,21 @@ func buildArtifactsProjection(
 		// taken before evaluation, which is the state the retained value names. A
 		// node whose render carries no retention records nothing.
 		state.hydrated.recordArtifactTemplate(state.NodeID, outputName, tmplText)
+		// The rule declared over this stage's facts, asked about the entry recorded
+		// on the line above. It sits between the recording and the evaluation below
+		// because that is the only span where the entry's text exists and nothing
+		// has yet evaluated it — after evaluation an undeclared pillar has already
+		// become either a placeholder in the output or a halt naming the first hop
+		// of the expression rather than the expression the author wrote.
+		//
+		// It stands BESIDE the pre-check rather than replacing it. The two keep
+		// different halves: this reports every offending reference in the template,
+		// the pre-check returns on the first and keeps the parse-error arm; and the
+		// pre-check keeps its pillar arms because this walk is also reached by a
+		// FeatureRecipe render, which contributes no subject here.
+		if err := runArtifactPillarRule(cancelled, state, outputName); err != nil {
+			return err
+		}
 		if err := preCheckArtifactPillars(state, outputName, tmplText, leftDelim, rightDelim); err != nil {
 			return err
 		}

@@ -139,7 +139,7 @@ func TestArtifactRetentionLeavesTheProjectionHandedToTheProviderUntouched(t *tes
 		for _, name := range order {
 			state.Recipe.Spec.Artifacts.Set(name, types.ArtifactEntry{Inline: bodies[name]})
 		}
-		proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+		proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 		if err != nil {
 			t.Fatalf("buildArtifactsProjection: %v", err)
 		}

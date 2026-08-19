@@ -280,7 +280,7 @@ func TestArtifactProjectionIsRetainedOnlyForANodesOwnRecipe(t *testing.T) {
 		state.artifacts = attach
 		resetArtifacts(state)
 		state.Recipe.Spec.Artifacts.Set("out.yaml", types.ArtifactEntry{Inline: text})
-		if _, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}"); err != nil {
+		if _, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}"); err != nil {
 			t.Fatalf("buildArtifactsProjection: %v", err)
 		}
 	}

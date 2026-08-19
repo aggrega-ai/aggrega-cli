@@ -5,10 +5,8 @@ package renderer
 
 import (
 	"context"
-	stderrors "errors"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // selfReportRefusalReporter is a presentation that records the plugin
@@ -186,26 +184,11 @@ func runDescribedStageRules(
 // ordinary case reads as the single diagnostic it is. Several are joined under
 // an envelope naming what they are about, which is the shape a display surface
 // already renders every member of.
+//
+// The rendering itself is the shared one, so this reading and the one over a
+// node's artifact entries cannot report the same class of fault in two shapes.
+// What is this stage's own is the envelope: these findings are about steps that
+// may not run, which is what the wording says.
 func describedStageHalt(objections []constraint.Objection) error {
-	if len(objections) == 0 {
-		return nil
-	}
-	halts := make([]error, 0, len(objections))
-	for _, o := range objections {
-		halts = append(halts, cerrors.Wrap(
-			o.Sentinel(),
-			cerrors.CatalogError,
-			cerrors.SourceLocation{File: o.SourceFile(), Locator: o.Locator()},
-			constraint.ObjectionMessage(o),
-		))
-	}
-	if len(halts) == 1 {
-		return halts[0]
-	}
-	return cerrors.Wrap(
-		stderrors.Join(halts...),
-		cerrors.CatalogError,
-		cerrors.SourceLocation{},
-		"pipeline steps that cannot run as declared",
-	)
+	return objectionsAsHalt(objections, "pipeline steps that cannot run as declared")
 }

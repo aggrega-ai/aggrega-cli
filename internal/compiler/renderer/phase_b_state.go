@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -178,6 +179,25 @@ type PhaseBState struct {
 	// of a value declared over a node's own Recipe — the two would otherwise
 	// collide under one node identity. nil records nothing.
 	hydrated *hydratedProjections
+
+	// hydratedFacts presents, as named facts, the state a node reaches before its
+	// artifact bytes exist. It is carried here so the rule declared over those
+	// facts can be asked about an artifact entry at the point the entry's text has
+	// been resolved and nothing has evaluated it yet — the only point where both
+	// halves of that question are answerable.
+	//
+	// It reads the retention above by pointer rather than holding a copy, so it
+	// answers from whatever this walk has recorded by the time it is asked. That
+	// is what lets the entry recorded on the line above be the entry the rule is
+	// then invoked over.
+	//
+	// It is unexported and, like the retention, is set only for a node's own
+	// base-Recipe state. An attachment's render builds its own state and receives
+	// neither, so the rule contributes no finding there and the pre-check beside
+	// it remains that path's pillar enforcement. The two absences are one
+	// arrangement and are set together for that reason: a walk that records the
+	// facts must also be able to read them.
+	hydratedFacts constraint.HydratedView
 
 	// artifacts is the render's retained set of per-node artifact projections,
 	// carried here so the artifacts walk can record each entry's evaluated bytes

@@ -39,7 +39,7 @@ func TestArtifactsLibraryImport_ByteIdenticalToInline(t *testing.T) {
 	resetArtifacts(inlineState)
 	inlineState.Recipe.Spec.Artifacts.Set("widget-crd.yaml", types.ArtifactEntry{Inline: albCRDBody})
 	inlineState.Recipe.Spec.Artifacts.Set("widget-rbac.yaml", types.ArtifactEntry{Inline: albRBACBody})
-	inlineProj, err := buildArtifactsProjection(tmplCtx, inlineState, nodeCtx, "{{", "}}")
+	inlineProj, err := buildArtifactsProjection(nil, tmplCtx, inlineState, nodeCtx, "{{", "}}")
 	if err != nil {
 		t.Fatalf("inline projection: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestArtifactsLibraryImport_ByteIdenticalToInline(t *testing.T) {
 			[]string{"widget-crd.yaml", "widget-rbac.yaml"},
 			[]string{albCRDBody, albRBACBody}),
 	}
-	libProj, err := buildArtifactsProjection(tmplCtx2, libState, nodeCtx2, "{{", "}}")
+	libProj, err := buildArtifactsProjection(nil, tmplCtx2, libState, nodeCtx2, "{{", "}}")
 	if err != nil {
 		t.Fatalf("library projection: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestArtifactsLibraryImport_LoudFailures(t *testing.T) {
 			resetArtifacts(state)
 			state.Recipe.Spec.Artifacts.Set("slot", types.ArtifactEntry{Import: tc.imp})
 			state.ArtifactsLibraries = libs
-			_, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+			_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 			if err == nil {
 				t.Fatalf("expected a loud failure for %q; got nil", tc.imp)
 			}
@@ -154,7 +154,7 @@ func TestArtifactsLibraryImport_OutputCollisionHalts(t *testing.T) {
 		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml"}, []string{albCRDBody}),
 	}
-	_, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if !errors.Is(err, ErrArtifactOutputCollision()) {
 		t.Fatalf("expected ErrArtifactOutputCollision; got %v", err)
 	}
