@@ -110,7 +110,7 @@ func (s *Server) verifyDriftAndUpdateCache(lockfilePath string, cl closure.Closu
 	if err := lockfile.Verify(lf, cl); err != nil {
 		message := fmt.Sprintf("Lockfile drifted from current closure. Run `aggrega pull --upgrade --release <release>` to update. Details: %v", err)
 		s.setDiagnostics(lockfilePath, []Diagnostic{
-			{Line: 1, Column: 1, Severity: "warning", Message: message, Code: diagnosticCode(err)},
+			{Line: 1, Column: 1, Severity: editorSeverityWarning, Message: message, Code: diagnosticCode(err)},
 		})
 		return lf
 	}

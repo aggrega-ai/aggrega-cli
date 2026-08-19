@@ -90,7 +90,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		return []Diagnostic{{
 			Line:     1,
 			Column:   1,
-			Severity: "error",
+			Severity: editorSeverityError,
 			Message:  "Dependencies: " + envelope.Message,
 			Code:     diagnosticCode(envelope.cause),
 		}}
@@ -139,7 +139,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		return []Diagnostic{{
 			Line:     1,
 			Column:   1,
-			Severity: "error",
+			Severity: editorSeverityError,
 			Message:  fmt.Sprintf("Dependencies: catalog extends: %v", vr.ClosureExtendsErrors[0]),
 			Code:     diagnosticCode(vr.ClosureExtendsErrors[0]),
 		}}
@@ -153,7 +153,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		return []Diagnostic{{
 			Line:     1,
 			Column:   1,
-			Severity: "error",
+			Severity: editorSeverityError,
 			Message:  "Dependencies: " + s.skipContext(view, vr.PillarError.Error()),
 			Code:     diagnosticCode(vr.PillarError),
 		}}
@@ -178,7 +178,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// populated uniformly for both single- and multi-violation cases.
 	if tier4 != nil && len(tier4.ResolveDiagnostics) > 0 {
 		for _, ve := range tier4.ResolveDiagnostics {
-			diags = append(diags, resolverFindingToDiagnostic(ve, "error", doc, idx))
+			diags = append(diags, resolverFindingToDiagnostic(ve, editorSeverityError, doc, idx))
 		}
 	} else if vr.RunErr != nil {
 		// Non-resolver pre-analyzer phase error (topology / IR / guards
@@ -186,7 +186,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		diags = append(diags, Diagnostic{
 			Line:     1,
 			Column:   1,
-			Severity: "error",
+			Severity: editorSeverityError,
 			Message:  tier4PhaseErrorMessage(vr.RunErr),
 			Code:     diagnosticCode(vr.RunErr),
 		})
@@ -198,7 +198,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// squiggles the offending authoring key rather than the head of the file.
 	if tier4 != nil {
 		for _, a := range tier4.LintAdvisories {
-			diags = append(diags, resolverFindingToDiagnostic(a, "warning", doc, idx))
+			diags = append(diags, resolverFindingToDiagnostic(a, editorSeverityWarning, doc, idx))
 		}
 	}
 
@@ -218,7 +218,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		diags = append(diags, Diagnostic{
 			Line:     1,
 			Column:   1,
-			Severity: "error",
+			Severity: editorSeverityError,
 			Message:  "Dependencies: " + ferr.Error(),
 			Code:     diagnosticCode(ferr),
 		})
@@ -231,7 +231,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		diags = append(diags, Diagnostic{
 			Line:     1,
 			Column:   1,
-			Severity: "error",
+			Severity: editorSeverityError,
 			Message:  "Dependencies: input-kind: " + e.Error(),
 			Code:     diagnosticCode(e),
 		})
@@ -284,7 +284,7 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 			Column:    col,
 			EndLine:   endLine,
 			EndColumn: endCol,
-			Severity:  "error",
+			Severity:  editorSeverityError,
 			// The code comes off Sentinel rather than off the entry: an
 			// AnalysisError reports its own Message and does not unwrap to the
 			// condition it names, so a chain walk over the entry itself finds

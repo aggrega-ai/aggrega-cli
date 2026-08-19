@@ -20,6 +20,10 @@
 // the region its markers delimit; every other byte of the page is curated prose
 // and survives untouched.
 //
+// Every -out run reports the size of the identity set it read, so a caller can
+// state what its verdict covered instead of leaving the reader of a reassuring
+// line to guess whether the whole set was behind it or a fragment of one.
+//
 // Every -out run also reports two counts over the halting-conditions page: how
 // many declared halting conditions no entry names, and how many entries do not
 // quote the message the condition they cover registers. The first asks whether a
@@ -116,6 +120,15 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
+
+	// The size of the set this run read is reported beside what it did with it.
+	// Without it, refreshing the page from the whole declared set and refreshing
+	// it from three identities produce the same line, so a reader of a
+	// reassuring one cannot tell which of the two they have — and a caller that
+	// wants to say what its verdict covered has nothing to say it with. The
+	// count is emitted from the extraction that rendered the region, so the
+	// figure and the bytes it describes cannot disagree.
+	fmt.Println("identities", len(ids))
 	if written {
 		fmt.Println("updated", page)
 	} else {

@@ -56,12 +56,12 @@ func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diag
 func editorSeverity(pluginSeverity string) string {
 	switch pluginSeverity {
 	case abi.SeverityHalt:
-		return "error"
+		return editorSeverityError
 	case abi.SeverityWarn:
-		return "warning"
+		return editorSeverityWarning
 	case abi.SeverityInfo:
-		return "info"
+		return editorSeverityInfo
 	default:
-		return "error"
+		return editorSeverityError
 	}
 }

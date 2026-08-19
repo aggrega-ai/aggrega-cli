@@ -237,6 +237,31 @@ type Diagnostic struct {
 	EndColumn int    `json:"end_column,omitempty"`
 }
 
+// The editor wire's severity tiers: the closed set a [Diagnostic]'s Severity
+// field carries.
+//
+// They are declared rather than written out at each construction site because
+// this daemon handles two severity vocabularies that share a word. Rendering
+// plugins report halt, warn and info; the editor wire reports error, warning and
+// info, and info is spelled the same on both. A bare literal at a construction
+// site therefore reads as belonging to either vocabulary, while a named tier says
+// which wire the value is going out on.
+//
+// The values are the JSON strings themselves, so the bytes a client receives are
+// a function of these declarations. The [Diagnostic] documentation above names the
+// same three strings, because they are the contract a client that reads the
+// payload without linking this package works against.
+//
+// Tests asserting an expected editor severity keep their own literals on purpose.
+// An assertion written against these constants would agree with them by
+// construction and could no longer catch a change to the value going over the
+// wire, so that near-duplicate is deliberate and is not to be unified away.
+const (
+	editorSeverityError   = "error"
+	editorSeverityWarning = "warning"
+	editorSeverityInfo    = "info"
+)
+
 // diagnosticCode returns the code of the condition err's chain names, or the
 // empty string when the chain names none.
 //

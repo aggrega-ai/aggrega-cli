@@ -162,7 +162,7 @@ func (s *Server) envelopeDiagnosticsForBuffer(file string, content []byte, doc *
 			Column:    col,
 			EndLine:   endLine,
 			EndColumn: endCol,
-			Severity:  "error",
+			Severity:  editorSeverityError,
 			Message:   string(kind) + " document violates its envelope schema: " + f.Message,
 			Code:      code,
 		})
