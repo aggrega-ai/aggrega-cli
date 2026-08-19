@@ -285,8 +285,8 @@ var ProvidesTemplateSelfContained = constraint.Check[
 
 // The two pillar roots an artifact template may only read when the document
 // carrying it supplies them. They are declared once and read by every form of the
-// rule — the three declared values below and the hand-written pre-check that still
-// runs — because the roots ARE the rule's subject: a copy in each site would agree
+// rule — the three declared values below, one per carrier the artifacts walk is
+// reached by — because the roots ARE the rule's subject: a copy in each site would agree
 // today and would be the thing that silently diverges if a pillar were ever
 // renamed, since a stale spelling matches nothing and the check goes quiet rather
 // than failing.
@@ -447,15 +447,14 @@ func artifactPillarObjections[S artifactPillarSubject](
 // is why the rule sits at the stage that holds the text and reads the pair
 // through the stage containment.
 //
-// Two deliberate differences from the hand-written form beside this file, so a
-// reader comparing them does not read either as drift. This value reports EVERY
-// offending reference in one template rather than the first, because an author
-// naming two absent pillars is better told about both than about whichever the
-// parser reached first. And a template that does not parse is not this rule's
-// finding: evaluation reports the parse error against the same entry, so
-// refusing it here as well would report one authoring fault twice — the
-// hand-written form reports it because it is the path that runs, and the entry
-// would otherwise reach evaluation with no diagnostic at all.
+// Two properties are worth stating because a reader may expect the shape the
+// hand-written arms this value replaced had. This value reports EVERY offending
+// reference in one template rather than the first, because an author naming two
+// absent pillars is better told about both than about whichever the parser reached
+// first. And a template that does not parse is not this rule's finding: evaluation
+// reports the parse error against the same entry, so refusing it here as well
+// would report one authoring fault twice — the parse pre-check standing beside the
+// invocation reports it instead, which is the one condition that pre-check kept.
 //
 // Its detail names the offending expression and the artifact that holds it. The
 // expression stands bare, because the registered wording already says a pillar

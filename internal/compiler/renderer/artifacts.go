@@ -5,7 +5,7 @@
 // model. `artifacts:` is a single OrderedMap keyed by output filename; each entry
 // is either inline content (a templated string) or $import:-loaded (a map
 // containing only $import: with a file path). The host runs the generic,
-// invariant-forced work — the $import read, the pillar pre-check, the Go-template
+// invariant-forced work — the $import read, the template parse pre-check, the Go-template
 // evaluation against the full TemplateContext (including .workload and .source),
 // and the build-provenance key computation — and projects the result to the
 // provider guest, which decides format, provenance placement, output path, and
@@ -36,7 +36,7 @@ import (
 // computed build-provenance key sets — and dispatches it here. The guest owns the
 // format decision, the provenance placement, the output path, and the final
 // bytes; the host runs only the generic, invariant-forced work (the $import read,
-// the pillar pre-check, the template evaluation, and the provenance-key
+// the template parse pre-check, the template evaluation, and the provenance-key
 // computation).
 //
 // Mirrors [WorkloadSynthesizer]: an engine that does not implement it produces a
@@ -59,7 +59,8 @@ type ArtifactsEmitter interface {
 
 // buildArtifactsProjection performs the generic, invariant-forced host work for a
 // node's artifacts: it walks Recipe.Spec.Artifacts in author order, resolves each
-// entry's content, runs the pillar pre-check, and evaluates it as a Go template
+// entry's content, asks the rule declared over the carrier it is rendering for,
+// checks that the template parses, and evaluates it as a Go template
 // against tmplCtx using the supplied delimiter pair. It attaches the host-computed
 // build-provenance label and annotation key sets — the same key computation every
 // emitting surface shares — to each entry. Format, provenance placement, path, and
@@ -126,9 +127,9 @@ func buildArtifactsProjection(
 		// become either a placeholder in the output or a halt naming the first hop
 		// of the expression rather than the expression the author wrote.
 		//
-		// It stands BESIDE the pre-check rather than replacing it. The two keep
-		// different halves: this reports every offending reference in the template,
-		// while the pre-check returns on the first and keeps the parse-error arm.
+		// It is the only pillar reading on this carrier: the pre-check beside it once
+		// held the same two conditions and no longer does, so a reference to an
+		// undeclared pillar is refused here or not at all.
 		if err := runArtifactPillarRule(cancelled, state, outputName); err != nil {
 			return err
 		}
@@ -146,7 +147,12 @@ func buildArtifactsProjection(
 		if err := runAttachmentArtifactPillarRule(cancelled, state, outputName); err != nil {
 			return err
 		}
-		if err := preCheckArtifactPillars(state, outputName, tmplText, leftDelim, rightDelim); err != nil {
+		// What is left of the pre-check: the parse condition, which the declared rule
+		// deliberately does not own because evaluation reports it against the same
+		// entry. It runs after both pillar readings so a template naming an
+		// undeclared pillar is answered by the rule that has something to say about
+		// it, and before evaluation so the failure carries a parse attribution.
+		if err := preCheckArtifactTemplateParses(outputName, tmplText, leftDelim, rightDelim); err != nil {
 			return err
 		}
 		rendered, err := EvalTemplateWithDelims(
@@ -242,57 +248,30 @@ func buildArtifactsProjection(
 	return proj, nil
 }
 
-// preCheckArtifactPillars walks the template's parsed field-access set
-// (via CollectTemplateFieldAccessesWithDelims) and short-circuits with
-// ErrArtifactPillarNotDeclared, categorised CATALOG_ERROR, when the template
-// references a pillar slot that the current Recipe has not declared:
-//   - any `.workload` or `.workload.*` reference when state.ParsedWorkload is nil,
-//     which is the state a Recipe declaring no workload: reaches artifact
-//     evaluation in, workload synthesis having had no body to parse.
-//   - any `.source` or `.source.*` reference when the Recipe carries no source
-//     value. The value read here is the RESOLVED source, because source
-//     resolution replaces state.Recipe with a local copy whose Spec.Source holds
-//     the evaluated result; so a source: template that renders to an empty string
-//     counts as declaring none, exactly as an absent source: does, and both arms
-//     below are one condition under one identity.
-//
-// The pre-check names the failing expression authoritatively: the literal
-// dot-path the parser captured, whatever depth it was written at.
-//
-// What it stands in front of differs with that depth, and both halves matter
-// because only one of them is an error at all. A reference of one segment to a
-// pillar the Recipe did not declare does NOT fail evaluation: the pillar is a
-// root the context defines, so the read is admitted and renders the literal text
-// "<no value>" into the artifact, and the build completes and writes the file. A
-// reference that descends through such a pillar does fail, with text/template's
-// own nil-pointer wording, which names the first hop rather than the path the
-// author wrote and offers no remedy. So this refuses two different outcomes with
-// one message — a file that ships a placeholder nobody asked for, and a halt an
-// author cannot act on.
+// preCheckArtifactTemplateParses surfaces a template that does not parse as a
+// CATALOG_ERROR positioned at the artifact, before the entry reaches evaluation.
 //
 // leftDelim/rightDelim are the same delimiter pair the eventual
-// EvalTemplateWithDelims call will use, so the parser sees Aggrega's
-// templating exactly as the renderer will execute it. For external-handler
-// engines using non-default delimiters (helm-chart's `[[ ]]`), Helm's
-// `{{ ... }}` blocks become opaque text and don't surface as parse errors
-// or as field-access entries.
-func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, rightDelim string) error {
-	refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim)
-	if err != nil {
+// EvalTemplateWithDelims call will use, so the parser sees Aggrega's templating
+// exactly as the renderer will execute it. For external-handler engines using
+// non-default delimiters (helm-chart's `[[ ]]`), Helm's `{{ ... }}` blocks become
+// opaque text and don't surface as parse errors.
+//
+// A parse failure is deliberately NOT the declared pillar rule's finding, and this
+// is where the condition kept its home for that reason. Evaluation would report it
+// against the same entry, so refusing it in both places would report one authoring
+// fault twice; refusing it here first is what gives it the parse attribution
+// against the artifact's own name rather than the evaluation wording.
+//
+// It is the whole of what this pre-check still owns. The pillar conditions that
+// used to sit beside it — a `.workload` or `.source` reference the document
+// carrying the template does not declare — belong to the rule declared over each
+// carrier the artifacts walk is reached by, which reports every offending
+// reference in a template rather than the first and positions its finding at the
+// document the reference was written in.
+func preCheckArtifactTemplateParses(filename, tmplText, leftDelim, rightDelim string) error {
+	if _, err := gotmpl.CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim); err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template parse", filename))
-	}
-	workloadDeclared := state.ParsedWorkload != nil
-	sourceDeclared := recipeSourceDeclared(state.Recipe)
-
-	for _, ref := range refs {
-		if !workloadDeclared && pillarRefMatches(ref, pillarRefWorkload) {
-			return cerrors.Wrap(ErrArtifactPillarNotDeclared(), cerrors.CatalogError, cerrors.SourceLocation{File: filename},
-				fmt.Sprintf("artifact %q template references %q but Recipe declares no workload:", filename, ref))
-		}
-		if !sourceDeclared && pillarRefMatches(ref, pillarRefSource) {
-			return cerrors.Wrap(ErrArtifactPillarNotDeclared(), cerrors.CatalogError, cerrors.SourceLocation{File: filename},
-				fmt.Sprintf("artifact %q template references %q but Recipe declares no source:", filename, ref))
-		}
 	}
 	return nil
 }

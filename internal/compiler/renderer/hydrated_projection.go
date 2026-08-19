@@ -403,8 +403,10 @@ type attachmentCarrierInputs struct {
 //
 // The two absences are different questions, on the same reading the node's own
 // value states about its own pair. An absent presentation says this render
-// published none, which is an ordinary outcome: the rule is skipped and the
-// hand-written reading beside it does the work. An absent retention beneath a
+// published none, and nothing then reads this carrier's pillar facts — a state
+// only a caller assembling a render's input directly reaches, and one no pillar
+// reading covers, since the hand-written arms that once stood in for it are gone.
+// An absent retention beneath a
 // PRESENT presentation is not an outcome but a broken arrangement — the
 // presentation would answer every entry's text with the empty string, the rule
 // would collect no reference from it, and it would admit every template it was

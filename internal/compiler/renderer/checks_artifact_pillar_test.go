@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // The artifact-pillar rule reads four declared facts, and this file runs the
@@ -423,85 +422,24 @@ func TestTheArtifactPillarRuleReadsNoUndeclaredFact(t *testing.T) {
 	}
 }
 
-// TestTheArtifactPillarRuleAndTheHandWrittenPreCheckAgree runs both forms of the
-// rule over one input set and compares which entries each refuses.
+// The cross-check that ran both forms of this rule over one input set and compared
+// which entries each refused is REMOVED, and the reason is that its premise is
+// discharged rather than that it stopped being useful.
 //
-// The two coexist deliberately while nothing invokes a declared value, and no
-// structure holds them in step — they share the pillar roots and the
-// exact-or-descendant test and nothing else — so the agreement is asserted here
-// rather than assumed. It is agreement on WHICH ENTRIES are refused and not on
-// how many objections each produces: the declared value reports every offending
-// reference in a body while the hand-written form stops at the first, which is a
-// stated difference rather than drift.
-func TestTheArtifactPillarRuleAndTheHandWrittenPreCheckAgree(t *testing.T) {
-	t.Parallel()
-
-	stub := newArtifactPillarFactStub()
-
-	// The declared side is run one node at a time, because an objection carries no
-	// node coordinate: the nodes share one artifact set, so a single walk's
-	// objections could not be attributed back to a node. Running each node's own
-	// walk is what makes the comparison per node.
-	//
-	// Within a node the entry comes from the subject the framework invoked the rule
-	// with, never from the objection's locator. A locator is a position, and an
-	// artifact entry whose output name is a filename is not separately addressable,
-	// so every entry in the block positions at the block: keying this map on a
-	// locator collapses every refused entry onto one key, and each of the others
-	// then reads as "the declared value did not refuse it" — which is a statement
-	// about the key, not about the rule.
-	perNodeDeclared := map[string]bool{}
-	for _, n := range artifactPillarNodes {
-		var raised []artifactObjection
-		single := artifactFixtureFor(n.id)
-		if _, err := constraint.RunOnNodeArtifacts(nil, single, single,
-			constraint.HydratedView(stub),
-			attributedArtifactCheck(ArtifactPillarDeclared, &raised)); err != nil {
-			t.Fatalf("node %q artifact traversal: %v", n.id, err)
-		}
-		for _, r := range raised {
-			perNodeDeclared[factKey(n.id, r.artifact)] = true
-		}
-	}
-
-	compared := 0
-	for _, n := range artifactPillarNodes {
-		for _, name := range artifactEntryNames {
-			state := &PhaseBState{Recipe: &types.Recipe{}}
-			if n.workloadPresent {
-				state.ParsedWorkload = &types.Workload{}
-			}
-			if n.sourceDeclared {
-				state.Recipe.Spec.Source = "oci://example.test/chart"
-			}
-			handWritten := preCheckArtifactPillars(state, name,
-				artifactPillarBodies[name], n.left, n.right)
-
-			// The hand-written form also refuses a body that does not parse, which
-			// the declared value leaves to evaluation, so the comparison is on the
-			// pillar verdict alone rather than on any error.
-			handRefused := handWritten != nil && errors.Is(handWritten, ErrArtifactPillarNotDeclared())
-			declRefused := perNodeDeclared[factKey(n.id, name)]
-			compared++
-			if handRefused != declRefused {
-				t.Errorf("node %q artifact %q: the hand-written pre-check refused=%v while the "+
-					"declared value refused=%v.\n"+
-					"INVARIANT: the two forms express one rule while both are present.\n"+
-					"CONSEQUENCE: a divergence means the halt a user meets and the placement the "+
-					"framework computes describe different rules.",
-					n.id, name, handRefused, declRefused)
-			}
-		}
-	}
-	if compared == 0 {
-		t.Fatal("no entry was compared, so this test proves nothing about the two forms")
-	}
-	// Coverage only. It deliberately does not claim the two forms agree: a log
-	// line runs whether or not an assertion above failed, so one asserting the
-	// verdict would print "both forms agree" underneath the errors proving they
-	// do not.
-	t.Logf("compared %d artifact entries across %d nodes", compared, len(artifactPillarNodes))
-}
+// It existed because the two forms coexisted with no structure holding them in
+// step, so their agreement had to be asserted rather than assumed. The
+// hand-written form is now gone: the pre-check beside the walk keeps only its parse
+// condition, so there is no second implementation of the pillar verdict left to
+// compare against, and a comparison against the production path would compare the
+// framework with itself.
+//
+// What it proved is not lost. It asserted the declared side's verdict per entry
+// over the same grid TestTheArtifactPillarRuleObjectsInBothDirections drives —
+// each pillar referenced against each pillar declared, both arms, the near-miss
+// control, the delimiter row and the non-parsing body — and that test matches the
+// objection set as a whole rather than by count, so the per-entry verdict stays
+// asserted. The only thing it additionally held was the equality with a form that
+// no longer exists.
 
 // artifactObjection is one raised objection together with the artifact the
 // framework invoked the rule over.

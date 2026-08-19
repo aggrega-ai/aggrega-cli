@@ -245,7 +245,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 // phaseB3 projects Recipe.Spec.Artifacts — each entry is either inline content
 // or a file referenced by its `$import:` directive — the third input kind per
 // chapter 16. The host builds an ArtifactsProjection (the $import read, the
-// pillar pre-check, the Go-template evaluation, and the build-provenance key
+// template parse pre-check, the Go-template evaluation, and the build-provenance key
 // computation — the generic, invariant-forced work) and dispatches it to the
 // provider's ArtifactsEmitter, which decides the output format, the provenance
 // placement, the output path, and the final bytes. Each returned file carries

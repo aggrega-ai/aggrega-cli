@@ -353,9 +353,25 @@ data:
 	}
 }
 
-// ----- host projection: nil .workload produces a clear CATALOG_ERROR -----
+// ----- host projection: nil .workload still halts, and does not emit -----
 
-func TestBuildArtifactsProjection_NilWorkloadProducesClearError(t *testing.T) {
+// TestBuildArtifactsProjection_NilWorkloadDescentStillHalts holds the one property
+// of this state that the walk itself owns: a template descending through a pillar
+// the Recipe does not declare halts with a CATALOG_ERROR rather than emitting a
+// file built from a value nobody authored.
+//
+// It formerly also asserted that the halt names the failing expression and hints
+// that no workload is declared. Those are diagnostic-QUALITY assertions and they
+// belonged to the pre-check's pillar arms, which are gone: this state is a
+// hand-assembled one carrying no presentation, so no declared value reads its
+// pillar facts and the halt here comes from evaluation. The quality contract moved
+// with the mechanism rather than being dropped, and it is asserted more strictly
+// than these two lines did — TestTheArtifactPillarRuleObjectsInBothDirections
+// compares each objection's exact detail, the offending expression and the
+// captioned artifact included, over both arms; and
+// TestTheArtifactPillarRuleHaltsTheBuildOnANodesOwnRecipe reads the same wording
+// off a real build's halt.
+func TestBuildArtifactsProjection_NilWorkloadDescentStillHalts(t *testing.T) {
 	t.Parallel()
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	resetArtifacts(state)
@@ -364,19 +380,18 @@ spec:
   port: {{ .workload.containers.main.ports.web }}
 `})
 
-	_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err == nil {
-		t.Fatal("expected CATALOG_ERROR for .workload reference with no workload declared")
+		t.Fatalf("expected CATALOG_ERROR for a .workload descent with no workload declared; "+
+			"the walk projected %d entry/entries instead", len(proj.Entries))
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "CATALOG_ERROR") {
 		t.Errorf("expected CATALOG_ERROR prefix, got %q", msg)
 	}
-	if !strings.Contains(msg, ".workload.containers.main.ports.web") {
-		t.Errorf("error should name the failing expression, got %q", msg)
-	}
-	if !strings.Contains(msg, "no workload") {
-		t.Errorf("error should hint that no workload is declared, got %q", msg)
+	if len(proj.Entries) != 0 {
+		t.Errorf("the halting walk still projected %d entry/entries; want none — a file built from "+
+			"an undeclared pillar must not reach a guest", len(proj.Entries))
 	}
 }
 

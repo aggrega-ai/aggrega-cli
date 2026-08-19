@@ -5,7 +5,6 @@ package renderer
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -126,109 +125,59 @@ func TestSpliceArtifactProvenance_DefaultDelimsParseError(t *testing.T) {
 	}
 }
 
-// TestPreCheckArtifactPillars_AllBranches walks the pre-check's grid: each pillar
-// referenced or not, against that pillar declared or not, plus the two source
-// shapes a declaration can take and the empty-string case that reads as none.
+// TestRecipeSourceDeclared_EveryBranch walks the whole branch set of the decision
+// that answers whether a Recipe carries a source: a nil Recipe, an absent source,
+// a source that resolved to the empty string, a non-empty string, and a structured
+// value.
 //
-// Every halting row asserts the sentinel rather than "some error". The check has
-// two arms reporting one condition, and an arm that stopped raising the identity —
-// or a different halt preempting it, since the reference is parsed before either
-// arm is reached — is exactly what an any-error assertion cannot see.
+// It replaces the branch grid the artifacts pre-check's two pillar arms used to
+// carry. Those arms are gone — the rule declared over each carrier of the
+// artifacts walk owns the pillar verdict now, and its own grid drives each pillar
+// referenced against each pillar declared, both arms and a near-miss control. What
+// that grid does NOT reach is this decision's shape handling, because the declared
+// rule reads the answer as a boolean fact: the mapping from an authored source
+// value to that boolean is made here, and the structured-value row had no other
+// home in the suite.
 //
-// The passing rows are the other half of the same proof: a reference to a pillar
-// that IS declared must not halt, and a template referencing neither pillar must
-// not halt whatever is declared. Without them a check that refused everything
-// would satisfy every halting row.
-func TestPreCheckArtifactPillars_AllBranches(t *testing.T) {
+// The empty-string row is the load-bearing one. The value read is the RESOLVED
+// source, so a source: template that rendered to nothing leaves the Recipe with
+// none exactly as an absent source does — and a reading that answered true for it
+// would admit every `.source.*` reference in a Recipe whose source resolved away.
+func TestRecipeSourceDeclared_EveryBranch(t *testing.T) {
 	t.Parallel()
 
-	// declared carries the two independent axes the check reads, so a row states
-	// the state it runs against rather than inheriting it from the row above.
-	type declared struct {
-		workload bool
-		source   any
-	}
 	for _, tc := range []struct {
-		name    string
-		state   declared
-		tmpl    string
-		wantErr bool
+		name   string
+		recipe *types.Recipe
+		want   bool
 	}{
+		{name: "nil Recipe carries no source", recipe: nil, want: false},
+		{name: "absent source", recipe: sourceOnlyRecipe(nil), want: false},
+		{name: "source resolved to the empty string", recipe: sourceOnlyRecipe(""), want: false},
+		{name: "source declared as a non-empty string", recipe: sourceOnlyRecipe("/chart/path"), want: true},
 		{
-			name:    "workload key referenced, no workload declared",
-			tmpl:    "{{ .workload.containers }}",
-			wantErr: true,
-		},
-		{
-			name:    "workload root referenced bare, no workload declared",
-			tmpl:    "{{ .workload }}",
-			wantErr: true,
-		},
-		{
-			name:    "source key referenced, no source declared",
-			tmpl:    "{{ .source.path }}",
-			wantErr: true,
-		},
-		{
-			name:    "source root referenced bare, no source declared",
-			tmpl:    "{{ .source }}",
-			wantErr: true,
-		},
-		{
-			name:  "source referenced, declared as a string",
-			state: declared{source: "/chart/path"},
-			tmpl:  "{{ .source }}",
-		},
-		{
-			name:  "source key referenced, declared as a structured value",
-			state: declared{source: map[string]any{"chart": "x"}},
-			tmpl:  "{{ .source.chart }}",
-		},
-		{
-			// The resolved source is what this reads, so a source: template that
-			// rendered to nothing is indistinguishable here from no source: at all.
-			name:    "source referenced, declared as an empty string",
-			state:   declared{source: ""},
-			tmpl:    "{{ .source }}",
-			wantErr: true,
-		},
-		{
-			name:  "workload referenced, workload declared",
-			state: declared{workload: true},
-			tmpl:  "{{ .workload }}",
-		},
-		{
-			// The near-miss control: a name one edit away from a checked pillar
-			// belongs to neither arm, so this check is silent and the unknown-root
-			// halt owns it. A row asserting a halt here would be asserting the
-			// wrong condition against this function.
-			name: "neither pillar referenced, nothing declared",
-			tmpl: "{{ .values.port }}",
+			name:   "source declared as a structured value",
+			recipe: sourceOnlyRecipe(map[string]any{"chart": "x"}),
+			want:   true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			state := &PhaseBState{Recipe: &types.Recipe{}}
-			state.Recipe.Spec.Source = tc.state.source
-			if tc.state.workload {
-				state.ParsedWorkload = &types.Workload{}
-			}
-
-			err := preCheckArtifactPillars(state, "f", tc.tmpl, "{{", "}}")
-			if !tc.wantErr {
-				if err != nil {
-					t.Fatalf("expected no halt, got %v", err)
-				}
-				return
-			}
-			if err == nil {
-				t.Fatalf("expected a halt, got none")
-			}
-			if !errors.Is(err, ErrArtifactPillarNotDeclared()) {
-				t.Errorf("halt does not carry ErrArtifactPillarNotDeclared: %v", err)
+			if got := recipeSourceDeclared(tc.recipe); got != tc.want {
+				t.Errorf("recipeSourceDeclared = %v, want %v.\n"+
+					"CONSEQUENCE: the pillar rule reads this as a fact, so a wrong answer here "+
+					"admits a reference the document never licensed or refuses one it did.",
+					got, tc.want)
 			}
 		})
 	}
+}
+
+// sourceOnlyRecipe is a Recipe carrying just the source value under test.
+func sourceOnlyRecipe(source any) *types.Recipe {
+	r := &types.Recipe{}
+	r.Spec.Source = source
+	return r
 }
 
 // TestMappingValueByKey_EveryBranch pins the mapping-content lookup:
@@ -286,15 +235,28 @@ func TestProvenanceSkipWarning_FilenameSubstring(t *testing.T) {
 	}
 }
 
-// TestBuildArtifactsProjection_PillarPrecheckError pins the pre-check error
-// propagation: an artifact template referencing .workload without workload
-// declared returns CATALOG_ERROR from the projection builder.
-func TestBuildArtifactsProjection_PillarPrecheckError(t *testing.T) {
+// TestBuildArtifactsProjection_ParsePrecheckError pins the surviving pre-check's
+// error propagation: an artifact template that does not parse halts the projection
+// builder, with the parse attribution rather than the evaluation one.
+//
+// It was previously aimed at the pillar arms, which are gone. The retarget is not
+// a narrowing of what it proved: its subject is that a pre-check refusal reaches
+// the caller through the walk, and the parse condition is the one the pre-check
+// still owns. The wording is asserted rather than "some error", because an
+// unparsed template ALSO fails at evaluation — so a bare non-nil check would pass
+// with the pre-check removed entirely, which is the whole thing this test exists
+// to notice.
+func TestBuildArtifactsProjection_ParsePrecheckError(t *testing.T) {
 	t.Parallel()
 	state := &PhaseBState{Recipe: &types.Recipe{}}
-	state.Recipe.Spec.Artifacts.Set("f.yaml", types.ArtifactEntry{Inline: "{{ .workload.x }}"})
+	state.Recipe.Spec.Artifacts.Set("f.yaml", types.ArtifactEntry{Inline: "{{ .values.unclosed "})
 	_, err := buildArtifactsProjection(nil, &types.TemplateContext{}, state, NodeRenderContext{}, "{{", "}}")
 	if err == nil {
-		t.Errorf("missing-pillar reference should fail")
+		t.Fatal("an artifact template that does not parse should halt the projection builder")
+	}
+	if !strings.Contains(err.Error(), `artifact "f.yaml" template parse`) {
+		t.Errorf("the halt does not carry the pre-check's parse attribution; got %v.\n"+
+			"CONSEQUENCE: an unparsed template fails at evaluation too, so this halt arriving "+
+			"with the evaluation wording means the parse pre-check no longer runs.", err)
 	}
 }

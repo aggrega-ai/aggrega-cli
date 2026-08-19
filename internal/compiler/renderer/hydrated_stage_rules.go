@@ -94,14 +94,14 @@ var (
 // written into the output or a halt naming the first hop of the expression rather
 // than the expression itself.
 //
-// # It stands beside the pre-check rather than replacing it
+// # It is the only pillar reading on this carrier
 //
-// The two are complementary and each keeps what the other deliberately does not.
-// This rule reports every offending reference in one template; the pre-check
-// returns on the first. The pre-check keeps the parse-error arm, because a
-// template that does not parse is not this rule's finding — evaluation reports
-// the parse error against the same entry, so refusing it here as well would
-// report one authoring fault twice.
+// The pre-check standing beside it in the walk once held the same two conditions
+// and no longer does, so a reference to a pillar the document does not declare is
+// refused here or not at all. What that pre-check keeps is the parse condition,
+// because a template that does not parse is not this rule's finding — evaluation
+// reports the parse error against the same entry, so refusing it here as well
+// would report one authoring fault twice.
 //
 // The walk this sits in is reached by two renders: a node's own Recipe, and the
 // render an attachment's or a boundary-scope FeatureRecipe carries. Only the
@@ -112,10 +112,11 @@ var (
 // instead by the two sibling values keyed by their own carrier, invoked beside
 // this one at the same seam.
 //
-// The pre-check keeps its pillar arms as a second reading, which is not the same
-// claim as their being unreachable: they refuse the same input, in a build that
-// published no presentation for either reading to run over — the state a caller
-// assembling its own input reaches.
+// So the three values between them cover every entry the walk projects, and they
+// share one presentation: a render that published none skips all three, and no
+// reading refuses a pillar reference in that build. That state is reachable only
+// by assembling a render's input directly, which nothing outside this module can
+// do, and the one assembler inside it publishes the presentation unconditionally.
 //
 // # The two nil conditions are different questions
 //

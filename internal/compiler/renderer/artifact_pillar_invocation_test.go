@@ -519,24 +519,39 @@ func TestTheFeatureCarriedArtifactIsRefusedByTheDeclaredRule(t *testing.T) {
 		"halt = %s", attachmentInvocations, msg)
 }
 
-// TestTheFeatureCarriedArtifactIsRefusedByThePreCheckWithNoPresentationPublished is
-// the other reading of the same input, and it is what keeps the hand-written
-// pre-check's pillar arms on the record.
+// TestNoPillarReadingRunsInABuildThatPublishesNoPresentation pins the residual
+// state the pillar rule's reach leaves behind, and it is what holds the deletion of
+// the pre-check's pillar arms in place.
 //
-// The two readings are separated by the one thing that decides which runs: whether
-// the render published the mid-render presentation a declared value reads. A build
-// assembled without it reaches neither declared value — the node's own has no
-// presentation, and the attachment's carrier is handed none — so the pre-check is
-// what refuses, and its wording is read here so both diagnostics stay measured
-// rather than inferred.
+// The arms once refused this input. They are gone: the pillar verdict belongs to
+// the rule declared over each carrier the artifacts walk is reached by, and those
+// three values read one presentation. A build assembled without it reaches none of
+// them — the node's own has no presentation, and each attachment carrier is handed
+// none — so nothing reads the pillar facts and the reference travels on to
+// evaluation.
+//
+// Three things are asserted and each catches a different regression. Neither
+// declared value is invoked, which is what makes this the presentation-less state
+// rather than a build where a rule ran and approved. The halt does NOT carry the
+// undeclared-pillar condition, which is the needle on the deletion: an arm added
+// back to the pre-check would refuse here and fail this line. And the build still
+// halts, from evaluation, because the reference descends through the absent pillar.
+//
+// The residual is a diagnostic-quality gap rather than a silent admission for THIS
+// input, and it is worth being exact about the bound: a reference of one segment to
+// an undeclared pillar does not fail evaluation at all — it renders the literal
+// placeholder into the artifact — so in this state that shape would ship a file
+// nobody asked for. The state is reachable only by assembling a render's input
+// directly, which nothing outside this module can do, and the single assembler
+// inside it publishes the presentation unconditionally.
 //
 // It does not run in parallel: it replaces package-level declarations.
-func TestTheFeatureCarriedArtifactIsRefusedByThePreCheckWithNoPresentationPublished(t *testing.T) {
+func TestNoPillarReadingRunsInABuildThatPublishesNoPresentation(t *testing.T) {
 	recordedOwn := recordArtifactPillarInvocations(t)
 	recordedAttachment := recordAttachmentArtifactPillarInvocations(t)
 
 	// monitoringFeatureInput carries no graph-stage presentation, so the render
-	// publishes no mid-render one for either declared value to read.
+	// publishes no mid-render one for any declared value to read.
 	input := monitoringFeatureInput(t)
 	lookup := invocationLookup(
 		artifactSet([2]string{invocationHostEntries[0], invocationPlainBody}),
@@ -545,22 +560,22 @@ func TestTheFeatureCarriedArtifactIsRefusedByThePreCheckWithNoPresentationPublis
 
 	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
 	if err == nil {
-		t.Fatal("a FeatureRecipe artifact naming an undeclared pillar was admitted; want a halt from " +
-			"the pre-check")
+		t.Fatal("a FeatureRecipe artifact descending through an undeclared pillar was admitted " +
+			"outright; want a halt, from evaluation if from nothing else")
 	}
-	if !errors.Is(err, renderer.ErrArtifactPillarNotDeclared()) {
-		t.Fatalf("the halt does not carry the undeclared-pillar condition: %+v", err)
-	}
-
-	// The pre-check's own wording, which names which pillar is absent in prose.
 	msg := cerrors.CauseChain(err)
-	want := `artifact "` + invocationOffendingEntry + `" template references ".source.chart" but Recipe declares no source:`
-	if !strings.Contains(msg, want) {
-		t.Errorf("the halt does not carry the pre-check's wording %q.\nfull halt: %s", want, msg)
+	if errors.Is(err, renderer.ErrArtifactPillarNotDeclared()) {
+		t.Errorf("the halt carries the undeclared-pillar condition in a build no declared value "+
+			"could read.\nCONSEQUENCE: a pillar arm has been restored to the hand-written "+
+			"pre-check, so one authoring fault is reported by two mechanisms again.\n"+
+			"full halt: %s", msg)
+	}
+	if strings.Contains(msg, "but Recipe declares no source:") {
+		t.Errorf("the halt carries the deleted pillar arm's wording.\nfull halt: %s", msg)
 	}
 
-	// Neither declared value ran, which is what makes the refusal above the
-	// pre-check's rather than a second reading of the same input.
+	// No declared value ran, which is what makes the reading above the
+	// presentation-less one rather than a rule that ran and approved.
 	for _, r := range recordedOwn() {
 		if r.artifact == invocationOffendingEntry {
 			t.Errorf("the node's own value was invoked over %q in a build that published no "+
@@ -574,7 +589,8 @@ func TestTheFeatureCarriedArtifactIsRefusedByThePreCheckWithNoPresentationPublis
 		}
 	}
 
-	t.Logf("DIAGNOSTIC WALK — FeatureRecipe-carried, no presentation published: halt = %s", msg)
+	t.Logf("DIAGNOSTIC WALK — FeatureRecipe-carried, no presentation published, pillar arms deleted: "+
+		"halt = %s", msg)
 }
 
 // invocationTwoOffencesBody names TWO pillars the Recipe does not declare, in one
@@ -583,20 +599,28 @@ func TestTheFeatureCarriedArtifactIsRefusedByThePreCheckWithNoPresentationPublis
 // reports every one of them.
 const invocationTwoOffencesBody = "kind: Offender\nchart: {{ .source.chart }}\nrepo: {{ .source.repository }}\n"
 
-// TestTheArtifactPillarDiagnosticCountAndWordingOnBothReadings measures what an
-// author is handed by each of the two readings over ONE input, and is the artifact
-// the change's diagnostic effect is recorded from.
+// TestTheArtifactPillarDiagnosticNamesEveryOffendingReference measures what an
+// author is handed for one entry naming TWO pillars its document does not declare,
+// and is the artifact the change's diagnostic effect is recorded from.
 //
-// The two readings are separated on the same build by the one thing that decides
-// which runs: whether the render published the mid-render presentation a declared
-// value reads. A build that publishes it reaches the declared value first; a build
-// assembled without it reaches the pre-check, which is the state a caller
-// assembling its own input leaves every carrier in. So both columns are measured
-// from a real build over the same Recipe, the same entry and the same template text
-// rather than inferred from a format string.
+// It previously measured two columns over the same input — the hand-written
+// pre-check's reading beside the declared rule's — because both mechanisms were
+// live and the count was what separated them: the pre-check returned on the first
+// offending reference and the rule reports every one. The pre-check's pillar arms
+// are gone, so the BEFORE column has no mechanism left to measure and only the
+// remaining reading is asserted here. Nothing about the declared reading's
+// assertions changed; what is measured elsewhere is that no pillar reading runs at
+// all in a build publishing no presentation.
+//
+// Two invariants, and the second is why the invocation count sits beside the
+// wording. The halt names both offending references, which is the whole of the
+// accepted diagnostic-count change. And the rule was invoked exactly ONCE for the
+// entry, so the several findings come from one invocation reading the whole
+// template rather than from several invocations over the same entry — a
+// distinction the message alone cannot express.
 //
 // It does not run in parallel: it replaces a package-level declaration.
-func TestTheArtifactPillarDiagnosticCountAndWordingOnBothReadings(t *testing.T) {
+func TestTheArtifactPillarDiagnosticNamesEveryOffendingReference(t *testing.T) {
 	recorded := recordArtifactPillarInvocations(t)
 
 	hostArtifacts := func() types.OrderedMap[types.ArtifactEntry] {
@@ -604,48 +628,32 @@ func TestTheArtifactPillarDiagnosticCountAndWordingOnBothReadings(t *testing.T) 
 	}
 	feature := artifactSet([2]string{invocationFeatureEntry, invocationFeatureBody})
 
-	// The reading the pre-check gives. The presentation a declared value reads is
-	// absent, so no declared value contributes a subject on any carrier of this
-	// build; the column is taken on the node's own path so the two differ in the
-	// reading and in nothing else.
-	before := monitoringFeatureInput(t)
-	_, errBefore := renderer.RenderAll(context.Background(), before, invocationLookup(hostArtifacts(), feature), testHelmFactory(t))
-	if errBefore == nil {
-		t.Fatal("the pre-check admitted a template naming two undeclared pillars")
-	}
-	if !errors.Is(errBefore, renderer.ErrArtifactPillarNotDeclared()) {
-		t.Fatalf("the pre-check's halt does not carry the undeclared-pillar condition: %+v", errBefore)
-	}
-
-	// The reading the declared rule gives, over the same Recipe and the same text.
-	after := invocationInput(t)
-	_, errAfter := renderer.RenderAll(context.Background(), after, invocationLookup(hostArtifacts(), feature), testHelmFactory(t))
-	if errAfter == nil {
+	// The reading the declared rule gives, taken on the node's own path so the
+	// entry, the Recipe and the template text are all the ones a reader can look up.
+	input := invocationInput(t)
+	_, err := renderer.RenderAll(context.Background(), input, invocationLookup(hostArtifacts(), feature), testHelmFactory(t))
+	if err == nil {
 		t.Fatal("the declared rule admitted a template naming two undeclared pillars")
 	}
-	if !errors.Is(errAfter, renderer.ErrArtifactPillarNotDeclared()) {
-		t.Fatalf("the rule's halt does not carry the undeclared-pillar condition: %+v", errAfter)
+	if !errors.Is(err, renderer.ErrArtifactPillarNotDeclared()) {
+		t.Fatalf("the rule's halt does not carry the undeclared-pillar condition: %+v", err)
 	}
 
-	// The pre-check names ONE reference: it returns on the first it reaches.
-	msgBefore := cerrors.CauseChain(errBefore)
-	if !strings.Contains(msgBefore, `".source.chart"`) {
-		t.Errorf("the pre-check's halt does not name the first offending reference.\nfull halt: %s", msgBefore)
-	}
-	if strings.Contains(msgBefore, `".source.repository"`) {
-		t.Errorf("the pre-check's halt names the SECOND offending reference; it is documented as returning on the first.\n"+
-			"full halt: %s", msgBefore)
-	}
-
-	// The rule names BOTH, which is its stated improvement over the reading beside
-	// it and the whole of the accepted diagnostic-count change.
-	msgAfter := cerrors.CauseChain(errAfter)
+	// The rule names BOTH references, which is its stated improvement over the
+	// reading it replaced and the whole of the accepted diagnostic-count change.
+	msg := cerrors.CauseChain(err)
 	for _, want := range []string{`".source.chart"`, `".source.repository"`} {
-		if !strings.Contains(msgAfter, want) {
+		if !strings.Contains(msg, want) {
 			t.Errorf("the rule's halt does not name %s.\n"+
 				"INVARIANT: the rule reports EVERY offending reference in one template rather than the first.\n"+
-				"full halt: %s", want, msgAfter)
+				"full halt: %s", want, msg)
 		}
+	}
+
+	// And the wording the deleted arms produced is absent, so the halt is the
+	// declared rule's rather than a reinstated second reading of the same input.
+	if strings.Contains(msg, "but Recipe declares no source:") {
+		t.Errorf("the halt carries the deleted pillar arm's wording.\nfull halt: %s", msg)
 	}
 
 	// And the rule was invoked exactly once for the entry, raising two findings from
@@ -664,8 +672,6 @@ func TestTheArtifactPillarDiagnosticCountAndWordingOnBothReadings(t *testing.T) 
 			invocations, invocationOffendingEntry)
 	}
 
-	t.Logf("DIAGNOSTIC WALK — ArtifactPillarDeclared, one entry naming two undeclared pillars.\n"+
-		"  BEFORE (pre-check, where no presentation was published): 1 reference named\n    %s\n"+
-		"  AFTER  (declared rule, node's own Recipe): 2 references named\n    %s",
-		msgBefore, msgAfter)
+	t.Logf("DIAGNOSTIC WALK — ArtifactPillarDeclared, one entry naming two undeclared pillars, "+
+		"node's own Recipe: 2 references named\n    %s", msg)
 }
