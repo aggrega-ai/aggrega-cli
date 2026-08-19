@@ -504,8 +504,15 @@ func RunOnNodeMechanisms[V View](
 // name under one, a mount path under another — so it is one of the two coordinates
 // that can carry the dialect's separator. A key that does carries it as ONE
 // authored key, which the dialect cannot address, so the locator names the
-// mechanism's block and the key reaches the author as the subject's coordinate and
-// as the detail a rule raises with.
+// mechanism's block and stops. The key still reaches the author, as the subject's
+// coordinate and as a value a rule over this kind has to raise: a locator naming
+// the block is a position an author can follow, and the key is what says which
+// entry inside it. Which of a rule's values carries a caption and which stands
+// bare is in [DetailValue].
+//
+// A rule raises the key whether or not this particular one carries the separator,
+// because the rule cannot see which case it is in and a reader told the same thing
+// twice is better served than one told it never.
 func RunOnNodeMechanismDeliveryKeys[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -655,6 +662,36 @@ func pillarNesting(pillar string) (scopeNesting, bool) {
 // did not mention. Recovering that afterwards would mean re-running the
 // precedence over the documents, which is a second answer to a question already
 // answered.
+//
+// # A composed component key costs the locator every segment under it
+//
+// One of the shapes above spells the component with a key a deployment wrote,
+// and a deployment addresses a component a composition contributed by the
+// qualified identifier the composition gave it — which carries the separator the
+// locator dialect divides its segments with. The dialect cannot address such a
+// key, so the locator stops at the components block and gives up that segment
+// and every segment after it: the attachment, the pillar and the leaf go with
+// it, however ordinary each of those is on its own. The other two shapes lose
+// nothing — a component's own block is keyed by the short name its own document
+// wrote, and an entry written scope-wide names no component at all.
+//
+// So a rule over this kind names the attachment, the pillar and the leaf in its
+// detail, captioned, because on that shape the locator carries none of them and
+// the block alone cannot say which entry under it is at fault. It names them
+// whether or not this particular component key carries the separator: the rule
+// cannot see which case it is in, and a reader told the same thing twice is
+// better served than one told it never. Which of a rule's values carries a
+// caption is in [DetailValue].
+//
+// The component key itself is not among what a rule can name here. It is not a
+// coordinate this kind carries — the coordinates are the node, the attachment,
+// the pillar and the leaf — and a kind exposes one accessor per coordinate and
+// no more, so the authored key the entry sits under is read as a fact keyed by
+// those coordinates or not at all.
+//
+// What a rule does name is a requirement on the rule and not something the
+// framework supplies. What a rule's registered wording already names is the
+// rule's own, so which of its values still needs saying is too.
 func RunOnNodeAttachmentPillarLeaves[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -860,10 +897,17 @@ func RunOnBoundaryAttachmentPipelineSteps[V View](
 //
 // An output name is a filename, so on this axis the name ordinarily carries the
 // dialect's separator — and it carries it as ONE authored key, which the dialect
-// cannot address. The locator then names the artifacts block and stops, so a rule
-// over this kind names the entry in its detail: the block says where to look and
-// only the detail can say which entry inside it, since the position is a path and
-// a filename is a name.
+// cannot address. The locator then names the artifacts block and stops, which is
+// what a rule over this kind has to make up for: it names the artifact in its
+// detail, because the block says where to look and only the detail can say which
+// artifact inside it, since the position is a path and a filename is a name. It
+// names it CAPTIONED, because a filename standing bare beside another quoted
+// value is not something a reader can tell apart from it — see [DetailValue] for
+// which of a rule's values carries a caption.
+//
+// That is a requirement on the rule and not something the framework can supply.
+// What a rule's registered wording already names is the rule's own, so which of
+// its values still needs saying is too.
 func RunOnNodeArtifacts[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,

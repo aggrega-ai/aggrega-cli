@@ -18,16 +18,77 @@ import (
 // provenance the framework supplied.
 //
 // Every field is unexported and there is no exported constructor: the only way
-// to produce a populated Objection is [Subject.Raise], and a Subject comes
-// only from this package. The zero value is constructible, as it is for any Go
-// struct, and carries no sentinel and no provenance — [Objection.Sentinel]
-// returns nil for it, which is how a reader tells it apart from a raised
-// objection.
+// to produce a populated Objection is [Subject.Raise] or [Subject.RaiseWith],
+// and a Subject comes only from this package. The zero value is constructible,
+// as it is for any Go struct, and carries no sentinel and no provenance —
+// [Objection.Sentinel] returns nil for it, which is how a reader tells it apart
+// from a raised objection.
 type Objection struct {
 	sentinel error
 	file     string
 	locator  string
-	detail   []string
+	detail   []DetailValue
+}
+
+// DetailValue is one value a check supplied, and the caption naming what that
+// value is.
+//
+// A caption exists because a rule's registered text is one static string and
+// names one thing. The value that thing refers to needs no caption: the
+// sentence has already said what it is, and a caption would repeat the
+// sentence. Every further value the rule supplies is something the sentence does
+// not name, and a reader handed two bare quoted strings has no way to tell which
+// is which — an artifact's output name and a configuration pillar reference are
+// both filenames or both dotted words, and the rule is the only thing that knows
+// which is which.
+//
+// So the convention a rule authors against is: leave bare the value the
+// registered text already names, and caption every other one. Build the two
+// forms with [Uncaptioned] and [Captioned] and raise them with
+// [Subject.RaiseWith].
+//
+// A caption is the rule's own word for what it holds, so it is written in the
+// vocabulary the author of the offending document reads — the key they typed,
+// the block they wrote it in — and never a name for something only the compiler
+// can see.
+//
+// Its fields are unexported and there is no literal form, so a value reaches a
+// message only through one of the two constructors. That is the same seal the
+// objection itself carries, for the same reason: the shape a diagnostic is
+// rendered from is this package's to decide.
+type DetailValue struct {
+	caption string
+	value   string
+}
+
+// Uncaptioned is the detail value a rule's registered text already names, which
+// is why it carries no caption.
+func Uncaptioned(value string) DetailValue {
+	return DetailValue{value: value}
+}
+
+// Captioned is a detail value the rule's registered text does not name, carrying
+// the caption that says what it is.
+//
+// caption is prose and not a key: it is read as part of a sentence, so it is
+// spelled as the words that precede the value rather than as an identifier with
+// a separator in it.
+func Captioned(caption, value string) DetailValue {
+	return DetailValue{caption: caption, value: value}
+}
+
+// render spells one detail value as a message reads it: the quoted value, with
+// the caption ahead of it where the rule supplied one.
+//
+// The value is quoted whether or not it is captioned, which keeps a value
+// carrying a space or a comma readable as one value and makes a value the check
+// supplied empty visible instead of vanishing into the separator.
+func (d DetailValue) render() string {
+	quoted := fmt.Sprintf("%q", d.value)
+	if d.caption == "" {
+		return quoted
+	}
+	return d.caption + " " + quoted
 }
 
 // Sentinel returns the sentinel naming the rule the check enforces. It is nil
@@ -46,12 +107,22 @@ func (o Objection) Locator() string { return o.locator }
 // Detail returns the check's detail values in the order the check supplied
 // them. The result is a copy, so a caller cannot reach back into the
 // objection, and it is nil when the check supplied no detail.
+//
+// It carries the values and not their captions. A caption says how a value reads
+// inside a sentence, which is a question only the rendered message asks: every
+// boundary that reads an objection structurally reads the sentinel to know which
+// rule spoke and the provenance to know where, and takes the wording whole from
+// [ObjectionMessage]. So a caption accessor would have no reader, and a field no
+// reader consumes is one nothing keeps honest. A boundary that comes to need the
+// captions separately is the point at which to expose them, against that reader.
 func (o Objection) Detail() []string {
 	if len(o.detail) == 0 {
 		return nil
 	}
-	out := make([]string, len(o.detail))
-	copy(out, o.detail)
+	out := make([]string, 0, len(o.detail))
+	for _, d := range o.detail {
+		out = append(out, d.value)
+	}
 	return out
 }
 
@@ -75,24 +146,33 @@ func (o Objection) Detail() []string {
 // only that text would drop the very thing an author has to act on.
 //
 // The values are rendered rather than described, because this reads every rule
-// and knows none of them: a check's detail is an ordered list of strings whose
+// and knows none of them: a check's detail is an ordered list of values whose
 // meaning is the rule's, so any attempt here to caption them would be one
 // renderer holding a copy of every rule's grammar. Each is quoted, which keeps
 // a value carrying a space or a comma readable as one value and makes a value
 // the check supplied empty visible instead of vanishing into the separator.
+//
+// That refusal stands, and it is what fixes where a caption comes from rather
+// than whether there is one. A caption travels with the value the rule supplied,
+// so the grammar stays with the rule and what is held here is only the
+// convention it is spelled by: a captioned value reads as its caption then the
+// quoted value, an uncaptioned one as the quoted value alone, and the two mix
+// freely in one message because a rule ordinarily has exactly one value its
+// registered text already names. See [DetailValue] for which of a rule's values
+// carries a caption and which does not. A rule that captions nothing renders
+// from the quoted values alone, so the convention costs such a rule nothing.
 //
 // A check that supplied no detail gets the registered wording alone, so a rule
 // whose identity says the whole of it reads as a sentence rather than as one
 // with an empty parenthesis after it.
 func ObjectionMessage(o Objection) string {
 	registered := o.Sentinel().Error()
-	detail := o.Detail()
-	if len(detail) == 0 {
+	if len(o.detail) == 0 {
 		return registered
 	}
-	quoted := make([]string, 0, len(detail))
-	for _, d := range detail {
-		quoted = append(quoted, fmt.Sprintf("%q", d))
+	rendered := make([]string, 0, len(o.detail))
+	for _, d := range o.detail {
+		rendered = append(rendered, d.render())
 	}
-	return registered + " (" + strings.Join(quoted, ", ") + ")"
+	return registered + " (" + strings.Join(rendered, ", ") + ")"
 }

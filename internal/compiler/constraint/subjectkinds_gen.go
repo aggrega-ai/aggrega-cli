@@ -88,7 +88,7 @@ const (
 	// SubjectModule is the subject kind module, keyed by 1 declared fact.
 	SubjectModule SubjectKind = "module"
 
-	// SubjectNodeAttachmentPillarLeaf is the subject kind (node, attachment, pillar, leaf), keyed by 1 declared fact.
+	// SubjectNodeAttachmentPillarLeaf is the subject kind (node, attachment, pillar, leaf), keyed by 2 declared facts.
 	SubjectNodeAttachmentPillarLeaf SubjectKind = "(node, attachment, pillar, leaf)"
 
 	// SubjectNodePipelineStep is the subject kind (node, pipeline-step), keyed by 4 declared facts.

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
@@ -207,4 +209,120 @@ func TestGraphPresentationAnswersARuleFromTheCompiledGraph(t *testing.T) {
 			t.Errorf("conversion invented %d violation(s) from nothing raised", len(converted))
 		}
 	})
+}
+
+// componentKeysIn collects every key of every `components` mapping a document
+// holds, at any nesting depth.
+//
+// It treats each key as one whole key and never splits it, which is the point: a
+// component key may itself contain the character a position divides its segments
+// with, so any instrument that walks a dotted path cannot ask whether such a key
+// exists. This asks the document directly.
+func componentKeysIn(t *testing.T, path string) map[string]bool {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+
+	out := map[string]bool{}
+	var walk func(node any, underComponents bool)
+	walk = func(node any, underComponents bool) {
+		mapping, isMapping := node.(map[string]any)
+		if !isMapping {
+			return
+		}
+		for key, value := range mapping {
+			if underComponents {
+				out[key] = true
+			}
+			walk(value, key == "components")
+		}
+	}
+	walk(doc, false)
+	return out
+}
+
+// TestGraphPresentationAnswersTheAuthoredComponentOfAnAttachmentLeaf is the
+// invocation proof for the per-leaf authored-component fact.
+//
+// It exists because the rule that reads this fact is proved against a double, and
+// a double proves the rule rather than the presentation: the fact is answered from
+// a projection the fold produces, which no double can be wrong about. So this
+// compiles a real workspace, takes the presentation the pipeline itself built, and
+// invokes the accessor at every coordinate the framework's own traversal reaches.
+//
+// The deployment is the one nesting components under boundaries and also attaching
+// a feature to a boundary itself, so both answers occur in one compilation: an
+// entry keyed under a component, and an entry keyed under none. A fixture carrying
+// only the first would pass an accessor that returned the node's identifier
+// unconditionally, which is the defect this fact exists instead of.
+func TestGraphPresentationAnswersTheAuthoredComponentOfAnAttachmentLeaf(t *testing.T) {
+	out, catalogLookup := compileWorkspace(t, workspaceFixture{
+		aggregatePath: locatorAggregatePath,
+		releasePath:   locatorBoundariedReleasePath,
+		manifestPath:  invocationManifestPath,
+		catalogPath:   invocationCatalogPath,
+	}, bytesOf(t, locatorAggregatePath))
+	coordinates := coordinatesOf(t, out, catalogLookup)
+
+	authored := componentKeysIn(t, locatorBoundariedReleasePath)
+	if len(authored) == 0 {
+		t.Fatal("the deployment document holds no component key at all, so every membership check below " +
+			"would fail for a reason that has nothing to do with the fact under proof")
+	}
+
+	var named, unnamed int
+	_, err := constraint.RunOnNodeAttachmentPillarLeaves(
+		nil,
+		coordinates, coordinates, coordinates, coordinates,
+		out.GraphView,
+		constraint.Check[constraint.GraphView, constraint.NodeAttachmentPillarLeafSubject]{
+			Sentinel: analyzer.ErrOverriddenAnnotation(),
+			Severity: constraint.SeverityWarning,
+			Run: func(v constraint.GraphView, s constraint.NodeAttachmentPillarLeafSubject) []constraint.Objection {
+				component := v.PerLeafAttachmentAuthoredComponent(
+					s.NodeID(), s.AttachmentName(), s.PillarName(), s.LeafName(),
+				)
+				if component == "" {
+					unnamed++
+					return nil
+				}
+				named++
+				if !authored[component] {
+					t.Errorf("the presentation answers component %q for the leaf at %s, and the deployment "+
+						"holds no component under that key.\n"+
+						"INVARIANT: this fact names the key an author can edit, so it is a key the document contains.\n"+
+						"CONSEQUENCE: a reader sent to a component nobody wrote is worse served than one sent nowhere, "+
+						"because the position looks followable and is not.",
+						component, s.Locator())
+				}
+				return nil
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("the traversal returned %v over a walk nothing cancelled", err)
+	}
+
+	// Both counts are required non-zero, and neither is incidental. With no named
+	// leaf the membership assertion above never ran; with no unnamed leaf the
+	// proof could not tell this accessor from one that answers every leaf with
+	// something, which is the shape that invents a component on a boundary-wide
+	// entry.
+	if named == 0 {
+		t.Errorf("the presentation named a component for none of the leaves it was asked about; the " +
+			"membership assertion never ran, so its silence means nothing")
+	}
+	if unnamed == 0 {
+		t.Errorf("every leaf was answered with a component, so this compilation cannot distinguish the " +
+			"fact from one that answers unconditionally — yet the deployment attaches a feature to a " +
+			"boundary itself, which names no component")
+	}
+	t.Logf("%d leaf/leaves keyed under a component, %d written scope-wide", named, unnamed)
 }

@@ -102,6 +102,27 @@ type AttachmentLeafKey struct {
 // order anything is emitted in.
 type AttachmentSites map[AttachmentLeafKey]constraint.AuthoredSite
 
+// siteOf is the site recorded for one attachment leaf, and the zero site when
+// the projection holds none for it.
+//
+// Every reader addresses the projection through here rather than composing the
+// key where it reads. The key is a composite, and a field added to it is
+// silently defaulted in whatever keyed literal does not set it — so a second
+// reader spelling its own key would go on compiling while addressing a
+// different entry than the projection wrote. The projection's own writer still
+// composes a key, because it defines the mapping rather than consulting it.
+//
+// The zero site is a real answer and not a lookup failure: it names no scope
+// and no component, which is what a leaf outside the projection has to read as.
+func (s AttachmentSites) siteOf(node, attachment, pillar, leaf string) constraint.AuthoredSite {
+	return s[AttachmentLeafKey{
+		Node:       node,
+		Attachment: attachment,
+		Pillar:     pillar,
+		Leaf:       leaf,
+	}]
+}
+
 // BuildIR executes Step 3 of the compiler pipeline: graph finalization.
 //
 // Steps performed (numbered to match the body's section comments):

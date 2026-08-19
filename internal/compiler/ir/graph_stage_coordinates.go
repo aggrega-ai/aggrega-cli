@@ -303,12 +303,7 @@ func (c *GraphStageCoordinates) AttachmentPillarLeaves(
 	for _, name := range names {
 		out = append(out, constraint.AttachmentLeaf{
 			Value: name,
-			Site: c.sites[AttachmentLeafKey{
-				Node:       node,
-				Attachment: attachment,
-				Pillar:     pillar,
-				Leaf:       name,
-			}],
+			Site:  c.sites.siteOf(node, attachment, pillar, name),
 		})
 	}
 	return out

@@ -185,11 +185,22 @@ var ArtifactCrossBoundaryLinkPlaceholderResolved = constraint.Check[
 // wiring the same key through two dependencies is told about both rather than
 // about whichever sorted first.
 //
-// Its detail names the socket alone. The locator already names the mechanism
-// and the key, because the subject stands for the entry the author wrote at
-// that position; the socket belongs to a different entry the locator does not
-// reach, so naming it is what makes the objection point at the second
-// declaration as well as the first.
+// Its detail names the delivery key and the socket. The key stands bare, because
+// the registered wording already says a duplicated delivery key is what the
+// finding is about; the socket is captioned, since a socket name and a delivery
+// key are both bare words and nothing else in the message tells them apart.
+//
+// Both are needed, and for different reasons. The socket belongs to a different
+// entry from the one the objection is attributed to, so naming it is what makes
+// the finding point at the second declaration as well as the first. The key is
+// there because the locator cannot always carry it: what a key spells is the
+// mechanism's own business, and a mechanism delivering into a file names a mount
+// path, which carries the separator the locator dialect divides its segments
+// with. A locator stops at the deepest segment it can address, so for such a key
+// it names the mechanism's block and the detail is the only thing that says which
+// key inside it. A key that happens to be one bare word does reach the locator,
+// and the detail naming it as well costs nothing: a reader is told the same thing
+// twice rather than left to find out which case they are in.
 var SelfInjectKeyNotDeliveredByAnEdge = constraint.Check[
 	constraint.GraphView,
 	constraint.NodeMechanismDeliveryKeySubject,
@@ -206,7 +217,11 @@ var SelfInjectKeyNotDeliveredByAnEdge = constraint.Check[
 		}
 		out := make([]constraint.Objection, 0, len(sockets))
 		for _, socket := range sockets {
-			out = append(out, s.Raise(ErrSelfInjectKeyCollision(), socket))
+			out = append(out, s.RaiseWith(
+				ErrSelfInjectKeyCollision(),
+				constraint.Uncaptioned(s.DeliveryKey()),
+				constraint.Captioned("socket", socket),
+			))
 		}
 		return out
 	},
@@ -350,10 +365,21 @@ func recipeSourceDeclared(recipe *types.Recipe) bool {
 // hand-written form reports it because it is the path that runs, and the entry
 // would otherwise reach evaluation with no diagnostic at all.
 //
-// Its detail names the offending expression, and only that. The locator names
-// the artifact entry inside the Recipe's own file — which is the position the
-// author edits — so the expression is what inside that entry has to change. The
-// node is a coordinate the subject carries and the locator does not, and it is
+// Its detail names the offending expression and the artifact that holds it. The
+// expression stands bare, because the registered wording already says a pillar
+// reference is what the finding is about; the artifact is captioned, because an
+// output name is a filename and a filename beside a dotted reference is two
+// quoted strings a reader cannot tell apart.
+//
+// Naming the artifact is what makes the finding actionable, and the locator is
+// why. An artifact's output name is a filename, so it carries the separator the
+// locator dialect divides its segments with, and a locator stops at the deepest
+// segment it can address rather than spelling a path that resolves nowhere: it
+// names the artifacts block in the Recipe's own file. That is the block the author
+// edits, and the detail is the only thing that can say which artifact inside it —
+// which matters most in a Recipe that declares many.
+//
+// The node is a coordinate the subject carries and the locator does not, and it is
 // deliberately left out of the detail: the fault is in the Recipe's text rather
 // than in any one node that binds it, so naming a node would point an author at
 // an instance when the edit is in the entry every instance shares.
@@ -384,7 +410,11 @@ var ArtifactPillarDeclared = constraint.Check[
 			default:
 				continue
 			}
-			out = append(out, s.Raise(ErrArtifactPillarNotDeclared(), ref))
+			out = append(out, s.RaiseWith(
+				ErrArtifactPillarNotDeclared(),
+				constraint.Uncaptioned(ref),
+				constraint.Captioned("artifact", s.ArtifactName()),
+			))
 		}
 		return out
 	},

@@ -1763,6 +1763,36 @@ type GraphView interface {
 	// types.IRFeatureEntry.ValuesProvenance.
 	PerLeafAttachmentProvenance(node string, attachment string, pillar string, leaf string) LeafProvenance
 
+	// PerLeafAttachmentAuthoredComponent is the component key the entry that
+	// supplied one leaf of an attachment's configuration was written under,
+	// empty when that entry was written scope-wide and names no component at
+	// all.
+	//
+	// The emptiness is the answer rather than a missing value. A scope-wide
+	// entry takes effect on every component the scope holds and none of those
+	// is a place anyone can edit, so the one editable site is the scope's own
+	// block, which names no component; a reader handed a component name there
+	// would be pointed at one of the many places the entry takes effect
+	// instead of the one place it was written.
+	//
+	// It is a separate fact from the leaf's provenance rather than a field on
+	// it. The provenance record answers where a value came from, and it is one
+	// fact because the displaced side and the displacing side are only visible
+	// together. Where the entry sits in its document is a different question,
+	// asked by a reader who already has the answer to the first and needs
+	// somewhere to send an author.
+	//
+	// The spelling is the document's own and never one naming rule applied to
+	// every surface. A deployment addresses a component a composition
+	// contributed by the qualified identifier the composition gave it, while
+	// the application's own scope tree keys that same component by the short
+	// name it was declared under, so one component is spelled two ways across
+	// the two surfaces and this names whichever spelling the document that
+	// supplied the leaf used.
+	//
+	// Keyed by (node, attachment, pillar, leaf); read from ir.AttachmentSites.
+	PerLeafAttachmentAuthoredComponent(node string, attachment string, pillar string, leaf string) string
+
 	// NodeLabels is the label set a node carries once every contributing
 	// surface has been folded, in author order.
 	//

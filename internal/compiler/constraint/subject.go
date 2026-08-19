@@ -39,6 +39,11 @@ type Subject interface {
 	// sentinel and the check's detail.
 	Raise(sentinel error, detail ...string) Objection
 
+	// RaiseWith is Raise for a rule supplying a value its registered text
+	// does not name, so at least one of its detail values carries a
+	// caption saying what it is. See [DetailValue].
+	RaiseWith(sentinel error, detail ...DetailValue) Objection
+
 	// RaiseAt produces an Objection attributed to the element leaf names
 	// inside this subject, carrying sentinel, leaf as the first detail
 	// value, and the check's remaining detail after it.
@@ -84,10 +89,33 @@ func newProvenance(sourceFile string, segments ...string) provenance {
 	}
 }
 
+// Raise and RaiseWith are two signatures over one construction, and both parts
+// of that are deliberate.
+//
+// The construction is single: Raise widens its values and hands them here, so
+// there is one place an objection's fields are populated and the two forms cannot
+// come to disagree about what raising means.
+//
+// The signatures stay two, which is the part a later reading is likely to want to
+// "unify" — folding Raise away so every rule wrapped its values. The rendered
+// message is identical either way, so no reported behaviour turns on the choice,
+// and the great majority of rules raise exactly the one value their registered
+// text names: a wrapper on those is ceremony that says nothing, at every call
+// site, forever. So the narrow form is kept for the ordinary case and the wide
+// one is reached for only when a rule has something to caption. Widening Raise
+// into the wide form is a change with a cost and no reader-visible benefit.
 func (p provenance) Raise(sentinel error, detail ...string) Objection {
+	values := make([]DetailValue, 0, len(detail))
+	for _, d := range detail {
+		values = append(values, Uncaptioned(d))
+	}
+	return p.RaiseWith(sentinel, values...)
+}
+
+func (p provenance) RaiseWith(sentinel error, detail ...DetailValue) Objection {
 	o := Objection{sentinel: sentinel, file: p.file, locator: p.locator}
 	if len(detail) > 0 {
-		o.detail = make([]string, len(detail))
+		o.detail = make([]DetailValue, len(detail))
 		copy(o.detail, detail)
 	}
 	return o

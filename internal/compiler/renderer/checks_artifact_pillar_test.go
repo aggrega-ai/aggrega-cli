@@ -141,6 +141,13 @@ var artifactPillarNodes = []struct {
 	// records — and the comparison below tests presence rather than multiplicity,
 	// so a pooled expectation could not see a node that objected when it should
 	// have been silent. Per node, silence is checkable.
+	//
+	// The detail's second value is the same artifact, and the repetition is the
+	// assertion rather than an accident of the format: the record's leading field
+	// is the framework's attribution, taken from the subject the rule was invoked
+	// with, while the detail is what the RULE said. A rule naming some other
+	// artifact — or naming none — produces a record whose two halves disagree,
+	// which no comparison over the rule's detail alone could see.
 	objections []string
 }{
 	{
@@ -149,12 +156,12 @@ var artifactPillarNodes = []struct {
 		// — which is what states that the value reports every offending reference
 		// rather than stopping at the first.
 		objections: []string{
-			"reads-workload.yaml|recipes/app.yaml|.spec.artifacts|.workload",
-			"reads-workload-leaf.yaml|recipes/app.yaml|.spec.artifacts|.workload.containers",
-			"reads-source.yaml|recipes/app.yaml|.spec.artifacts|.source",
-			"reads-source-leaf.yaml|recipes/app.yaml|.spec.artifacts|.source.version",
-			"reads-both.yaml|recipes/app.yaml|.spec.artifacts|.source",
-			"reads-both.yaml|recipes/app.yaml|.spec.artifacts|.workload",
+			"reads-workload.yaml|recipes/app.yaml|.spec.artifacts|.workload,reads-workload.yaml",
+			"reads-workload-leaf.yaml|recipes/app.yaml|.spec.artifacts|.workload.containers,reads-workload-leaf.yaml",
+			"reads-source.yaml|recipes/app.yaml|.spec.artifacts|.source,reads-source.yaml",
+			"reads-source-leaf.yaml|recipes/app.yaml|.spec.artifacts|.source.version,reads-source-leaf.yaml",
+			"reads-both.yaml|recipes/app.yaml|.spec.artifacts|.source,reads-both.yaml",
+			"reads-both.yaml|recipes/app.yaml|.spec.artifacts|.workload,reads-both.yaml",
 		},
 	},
 	{
@@ -170,7 +177,7 @@ var artifactPillarNodes = []struct {
 		// usual-pair bodies are opaque text and only the body written in the
 		// alternate pair is read at all.
 		objections: []string{
-			"alternate-pair-read.yaml|recipes/app.yaml|.spec.artifacts|.workload",
+			"alternate-pair-read.yaml|recipes/app.yaml|.spec.artifacts|.workload,alternate-pair-read.yaml",
 		},
 	},
 }
@@ -568,4 +575,71 @@ func countingArtifactCheck[S constraint.Subject](
 			return declared.Run(v, s)
 		},
 	}
+}
+
+// TestTheArtifactPillarFindingNamesWhichArtifactItIsAbout reads the whole message
+// an author is handed, rather than the values inside it.
+//
+// The rule names two values and they are the same shape: an output name is a
+// filename and a pillar reference is a dotted word, so rendered as two bare quoted
+// strings side by side there is nothing in the message that says which is which.
+// Reading each value out separately passes on exactly that message, which is why
+// this asserts the caption and the punctuation around it.
+//
+// It is also what the position cannot supply. An output name carries the separator
+// the locator dialect divides its segments with, and it carries it as one authored
+// key — so the locator names the artifacts block and stops, and in a Recipe
+// declaring twenty entries the block is where the author already was.
+func TestTheArtifactPillarFindingNamesWhichArtifactItIsAbout(t *testing.T) {
+	t.Parallel()
+
+	const entry = "policy.yaml"
+
+	fixture := artifactSiteFixture{
+		nodes: []constraint.NodeInstance{{
+			ID: "web", SourceFile: "aggregate.yaml", AuthoredName: "web",
+			SubsystemPath: "default", SynthesizedSubsystem: true,
+		}},
+		artifacts: map[string][]constraint.AuthoredCoordinate{
+			factKey("web"): {{Value: entry, SourceFile: "recipes/app.yaml"}},
+		},
+	}
+	stub := artifactPillarFactStub{
+		text:            map[string]string{factKey("web", entry): `image: {{ .workload }}`},
+		delimiters:      map[string]constraint.ArtifactTemplateDelimiters{factKey("web"): {Left: "{{", Right: "}}"}},
+		workloadPresent: map[string]bool{factKey("web"): false},
+		sourceDeclared:  map[string]bool{factKey("web"): false},
+	}
+
+	raised, err := constraint.RunOnNodeArtifacts(
+		nil, fixture, fixture, constraint.HydratedView(stub), ArtifactPillarDeclared,
+	)
+	if err != nil {
+		t.Fatalf("the traversal returned %v with no cancellation signal supplied; want no error", err)
+	}
+	if len(raised) != 1 {
+		t.Fatalf("the rule raised %d objection(s) over one offending entry; want 1 — with none "+
+			"there is nothing below to read", len(raised))
+	}
+	o := raised[0]
+
+	if want := ".spec.artifacts"; o.Locator() != want {
+		t.Fatalf("the finding is positioned at %q; want %q — an output name is one authored key "+
+			"carrying the separator, so the dialect names the block instead. The assertion below "+
+			"is only load-bearing while this holds.", o.Locator(), want)
+	}
+	if got, want := o.SourceFile(), "recipes/app.yaml"; got != want {
+		t.Errorf("the finding names document %q; want %q — the block is in the Recipe's own file, "+
+			"not in the Aggregate the node was authored in", got, want)
+	}
+
+	message := constraint.ObjectionMessage(o)
+	want := ErrArtifactPillarNotDeclared().Error() + ` (".workload", artifact "` + entry + `")`
+	if message != want {
+		t.Errorf("the finding reads\n  %s\nwant\n  %s\n"+
+			"INVARIANT: the registered wording names the pillar reference, so that value stands "+
+			"bare and the artifact says what it is.\nCONSEQUENCE: two bare quoted values leave an "+
+			"author unable to tell the reference from the filename.", message, want)
+	}
+	t.Logf("the finding an author reads: %s at %s: %s", o.SourceFile(), o.Locator(), message)
 }

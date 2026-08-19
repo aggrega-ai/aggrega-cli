@@ -396,6 +396,52 @@ var RequiredAttachmentSlotBound = constraint.Check[
 // whether or not the two would have produced different output. The per-leaf
 // merge overwrites the suppressed value, so no comparison is available to make
 // and the provenance record is the whole of the actionable signal.
+//
+// # What the detail names, and why the coordinates are in it
+//
+// The suppressed annotation stands bare, because the registered wording already
+// says an overridden annotation contribution is what the finding is about.
+// Everything after it is captioned, since an annotation key, an attachment name
+// and a configuration key are bare or dotted words alike: raised bare they arrive
+// as a row of quoted strings with nothing saying which is which.
+//
+// The coordinates are there because a locator cannot always carry them. A
+// deployment addresses a component a composition contributed by the qualified
+// identifier the composition gave it, and a deployment's attachment names admit
+// the separator the locator dialect divides its segments with — so on those
+// surfaces the position stops at the block above the offending key and gives up
+// everything written under it at once. Naming what it gave up is what turns a
+// finding about a block into a finding about a key. They are named whether or not
+// the position actually gave them up: the rule cannot see which case it is in,
+// and a reader told the same thing twice is better served than one told it never.
+//
+// # What the rule names, and what it leaves to the position
+//
+// The component key is not a coordinate this rule is invoked at, so it is read as
+// a declared fact rather than off the subject. The distinction is not procedural:
+// the authored key an entry sits under is a different value from the node's
+// identifier wherever the two surfaces spell one component differently, so a rule
+// substituting the identifier would name a component that is not the editable
+// site — and on an entry written scope-wide it would name one where the author
+// wrote none. It is therefore raised only where the entry has one, which is what
+// keeps a scope-wide finding from acquiring a component it never had.
+//
+// With that fact read, the finding names every coordinate a position can give up.
+// A deployment's boundary names and an application's scope and component names
+// admit no separator, so a position truncated at all is truncated at the
+// components block or at the attachments block, and the component, the
+// attachment, the pillar and the key are exactly what lies below those two. So
+// what remains unnamed is nothing: a reader is handed either a whole position or
+// a truncated one plus every coordinate under it.
+//
+// The annotation's own site comes last, after the coordinates rather than among
+// them. It is a whole position in itself and the longest value the finding
+// carries, so a reader scanning for the short coordinates would have to read past
+// it; and set before them, its caption reads as though the coordinates were where
+// the annotation was declared, which is the one thing they are not. It is not the
+// component key by another name either — it names where the DISPLACED annotation
+// was written, which is the scope it was inherited from whenever it was not
+// written on the component that displaced it.
 var OverriddenAnnotationAdvisory = constraint.Check[
 	constraint.GraphView,
 	constraint.NodeAttachmentPillarLeafSubject,
@@ -412,11 +458,19 @@ var OverriddenAnnotationAdvisory = constraint.Check[
 		if !leaf.DisplacesAnnotation {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(
-			ErrOverriddenAnnotation(),
-			leaf.DisplacedAnnotationKey,
-			leaf.DisplacedAnnotationSource,
-		)}
+		detail := []constraint.DetailValue{constraint.Uncaptioned(leaf.DisplacedAnnotationKey)}
+		if component := v.PerLeafAttachmentAuthoredComponent(
+			s.NodeID(), s.AttachmentName(), s.PillarName(), s.LeafName(),
+		); component != "" {
+			detail = append(detail, constraint.Captioned("component", component))
+		}
+		detail = append(detail,
+			constraint.Captioned("attachment", s.AttachmentName()),
+			constraint.Captioned("pillar", s.PillarName()),
+			constraint.Captioned("key", s.LeafName()),
+			constraint.Captioned("annotation declared at", leaf.DisplacedAnnotationSource),
+		)
+		return []constraint.Objection{s.RaiseWith(ErrOverriddenAnnotation(), detail...)}
 	},
 }
 

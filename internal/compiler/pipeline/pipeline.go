@@ -421,11 +421,12 @@ func runStepsOneToFour(
 		out.AttachmentSites = attachmentSites
 
 		// The presentation of the graph just finalised, extending the one the
-		// flattening produced. Built here because this is where both products are
-		// in hand: a stage's presentation embeds the stage below it rather than
-		// re-reading that stage's inputs, so building it anywhere else would mean
-		// producing a second answer to facts this one already answers.
-		out.GraphView = ir.NewGraphView(graph, topoResult.StageView)
+		// flattening produced. Built here because this is where every product it
+		// takes is in hand — the graph, the presentation below it, and the
+		// per-leaf sites: a stage's presentation embeds the stage below it rather
+		// than re-reading that stage's inputs, so building it anywhere else would
+		// mean producing a second answer to facts this one already answers.
+		out.GraphView = ir.NewGraphView(graph, topoResult.StageView, out.AttachmentSites)
 
 		// The enumeration of the same graph, built beside the presentation
 		// because it reads that presentation for the axes a fact already names.

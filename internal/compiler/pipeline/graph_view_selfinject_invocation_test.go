@@ -249,7 +249,7 @@ func TestTheSelfInjectCollisionRuleIsInvokedOverTheCompiledGraph(t *testing.T) {
 				len(out.Analysis.Errors), projected, out.Analysis.Errors)
 		}
 
-		var sockets []string
+		var sockets, messages []string
 		for i, finding := range out.Analysis.Errors {
 			if !errors.Is(finding.Sentinel, renderer.ErrSelfInjectKeyCollision()) {
 				t.Errorf("finding %d carries %v, want the collision condition", i, finding.Sentinel)
@@ -265,6 +265,7 @@ func TestTheSelfInjectCollisionRuleIsInvokedOverTheCompiledGraph(t *testing.T) {
 				t.Errorf("finding %d names document %q, want %q", i, finding.OriginFile, invocationAggregatePath)
 			}
 			sockets = append(sockets, socketNamedBy(t, finding.Message))
+			messages = append(messages, finding.Message)
 		}
 
 		// The order the findings reach the reader is the order the graph holds the
@@ -278,6 +279,26 @@ func TestTheSelfInjectCollisionRuleIsInvokedOverTheCompiledGraph(t *testing.T) {
 		}
 		if !slices.Equal(sockets, graphOrder) {
 			t.Errorf("findings name sockets %v; the graph holds the connections as %v", sockets, graphOrder)
+		}
+
+		// Each message whole, spelled out from the graph rather than read back out
+		// of the message it checks, so nothing here is compared against itself.
+		//
+		// It is the whole string and not the values in it because the rule names two
+		// and what an author needs is to tell them apart: the delivery key and the
+		// socket are both bare words, so two quoted words side by side read as one
+		// kind of thing and leave a reader unable to act. A check reading each value
+		// out separately passes on exactly that message, which is why the caption
+		// and the punctuation around it are asserted rather than the values alone.
+		wantMessages := make([]string, 0, len(graphOrder))
+		for _, socket := range graphOrder {
+			wantMessages = append(wantMessages,
+				`duplicate delivery key across self-inject and uses-inject `+
+					`("PROJECTED_KEY", socket "`+socket+`")`)
+		}
+		if !slices.Equal(messages, wantMessages) {
+			t.Errorf("the findings read\n  %s\nwant\n  %s",
+				strings.Join(messages, "\n  "), strings.Join(wantMessages, "\n  "))
 		}
 		t.Logf("the compilation reported %d finding(s) at %q in %q, naming sockets %v",
 			len(out.Analysis.Errors), out.Analysis.Errors[0].Field, out.Analysis.Errors[0].OriginFile, sockets)
@@ -446,20 +467,30 @@ func TestTheSelfInjectCollisionRuleIsAskedAboutEveryAuthoredDeliveryKey(t *testi
 // socketNamedBy reads the socket a finding's message quotes.
 //
 // The message is composed from the condition's registered text and the values the
-// rule supplied, each quoted — so the quoted span is the socket and reading it
-// back is how the order the findings arrive in is compared against the graph's.
+// rule supplied, each quoted. The rule supplies two — the delivery key and the
+// socket that also delivers it — so the socket is found by the caption ahead of
+// it rather than by position, and reading it back is how the order the findings
+// arrive in is compared against the graph's.
+//
+// The caption is spelled here rather than read from the rule, deliberately. A
+// helper that took the word from the code it checks would agree with any word the
+// code came to use, including none, and the message reaching an author unlabelled
+// is exactly the failure this reads for.
 func socketNamedBy(t *testing.T, message string) string {
 	t.Helper()
-	open := strings.Index(message, `"`)
-	if open < 0 {
-		t.Fatalf("finding %q quotes no value; it cannot name the connection it collides through", message)
+	const caption = `socket "`
+	at := strings.Index(message, caption)
+	if at < 0 {
+		t.Fatalf("finding %q names no socket; it cannot say which connection it collides through, "+
+			"and an unlabelled value leaves an author unable to tell it from the delivery key "+
+			"quoted beside it", message)
 	}
-	rest := message[open+1:]
-	close := strings.Index(rest, `"`)
-	if close < 0 {
+	rest := message[at+len(caption):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
 		t.Fatalf("finding %q has an unterminated quoted value", message)
 	}
-	return rest[:close]
+	return rest[:end]
 }
 
 // customMechanismCatalog copies the fixture catalog and admits one mechanism

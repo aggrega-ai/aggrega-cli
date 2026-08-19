@@ -9,8 +9,9 @@ import (
 )
 
 // graphView presents the finalised graph to a check as named facts: the label
-// set a node ends up with, what each attachment resolved to and where each leaf
-// of its configuration came from, and what each edge resolved to and delivers.
+// set a node ends up with, what each attachment resolved to, where each leaf of
+// its configuration came from and which component key it was written under, and
+// what each edge resolved to and delivers.
 //
 // It satisfies [constraint.GraphView], and the compiler holds it to that
 // contract at the bottom of this file rather than a comment claiming it.
@@ -29,8 +30,9 @@ import (
 // What this stage adds is what the cascade and the annotation-driven expansion
 // produce, and nothing that was complete before them. An attachment's resolved
 // type is here rather than earlier because a scope above the node can
-// contribute it; a leaf's provenance is here because it records which
-// contribution won.
+// contribute it; a leaf's provenance and the component key it was written under
+// are here for one reason between them, that both record which contribution
+// won.
 //
 // # Values are handed over uncopied
 //
@@ -52,6 +54,13 @@ type graphView struct {
 	// of folded once: an edge set is small beside the node set, and folding it
 	// would hold a second index of what the graph already orders.
 	edges []types.IREdge
+
+	// sites names, per attachment leaf, where the contribution that won it was
+	// written. It is held rather than derived because the graph cannot answer
+	// it: the merged entry keeps the winning value and its origin and never the
+	// contest, so which scope supplied any one leaf is settled while the
+	// cascade folds and is gone once it finishes.
+	sites AttachmentSites
 }
 
 // NewGraphView presents the graph a build has just finalised, with the facts
@@ -60,13 +69,22 @@ type graphView struct {
 // The products are taken rather than reached for, because a view projects facts
 // already produced and never produces one of its own.
 //
-// It returns nil when either product is absent. A presentation missing the
-// graph would answer this stage's facts from nothing, and one missing the
-// earlier presentation would answer every earlier fact from nothing — and a
-// presentation that answers emptily is worse than an absent one, because a rule
-// reading it cannot tell an empty answer from a real one.
-func NewGraphView(graph *types.IRGraph, earlier constraint.TopologyView) constraint.GraphView {
-	if graph == nil || earlier == nil {
+// It returns nil when any product is absent. A presentation missing the graph
+// would answer this stage's facts from nothing, one missing the earlier
+// presentation would answer every earlier fact from nothing, and one missing the
+// per-leaf sites would report every leaf as written where no component is named
+// — and a presentation that answers emptily is worse than an absent one, because
+// a rule reading it cannot tell an empty answer from a real one. The sites are
+// the sharpest case of that: naming no component is itself a real answer, the
+// one a scope-wide entry has, so an absent projection would not read as absent.
+// A projection holding no leaf is a different thing and is accepted, because a
+// build whose attachments configure nothing has no leaf to record.
+func NewGraphView(
+	graph *types.IRGraph,
+	earlier constraint.TopologyView,
+	sites AttachmentSites,
+) constraint.GraphView {
+	if graph == nil || earlier == nil || sites == nil {
 		return nil
 	}
 	return &graphView{
@@ -74,6 +92,7 @@ func NewGraphView(graph *types.IRGraph, earlier constraint.TopologyView) constra
 		nodes:        graph.Spec.Nodes,
 		attachments:  graph.Spec.FeatureValuesMapping,
 		edges:        graph.Spec.Edges,
+		sites:        sites,
 	}
 }
 
@@ -151,6 +170,23 @@ func (v *graphView) PerLeafAttachmentProvenance(
 		out.DisplacedAnnotationSource = prov.OverriddenAnnotation.AnnotationSource
 	}
 	return out
+}
+
+// PerLeafAttachmentAuthoredComponent returns the component key the entry that
+// supplied one leaf of an attachment's configuration was written under, empty
+// when that entry was written scope-wide and names no component at all.
+//
+// A leaf the projection holds no site for reads as naming no component, which is
+// the same answer a scope-wide entry gives. The two collapse deliberately: what
+// a reader does with this value is name a component or name none, and there is
+// nothing it could do with the difference.
+func (v *graphView) PerLeafAttachmentAuthoredComponent(
+	node string,
+	attachment string,
+	pillar string,
+	leaf string,
+) string {
+	return v.sites.siteOf(node, attachment, pillar, leaf).Component
 }
 
 // PerEdgeOriginFeatureType returns the Feature type an edge originated from,
