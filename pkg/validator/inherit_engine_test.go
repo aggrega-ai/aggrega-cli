@@ -48,8 +48,14 @@ func TestResolveInheritance_CycleDetection(t *testing.T) {
 	if !errors.Is(result.Errors[0], ErrCyclicExtension()) {
 		t.Errorf("expected ErrCyclicExtension, got %v", result.Errors[0])
 	}
-	if !strings.Contains(result.Errors[0].Error(), " — ") {
-		t.Errorf("expected the diagnostic to carry a constraint clause; got: %s", result.Errors[0].Error())
+	// The message opens with the condition's registered sentence and carries
+	// the occurrence detail after it, so both halves are asserted: a rendering
+	// that dropped either would still satisfy the errors.Is check above.
+	if !strings.HasPrefix(result.Errors[0].Error(), ErrCyclicExtension().Error()+" (") {
+		t.Errorf("expected the diagnostic to open with the registered sentence; got: %s", result.Errors[0].Error())
+	}
+	if !strings.Contains(result.Errors[0].Error(), "already in chain") {
+		t.Errorf("expected the diagnostic to carry the occurrence detail; got: %s", result.Errors[0].Error())
 	}
 }
 

@@ -99,7 +99,6 @@ func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
 		Version:    r.Metadata.Version,
 		Path:       sourcePath,
 		Rule:       "eval",
-		Constraint: "the eval provider executes formatting in-memory and forbids input-kind fields",
 		Suggestion: fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
 		Err:        ErrRecipeEvalProviderConstraint(),
 	})
@@ -126,14 +125,16 @@ func validateRecipeOutputLabels(r *types.Recipe, sourcePath string) error {
 	for _, key := range keys {
 		if isReservedLabelKey(key) {
 			return NewShapeRuleError(ShapeRuleViolation{
-				Kind:       envelope.KindRecipe,
-				Name:       r.Metadata.Name,
-				Version:    r.Metadata.Version,
-				Path:       sourcePath,
-				Rule:       "output-labels",
-				Constraint: "outputLabels may not use a reserved namespace",
+				Kind:    envelope.KindRecipe,
+				Name:    r.Metadata.Name,
+				Version: r.Metadata.Version,
+				Path:    sourcePath,
+				Rule:    "output-labels",
+				// The block is named in the key the author typed, because one
+				// condition covers both label blocks and its registered
+				// sentence therefore cannot say which of the two was authored.
 				Suggestion: fmt.Sprintf(
-					"key %q uses a reserved namespace (%q and %q are reserved for platform provenance)",
+					"key %q in outputLabels uses a reserved namespace (%q and %q are reserved for platform provenance)",
 					key, types.ReservedLabelPrefixAggregaAI, types.ReservedLabelPrefixK8sRecommended),
 				Err: ErrRecipeOutputLabelReservedNamespace(),
 			})
@@ -174,14 +175,15 @@ func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) err
 	for _, key := range r.Spec.OutputComponentLabels {
 		if isReservedLabelKey(key) {
 			return NewShapeRuleError(ShapeRuleViolation{
-				Kind:       envelope.KindRecipe,
-				Name:       r.Metadata.Name,
-				Version:    r.Metadata.Version,
-				Path:       sourcePath,
-				Rule:       "output-component-labels",
-				Constraint: "outputComponentLabels may not use a reserved namespace",
+				Kind:    envelope.KindRecipe,
+				Name:    r.Metadata.Name,
+				Version: r.Metadata.Version,
+				Path:    sourcePath,
+				Rule:    "output-component-labels",
+				// The block is named in the key the author typed, for the
+				// reason the literal block's site records.
 				Suggestion: fmt.Sprintf(
-					"key %q uses a reserved namespace (%q and %q are reserved for platform provenance)",
+					"key %q in outputComponentLabels uses a reserved namespace (%q and %q are reserved for platform provenance)",
 					key, types.ReservedLabelPrefixAggregaAI, types.ReservedLabelPrefixK8sRecommended),
 				Err: ErrRecipeOutputLabelReservedNamespace(),
 			})
@@ -190,14 +192,13 @@ func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) err
 	for _, key := range r.Spec.OutputComponentLabels {
 		if _, literal := r.Spec.OutputLabels[key]; literal {
 			return NewShapeRuleError(ShapeRuleViolation{
-				Kind:       envelope.KindRecipe,
-				Name:       r.Metadata.Name,
-				Version:    r.Metadata.Version,
-				Path:       sourcePath,
-				Rule:       "output-component-labels",
-				Constraint: "a key may not be declared in both outputComponentLabels and outputLabels",
+				Kind:    envelope.KindRecipe,
+				Name:    r.Metadata.Name,
+				Version: r.Metadata.Version,
+				Path:    sourcePath,
+				Rule:    "output-component-labels",
 				Suggestion: fmt.Sprintf(
-					"key %q is promoted and also declared literally; keep whichever source the label should come from and drop the other",
+					"key %q is promoted through outputComponentLabels and also declared literally in outputLabels; keep whichever source the label should come from and drop the other",
 					key),
 				Err: ErrRecipeOutputComponentLabelCollision(),
 			})
@@ -224,7 +225,6 @@ func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
 		Version:    r.Metadata.Version,
 		Path:       sourcePath,
 		Rule:       "1",
-		Constraint: "valuesMapping requires source",
 		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
 		Err:        ErrRecipeRule1(),
 	})
@@ -255,7 +255,6 @@ func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 		Version:    r.Metadata.Version,
 		Path:       sourcePath,
 		Rule:       "5",
-		Constraint: "at least one input kind must be present",
 		Suggestion: "declare one of: source (with valuesMapping), workload, artifacts",
 		Err:        ErrRecipeRule5(),
 	})

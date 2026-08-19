@@ -101,6 +101,32 @@ func CodeOf(err error) (string, bool) {
 	return "", false
 }
 
+// MessageOf returns the sentence registered for the first condition in err's
+// chain that carries one, and whether any error in the chain did.
+//
+// It is CodeOf's companion and walks the same chain for the same reason: the
+// sentence survives arbitrary wrapping, so a surface composing a diagnostic
+// many frames above the site that raised the failure still opens with the
+// wording the condition was registered under.
+//
+// It asks a different question from err.Error(), and the difference is the
+// whole reason it exists. err.Error() reports the OUTERMOST frame's text,
+// which is whatever that frame chose to say; this reports the wording of the
+// condition underneath it. A composer reading err.Error() and calling the
+// result the condition's wording would be rendering its own wrap, and the two
+// agreeing on the day it is written is exactly what would hide the divergence
+// the day either is edited.
+//
+// An error chain carrying no registered identity reports no sentence, which is
+// a fact about the chain rather than a failure.
+func MessageOf(err error) (string, bool) {
+	var coded CodedError
+	if stderrors.As(err, &coded) {
+		return coded.Error(), true
+	}
+	return "", false
+}
+
 // Meta is the metadata declared beside an identity at its registration.
 //
 // It carries the message and nothing else, deliberately. The two other
@@ -119,8 +145,27 @@ func CodeOf(err error) (string, bool) {
 // absent one, because it reads as a measured absence rather than an undecided
 // question.
 type Meta struct {
-	// Message is the text the identity's Error method returns. It is the
-	// user-visible description of the condition and must not be empty.
+	// Message is the text the identity's Error method returns: one sentence
+	// stating the condition, in the words a reader of a diagnostic sees.
+	//
+	// It is the single home of that wording, and the composition rule is what
+	// makes that true rather than aspirational: a diagnostic naming the
+	// condition OPENS with this sentence and appends whatever the occurrence
+	// supplies after it — the document, the authored key, the offending value,
+	// the advice. The split is forced by what each side can carry. This
+	// sentence is one static string per condition, so it cannot name the
+	// occurrence; the occurrence's values mean nothing without the sentence
+	// that says which rule they are about. Composing the wording a second time
+	// from the occurrence's own fields would leave two copies of one
+	// condition's words, and the copy is what drifts — an agreeing copy most
+	// of all, because the agreement is what hides the divergence until one
+	// side is edited.
+	//
+	// Read the sentence off an error with MessageOf, which walks the chain the
+	// way CodeOf does.
+	//
+	// It must not be empty: an empty sentence renders as a dangling separator
+	// inside an enclosing wrap, and registration refuses one.
 	Message string
 }
 

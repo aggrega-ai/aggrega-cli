@@ -118,19 +118,19 @@ func TestFormatCompilerError_OpsCategory_RendersViaResolverError(t *testing.T) {
 func TestFormatCompilerError_CatalogCategory_RendersRecipeShapeRule(t *testing.T) {
 	t.Parallel()
 	rve := validator.NewShapeRuleError(validator.ShapeRuleViolation{
-		Kind:       envelope.KindRecipe,
-		Name:       "my-recipe",
-		Version:    "1.0.0",
-		Path:       "/path/to/recipe.yaml",
-		Rule:       "1",
-		Constraint: "valuesMapping requires source",
-		Err:        validator.ErrRecipeRule1(),
+		Kind:    envelope.KindRecipe,
+		Name:    "my-recipe",
+		Version: "1.0.0",
+		Path:    "/path/to/recipe.yaml",
+		Rule:    "1",
+		Err:     validator.ErrRecipeRule1(),
 	})
 	got := formatCompilerError(rve)
 	for _, want := range []string{
 		"[CATALOG_ERROR]",
 		"/path/to/recipe.yaml",
-		"rule 1: valuesMapping requires source",
+		validator.ErrRecipeRule1().Error(),
+		"rule 1",
 		"Recipe my-recipe:1.0.0",
 	} {
 		if !strings.Contains(got, want) {
@@ -148,13 +148,12 @@ func TestFormatCompilerError_CatalogCategory_RendersRecipeShapeRule(t *testing.T
 func TestFormatCompilerError_CatalogCategory_RendersFeatureRecipeShapeRule(t *testing.T) {
 	t.Parallel()
 	fre := validator.NewShapeRuleError(validator.ShapeRuleViolation{
-		Kind:       envelope.KindFeatureRecipe,
-		Name:       "my-featurerecipe",
-		Version:    "1.0.0",
-		Path:       "/path/to/featurerecipe.yaml",
-		Rule:       "1",
-		Constraint: "valuesMapping requires source",
-		Err:        validator.ErrFeatureRecipeRule1(),
+		Kind:    envelope.KindFeatureRecipe,
+		Name:    "my-featurerecipe",
+		Version: "1.0.0",
+		Path:    "/path/to/featurerecipe.yaml",
+		Rule:    "1",
+		Err:     validator.ErrFeatureRecipeRule1(),
 	})
 	got := formatCompilerError(fre)
 	for _, want := range []string{
@@ -338,16 +337,15 @@ func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 	ce := cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "translation msg", nil, nil)
 	re := &resolver.ResolverError{Entity: "Aggregate my-app", Field: ".f", Message: "resolver msg", Err: resolver.ErrInvalidInstanceName()}
 	rve := validator.NewShapeRuleError(validator.ShapeRuleViolation{
-		Kind:       envelope.KindRecipe,
-		Name:       "r",
-		Path:       "/r.yaml",
-		Constraint: "recipe rule msg",
-		Err:        validator.ErrRecipeRule1(),
+		Kind: envelope.KindRecipe,
+		Name: "r",
+		Path: "/r.yaml",
+		Err:  validator.ErrRecipeRule1(),
 	})
 	joined := stderrors.Join(ce, re, rve)
 
 	got := formatCompilerError(joined)
-	for _, want := range []string{"[TRANSLATION_ERROR]", "[DEVELOPER_ERROR]", "[CATALOG_ERROR]", "translation msg", "resolver msg", "recipe rule msg"} {
+	for _, want := range []string{"[TRANSLATION_ERROR]", "[DEVELOPER_ERROR]", "[CATALOG_ERROR]", "translation msg", "resolver msg", validator.ErrRecipeRule1().Error()} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Mixed-type Join missing %q\n--- got ---\n%s", want, got)
 		}

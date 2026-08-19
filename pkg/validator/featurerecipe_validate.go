@@ -86,7 +86,6 @@ func validateFeatureRecipeRule1(fr *types.FeatureRecipe, sourcePath string) erro
 		Version:    fr.Metadata.Version,
 		Path:       sourcePath,
 		Rule:       "1",
-		Constraint: "valuesMapping requires source",
 		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
 		Err:        ErrFeatureRecipeRule1(),
 	})
@@ -119,7 +118,6 @@ func validateFeatureRecipeEvalProvider(fr *types.FeatureRecipe, sourcePath strin
 		Version:    fr.Metadata.Version,
 		Path:       sourcePath,
 		Rule:       "eval",
-		Constraint: "the eval provider executes formatting in-memory and forbids render input-kind fields",
 		Suggestion: fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
 		Err:        ErrFeatureRecipeEvalProviderConstraint(),
 	})

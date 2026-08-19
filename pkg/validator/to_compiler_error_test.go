@@ -16,9 +16,10 @@ import (
 
 // TestShapeRuleError_RoutesToCatalog verifies that a shape-rule failure on
 // either catalog kind that carries them converts to a CompilerError with the
-// CatalogError category, and that the rule identifier survives the fold into
-// the constraint text — it is the only thing telling an author WHICH rule
-// failed.
+// CatalogError category, that the message OPENS with the sentence the rule's
+// condition is registered with, and that the rule identifier survives as one of
+// the values the occurrence supplies — it is the only thing telling an author
+// WHICH rule failed, and the sentence cannot carry it.
 func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 	for _, tc := range []struct {
 		kind          envelope.Kind
@@ -35,7 +36,6 @@ func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 				Version:    "1.0.0",
 				Path:       "/path/to/recipe.yaml",
 				Rule:       "1",
-				Constraint: "valuesMapping requires source",
 				Suggestion: "declare a source: pointer alongside valuesMapping",
 				Err:        tc.sentinel,
 			})
@@ -49,9 +49,16 @@ func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 			if ce.Source.File != "/path/to/recipe.yaml" {
 				t.Errorf("Source.File = %q, want %q", ce.Source.File, "/path/to/recipe.yaml")
 			}
+			// The registered sentence is read off the condition rather than
+			// restated here, so this assertion cannot pass against a second copy
+			// of the wording.
+			if sentence := tc.sentinel.Error(); !strings.HasPrefix(ce.Message, sentence+" (") {
+				t.Errorf("Message must open with the registered sentence %q: %q", sentence, ce.Message)
+			}
 			for _, want := range []string{
 				tc.wantReference,
-				"rule 1: valuesMapping requires source",
+				"rule 1",
+				"at /path/to/recipe.yaml",
 				"declare a source: pointer alongside valuesMapping",
 			} {
 				if !strings.Contains(ce.Message, want) {
@@ -75,16 +82,16 @@ func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 // parts render away cleanly rather than leaving a dangling separator.
 func TestShapeRuleError_OmitsAnAbsentRuleAndVersion(t *testing.T) {
 	err := validator.NewShapeRuleError(validator.ShapeRuleViolation{
-		Kind:       envelope.KindRecipe,
-		Name:       "my-recipe",
-		Path:       "/path/to/recipe.yaml",
-		Constraint: "valuesMapping requires source",
+		Kind: envelope.KindRecipe,
+		Name: "my-recipe",
+		Path: "/path/to/recipe.yaml",
+		Err:  validator.ErrRecipeRule1(),
 	})
 	msg := err.Error()
-	if !strings.HasPrefix(msg, "Recipe my-recipe:") {
+	if !strings.Contains(msg, "(Recipe my-recipe, at /path/to/recipe.yaml)") {
 		t.Errorf("an absent version should leave no trailing separator: %q", msg)
 	}
-	if strings.Contains(msg, "rule :") {
+	if strings.Contains(msg, "rule ") {
 		t.Errorf("an absent rule identifier should leave no empty rule token: %q", msg)
 	}
 }
@@ -137,7 +144,7 @@ func TestValidationError_ToCompilerError_ComponentRoutesToCatalog(t *testing.T) 
 	if !strings.Contains(ce.Message, "must be >= 1024") {
 		t.Errorf("Message missing Constraint: %q", ce.Message)
 	}
-	if !strings.Contains(ce.Message, "(got 80)") {
+	if !strings.Contains(ce.Message, "got 80") {
 		t.Errorf("Message missing Actual: %q", ce.Message)
 	}
 	if !strings.Contains(ce.Message, "Use a port number >= 1024") {
@@ -173,18 +180,21 @@ func TestValidationError_ToCompilerError_AggregateRoutesToDeveloper(t *testing.T
 func TestValidationError_ReferenceIsDerivedFromTheKind(t *testing.T) {
 	const name = "core/shared:1.0.0"
 	cases := []struct {
-		kind         envelope.Kind
-		wantCategory cerrors.Category
-		wantPrefix   string
+		kind          envelope.Kind
+		wantCategory  cerrors.Category
+		wantReference string
 	}{
 		{envelope.KindComponent, cerrors.CatalogError, "Component core/shared:1.0.0"},
 		{envelope.KindFeature, cerrors.CatalogError, "Feature core/shared:1.0.0"},
 		{envelope.KindRelease, cerrors.OpsError, "Release core/shared:1.0.0"},
 	}
 	for _, tc := range cases {
-		ve := validator.NewValidationError(tc.kind, name, validator.ValidationDetail{FieldPath: ".spec.extends"})
-		if !strings.HasPrefix(ve.Error(), tc.wantPrefix) {
-			t.Errorf("kind %q: Error() = %q, want it to open with %q", tc.kind, ve.Error(), tc.wantPrefix)
+		ve := validator.NewValidationError(tc.kind, name, validator.ValidationDetail{
+			FieldPath: ".spec.extends",
+			Err:       validator.ErrCyclicExtension(),
+		})
+		if !strings.Contains(ve.Error(), "("+tc.wantReference+",") {
+			t.Errorf("kind %q: Error() = %q, want it to name the entity as %q", tc.kind, ve.Error(), tc.wantReference)
 		}
 		if got := ve.ToCompilerError().Category; got != tc.wantCategory {
 			t.Errorf("kind %q: Category = %v, want %v", tc.kind, got, tc.wantCategory)
@@ -218,7 +228,10 @@ func TestNewValidationError_RefusesAKindWithNoDomain(t *testing.T) {
 					t.Errorf("the refusal should name the offending kind as %s; got %v", quoted, r)
 				}
 			}()
-			validator.NewValidationError(kind, "core/api:1.0.0", validator.ValidationDetail{FieldPath: ".spec.extends"})
+			validator.NewValidationError(kind, "core/api:1.0.0", validator.ValidationDetail{
+				FieldPath: ".spec.extends",
+				Err:       validator.ErrCyclicExtension(),
+			})
 		})
 	}
 }
@@ -237,4 +250,36 @@ func TestValidationError_ZeroValueIsRefusedAtConversion(t *testing.T) {
 	}()
 	ve := &validator.ValidationError{}
 	_ = ve.ToCompilerError()
+}
+
+// TestBothRaisePathsOpenWithOneSentence pins the property this composition
+// exists for: a condition raised through the structured failure and the same
+// condition raised as a wrapped error report the SAME opening sentence.
+//
+// Before the two shapes shared one opening, no single sentence was true of a
+// condition raised both ways — the wrapped form rendered the registered wording
+// and the structured form rendered a composition of its own fields, so a reader
+// matching a diagnostic against the reference documentation had two texts to
+// reconcile for one rule. The assertion reads the sentence off the condition
+// rather than restating it, so it cannot pass against a second copy.
+func TestBothRaisePathsOpenWithOneSentence(t *testing.T) {
+	t.Parallel()
+	sentinel := validator.ErrCyclicExtension()
+	sentence := sentinel.Error()
+
+	structured := validator.NewValidationError(envelope.KindComponent, "example/data/alpha", validator.ValidationDetail{
+		FieldPath:  ".spec.extends",
+		Constraint: "circular extends detected: example/data/beta:1.0.0 already in chain",
+		Err:        sentinel,
+	}).Error()
+	wrapped := fmt.Errorf("%w: Manifest %q extends %q, which is already in the chain", sentinel, "cycle-a", "./manifest-b.yaml").Error()
+
+	for label, got := range map[string]string{"structured": structured, "wrapped": wrapped} {
+		if !strings.HasPrefix(got, sentence) {
+			t.Errorf("%s raise path does not open with the registered sentence %q: %q", label, sentence, got)
+		}
+	}
+	if !stderrors.Is(validator.NewValidationError(envelope.KindComponent, "x", validator.ValidationDetail{Err: sentinel}), sentinel) {
+		t.Error("errors.Is must still match the condition through the structured failure")
+	}
 }

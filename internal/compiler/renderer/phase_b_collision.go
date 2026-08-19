@@ -82,7 +82,6 @@ func detectFilenameCollisions(state *PhaseBState) error {
 		Version:    state.RecipeVersion,
 		Path:       state.RecipePath,
 		Rule:       "7",
-		Constraint: "filename collision across input-kind origins at emission",
 		Suggestion: strings.Join(details, "; "),
 		Err:        validator.ErrRecipeRule7(),
 	})

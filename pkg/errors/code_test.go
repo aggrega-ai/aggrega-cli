@@ -144,6 +144,54 @@ func TestIdentity_CodeIsReadableThroughWraps(t *testing.T) {
 	}
 }
 
+// TestIdentity_RegisteredSentenceIsReadableThroughWraps covers the accessor a
+// surface composing a diagnostic reads: it wants the sentence the CONDITION was
+// registered with, not the text of whatever frame it happens to be holding.
+//
+// The distinction is what the test is for. Both reads below run against the same
+// chain, and they disagree — Error() reports the outermost wrap and MessageOf
+// reports the registered sentence underneath it — so a composer that reached for
+// Error() would render its own wrap and present it as the condition's wording.
+func TestIdentity_RegisteredSentenceIsReadableThroughWraps(t *testing.T) {
+	t.Parallel()
+
+	inner := fmt.Errorf("reading the extends chain: %w", errCyclicExtension())
+	outer := fmt.Errorf("resolving the aggregate: %w", inner)
+
+	got, ok := cerrors.MessageOf(outer)
+	if !ok {
+		t.Fatalf("no sentence was readable from a chain carrying a registered identity: %v", outer)
+	}
+	if got != messageCyclicExtension {
+		t.Errorf("MessageOf = %q; want the sentence the identity was registered with, %q", got, messageCyclicExtension)
+	}
+	if outer.Error() == got {
+		t.Errorf("the outermost frame's text and the registered sentence are the same string (%q), so this "+
+			"test cannot distinguish the two reads it exists to distinguish", got)
+	}
+
+	// Read off the bare identity, which is the shape a caller holding the
+	// sentinel itself passes.
+	if got, ok := cerrors.MessageOf(errCyclicExtension()); !ok || got != messageCyclicExtension {
+		t.Errorf("MessageOf(identity) = %q, %v; want %q, true", got, ok, messageCyclicExtension)
+	}
+
+	// Two identities sharing an exported accessor name in two packages carry two
+	// sentences, and the read must not collapse them.
+	if got, _ := cerrors.MessageOf(fmt.Errorf("merging: %w", errMergerCyclicExtension())); got != messageMergerCyclicExtension {
+		t.Errorf("MessageOf = %q; want the merger identity's own sentence %q", got, messageMergerCyclicExtension)
+	}
+
+	// A chain carrying no registered identity reports no sentence, the same fact
+	// CodeOf reports about the same chain.
+	if got, ok := cerrors.MessageOf(stderrors.New("an ordinary error")); ok {
+		t.Errorf("MessageOf reported %q for a chain carrying no identity", got)
+	}
+	if _, ok := cerrors.MessageOf(nil); ok {
+		t.Errorf("MessageOf reported a sentence for a nil error")
+	}
+}
+
 // TestIdentity_ForgingTheCodeStringYieldsNoIdentity is the runtime half of the
 // asymmetry the split exists for: the code travels outward and never back. The
 // compile-time half — that the identity type cannot be named, its field cannot

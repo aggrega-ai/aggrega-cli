@@ -214,22 +214,22 @@ func TestValidateRecipe_ErrorMessage_NamesEntityRuleAndLocation(t *testing.T) {
 		t.Fatal("expected error")
 	}
 	msg := err.Error()
-	// The entity reference opens the message and is built from the kind the
-	// failure carries, never parsed back out of the rendered text.
-	if !strings.HasPrefix(msg, "Recipe ") {
-		t.Errorf("message must open with the entity reference, got: %q", msg)
+	// The rule's own registered sentence opens the message, read off the
+	// condition rather than restated here, so this cannot pass against a second
+	// copy of the wording composed from the failure's fields.
+	if sentence := validator.ErrRecipeRule5().Error(); !strings.HasPrefix(msg, sentence+" (") {
+		t.Errorf("message must open with the registered sentence %q, got: %q", sentence, msg)
+	}
+	// The entity reference is built from the kind the failure carries, never
+	// parsed back out of the rendered text.
+	if !strings.Contains(msg, "Recipe "+tName+":"+tVer) {
+		t.Errorf("message must name the entity as kind + name:version: %q", msg)
 	}
 	if !strings.Contains(msg, tFile) {
 		t.Errorf("message must contain file path: %q", msg)
 	}
-	if !strings.Contains(msg, tName+":"+tVer) {
-		t.Errorf("message must contain name:version: %q", msg)
-	}
 	if !strings.Contains(msg, "rule 5") {
 		t.Errorf("message must name the rule: %q", msg)
-	}
-	if !strings.Contains(msg, "at least one input kind") {
-		t.Errorf("message must include rule description: %q", msg)
 	}
 }
 

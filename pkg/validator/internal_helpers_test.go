@@ -4,6 +4,8 @@
 package validator
 
 import (
+	stderrors "errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -106,10 +108,9 @@ func TestHasOverlapEscapeHatch_DetectsEveryEscapeClause(t *testing.T) {
 	}
 }
 
-// TestValidationError_Error_FormatsAllFields pins the Error() output
-// when every field is populated: Entity + FieldPath in the header,
-// Constraint after an em dash, Actual in parens, Suggestion after a
-// period.
+// TestValidationError_Error_FormatsAllFields pins the Error() output when
+// every field is populated: the condition's registered sentence opens it, and
+// the values this occurrence supplied follow in the parenthesised list.
 func TestValidationError_Error_FormatsAllFields(t *testing.T) {
 	t.Parallel()
 	ve := NewValidationError(envelope.KindComponent, "core/api:1.0.0", ValidationDetail{
@@ -117,11 +118,15 @@ func TestValidationError_Error_FormatsAllFields(t *testing.T) {
 		Constraint: "must be >= 1024",
 		Actual:     "80",
 		Suggestion: "Use a port number >= 1024",
+		Err:        ErrInheritanceMerge(),
 	})
 	msg := ve.Error()
+	if sentence := ErrInheritanceMerge().Error(); !strings.HasPrefix(msg, sentence+" (") {
+		t.Errorf("Error() must open with the registered sentence %q; got: %s", sentence, msg)
+	}
 	for _, want := range []string{
 		"Component core/api:1.0.0",
-		".values.port",
+		"at .values.port",
 		"must be >= 1024",
 		"got 80",
 		"Use a port number >= 1024",
@@ -132,22 +137,66 @@ func TestValidationError_Error_FormatsAllFields(t *testing.T) {
 	}
 }
 
-// TestValidationError_Error_MinimalShape pins the Error() output when
-// only the required fields (Entity + FieldPath) are populated. The
-// optional clauses (Constraint / Actual / Suggestion) are omitted.
+// TestValidationError_Error_MinimalShape pins the Error() output when only the
+// condition and the entity reference are supplied. The optional values are
+// omitted rather than rendered as empty list entries, so a sparse failure reads
+// as a sentence with one value after it.
 func TestValidationError_Error_MinimalShape(t *testing.T) {
 	t.Parallel()
 	ve := NewValidationError(envelope.KindFeature, "core/x:1.0.0", ValidationDetail{
-		FieldPath: ".values.foo",
+		Err: ErrCyclicExtension(),
 	})
 	msg := ve.Error()
-	if !strings.Contains(msg, "Feature core/x:1.0.0") || !strings.Contains(msg, ".values.foo") {
-		t.Errorf("minimal shape: required fields missing; got: %s", msg)
+	if want := ErrCyclicExtension().Error() + " (Feature core/x:1.0.0)"; msg != want {
+		t.Errorf("minimal shape = %q, want %q", msg, want)
 	}
-	// Optional clauses absent from the rendered message.
-	for _, absent := range []string{" — ", "(got "} {
+	// No separator is left dangling for a value the failure did not supply.
+	for _, absent := range []string{", ", "at ", "rule ", "got ", ". "} {
 		if strings.Contains(msg, absent) {
 			t.Errorf("minimal shape should not include %q; got: %s", absent, msg)
 		}
+	}
+}
+
+// TestNewValidationError_RefusesADetailWithNoCondition pins the refusal that
+// makes "every rendered failure opens with its condition's sentence" a property
+// of the type rather than a convention its call sites keep. A failure with no
+// registered sentence to open with is refused where the detail was supplied,
+// rather than at the surface that later tries to render it.
+//
+// Both refused shapes are covered, because they fail for one reason and would
+// be easy to guard against separately: an absent condition, and a plain error
+// that names no registered condition and so carries no sentence either.
+func TestNewValidationError_RefusesADetailWithNoCondition(t *testing.T) {
+	t.Parallel()
+	for label, detail := range map[string]ValidationDetail{
+		"no condition at all":   {FieldPath: ".values.port"},
+		"an unregistered error": {FieldPath: ".values.port", Err: stderrors.New("a plain error")},
+		"a wrapped plain error": {FieldPath: ".values.port", Err: fmt.Errorf("wrapping: %w", stderrors.New("a plain error"))},
+	} {
+		t.Run(label, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatalf("NewValidationError accepted %s; want a refusal", label)
+				}
+				msg, ok := r.(string)
+				if !ok || !strings.Contains(msg, "carries no condition") {
+					t.Errorf("the refusal should say the failure carries no condition; got %v", r)
+				}
+			}()
+			NewValidationError(envelope.KindComponent, "core/api:1.0.0", detail)
+		})
+	}
+
+	// The positive half, so the refusal above cannot be passing because the
+	// constructor refuses everything: an identity wrapped on its way in still
+	// carries its sentence, and the message still opens with it.
+	ve := NewValidationError(envelope.KindComponent, "core/api:1.0.0", ValidationDetail{
+		FieldPath: ".values.port",
+		Err:       fmt.Errorf("resolving the chain: %w", ErrCyclicExtension()),
+	})
+	if sentence := ErrCyclicExtension().Error(); !strings.HasPrefix(ve.Error(), sentence+" (") {
+		t.Errorf("a wrapped identity should still open the message with %q; got %s", sentence, ve.Error())
 	}
 }

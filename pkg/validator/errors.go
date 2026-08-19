@@ -5,6 +5,7 @@ package validator
 
 import (
 	"fmt"
+	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -30,17 +31,40 @@ var errAssertionNameCollision = cerrors.Register("validator/assertion-name-colli
 	Message: "assertion name declared twice across the extends chain: rename the extending entity's assertion, whose assertions add to the base's and never replace one",
 })
 
-// ValidationDetail describes a validation failure: where it was found, what
-// was required there, what was found instead, what to do about it, and the
-// sentinel callers match on. Every field is optional — what identifies the
-// failure is the entity kind and name given to NewValidationError, not
-// anything here.
+// ValidationDetail describes a validation failure: which condition it
+// violates, where it was found, what was required there, what was found
+// instead, and what to do about it.
+//
+// Err is required, and it is the field the rendered message is built around:
+// the sentence its condition is registered with is what the message opens
+// with, so a failure carrying no condition would have no sentence to report.
+// NewValidationError refuses one. Every other field is optional and is omitted
+// from the message when empty; which entity is at fault comes from the kind and
+// name given to NewValidationError rather than from anything here.
 type ValidationDetail struct {
-	FieldPath  string // e.g. ".values.port"
-	Constraint string // e.g. "must be >= 1024"
-	Actual     string // e.g. "80"
-	Suggestion string // e.g. "Use a port number >= 1024"
-	Err        error  // sentinel, matched via errors.Is
+	// FieldPath locates the failure inside the document, e.g. ".values.port".
+	// A check that has only the file it read passes that instead — the same
+	// dual meaning cerrors.SourceLocation.File carries, which is where this
+	// value lands.
+	FieldPath string
+	// Rule identifies the violated rule the way the entity's reference
+	// documentation names it. It is set by NewShapeRuleError from the
+	// identifier a ShapeRuleViolation carries and is empty for every other
+	// failure; see ShapeRuleViolation.Rule for what the identifiers are.
+	Rule string
+	// Constraint states what this occurrence required, e.g. "must be >= 1024".
+	// It is for what the condition's own registered sentence cannot say —
+	// never a restatement of it, which would be a second copy of the rule's
+	// wording sitting next to the first.
+	Constraint string
+	// Actual is the offending value, e.g. "80".
+	Actual string
+	// Suggestion is the advice for satisfying the rule, e.g. "Use a port
+	// number >= 1024".
+	Suggestion string
+	// Err is the identity of the condition the failure names, matched via
+	// errors.Is. Required.
+	Err error
 }
 
 // ValidationError is a structured validation failure: which entity is at
@@ -85,7 +109,9 @@ func categoryFor(kind envelope.Kind) cerrors.Category {
 // the given kind. name is the entity's metadata name, e.g.
 // "core/api-server:1.0.0"; kind is the entity kind that name belongs to.
 //
-// It panics when kind names no authoring domain — the zero kind included.
+// It panics when kind names no authoring domain — the zero kind included — and
+// when detail names no registered condition, so that every failure this
+// constructor produces has a sentence to open its message with.
 // A kind reaches here only as a constant chosen where the failure is
 // reported, never from an authored document, so an unmappable one means
 // either a call site left the kind unset or an entity kind has begun
@@ -98,12 +124,23 @@ func NewValidationError(kind envelope.Kind, name string, detail ValidationDetail
 	// kind while the site that supplied it is still on the stack. The value is
 	// resolved again at conversion, from the kind, so nothing derived is stored.
 	categoryFor(kind)
+	// The check is for a registered SENTENCE rather than merely a non-nil error,
+	// because a sentence is what the rendered message opens with: an error
+	// carrying no registered identity would render as a value list with nothing
+	// saying which rule it is about, and would be unmatchable by any consumer
+	// besides. cerrors.MessageOf walks the chain, so an identity wrapped on its
+	// way here still satisfies it.
+	if _, ok := cerrors.MessageOf(detail.Err); !ok {
+		panic(fmt.Sprintf("validator: a validation failure against %s %q carries no condition, so the "+
+			"rendered message has no registered sentence to open with; set ValidationDetail.Err to the "+
+			"identity of the condition the check enforces", kind, name))
+	}
 	return &ValidationError{kind: kind, name: name, detail: detail}
 }
 
 // ShapeRuleViolation describes a catalog entity that breaks one of the shape
 // rules governing its kind: which entity, where it was loaded from, which rule,
-// what that rule requires, and what to do about it.
+// and what to do about it.
 //
 // It is a description handed to NewShapeRuleError, not a failure in its own
 // right. It carries no Error method, nothing returns it, and no caller matches
@@ -126,8 +163,6 @@ type ShapeRuleViolation struct {
 	// documentation names it — a number for the numbered shape rules, a word
 	// for the named ones. Optional: omitted from the message when empty.
 	Rule string
-	// Constraint states what the rule requires.
-	Constraint string
 	// Suggestion is the rule-specific advice for satisfying it.
 	Suggestion string
 	// Err is the sentinel callers match on.
@@ -137,26 +172,29 @@ type ShapeRuleViolation struct {
 // NewShapeRuleError builds the validation failure a ShapeRuleViolation
 // describes.
 //
-// The rule identifier travels inside the constraint text rather than in a field
-// of its own, because what an author needs is a single sentence naming both the
-// rule that failed and what it requires; a diagnostic that names the failure
-// without naming the rule is weaker than one that names both.
+// What the rule REQUIRES is not supplied here, and there is no field for it.
+// That is the sentence the rule's condition is registered with, and it is what
+// the rendered message opens with — so a rule's wording lives with the rule's
+// identity and a second copy cannot drift from it. A violation that also
+// carried the requirement as text would be that second copy, agreeing on the
+// day it was written and diverging the day either side is reworded.
 //
-// It panics when Kind names no authoring domain, for the reason
-// NewValidationError does: a kind reaches here as a constant chosen where the
-// rule is checked, never from an authored document.
+// The rule IDENTIFIER is a different thing and does travel here. It is not
+// derivable from the sentence, and it is what lets a reader find the rule in
+// the entity's reference documentation, so it renders as one of the values the
+// occurrence supplies rather than being folded into the wording.
+//
+// It panics when Kind names no authoring domain, and when Err carries no
+// condition, for the reasons NewValidationError does: both reach here as
+// constants chosen where the rule is checked, never from an authored document.
 func NewShapeRuleError(v ShapeRuleViolation) *ValidationError {
 	name := v.Name
 	if v.Version != "" {
 		name += ":" + v.Version
 	}
-	constraint := v.Constraint
-	if v.Rule != "" {
-		constraint = "rule " + v.Rule + ": " + constraint
-	}
 	return NewValidationError(v.Kind, name, ValidationDetail{
 		FieldPath:  v.Path,
-		Constraint: constraint,
+		Rule:       v.Rule,
 		Suggestion: v.Suggestion,
 		Err:        v.Err,
 	})
@@ -171,16 +209,49 @@ func (e *ValidationError) entity() string {
 // message renders the one-line description shared by Error and the compiler
 // error ToCompilerError produces. Both surfaces report the same failure, so
 // there is one rendering rather than two that agree until one is edited.
+//
+// It OPENS with the sentence the failure's condition is registered with, read
+// through cerrors.MessageOf, and appends what this occurrence supplied after
+// it. The order is the mechanism rather than a preference. The registered
+// sentence is one static string per condition, so it cannot name the entity,
+// the key or the value at fault; those values in turn say nothing on their own
+// about which rule they violate. Leading with the sentence therefore keeps a
+// condition's wording in the one place the condition is declared, and what
+// follows it is exactly what that sentence could not carry.
+//
+// The occurrence's values render as a parenthesised list in a fixed order —
+// entity reference, rule identifier, position, constraint, offending value —
+// each omitted when this failure supplied none, so a sparse failure reads as a
+// sentence rather than as one trailing empty separators. The suggestion follows
+// the list as a sentence of its own, because it is advice to act on rather than
+// a value to read.
+//
+// A failure carrying no condition renders the value list alone. That shape is
+// unreachable through NewValidationError, which refuses a detail with no
+// condition; it exists because an empty composite literal of this type is legal
+// from any package, and rendering the values is better than panicking inside an
+// error's own Error method.
 func (e *ValidationError) message() string {
-	msg := fmt.Sprintf("%s: validation error at %s", e.entity(), e.detail.FieldPath)
+	values := make([]string, 0, 5)
+	values = append(values, e.entity())
+	if e.detail.Rule != "" {
+		values = append(values, "rule "+e.detail.Rule)
+	}
+	if e.detail.FieldPath != "" {
+		values = append(values, "at "+e.detail.FieldPath)
+	}
 	if e.detail.Constraint != "" {
-		msg += fmt.Sprintf(" — %s", e.detail.Constraint)
+		values = append(values, e.detail.Constraint)
 	}
 	if e.detail.Actual != "" {
-		msg += fmt.Sprintf(" (got %s)", e.detail.Actual)
+		values = append(values, "got "+e.detail.Actual)
+	}
+	msg := "(" + strings.Join(values, ", ") + ")"
+	if sentence, ok := cerrors.MessageOf(e.detail.Err); ok {
+		msg = sentence + " " + msg
 	}
 	if e.detail.Suggestion != "" {
-		msg += fmt.Sprintf(". %s", e.detail.Suggestion)
+		msg += ". " + e.detail.Suggestion
 	}
 	return msg
 }
@@ -207,8 +278,10 @@ func (e *ValidationError) Unwrap() error {
 // The Source location maps the JSON-path FieldPath into the CompilerError's
 // SourceLocation.File. FieldPath is a JSON-path-style locator (e.g.,
 // ".values.port"), not a real file path; the dual semantics is the same
-// as ResolverError.Field. The Message combines Constraint, Actual, and
-// Suggestion preserving the structure that Error() carries.
+// as ResolverError.Field. The Message is exactly what Error() renders — one
+// composition feeding both surfaces, so the two cannot diverge and a chain walk
+// that suppresses a restatement is not defeated by two strings that say the
+// same thing differently.
 //
 // Inner error chain preserved via cerrors.Wrap so errors.Is against the
 // validator's sentinel errors continues to match.
