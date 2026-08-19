@@ -384,7 +384,17 @@ func dispatchBoundaryScopeFR(
 	// assembler routing. instanceLabel is "" so the boundary-disambiguated
 	// LabelComponentID set above stays the resource-naming basis (a per-instance
 	// label would collide across boundaries sharing an FR-instance name).
-	emitted, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "", featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
+	//
+	// The carrier is (this boundary, this attachment), passed as the two identities
+	// rather than derived from the synthetic node ID above: that string joins the
+	// same two values with separators neither of them is constrained to exclude, so
+	// splitting it back is not a recoverable operation. The retention it records
+	// into is the render's own, reached through the state of whichever component
+	// node dispatched this FR — one value for the whole render, so which node that
+	// was does not select it.
+	emitted, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "",
+		state.hydrated.attachmentOnBoundary(key.BoundaryPath, frInstance),
+		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 	if err != nil {
 		return err
 	}

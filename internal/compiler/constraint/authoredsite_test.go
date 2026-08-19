@@ -215,6 +215,10 @@ spec:
   locals:
     prefix: "{{ .context.instance_id }}"
 `,
+		// Its artifacts block carries an entry whose authored key holds the locator
+		// dialect's separator, which is the ordinary shape on this axis: an inline
+		// entry's key is its output filename. So a locator over the entry names this
+		// block and stops, and that is what the walk below confirms resolves.
 		"featurerecipes/tls.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
@@ -225,7 +229,14 @@ spec:
     - id: stamp
       plugin: core/stamper:1.0.0
       function: mutate
+  artifacts:
+    values.yaml: "replicas: 2"
 `,
+		// The second attachment on the same node, carrying an artifacts entry that
+		// resolves to the SAME output name as the first one's. Nothing declares output
+		// names unique across documents, so this is ordinary authoring rather than a
+		// contrived collision — and it is what makes the attachment coordinate
+		// load-bearing.
 		"featurerecipes/logging.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
@@ -236,6 +247,8 @@ spec:
     - id: stamp
       plugin: core/stamper:1.0.0
       function: mutate
+  artifacts:
+    values.yaml: "level: info"
 `,
 		"featurerecipes/shared-db.yaml": `
 apiVersion: aggrega.ai/v1alpha1
@@ -247,6 +260,8 @@ spec:
     - id: annotate
       plugin: core/annotator:1.0.0
       function: mutate
+  artifacts:
+    dashboard.json: "{}"
 `,
 	}
 }

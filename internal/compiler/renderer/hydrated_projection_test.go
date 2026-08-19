@@ -40,18 +40,30 @@ func declaredAtHydratedStage(t *testing.T) []string {
 	return own
 }
 
-// projectedFieldNames returns the names the retention carries, taken from the
-// two structures that hold them.
+// projectedFieldNames returns the names the retention carries, taken from every
+// structure that holds one.
 //
-// Both are read because one value is held per render and the rest per node: the
-// render's resolved provides are already evaluated once for the whole render, so
-// the retention holds that bag itself rather than a copy under every node.
+// All four are read because the retention is held at four scopes, and each scope
+// is a different thing being retained rather than a different place to put the
+// same thing. One value is held per render — the resolved provides, already
+// evaluated once for the whole render, so the retention holds that bag itself
+// rather than a copy under every node. The rest are held per node, per attachment
+// on a node, and per boundary-scope attachment: three documents author the source,
+// the workload and the artifacts a render reads, and an attachment's render runs
+// under the host component's node identity, so a single per-node scope would
+// answer the host's values for the attachment's documents.
+//
+// A structure added here later that holds no declared name fails the comparison
+// below from its other direction, so this list cannot be widened into one that
+// admits an unnamed field.
 func projectedFieldNames(t *testing.T) []string {
 	t.Helper()
 	var names []string
 	for _, typ := range []reflect.Type{
 		reflect.TypeOf(hydratedProjection{}),
 		reflect.TypeOf(hydratedProjections{}),
+		reflect.TypeOf(nodeAttachmentProjection{}),
+		reflect.TypeOf(boundaryAttachmentProjection{}),
 	} {
 		for i := 0; i < typ.NumField(); i++ {
 			f := typ.Field(i)

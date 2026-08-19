@@ -1028,6 +1028,127 @@ func newNodeArtifactSubject(sourceFile, node, artifact string, segments ...strin
 	}
 }
 
+// NodeAttachmentArtifactSubject is the subject of a check invoked once per
+// artifact the FeatureRecipe one attachment binds on a node projects.
+//
+// It is keyed per attachment as well as per node because the artifacts block is
+// authored on the FeatureRecipe the attachment binds, a different document from
+// the node's own Recipe. Two attachments on one node therefore carry
+// independently authored artifacts blocks, and nothing makes their output
+// filenames distinct from each other or from the node's own — so the attachment
+// is what tells one block from another, and a kind carrying only the node and the
+// artifact could not.
+type NodeAttachmentArtifactSubject interface {
+	Subject
+
+	// NodeID identifies the node carrying the attachment, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// AttachmentName is the attachment whose FeatureRecipe projects the artifact.
+	AttachmentName() string
+
+	// ArtifactName is the artifact the check was invoked for, named by the output
+	// name the entry resolves to — on the same reading the node's own artifact
+	// kind carries: an inline entry resolves to its own authored key, an imported
+	// file to that file's base name, and a library bundle to one name per file it
+	// holds. Which artifacts block the name belongs to is said by the kind it is
+	// reached within.
+	ArtifactName() string
+
+	nodeAttachmentArtifact()
+}
+
+type nodeAttachmentArtifactSubject struct {
+	provenance
+	node       string
+	attachment string
+	artifact   string
+}
+
+func (nodeAttachmentArtifactSubject) nodeAttachmentArtifact() {}
+
+func (s nodeAttachmentArtifactSubject) NodeID() string { return s.node }
+
+func (s nodeAttachmentArtifactSubject) AttachmentName() string { return s.attachment }
+
+func (s nodeAttachmentArtifactSubject) ArtifactName() string { return s.artifact }
+
+func newNodeAttachmentArtifactSubject(
+	sourceFile, node, attachment, artifact string,
+	segments ...string,
+) NodeAttachmentArtifactSubject {
+	return nodeAttachmentArtifactSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		attachment: attachment,
+		artifact:   artifact,
+	}
+}
+
+// BoundaryAttachmentArtifactSubject is the subject of a check invoked once per
+// artifact the FeatureRecipe one boundary-scope attachment binds projects.
+//
+// It is rooted at a boundary rather than at a node because that is where the
+// attachment is declared. Such an attachment is written once and reaches every
+// component the boundary holds, so a node-rooted walk would ask about one
+// authored entry once per component — the same authored text presented as many
+// times as the boundary has members — and would ask about it not at all for a
+// boundary holding none, which is silence a caller cannot tell from approval.
+//
+// The output filenames in that block are chosen independently of any component's,
+// so this is a separate kind rather than the node-rooted one reached differently:
+// no node-rooted key can name an artifact authored against a boundary.
+type BoundaryAttachmentArtifactSubject interface {
+	Subject
+
+	// BoundaryPath is the boundary the attachment was declared on, as every
+	// keyed fact takes it. It is the scope's path from the document's own scope
+	// set rather than a bare name, because boundaries nest and two scopes at
+	// different depths may carry one name.
+	BoundaryPath() string
+
+	// AttachmentName is the attachment whose FeatureRecipe projects the artifact:
+	// the name the operator wrote it under.
+	AttachmentName() string
+
+	// ArtifactName is the artifact the check was invoked for, named by the output
+	// name the entry resolves to — on the same reading every artifact kind
+	// carries: an inline entry resolves to its own authored key, an imported file
+	// to that file's base name, and a library bundle to one name per file it
+	// holds.
+	ArtifactName() string
+
+	boundaryAttachmentArtifact()
+}
+
+type boundaryAttachmentArtifactSubject struct {
+	provenance
+	boundary   string
+	attachment string
+	artifact   string
+}
+
+func (boundaryAttachmentArtifactSubject) boundaryAttachmentArtifact() {}
+
+func (s boundaryAttachmentArtifactSubject) BoundaryPath() string { return s.boundary }
+
+func (s boundaryAttachmentArtifactSubject) AttachmentName() string { return s.attachment }
+
+func (s boundaryAttachmentArtifactSubject) ArtifactName() string { return s.artifact }
+
+func newBoundaryAttachmentArtifactSubject(
+	sourceFile, boundary, attachment, artifact string,
+	segments ...string,
+) BoundaryAttachmentArtifactSubject {
+	return boundaryAttachmentArtifactSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		boundary:   boundary,
+		attachment: attachment,
+		artifact:   artifact,
+	}
+}
+
 // ModuleSubject is the subject of a check invoked once per sub-module the
 // composition brought in: one entry of an Aggregate's `aggregates` block, at
 // every depth.

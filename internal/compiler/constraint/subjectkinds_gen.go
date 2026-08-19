@@ -58,7 +58,7 @@ const (
 	// SubjectEdge is the subject kind edge, keyed by 8 declared facts.
 	SubjectEdge SubjectKind = "edge"
 
-	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 15 declared facts.
+	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 18 declared facts.
 	SubjectNodeAttachment SubjectKind = "(node, attachment)"
 
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 3 declared facts.
@@ -79,7 +79,7 @@ const (
 	// SubjectNodePillarLeaf is the subject kind (node, pillar, leaf), keyed by 1 declared fact.
 	SubjectNodePillarLeaf SubjectKind = "(node, pillar, leaf)"
 
-	// SubjectBoundaryAttachment is the subject kind (boundary, attachment), keyed by 2 declared facts.
+	// SubjectBoundaryAttachment is the subject kind (boundary, attachment), keyed by 5 declared facts.
 	SubjectBoundaryAttachment SubjectKind = "(boundary, attachment)"
 
 	// SubjectNodeParameter is the subject kind (node, parameter), keyed by 1 declared fact.
@@ -108,6 +108,12 @@ const (
 
 	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 3 declared facts.
 	SubjectNodeArtifact SubjectKind = "(node, artifact)"
+
+	// SubjectNodeAttachmentArtifact is the subject kind (node, attachment, artifact), keyed by 1 declared fact.
+	SubjectNodeAttachmentArtifact SubjectKind = "(node, attachment, artifact)"
+
+	// SubjectBoundaryAttachmentArtifact is the subject kind (boundary, attachment, artifact), keyed by 1 declared fact.
+	SubjectBoundaryAttachmentArtifact SubjectKind = "(boundary, attachment, artifact)"
 
 	// SubjectBoundaryProviderPath is the subject kind (boundary, provider, path), keyed by 2 declared facts.
 	SubjectBoundaryProviderPath SubjectKind = "(boundary, provider, path)"
@@ -141,6 +147,8 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeProvidesKey, Coordinates: []string{"node", "provides-key"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeLocalsKey, Coordinates: []string{"node", "locals-key"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifact, Coordinates: []string{"node", "artifact"}, Traversal: TraversalPull},
+	{Kind: SubjectNodeAttachmentArtifact, Coordinates: []string{"node", "attachment", "artifact"}, Traversal: TraversalPull},
+	{Kind: SubjectBoundaryAttachmentArtifact, Coordinates: []string{"boundary", "attachment", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryProviderPath, Coordinates: []string{"boundary", "provider", "path"}, Traversal: TraversalPull},
 }
 

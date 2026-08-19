@@ -1,0 +1,606 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package renderer
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
+
+// The mid-render facts an attachment's render reaches are retained under that
+// attachment's own carrier, and this file drives a real build over both carriers
+// and reads what the retention holds.
+//
+// # Why a presence check would certify nothing
+//
+// Each of these facts has a sibling keyed by the node alone, and every accessor
+// answers a zero value for a carrier the retention does not hold. So a retention
+// that recorded nothing, and one that recorded everything under the wrong key,
+// both answer exactly what a correct one answers for a build where the host and
+// its attachments happen to agree. Three things are therefore asserted rather
+// than presence: the count of carriers recorded, the identity of each carrier's
+// entries, and — the load-bearing one — that every attachment's answer DIFFERS
+// from the host node's.
+//
+// The fixture is built so no two of those answers can coincide. The host declares
+// a source and no workload; one attachment declares a workload and no source, the
+// other the reverse of that; and every carrier declares an artifact under one
+// shared output name, so a key space that collapsed would hand one carrier's text
+// back for another's.
+//
+// # Each carrier renders through its own provider
+//
+// The delimiter pair an artifact entry is read with is a property of the provider
+// that reads it, and an attachment binds its own FeatureRecipe declaring its own
+// capability. The four sites here therefore declare four distinct pairs, none of
+// them the usual one on more than one site — which is what makes a delimiter
+// answered from the host's provider visible as a wrong pair rather than as the
+// same pair by luck.
+
+// The four capability bindings the fixture declares, one per render site, each
+// resolving to a provider declaring its own delimiter pair.
+const (
+	carrierHostCapability      = "host-provider"
+	carrierMonCapability       = "mon-provider"
+	carrierLogsCapability      = "logs-provider"
+	carrierBoundaryCapability  = "boundary-provider"
+	carrierSharedArtifactName  = "carrier-shared.yaml"
+	carrierHostArtifactName    = "carrier-host-own.yaml"
+	carrierMonArtifactName     = "carrier-mon-own.yaml"
+	carrierLogsArtifactName    = "carrier-logs-own.yaml"
+	carrierBoundaryArtifact    = "carrier-bridge-own.yaml"
+	carrierNode                = "api"
+	carrierBoundaryPath        = "cluster"
+	carrierMonInstance         = "mon"
+	carrierLogsInstance        = "logs"
+	carrierBoundaryInstance    = "bridge"
+	carrierMonFeatureType      = "core/monitoring"
+	carrierLogsFeatureType     = "core/logging"
+	carrierBoundaryFeatureType = "core/bridge"
+)
+
+// carrierDelimiters is the pair each capability's provider declares. No pair
+// repeats, and none is the usual one, so a delimiter answered from the wrong
+// provider cannot read as the right answer.
+var carrierDelimiters = map[string][2]string{
+	carrierHostCapability:     {"<{", "}>"},
+	carrierMonCapability:      {"[[", "]]"},
+	carrierLogsCapability:     {"<<", ">>"},
+	carrierBoundaryCapability: {"((", "))"},
+}
+
+// carrierSynthesizingProvider is a provider that places artifacts and also
+// synthesises a workload, which is what lets a fixture site declare a workload
+// while another declares a source.
+type carrierSynthesizingProvider struct {
+	stubArtifactsEmitter
+}
+
+func (p *carrierSynthesizingProvider) SynthesizeWorkload(
+	_ context.Context, _ *types.TemplateContext, _ *types.Workload, nodeCtx NodeRenderContext,
+) ([]EmittedFile, error) {
+	return []EmittedFile{{
+		Name:   "carrier-synth.yaml",
+		Origin: EmitOriginWorkload,
+		Body:   []byte("kind: Synthesised\nsite: " + nodeCtx.LabelComponentID + "\n"),
+	}}, nil
+}
+
+// carrierFactory resolves each declared capability to a provider carrying that
+// capability's own delimiter pair. An unknown binding fails, which is what the
+// unresolved-provider case reads through.
+func carrierFactory() EngineFactory {
+	return func(capability string) (Provider, error) {
+		pair, ok := carrierDelimiters[capability]
+		if !ok {
+			return nil, errors.New("no provider for that capability")
+		}
+		p := &carrierSynthesizingProvider{}
+		p.left, p.right = pair[0], pair[1]
+		return p, nil
+	}
+}
+
+// carrierGraphFacts stands in for the presentation the graph finalisation
+// produces, which the render's later presentations are built over.
+//
+// It carries no value behind the interface: none of the facts read here is a
+// graph-stage one, so a read panics rather than answering a zero value. It is
+// supplied because the presentation chain refuses to assemble with a hole in it —
+// without it the render publishes no mid-render presentation and every accessor
+// assertion below would be unreachable for a reason unrelated to the retention.
+type carrierGraphFacts struct{ constraint.GraphView }
+
+// carrierWorkload is the workload body a site declaring one carries.
+const carrierWorkload = `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: carrier:latest
+`
+
+// carrierArtifacts builds an artifacts block holding the shared output name and
+// one name of the site's own, each body naming the site so a text read from the
+// wrong carrier is legible in the failure.
+func carrierArtifacts(ownName, site string) types.OrderedMap[types.ArtifactEntry] {
+	out := types.OrderedMap[types.ArtifactEntry]{}
+	out.Set(carrierSharedArtifactName, types.ArtifactEntry{Inline: "kind: Shared\nsite: " + site + "\n"})
+	out.Set(ownName, types.ArtifactEntry{Inline: "kind: Own\nsite: " + site + "\n"})
+	return out
+}
+
+// carrierText is the template text the fixture authored for one site's entry, as
+// the retention must hold it: before anything evaluates it.
+func carrierText(kind, site string) string {
+	return "kind: " + kind + "\nsite: " + site + "\n"
+}
+
+// carrierLookup binds the host component and the three attachments, each to a
+// document declaring its own capability and its own pillars.
+//
+//	site                     source   workload
+//	host node's own Recipe    yes       no
+//	attachment "mon"           no      yes
+//	attachment "logs"         yes       no
+//	boundary attachment        no      yes
+//
+// The host disagrees with every attachment on at least one pillar, and the two
+// node-carried attachments disagree with each other on both — so an answer read
+// from the wrong carrier is a different answer rather than the same one.
+func carrierLookup() RecipeLookup {
+	return RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			if componentType != "core/compute/api-server" {
+				return nil, false
+			}
+			return &types.Recipe{
+				APIVersion: "aggrega.ai/v1alpha1",
+				Kind:       "Recipe",
+				Metadata:   types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
+				Spec: types.RecipeSpec{
+					Capability: carrierHostCapability,
+					Implements: "core/compute/api-server",
+					Source:     "./host-chart",
+					Artifacts:  carrierArtifacts(carrierHostArtifactName, "host"),
+				},
+			}, true
+		},
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			switch featureType {
+			case carrierMonFeatureType:
+				return &types.FeatureRecipe{
+					Metadata: types.FeatureRecipeMetadata{Name: "mon-fr", Version: "1.0.0"},
+					Spec: types.FeatureRecipeSpec{
+						Capability: carrierMonCapability,
+						Implements: carrierMonFeatureType,
+						Workload:   types.WorkloadTemplate{Inline: carrierWorkload},
+						Artifacts:  carrierArtifacts(carrierMonArtifactName, "mon"),
+					},
+				}, true
+			case carrierLogsFeatureType:
+				return &types.FeatureRecipe{
+					Metadata: types.FeatureRecipeMetadata{Name: "logs-fr", Version: "1.0.0"},
+					Spec: types.FeatureRecipeSpec{
+						Capability: carrierLogsCapability,
+						Implements: carrierLogsFeatureType,
+						Source:     "./logs-chart",
+						Artifacts:  carrierArtifacts(carrierLogsArtifactName, "logs"),
+					},
+				}, true
+			case carrierBoundaryFeatureType:
+				return &types.FeatureRecipe{
+					Metadata: types.FeatureRecipeMetadata{Name: "bridge-fr", Version: "1.0.0"},
+					Spec: types.FeatureRecipeSpec{
+						Capability:     carrierBoundaryCapability,
+						Implements:     carrierBoundaryFeatureType,
+						ExecutionScope: "boundary",
+						Workload:       types.WorkloadTemplate{Inline: carrierWorkload},
+						Artifacts:      carrierArtifacts(carrierBoundaryArtifact, "bridge"),
+					},
+				}, true
+			}
+			return nil, false
+		},
+	}
+}
+
+// carrierInput assembles the one build both carriers are reached from: a single
+// node holding two attachments, plus a boundary-scope attachment on the boundary
+// that node sits in.
+func carrierInput() RendererInput {
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set(carrierNode, types.IRNode{
+		Component:       "core/compute/api-server",
+		BoundaryPath:    carrierBoundaryPath,
+		ResolvedVersion: "1.0.0",
+	})
+
+	attachments := types.OrderedMap[types.IRFeatureEntry]{}
+	attachments.Set(carrierMonInstance, types.IRFeatureEntry{Type: carrierMonFeatureType})
+	attachments.Set(carrierLogsInstance, types.IRFeatureEntry{Type: carrierLogsFeatureType})
+	attachments.Set(carrierBoundaryInstance, types.IRFeatureEntry{Type: carrierBoundaryFeatureType})
+	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	fvm.Set(carrierNode, attachments)
+
+	boundaryProjection := types.OrderedMap[types.IRBoundaryFeature]{}
+	boundaryProjection.Set(carrierBoundaryInstance, types.IRBoundaryFeature{
+		Type:  carrierBoundaryFeatureType,
+		Infra: types.OrderedMap[any]{},
+	})
+	boundaryFeatures := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	boundaryFeatures.Set(carrierBoundaryPath, boundaryProjection)
+
+	authoredFeatures := types.OrderedMap[types.BoundaryFeature]{}
+	authoredFeatures.Set(carrierBoundaryInstance, types.BoundaryFeature{
+		Type:  carrierBoundaryFeatureType,
+		Infra: types.OrderedMap[any]{},
+	})
+	boundary := types.Boundary{
+		Directory:  "dist/cluster",
+		Features:   authoredFeatures,
+		Components: types.OrderedMap[types.BoundaryComponent]{},
+		Boundaries: types.OrderedMap[types.Boundary]{},
+	}
+	boundary.Components.Set(carrierNode, types.BoundaryComponent{})
+	boundaries := types.OrderedMap[types.Boundary]{}
+	boundaries.Set(carrierBoundaryPath, boundary)
+
+	return RendererInput{
+		GraphView: carrierGraphFacts{},
+		Graph: &types.IRGraph{
+			Metadata: types.IRMetadata{AggregateName: "carrier-app"},
+			Spec: types.IRSpec{
+				Nodes:                nodes,
+				ValuesMapping:        types.OrderedMap[json.RawMessage]{},
+				InfraMapping:         types.OrderedMap[json.RawMessage]{},
+				FeatureValuesMapping: fvm,
+				BoundaryFeatures:     boundaryFeatures,
+				Provenance:           types.IRProvenance{CompilerVersion: "test", AggregateVersion: "1.0.0"},
+			},
+		},
+		FeatureOrder: ir.FeatureOrder{
+			carrierNode: {carrierMonInstance, carrierLogsInstance, carrierBoundaryInstance},
+		},
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "carrier-app"}},
+			Release: &types.Release{
+				Metadata: types.ReleaseMetadata{Name: "carrier-release", Version: "1.0.0", Environment: "test"},
+				Spec:     types.ReleaseSpec{Boundaries: boundaries},
+			},
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{
+				carrierNode: {BoundaryPath: carrierBoundaryPath, Directory: "dist/cluster"},
+			},
+		},
+	}
+}
+
+// carrierRender runs the fixture build and fails the test if it did not complete,
+// because nothing read afterwards is attributable to the retention otherwise.
+func carrierRender(t *testing.T) *RenderResult {
+	t.Helper()
+	res, err := RenderAll(context.Background(), carrierInput(), carrierLookup(), carrierFactory())
+	if err != nil {
+		t.Fatalf("the fixture build did not complete, so nothing below is attributable: %+v", err)
+	}
+	if res.HydratedView == nil {
+		t.Fatal("the render published no mid-render presentation; every accessor assertion below would be unreachable")
+	}
+	return res
+}
+
+// TestTheRetentionHoldsOneEntryPerAttachmentCarrier asserts the recorded set by
+// COUNT and by IDENTITY on both carriers.
+//
+// A count alone cannot separate a set of the right size over the right keys from
+// one of the right size over the wrong keys, and this is exactly the surface where
+// that confusion lives: every key here is built from strings the render also has
+// under other names — the host's node id, the attachment's instance name, the
+// boundary's path — so a carrier assembled from the wrong pair of them produces a
+// set of the same size. The keys are therefore named explicitly.
+func TestTheRetentionHoldsOneEntryPerAttachmentCarrier(t *testing.T) {
+	t.Parallel()
+
+	res := carrierRender(t)
+
+	// ANTI-NEEDLE. A build carrying attachments with artifacts must record
+	// carriers; a zero here is the whole failure this file exists to catch, and it
+	// passes every byte-identity and determinism proof over the same build.
+	if got := res.hydrated.recordedNodeAttachments(); got == 0 {
+		t.Fatal("the retention recorded ZERO node-carried attachment renders over a build carrying two.\n" +
+			"CONSEQUENCE: every fact keyed by that carrier answers its zero value, which reads exactly " +
+			"like an attachment that declared nothing.")
+	}
+	if got := res.hydrated.recordedBoundaryAttachments(); got == 0 {
+		t.Fatal("the retention recorded ZERO boundary-scope attachment renders over a build carrying one.")
+	}
+
+	// BY COUNT: one entry per attachment render, and no more. A wider carrier —
+	// one keyed by the node alone, say — would collapse the two node-carried
+	// attachments into one entry and show up here.
+	if got := res.hydrated.recordedNodeAttachments(); got != 2 {
+		t.Errorf("the retention holds %d node-carried attachment renders, want 2 — one per attachment the node declares", got)
+	}
+	if got := res.hydrated.recordedBoundaryAttachments(); got != 1 {
+		t.Errorf("the retention holds %d boundary-scope attachment renders, want 1", got)
+	}
+
+	// BY IDENTITY: the keys are the ones named, not merely two of the right shape.
+	for _, key := range []nodeAttachmentKey{
+		{node: carrierNode, attachment: carrierMonInstance},
+		{node: carrierNode, attachment: carrierLogsInstance},
+	} {
+		if _, ok := res.hydrated.nodeAttachmentProjectionOf(key); !ok {
+			t.Errorf("nothing is recorded for carrier (node %q, attachment %q)", key.node, key.attachment)
+		}
+	}
+	boundaryKey := boundaryAttachmentKey{boundary: carrierBoundaryPath, attachment: carrierBoundaryInstance}
+	if _, ok := res.hydrated.boundaryAttachmentProjectionOf(boundaryKey); !ok {
+		t.Errorf("nothing is recorded for carrier (boundary %q, attachment %q)",
+			boundaryKey.boundary, boundaryKey.attachment)
+	}
+
+	// The boundary-scope attachment must NOT also be recorded as a node-carried
+	// one. It is declared once at the boundary and reaches every component the
+	// boundary holds, so a node-rooted recording would hold the same authored
+	// document once per member.
+	if _, ok := res.hydrated.nodeAttachmentProjectionOf(
+		nodeAttachmentKey{node: carrierNode, attachment: carrierBoundaryInstance},
+	); ok {
+		t.Errorf("the boundary-scope attachment %q is also recorded under the node carrier; "+
+			"one authored document would then be held under as many keys as the boundary has members",
+			carrierBoundaryInstance)
+	}
+
+	t.Logf("DIAGNOSTIC WALK — carriers recorded: %d node-carried, %d boundary-scope",
+		res.hydrated.recordedNodeAttachments(), res.hydrated.recordedBoundaryAttachments())
+}
+
+// TestEveryCarriersArtifactTextIsItsOwn drives the shared output name through all
+// four sites and requires each to answer its own text.
+//
+// The shared name is what makes this more than a presence check: all four sites
+// declare an entry under it, so a key space that collapsed — an attachment filed
+// under the host node, or the two attachments filed under the node alone — would
+// answer one site's text where another's belongs, with the count unchanged.
+func TestEveryCarriersArtifactTextIsItsOwn(t *testing.T) {
+	t.Parallel()
+
+	view := carrierRender(t).HydratedView
+
+	// The node's own Recipe, read through the fact declared over it.
+	if got, want := view.ArtifactTemplateText(carrierNode, carrierSharedArtifactName),
+		carrierText("Shared", "host"); got != want {
+		t.Errorf("the node's own shared entry reads %q, want %q", got, want)
+	}
+
+	for _, tc := range []struct {
+		attachment string
+		site       string
+		ownName    string
+	}{
+		{carrierMonInstance, "mon", carrierMonArtifactName},
+		{carrierLogsInstance, "logs", carrierLogsArtifactName},
+	} {
+		shared := view.AttachmentArtifactTemplateText(carrierNode, tc.attachment, carrierSharedArtifactName)
+		if want := carrierText("Shared", tc.site); shared != want {
+			t.Errorf("attachment %q reads %q for the shared entry, want %q.\n"+
+				"INVARIANT: the entry is authored on the FeatureRecipe the attachment binds, so the "+
+				"attachment coordinate is what tells it from the node's own and from another attachment's.",
+				tc.attachment, shared, want)
+		}
+		own := view.AttachmentArtifactTemplateText(carrierNode, tc.attachment, tc.ownName)
+		if want := carrierText("Own", tc.site); own != want {
+			t.Errorf("attachment %q reads %q for its own entry %q, want %q", tc.attachment, own, tc.ownName, want)
+		}
+		// The attachment's own name is not the node's, so asking the node-keyed
+		// fact for it must answer empty rather than the attachment's text.
+		if leaked := view.ArtifactTemplateText(carrierNode, tc.ownName); leaked != "" {
+			t.Errorf("the node-keyed fact answers %q for %q, which attachment %q authored; "+
+				"the attachment's entries have leaked into a fact declared over the node's own Recipe",
+				leaked, tc.ownName, tc.attachment)
+		}
+	}
+
+	// The boundary-scope attachment, whose entries are keyed by the boundary.
+	shared := view.BoundaryAttachmentArtifactTemplateText(
+		carrierBoundaryPath, carrierBoundaryInstance, carrierSharedArtifactName)
+	if want := carrierText("Shared", "bridge"); shared != want {
+		t.Errorf("the boundary-scope attachment reads %q for the shared entry, want %q", shared, want)
+	}
+	own := view.BoundaryAttachmentArtifactTemplateText(
+		carrierBoundaryPath, carrierBoundaryInstance, carrierBoundaryArtifact)
+	if want := carrierText("Own", "bridge"); own != want {
+		t.Errorf("the boundary-scope attachment reads %q for its own entry, want %q", own, want)
+	}
+	// And it is not reachable through the node-rooted attachment key.
+	if leaked := view.AttachmentArtifactTemplateText(
+		carrierNode, carrierBoundaryInstance, carrierBoundaryArtifact); leaked != "" {
+		t.Errorf("the node-rooted attachment key answers %q for a boundary-scope entry", leaked)
+	}
+}
+
+// TestEveryCarriersPillarAnswersAreItsOwn is the independence assertion, and it is
+// the reason these facts carry an attachment coordinate at all.
+//
+// Each attachment's render runs under the host component's node identity over a
+// source and a workload its FeatureRecipe declares. So asked of the node, the
+// answers would be the host's — admitting a reference to a pillar the attachment
+// does not carry wherever the host carries it, and refusing a legitimate one
+// wherever the host does not. Both directions are wrong and neither shows in the
+// rendered output, which is why the fixture makes every pair disagree: an
+// assertion over a build where the host and its attachments agreed would pass on
+// exactly the defect it exists to catch.
+func TestEveryCarriersPillarAnswersAreItsOwn(t *testing.T) {
+	t.Parallel()
+
+	view := carrierRender(t).HydratedView
+
+	// The host node's own answers, which every attachment's must differ from.
+	hostSource := view.ResolvedNodeSourceDeclared(carrierNode)
+	hostWorkload := view.ParsedNodeWorkloadPresent(carrierNode)
+	if !hostSource || hostWorkload {
+		t.Fatalf("the fixture's host answers source=%v workload=%v; it must declare a source and no "+
+			"workload, or the disagreement every assertion below rests on does not exist",
+			hostSource, hostWorkload)
+	}
+
+	for _, tc := range []struct {
+		attachment   string
+		wantSource   bool
+		wantWorkload bool
+	}{
+		{carrierMonInstance, false, true},
+		{carrierLogsInstance, true, false},
+	} {
+		gotSource := view.AttachmentResolvedSourceDeclared(carrierNode, tc.attachment)
+		gotWorkload := view.AttachmentParsedWorkloadPresent(carrierNode, tc.attachment)
+		if gotSource != tc.wantSource {
+			t.Errorf("attachment %q: source declared = %v, want %v (the host answers %v)",
+				tc.attachment, gotSource, tc.wantSource, hostSource)
+		}
+		if gotWorkload != tc.wantWorkload {
+			t.Errorf("attachment %q: workload present = %v, want %v (the host answers %v)",
+				tc.attachment, gotWorkload, tc.wantWorkload, hostWorkload)
+		}
+	}
+
+	// The two attachments disagree with each other on both pillars, so a carrier
+	// keyed by the node alone would answer whichever rendered last for both.
+	if view.AttachmentResolvedSourceDeclared(carrierNode, carrierMonInstance) ==
+		view.AttachmentResolvedSourceDeclared(carrierNode, carrierLogsInstance) {
+		t.Error("the two attachments on one node answer the same resolved source; the fixture must " +
+			"make them disagree, or a carrier missing the attachment coordinate would pass")
+	}
+	if view.AttachmentParsedWorkloadPresent(carrierNode, carrierMonInstance) ==
+		view.AttachmentParsedWorkloadPresent(carrierNode, carrierLogsInstance) {
+		t.Error("the two attachments on one node answer the same parsed workload")
+	}
+
+	// The boundary-scope attachment declares a workload and no source: the reverse
+	// of the host on both.
+	if got := view.BoundaryAttachmentResolvedSourceDeclared(carrierBoundaryPath, carrierBoundaryInstance); got {
+		t.Errorf("the boundary-scope attachment answers source declared = %v, want false (the host answers %v)",
+			got, hostSource)
+	}
+	if got := view.BoundaryAttachmentParsedWorkloadPresent(carrierBoundaryPath, carrierBoundaryInstance); !got {
+		t.Errorf("the boundary-scope attachment answers workload present = %v, want true (the host answers %v)",
+			got, hostWorkload)
+	}
+
+	t.Logf("DIAGNOSTIC WALK — pillars per carrier: host(source=%v workload=%v) "+
+		"mon(source=%v workload=%v) logs(source=%v workload=%v) bridge(source=%v workload=%v)",
+		hostSource, hostWorkload,
+		view.AttachmentResolvedSourceDeclared(carrierNode, carrierMonInstance),
+		view.AttachmentParsedWorkloadPresent(carrierNode, carrierMonInstance),
+		view.AttachmentResolvedSourceDeclared(carrierNode, carrierLogsInstance),
+		view.AttachmentParsedWorkloadPresent(carrierNode, carrierLogsInstance),
+		view.BoundaryAttachmentResolvedSourceDeclared(carrierBoundaryPath, carrierBoundaryInstance),
+		view.BoundaryAttachmentParsedWorkloadPresent(carrierBoundaryPath, carrierBoundaryInstance))
+}
+
+// TestEveryCarriersDelimiterPairComesFromItsOwnProvider asserts each site's
+// artifact-template delimiters are answered from the provider that reads that
+// site's entries.
+//
+// The pair is a property of the provider, and an attachment binds its own
+// FeatureRecipe declaring its own capability — so a node whose attachment renders
+// through a different provider is ordinary rather than exceptional. Read with the
+// wrong pair, a template's downstream target syntax surfaces as references it does
+// not make, so an answer taken from the host's provider is a wrong verdict rather
+// than a mis-filing. No two sites here declare the same pair, and none declares
+// the usual one, which is what makes a wrong answer visible.
+func TestEveryCarriersDelimiterPairComesFromItsOwnProvider(t *testing.T) {
+	t.Parallel()
+
+	view := carrierRender(t).HydratedView
+
+	want := func(capability string) constraint.ArtifactTemplateDelimiters {
+		pair := carrierDelimiters[capability]
+		return constraint.ArtifactTemplateDelimiters{Left: pair[0], Right: pair[1]}
+	}
+
+	if got, w := view.ProviderArtifactTemplateDelimiters(carrierNode), want(carrierHostCapability); got != w {
+		t.Errorf("the node's own provider answers %v, want %v", got, w)
+	}
+	for _, tc := range []struct {
+		attachment string
+		capability string
+	}{
+		{carrierMonInstance, carrierMonCapability},
+		{carrierLogsInstance, carrierLogsCapability},
+	} {
+		got := view.AttachmentProviderArtifactTemplateDelimiters(carrierNode, tc.attachment)
+		if w := want(tc.capability); got != w {
+			t.Errorf("attachment %q answers %v, want %v — the pair its OWN provider declares", tc.attachment, got, w)
+		}
+		if got == want(carrierHostCapability) {
+			t.Errorf("attachment %q answers the HOST provider's pair; the pair is a property of the "+
+				"provider that reads the entry, and the attachment binds its own", tc.attachment)
+		}
+	}
+
+	got := view.BoundaryAttachmentProviderArtifactTemplateDelimiters(carrierBoundaryPath, carrierBoundaryInstance)
+	if w := want(carrierBoundaryCapability); got != w {
+		t.Errorf("the boundary-scope attachment answers %v, want %v", got, w)
+	}
+	if got == want(carrierHostCapability) {
+		t.Error("the boundary-scope attachment answers the host provider's pair")
+	}
+
+	// An attachment nothing binds is answered with the usual pair rather than with
+	// an absence, which is the fallback the render itself applies.
+	usual := constraint.ArtifactTemplateDelimiters{Left: "{{", Right: "}}"}
+	if got := view.AttachmentProviderArtifactTemplateDelimiters(carrierNode, "no-such-attachment"); got != usual {
+		t.Errorf("an unbound attachment answers %v, want the usual pair %v", got, usual)
+	}
+	if got := view.BoundaryAttachmentProviderArtifactTemplateDelimiters(
+		carrierBoundaryPath, "no-such-attachment"); got != usual {
+		t.Errorf("an unbound boundary-scope attachment answers %v, want the usual pair %v", got, usual)
+	}
+
+	t.Logf("DIAGNOSTIC WALK — delimiter pairs per carrier: host %v, mon %v, logs %v, bridge %v",
+		view.ProviderArtifactTemplateDelimiters(carrierNode),
+		view.AttachmentProviderArtifactTemplateDelimiters(carrierNode, carrierMonInstance),
+		view.AttachmentProviderArtifactTemplateDelimiters(carrierNode, carrierLogsInstance),
+		view.BoundaryAttachmentProviderArtifactTemplateDelimiters(carrierBoundaryPath, carrierBoundaryInstance))
+}
+
+// TestTheNodesOwnArtifactAxisStillEnumeratesOnlyItsOwnEntries holds the boundary
+// the attachment retention must not cross.
+//
+// Every attachment's entries flow through the same artifacts walk as the node's
+// own, under the node's identity. Before this retention existed, what kept them
+// out of the node's own values was that an attachment's render carried no
+// retention at all; now it carries one, so the discriminator is which retention it
+// carries rather than whether it carries any. If an attachment's render were given
+// the per-node retention, its entries would be recorded under the host node — and
+// the axis enumerating that node's artifacts, which is what invokes a rule once
+// per entry, would present them as the node's own.
+func TestTheNodesOwnArtifactAxisStillEnumeratesOnlyItsOwnEntries(t *testing.T) {
+	t.Parallel()
+
+	res := carrierRender(t)
+
+	names := res.hydrated.artifactNames(carrierNode)
+	if len(names) == 0 {
+		t.Fatal("the node's own artifacts walk recorded nothing; the exclusion below would hold vacuously")
+	}
+	wantOwn := map[string]bool{carrierSharedArtifactName: true, carrierHostArtifactName: true}
+	for _, name := range names {
+		if !wantOwn[name] {
+			t.Errorf("the node's own artifact axis enumerates %q, which no entry of its Recipe declares; "+
+				"an attachment's entries have been recorded under the host node", name)
+		}
+	}
+	if len(names) != len(wantOwn) {
+		t.Errorf("the node's own artifact axis enumerates %v; want exactly the two entries its Recipe declares", names)
+	}
+}

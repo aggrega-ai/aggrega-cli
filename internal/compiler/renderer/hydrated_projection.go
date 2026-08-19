@@ -93,12 +93,102 @@ type hydratedProjection struct {
 	ArtifactTemplateText types.OrderedMap[string]
 }
 
+// An artifacts block is authored on the entity that carries it, and three
+// entities carry one: a component's Recipe, the FeatureRecipe an attachment binds
+// on a node, and the FeatureRecipe an operator attaches at a boundary. The same
+// holds for the source and the workload a render reads its pillars from. So the
+// state one render reaches is retained under the CARRIER it was authored
+// against, and the three carriers are three key spaces rather than one.
+//
+// The separation is not filing. An attachment's render runs under the host
+// component's node identity over documents the FeatureRecipe declares, so a
+// single node-keyed space would answer the host's pillars for the attachment's
+// templates — admitting a reference to a pillar the attachment does not carry
+// wherever the host carries it, and refusing a legitimate one wherever the host
+// does not. Both directions are wrong and neither is visible from the outcome.
+//
+// The two attachment carriers are held in separate maps under separate key types
+// rather than in one map under a carrier discriminator. A boundary-rooted
+// identity is then unable to be written into a node-rooted key at all, which is a
+// property of the types rather than of a discriminator being set correctly at
+// every write.
+
+// nodeAttachmentKey identifies the render of one attachment on one node. Both
+// coordinates are required: two attachments on one node are independently
+// authored, and nothing makes one's output names distinct from the other's.
+type nodeAttachmentKey struct {
+	node       string
+	attachment string
+}
+
+// boundaryAttachmentKey identifies the render of one boundary-scope attachment.
+//
+// It is rooted at the boundary because that is where such an attachment is
+// declared — it is written once and reaches every component the boundary holds,
+// so a component-rooted key would hold one authored document under as many keys
+// as the boundary has members, and none at all for a boundary holding none.
+//
+// The boundary is its scope path rather than a bare name, because boundaries nest
+// and two scopes at different depths may carry one name.
+type boundaryAttachmentKey struct {
+	boundary   string
+	attachment string
+}
+
+// nodeAttachmentProjection is what the mid-render state of one attachment's
+// render on a node is reduced to once that state is complete.
+//
+// The field names are the correspondence with the accessors that read them, on
+// the reading the per-node projection above follows, and the guard beside this
+// file compares the two sets in both directions.
+type nodeAttachmentProjection struct {
+	// AttachmentResolvedSourceDeclared reports whether the FeatureRecipe the
+	// attachment binds carries a source once source resolution has run.
+	//
+	// The value recorded is the RESOLVED source: the attachment's render is built
+	// around a Recipe carrying the resolved value, so a source template evaluating
+	// to an empty string is recorded the same as an absent source.
+	AttachmentResolvedSourceDeclared bool
+
+	// AttachmentParsedWorkloadPresent reports whether the attachment's render
+	// state carries a workload. A FeatureRecipe declaring no workload body
+	// reaches artifact evaluation with none, because workload synthesis had
+	// nothing to parse.
+	AttachmentParsedWorkloadPresent bool
+
+	// AttachmentArtifactTemplateText is the template text standing at each of the
+	// attachment's artifacts, keyed by the output name the entry resolves to and
+	// held in the order the entries were walked.
+	AttachmentArtifactTemplateText types.OrderedMap[string]
+}
+
+// boundaryAttachmentProjection is what the mid-render state of one boundary-scope
+// attachment's render is reduced to once that state is complete.
+type boundaryAttachmentProjection struct {
+	// BoundaryAttachmentResolvedSourceDeclared reports whether the FeatureRecipe
+	// the boundary-scope attachment binds carries a source once source resolution
+	// has run, read as the resolved value for the reason its node-carried sibling
+	// is.
+	BoundaryAttachmentResolvedSourceDeclared bool
+
+	// BoundaryAttachmentParsedWorkloadPresent reports whether the boundary-scope
+	// attachment's render state carries a workload.
+	BoundaryAttachmentParsedWorkloadPresent bool
+
+	// BoundaryAttachmentArtifactTemplateText is the template text standing at
+	// each of the boundary-scope attachment's artifacts, keyed by the output name
+	// the entry resolves to and held in the order the entries were walked.
+	BoundaryAttachmentArtifactTemplateText types.OrderedMap[string]
+}
+
 // hydratedProjections is one render's retained set of those projections, keyed
-// by node.
+// by node and, for what an attachment's render reaches, by that attachment's
+// carrier.
 //
 // It is installed once per render and lives for the whole of it. The per-node
-// projections are written as each node's state completes; the resolved provides
-// are not written at all, because the render already holds them.
+// projections are written as each node's state completes, the per-attachment ones
+// as each attachment's render completes; the resolved provides are not written at
+// all, because the render already holds them.
 type hydratedProjections struct {
 	// ResolvedNodeProvides is the render's own resolved-provides bag, held here
 	// by reference rather than copied per node.
@@ -113,8 +203,10 @@ type hydratedProjections struct {
 	// never contended; it is here because a map written from two goroutines is a
 	// crash rather than a wrong answer, and the walk's sequence is not a property
 	// this value can assert about its callers.
-	mu     sync.Mutex
-	byNode map[string]*hydratedProjection
+	mu                   sync.Mutex
+	byNode               map[string]*hydratedProjection
+	byNodeAttachment     map[nodeAttachmentKey]*nodeAttachmentProjection
+	byBoundaryAttachment map[boundaryAttachmentKey]*boundaryAttachmentProjection
 }
 
 // newHydratedProjections returns an empty set for one render, holding the
@@ -123,6 +215,8 @@ func newHydratedProjections(provides NodeProvides) *hydratedProjections {
 	return &hydratedProjections{
 		ResolvedNodeProvides: provides,
 		byNode:               map[string]*hydratedProjection{},
+		byNodeAttachment:     map[nodeAttachmentKey]*nodeAttachmentProjection{},
+		byBoundaryAttachment: map[boundaryAttachmentKey]*boundaryAttachmentProjection{},
 	}
 }
 
@@ -141,12 +235,13 @@ func (h *hydratedProjections) recordNode(state *PhaseBState) {
 	if h == nil || state == nil {
 		return
 	}
+	sourceDeclared, workloadPresent := pillarsReached(state)
 	p := &hydratedProjection{
-		ParsedNodeWorkloadPresent: state.ParsedWorkload != nil,
+		ResolvedNodeSourceDeclared: sourceDeclared,
+		ParsedNodeWorkloadPresent:  workloadPresent,
 	}
 	if recipe := state.Recipe; recipe != nil {
 		p.DeclaredLocalsKeys = recipe.Spec.Locals.Keys()
-		p.ResolvedNodeSourceDeclared = recipeSourceDeclared(recipe)
 		p.ValuesMappingTemplateRefs = collectValuesMappingRefs(recipe.Spec.ValuesMapping)
 	}
 
@@ -165,9 +260,12 @@ func (h *hydratedProjections) recordNode(state *PhaseBState) {
 // It is called from the artifacts walk rather than beside recordNode, because
 // that walk is where an imported entry's and a bundle entry's content is
 // resolved — the content the recorded fact names for all three authoring forms.
-// A nil set records nothing, which is what keeps the attachment-carried artifacts
-// that flow through the same walk out of a fact declared over a node's own
-// Recipe.
+//
+// A nil set records nothing, and that is what keeps the attachment-carried
+// artifacts flowing through the same walk out of a fact declared over a node's
+// own Recipe: an attachment's render is given no node retention, so this is not
+// reached for it. Those entries are recorded against their own carrier instead,
+// through the seam below.
 func (h *hydratedProjections) recordArtifactTemplate(nodeID, outputName, text string) {
 	if h == nil {
 		return
@@ -219,6 +317,210 @@ func (h *hydratedProjections) recordedNodes() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return len(h.byNode)
+}
+
+// attachmentRecorder records what one attachment's render reached, under the
+// carrier that attachment was declared against.
+//
+// It exists because the render path that produces those values is one path
+// reached from two carriers: the same function renders an attachment declared on
+// a node and one declared at a boundary, and it cannot tell which from anything
+// it holds. The node identity it carries is the HOST component's for the first
+// and a composite marker built for dispatch uniqueness for the second, so neither
+// is the carrier. Handing that path a recorder its caller built is what supplies
+// the carrier without the path having to decide it — and it makes writing a
+// boundary-rooted identity into a node-rooted key impossible rather than merely
+// unintended.
+type attachmentRecorder interface {
+	// recordPillars reduces one attachment render's completed mid-render state to
+	// the projection that outlives it.
+	recordPillars(state *PhaseBState)
+
+	// recordArtifactTemplate retains the template text standing at one artifact
+	// of this attachment's FeatureRecipe, under the output name that entry
+	// resolves to.
+	recordArtifactTemplate(outputName, text string)
+}
+
+// nodeAttachmentRecorder records against the carrier of an attachment declared on
+// a node.
+type nodeAttachmentRecorder struct {
+	into *hydratedProjections
+	key  nodeAttachmentKey
+}
+
+// boundaryAttachmentRecorder records against the carrier of an attachment
+// declared at a boundary.
+type boundaryAttachmentRecorder struct {
+	into *hydratedProjections
+	key  boundaryAttachmentKey
+}
+
+// attachmentOnNode returns the seam recording what one attachment's render on a
+// node reaches. A nil set yields a seam that records nothing, which is the state
+// of a render whose caller assembled its own input.
+func (h *hydratedProjections) attachmentOnNode(node, attachment string) attachmentRecorder {
+	return nodeAttachmentRecorder{into: h, key: nodeAttachmentKey{node: node, attachment: attachment}}
+}
+
+// attachmentOnBoundary returns the seam recording what one boundary-scope
+// attachment's render reaches.
+func (h *hydratedProjections) attachmentOnBoundary(boundary, attachment string) attachmentRecorder {
+	return boundaryAttachmentRecorder{
+		into: h,
+		key:  boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	}
+}
+
+func (r nodeAttachmentRecorder) recordPillars(state *PhaseBState) {
+	h := r.into
+	if h == nil || state == nil {
+		return
+	}
+	sourceDeclared, workloadPresent := pillarsReached(state)
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p := h.nodeAttachmentEntry(r.key)
+	p.AttachmentResolvedSourceDeclared = sourceDeclared
+	p.AttachmentParsedWorkloadPresent = workloadPresent
+}
+
+func (r nodeAttachmentRecorder) recordArtifactTemplate(outputName, text string) {
+	h := r.into
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.nodeAttachmentEntry(r.key).AttachmentArtifactTemplateText.Set(outputName, text)
+}
+
+func (r boundaryAttachmentRecorder) recordPillars(state *PhaseBState) {
+	h := r.into
+	if h == nil || state == nil {
+		return
+	}
+	sourceDeclared, workloadPresent := pillarsReached(state)
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p := h.boundaryAttachmentEntry(r.key)
+	p.BoundaryAttachmentResolvedSourceDeclared = sourceDeclared
+	p.BoundaryAttachmentParsedWorkloadPresent = workloadPresent
+}
+
+func (r boundaryAttachmentRecorder) recordArtifactTemplate(outputName, text string) {
+	h := r.into
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.boundaryAttachmentEntry(r.key).BoundaryAttachmentArtifactTemplateText.Set(outputName, text)
+}
+
+// nodeAttachmentEntry returns the entry one carrier's values are recorded into,
+// creating it on first write.
+//
+// The pillars and the artifact texts are recorded at two different points of one
+// render — the pillars once the state is complete, each text as the artifacts walk
+// resolves it — so whichever arrives first creates the entry and the other adds to
+// it. The caller holds the lock.
+func (h *hydratedProjections) nodeAttachmentEntry(key nodeAttachmentKey) *nodeAttachmentProjection {
+	p, ok := h.byNodeAttachment[key]
+	if !ok {
+		p = &nodeAttachmentProjection{}
+		h.byNodeAttachment[key] = p
+	}
+	return p
+}
+
+// boundaryAttachmentEntry returns the entry one boundary-scope carrier's values
+// are recorded into, creating it on first write. The caller holds the lock.
+func (h *hydratedProjections) boundaryAttachmentEntry(
+	key boundaryAttachmentKey,
+) *boundaryAttachmentProjection {
+	p, ok := h.byBoundaryAttachment[key]
+	if !ok {
+		p = &boundaryAttachmentProjection{}
+		h.byBoundaryAttachment[key] = p
+	}
+	return p
+}
+
+// nodeAttachmentProjectionOf returns one node-carried attachment's retained
+// projection, and reports whether that carrier was recorded.
+func (h *hydratedProjections) nodeAttachmentProjectionOf(
+	key nodeAttachmentKey,
+) (nodeAttachmentProjection, bool) {
+	if h == nil {
+		return nodeAttachmentProjection{}, false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p, ok := h.byNodeAttachment[key]
+	if !ok {
+		return nodeAttachmentProjection{}, false
+	}
+	return *p, true
+}
+
+// boundaryAttachmentProjectionOf returns one boundary-scope attachment's retained
+// projection, and reports whether that carrier was recorded.
+func (h *hydratedProjections) boundaryAttachmentProjectionOf(
+	key boundaryAttachmentKey,
+) (boundaryAttachmentProjection, bool) {
+	if h == nil {
+		return boundaryAttachmentProjection{}, false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p, ok := h.byBoundaryAttachment[key]
+	if !ok {
+		return boundaryAttachmentProjection{}, false
+	}
+	return *p, true
+}
+
+// recordedNodeAttachments reports how many node-carried attachment renders the
+// set holds.
+func (h *hydratedProjections) recordedNodeAttachments() int {
+	if h == nil {
+		return 0
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.byNodeAttachment)
+}
+
+// recordedBoundaryAttachments reports how many boundary-scope attachment renders
+// the set holds.
+func (h *hydratedProjections) recordedBoundaryAttachments() int {
+	if h == nil {
+		return 0
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.byBoundaryAttachment)
+}
+
+// pillarsReached reads, from one completed mid-render state, the two pillar
+// answers every form of this retention records: whether the render carries a
+// source once resolution has run, and whether it carries a workload.
+//
+// It is one function rather than an expression at each recording site because a
+// node's own render and an attachment's render must answer these the same way.
+// The attachment's render is built around a Recipe carrying the FeatureRecipe's
+// own resolved source, and its state carries the workload parsed from the
+// FeatureRecipe's own body, so the two are the same reading over different
+// documents — and two copies of it would be free to diverge over a state neither
+// reads twice.
+func pillarsReached(state *PhaseBState) (sourceDeclared, workloadPresent bool) {
+	if state == nil {
+		return false, false
+	}
+	return recipeSourceDeclared(state.Recipe), state.ParsedWorkload != nil
 }
 
 // collectValuesMappingRefs derives the reference set of a node's values mapping.

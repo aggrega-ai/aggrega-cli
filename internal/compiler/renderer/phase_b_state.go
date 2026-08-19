@@ -180,6 +180,26 @@ type PhaseBState struct {
 	// collide under one node identity. nil records nothing.
 	hydrated *hydratedProjections
 
+	// attachmentHydrated is the seam through which an attachment's render records
+	// the state it reaches, under the carrier that attachment was declared
+	// against.
+	//
+	// It is set INSTEAD of the retention above and never beside it. The two are the
+	// same mechanism reached from carriers that cannot share a key space: an
+	// attachment's render walks the same producers under the host component's node
+	// identity, so a state carrying the node retention would file the attachment's
+	// entries under the host — where nothing tells them from the host Recipe's own,
+	// and where they would answer a fact declared over it.
+	//
+	// The carrier travels on the state rather than being derived at the recording
+	// site because it is not derivable there: the node identity an attachment's
+	// render carries is the host's on one carrier and a composite marker built for
+	// dispatch uniqueness on the other, and neither names the attachment.
+	//
+	// nil records nothing, which is the state of a node's own render and of a
+	// render whose caller assembled its own input.
+	attachmentHydrated attachmentRecorder
+
 	// hydratedFacts presents, as named facts, the state a node reaches before its
 	// artifact bytes exist. It is carried here so the rule declared over those
 	// facts can be asked about an artifact entry at the point the entry's text has
@@ -242,6 +262,39 @@ func (s *PhaseBState) capture(pass trace.Pass, fileSuffix string, ctx *types.Tem
 	}
 	_ = s.Trace.Write(pass, s.NodeID, s.BoundaryPath, fileSuffix,
 		trace.PillarSnapshot(s.displayContext(ctx), pass, s.Redact))
+}
+
+// recordArtifactTemplateText retains the template text standing at one artifact
+// this render's artifacts walk resolved, against whichever carrier the state
+// holds.
+//
+// It is the one routing seam for that recording, so the walk records without
+// knowing which carrier it is on. The two arms are exclusive by construction
+// rather than by a test here: a node's own state is given the per-node retention
+// and an attachment's render the attachment seam, each at its own construction
+// site. A state carrying neither records nothing.
+func (s *PhaseBState) recordArtifactTemplateText(outputName, text string) {
+	if s == nil {
+		return
+	}
+	s.hydrated.recordArtifactTemplate(s.NodeID, outputName, text)
+	if s.attachmentHydrated != nil {
+		s.attachmentHydrated.recordArtifactTemplate(outputName, text)
+	}
+}
+
+// recordAttachmentPillars reduces the mid-render state one attachment's render
+// reached to the projection that outlives it.
+//
+// It is called at the position the node walk records its own: source resolution
+// has produced the value the render's Recipe carries, the workload has been
+// parsed, and no artifact template has been evaluated. A state that is not an
+// attachment's render records nothing.
+func (s *PhaseBState) recordAttachmentPillars() {
+	if s == nil || s.attachmentHydrated == nil {
+		return
+	}
+	s.attachmentHydrated.recordPillars(s)
 }
 
 // displayContext returns the context the projection is handed: the live one when

@@ -497,11 +497,59 @@ type BoundaryAttachmentPipelineStepEnumerator interface {
 	BoundaryAttachmentPipelineSteps(boundary string, attachment string) []AuthoredCoordinate
 }
 
-// ArtifactEnumerator supplies the artifacts one node projects.
+// The artifact axis is supplied by three enumerators, one per authored artifacts
+// block, and the split is a property of the authoring rather than a convenience.
+//
+// An artifacts block is authored on the entity that carries it, and three
+// entities carry one: a component's Recipe, the FeatureRecipe an attachment binds
+// on a node, and the FeatureRecipe an operator attaches at a boundary. Those are
+// three separate documents, and the output names inside them are chosen
+// independently — nothing declares them unique across documents, and an artifact
+// name is therefore meaningful only together with the block it was written in.
+//
+// So the coordinates that identify an artifact are the coordinates that identify
+// its block plus the artifact's own name, and each of the three gets its own
+// enumerator and its own subject kind. Widening one enumerator to cover all three
+// would hand the framework entries from several documents under one key, and a
+// fact keyed that way would answer with whichever block was asked last.
+
+// ArtifactEnumerator supplies the artifacts one node's own Recipe projects, and
+// only those.
+//
+// The artifacts an attachment projects are supplied by
+// [AttachmentArtifactEnumerator] and [BoundaryAttachmentArtifactEnumerator],
+// never here: an implementation folding an attachment's entries into this answer
+// would present them under a key that cannot tell them from the node's own.
 type ArtifactEnumerator interface {
 	// Artifacts returns a node's artifact names, in a deterministic order the
 	// implementation declares.
 	Artifacts(node string) []AuthoredCoordinate
+}
+
+// AttachmentArtifactEnumerator supplies the artifacts the FeatureRecipe one
+// attachment binds on a node projects.
+//
+// Each entry carries its own file, because a FeatureRecipe is a different
+// document from the Aggregate the attachment was written in.
+type AttachmentArtifactEnumerator interface {
+	// AttachmentArtifacts returns the artifacts one attachment projects, named by
+	// the output name each entry resolves to, in a deterministic order the
+	// implementation declares.
+	AttachmentArtifacts(node string, attachment string) []AuthoredCoordinate
+}
+
+// BoundaryAttachmentArtifactEnumerator supplies the artifacts the FeatureRecipe
+// one boundary-scope attachment binds projects.
+//
+// The axis is keyed per boundary and not per node for the reason the boundary's
+// own attachment axis is: such an attachment is declared once at the boundary and
+// reaches every component the boundary holds, so enumerating its artifacts per
+// component would present one authored block many times over.
+type BoundaryAttachmentArtifactEnumerator interface {
+	// BoundaryAttachmentArtifacts returns the artifacts one boundary-scope
+	// attachment projects, named by the output name each entry resolves to, in a
+	// deterministic order the implementation declares.
+	BoundaryAttachmentArtifacts(boundary string, attachment string) []AuthoredCoordinate
 }
 
 // ProviderEnumerator supplies the providers rendered within one boundary.

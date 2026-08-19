@@ -335,9 +335,59 @@ func (v *describedView) AuthoredNodeProvides(node string, key string) string {
 func (v *describedView) ProviderArtifactTemplateDelimiters(
 	node string,
 ) constraint.ArtifactTemplateDelimiters {
+	return declaredArtifactDelimiters(v.nodeEngine(node))
+}
+
+// AttachmentProviderArtifactTemplateDelimiters returns the delimiter pair the
+// provider rendering one attachment's documents on a node declares its artifact
+// entries are read with.
+//
+// It is a separate answer from the pair the node's own provider declares, and
+// that separation is what makes it correct rather than approximate. The
+// attachment binds its own FeatureRecipe, which declares its own capability, so
+// the provider reading the attachment's entries is independently authored from
+// the one reading the node's — and an entry read with the wrong pair has its
+// downstream target syntax surface as references it does not make.
+//
+// An attachment with no bound FeatureRecipe is answered with the usual pair, on
+// the reading the node-scoped form carries: the fallback is made here once
+// rather than in every rule.
+func (v *describedView) AttachmentProviderArtifactTemplateDelimiters(
+	node string, attachment string,
+) constraint.ArtifactTemplateDelimiters {
+	return declaredArtifactDelimiters(v.attachmentEngine(node, attachment))
+}
+
+// BoundaryAttachmentProviderArtifactTemplateDelimiters returns the delimiter
+// pair the provider rendering one boundary-scope attachment's documents declares
+// its artifact entries are read with.
+//
+// It is rooted at the boundary because that is where such an attachment is
+// declared: it stands against no single component, so neither a node's own pair
+// nor the pair of an attachment on some component is the pair its entries are
+// read with.
+func (v *describedView) BoundaryAttachmentProviderArtifactTemplateDelimiters(
+	boundary string, attachment string,
+) constraint.ArtifactTemplateDelimiters {
+	return declaredArtifactDelimiters(v.boundaryAttachmentEngine(boundary, attachment))
+}
+
+// declaredArtifactDelimiters is the pair one engine declares its artifact
+// entries are read with, and is the one place the fallback every form of that
+// fact shares is applied.
+//
+// It takes the outcome of an engine resolution rather than resolving one itself,
+// because the three forms of the fact resolve their engine from three different
+// bindings — a node's own Recipe, and the FeatureRecipe an attachment binds at
+// either of its two carriers — while the reading of the resolved engine and the
+// fallback are the same for all three. A copy of that reading per accessor would
+// be free to answer a differently-shaped absence.
+//
+// An unresolved engine and one that places no artifacts both answer the usual
+// pair, which is the pair the render applies in both situations.
+func declaredArtifactDelimiters(engine Provider, resolved bool) constraint.ArtifactTemplateDelimiters {
 	usual := constraint.ArtifactTemplateDelimiters{Left: "{{", Right: "}}"}
-	engine, ok := v.nodeEngine(node)
-	if !ok {
+	if !resolved {
 		return usual
 	}
 	emitter, ok := engine.(ArtifactsEmitter)
@@ -593,18 +643,59 @@ func (v *describedView) stepExport(
 // carries that provider's retained self-report. A node with no bound Recipe, and
 // a binding the factory cannot resolve, both report false.
 func (v *describedView) nodeEngine(node string) (Provider, bool) {
-	if v.engineFactory == nil {
-		return nil, false
-	}
 	recipe, ok := v.recipes[node]
 	if !ok || recipe == nil {
 		return nil, false
 	}
-	// The factory receives the full binding, version pin included, exactly as
-	// the render's own engine resolution does: the pin selects which provider-
-	// rendering plugin version answers, and that is the plugin whose self-report
-	// this stage's provider facts report.
-	engine, err := v.engineFactory(recipe.Spec.Capability)
+	return v.capabilityEngine(recipe.Spec.Capability)
+}
+
+// attachmentEngine resolves the engine that renders one attachment's own
+// documents on a node — the engine behind the capability its bound FeatureRecipe
+// declares, which is a different document from the node's own Recipe and may
+// therefore name a different provider.
+//
+// An attachment with no bound FeatureRecipe reports false, which is the same
+// report a binding the factory cannot resolve gives.
+func (v *describedView) attachmentEngine(node string, attachment string) (Provider, bool) {
+	fr, ok := v.attachmentFeatureRecipe(node, attachment)
+	if !ok {
+		return nil, false
+	}
+	return v.capabilityEngine(fr.Spec.Capability)
+}
+
+// boundaryAttachmentEngine resolves the engine that renders one boundary-scope
+// attachment's own documents, behind the capability its bound FeatureRecipe
+// declares.
+func (v *describedView) boundaryAttachmentEngine(
+	boundary string, attachment string,
+) (Provider, bool) {
+	fr, ok := v.boundaryAttachmentFeatureRecipe(boundary, attachment)
+	if !ok {
+		return nil, false
+	}
+	return v.capabilityEngine(fr.Spec.Capability)
+}
+
+// capabilityEngine resolves the engine behind one declared capability binding,
+// which carries that provider's retained self-report.
+//
+// It is the one resolution the provider facts reach an engine through, whichever
+// entity declared the binding: a node's Recipe and the FeatureRecipe an
+// attachment binds are different documents naming capabilities the same way, and
+// a second resolution beside this one would be free to resolve a binding
+// differently for the same string.
+//
+// The factory receives the full binding, version pin included, exactly as the
+// render's own engine resolution does: the pin selects which provider-rendering
+// plugin version answers, and that is the plugin whose self-report this stage's
+// provider facts report.
+func (v *describedView) capabilityEngine(capability string) (Provider, bool) {
+	if v.engineFactory == nil {
+		return nil, false
+	}
+	engine, err := v.engineFactory(capability)
 	if err != nil || engine == nil {
 		return nil, false
 	}

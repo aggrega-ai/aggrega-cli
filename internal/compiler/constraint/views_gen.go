@@ -2242,6 +2242,58 @@ type DescribedView interface {
 	//
 	// Keyed by node; read from wasm.ProviderContract.ArtifactDelimiters.
 	ProviderArtifactTemplateDelimiters(node string) ArtifactTemplateDelimiters
+
+	// AttachmentProviderArtifactTemplateDelimiters is the delimiter pair the
+	// provider rendering one attachment's documents on a node declares its
+	// artifact entries are read with.
+	//
+	// A provider declaring no pair is answered with the usual pair rather than
+	// with an absence, on the same reading the node-scoped form carries: what
+	// a rule needs is the pair an entry will actually be read with, so the
+	// fallback is made here once rather than in every rule.
+	//
+	// It is a separate fact from the pair the node's own provider declares,
+	// and the separation is what makes a rule over an attachment's artifact
+	// text correct rather than approximate. An attachment binds its own
+	// FeatureRecipe, which declares its own capability, so the provider
+	// reading the attachment's entries is independently authored from the one
+	// reading the node's — and read with the wrong pair, a template's
+	// downstream target syntax surfaces as references it does not make. A rule
+	// handed the node's pair would therefore report an attachment's entry
+	// against a syntax nothing applied to it.
+	//
+	// It is keyed per attachment and not per entry, because one FeatureRecipe
+	// binds one provider for every entry in its artifacts block. Which entry a
+	// pair is applied to is the reading rule's question and is not a
+	// coordinate of this one.
+	//
+	// Keyed by (node, attachment); read from
+	// wasm.ProviderContract.ArtifactDelimiters.
+	AttachmentProviderArtifactTemplateDelimiters(node string, attachment string) ArtifactTemplateDelimiters
+
+	// BoundaryAttachmentProviderArtifactTemplateDelimiters is the delimiter
+	// pair the provider rendering one boundary-scope attachment's documents
+	// declares its artifact entries are read with.
+	//
+	// A provider declaring no pair is answered with the usual pair rather than
+	// with an absence, on the reading every form of this fact carries.
+	//
+	// It is rooted at a boundary rather than at a node because that is where
+	// the attachment is declared: such an attachment reaches every component
+	// the boundary holds, so keying it by a component would present one
+	// authored attachment many times over and would have no answer at all for
+	// a boundary holding no components.
+	//
+	// It is a separate fact from the two node-rooted forms rather than either
+	// of them reached through a different coordinate. The boundary-scope
+	// attachment binds its own FeatureRecipe and therefore its own provider,
+	// and it stands against no single component — so neither a node's own
+	// pair nor the pair of an attachment on some component is the pair its
+	// entries are read with, and no node-rooted key can name it.
+	//
+	// Keyed by (boundary, attachment); read from
+	// wasm.ProviderContract.ArtifactDelimiters.
+	BoundaryAttachmentProviderArtifactTemplateDelimiters(boundary string, attachment string) ArtifactTemplateDelimiters
 }
 
 // HydratedView exposes the facts complete at the hydrated stage: per-node
@@ -2363,6 +2415,171 @@ type HydratedView interface {
 	//
 	// Keyed by (node, artifact); read from types.RecipeSpec.Artifacts.
 	ArtifactTemplateText(node string, artifact string) string
+
+	// AttachmentResolvedSourceDeclared reports whether the FeatureRecipe one
+	// attachment binds on a node carries a source once source resolution has
+	// run.
+	//
+	// The value read is the RESOLVED source and not the text the author wrote,
+	// on the same reading the node-scoped form carries: a source template
+	// evaluating to an empty string leaves the attachment with no source just
+	// as an absent source does, and one condition covers both so a rule can
+	// name a single cause.
+	//
+	// It is a separate fact from the node's own resolved source rather than
+	// the same fact reached differently, and this is the pair where the
+	// difference decides a verdict rather than a filing. The attachment's
+	// render runs under the host component's node identity over a source the
+	// FeatureRecipe declares, so the two answers are independently authored
+	// and routinely differ: asked of the node, a host that declares a source
+	// would have an attachment's reference to an absent one admitted, and a
+	// host that declares none would have a legitimate attachment reference
+	// refused. Both directions are wrong and neither is visible from the
+	// outcome, which is why the attachment coordinate is in the key.
+	//
+	// It is a yes-or-no answer rather than the source value, on the reading
+	// the node-scoped form carries: a source is either a location string or an
+	// open structured object whose keys the provider defines, so handing the
+	// value over would hand a rule provider-defined content the framework
+	// declares no fact for.
+	//
+	// Keyed by (node, attachment); read from types.FeatureRecipeSpec.Source.
+	AttachmentResolvedSourceDeclared(node string, attachment string) bool
+
+	// AttachmentParsedWorkloadPresent reports whether the render of one
+	// attachment on a node carries a workload.
+	//
+	// A FeatureRecipe declaring no workload body reaches artifact evaluation
+	// with none, because workload synthesis had nothing to parse. So this is
+	// what separates an attachment whose artifact templates may read the
+	// workload pillar from one whose reference to it has nothing to resolve
+	// against.
+	//
+	// It is a separate fact from the node's own parsed workload for the reason
+	// the attachment's resolved source is: the attachment renders under the
+	// host component's node identity over a workload the FeatureRecipe
+	// declares, so a key without the attachment would answer about the host's
+	// pillars while the template being read is the attachment's. Two
+	// attachments on one node are likewise independently authored, and one
+	// declaring a workload says nothing about the other.
+	//
+	// It is a yes-or-no answer rather than the workload itself, on the reading
+	// the node-scoped form carries: the workload is a structured document, and
+	// a rule handed it could walk into content the framework declares no fact
+	// for.
+	//
+	// Keyed by (node, attachment); read from types.FeatureRecipeSpec.Workload.
+	AttachmentParsedWorkloadPresent(node string, attachment string) bool
+
+	// AttachmentArtifactTemplateText is the template text standing at one
+	// artifact of the FeatureRecipe one attachment binds on a node, as it is
+	// before anything evaluates it.
+	//
+	// It is keyed per attachment as well as per node because the entry is
+	// authored on the FeatureRecipe the attachment binds, a different document
+	// from the node's own Recipe. Two attachments on one node therefore carry
+	// independently authored artifacts blocks, and nothing makes their output
+	// filenames distinct from each other or from the node's own — so the
+	// attachment is what tells one block from another, and a key carrying only
+	// the node and the artifact would answer for whichever was asked last.
+	//
+	// It is the authored text and not the bytes the entry projected to, which
+	// is the same division the node-scoped pair draws: THIS ONE answers what
+	// the entry says, which a rule admitting or refusing authoring has to
+	// read, because a template such a rule refuses is exactly one whose bytes
+	// are never produced.
+	//
+	// The text is the entry's content whichever form the entry took: written
+	// inline, supplied by an imported file, or supplied by an entry of a
+	// library bundle. A rule asking what an artifact template may reference
+	// asks the same question of all three.
+	//
+	// Keyed by (node, attachment, artifact); read from
+	// types.FeatureRecipeSpec.Artifacts.
+	AttachmentArtifactTemplateText(node string, attachment string, artifact string) string
+
+	// BoundaryAttachmentResolvedSourceDeclared reports whether the
+	// FeatureRecipe one boundary-scope attachment binds carries a source once
+	// source resolution has run.
+	//
+	// The value read is the RESOLVED source and not the text the author wrote,
+	// on the reading every form of this fact carries: a source template
+	// evaluating to an empty string leaves the attachment with no source just
+	// as an absent source does.
+	//
+	// It is rooted at a boundary rather than at a node because that is where
+	// the attachment is declared, and it reaches every component the boundary
+	// holds — so a component-rooted key would present one authored
+	// attachment many times over and would have no answer at all for a
+	// boundary holding no components.
+	//
+	// It is a separate fact from the node-rooted forms rather than either of
+	// them reached through a different coordinate. A boundary-scope attachment
+	// stands against no single component, so no component's resolved source is
+	// its own, and no node-rooted key can name it.
+	//
+	// It is a yes-or-no answer rather than the source value, for the reason
+	// every form of this fact is: a source may be an open structured object
+	// whose keys the provider defines, and the framework declares no fact for
+	// what is inside it.
+	//
+	// Keyed by (boundary, attachment); read from
+	// types.FeatureRecipeSpec.Source.
+	BoundaryAttachmentResolvedSourceDeclared(boundary string, attachment string) bool
+
+	// BoundaryAttachmentParsedWorkloadPresent reports whether the render of
+	// one boundary-scope attachment carries a workload.
+	//
+	// A FeatureRecipe declaring no workload body reaches artifact evaluation
+	// with none, because workload synthesis had nothing to parse. So this is
+	// what separates a boundary-scope attachment whose artifact templates may
+	// read the workload pillar from one whose reference to it has nothing to
+	// resolve against.
+	//
+	// It is rooted at a boundary for the reason the boundary-scope resolved
+	// source is: the attachment is declared once at the boundary and reaches
+	// every component the boundary holds, so a component-rooted key would
+	// present one authored workload declaration many times over.
+	//
+	// It is a yes-or-no answer rather than the workload itself, on the reading
+	// every form of this fact carries: the workload is a structured document,
+	// and a rule handed it could walk into content the framework declares no
+	// fact for.
+	//
+	// Keyed by (boundary, attachment); read from
+	// types.FeatureRecipeSpec.Workload.
+	BoundaryAttachmentParsedWorkloadPresent(boundary string, attachment string) bool
+
+	// BoundaryAttachmentArtifactTemplateText is the template text standing at
+	// one artifact of the FeatureRecipe one boundary-scope attachment binds,
+	// as it is before anything evaluates it.
+	//
+	// It is rooted at a boundary rather than at a node because that is where
+	// the attachment is declared. Such an attachment is written once and
+	// reaches every component the boundary holds, so a component-rooted key
+	// would offer one authored entry once per component — the same authored
+	// text under as many keys as the boundary has members — and would offer
+	// it not at all for a boundary holding none.
+	//
+	// It is a separate fact from the node-rooted forms rather than either of
+	// them reached differently. The output filenames in this block are chosen
+	// independently of any component's and of any other attachment's, and
+	// nothing declares them unique across documents, so the coordinates that
+	// identify one entry are the boundary and the attachment together with the
+	// entry's own name.
+	//
+	// It is the authored text and not the bytes the entry projected to, which
+	// is the division every form of this fact draws: a rule admitting or
+	// refusing authoring reads the text, because a template such a rule
+	// refuses is exactly one whose bytes are never produced.
+	//
+	// The text is the entry's content whichever form the entry took: written
+	// inline, supplied by an imported file, or supplied by an entry of a
+	// library bundle.
+	//
+	// Keyed by (boundary, attachment, artifact); read from
+	// types.FeatureRecipeSpec.Artifacts.
+	BoundaryAttachmentArtifactTemplateText(boundary string, attachment string, artifact string) string
 }
 
 // RenderedView exposes the facts complete at the rendered stage: artifact

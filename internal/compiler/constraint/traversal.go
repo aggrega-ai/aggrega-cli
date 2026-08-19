@@ -928,6 +928,94 @@ func RunOnNodeArtifacts[V View](
 	})
 }
 
+// RunOnNodeAttachmentArtifacts invokes check once per artifact the FeatureRecipe
+// each attachment binds on a node projects, in node order, then attachment order,
+// then artifact order.
+//
+// The locator is .spec.artifacts.<name> in the FeatureRecipe's own file, which is
+// a different document from the Aggregate the attachment was written in — so the
+// file comes from the enumerated entry and not from the node, exactly as it does
+// for the coordinates a node's Recipe authors.
+//
+// The name is the output name the entry resolves to, so on this axis it ordinarily
+// carries the locator dialect's separator, and it carries it as ONE authored key
+// the dialect cannot address. The locator then names the artifacts block and stops
+// — the same constraint [RunOnNodeArtifacts] carries and for the same reason, and
+// this kind inherits it rather than reaching for a deeper path. So a rule over
+// this kind owes the same thing a rule over the node's own artifacts owes: it
+// names the artifact in its detail, captioned, because the block says where to
+// look and only the detail can say which artifact inside it.
+//
+// The attachment reaches the subject as a coordinate without reaching the locator,
+// and that is not an inconsistency: the locator names the document the author
+// edits to change the entry, while the coordinate is what tells this artifacts
+// block from the node's own and from another attachment's when a fact is keyed.
+func RunOnNodeAttachmentArtifacts[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	attachments AttachmentEnumerator,
+	artifacts AttachmentArtifactEnumerator,
+	view V,
+	check Check[V, NodeAttachmentArtifactSubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentArtifactSubject {
+		var out []NodeAttachmentArtifactSubject
+		for _, attachment := range attachments.Attachments(node.ID) {
+			for _, entry := range artifacts.AttachmentArtifacts(node.ID, attachment) {
+				out = append(out, newNodeAttachmentArtifactSubject(
+					entry.SourceFile, node.ID, attachment, entry.Value,
+					documentSpecSegments(authoredKeyArtifacts, entry.Value)...,
+				))
+			}
+		}
+		return out
+	})
+}
+
+// RunOnBoundaryAttachmentArtifacts invokes check once per artifact the
+// FeatureRecipe each boundary-scope attachment binds projects, in boundary order,
+// then attachment order, then artifact order.
+//
+// The locator is .spec.artifacts.<name> in the FeatureRecipe's own file, on the
+// same reasoning as the node-carried attachment's artifacts: the entry is authored
+// in the FeatureRecipe, which is the document an author edits to change it, and
+// that document is neither the Release the attachment was declared in nor any
+// component's Recipe.
+//
+// So the boundary contributes no locator segment here, and that is the point
+// rather than an omission — the reading [RunOnBoundaryAttachmentPipelineSteps]
+// states for the other boundary-rooted kind whose locator names a FeatureRecipe: a
+// boundary key spliced onto a FeatureRecipe-rooted locator would name a path that
+// document does not have. The boundary remains a coordinate, because that is what
+// tells this artifacts block from another boundary's when a fact is keyed.
+//
+// The name is the output name the entry resolves to, so the locator names the
+// artifacts block and stops, exactly as it does on the two node-rooted artifact
+// kinds. A rule over this kind therefore owes the artifact in its detail,
+// captioned, for the reason set out at [RunOnNodeArtifacts].
+func RunOnBoundaryAttachmentArtifacts[V View](
+	cancelled Cancellation,
+	boundaries BoundaryEnumerator,
+	attachments BoundaryAttachmentEnumerator,
+	artifacts BoundaryAttachmentArtifactEnumerator,
+	view V,
+	check Check[V, BoundaryAttachmentArtifactSubject],
+) ([]Objection, error) {
+	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
+		func(boundary AuthoredCoordinate) []BoundaryAttachmentArtifactSubject {
+			var out []BoundaryAttachmentArtifactSubject
+			for _, attachment := range attachments.BoundaryAttachments(boundary.Value) {
+				for _, entry := range artifacts.BoundaryAttachmentArtifacts(boundary.Value, attachment) {
+					out = append(out, newBoundaryAttachmentArtifactSubject(
+						entry.SourceFile, boundary.Value, attachment, entry.Value,
+						documentSpecSegments(authoredKeyArtifacts, entry.Value)...,
+					))
+				}
+			}
+			return out
+		})
+}
+
 // RunOnBoundaryProviderPaths invokes check once per output path written for one
 // provider within one boundary, in boundary order, then provider order, then
 // path order.

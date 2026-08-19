@@ -1006,6 +1006,20 @@ var subjectKindBindings = map[SubjectKind]struct {
 			return newNodeArtifactSubject(f, "web", "values-yaml", "spec", "artifacts", "values-yaml")
 		},
 	},
+	SubjectNodeAttachmentArtifact: {
+		iface: reflect.TypeOf((*NodeAttachmentArtifactSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newNodeAttachmentArtifactSubject(f, "web", "tls", "values.yaml",
+				"spec", "artifacts", "values.yaml")
+		},
+	},
+	SubjectBoundaryAttachmentArtifact: {
+		iface: reflect.TypeOf((*BoundaryAttachmentArtifactSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newBoundaryAttachmentArtifactSubject(f, "prod", "shared-db", "dashboard.json",
+				"spec", "artifacts", "dashboard.json")
+		},
+	},
 	SubjectBoundaryAttachment: {
 		iface: reflect.TypeOf((*BoundaryAttachmentSubject)(nil)).Elem(),
 		make: func(f string) Subject {

@@ -7,12 +7,19 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
-// hydratedView presents, as named facts, the state each node reached before any
-// of its artifact bytes existed: the local names its Recipe declares, the value
-// its Recipe resolved for each provides key, the reference set of its inline
-// values mapping, whether a source survived resolution, whether a workload was
-// parsed, and the template text standing at each of its artifacts before
-// anything evaluates it.
+// hydratedView presents, as named facts, the state each render reached before any
+// of its artifact bytes existed: the local names a node's Recipe declares, the
+// value it resolved for each provides key, the reference set of its inline values
+// mapping, whether a source survived resolution, whether a workload was parsed,
+// and the template text standing at each artifact before anything evaluates it.
+//
+// The last three are presented per carrier rather than per node alone, because
+// three documents author them: a node's own Recipe, the FeatureRecipe an
+// attachment binds on a node, and the FeatureRecipe an operator attaches at a
+// boundary. An attachment's render runs under the host component's node identity
+// over documents its FeatureRecipe declares, so a node-keyed answer would report
+// the host's pillars for the attachment's templates — wrong in both directions and
+// invisible from the outcome.
 //
 // It satisfies [constraint.HydratedView], and the compiler holds it to that
 // contract at the bottom of this file rather than a comment claiming it.
@@ -36,9 +43,10 @@ import (
 // # Every fact is read from the retention the render already holds
 //
 // The state each of these facts describes is a loop-local: it is built for one
-// node, used to render it, and dropped when that node's turn ends. What survives
-// is a projection of that state, one value per fact declared here, recorded as
-// each node completes. The accessors below read that retention and nothing else,
+// render, used to produce that render's documents, and dropped when its turn
+// ends. What survives is a projection of that state, one value per fact declared
+// here, recorded as each node completes and as each attachment's render on that
+// node completes. The accessors below read that retention and nothing else,
 // so presenting this stage re-reads no document and re-derives no value — a
 // second derivation beside the recording would be free to disagree with it about
 // a node neither of them reads twice.
@@ -208,6 +216,125 @@ func (v *hydratedView) ArtifactTemplateText(node string, artifact string) string
 		return ""
 	}
 	text, _ := p.ArtifactTemplateText.Get(artifact)
+	return text
+}
+
+// AttachmentResolvedSourceDeclared reports whether the FeatureRecipe one
+// attachment binds on a node carries a source once source resolution has run.
+//
+// It is answered from the attachment's own carrier and never from the node's,
+// and that is where this fact earns its coordinate rather than merely filing
+// tidily. The attachment's render runs under the host component's node identity
+// over a source the FeatureRecipe declares, so asked of the node the answer would
+// be the host's: a host declaring a source would have an attachment's reference
+// to an absent one admitted, and a host declaring none would have a legitimate
+// attachment reference refused.
+//
+// An attachment the render did not reach answers false, which is what an
+// attachment whose FeatureRecipe declares no source also gives — the same reading
+// every fact of this stage carries for a carrier absent from the retention.
+func (v *hydratedView) AttachmentResolvedSourceDeclared(node string, attachment string) bool {
+	p, _ := v.projections.nodeAttachmentProjectionOf(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	return p.AttachmentResolvedSourceDeclared
+}
+
+// AttachmentParsedWorkloadPresent reports whether the render of one attachment on
+// a node carries a workload.
+//
+// A FeatureRecipe declaring no workload body reaches artifact evaluation with
+// none, because workload synthesis had nothing to parse. So this is what
+// separates an attachment whose artifact templates may read the workload pillar
+// from one whose reference to it has nothing to resolve against.
+//
+// It is answered from the attachment's own carrier for the reason its resolved
+// source is, and two attachments on one node answer independently: one declaring
+// a workload says nothing about the other.
+func (v *hydratedView) AttachmentParsedWorkloadPresent(node string, attachment string) bool {
+	p, _ := v.projections.nodeAttachmentProjectionOf(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	return p.AttachmentParsedWorkloadPresent
+}
+
+// AttachmentArtifactTemplateText returns the template text standing at one
+// artifact of the FeatureRecipe one attachment binds on a node, as it is before
+// anything evaluates it.
+//
+// The artifact is named by the output name the entry resolves to. The text is the
+// entry's content whichever form the entry took — written inline, supplied by an
+// imported file, or supplied by an entry of a library bundle — because the
+// retention records it where that content is resolved rather than where the entry
+// is authored.
+//
+// An artifact this carrier does not hold answers empty, which is what an
+// attachment the render did not reach and an artifact of the node's own Recipe
+// both give: the node's entries are recorded against the node and are not
+// reachable through this key.
+func (v *hydratedView) AttachmentArtifactTemplateText(
+	node string, attachment string, artifact string,
+) string {
+	p, ok := v.projections.nodeAttachmentProjectionOf(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	if !ok {
+		return ""
+	}
+	text, _ := p.AttachmentArtifactTemplateText.Get(artifact)
+	return text
+}
+
+// BoundaryAttachmentResolvedSourceDeclared reports whether the FeatureRecipe one
+// boundary-scope attachment binds carries a source once source resolution has
+// run.
+//
+// It is answered from a carrier rooted at the boundary, because that is where
+// such an attachment is declared and it reaches every component the boundary
+// holds. It stands against no single component, so no component's resolved source
+// is its own and no node-rooted key can name it.
+func (v *hydratedView) BoundaryAttachmentResolvedSourceDeclared(
+	boundary string, attachment string,
+) bool {
+	p, _ := v.projections.boundaryAttachmentProjectionOf(
+		boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	)
+	return p.BoundaryAttachmentResolvedSourceDeclared
+}
+
+// BoundaryAttachmentParsedWorkloadPresent reports whether the render of one
+// boundary-scope attachment carries a workload.
+//
+// A FeatureRecipe declaring no workload body reaches artifact evaluation with
+// none, because workload synthesis had nothing to parse. The carrier is rooted at
+// the boundary for the reason the boundary-scope resolved source is.
+func (v *hydratedView) BoundaryAttachmentParsedWorkloadPresent(
+	boundary string, attachment string,
+) bool {
+	p, _ := v.projections.boundaryAttachmentProjectionOf(
+		boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	)
+	return p.BoundaryAttachmentParsedWorkloadPresent
+}
+
+// BoundaryAttachmentArtifactTemplateText returns the template text standing at
+// one artifact of the FeatureRecipe one boundary-scope attachment binds, as it is
+// before anything evaluates it.
+//
+// The output names in that block are chosen independently of any component's and
+// of any other attachment's, and nothing declares them unique across documents —
+// so the coordinates identifying one entry are the boundary and the attachment
+// together with the entry's own name.
+func (v *hydratedView) BoundaryAttachmentArtifactTemplateText(
+	boundary string, attachment string, artifact string,
+) string {
+	p, ok := v.projections.boundaryAttachmentProjectionOf(
+		boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	)
+	if !ok {
+		return ""
+	}
+	text, _ := p.BoundaryAttachmentArtifactTemplateText.Get(artifact)
 	return text
 }
 

@@ -112,9 +112,13 @@ func buildArtifactsProjection(
 		// The retained text is taken here rather than beside the authored entry,
 		// because this is where an imported entry's and a bundle entry's content
 		// has been resolved to the text that stands at the artifact — and it is
-		// taken before evaluation, which is the state the retained value names. A
-		// node whose render carries no retention records nothing.
-		state.hydrated.recordArtifactTemplate(state.NodeID, outputName, tmplText)
+		// taken before evaluation, which is the state the retained value names.
+		//
+		// It is recorded against the carrier the render's state holds, which is
+		// what tells a node's own entries from those of an attachment reaching this
+		// same walk under the node's identity. A render carrying no carrier records
+		// nothing.
+		state.recordArtifactTemplateText(outputName, tmplText)
 		// The rule declared over this stage's facts, asked about the entry recorded
 		// on the line above. It sits between the recording and the evaluation below
 		// because that is the only span where the entry's text exists and nothing

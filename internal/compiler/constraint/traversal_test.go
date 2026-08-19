@@ -68,6 +68,9 @@ type traversalFixture struct {
 
 	attachPipeline         map[string][]AuthoredCoordinate
 	boundaryAttachPipeline map[string][]AuthoredCoordinate
+
+	attachArtifacts         map[string][]AuthoredCoordinate
+	boundaryAttachArtifacts map[string][]AuthoredCoordinate
 }
 
 func fixtureKey(parts ...string) string { return strings.Join(parts, "\x00") }
@@ -127,6 +130,14 @@ func (f traversalFixture) AttachmentPipelineSteps(node, attachment string) []Aut
 
 func (f traversalFixture) BoundaryAttachmentPipelineSteps(boundary, attachment string) []AuthoredCoordinate {
 	return f.boundaryAttachPipeline[fixtureKey(boundary, attachment)]
+}
+
+func (f traversalFixture) AttachmentArtifacts(node, attachment string) []AuthoredCoordinate {
+	return f.attachArtifacts[fixtureKey(node, attachment)]
+}
+
+func (f traversalFixture) BoundaryAttachmentArtifacts(boundary, attachment string) []AuthoredCoordinate {
+	return f.boundaryAttachArtifacts[fixtureKey(boundary, attachment)]
 }
 
 func (f traversalFixture) Providers(boundary string) []string {
@@ -332,6 +343,31 @@ func newTraversalFixture() traversalFixture {
 		// declares no pipeline and yielding nothing there rather than stopping.
 		boundaryAttachPipeline: map[string][]AuthoredCoordinate{
 			fixtureKey("prod/edge", "shared-db"): {{Value: "annotate", SourceFile: "featurerecipes/shared-db.yaml"}},
+		},
+
+		// The SAME output name under two attachments on one node, which is what the
+		// attachment coordinate exists to separate. Independently authored blocks may
+		// each resolve an entry to one filename, nothing declares output names unique
+		// across documents, and a key carrying only the node and the artifact would
+		// answer for whichever was asked last.
+		//
+		// The name is spelled with the dialect's separator in it, where the node's own
+		// axis above uses a hyphenated name, and the pair is deliberate rather than an
+		// inconsistency to be tidied. An output name is a filename, so carrying the
+		// separator is the ordinary case on this axis and the truncated locator is
+		// what these entries exercise; the node's own entry keeps a separator-free
+		// name so the untruncated locator stays exercised too. Neither shape proves
+		// the other.
+		attachArtifacts: map[string][]AuthoredCoordinate{
+			fixtureKey("web", "tls"):     {{Value: "values.yaml", SourceFile: "featurerecipes/tls.yaml"}},
+			fixtureKey("web", "logging"): {{Value: "values.yaml", SourceFile: "featurerecipes/logging.yaml"}},
+		},
+		// One of the boundary's two attachments projects an artifact and the other
+		// projects none, so a transcript shows the walk entering an attachment that
+		// declares no artifacts block and yielding nothing there rather than
+		// stopping.
+		boundaryAttachArtifacts: map[string][]AuthoredCoordinate{
+			fixtureKey("prod/edge", "shared-db"): {{Value: "dashboard.json", SourceFile: "featurerecipes/shared-db.yaml"}},
 		},
 	}
 }
@@ -582,6 +618,43 @@ func traversalCases() []traversalCase {
 			},
 			want: []string{
 				"recipes/web.yaml|.spec.artifacts.values-yaml",
+			},
+		},
+		{
+			// Two invocations whose locators are identical and stop at the artifacts
+			// block, differing only in the file — and both halves of that are the
+			// point. The block is where they stop because each entry resolves to a
+			// filename, which carries the dialect's separator as one authored key the
+			// dialect cannot address; the file differs because the entry is authored
+			// on the attachment's own FeatureRecipe rather than on the Aggregate the
+			// attachment was written in. The two entries resolve to ONE name, so this
+			// transcript can tell them apart only by their files — which is exactly
+			// why the attachment is a coordinate, and what the readback below shows.
+			kind: SubjectNodeAttachmentArtifact,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeAttachmentArtifacts(cancelled, f, f, f, v,
+					raisingCheck[NodeAttachmentArtifactSubject]())
+			},
+			want: []string{
+				"featurerecipes/tls.yaml|.spec.artifacts",
+				"featurerecipes/logging.yaml|.spec.artifacts",
+			},
+		},
+		{
+			// One invocation from two enumerated attachments on one boundary, and
+			// none at all from the second boundary: the walk enters an attachment
+			// that projects no artifact, yields nothing there, and carries on. The
+			// locator names the FeatureRecipe's own artifacts block and stops, so the
+			// boundary contributes no segment — a boundary key spliced onto a
+			// FeatureRecipe-rooted locator would name a path that document does not
+			// have.
+			kind: SubjectBoundaryAttachmentArtifact,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryAttachmentArtifacts(cancelled, f, f, f, v,
+					raisingCheck[BoundaryAttachmentArtifactSubject]())
+			},
+			want: []string{
+				"featurerecipes/shared-db.yaml|.spec.artifacts",
 			},
 		},
 		{
@@ -1142,6 +1215,37 @@ func coordinateFlowCases() []coordinateFlowCase {
 				}, func(s NodeArtifactSubject) string { return s.NodeID() + "|" + s.ArtifactName() })
 			},
 			want: []string{"web|values-yaml"},
+		},
+
+		// The kind whose reason for existing is exactly what this readback shows: the
+		// two invocations carry the same node and the same output name, and the
+		// attachment is the only thing that separates them. A traversal that dropped
+		// the attachment would produce two identical records here, while every
+		// declaration assertion stayed green — and the provenance transcript above
+		// could not see it either, because both locators stop at the same block.
+		{
+			kind: SubjectNodeAttachmentArtifact,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeAttachmentArtifactSubject]) ([]Objection, error) {
+					return RunOnNodeAttachmentArtifacts(nil, f, f, f, traversalView{}, c)
+				}, func(s NodeAttachmentArtifactSubject) string {
+					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.ArtifactName()
+				})
+			},
+			want: []string{"web|tls|values.yaml", "web|logging|values.yaml"},
+		},
+		{
+			kind: SubjectBoundaryAttachmentArtifact,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, BoundaryAttachmentArtifactSubject]) ([]Objection, error) {
+					return RunOnBoundaryAttachmentArtifacts(nil, f, f, f, traversalView{}, c)
+				}, func(s BoundaryAttachmentArtifactSubject) string {
+					return s.BoundaryPath() + "|" + s.AttachmentName() + "|" + s.ArtifactName()
+				})
+			},
+			want: []string{"prod/edge|shared-db|dashboard.json"},
 		},
 		{
 			kind: SubjectNodeSocket,
