@@ -51,6 +51,19 @@ const (
 	// under a namespace filter, so only a key the host has no reason to know
 	// can show the annotations arrived verbatim.
 	governanceFactsAuthorAnnotation = "governance.example/review-ticket"
+
+	// The two authored leaves the credential fixture writes a value at, named
+	// here because the assertions below need BOTH: one is the coordinate a
+	// verdict must report, the other the coordinate a verdict must never
+	// report, and a pair stated as two bare literals reads as one fact repeated
+	// rather than as the discrimination it is.
+	//
+	// The Feature declares literalPassword sensitive and deliberately leaves
+	// secretName undeclared — a locator is the public half of a referenced
+	// credential — so which of the two a marking names is the whole test of
+	// whether the marking follows the declarations or reaches past them.
+	governanceFactsDeclaredLeaf   = "values.literalPassword"
+	governanceFactsUndeclaredLeaf = "values.secretName"
 )
 
 // loadGovernanceWire loads one variant of the governance-wire fixture —
@@ -202,11 +215,22 @@ func TestGovernanceSensitiveByValueDenyE2E(t *testing.T) {
 // provides key — so no delivery key is marked and the only remaining offence is
 // the authored leaf.
 //
-// Two assertions carry the attribution. The verdict must NAME the authored leaf,
-// which it can only do by reading the per-leaf marking off the wire. And it must
-// NOT name a delivery key, which is what shows the two routes are reported
+// Three assertions carry the attribution. The verdict must NAME the authored
+// leaf, which it can only do by reading the per-leaf marking off the wire. It
+// must NOT name a delivery key, which is what shows the two routes are reported
 // separately rather than folded into one message: a rule that fell back to the
 // delivery wording would satisfy a bare "did it halt" check and fail this.
+//
+// And it must NOT name the OTHER leaf this same attachment authors a value at.
+// That third assertion is the one a presence check cannot stand in for, and it
+// is why the pair of leaves is the fixture rather than a single one. The
+// attachment writes a value at secretName as well, which the Feature declares
+// nothing about; a marking that reached past the declarations would name it, the
+// build would be denied over material its author left readable, and every
+// presence assertion above would still be satisfied. Marking too widely is the
+// failure with no cheap undo — it declares public data secret and then refuses
+// builds that should pass — so the verdict has to show the unmarked leaf staying
+// unmarked in the same breath as it names the marked one.
 func TestGovernanceSensitiveByValueAuthoredLeafDenyE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "no-marked-delivery", "no-sensitive-by-value", analyzer.SeverityDeny)
@@ -220,10 +244,15 @@ func TestGovernanceSensitiveByValueAuthoredLeafDenyE2E(t *testing.T) {
 	}
 	msg := err.Error()
 	t.Logf("authored-leaf verdict halt:\n%s", msg)
-	for _, want := range []string{`attachment "credentials"`, `authored leaf "values.literalPassword"`} {
+	for _, want := range []string{`attachment "credentials"`, `authored leaf "` + governanceFactsDeclaredLeaf + `"`} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("authored-leaf deny does not report %q, so the per-leaf marking did not reach the guest:\n%v", want, msg)
 		}
+	}
+	if strings.Contains(msg, governanceFactsUndeclaredLeaf) {
+		t.Errorf("authored-leaf deny names %q, a leaf this attachment authors a value at but the Feature declares "+
+			"nothing about; the marking joins declaration to declaration, so a verdict reaching this leaf means the "+
+			"marking was applied more widely than any author asked for:\n%v", governanceFactsUndeclaredLeaf, msg)
 	}
 	if strings.Contains(msg, "DATABASE_PASSWORD") {
 		t.Errorf("authored-leaf deny names a delivery key, but this fixture marks none; the two routes must be "+

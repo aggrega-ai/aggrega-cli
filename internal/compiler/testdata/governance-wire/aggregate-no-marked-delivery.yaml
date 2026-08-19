@@ -20,6 +20,15 @@ spec:
           # route therefore still denies here, and NAMES the authored leaf
           # rather than a delivery key, which is what shows the two routes
           # are distinguished rather than folded together.
+          # THE ORDER OF THESE TWO LEAVES IS LOAD-BEARING. Keep secretName first.
+          # A verdict names the FIRST marked authored leaf, so with the unmarked
+          # locator written first, a marking that reached past the declarations
+          # would surface it there and the deny assertion that checks this leaf
+          # stays unnamed would fire. Swap them and that guard goes quiet: the
+          # declared leaf would occupy the reported position either way, and a
+          # marking applied to everything would look exactly like one applied
+          # correctly. Nothing in the schema enforces this order, which is why it
+          # is written down here rather than left for a reader to infer.
           values:
             secretName: db-creds
             literalPassword: by-value-plaintext
