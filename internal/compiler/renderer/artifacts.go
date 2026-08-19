@@ -217,9 +217,19 @@ func buildArtifactsProjection(
 //     counts as declaring none, exactly as an absent source: does, and both arms
 //     below are one condition under one identity.
 //
-// The pre-check names the failing expression authoritatively (the literal
-// dot-path captured by the parser) and avoids depending on text/template's
-// runtime nil-pointer error formatting.
+// The pre-check names the failing expression authoritatively: the literal
+// dot-path the parser captured, whatever depth it was written at.
+//
+// What it stands in front of differs with that depth, and both halves matter
+// because only one of them is an error at all. A reference of one segment to a
+// pillar the Recipe did not declare does NOT fail evaluation: the pillar is a
+// root the context defines, so the read is admitted and renders the literal text
+// "<no value>" into the artifact, and the build completes and writes the file. A
+// reference that descends through such a pillar does fail, with text/template's
+// own nil-pointer wording, which names the first hop rather than the path the
+// author wrote and offers no remedy. So this refuses two different outcomes with
+// one message — a file that ships a placeholder nobody asked for, and a halt an
+// author cannot act on.
 //
 // leftDelim/rightDelim are the same delimiter pair the eventual
 // EvalTemplateWithDelims call will use, so the parser sees Aggrega's

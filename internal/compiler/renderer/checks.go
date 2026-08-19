@@ -336,9 +336,16 @@ func recipeSourceDeclared(recipe *types.Recipe) bool {
 // Two pillars are readable from an artifact template only when the Recipe
 // supplies them. A Recipe declaring no workload body reaches artifact evaluation
 // with no workload to read, and one carrying no source reaches it with no source
-// to read — so a template naming either would render an empty value rather than
-// fail. The rule refuses the reference instead, which turns a silently empty
-// artifact into a halt naming the expression to fix.
+// to read.
+//
+// What happens then depends on how deep the reference goes, and the rule refuses
+// both cases with one message because neither is acceptable. A reference of one
+// segment is admitted, because the pillar is a root the context defines: it
+// renders the literal text "<no value>" and the build writes the file. A
+// reference that descends through the pillar fails instead, with wording that
+// names the first hop rather than the expression the author wrote. So the rule
+// stands in front of a shipped placeholder on one side and an unactionable halt
+// on the other, and replaces both with a halt naming the expression to fix.
 //
 // The source arm reads whether a source survived resolution rather than whether
 // one was authored, and the two differ: a source template evaluating to an empty
