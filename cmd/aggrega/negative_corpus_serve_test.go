@@ -6,8 +6,7 @@
 // envelope-invalid Aggregate in the workspace yields a diagnostic
 // carrying the envelope-violation message. Serve's contract is "carries
 // the diagnostic"; the violation CLASSES are exhausted at the build/lint/
-// engine layers, so one row proves the inheritance (the economy ruled at
-// the plan gate).
+// engine layers, so one row proves the inheritance.
 //
 // The in-process serve harness does not run the cascade (no active
 // Release → no Tier-4), so the envelope diagnostic surfaces only against
@@ -22,6 +21,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // TestNegativeCorpusServe_MalformedAnchoringReleaseDiagnostic is the
@@ -111,7 +112,14 @@ spec:
 	})); err != nil {
 		t.Fatalf("write validate: %v", err)
 	}
-	const wantText = "violates its envelope schema"
+	// This leg publishes the LOAD ERROR's own rendered text, so the expected
+	// string is the condition's registered sentence read off the condition —
+	// not a literal, which would let this test pass against wording that had
+	// drifted from the identity. The buffer-envelope leg below reaches the same
+	// condition by a different path and composes its own occurrence detail, but
+	// it reads the sentence from this same place, so one expectation serves
+	// both legs rather than each leg owning a wording of its own.
+	wantText := envelope.ErrEntityEnvelope().Error()
 	found := false
 	for i := 0; i < 6 && !found; i++ {
 		msg := readOneResponse(t, stdout, 10*time.Second)
@@ -264,11 +272,13 @@ spec:
 
 	// The daemon may emit notifications before the id=2 response; scan a
 	// few messages for one carrying a diagnostic with the envelope text.
-	// The rendered diagnostic carries envelope.Error.Error() ("…document
-	// violates its envelope schema"); the sentinel string "document
-	// envelope validation failed" is reachable only via errors.Is at the
-	// Go boundary, never in the wire diagnostic — assert the rendered text.
-	const want = "violates its envelope schema"
+	//
+	// The daemon composes its own occurrence detail here — one entry per
+	// finding, positioned on the offending key — but the sentence naming the
+	// condition is read off the condition, the same one the terminal opens
+	// with. So the expectation is that sentence rather than a literal: a
+	// literal would keep matching a message the condition no longer says.
+	want := envelope.ErrEntityEnvelope().Error()
 	found := false
 	for i := 0; i < 6 && !found; i++ {
 		msg := readOneResponse(t, stdout, 10*time.Second)
@@ -323,6 +333,18 @@ func stringify(v any) string {
 func serveValidateScan(t *testing.T, files map[string]string, validateFile string) string {
 	return serveValidateScanBuffer(t, files, validateFile, files[validateFile])
 }
+
+// envelopeSentenceInScan is what an envelope rejection looks like anywhere in a
+// scan of the daemon's traffic: the condition's registered sentence, read off
+// the condition rather than restated as a literal.
+//
+// Both the positive and the negative assertions below depend on it being
+// derived, and the negative ones depend on it more. A literal that the product
+// has stopped emitting still makes a positive assertion fail loudly — but it
+// makes a negative one pass unconditionally, so a guard that the envelope leg
+// must NOT fire would go on reporting green with the leg firing on every
+// document.
+func envelopeSentenceInScan() string { return envelope.ErrEntityEnvelope().Error() }
 
 // serveValidateScanBuffer is serveValidateScan with an explicit editor
 // buffer distinct from the on-disk content. It models live editing — the
@@ -446,8 +468,8 @@ spec:
 		"release-b.yaml": badRelease,
 		"manifest.yaml":  minimalManifest,
 	}, "release-b.yaml")
-	if !strings.Contains(scan, "violates its envelope schema") {
-		t.Fatalf("non-anchoring Release values-ban produced no envelope diagnostic on its own file:\n%s", scan)
+	if want := envelopeSentenceInScan(); !strings.Contains(scan, want) {
+		t.Fatalf("non-anchoring Release values-ban produced no envelope diagnostic (%q) on its own file:\n%s", want, scan)
 	}
 }
 
@@ -471,8 +493,8 @@ spec:
       port: { type: integer }
 `
 	scan := serveValidateScan(t, map[string]string{"component.yaml": comp}, "component.yaml")
-	if !strings.Contains(scan, "violates its envelope schema") {
-		t.Fatalf("catalog Component junk key produced no envelope diagnostic on its file:\n%s", scan)
+	if want := envelopeSentenceInScan(); !strings.Contains(scan, want) {
+		t.Fatalf("catalog Component junk key produced no envelope diagnostic (%q) on its file:\n%s", want, scan)
 	}
 }
 
@@ -495,18 +517,19 @@ spec:
           image: "{{ .Values.image }}"
 `
 	scan := serveValidateScan(t, map[string]string{"templates/deployment.yaml": chartTemplate}, "templates/deployment.yaml")
-	if strings.Contains(scan, "violates its envelope schema") {
-		t.Fatalf("foreign YAML wrongly produced an envelope diagnostic (the guard failed):\n%s", scan)
+	if want := envelopeSentenceInScan(); strings.Contains(scan, want) {
+		t.Fatalf("foreign YAML wrongly produced an envelope diagnostic (%q) — the guard failed:\n%s", want, scan)
 	}
 }
 
 // TestNegativeCorpusServe_CleanAggregateStillTier4 — row (d), the
 // regression: an envelope-CLEAN active Aggregate falls through the
 // per-file envelope leg to its Tier-4 semantic validation. The fixture's
-// parameter type mismatch is a Step-1 pillar (content) issue, not an
-// envelope one; the leg must NOT fire (no "violates its envelope schema")
-// and the Tier-4 diagnostic about the parameter must still surface —
-// proving envelope-clean does not short-circuit Tier-4.
+// parameter type mismatch is a schema-validation issue over the entity's
+// declared pillars, not an envelope one; the leg must NOT fire (no
+// envelope diagnostic at all) and the Tier-4 diagnostic about the
+// parameter must still surface — proving envelope-clean does not
+// short-circuit Tier-4.
 func TestNegativeCorpusServe_CleanAggregateStillTier4(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	agg := `apiVersion: aggrega.ai/v1alpha1
@@ -553,8 +576,8 @@ spec:
 		"release.yaml":   release,
 		"manifest.yaml":  manifest,
 	}, "aggregate.yaml")
-	if strings.Contains(scan, "violates its envelope schema") {
-		t.Fatalf("envelope-clean active Aggregate wrongly produced an envelope diagnostic (the leg should not fire / not short-circuit Tier-4):\n%s", scan)
+	if want := envelopeSentenceInScan(); strings.Contains(scan, want) {
+		t.Fatalf("envelope-clean active Aggregate wrongly produced an envelope diagnostic (%q) — the leg should not fire / not short-circuit Tier-4:\n%s", want, scan)
 	}
 	if !strings.Contains(scan, "port") {
 		t.Fatalf("clean active Aggregate did not receive its Tier-4 parameter diagnostic (Tier-4 fall-through broken):\n%s", scan)
@@ -612,8 +635,8 @@ func TestNegativeCorpusServe_ConfigByFilenameGetsDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	badConfigBuffer := "workspace:\noffline: \"notabool\"\n"
 	scan := serveValidateScanBuffer(t, map[string]string{}, ".aggrega-config.yaml", badConfigBuffer)
-	if !strings.Contains(scan, "violates its envelope schema") {
-		t.Fatalf("invalid .aggrega-config.yaml buffer produced no envelope diagnostic on its file:\n%s", scan)
+	if want := envelopeSentenceInScan(); !strings.Contains(scan, want) {
+		t.Fatalf("invalid .aggrega-config.yaml buffer produced no envelope diagnostic (%q) on its file:\n%s", want, scan)
 	}
 }
 
@@ -625,8 +648,8 @@ func TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	badLockfileBuffer := "version: 1\nrelease: 123\ngenerated_at: \"2026-01-01T00:00:00Z\"\n"
 	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "release.lock", badLockfileBuffer)
-	if !strings.Contains(scan, "violates its envelope schema") {
-		t.Fatalf("invalid active-release lockfile buffer produced no envelope diagnostic on its file:\n%s", scan)
+	if want := envelopeSentenceInScan(); !strings.Contains(scan, want) {
+		t.Fatalf("invalid active-release lockfile buffer produced no envelope diagnostic (%q) on its file:\n%s", want, scan)
 	}
 }
 
@@ -638,7 +661,7 @@ func TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic(t *testing.T) {
 func TestNegativeCorpusServe_ForeignLockNoEnvelopeDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "Cargo.lock", "a: 1\n")
-	if strings.Contains(scan, "violates its envelope schema") {
-		t.Fatalf("foreign .lock wrongly produced an envelope diagnostic (the foreign-.lock guard failed):\n%s", scan)
+	if want := envelopeSentenceInScan(); strings.Contains(scan, want) {
+		t.Fatalf("foreign .lock wrongly produced an envelope diagnostic (%q) — the foreign-.lock guard failed:\n%s", want, scan)
 	}
 }

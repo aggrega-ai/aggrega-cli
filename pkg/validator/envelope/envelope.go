@@ -53,9 +53,19 @@ import (
 // boundary.
 func ErrEntityEnvelope() error { return errEntityEnvelope }
 
+// The sentence states the condition and stops there. Three paths raise this
+// one condition — a document that will not parse, an engine that could not
+// run, and a document the schema rejected — and only the third is a document
+// the author can correct against a schema. Advice that fits the third is wrong
+// on the other two, where the document may be perfectly well-formed, so it is
+// supplied by the path where it is true rather than carried here.
 var errEntityEnvelope = aggerrors.Register("validator-envelope/entity-envelope", aggerrors.Meta{
-	Message: "document envelope validation failed: correct the document to match its kind's schema",
+	Message: "document envelope validation failed",
 })
+
+// adviceCorrectDocument is the advice for the schema-violation path, the one
+// path on which it is true.
+const adviceCorrectDocument = "correct the document to match its kind's schema"
 
 // Kind names a document family with an embedded envelope schema.
 type Kind string
@@ -190,16 +200,30 @@ type Error struct {
 	Positions map[string]aggerrors.SourceLocation
 }
 
-// Error renders the violation as one grouped report: a header naming the
-// file and kind, then each finding with its position, key path and message.
+// Error renders the violation as one grouped report: the condition's
+// registered sentence, the kind and file it was met on, then each finding with
+// its position, key path and message, and the advice for this path last.
+//
+// The sentence leads and is read off the condition rather than written here,
+// so the words a reader sees have one home. The header states no framing of its
+// own: that the document failed its envelope validation is exactly what the
+// registered sentence says, and a header repeating it would state the condition
+// twice in one line.
 //
 // The header establishes the file, so a finding carries only its line and
 // column rather than repeating the path — the same grouping the compiler's
 // other multi-finding schema report uses, and the difference between a
 // readable diagnostic and one that restates an absolute path five times.
 func (e *Error) Error() string {
+	values := make([]string, 0, 2)
+	if e.Kind != "" {
+		values = append(values, string(e.Kind))
+	}
+	if e.Path != "" {
+		values = append(values, "at "+e.Path)
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s: %s document violates its envelope schema", e.Path, e.Kind)
+	b.WriteString(aggerrors.ComposeMessage(ErrEntityEnvelope(), values, ""))
 	for i, f := range e.Findings {
 		if i >= 4 {
 			fmt.Fprintf(&b, "; (+%d more)", len(e.Findings)-4)
@@ -215,6 +239,7 @@ func (e *Error) Error() string {
 		}
 		fmt.Fprintf(&b, "%s: %s", fp, f.Message)
 	}
+	b.WriteString(". " + adviceCorrectDocument)
 	return b.String()
 }
 
@@ -222,16 +247,29 @@ func (e *Error) Unwrap() error { return ErrEntityEnvelope() }
 
 // envelopeFailure attaches ErrEntityEnvelope to a validation failure that has
 // no per-field findings to report — a document that will not parse, or an
-// engine that could not run. It reports the underlying failure's message
-// unchanged, because ErrEntityEnvelope's own text advises correcting the
-// document: sound advice for a malformed document and wrong for an engine
-// failure, where the document may be perfectly well-formed. So the sentinel
-// serves as a matcher on these paths and never as text a reader is shown.
+// engine that could not run.
+//
+// It reports the condition's registered sentence and then the underlying
+// failure, which is the composition every diagnostic naming a condition
+// follows. What makes that safe on these paths is that the sentence states the
+// condition and nothing more. A sentence carrying advice to correct the
+// document could not lead here: that advice is sound for a malformed document
+// and wrong for an engine failure, where the document may be perfectly
+// well-formed. Keeping the advice with the path it is true of is what lets the
+// sentinel be both the matcher these paths are gated on and the sentence they
+// open with.
+//
+// The cause is the detail, and it is the whole detail: a parse failure names
+// the document and what would not read, an engine failure names the stage that
+// could not run, and neither has advice this side of the failure can add that
+// the cause does not already carry.
 type envelopeFailure struct {
 	cause error
 }
 
-func (e *envelopeFailure) Error() string { return e.cause.Error() }
+func (e *envelopeFailure) Error() string {
+	return aggerrors.ComposeMessage(ErrEntityEnvelope(), nil, "") + ": " + e.cause.Error()
+}
 
 // Unwrap reports the cause and the sentinel together, so a caller matching
 // either the specific cause or ErrEntityEnvelope succeeds.
@@ -248,10 +286,13 @@ func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEn
 // bytes then succeeds and would carry the build forward with this check
 // never having run.
 //
-// A schema violation returns *Error, carrying one finding per violation and
-// the source position of each violated path, resolved against the bytes
-// supplied here. A parse failure and an engine failure have no per-field
-// findings and report their own message unchanged.
+// Every error it returns opens with that condition's registered sentence, so a
+// reader is told which condition was met before being told anything about the
+// occurrence. A schema violation returns *Error, carrying one finding per
+// violation and the source position of each violated path, resolved against
+// the bytes supplied here, and closes with the advice for that path. A parse
+// failure and an engine failure have no per-field findings, so the sentence is
+// followed by the underlying failure's own message and nothing else.
 //
 // A document whose anchor is aliased inside its own content is refused as a
 // parse failure, naming that anchor. It describes an infinite tree rather

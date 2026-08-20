@@ -139,8 +139,8 @@ func TestValidatePluginBadTypeHaltsLoudly(t *testing.T) {
 	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Errorf("error does not wrap ErrEntityEnvelope: %v", err)
 	}
-	if !strings.Contains(err.Error(), "envelope schema") {
-		t.Errorf("diagnostic does not name the envelope schema: %v", err)
+	if want := envelope.ErrEntityEnvelope().Error(); !strings.Contains(err.Error(), want) {
+		t.Errorf("diagnostic does not carry the envelope condition's registered sentence %q: %v", want, err)
 	}
 }
 
@@ -297,8 +297,8 @@ func TestValidateBrokenEntityHaltsLoudly(t *testing.T) {
 	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Errorf("error does not wrap ErrEntityEnvelope: %v", err)
 	}
-	if !strings.Contains(err.Error(), "envelope schema") {
-		t.Errorf("diagnostic does not name the envelope schema: %v", err)
+	if want := envelope.ErrEntityEnvelope().Error(); !strings.Contains(err.Error(), want) {
+		t.Errorf("diagnostic does not carry the envelope condition's registered sentence %q: %v", want, err)
 	}
 }
 

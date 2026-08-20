@@ -87,9 +87,18 @@ type WorkloadValidationFinding struct {
 	Suggestion string // optional fix hint
 }
 
-// Error formats the validation failure. Each finding renders as an indented
-// detail line so a multi-failure error reads as a single grouped report rather
-// than N separate errors.
+// Error formats the validation failure. The header opens with the condition's
+// registered sentence and names the occurrence after it — the Workload, its
+// owning Recipe, the file, and the stage that checked it — and each finding
+// then renders as an indented detail line, so a multi-failure error reads as a
+// single grouped report rather than N separate errors.
+//
+// The sentence is read off the condition rather than written here, so the words
+// a reader sees have one home. The header states no framing of its own: that
+// this stage's validation failed is exactly what the registered sentence says,
+// and a header repeating it would state the condition twice in one line. The
+// stage itself is an occurrence value, since which check ran is a property of
+// the occurrence; the wording comes from the condition.
 //
 // It does not name its own category. The category is a rendering concern the
 // diagnostic envelope owns and states once, as its leading tag; a message that
@@ -99,16 +108,22 @@ type WorkloadValidationFinding struct {
 // Error output that is not exactly what the envelope's message was built from
 // renders a second time as a "caused by:" continuation, repeating the whole
 // report. One rendering feeding both surfaces is what keeps that from
-// happening, rather than agreement that has to be maintained.
+// happening, rather than agreement that has to be maintained, and it is why
+// ToCompilerError passes this output rather than composing a second one.
 func (e *WorkloadValidationError) Error() string {
-	header := "Workload"
+	values := make([]string, 0, 3)
 	if e.RecipeName != "" || e.RecipeVersion != "" {
-		header += fmt.Sprintf(" (in Recipe %s:%s)", e.RecipeName, e.RecipeVersion)
+		values = append(values, fmt.Sprintf("Workload in Recipe %s:%s", e.RecipeName, e.RecipeVersion))
+	} else {
+		values = append(values, "Workload")
 	}
 	if e.Path != "" {
-		header += " " + e.Path
+		values = append(values, "at "+e.Path)
 	}
-	header += " — " + e.Stage + " validation failed:"
+	if e.Stage != "" {
+		values = append(values, e.Stage+" stage")
+	}
+	header := cerrors.ComposeMessage(e.Err, values, "")
 
 	if len(e.Findings) == 0 {
 		return header
@@ -116,6 +131,7 @@ func (e *WorkloadValidationError) Error() string {
 
 	var b strings.Builder
 	b.WriteString(header)
+	b.WriteString(":")
 	for _, f := range e.Findings {
 		b.WriteString("\n  ")
 		if f.FieldPath != "" {

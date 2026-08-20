@@ -10,6 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
@@ -137,8 +138,21 @@ func (s *Server) envelopeDiagnosticsForBuffer(file string, content []byte, doc *
 	}
 	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 	// One rejection, one condition: every finding beneath it reports the same
-	// code, and what separates them is the key each one points at.
+	// code and opens with the same sentence, and what separates them is the key
+	// each one points at.
 	code := diagnosticCode(envErr)
+	// The sentence is read off the condition rather than written here, and the
+	// message a terminal shows for the same rejection reads it from that same
+	// place, so the two surfaces cannot disagree about which condition they are
+	// reporting. That is a property of where the words come from, not of two
+	// literals that happen to match today.
+	//
+	// The kind is this occurrence's value and goes in the parentheses; the file
+	// is deliberately not among them, because a diagnostic is already attached
+	// to the file it was raised on. Nor is the advice the grouped report closes
+	// with: this surface emits one diagnostic per finding, so advice would be
+	// repeated once per squiggle and add lines without adding facts.
+	header := cerrors.ComposeMessage(envelope.ErrEntityEnvelope(), []string{string(kind)}, "")
 	var diags []Diagnostic
 	for _, f := range leafmostFindings(envErr.Findings) {
 		// The path is resolved through the same walk the envelope's own
@@ -154,16 +168,13 @@ func (s *Server) envelopeDiagnosticsForBuffer(file string, content []byte, doc *
 		if span, ok := yamlpos.FieldRange(doc, idx, f.FieldPath); ok {
 			line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
 		}
-		// Carry the same envelope framing the CLI renders ("…document
-		// violates its envelope schema") plus the path-pointed finding, so
-		// the editor diagnostic reads as one coherent verdict with the CLI.
 		diags = append(diags, Diagnostic{
 			Line:      line,
 			Column:    col,
 			EndLine:   endLine,
 			EndColumn: endCol,
 			Severity:  editorSeverityError,
-			Message:   string(kind) + " document violates its envelope schema: " + f.Message,
+			Message:   header + ": " + f.Message,
 			Code:      code,
 		})
 	}

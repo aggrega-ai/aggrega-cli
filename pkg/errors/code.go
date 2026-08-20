@@ -6,6 +6,7 @@ package errors
 import (
 	stderrors "errors"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -125,6 +126,53 @@ func MessageOf(err error) (string, bool) {
 		return coded.Error(), true
 	}
 	return "", false
+}
+
+// ComposeMessage renders a diagnostic in the one composition every condition's
+// message follows: the condition's registered sentence first, the occurrence's
+// own values after it in parentheses, and the advice for this occurrence last.
+//
+// It is the single implementation of that composition, and it is a function
+// rather than a convention for a concrete reason: several composers each
+// building the same shape from their own struct fields would be several copies
+// of one condition's words, and such copies agree until one of them is edited.
+// A composer that needs the shape calls this; a composer whose
+// report groups many findings calls it for the header and appends its findings
+// beneath, so the leading sentence and the parenthesised occurrence still have
+// one definition.
+//
+// Every part is optional except the shape. A condition carrying no registered
+// sentence contributes none, which is a fact about the chain rather than a
+// failure — see MessageOf. An occurrence supplying no values gets no
+// parentheses, so a sparse failure reads as a sentence rather than as a
+// sentence trailing empty separators. Advice belongs to the raise path rather
+// than to the identity, which is why it is an argument here and not a field on
+// Meta: a sentence registered with advice in it is advice that has to be true
+// at every site that raises the condition, and the site where it is wrong is
+// the site a reader is most likely to reach.
+//
+// The sentence is read off the condition rather than passed as text, so a
+// caller cannot supply a second copy of the wording by accident.
+func ComposeMessage(condition error, values []string, advice string) string {
+	var b strings.Builder
+	if sentence, ok := MessageOf(condition); ok {
+		b.WriteString(sentence)
+	}
+	if len(values) > 0 {
+		if b.Len() > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString("(")
+		b.WriteString(strings.Join(values, ", "))
+		b.WriteString(")")
+	}
+	if advice != "" {
+		if b.Len() > 0 {
+			b.WriteString(". ")
+		}
+		b.WriteString(advice)
+	}
+	return b.String()
 }
 
 // Meta is the metadata declared beside an identity at its registration.

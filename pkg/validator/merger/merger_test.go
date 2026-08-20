@@ -1471,3 +1471,60 @@ func assertDeterministicMerge(t *testing.T, schemas []*Schema, trials int) {
 		}
 	}
 }
+
+// TestMergeError_OpensWithItsConditionAndSaysThePrefixOnce pins both halves of
+// this composer's contract.
+//
+// The report opens with the condition's registered sentence, read off the
+// condition rather than restated here — a restated copy would let this test
+// pass against wording that had drifted from the identity.
+//
+// And the package label these conditions register their sentences with appears
+// exactly once. It appears because the sentence carries it, not because the
+// composer writes one of its own; a composer that also wrote one would put the
+// label twice in a single line. Counting is what detects that, since both
+// spellings would otherwise look correct in isolation.
+func TestMergeError_OpensWithItsConditionAndSaysThePrefixOnce(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		err       *MergeError
+		wantValue string
+	}{
+		{
+			name:      "detail only",
+			err:       &MergeError{Detail: "extends chain revisits ./base.yaml", Err: ErrCyclicExtension()},
+			wantValue: "(extends chain revisits ./base.yaml)",
+		},
+		{
+			name:      "path, detail and source",
+			err:       &MergeError{Path: "properties.port", Source: "./base.yaml:12", Detail: "chain depth 11 exceeds the maximum of 10", Err: ErrMaxDepth()},
+			wantValue: "(at properties.port, chain depth 11 exceeds the maximum of 10, from ./base.yaml:12)",
+		},
+		{
+			name:      "no occurrence detail at all",
+			err:       &MergeError{Err: ErrMergeInvalid()},
+			wantValue: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := tc.err.Error()
+			sentence := tc.err.Err.Error()
+			if !strings.HasPrefix(got, sentence) {
+				t.Errorf("must open with the registered sentence %q; got %q", sentence, got)
+			}
+			if tc.wantValue == "" {
+				if got != sentence {
+					t.Errorf("a failure supplying no values must render the sentence alone; got %q", got)
+				}
+			} else if !strings.HasSuffix(got, tc.wantValue) {
+				t.Errorf("occurrence values must follow the sentence as %q; got %q", tc.wantValue, got)
+			}
+			if n := strings.Count(got, "merger:"); n != 1 {
+				t.Errorf("the package label must appear exactly once, from the sentence; appeared %d times in %q", n, got)
+			}
+		})
+	}
+}

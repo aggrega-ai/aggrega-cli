@@ -47,16 +47,27 @@ type MergeError struct {
 	Err    error
 }
 
+// Error opens with the condition's registered sentence and reports the
+// occurrence after it: the instance path, the merge-time detail, and the schema
+// in the chain the failure came from.
+//
+// The sentence is read off the condition rather than written here, so the words
+// a reader sees have one home. Note that these conditions register their
+// sentences with a package label already in them, and that label is therefore
+// printed by the sentence rather than by this composer, which writes none of
+// its own. Two labels in one line is what that avoids.
 func (e *MergeError) Error() string {
-	out := "merger: "
+	values := make([]string, 0, 3)
 	if e.Path != "" {
-		out += "at " + e.Path + ": "
+		values = append(values, "at "+e.Path)
 	}
-	out += e.Detail
+	if e.Detail != "" {
+		values = append(values, e.Detail)
+	}
 	if e.Source != "" {
-		out += " (from " + e.Source + ")"
+		values = append(values, "from "+e.Source)
 	}
-	return out
+	return cerrors.ComposeMessage(e.Err, values, "")
 }
 
 func (e *MergeError) Unwrap() error { return e.Err }

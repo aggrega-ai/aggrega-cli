@@ -228,18 +228,20 @@ func TestValidateWorkloadAttachments_ErrorMessageFormat(t *testing.T) {
 		t.Fatal("expected error")
 	}
 	msg := err.Error()
-	// The category is the envelope's to state, once, as its own tag; the
-	// failure's own text names the entity and leaves the category alone.
-	if !strings.HasPrefix(msg, "Workload") {
-		t.Errorf("must open with the entity reference, got: %q", msg)
+	// The message opens with the condition's registered sentence, which is
+	// read off the condition rather than restated here — a restated copy would
+	// let this test pass against wording that had drifted from the identity.
+	if want := validator.ErrWorkloadFeaturesSchema().Error(); !strings.HasPrefix(msg, want) {
+		t.Errorf("must open with the registered sentence %q, got: %q", want, msg)
 	}
+	// The category is the envelope's to state, once, as its own tag.
 	if strings.Contains(msg, "CATALOG_ERROR") {
 		t.Errorf("must not name its own category, got: %q", msg)
 	}
-	if !strings.Contains(msg, "test:1.0.0") {
-		t.Errorf("must contain recipe name:version, got: %q", msg)
+	if !strings.Contains(msg, "Workload in Recipe test:1.0.0") {
+		t.Errorf("must contain the entity reference, got: %q", msg)
 	}
-	if !strings.Contains(msg, "featuresSchema validation failed") {
+	if !strings.Contains(msg, "featuresSchema stage") {
 		t.Errorf("must contain stage tag, got: %q", msg)
 	}
 }

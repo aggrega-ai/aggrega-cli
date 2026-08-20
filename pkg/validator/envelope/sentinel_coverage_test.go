@@ -64,7 +64,7 @@ spec:
 			name:                "schema findings",
 			kind:                KindComponent,
 			doc:                 []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nstrayTopLevelKey: nope\n"),
-			wantMessageFragment: "violates its envelope schema",
+			wantMessageFragment: adviceCorrectDocument,
 		},
 		{
 			// A kind with no embedded schema fails inside the validator
@@ -93,18 +93,32 @@ spec:
 			if !errors.Is(err, ErrEntityEnvelope()) {
 				t.Errorf("%s: error must match ErrEntityEnvelope; got %v", tc.name, err)
 			}
+			// Every return path opens with the condition's registered
+			// sentence, whichever of them a document reaches. Asserted here
+			// rather than in a test of its own because this is the one place
+			// that enumerates all four returns: a fifth return added without
+			// the sentence fails here, where a separate test exercising one
+			// path would not see it.
+			if want := ErrEntityEnvelope().Error(); !strings.HasPrefix(err.Error(), want) {
+				t.Errorf("%s: every failure must open with the registered sentence %q; got %v", tc.name, want, err)
+			}
 		})
 	}
 }
 
-// TestValidateBytes_FindinglessFailuresKeepTheirOwnMessage pins the other half
-// of the coverage contract. ErrEntityEnvelope's text advises correcting the
-// document, which is right for a malformed document and wrong for an engine
-// failure — the document there may be flawless. So attaching the sentinel must
-// not put that advice in front of a reader: the message a findingless failure
-// reports stays the underlying failure's own, and the specific cause stays
-// matchable alongside the sentinel.
-func TestValidateBytes_FindinglessFailuresKeepTheirOwnMessage(t *testing.T) {
+// TestValidateBytes_FindinglessFailuresCarryNoDocumentAdvice pins the other
+// half of the coverage contract, and it is the reason ErrEntityEnvelope's
+// sentence states the condition and stops there. Advice to correct the
+// document is right for a malformed document and wrong for an engine failure,
+// where the document may be flawless — so the advice is supplied by the
+// schema-violation path rather than carried in the sentence every path opens
+// with. This asserts the outcome: a findingless failure reports the sentence
+// and its own cause, and no advice about correcting anything.
+//
+// The distinction is worth keeping in a test rather than in a comment, because
+// the tempting simplification is to move the advice into the sentence, where
+// every path would then pick it up.
+func TestValidateBytes_FindinglessFailuresCarryNoDocumentAdvice(t *testing.T) {
 	t.Parallel()
 
 	doc := []byte(`
@@ -118,10 +132,13 @@ metadata:
 	if err == nil {
 		t.Fatal("expected an engine failure for a kind with no embedded schema")
 	}
-	if strings.Contains(err.Error(), "correct the document") {
+	if strings.Contains(err.Error(), adviceCorrectDocument) {
 		t.Errorf("an engine failure must not tell an author to correct a document that is fine; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "no embedded schema for kind") {
 		t.Errorf("the underlying failure's own message must survive; got %v", err)
+	}
+	if want := ErrEntityEnvelope().Error(); !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("the condition's registered sentence must still lead; got %v", err)
 	}
 }

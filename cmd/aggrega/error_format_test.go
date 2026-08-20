@@ -373,3 +373,60 @@ func TestFormatCompilerError_ErrorsJoin_RecursionSafe(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatCompilerError_WorkloadValidation_SentenceSaidOnce is the
+// double-render guard on the grouped Workload report.
+//
+// The report's Error output and the envelope's message must be the same text,
+// because the chain walk suppresses a terminal frame only when the text it
+// would add is already present. Were the two to diverge, the whole grouped
+// report would render a second time as a "caused by:" continuation — the
+// findings included. Counting the condition's registered sentence in the
+// rendered output is what detects that: it is the one string that opens the
+// report, so a second occurrence means a second render.
+//
+// The expected sentence is read off the condition rather than written here, so
+// this test cannot pass against wording that has drifted from the identity.
+func TestFormatCompilerError_WorkloadValidation_SentenceSaidOnce(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		stage     string
+		condition error
+	}{
+		{"schema", validator.ErrWorkloadValidation()},
+		{"featuresSchema", validator.ErrWorkloadFeaturesSchema()},
+		{"slotReferenceability", validator.ErrSlotNotReferenceable()},
+	} {
+		t.Run(tc.stage, func(t *testing.T) {
+			t.Parallel()
+			wve := &validator.WorkloadValidationError{
+				Path:          "/path/to/recipe.yaml",
+				RecipeName:    "my-recipe",
+				RecipeVersion: "1.0.0",
+				Stage:         tc.stage,
+				Findings: []validator.WorkloadValidationFinding{
+					{FieldPath: ".containers.main.image", Constraint: "required field missing"},
+					{FieldPath: ".containers.main.ports", Constraint: "must be an array", Suggestion: "declare a port list"},
+				},
+				Err: tc.condition,
+			}
+			sentence := tc.condition.Error()
+			if !strings.HasPrefix(wve.Error(), sentence) {
+				t.Errorf("the report must open with %q; got %q", sentence, wve.Error())
+			}
+			if msg := wve.ToCompilerError().Message; msg != wve.Error() {
+				t.Errorf("the envelope's message must be exactly the report's own text, or the chain walk renders it twice\n envelope %q\n report   %q", msg, wve.Error())
+			}
+			got := formatCompilerError(wve)
+			if n := strings.Count(got, sentence); n != 1 {
+				t.Errorf("registered sentence rendered %d times, want exactly 1\n--- got ---\n%s", n, got)
+			}
+			if n := strings.Count(got, ".containers.main.ports"); n != 1 {
+				t.Errorf("finding rendered %d times, want exactly 1\n--- got ---\n%s", n, got)
+			}
+			if !strings.Contains(got, "declare a port list") {
+				t.Errorf("the finding's suggestion must survive the composition change\n--- got ---\n%s", got)
+			}
+		})
+	}
+}

@@ -5,7 +5,6 @@ package validator
 
 import (
 	"fmt"
-	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -232,6 +231,11 @@ func (e *ValidationError) entity() string {
 // condition; it exists because an empty composite literal of this type is legal
 // from any package, and rendering the values is better than panicking inside an
 // error's own Error method.
+//
+// The composition itself is cerrors.ComposeMessage and is shared with every
+// other composer that renders a condition, so what varies here is which values
+// this failure contributes and in what order — never the shape they are
+// rendered in.
 func (e *ValidationError) message() string {
 	values := make([]string, 0, 5)
 	values = append(values, e.entity())
@@ -247,14 +251,7 @@ func (e *ValidationError) message() string {
 	if e.detail.Actual != "" {
 		values = append(values, "got "+e.detail.Actual)
 	}
-	msg := "(" + strings.Join(values, ", ") + ")"
-	if sentence, ok := cerrors.MessageOf(e.detail.Err); ok {
-		msg = sentence + " " + msg
-	}
-	if e.detail.Suggestion != "" {
-		msg += ". " + e.detail.Suggestion
-	}
-	return msg
+	return cerrors.ComposeMessage(e.detail.Err, values, e.detail.Suggestion)
 }
 
 // Error returns a formatted human-readable message. Never contains raw validator-library output.

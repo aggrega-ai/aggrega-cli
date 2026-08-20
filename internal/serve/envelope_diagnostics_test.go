@@ -10,7 +10,22 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/serve/completion"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
+
+// envelopeDiagnosticHeader is what every envelope diagnostic in this file
+// expects its message to open with: the condition's registered sentence, read
+// off the condition, then the kind of the document it was raised on.
+//
+// The WORDING is derived rather than written out, so an assertion here cannot
+// pass against wording that has drifted from the identity it reports — a
+// literal would keep matching a message the condition no longer says. The
+// SHAPE around it is spelled out here on purpose, and must not be
+// "simplified" into a call to the composer the daemon itself uses: a test
+// asserting an expectation built by the code under test asserts nothing.
+func envelopeDiagnosticHeader(kind envelope.Kind) string {
+	return envelope.ErrEntityEnvelope().Error() + " (" + string(kind) + ")"
+}
 
 func parseDoc(t *testing.T, s string) *yaml.Node {
 	t.Helper()
@@ -24,8 +39,8 @@ func parseDoc(t *testing.T, s string) *yaml.Node {
 // TestEnvelopeDiagnosticsForBuffer_PositionBetterThan1To1 pins that an
 // envelope finding squiggles the offending key, not line 1: a Release
 // with values: on a boundary component lands the diagnostic on the
-// boundary path (line > 1) via the Tier-A position walk, and carries the
-// rendered envelope framing.
+// boundary path (line > 1) via the Tier-A position walk, and opens with the
+// condition's registered sentence.
 func TestEnvelopeDiagnosticsForBuffer_PositionBetterThan1To1(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t, t.TempDir(), nil, nil)
@@ -54,8 +69,8 @@ spec:
 	if d.Line <= 1 {
 		t.Errorf("diagnostic should land on the offending key (line > 1), not line 1; got line %d", d.Line)
 	}
-	if !strings.Contains(d.Message, "violates its envelope schema") {
-		t.Errorf("diagnostic must carry the envelope framing; got %q", d.Message)
+	if want := envelopeDiagnosticHeader(envelope.KindRelease); !strings.HasPrefix(d.Message, want+": ") {
+		t.Errorf("diagnostic must open with %q; got %q", want, d.Message)
 	}
 }
 
@@ -118,8 +133,8 @@ func TestEnvelopeDiagnosticsForBuffer_ConfigByFilename(t *testing.T) {
 	if d.Line <= 1 {
 		t.Errorf("diagnostic should land on the offending key (line > 1), not line 1; got line %d", d.Line)
 	}
-	if !strings.Contains(d.Message, "AggregaConfig document violates its envelope schema") {
-		t.Errorf("diagnostic must carry the AggregaConfig envelope framing; got %q", d.Message)
+	if want := envelopeDiagnosticHeader(envelope.KindAggregaConfig); !strings.HasPrefix(d.Message, want+": ") {
+		t.Errorf("diagnostic must open with %q; got %q", want, d.Message)
 	}
 }
 
@@ -139,8 +154,8 @@ func TestEnvelopeDiagnosticsForBuffer_ActiveReleaseLockfileByFilename(t *testing
 	if d.Line <= 1 {
 		t.Errorf("diagnostic should land on the offending key (line > 1), not line 1; got line %d", d.Line)
 	}
-	if !strings.Contains(d.Message, "Lockfile document violates its envelope schema") {
-		t.Errorf("diagnostic must carry the Lockfile envelope framing; got %q", d.Message)
+	if want := envelopeDiagnosticHeader(envelope.KindLockfile); !strings.HasPrefix(d.Message, want+": ") {
+		t.Errorf("diagnostic must open with %q; got %q", want, d.Message)
 	}
 }
 
@@ -231,18 +246,24 @@ func TestClassifyByFilename_NoActiveRelease(t *testing.T) {
 	}
 }
 
-// TestEnvelopeDiagnosticsForBuffer_EveryClassifiedKindIsCovered pins that a
-// schema-invalid buffer produces envelope diagnostics for EVERY kind the
-// apiVersion+kind classification recognizes — so the editor's verdict on an
-// authored document does not depend on which kind it is. A kind the
-// classification omits silently produces no diagnostics at all while the CLI
-// rejects the same bytes, which is a divergence an author experiences as the
-// editor calling a file clean.
+// TestEnvelopeDiagnosticsForBuffer_ClassifiedKindsProduceDiagnostics pins that a
+// schema-invalid buffer produces envelope diagnostics, and that each opens with
+// the condition's sentence, for the kinds enumerated below — so the editor's
+// verdict on an authored document does not depend on which of them it is. A
+// kind that produces none silently reports nothing while the CLI rejects the
+// same bytes, which is a divergence an author experiences as the editor calling
+// a file clean.
+//
+// 🔴 The enumerated kinds are a FLOOR, not the classification's whole set: the
+// table below carries fewer rows than classifyAggregaDocument recognizes, so a
+// kind absent from the table is unproven here rather than proven working. State
+// the corpus rather than implying coverage of every kind — a table read as a
+// total is how an untested kind passes for a tested one.
 //
 // The Component case is the calibration: it must produce diagnostics under the
 // same harness, so a kind that produces none is a real gap rather than a broken
 // instrument.
-func TestEnvelopeDiagnosticsForBuffer_EveryClassifiedKindIsCovered(t *testing.T) {
+func TestEnvelopeDiagnosticsForBuffer_ClassifiedKindsProduceDiagnostics(t *testing.T) {
 	t.Parallel()
 
 	// Each fixture is YAML-valid (so it parses and classifies) and
@@ -275,8 +296,8 @@ spec:
 			if !has || len(diags) == 0 {
 				t.Fatalf("a schema-invalid %s buffer must produce envelope diagnostics; has=%v diags=%d", name, has, len(diags))
 			}
-			if !strings.Contains(diags[0].Message, "violates its envelope schema") {
-				t.Errorf("%s diagnostic must carry the envelope framing; got %q", name, diags[0].Message)
+			if want := envelopeDiagnosticHeader(envelope.Kind(name)); !strings.HasPrefix(diags[0].Message, want+": ") {
+				t.Errorf("%s diagnostic must open with %q; got %q", name, want, diags[0].Message)
 			}
 		})
 	}

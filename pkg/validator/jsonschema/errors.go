@@ -62,18 +62,28 @@ type AdapterError struct {
 	Err error
 }
 
-// Error returns a formatted human-readable message naming the
-// offending path and keyword. Never returns a raw library-error
+// Error opens with the condition's registered sentence and names the
+// occurrence after it: the offending path, the offending keyword, and the
+// adapter-side description of the failure. Never returns a raw library-error
 // string.
+//
+// The sentence is read off the condition rather than written here, so the words
+// a reader sees have one home. Note that these conditions register their
+// sentences with a package label already in them, and that label is therefore
+// printed by the sentence rather than by this composer, which writes none of
+// its own. Two labels in one line is what that avoids.
 func (e *AdapterError) Error() string {
-	prefix := "validator/jsonschema"
+	values := make([]string, 0, 3)
 	if e.Path != "" {
-		prefix += " at " + e.Path
+		values = append(values, "at "+e.Path)
 	}
 	if e.Keyword != "" {
-		prefix += fmt.Sprintf(" (keyword %q)", e.Keyword)
+		values = append(values, fmt.Sprintf("keyword %q", e.Keyword))
 	}
-	return prefix + ": " + e.Message
+	if e.Message != "" {
+		values = append(values, e.Message)
+	}
+	return cerrors.ComposeMessage(e.Err, values, "")
 }
 
 // Unwrap returns the underlying sentinel for errors.Is matching.
