@@ -1081,6 +1081,21 @@ func lookupComponent(catalog CatalogLookup, componentType string) (types.Compone
 	return catalog.Component(componentType)
 }
 
+// catalogComponentFor returns the catalog Component for a type URI, or nil on a
+// miss. A miss is silent: an unresolvable type is another guard's report, and an
+// advisory lint must not double-report it.
+//
+// It is the pointer-returning form of [lookupComponent] for a reader that
+// branches on nil, and it sits beside it so the two catalog readings cannot come
+// to disagree about what a miss is.
+func catalogComponentFor(typeURI string, catalog CatalogLookup) *types.Component {
+	comp, found := lookupComponent(catalog, typeURI)
+	if !found {
+		return nil
+	}
+	return &comp
+}
+
 // authoredNodeText serializes an authored node to opaque bytes, empty when the
 // author wrote nothing there.
 //

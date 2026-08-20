@@ -46,9 +46,12 @@ import (
 // not among them, so a per-socket invocation would never be presented with its
 // own subject. The set the component wrote is read as a fact instead.
 //
-// The detail is the component type, the socket the author wrote, and the
-// declared socket it sits within one edit of. One objection is raised per pair,
-// so a name near two declared sockets names both.
+// The detail leads with the socket the author wrote, which is the value the
+// rule's own wording is about and so carries no caption. The component type it
+// was named on and the declared socket it sits within one edit of follow, each
+// captioned, because the wording names neither and a reader handed three bare
+// quoted names has no way to tell which is which. One objection is raised per
+// pair, so a name near two declared sockets names both.
 var authoredSocketNameNearADeclaredOne = constraint.Check[
 	constraint.NormalizedView,
 	constraint.NodeSubject,
@@ -74,8 +77,10 @@ var authoredSocketNameNearADeclaredOne = constraint.Check[
 				continue
 			}
 			for _, candidate := range nearMissCandidates(socket, declared) {
-				out = append(out, s.Raise(ErrUsesSocketNearMiss(),
-					componentType, socket, candidate))
+				out = append(out, s.RaiseWith(ErrUsesSocketNearMiss(),
+					constraint.Uncaptioned(socket),
+					constraint.Captioned("on component type", componentType),
+					constraint.Captioned("near the declared socket", candidate)))
 			}
 		}
 		return out
@@ -96,8 +101,10 @@ var authoredSocketNameNearADeclaredOne = constraint.Check[
 // separately authored, so a rule reading one for the other would advise about a
 // name the application never wrote.
 //
-// The detail is the component type, the name the attachment was written under,
-// and the declared slot it sits within one edit of.
+// The detail leads with the name the attachment was written under, which is the
+// value the rule's own wording is about and so carries no caption. The component
+// type it sits on and the declared slot it sits within one edit of follow, each
+// captioned, because the wording names neither.
 var attachmentNameNearADeclaredSlot = constraint.Check[
 	constraint.NormalizedView,
 	constraint.NodeAttachmentSubject,
@@ -121,8 +128,10 @@ var attachmentNameNearADeclaredSlot = constraint.Check[
 		}
 		var out []constraint.Objection
 		for _, candidate := range nearMissCandidates(s.AttachmentName(), declared) {
-			out = append(out, s.Raise(ErrAttachmentSlotNearMiss(),
-				componentType, s.AttachmentName(), candidate))
+			out = append(out, s.RaiseWith(ErrAttachmentSlotNearMiss(),
+				constraint.Uncaptioned(s.AttachmentName()),
+				constraint.Captioned("on component type", componentType),
+				constraint.Captioned("near the declared slot", candidate)))
 		}
 		return out
 	},

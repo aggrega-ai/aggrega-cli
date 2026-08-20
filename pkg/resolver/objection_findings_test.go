@@ -153,17 +153,19 @@ func TestTheConversionAttributesFindingsToTheDocumentItIsGiven(t *testing.T) {
 // between the two readings is which raise the rule used.
 //
 // One rule objects about a key inside the component's configuration and names it;
-// the other objects about a socket name the component wrote, whose first value is
-// a type name and not a place in the file. Both are invoked over the same
+// the other objects about a socket name the component wrote and keeps its finding
+// at the component whose block holds it. Both are invoked over the same
 // subject through the same traversal, and both convert through the same
 // conversion — so a difference in where they land is attributable to the raise and
 // to nothing else.
 //
-// The second rule is one whose leading value is a component type, which is what
-// makes it the honest exemplar of a raise that stays at the subject: a rule naming
-// an authored element positions at that element instead, so a rule chosen merely
-// because it reports at the component today would stop being an exemplar the
-// moment its own position was corrected.
+// The second rule is invoked once per component and reads the socket set that
+// component wrote as a fact, so the offending socket is never presented to it as a
+// subject: it names that socket in its detail and keeps the finding at the
+// component. That is what makes it the honest exemplar of a raise that stays at
+// the subject. Its position is asserted below rather than assumed, so a rule whose
+// own position was later corrected fails here loudly instead of quietly becoming
+// an exemplar of the other case.
 //
 // INVARIANT: a rule that raised at a leaf is positioned at that leaf; a rule that
 // raised at the subject stays at the subject.
@@ -178,7 +180,7 @@ func TestTwoRulesOverOneComponentPositionAtTheDepthEachRaisedAt(t *testing.T) {
 	// One component: its configuration violates the contract its type declares,
 	// and it wires a dependency socket one edit from the one that type declares.
 	// The first is reported by a rule that names the offending key; the second by
-	// a rule whose leading value is the component type.
+	// a rule that names the offending socket and stays at the component.
 	components := types.OrderedMap[types.ComponentInstance]{}
 	values := types.OrderedMap[any]{}
 	values.Set("replicas", "many")

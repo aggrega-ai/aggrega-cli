@@ -10,9 +10,22 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// LintUsesSocketNearMiss reports each socket on a component's own `uses:` block
+// lintUsesSocketNearMiss reads each socket on a component's own `uses:` block
 // whose name is not declared in its Component type's usesSchema but is within a
 // small edit distance of one — the shape a socket-name typo takes.
+//
+// 🔴 It is NOT the production reading. The rule reaches a build through the
+// declared check the advisory suite invokes; this is the second, independent
+// implementation the equivalence cross-check compares that reading against, and
+// it is retained for exactly that. A cross-check sharing an implementation with
+// what it checks cannot see the two drift apart, so this must not be folded into
+// the declared check or re-expressed in terms of it — and it must not be wired
+// into a build, which would report one authoring fault twice. It is unexported
+// so that no caller outside this package can restore it to a production path.
+//
+// What the two legitimately share is one definition of what counts as a near
+// miss: both reach [nearMissCandidates]. What the cross-check compares are their
+// conclusions.
 //
 // A socket name that appears in no usesSchema entry is legal on this surface:
 // the Aggregate author owns the application's topology and may name a socket the
@@ -23,28 +36,25 @@ import (
 // The cost of the openness is that a misspelled socket name silently becomes a
 // connection of its own instead of the one the author meant, and — carrying no
 // usesSchema entry — it carries no selector, no inject allowlist and no per-edge
-// contract. This lint is the mitigation: it names both spellings so the author
-// can see the pair. It is advisory and never changes the build's verdict — the
-// compiler does not police what an author names a socket.
+// contract. Naming both spellings so the author can see the pair is the
+// mitigation.
 //
 // Scope is the component's own `uses:` surface alone, which is the one surface
 // where an undeclared socket name is accepted. An attachment's `uses:` and a
 // Release's per-edge `uses:` may only name a declared socket, so a near miss
 // there already halts and reporting it again would double-report it.
 //
-// Each finding carries a Field locator naming the authoring site, so a front end
-// that maps locators to source positions can place the advisory on the offending
-// key rather than at the head of the file.
-//
 // Walk order. Component instances are walked in the order
 // collectComponentInstances returns (sorted by instance name); within an
 // instance, socket names are walked in [sort.Strings] order and each socket's
-// candidate declarations are compared in [sort.Strings] order, so repeated runs
-// over identical input emit an identical advisory sequence.
+// candidate declarations are compared in [sort.Strings] order. That order is this
+// implementation's own and is deliberately NOT the declared check's, which
+// invokes in the order the document declares; the cross-check therefore compares
+// the two findings as sets.
 //
 // Returns nil when agg is nil or when catalog.Component is nil — a catalog-less
 // path has no socket declarations to compare against.
-func LintUsesSocketNearMiss(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
+func lintUsesSocketNearMiss(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil

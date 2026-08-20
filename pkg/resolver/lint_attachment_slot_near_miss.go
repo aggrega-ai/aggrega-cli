@@ -10,9 +10,22 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// LintAttachmentSlotNearMiss reports each attachment whose name is not a
-// declared slot on its component's catalog type but is within a small edit
-// distance of one — the shape a slot-name typo takes.
+// lintAttachmentSlotNearMiss reads each attachment whose name is not a declared
+// slot on its component's catalog type but is within a small edit distance of
+// one — the shape a slot-name typo takes.
+//
+// 🔴 It is NOT the production reading. The rule reaches a build through the
+// declared check the advisory suite invokes; this is the second, independent
+// implementation the equivalence cross-check compares that reading against, and
+// it is retained for exactly that. A cross-check sharing an implementation with
+// what it checks cannot see the two drift apart, so this must not be folded into
+// the declared check or re-expressed in terms of it — and it must not be wired
+// into a build, which would report one authoring fault twice. It is unexported
+// so that no caller outside this package can restore it to a production path.
+//
+// What the two legitimately share is one definition of what counts as a near
+// miss: both reach [nearMissCandidates]. What the cross-check compares are their
+// conclusions.
 //
 // An attachment name that matches no declared slot is legal: the attachment
 // surface is open, so a deployment may attach a Feature under any name and the
@@ -21,24 +34,20 @@ import (
 // attachment shared at a broader scope, and it is deliberately not a halt.
 //
 // The cost of the openness is that a misspelled slot name silently becomes a
-// free attachment instead of filling the slot the author meant. This lint is
-// the mitigation: it names both spellings so the author can see the pair. It is
-// advisory and never changes the build's verdict — the compiler does not police
-// what an author names an attachment.
-//
-// Each finding carries a Field locator naming the authoring site, so a front end
-// that maps locators to source positions can place the advisory on the offending
-// key rather than at the head of the file.
+// free attachment instead of filling the slot the author meant. Naming both
+// spellings so the author can see the pair is the mitigation.
 //
 // Walk order. Component instances are walked in the order
 // collectComponentInstances returns (sorted by instance name); within an
 // instance, attachment names are walked in [sort.Strings] order and each
-// attachment's candidate slots are compared in [sort.Strings] order, so
-// repeated runs over identical input emit an identical advisory sequence.
+// attachment's candidate slots are compared in [sort.Strings] order. That order
+// is this implementation's own and is deliberately NOT the declared check's,
+// which invokes in the order the document declares; the cross-check therefore
+// compares the two findings as sets.
 //
 // Returns nil when agg is nil or when catalog.Component is nil — a catalog-less
 // path has no slot declarations to compare against.
-func LintAttachmentSlotNearMiss(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
+func lintAttachmentSlotNearMiss(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
@@ -76,15 +85,4 @@ func LintAttachmentSlotNearMiss(na types.NormalizedAggregate, catalog CatalogLoo
 	}
 
 	return out
-}
-
-// catalogComponentFor returns the catalog Component for a type URI, or nil on a
-// miss. A miss is silent: an unresolvable type is another guard's report, and an
-// advisory lint must not double-report it.
-func catalogComponentFor(typeURI string, catalog CatalogLookup) *types.Component {
-	comp, found := catalog.Component(typeURI)
-	if !found {
-		return nil
-	}
-	return &comp
 }

@@ -587,13 +587,21 @@ func ResolveAndValidate(
 		// Tier4Result. They are computed before the guard verdict so an advisory is
 		// not lost when an unrelated guard halts.
 		//
+		// The declared advisory rules are asked through RunAdvisories, which is a
+		// separate entry point from the halting suite and returns no collection a
+		// build can halt on. That separation is what keeps an advisory advisory:
+		// were these rules asked through RunGuards, whose return IS the verdict,
+		// a near miss would refuse authoring the compiler deliberately permits.
+		//
 		// APPEND, never assign: the resolve arrives already carrying the advisories
 		// from the checks that needed only the Aggregate, and assigning here would
 		// silently drop them.
-		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
-			resolver.LintAttachmentSlotNearMiss(normalized, catalogLookup)...)
-		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
-			resolver.LintUsesSocketNearMiss(normalized, catalogLookup)...)
+		declaredAdvisories, err := resolver.RunAdvisories(
+			ctx.Err, normalized, resolveResult.Release, catalogLookup, resolveResult.Parameters)
+		if err != nil {
+			return err
+		}
+		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories, declaredAdvisories...)
 		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
 			resolver.LintProvidesNotDeclared(normalized, catalogLookup, recipeFor)...)
 		for _, a := range resolveResult.LintAdvisories {
