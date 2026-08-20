@@ -141,30 +141,52 @@ func TestLookupWithSocketsOptional_NoSocketsIsIdentity(t *testing.T) {
 	}
 }
 
-// TestLookupWithSocketsOptional_RuleStaysInOnePlace asks the resolver's own
-// exported required-socket rule about both views. It is the guard against this
-// harness growing a second, local notion of what a required socket means: the
-// narrowing has to change the ANSWER the shared rule gives, while the rule
-// itself stays the only thing deciding. If someone later reimplements the rule
-// inside this package, the un-narrowed half of this test keeps reporting the
-// error and the reimplementation gains no cover.
+// requiredSocketsThroughTheCompilersOwnReading reports which of a type's
+// declared sockets carry a requirement, read through the compiler's own
+// presentation rather than off the entity.
+//
+// Both the socket set and the requirement come from that presentation, which is
+// what the required-socket rule itself reads, so this helper cannot answer
+// differently from a build. Reading the entity's own map here would be the second
+// notion of a required socket the test below exists to refuse.
+//
+// The presentation is built over an empty application because neither fact is
+// keyed by a component: they answer about what a type declares, which is the
+// whole of what the narrowing changes.
+func requiredSocketsThroughTheCompilersOwnReading(lookup resolver.CatalogLookup, typeURI string) []string {
+	view := resolver.NewNormalizedView(types.Normalize(&types.Aggregate{}), nil, lookup, nil)
+	var out []string
+	for _, socket := range view.DeclaredSocketNames(typeURI) {
+		if view.SocketRequired(typeURI, socket) {
+			out = append(out, socket)
+		}
+	}
+	return out
+}
+
+// TestLookupWithSocketsOptional_RuleStaysInOnePlace asks the compiler's own
+// reading of "is this socket required" about both views. It is the guard against
+// this harness growing a second, local notion of what a required socket means:
+// the narrowing has to change the ANSWER that reading gives, while the reading
+// stays the only thing deciding. If someone later reimplements the requirement
+// inside this package, the un-narrowed half of this test keeps reporting both
+// sockets and the reimplementation gains no cover.
 func TestLookupWithSocketsOptional_RuleStaysInOnePlace(t *testing.T) {
 	t.Parallel()
 	base := socketedLookup()
 	comp, _ := base.Component(socketedType)
 
-	// Nothing populated, view as authored: the shared rule reports both
-	// required sockets. This is what a build sees.
-	asAuthored := resolver.ValidateRequiredSockets(comp, syntheticInstanceName, ".spec.components[\"instance\"]", nil)
+	// The view as authored: the compiler's reading finds both requirements.
+	// This is what a build sees.
+	asAuthored := requiredSocketsThroughTheCompilersOwnReading(base, socketedType)
 	if len(asAuthored) != 2 {
-		t.Fatalf("as authored: expected the shared rule to report 2 unbound required sockets, got %d: %+v", len(asAuthored), asAuthored)
+		t.Fatalf("as authored: expected the compiler's reading to find 2 required sockets, got %d: %v", len(asAuthored), asAuthored)
 	}
 
-	// Same rule, same empty population, narrowed view: nothing to report.
+	// Same reading, narrowed view: no requirement left to report.
 	narrowed := lookupWithSocketsOptional(base, socketedType, declaredRequiredSockets(&comp))
-	narrowedComp, _ := narrowed.Component(socketedType)
-	declined := resolver.ValidateRequiredSockets(narrowedComp, syntheticInstanceName, ".spec.components[\"instance\"]", nil)
+	declined := requiredSocketsThroughTheCompilersOwnReading(narrowed, socketedType)
 	if len(declined) != 0 {
-		t.Fatalf("narrowed: expected the shared rule to report nothing, got %d: %+v", len(declined), declined)
+		t.Fatalf("narrowed: expected the compiler's reading to find nothing required, got %d: %v", len(declined), declined)
 	}
 }

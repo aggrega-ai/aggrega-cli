@@ -20,8 +20,12 @@ func socketCarriesAConnection(counted types.OrderedMap[int], socket string) bool
 	return named && count > 0
 }
 
-// requiredSocketIsPopulated reports each dependency socket a component type
+// RequiredSocketIsPopulated reports each dependency socket a component type
 // declares as one that must carry a connection, and which carries none.
+//
+// It is exported because the composition it reads is held by another package:
+// the rule is invoked from the pass that owns the flattened composition, over
+// that pass's own presentation and enumeration, rather than from here.
 //
 // Three surfaces can populate such a socket and the rule reads all three,
 // because a socket any one of them binds is wired in the graph that gets
@@ -48,8 +52,11 @@ func socketCarriesAConnection(counted types.OrderedMap[int], socket string) bool
 // is no declaration to read the requirement from. What that absence means is a
 // separate rule's question.
 //
-// The detail is the component type and the socket.
-var requiredSocketIsPopulated = constraint.Check[
+// The detail is the socket and, captioned, the component type that declared it
+// required. The registered text names the socket, so that value stays bare; the
+// component type is the other thing an author has to look at and the sentence
+// does not name it.
+var RequiredSocketIsPopulated = constraint.Check[
 	constraint.TopologyView,
 	constraint.NodeSocketSubject,
 ]{
@@ -76,7 +83,9 @@ var requiredSocketIsPopulated = constraint.Check[
 			return nil
 		}
 		return []constraint.Objection{
-			s.Raise(ErrMissingRequiredSocket(), componentType, s.SocketName()),
+			s.RaiseWith(ErrMissingRequiredSocket(),
+				constraint.Uncaptioned(s.SocketName()),
+				constraint.Captioned("declared required by component type", componentType)),
 		}
 	},
 }

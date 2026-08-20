@@ -1288,12 +1288,16 @@ spec:
 	return dir
 }
 
-// TestIntegration_RequiredSocket_AuthoredFixture isolates guard_required_socket:
-// a fixture Component with a required uses socket, referenced with the socket
-// UNBOUND, must fail the registry build with ErrMissingRequiredSocket — and with
-// that SPECIFIC sentinel, so a failure on an earlier guard (missing recipe /
-// values) surfaces as "wrong guard", not a false pass. Completes the five
-// silent-skip guards' negative coverage.
+// TestIntegration_RequiredSocket_AuthoredFixture isolates the required-socket
+// rule: a fixture Component with a required uses socket, referenced with the
+// socket UNBOUND, must fail the registry build with ErrMissingRequiredSocket —
+// and with that SPECIFIC sentinel, so a failure on an earlier check (missing
+// recipe / values) surfaces as "wrong check", not a false pass.
+//
+// It reaches the rule through a real registry build, which is what no in-process
+// proof of the rule can do: the fixture Component is pulled from the registry, so
+// the requirement this asserts on is read off an entity that travelled through
+// publication and back rather than one assembled in memory.
 func TestIntegration_RequiredSocket_AuthoredFixture(t *testing.T) {
 	host := startRegistry(t, nil)
 	pushCatalog(t, host, standardCatalogDir(t)) // for the mariadb target the recipe selector needs
@@ -1347,7 +1351,7 @@ spec:
 		t.Fatalf("required-socket: build SUCCEEDED; want failure with ErrMissingRequiredSocket")
 	}
 	if !errors.Is(err, resolver.ErrMissingRequiredSocket()) {
-		t.Fatalf("required-socket: build err = %v; want errors.Is(ErrMissingRequiredSocket) (a different error means the wrong guard fired)", err)
+		t.Fatalf("required-socket: build err = %v; want errors.Is(ErrMissingRequiredSocket) (a different error means the wrong check fired)", err)
 	}
 }
 

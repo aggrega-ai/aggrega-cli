@@ -366,20 +366,20 @@ func TestTheRequirementShapeRuleStopsPartwayOnACancelledWalk(t *testing.T) {
 }
 
 // TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk
-// proves that the signal THIS walk reads is the caller's own.
+// proves that the signal EVERY walk at this site reads is the caller's own.
 //
 // The discriminator is how many times the signal was read and not what the
-// function returned, and here the arithmetic is exact rather than derived from
-// preceding walks: this site runs ONE walk, so the read count is the count of
-// nodes it entered. A walk handed some other signal reads that other signal once
-// per node and returns nil, which is what the needle for this proof shows.
+// function returned: each walk reads it once per node, so an uncancelled run
+// reads it once per node per walk. A walk handed some other signal reads that
+// other signal instead, which shows up as a read count short by one walk's worth
+// — so the count is what makes "every walk threads the caller's signal" a
+// measurement rather than a claim.
 //
-// 🔴 Stated because it is what the sibling proof could not do: withdrawing
-// before the function is entered is a legitimate instrument HERE precisely
-// because there is no earlier walk to swallow the withdrawal. That is a property
-// of this site having one walk, not a general licence — a second walk added here
-// would make the first read belong to it, and the index would have to be
-// re-derived exactly as the sibling's was.
+// 🔴 The walk count is written out below rather than derived, and the coupling is
+// the assertion. Adding a rule to this site changes the expected count, and the
+// edit that updates it is the moment somebody has to look at whether the new
+// walk was handed the caller's signal. A test that derived the count from the
+// site itself would agree with a walk that read nothing.
 func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(t *testing.T) {
 	t.Parallel()
 
@@ -388,6 +388,10 @@ func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(
 	if nodes < 2 {
 		t.Fatalf("the composition holds %d node(s); the arithmetic below needs at least 2", nodes)
 	}
+	// The walks this site performs, each rooted at the node axis: the
+	// attachment-requirement shape and the required-socket population.
+	const walks = 2
+	expectedReads := nodes * walks
 
 	t.Run("a caller that withdraws stops the walk before its first node", func(t *testing.T) {
 		var reads int
@@ -403,17 +407,32 @@ func TestTheTopologyStageRulesThreadTheCallersSignalIntoTheRequirementShapeWalk(
 		}
 	})
 
-	t.Run("a caller that does not withdraw reaches every node", func(t *testing.T) {
-		var reads int
-		signal := countingCancellation{reads: &reads, withdrawAfter: nodes + 1}
+	t.Run("a caller that withdraws during a later walk still stops the site", func(t *testing.T) {
+		// The withdrawal lands after the first walk has finished, so it can only
+		// be observed by a walk that comes after it. A later walk handed some
+		// other signal would read nothing here and the site would return nil.
+		var seen int
+		signal := countingCancellation{reads: &seen, withdrawAfter: nodes + 1}
+		if err := runTopologyStageRules(signal, clean.Topology); !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v; want the caller's withdrawal, read by a walk after the first", err)
+		}
+		if seen != nodes+2 {
+			t.Errorf("the signal was read %d time(s); want %d — every node of the first walk, then the read that turns on the second walk's first node",
+				seen, nodes+2)
+		}
+	})
+
+	t.Run("a caller that does not withdraw reaches every node of every walk", func(t *testing.T) {
+		var seen int
+		signal := countingCancellation{reads: &seen, withdrawAfter: expectedReads + 1}
 		if err := runTopologyStageRules(signal, clean.Topology); err != nil {
 			t.Fatalf("a composition carrying no broken declaration returned %v", err)
 		}
-		// The control. It is what makes the count above a measure of a walk that
-		// reads the caller's signal rather than of a site that returned early for
+		// The control. It is what makes the count above a measure of walks that
+		// read the caller's signal rather than of a site that returned early for
 		// some other reason.
-		if reads != nodes {
-			t.Errorf("the signal was read %d time(s) for %d node(s)", reads, nodes)
+		if seen != expectedReads {
+			t.Errorf("the signal was read %d time(s); want %d — %d node(s) over %d walk(s)", seen, expectedReads, nodes, walks)
 		}
 	})
 }

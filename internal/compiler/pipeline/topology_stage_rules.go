@@ -81,13 +81,41 @@ func runTopologyStageRules(
 	if err != nil {
 		return err
 	}
-	violations := resolver.FindingsFromObjections(objections, topologyStageEntity)
+
+	// Every dependency socket a component type declares as one that must carry a
+	// connection does carry one. Three surfaces can populate such a socket and
+	// the rule reads all three; the last of them is the connection set the
+	// composition produced, which is why the rule is asked here — it is the
+	// earliest point at which every surface that can satisfy the requirement has
+	// contributed. Asked over every node the composition holds, so a component a
+	// module contributed is judged by the same rule as one the application
+	// declared directly.
+	socketObjections, err := constraint.RunOnNodeSockets(
+		ctx.Err,
+		topoResult.StageCoordinates,
+		topoResult.StageCoordinates,
+		topoResult.StageView,
+		resolver.RequiredSocketIsPopulated,
+	)
+	if err != nil {
+		return err
+	}
+
+	// One halt carrying both rules' findings, rule by rule. A document offending
+	// against both is reported for both rather than for whichever rule ran first:
+	// the two are asked at one stage, so there is no later pass that would report
+	// the second, and halting on the first would make the author fix one fault to
+	// discover the other.
+	violations := append(
+		resolver.FindingsFromObjections(objections, topologyStageEntity),
+		resolver.FindingsFromObjections(socketObjections, topologyStageEntity)...,
+	)
 	if len(violations) == 0 {
 		return nil
 	}
 	return &resolver.MultiResolverError{
 		Entity:     topologyStageEntity,
-		Summary:    fmt.Sprintf("%d malformed attachment requirement(s)", len(violations)),
+		Summary:    fmt.Sprintf("%d violation(s) over the composed application", len(violations)),
 		Violations: violations,
 	}
 }

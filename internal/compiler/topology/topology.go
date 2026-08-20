@@ -77,18 +77,34 @@ type TopologyResult struct {
 	StageView constraint.TopologyView
 
 	// StageCoordinates enumerates what a rule over this stage is invoked once
-	// per: the component instances the composition flattened.
+	// per: the component instances the composition flattened, and the dependency
+	// sockets each of their types declares.
 	//
 	// It is a second field over the same value rather than a second value. The
 	// presentation and the enumeration are one type here because both are read
 	// from the flattened set this stage produced, and one reading of one set is
 	// what keeps the coordinate a rule is invoked for and the facts it then
-	// reads from disagreeing. The field is typed as the axis so a caller reaches
-	// it without asserting: a presentation that stopped supplying the axis would
+	// reads from disagreeing. The field is typed as the axes so a caller reaches
+	// them without asserting: a presentation that stopped supplying one would
 	// stop compiling here rather than leaving a rule silently uninvoked.
 	//
 	// Nil under exactly the condition StageView is nil, and for the same reason.
-	StageCoordinates constraint.NodeEnumerator
+	StageCoordinates StageAxes
+}
+
+// StageAxes is every axis a rule over the flattened composition is invoked once
+// per.
+//
+// It names the axes rather than being satisfied by whichever the presentation
+// happens to offer: a presentation that stopped supplying one would stop
+// compiling at the assignment, instead of leaving a rule that reads that axis
+// silently uninvoked. Each axis stays a separate interface in the framework —
+// one per enumerated kind — and this is the set of them this stage supplies, so
+// adding an axis here is a deliberate widening rather than a side effect of a
+// method appearing on the presentation.
+type StageAxes interface {
+	constraint.NodeEnumerator
+	constraint.NodeSocketEnumerator
 }
 
 // TopologyNode is one flattened node in the topology graph. Fields are
@@ -701,14 +717,19 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
-	// Guard sub-aggregate components post-flatten. The Step-1 resolver guards
-	// see only the root Aggregate's Components + Subsystems, never the loaded
+	// Guard sub-aggregate components post-flatten. The resolve-stage guards see
+	// only the root Aggregate's Components + Subsystems, never the loaded
 	// sub-aggregate components — which exist only here, after flattening. Run
 	// the exported resolver validators over the sub-aggregate nodes (and their
-	// edges) so their sockets, values, and per-edge config are checked like any
-	// other. Predicate-inert: the sub-aggregate's own parameter context is not
+	// edges) so their values and per-edge config are checked like any other.
+	// Predicate-inert: the sub-aggregate's own parameter context is not
 	// resolved, so only context-independent structural constraints are checked
 	// (conditional x-aggrega predicates are validated where the context exists).
+	//
+	// A rule declared over the composition itself is NOT asked here. Such a rule
+	// is invoked once over every node the composition holds, by the pass that
+	// reads this stage's presentation, so asking it here for the module-contributed
+	// nodes alone would ask it twice for those and report one fault twice.
 
 	// The presentation of what this build flattened, produced once. The placement
 	// rule below reads it, and it is carried on the result so that the stage above
@@ -780,11 +801,18 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 // against theirs. Returns violations in flat.Nodes author order then edge
 // order — deterministic.
 //
-// The rules asked here are the SAME rules Step 1 asks, reached through the
+// The rules asked here are the SAME rules the resolve asks, reached through the
 // resolver's exported validators rather than restated, because the only thing
 // that differs for a sub-aggregate component is where its declaration is read
 // from. A rule asked of root components and not of these would make the coverage
 // of a check depend on how deep the author nested the component.
+//
+// The node filter above is what bounds this pass, and it is why a rule whose
+// evidence is complete only once the composition is flattened does not belong
+// here: such a rule has to be asked of every node, and a pass reaching only the
+// module-contributed ones would answer for half the composition. Those rules are
+// declared over this stage's presentation and invoked once over the whole node
+// set instead.
 func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg BuildConfig) []*resolver.ResolverError {
 	catalog := cfg.CatalogLookup
 	if catalog.Component == nil {
@@ -797,24 +825,6 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 	var release *types.Release
 	if cfg.ResolveResult != nil {
 		release = cfg.ResolveResult.Release
-	}
-
-	// Sockets each node ends up with an edge on, keyed (node, socket). Read from
-	// the resolved edge set, which is the authoritative answer to "is this socket
-	// bound" after the Aggregate's own wiring, the Release's edge creation and
-	// module flattening have all been applied. Feature-projected edges are
-	// excluded: their socket names belong to the FEATURE's socket set, a separate
-	// set on a separate entity, so an attachment can never satisfy a Component's
-	// socket.
-	boundSockets := map[string]map[string]bool{}
-	for _, e := range edges {
-		if e.OriginFeature != "" {
-			continue
-		}
-		if boundSockets[e.Source] == nil {
-			boundSockets[e.Source] = map[string]bool{}
-		}
-		boundSockets[e.Source][e.Socket] = true
 	}
 
 	var errs []*resolver.ResolverError
@@ -848,12 +858,6 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		// composed — so there is no name to reject. The one rule the surface does
 		// carry is the catalog-view classification, and that is asked above for
 		// every node rather than only for the ones declaring a uses block.
-
-		// Required-socket population, read from the resolved edge set. A socket the
-		// module leaves unbound and no Release wires is a missing required socket
-		// exactly as it is for a root component.
-		errs = append(errs, resolver.ValidateRequiredSockets(
-			catComp, nodeID, fmt.Sprintf(".%s", nodeID), boundSockets[nodeID])...)
 
 		// Attachment slot shape over the block the module's component authored.
 		// The attachments live on the per-node slice flattening collected, not on

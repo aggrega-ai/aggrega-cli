@@ -42,32 +42,26 @@ func TestGuardEntityViewInconsistency_Classifies(t *testing.T) {
 	}
 }
 
-// TestTheRequiredSocketGuardLeavesTheAbsentCatalogEntryToTheRuleThatOwnsIt pins
-// the one-home property for a fault that two paths can see.
+// TestTheAbsentCatalogEntryIsClassifiedByTheRuleThatOwnsIt pins the one-home
+// property for a fault that more than one rule can see.
 //
-// The required-socket guard reaches a component whose type the catalog holds no
-// entry for, and such a type declares no socket set for that guard to read. It
-// therefore ends on that component rather than classifying it: the classification
-// is a separate rule with its own sentinel, asked once per component naming such
-// a type. A guard that also classified would report one fault twice.
+// A component whose type the catalog holds no entry for declares no socket set,
+// so every rule reading what a type declares ends on that component rather than
+// classifying it. The classification is a separate rule with its own sentinel,
+// asked once per component naming such a type; a second rule that also
+// classified would report one fault twice.
 //
-// 🔴 Both halves are asserted over ONE document, and the pair is what makes this
-// a property rather than two observations: the guard's silence alone would also
-// be produced by a guard that never reached the component, and the rule's report
-// alone says nothing about whether a second path reports it too.
-func TestTheRequiredSocketGuardLeavesTheAbsentCatalogEntryToTheRuleThatOwnsIt(t *testing.T) {
+// 🔴 The other half of the pair — that the required-socket rule stays silent on
+// such a component — is asserted where that rule is proved, over the composed
+// application whose facts it reads. The silence alone would also be produced by a
+// rule that never reached the component, which is why the assertion sits beside a
+// fixture that can show the rule being invoked.
+func TestTheAbsentCatalogEntryIsClassifiedByTheRuleThatOwnsIt(t *testing.T) {
 	t.Parallel()
 
 	agg := oneBareComponent("core/absent:1.0.0", nil)
 	na := normalized(t, agg)
 	catalog := notFoundCatalog()
-
-	if errs := guardRequiredUsesSockets(na, nil, catalog); len(errs) != 0 {
-		t.Errorf("the required-socket guard reported on a type the catalog holds no entry for: %v.\n"+
-			"INVARIANT: the classification has one home, and it is not this guard.\n"+
-			"CONSEQUENCE: one fault is reported twice, once with a sentinel a caller matching on "+
-			"the socket rule does not expect.", errs)
-	}
 
 	view := newNormalizedView(na, nil, catalog, nil)
 	objections, err := constraint.RunOnNodes[constraint.NormalizedView](

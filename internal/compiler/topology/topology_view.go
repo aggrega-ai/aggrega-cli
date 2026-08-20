@@ -216,6 +216,27 @@ func (v *topologyView) Nodes() []constraint.NodeInstance {
 	return out
 }
 
+// NodeSockets returns the dependency sockets a node's component type declares,
+// in that type's own author order.
+//
+// The axis is the DECLARED socket set and not the set the node wrote. A rule
+// invoked once per socket is asked about sockets the author left empty as much
+// as about the ones they filled, so an axis built from what was written would
+// never present the case such a rule exists for.
+//
+// The set is read through the earlier stage's presentation, which already
+// answers what a component type declares, so the socket a rule is invoked for
+// and the requirement it then reads come from one reading of the catalog. A node
+// whose type the catalog holds no entry for contributes no socket, and what that
+// absence means is a separate rule's question.
+func (v *topologyView) NodeSockets(node string) []string {
+	componentType, present := v.FlattenedNodeComponentType(node)
+	if !present {
+		return nil
+	}
+	return v.DeclaredSocketNames(componentType)
+}
+
 // Modules returns every sub-module the composition brought in, in author order
 // with an importing module before the modules nested inside it, each carrying
 // the document that declared it.
@@ -238,9 +259,11 @@ func (v *topologyView) Modules() []constraint.AuthoredCoordinate {
 // it: a signature drifting from the declared facts stops compiling here, and the
 // axis the module rule is keyed by is held the same way.
 var (
-	_ constraint.TopologyView     = (*topologyView)(nil)
-	_ constraint.ModuleEnumerator = (*topologyView)(nil)
-	_ constraint.NodeEnumerator   = (*topologyView)(nil)
+	_ constraint.TopologyView         = (*topologyView)(nil)
+	_ constraint.ModuleEnumerator     = (*topologyView)(nil)
+	_ constraint.NodeEnumerator       = (*topologyView)(nil)
+	_ constraint.NodeSocketEnumerator = (*topologyView)(nil)
+	_ StageAxes                       = (*topologyView)(nil)
 )
 
 // newStageView builds the presentation of the composition this build produced,

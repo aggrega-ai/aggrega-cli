@@ -4,7 +4,6 @@
 package resolver
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -258,39 +257,12 @@ func TestTheConnectionSizingRuleReachesEveryPlacement(t *testing.T) {
 	}
 }
 
-// TestRequiredSocketGuard_InspectsEveryPlacement proves the required-socket rule
-// reaches a component wherever the Aggregate declares it, in both directions: a
-// required socket nothing binds halts, and the same socket bound from the
-// Release passes.
-//
-// The passing half also pins the node identity the rule matches a Release
-// binding on. A Release addresses a component by its bare instance name at every
-// placement, so crediting the binding is the correct outcome — and a rule keyed
-// on anything else would reject this document while accepting one that binds
-// nothing.
-func TestRequiredSocketGuard_InspectsEveryPlacement(t *testing.T) {
-	t.Parallel()
-	for _, pl := range nodePlacements {
-		t.Run(pl.name, func(t *testing.T) {
-			t.Parallel()
-			agg := parseAggregate(t, pl.wrap(plainComponents))
-			cat := edgeCoverageCatalog(t)
-
-			errs := guardRequiredUsesSockets(normalized(t, agg), nil, cat)
-			if len(errs) != 1 || !errors.Is(errs[0], ErrMissingRequiredSocket()) {
-				t.Fatalf("unbound required socket must halt; got %v", errs)
-			}
-			if !strings.Contains(errs[0].Field, pl.field) {
-				t.Errorf("diagnostic must locate the component at %s; got %s", pl.field, errs[0].Field)
-			}
-
-			bound := releaseNaming(t, "databases", "main", "target: db\n")
-			if errs := guardRequiredUsesSockets(normalized(t, agg), bound, cat); len(errs) != 0 {
-				t.Fatalf("required socket bound by the Release must pass; got %v", errs)
-			}
-		})
-	}
-}
+// The required-socket rule is deliberately absent from this file. It reads three
+// surfaces and the last of them is the connection set a composition produces, so
+// it cannot be asked of the two authoring documents alone — it is declared over
+// the composed application and proved beside that stage's presentation, over
+// every placement this file enumerates and over a component a module
+// contributes, which no reading taken here could reach.
 
 // TestTheConnectionConfigurationRuleMeasuresAnEmptyEdgeInEitherAuthoringForm
 // proves a socket's required per-edge key is enforced against an edge that

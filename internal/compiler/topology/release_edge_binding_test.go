@@ -82,8 +82,22 @@ func mustRelease(t *testing.T, y string) *types.Release {
 }
 
 // buildWith runs the whole topology build over an Aggregate, an optional
-// Release, and an optional sub-aggregate document reachable as module "mod".
+// Release, and an optional sub-aggregate document reachable as module "mod",
+// and reports only whether it halted.
 func buildWith(t *testing.T, aggYAML, relYAML, modYAML string) error {
+	t.Helper()
+	_, err := buildResultWith(t, aggYAML, relYAML, modYAML)
+	return err
+}
+
+// buildResultWith is buildWith for a caller that needs what the build produced —
+// a rule declared over this stage is invoked against the presentation and the
+// enumeration the result carries, so a proof of such a rule needs the result and
+// not just the verdict.
+//
+// The two share one body rather than one calling Build itself, so a fixture
+// cannot be built one way for one proof and another way for the next.
+func buildResultWith(t *testing.T, aggYAML, relYAML, modYAML string) (*TopologyResult, error) {
 	t.Helper()
 	agg := mustAggregate(t, aggYAML)
 	var rel *types.Release
@@ -117,7 +131,7 @@ func buildWith(t *testing.T, aggYAML, relYAML, modYAML string) error {
 			return mod, "mod.yaml", nil, nil
 		}
 	}
-	_, err := Build(BuildConfig{
+	return Build(BuildConfig{
 		ResolveResult: &resolver.ResolveResult{
 			Aggregate:            agg,
 			Release:              rel,
@@ -127,7 +141,6 @@ func buildWith(t *testing.T, aggYAML, relYAML, modYAML string) error {
 		CatalogLookup:    bindingCatalog(t),
 		LoadSubAggregate: loader,
 	})
-	return err
 }
 
 // flatAggregate is a two-component Aggregate whose consumer binds its required
@@ -547,15 +560,11 @@ spec:
 			mod:     modBoundSocket,
 			release: releaseOnSocket("caches"),
 		},
-		{
-			name:     "required socket left unbound halts",
-			mod:      modUnboundSocket,
-			sentinel: resolver.ErrMissingRequiredSocket(),
-		},
-		{
-			name: "required socket bound inside the module passes",
-			mod:  modBoundSocket,
-		},
+		// The required-socket rule is not in this table: it is declared over the
+		// composed application and invoked by the pass that reads this stage's
+		// presentation, so a build alone does not report it. Both directions of
+		// it — a module leaving the socket unbound and a module binding it — are
+		// proved beside the declaration instead.
 		{
 			name:     "per-edge required key missing on an edge that authors nothing halts",
 			mod:      modEmptyCacheEdge,

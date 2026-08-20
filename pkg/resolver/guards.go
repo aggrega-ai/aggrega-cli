@@ -116,25 +116,16 @@ type CatalogLookup struct {
 // author wrote, which is a question about the authored document and belongs at
 // its authoring site.
 //
-// The required uses-socket rule is the deliberate contrast, not an
-// inconsistency: it has no cascade to wait for. For the instances this pass
-// walks, two surfaces can populate a socket declared in a Component's usesSchema
-// — that component's own `uses` block and the Release's per-edge `uses` — and
-// both are authored documents already in scope here, so this is the earliest
-// stage at which the rule can be asked of them. A Feature attachment's `uses`
-// names sockets on the FEATURE, a separate socket set, so no attachment can
-// satisfy a Component's socket and no merged set has to be approximated. It is
-// the one rule this suite still asks through a function of its own, because the
-// evidence for it is read from the two documents rather than presented as a fact
-// this stage's view carries.
-//
-// That pair is complete for these instances and for these only. A component a
-// sub-aggregate contributes carries its own `uses` block in that
-// sub-aggregate's document, which is read only once the composition is
-// flattened, so this pass cannot see it and does not walk it. The same rule is
-// asked of such a component after flattening instead, against the resolved edge
-// set. See [ValidateRequiredSockets] for the two evidence sets and the one rule
-// over them.
+// The required uses-socket rule is not asked here either, and the reason is a
+// third one worth keeping separate from the cascade above. Three surfaces can
+// populate a socket a Component's usesSchema declares required: the component's
+// own `uses` block, the deployment's per-edge `uses`, and the connection set the
+// composition produced. Two of the three are in scope here and the third is not,
+// so a reading taken at this point would answer for the components the
+// application declares directly and would have to decline for the rest — one
+// rule in two mechanisms, each seeing a different half of the input. The rule is
+// declared over the composed application instead, where all three surfaces have
+// contributed, and asked once over every node.
 //
 // # The catalog
 //
@@ -187,12 +178,8 @@ func RunGuards(
 	}
 	contracts := newNormalizedView(na, release, catalog, parameters)
 
-	errs, err := runDeclaredRules(cancelled, contracts,
+	return runDeclaredRules(cancelled, contracts,
 		fmt.Sprintf("Aggregate %s", agg.Metadata.Name), releaseDocumentName(release))
-	if err != nil {
-		return nil, err
-	}
-	return append(errs, guardRequiredUsesSockets(na, release, catalog)...), nil
 }
 
 // releaseDocumentName renders the deployment document a finding names. A build
