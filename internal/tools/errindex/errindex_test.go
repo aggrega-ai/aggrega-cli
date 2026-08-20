@@ -42,10 +42,11 @@ func TestScan_ReadsDeclarationsRegistrationsAndReExports(t *testing.T) {
 		{handle: "pkg/thing.ErrPlain", code: "thing/plain", message: "a plain condition", importable: true},
 		{handle: "pkg/thing.ErrQuoted", code: "thing/quoted", message: "the `uses:` block is malformed", importable: true},
 		{handle: "pkg/other.ErrOwn", code: "other/own", message: "declared here", importable: true},
-		// A re-export declares no code of its own and takes the message
-		// registered against the identity it forwards to.
-		{handle: "pkg/other.ErrPlain", aliasOf: "pkg/thing.ErrPlain", message: "a plain condition", importable: true},
-		{handle: "pkg/wrap.ErrHidden", aliasOf: "internal/hidden.ErrHidden", message: "raised from a package no reader can import", importable: true},
+		// A re-export registers nothing of its own. It forwards to a condition and
+		// returns that condition's value, so it reports the same code and the same
+		// message; both are resolved through the forward rather than left empty.
+		{handle: "pkg/other.ErrPlain", code: "thing/plain", aliasOf: "pkg/thing.ErrPlain", message: "a plain condition", importable: true},
+		{handle: "pkg/wrap.ErrHidden", code: "hidden/hidden", aliasOf: "internal/hidden.ErrHidden", message: "raised from a package no reader can import", importable: true},
 		{handle: "internal/hidden.ErrHidden", code: "hidden/hidden", message: "raised from a package no reader can import", importable: false},
 	} {
 		id, ok := got[tc.handle]
@@ -230,6 +231,20 @@ func TestRenderRegion_OmitsUnimportablePackagesAndUnreachableOrigins(t *testing.
 	if !strings.Contains(region, "| `ErrHidden()` |") {
 		t.Errorf("region omits an importable re-export:\n%s", region)
 	}
+	// Every row reports the code, so a consumer holding one off the wire can
+	// resolve it. A declaring name and a re-export both report it, and a
+	// re-export reports the code of the condition it forwards to rather than
+	// a blank cell — which is what a handle that reports a code at run time and
+	// none here would look like.
+	if !strings.Contains(region, "| `ErrOwn()` | `other/own` | `declared here` |") {
+		t.Errorf("region omits the code of a declaring name:\n%s", region)
+	}
+	if !strings.Contains(region, "| `ErrHidden()` | `hidden/hidden` |") {
+		t.Errorf("region omits the code a re-export forwards to:\n%s", region)
+	}
+	if !strings.Contains(region, "| Sentinel | Code | Message |") {
+		t.Errorf("region does not head the code column:\n%s", region)
+	}
 	// Where both names are reachable, the pairing is stated.
 	if !strings.Contains(region, "- `ErrPlain()` is the same value as `pkg/thing.ErrPlain()`, so a match against either name succeeds.") {
 		t.Errorf("region omits the reachable re-export pairing:\n%s", region)
@@ -245,19 +260,30 @@ func TestRenderRegion_OmitsUnimportablePackagesAndUnreachableOrigins(t *testing.
 	}
 }
 
-func TestRenderRegion_RefusesAMessageCarryingATableSeparator(t *testing.T) {
+func TestRenderRegion_RefusesADeclaredStringCarryingATableSeparator(t *testing.T) {
 	t.Parallel()
-	// No message carries one today. The refusal exists because no escaping
-	// renders a separator correctly inside a cell, so the alternative to
-	// refusing is a silently malformed table.
-	_, err := renderRegion([]Identity{
-		{Pkg: "pkg/thing", Name: "ErrPiped", Message: "a | b", Importable: true},
-	})
-	if err == nil {
-		t.Fatal("renderRegion accepted a message carrying a table separator")
-	}
-	if !strings.Contains(err.Error(), "pkg/thing.ErrPiped") {
-		t.Errorf("error does not name the offending handle: %v", err)
+	// Neither a code nor a message carries one today. The refusal exists because
+	// no escaping renders a separator correctly inside a cell, so the alternative
+	// to refusing is a silently malformed table — and it covers both declared
+	// strings, because a separator breaks a row identically whichever cell holds
+	// it.
+	for _, tc := range []struct {
+		what string
+		id   Identity
+	}{
+		{what: "message", id: Identity{Pkg: "pkg/thing", Name: "ErrPiped", Code: "thing/piped", Message: "a | b", Importable: true}},
+		{what: "code", id: Identity{Pkg: "pkg/thing", Name: "ErrPiped", Code: "thing/a | b", Message: "a message", Importable: true}},
+	} {
+		_, err := renderRegion([]Identity{tc.id})
+		if err == nil {
+			t.Fatalf("renderRegion accepted a %s carrying a table separator", tc.what)
+		}
+		if !strings.Contains(err.Error(), "pkg/thing.ErrPiped") {
+			t.Errorf("%s: error does not name the offending handle: %v", tc.what, err)
+		}
+		if !strings.Contains(err.Error(), tc.what) {
+			t.Errorf("%s: error does not name which declared string carried it: %v", tc.what, err)
+		}
 	}
 }
 
@@ -285,6 +311,31 @@ func TestRenderRegion_LiveModuleNamesNoUnimportablePackage(t *testing.T) {
 	// region, so the region is proven non-empty against known content first.
 	if !strings.Contains(region, "### pkg/resolver") {
 		t.Fatal("the rendered region carries no resolver section; the scan is broken, not the rule")
+	}
+
+	// Every row reports all three cells for what actually ships. An empty code
+	// cell is the shape a broken re-export resolution takes — the row still
+	// renders, the table still parses, and the reader is told the condition has no
+	// code — so it is asserted structurally rather than against any copied value:
+	// naming a real code here would be a second copy of a declaration.
+	rows := 0
+	for _, line := range strings.Split(region, "\n") {
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		rows++
+		cells := strings.Split(strings.Trim(line, "|"), " | ")
+		if len(cells) != 3 {
+			t.Fatalf("row does not carry three cells: %q", line)
+		}
+		for i, c := range cells {
+			if strings.TrimSpace(strings.Trim(strings.TrimSpace(c), "`")) == "" {
+				t.Errorf("row cell %d is empty: %q", i, line)
+			}
+		}
+	}
+	if rows == 0 {
+		t.Fatal("the rendered region carries no table rows; the walk above asserted nothing")
 	}
 }
 

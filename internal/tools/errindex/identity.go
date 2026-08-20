@@ -26,16 +26,18 @@ import (
 const errorsPackageDir = "pkg/errors"
 
 // Identity is one handle a caller can match: the package that declares the name,
-// the name itself, and the message the condition renders.
+// the name itself, and the code and message the condition carries.
 //
-// Code and AliasOf are mutually exclusive. A declared identity carries the code
-// value it was declared with; a re-export carries the qualified handle it
-// forwards to and takes that handle's message, because a re-export declares no
-// new identity and registers no message of its own.
+// A re-export declares no new condition. It forwards to one, and the value it
+// returns IS that condition's value, so it reports the same code and the same
+// message. Both are therefore resolved through the forward rather than left
+// empty: a handle that reports a code at run time and shows none here would read
+// as a condition without one. AliasOf is what distinguishes the two kinds — it
+// names the handle forwarded to, and only a re-export carries it.
 type Identity struct {
 	Pkg        string // module-relative directory, e.g. "pkg/resolver"
 	Name       string // exported identifier, e.g. "ErrParameterMissing"
-	Code       string // declared code value; empty for a re-export
+	Code       string // registered code, resolved through a re-export
 	Message    string // registered message, resolved through a re-export
 	AliasOf    string // "pkg/oci.ErrFetchNotFound" for a re-export, else empty
 	Importable bool   // reachable by `import` from outside this module
@@ -338,9 +340,9 @@ func scan(root, modulePath string) ([]Identity, error) {
 	}
 
 	// The declaring accessors are resolved first, because a re-export takes the
-	// message registered against the identity it forwards to and cannot be
-	// resolved until that identity has one. The re-exported name is the one a
-	// caller is told to match, and its own declaration carries no message at all.
+	// code and the message registered against the identity it forwards to and
+	// cannot be resolved until that identity has them. The re-exported name is the
+	// one a caller is told to match, and its own declaration carries neither.
 	byHandle := map[string]*Identity{}
 	out := make([]Identity, 0, len(accessors))
 	for _, acc := range accessors {
@@ -389,7 +391,8 @@ func scan(root, modulePath string) ([]Identity, error) {
 			return nil, fmt.Errorf("%s.%s re-exports %s, which registers no message", acc.pkg, acc.name, acc.target.alias)
 		}
 		byHandle[acc.pkg+"."+acc.name] = &Identity{
-			Pkg: acc.pkg, Name: acc.name, Message: origin.Message, AliasOf: acc.target.alias,
+			Pkg: acc.pkg, Name: acc.name, Code: origin.Code, Message: origin.Message,
+			AliasOf: acc.target.alias,
 		}
 	}
 	for _, acc := range accessors {

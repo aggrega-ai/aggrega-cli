@@ -10,8 +10,19 @@ import (
 )
 
 // renderRegion returns the body of the generated region: one section per
-// package a reader can import, each listing the names that package exports and
-// the message each renders.
+// package a reader can import, each listing the names that package exports and,
+// for each, the code it is registered under and the message it renders.
+//
+// The code is a column of its own because it is the identifier a consumer
+// outside Go holds. It travels on the structured diagnostic rather than through
+// an import, so a consumer reading one has no way back to the condition unless
+// the correspondence is published. Most rows do read as a restatement of the
+// section and the name beside them, and that is exactly what makes publishing
+// the rest necessary: a reader who inferred the code from the row would be right
+// often enough to stop checking, and wrong on a re-export, whose code names the
+// condition it forwards to, and on a rule whose code names the rule rather than
+// the accessor. A re-export carries the forwarded code, so every row in every
+// section reports one.
 //
 // Only importable packages appear. An entry naming a package Go makes
 // unreachable from outside the module advertises a match no reader can write,
@@ -51,17 +62,28 @@ func renderRegion(ids []Identity) (string, error) {
 			b.WriteString("\n")
 		}
 		fmt.Fprintf(&b, "### %s\n\n", p)
-		b.WriteString("| Sentinel | Message |\n| --- | --- |\n")
+		b.WriteString("| Sentinel | Code | Message |\n| --- | --- | --- |\n")
 
 		rows := byPkg[p]
 		sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 		var reExports []Identity
 		for _, id := range rows {
-			if strings.Contains(id.Message, "|") {
-				return "", fmt.Errorf("%s: the registered message contains a table separator, "+
-					"which no escaping renders correctly inside a cell; reword the message", id.Handle())
+			// Both declared strings are checked, and the check is one loop rather
+			// than one per column: a separator breaks a row identically whichever
+			// cell carries it, and a second copy of the refusal would be a second
+			// place for the two to disagree.
+			for _, cell := range []struct{ what, text string }{
+				{"code", id.Code},
+				{"message", id.Message},
+			} {
+				if strings.Contains(cell.text, "|") {
+					return "", fmt.Errorf("%s: the registered %s contains a table separator, "+
+						"which no escaping renders correctly inside a cell; reword the %s",
+						id.Handle(), cell.what, cell.what)
+				}
 			}
-			fmt.Fprintf(&b, "| %s | %s |\n", codeSpan(id.Name+"()"), codeSpan(id.Message))
+			fmt.Fprintf(&b, "| %s | %s | %s |\n",
+				codeSpan(id.Name+"()"), codeSpan(id.Code), codeSpan(id.Message))
 			// A re-export is named alongside the handle it forwards to, so a
 			// reader holding one name knows the other matches too — but only
 			// when that other name is one they can reach. Where the origin sits
