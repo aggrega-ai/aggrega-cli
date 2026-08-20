@@ -431,7 +431,9 @@ var linterHostVocabulary = map[string]string{
 
 // irGuestVocabulary maps the IR schema's host container spellings to the neutral
 // guest vocabulary: every order-preserving OrderedMap becomes a plain map (the
-// guest reads a map; key order on the wire is the emitting host's concern). The
+// guest reads a map; key order on the wire is the emitting host's concern), and
+// the host's named attachment-provenance string type becomes a bare string,
+// which is the whole of what a guest forwarding the value needs. The
 // inject/values/infra fields already carry the opaque json.RawMessage spelling
 // from the schema annotations, and the recursive/pointer fields carry their
 // pointer spelling, so neither needs a vocabulary entry.
@@ -439,7 +441,8 @@ var irGuestVocabulary = map[string]string{
 	"OrderedMap[IRNode]":                        "map[string]IRNode",
 	"OrderedMap[IREdge]":                        "map[string]IREdge",
 	"OrderedMap[string]":                        "map[string]string",
-	"OrderedMap[any]":                           "map[string]json.RawMessage",
+	"OrderedMap[json.RawMessage]":               "map[string]json.RawMessage",
+	"AttachmentOrigin":                          "string",
 	"OrderedMap[FieldProvenance]":               "map[string]FieldProvenance",
 	"OrderedMap[IRFeatureEntry]":                "map[string]IRFeatureEntry",
 	"OrderedMap[OrderedMap[IRFeatureEntry]]":    "map[string]map[string]IRFeatureEntry",

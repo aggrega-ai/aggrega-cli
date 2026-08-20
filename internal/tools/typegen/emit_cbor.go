@@ -75,11 +75,23 @@ func cborKeyLess(a, b string) bool {
 }
 
 // orderedMapValueType reports whether goType is an order-preserving ordered-map
-// spelling and, when it is, returns its value type. Bracket matching is balanced
-// so a nested ordered map (an ordered map of ordered maps) yields the inner
-// ordered map rather than a truncated prefix.
+// spelling and, when it is, returns its value type.
+//
+// Both the package-qualified spelling and the bare one are recognised, because
+// which of the two a codec sees depends on where that codec is emitted: a codec
+// emitted into the package that declares the ordered map sees the bare spelling,
+// since a package cannot qualify its own types, while a codec emitted anywhere
+// else sees the qualified one. Recognising both here is what keeps every call
+// site from normalising the spelling itself, which is where the two forms would
+// drift apart.
+//
+// Bracket matching is balanced, so a nested ordered map (an ordered map of
+// ordered maps) yields the inner ordered map rather than a truncated prefix.
 func orderedMapValueType(goType string) (string, bool) {
-	const prefix = "types.OrderedMap["
+	prefix := "types.OrderedMap["
+	if !strings.HasPrefix(goType, prefix) {
+		prefix = "OrderedMap["
+	}
 	if !strings.HasPrefix(goType, prefix) || !strings.HasSuffix(goType, "]") {
 		return "", false
 	}

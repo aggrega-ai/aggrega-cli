@@ -587,3 +587,95 @@ func TestTargetSchemaFileAgreesWithItsSchemaBytes(t *testing.T) {
 		})
 	}
 }
+
+// TestOrderedMapValueTypeSpellings covers both ordered-map spellings the
+// generator can meet, and asserts them as a pair rather than one at a time
+// because only the emission destination decides which one arrives: a codec
+// emitted into the package that declares the ordered map sees the bare
+// spelling, since a package cannot qualify its own types, while a codec
+// emitted anywhere else sees the qualified one.
+//
+// The pairing is the load-bearing part. A helper that recognises one spelling
+// and not the other still emits a codec that compiles and round-trips against
+// its own counterpart for the unrecognised form — the map falls through to an
+// opaque marshal and is counted as an always-present field — so no compile
+// error, no failing round-trip and no drift gate distinguishes the two. The
+// equality assertion fixes that one annotation resolves to one value type
+// whichever spelling carries it.
+func TestOrderedMapValueTypeSpellings(t *testing.T) {
+	// The value type is spelling-independent for these, so the bare and
+	// qualified forms must agree exactly.
+	for _, tc := range []struct {
+		name    string
+		bare    string
+		valType string
+	}{
+		{name: "scalar value", bare: "OrderedMap[string]", valType: "string"},
+		{name: "opaque value", bare: "OrderedMap[json.RawMessage]", valType: "json.RawMessage"},
+		{name: "named value", bare: "OrderedMap[IRFeatureEntry]", valType: "IRFeatureEntry"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			qualified := "types." + tc.bare
+			gotBare, okBare := orderedMapValueType(tc.bare)
+			gotQual, okQual := orderedMapValueType(qualified)
+			if !okBare {
+				t.Fatalf("orderedMapValueType(%q) reported not-an-ordered-map, so a codec emitted into "+
+					"the package that declares the type would encode it opaquely", tc.bare)
+			}
+			if !okQual {
+				t.Fatalf("orderedMapValueType(%q) reported not-an-ordered-map", qualified)
+			}
+			if gotBare != tc.valType {
+				t.Errorf("orderedMapValueType(%q) value type = %q, want %q", tc.bare, gotBare, tc.valType)
+			}
+			if gotQual != tc.valType {
+				t.Errorf("orderedMapValueType(%q) value type = %q, want %q", qualified, gotQual, tc.valType)
+			}
+			if gotBare != gotQual {
+				t.Errorf("the two spellings disagree on the value type: %q yields %q while %q yields %q",
+					tc.bare, gotBare, qualified, gotQual)
+			}
+		})
+	}
+
+	// Bracket matching is balanced, so a nested ordered map yields the whole
+	// inner ordered map rather than a prefix truncated at the first bracket.
+	// The inner spelling is carried through verbatim, which is why these two
+	// expectations differ from each other rather than being one value.
+	t.Run("nested, bare", func(t *testing.T) {
+		got, ok := orderedMapValueType("OrderedMap[OrderedMap[string]]")
+		if !ok || got != "OrderedMap[string]" {
+			t.Errorf("got (%q, %v), want (%q, true)", got, ok, "OrderedMap[string]")
+		}
+	})
+	t.Run("nested, qualified", func(t *testing.T) {
+		got, ok := orderedMapValueType("types.OrderedMap[types.OrderedMap[string]]")
+		if !ok || got != "types.OrderedMap[string]" {
+			t.Errorf("got (%q, %v), want (%q, true)", got, ok, "types.OrderedMap[string]")
+		}
+	})
+
+	// Everything that is not an ordered map must still be refused, so widening
+	// the accepted spellings does not start claiming plain maps, slices,
+	// pointers or scalars as order-preserving containers.
+	for _, spelling := range []string{
+		"string",
+		"json.RawMessage",
+		"map[string]string",
+		"map[string]OrderedMap[string]",
+		"[]string",
+		"*CatalogMetadata",
+		"other.OrderedMap[string]",
+		"OrderedMap[string]trailing",
+		"OrderedMap[",
+		"",
+	} {
+		t.Run("refused/"+spelling, func(t *testing.T) {
+			if got, ok := orderedMapValueType(spelling); ok {
+				t.Errorf("orderedMapValueType(%q) reported an ordered map with value type %q; it is not "+
+					"an order-preserving container and encoding it as one would emit a map head for a "+
+					"value that has none", spelling, got)
+			}
+		})
+	}
+}
