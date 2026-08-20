@@ -365,3 +365,122 @@ func TestFormatCompilerError_FmtLinkBetweenFrames(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatCompilerError_ShortCode_HeadOnlyNotOnContinuation pins the one rule
+// that decides where a condition's short code appears: the head of a diagnostic
+// carries it, and no frame beneath a "caused by:" marker does.
+//
+// The assertion that earns its keep is the count. Asserting only that the head
+// carries the code passes just as happily when every continuation carries it
+// too, which is the shape that adds a line's worth of noise per frame and names
+// nothing new — so the test counts the code across the whole rendering and
+// requires exactly one. It would fail if the code leaked onto the continuation.
+//
+// The chain is the catalog loader's real duplicate shape: the condition sits at
+// the bottom, two envelope frames above it, so this also pins that the head
+// prints the code the CHAIN names rather than one the head frame holds itself.
+func TestFormatCompilerError_ShortCode_HeadOnlyNotOnContinuation(t *testing.T) {
+	t.Parallel()
+	condition := catalog.ErrDuplicateRecipeIdentity()
+	code, ok := cerrors.ShortCodeOf(condition)
+	if !ok {
+		t.Fatalf("condition %v reports no short code; nothing to pin", condition)
+	}
+
+	inner := cerrors.Wrap(condition, cerrors.CatalogError,
+		cerrors.SourceLocation{File: "aggrega-catalog/recipe/helm/api-copy/recipe.yaml"},
+		`recipe identity "helm/api:1.0.0" already declared`)
+	head := cerrors.Wrap(inner, cerrors.CatalogError,
+		cerrors.SourceLocation{File: "aggrega-catalog"}, "catalog load")
+
+	got := formatCompilerError(head)
+	t.Logf("head-and-continuation rendering:\n%s", got)
+
+	if want := headTag(t, cerrors.CatalogError, condition); !strings.Contains(got, want) {
+		t.Errorf("head does not name the condition: missing %q\n--- got ---\n%s", want, got)
+	}
+	if want := "caused by: [" + string(cerrors.CatalogError) + "]"; !strings.Contains(got, want) {
+		t.Errorf("continuation should carry the category alone: missing %q\n--- got ---\n%s", want, got)
+	}
+	if n := strings.Count(got, code); n != 1 {
+		t.Errorf("short code %s said %d times, want exactly 1 — a continuation is repeating it\n--- got ---\n%s",
+			code, n, got)
+	}
+}
+
+// TestFormatCompilerError_ShortCode_NotOnJoinedForkSubErrors covers the second
+// way a code can leak into a continuation, and the one a straightforward
+// implementation misses: the sub-errors beneath a "caused by (N):" header are
+// rendered through the whole formatting recursion, so each of them is a head
+// frame as far as that recursion can tell.
+//
+// They are not heads to a reader — they sit under a marker, indented, as the
+// detail of the frame above — so none of them carries a code, and the count
+// assertion is again what pins it.
+func TestFormatCompilerError_ShortCode_NotOnJoinedForkSubErrors(t *testing.T) {
+	t.Parallel()
+	condition := catalog.ErrNoRecipeResolved()
+	code, ok := cerrors.ShortCodeOf(condition)
+	if !ok {
+		t.Fatalf("condition %v reports no short code; nothing to pin", condition)
+	}
+
+	subA := cerrors.Wrap(condition, cerrors.CatalogError,
+		cerrors.SourceLocation{File: "manifest.yaml"}, `component "db" has no mapping`)
+	subB := cerrors.Wrap(condition, cerrors.CatalogError,
+		cerrors.SourceLocation{File: "manifest.yaml"}, `feature "metrics" has no mapping`)
+	head := cerrors.Wrap(stderrors.Join(subA, subB), cerrors.CatalogError,
+		cerrors.SourceLocation{}, "recipe resolution")
+
+	got := formatCompilerError(head)
+	t.Logf("forked-continuation rendering:\n%s", got)
+
+	if !strings.Contains(got, "caused by (2):") {
+		t.Errorf("expected the two-way fork header\n--- got ---\n%s", got)
+	}
+	if want := headTag(t, cerrors.CatalogError, condition); !strings.Contains(got, want) {
+		t.Errorf("head does not name the condition: missing %q\n--- got ---\n%s", want, got)
+	}
+	if n := strings.Count(got, code); n != 1 {
+		t.Errorf("short code %s said %d times, want exactly 1 — a forked sub-error is repeating it\n--- got ---\n%s",
+			code, n, got)
+	}
+	// Both sub-errors still name their category, and name it alone.
+	if n := strings.Count(got, "["+string(cerrors.CatalogError)+"]"); n != 2 {
+		t.Errorf("expected both forked sub-errors to carry the bare category tag, found %d\n--- got ---\n%s", n, got)
+	}
+}
+
+// TestFormatCompilerError_ShortCode_EachTopLevelJoinElementCarriesItsOwn is the
+// converse of the two above, and it is why the rule is stated in terms of
+// position rather than of nesting depth.
+//
+// A top-level errors.Join is a list of independent failures — separated by the
+// "---" rule, each about a different thing — so every element leads a
+// diagnostic of its own and names its own condition. Suppressing the code on
+// everything but the first element would leave a reader unable to name any
+// failure but one.
+func TestFormatCompilerError_ShortCode_EachTopLevelJoinElementCarriesItsOwn(t *testing.T) {
+	t.Parallel()
+	first := catalog.ErrNoRecipeResolved()
+	second := catalog.ErrDuplicateRecipeIdentity()
+
+	got := formatCompilerError(stderrors.Join(
+		cerrors.Wrap(first, cerrors.CatalogError,
+			cerrors.SourceLocation{File: "manifest.yaml"}, "recipe resolution"),
+		cerrors.Wrap(second, cerrors.CatalogError,
+			cerrors.SourceLocation{File: "recipe.yaml"}, "catalog load"),
+	))
+	t.Logf("two independent failures:\n%s", got)
+
+	blocks := strings.Split(got, "\n---\n")
+	if len(blocks) != 2 {
+		t.Fatalf("want two diagnostics separated by the join rule; got %d\n--- got ---\n%s", len(blocks), got)
+	}
+	for i, condition := range []error{first, second} {
+		want := headTag(t, cerrors.CatalogError, condition)
+		if !strings.HasPrefix(blocks[i], want) {
+			t.Errorf("diagnostic %d does not open with %q\n--- got ---\n%s", i, want, blocks[i])
+		}
+	}
+}

@@ -16,10 +16,14 @@ import (
 )
 
 // formatCompilerError renders a CompilerError in the documented multi-line
-// shape (category tag in brackets, source pointer, message, optional
-// expression, optional pillar snapshot). When err is not (or does not wrap)
-// a *CompilerError, falls back to err.Error() so non-CLI callers and
+// shape (the bracketed head, source pointer, message, optional expression,
+// optional pillar snapshot). When err is not (or does not wrap) a
+// *CompilerError, falls back to err.Error() so non-CLI callers and
 // non-categorised errors retain their existing presentation.
+//
+// The bracketed head carries the category and, when the chain names a
+// registered condition, that condition's short code beside it. Which frames
+// carry the short code is decided by diagnosticPosition below, not here.
 //
 // Dispatch runs three detection branches in a fixed order, and that order is
 // part of the contract rather than an implementation detail:
@@ -61,6 +65,36 @@ import (
 // that errors.Is against the type's sentinel still matches and that the
 // rendered output carries the expected category tag.
 func formatCompilerError(err error) string {
+	return formatCompilerErrorAt(err, leadingDiagnostic)
+}
+
+// diagnosticPosition says where a rendered diagnostic sits in the output, and
+// it decides exactly one thing: whether the bracketed head carries the
+// condition's short code.
+//
+// The short code names the condition once, at the point the reader meets the
+// failure. Repeating it on every frame beneath a "caused by" marker would add
+// lines of the same fact — the frames below a marker are the same failure
+// seen from further in, not further failures — so a continuation prints the
+// category alone, exactly as it did before short codes existed.
+type diagnosticPosition int
+
+const (
+	// leadingDiagnostic is a diagnostic the reader scans from the left
+	// margin: the command's failure, or one element of a top-level
+	// errors.Join, each of which is separated by the "---" rule and is a
+	// failure in its own right rather than a detail of its neighbour.
+	leadingDiagnostic diagnosticPosition = iota
+	// continuingDiagnostic is anything rendered beneath a "caused by:" or
+	// "caused by (N):" marker.
+	continuingDiagnostic
+)
+
+// formatCompilerErrorAt is formatCompilerError with the position the result
+// will occupy. It is the recursion's real entry point: every branch passes the
+// position through, so a chain reached from beneath a "caused by" marker keeps
+// rendering as a continuation however many conversions and forks it crosses.
+func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 	if err == nil {
 		return ""
 	}
@@ -68,13 +102,18 @@ func formatCompilerError(err error) string {
 	// Recursion is safe: each sub-error re-enters and reaches a terminal
 	// branch, and a sub-error that is itself a multi-error is handled by the
 	// same recursive call.
+	//
+	// Each element inherits this call's position rather than being forced to
+	// one: a join reached at the top level is a list of independent failures,
+	// each of which leads its own diagnostic, while a join reached beneath a
+	// "caused by (N):" marker is a list of details and stays a continuation.
 	type multiErr interface{ Unwrap() []error }
 	if me, ok := err.(multiErr); ok {
 		parts := me.Unwrap()
 		if len(parts) > 0 {
 			rendered := make([]string, 0, len(parts))
 			for _, sub := range parts {
-				if s := formatCompilerError(sub); s != "" {
+				if s := formatCompilerErrorAt(sub, pos); s != "" {
 					rendered = append(rendered, s)
 				}
 			}
@@ -88,25 +127,46 @@ func formatCompilerError(err error) string {
 	// above; a branch added out of order compiles and passes its own test.
 	var ce *cerrors.CompilerError
 	if stderrors.As(err, &ce) && ce != nil {
-		return renderCompilerErrorChain(ce)
+		return renderCompilerErrorChain(ce, headShortCode(err, pos))
 	}
 	var re *resolver.ResolverError
 	if stderrors.As(err, &re) && re != nil {
-		return formatCompilerError(re.ToCompilerError())
+		return formatCompilerErrorAt(re.ToCompilerError(), pos)
 	}
 	var wve *validator.WorkloadValidationError
 	if stderrors.As(err, &wve) && wve != nil {
-		return formatCompilerError(wve.ToCompilerError())
+		return formatCompilerErrorAt(wve.ToCompilerError(), pos)
 	}
 	var ve *validator.ValidationError
 	if stderrors.As(err, &ve) && ve != nil {
-		return formatCompilerError(ve.ToCompilerError())
+		return formatCompilerErrorAt(ve.ToCompilerError(), pos)
 	}
 	var ae *analyzer.AnalysisError
 	if stderrors.As(err, &ae) && ae != nil {
-		return formatCompilerError(ae.ToCompilerError())
+		return formatCompilerErrorAt(ae.ToCompilerError(), pos)
 	}
 	return err.Error()
+}
+
+// headShortCode returns the short code the head of a diagnostic rendered at
+// pos should carry, or the empty string when it carries none.
+//
+// Two reasons it can be empty, and the rendering treats them alike because the
+// reader cannot act on the difference: the diagnostic is a continuation, or the
+// chain names no registered condition. The second is a fact about the chain
+// rather than a failure, so the head prints the category on its own rather
+// than a placeholder standing in for an identifier that does not exist.
+//
+// It reads the whole error rather than the envelope alone. The condition's
+// identity usually sits below the envelope, but a caller may also wrap the
+// envelope in it, and the chain walk in ShortCodeOf reaches both — so the code
+// printed is the one the chain names, wherever in the chain it was raised.
+func headShortCode(err error, pos diagnosticPosition) string {
+	if pos != leadingDiagnostic {
+		return ""
+	}
+	code, _ := cerrors.ShortCodeOf(err)
+	return code
 }
 
 // renderCompilerErrorChain renders the head envelope in the documented
@@ -116,6 +176,13 @@ func formatCompilerError(err error) string {
 // pointer, and message — the innermost file-pointed frame is always
 // visible, and a phase-context wrap can no longer swallow the specific
 // diagnostic beneath it.
+//
+// shortCode is what the head's bracketed tag carries beside the category, or
+// empty for none; the caller has already decided it from the diagnostic's
+// position. Every frame this function renders below the head is a
+// continuation, so each is rendered with no short code — including the joined
+// sub-errors under a "caused by (N):" header, which re-enter the full
+// formatting recursion at the continuing position for that reason.
 //
 // Walk rules:
 //   - A nested envelope adding nothing beyond the previously rendered
@@ -143,12 +210,12 @@ func formatCompilerError(err error) string {
 //
 // Rendering is read-only on the chain — errors.Is / errors.As behavior
 // is untouched.
-func renderCompilerErrorChain(head *cerrors.CompilerError) string {
+func renderCompilerErrorChain(head *cerrors.CompilerError, shortCode string) string {
 	if head == nil {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString(renderCompilerError(head))
+	b.WriteString(renderCompilerError(head, shortCode))
 	prev := head
 	depth := 0
 	link := head.Wrap
@@ -157,7 +224,7 @@ func renderCompilerErrorChain(head *cerrors.CompilerError) string {
 			subs := me.Unwrap()
 			rendered := make([]string, 0, len(subs))
 			for _, sub := range subs {
-				if s := formatCompilerError(sub); s != "" {
+				if s := formatCompilerErrorAt(sub, continuingDiagnostic); s != "" {
 					rendered = append(rendered, s)
 				}
 			}
@@ -179,7 +246,7 @@ func renderCompilerErrorChain(head *cerrors.CompilerError) string {
 			}
 			if !frameRedundant(prev, ce) {
 				depth++
-				b.WriteString(indentCausedBy(renderCompilerError(ce), depth))
+				b.WriteString(indentCausedBy(renderCompilerError(ce, ""), depth))
 			}
 			prev = ce
 			link = ce.Wrap
@@ -267,16 +334,26 @@ func indentCausedBy(block string, depth int) string {
 }
 
 // renderCompilerError formats a *CompilerError per the documented
-// multi-line shape: category tag in brackets, source pointer, message,
-// optional expression, optional pillar snapshot. Extracted from the
+// multi-line shape: the bracketed head, source pointer, message, optional
+// expression, optional pillar snapshot. Extracted from the
 // formatCompilerError detection-and-render combo so the rendering stays
 // pure (no chain-walking) and the caller controls when rendering fires.
-func renderCompilerError(ce *cerrors.CompilerError) string {
+//
+// The bracketed head holds the category, and holds the condition's short code
+// beside it when shortCode is non-empty. Deciding whether it should be is the
+// caller's job, not this function's: what to print depends on where the result
+// will sit and on what the whole chain names, and this function sees neither.
+// Passing the empty string prints the category alone.
+func renderCompilerError(ce *cerrors.CompilerError, shortCode string) string {
 	if ce == nil {
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "[%s]", ce.Category)
+	if shortCode == "" {
+		fmt.Fprintf(&b, "[%s]", ce.Category)
+	} else {
+		fmt.Fprintf(&b, "[%s %s]", ce.Category, shortCode)
+	}
 	if src := ce.Source.String(); src != "" {
 		fmt.Fprintf(&b, " %s", src)
 	}

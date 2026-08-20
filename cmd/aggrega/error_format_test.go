@@ -15,6 +15,27 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
+// headTag builds the bracketed head a diagnostic carries when its chain names a
+// registered condition: the category word, then that condition's short code.
+//
+// It reads the short code off the condition rather than spelling the number
+// out, and the reason is not brevity. A number written here would be a second
+// copy of the one the condition was registered with, and the two agree until
+// either is edited — while what these tests are about is WHERE the code lands,
+// not which number a particular condition holds. The registry's own tests own
+// that question.
+//
+// A condition reporting no short code fails the test rather than yielding a
+// head with a blank in it, which would assert nothing and read as a pass.
+func headTag(t *testing.T, category cerrors.Category, condition error) string {
+	t.Helper()
+	code, ok := cerrors.ShortCodeOf(condition)
+	if !ok {
+		t.Fatalf("condition %v reports no short code, so the head under test cannot be built", condition)
+	}
+	return "[" + string(category) + " " + code + "]"
+}
+
 // TestFormatCompilerError_RichShape verifies the formatter renders the
 // documented multi-line shape for a CompilerError: category tag in
 // brackets, source pointer, message, expression, active pillars list.
@@ -78,7 +99,7 @@ func TestFormatCompilerError_DeveloperCategory_RendersViaResolverError(t *testin
 	}
 	got := formatCompilerError(re)
 	for _, want := range []string{
-		"[DEVELOPER_ERROR]",
+		headTag(t, cerrors.DeveloperError, resolver.ErrInvalidInstanceName()),
 		".spec.components.bad-name",
 		"Aggregate my-app",
 		"invalid component name",
@@ -100,8 +121,8 @@ func TestFormatCompilerError_OpsCategory_RendersViaResolverError(t *testing.T) {
 		Err:     resolver.ErrInvalidParameterRef(),
 	}
 	got := formatCompilerError(re)
-	if !strings.Contains(got, "[OPS_ERROR]") {
-		t.Errorf("output missing [OPS_ERROR] tag\n--- got ---\n%s", got)
+	if want := headTag(t, cerrors.OpsError, resolver.ErrInvalidParameterRef()); !strings.Contains(got, want) {
+		t.Errorf("output missing %q\n--- got ---\n%s", want, got)
 	}
 }
 
@@ -127,7 +148,7 @@ func TestFormatCompilerError_CatalogCategory_RendersRecipeShapeRule(t *testing.T
 	})
 	got := formatCompilerError(rve)
 	for _, want := range []string{
-		"[CATALOG_ERROR]",
+		headTag(t, cerrors.CatalogError, validator.ErrRecipeRule1()),
 		"/path/to/recipe.yaml",
 		validator.ErrRecipeRule1().Error(),
 		"rule values-mapping",
@@ -157,7 +178,7 @@ func TestFormatCompilerError_CatalogCategory_RendersFeatureRecipeShapeRule(t *te
 	})
 	got := formatCompilerError(fre)
 	for _, want := range []string{
-		"[CATALOG_ERROR]",
+		headTag(t, cerrors.CatalogError, validator.ErrFeatureRecipeRule1()),
 		"/path/to/featurerecipe.yaml",
 		"FeatureRecipe my-featurerecipe:1.0.0",
 	} {
@@ -190,7 +211,11 @@ func TestFormatCompilerError_WorkloadValidation_CategorySaidOnce(t *testing.T) {
 	if n := strings.Count(got, "CATALOG_ERROR"); n != 1 {
 		t.Errorf("category named %d times, want exactly 1\n--- got ---\n%s", n, got)
 	}
-	for _, want := range []string{"[CATALOG_ERROR]", ".containers.main.image", "required field missing"} {
+	for _, want := range []string{
+		headTag(t, cerrors.CatalogError, validator.ErrWorkloadValidation()),
+		".containers.main.image",
+		"required field missing",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\n--- got ---\n%s", want, got)
 		}
@@ -345,7 +370,18 @@ func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 	joined := stderrors.Join(ce, re, rve)
 
 	got := formatCompilerError(joined)
-	for _, want := range []string{"[TRANSLATION_ERROR]", "[DEVELOPER_ERROR]", "[CATALOG_ERROR]", "translation msg", "resolver msg", validator.ErrRecipeRule1().Error()} {
+	// The envelope built with cerrors.New wraps nothing, so its chain names no
+	// condition and its head stays the category alone — the two that do name one
+	// carry their code, because a top-level Join element leads its own
+	// diagnostic rather than continuing its neighbour's.
+	for _, want := range []string{
+		"[TRANSLATION_ERROR]",
+		headTag(t, cerrors.DeveloperError, resolver.ErrInvalidInstanceName()),
+		headTag(t, cerrors.CatalogError, validator.ErrRecipeRule1()),
+		"translation msg",
+		"resolver msg",
+		validator.ErrRecipeRule1().Error(),
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Mixed-type Join missing %q\n--- got ---\n%s", want, got)
 		}

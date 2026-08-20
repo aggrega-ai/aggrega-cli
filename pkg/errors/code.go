@@ -78,9 +78,13 @@ func (s *sealed) Error() string { return s.message }
 // outside Go on the structured diagnostic the compiler-as-service daemon
 // publishes, where it travels as a field of its own. That is what the separate
 // identifier buys a consumer that does not link this package: it reads the code
-// rather than recognising a condition by the wording of its message. What
-// `aggrega` prints on a terminal is unchanged — the category prefix, the source
-// location and the message text.
+// rather than recognising a condition by the wording of its message.
+//
+// It is not the code `aggrega` prints on a terminal. A printed diagnostic opens
+// with its category and the condition's SHORT code, because a qualified,
+// hyphenated code is wide enough on the longest conditions to push the message
+// off a narrow terminal. The division holds for both surfaces: this code is the
+// one a machine consumer matches on, the short code is the one a reader quotes.
 func (s *sealed) ErrorCode() string { return s.code }
 
 // ErrorShortCode returns the short code the identity was registered under — the
@@ -315,18 +319,19 @@ type Meta struct {
 	//
 	//   - Numbers are handed out monotonically from E0001. Monotonic in
 	//     ALLOCATION order — the order conditions were added — and never in sort
-	//     order: a condition added later takes the next free number and is not
-	//     inserted among its neighbours, so the numbers in any listing will not
-	//     be contiguous within a package.
+	//     order: a condition added later takes the next free number rather than
+	//     being inserted among its neighbours. So a package's numbers say when
+	//     its conditions were declared relative to every other package's, and
+	//     nothing about how they sort or read together.
 	//   - A number is never reused. A retired condition's number stays retired,
 	//     so a user quoting it from an old report is never sent to a different
 	//     condition. This is also why no gap check exists and none should be
 	//     added: never-reusing GUARANTEES permanent gaps, so a no-gaps check
 	//     would refuse exactly the state the rule produces.
 	//   - The next free number is one greater than the highest already allocated.
-	//     Because gaps are permanent and the numbers are not contiguous within
-	//     any package, the highest is read off the whole declared set rather than
-	//     off the neighbours of the condition being added.
+	//     Because the numbering is one flat space shared by every package, the
+	//     highest is read off the whole declared set rather than off the
+	//     neighbours of the condition being added.
 	//
 	// It must not be empty, and registration refuses an empty one for the same
 	// reason it refuses an empty descriptive code: a condition with nothing to
