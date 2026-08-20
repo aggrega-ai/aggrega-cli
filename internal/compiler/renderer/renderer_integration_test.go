@@ -18,6 +18,21 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// TestIntegration_ProvidesSelfContainmentViolation drives a render given no
+// presentation of the finalised graph, which is what this package can build: the
+// presentation chain descends from the composition's own, whose constructor is
+// unexported, so a render assembled here presents no stage and the rules declared
+// over one are not invoked.
+//
+// What the build still owes in that state is the loud refusal, and it is asserted
+// here: the entry reaches the evaluator, which refuses the same reference against
+// the same declared scope and names both the expression and the roots the scope
+// admits. So the reference is never rendered empty whether or not the earlier
+// refusal was reachable — the two readings share one walk, which is what makes
+// that a property rather than a coincidence.
+//
+// The earlier refusal, and the condition it names, are proven where a compilation
+// is available and the presentation therefore exists.
 func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 	t.Parallel()
 	nodes := types.OrderedMap[types.IRNode]{}
@@ -53,8 +68,22 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for provides self-containment violation")
 	}
-	if !errors.Is(err, renderer.ErrProvidesSelfContainment()) {
-		t.Errorf("expected ErrProvidesSelfContainment, got: %v", err)
+	if !errors.Is(err, renderer.ErrProvidesEvaluation()) {
+		t.Errorf("expected the provides-evaluation halt, got: %v", err)
+	}
+	// The refusal has to be actionable from the diagnostic alone: the expression
+	// that reaches outside the data, and what the surface does define. Read over the
+	// whole chain, because the outermost wrap names the pass and the cause names the
+	// reference.
+	var chain []string
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		chain = append(chain, e.Error())
+	}
+	text := strings.Join(chain, " | ")
+	for _, want := range []string{".context.inject.env.TARGET", ".context.instance_id"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the halt omits %q, so the reference is refused without saying what to write instead: %s", want, text)
+		}
 	}
 }
 

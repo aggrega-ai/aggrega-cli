@@ -4,13 +4,11 @@
 package renderer
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"sort"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -206,48 +204,6 @@ func assembledFilesToRendered(grp *assembledGroup) []RenderedFile {
 		out = append(out, RenderedFile{Path: name, Content: grp.files[name].Content})
 	}
 	return out
-}
-
-// scanOrphanCrossBoundaryLinkSentinels scans every assembled file for a
-// surviving cross-boundary link placeholder. A placeholder is a build-internal
-// marker the host stamps into a consuming node's injected input and a render
-// target replaces during link resolution; one that reaches assembled output
-// means resolution did not reach it — the injected value was consumed at a
-// position the resolver could not address, or the edge was stamped without a
-// matching resolve. Shipping a literal placeholder would be a silent defect, so
-// the build halts loudly, naming the file. Groups and files are walked in sorted
-// order so the halt names the same file across runs of identical input.
-func scanOrphanCrossBoundaryLinkSentinels(assembledByDispatch map[dispatchKey]*assembledGroup) error {
-	keys := make([]dispatchKey, 0, len(assembledByDispatch))
-	for k := range assembledByDispatch {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].Path != keys[j].Path {
-			return keys[i].Path < keys[j].Path
-		}
-		return keys[i].Provider < keys[j].Provider
-	})
-	prefix := []byte(rendercore.CrossBoundaryLinkSentinelPrefix)
-	for _, k := range keys {
-		grp := assembledByDispatch[k]
-		if grp == nil {
-			continue
-		}
-		names := make([]string, 0, len(grp.files))
-		for name := range grp.files {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			if bytes.Contains(grp.files[name].Content, prefix) {
-				return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: name},
-					fmt.Sprintf("assembled file %q at dispatch path %q retains an unresolved cross-boundary link placeholder",
-						name, k.Path), nil, ErrOrphanCrossBoundaryLinkSentinel())
-			}
-		}
-	}
-	return nil
 }
 
 // buildLinkEdge assembles the domain-blind per-edge payload for one

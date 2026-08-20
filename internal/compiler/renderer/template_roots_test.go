@@ -358,7 +358,7 @@ func TestRootIdentification_ParityAcrossSurfaces(t *testing.T) {
 		`{{ default dict .staleroot }}`,
 	}
 	for _, tmpl := range staleForms {
-		if err := CheckProvidesSelfContainment(tmpl, "r"); err == nil {
+		if err := providesSelfContainmentHalt(t, tmpl, "r"); err == nil {
 			t.Errorf("provides surface must halt on %q", tmpl)
 		}
 		if _, err := EvalTemplate("probe", tmpl, ctx); err == nil {
@@ -374,7 +374,7 @@ func TestRootIdentification_ParityAcrossSurfaces(t *testing.T) {
 		`{{ range .values.absentkey }}{{ .anything }}{{ end }}`,
 	}
 	for _, tmpl := range okForms {
-		if err := CheckProvidesSelfContainment(tmpl, "r"); err != nil {
+		if err := providesSelfContainmentHalt(t, tmpl, "r"); err != nil {
 			t.Errorf("provides surface must accept %q, got: %v", tmpl, err)
 		}
 		if _, err := EvalTemplate("probe", tmpl, ctx); err != nil {

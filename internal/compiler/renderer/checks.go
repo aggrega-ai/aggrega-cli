@@ -21,30 +21,35 @@ import (
 // than from where a call happens to sit, and the provenance its diagnostic
 // carries is supplied to it rather than assembled in its body.
 //
-// The rules are declared here and the hand-written functions beside this file
-// still run. That is what a reader comparing the two should expect rather than
-// read as duplication left behind: a declaration is invoked where something
-// presents a view over the compilation products its stage names, and nothing
-// presents one at the stages these rules declare. The declaration is what makes
-// the placement computable; the invocation arrives with the change that supplies
-// the view these rules need, and the hand-written form is removed by the change
-// that no longer needs it.
+// A rule here is reached where something presents a view over the compilation
+// products its stage names, and each stage's invocation lives beside that
+// presentation rather than here. Which of these rules a build reaches, and from
+// where, is derived from the source rather than stated in prose — so this file
+// deliberately makes no claim about it, and a reader asking whether a particular
+// rule is enforced reads the derived answer instead of a comment that could go
+// stale against the code beside it.
 //
-// That is a statement about these declarations and not about the framework. A
-// view over an authored document is presented elsewhere, and a rule declared
-// there is invoked through it, so a reader must not read the paragraph above as
-// saying no view exists anywhere.
+// A value here may be declared and reached from nowhere, which is a real state
+// rather than an oversight: declaring a rule makes its placement computable and
+// does not make it run. Naming which values are in that state is left to the
+// derivation, because a list here would be a second copy of what the derivation
+// computes and the copy is what goes stale.
 //
-// What a declaration here does not carry is the traversal its hand-written
-// counterpart performs. A hand-written scan over assembled output walks every
-// dispatch group and every file within it, and sorts both so the file it names
-// is the same one across runs of identical input. A check is invoked once per
-// subject instead, and the framework's enumeration order is what makes that
-// sequence deterministic — so a declaration reads one file's bytes, holds no
-// loop, and sorts nothing. One that kept the walk would have re-implemented the
-// traversal inside its own predicate, which is the arrangement the framework
-// replaces; one that enumerated the path set and then read each path's bytes
-// would have done the same thing by a longer route.
+// What a declaration does not carry is the traversal a hand-written enforcer
+// performs. Such a form walks its own subject set — every dispatch group and every
+// file within it, say — and sorts as it goes so the position it names is the same
+// one across runs of identical input. A check is invoked once per subject instead,
+// and the framework's enumeration order is what makes that sequence deterministic
+// — so a declaration reads one file's bytes, holds no loop, and sorts nothing. One
+// that kept the walk would have re-implemented the traversal inside its own
+// predicate, which is the arrangement the framework replaces; one that enumerated
+// the path set and then read each path's bytes would have done the same thing by a
+// longer route.
+//
+// The other consequence of being invoked once per subject is what the build
+// reports. A walk that returns on its first offender names one position however
+// many are wrong; a rule invoked per subject raises about each, so an author with
+// three faults is told about three of them from one build.
 //
 // A detail carries fact values and never a rendering of them: turning an
 // objection into a message is the framework's job, and a rule that formatted one

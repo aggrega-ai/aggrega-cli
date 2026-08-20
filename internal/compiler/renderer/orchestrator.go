@@ -485,6 +485,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		); err != nil {
 			return nil, err
 		}
+
+		// The rule over what a Recipe wrote for each of its provides keys, invoked
+		// against the same presentation and the same enumeration. It is a separate
+		// call rather than a member of the reading above because it carries no
+		// plugin-resolution guard: nothing about a provides template depends on a
+		// plugin, so a render that resolved none still owes this refusal.
+		//
+		// It is asked here, ahead of the pass below, for the reason the rule reads
+		// authored text at all: the value a refused template would produce is never
+		// produced, so the refusal has to be reported before evaluation rather than
+		// from it.
+		if err := runAuthoredProvidesRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
 	}
 
 	// Pass 1: per node, resolve locals then provides. The locals travel with the
@@ -1822,15 +1836,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	}
 	result.Warnings = append(result.Warnings, linkWarnings...)
 
-	// Orphan-placeholder guard. After the link pass, no cross-boundary link
-	// placeholder may survive in assembled output — a resolved link replaces its
-	// placeholder, and a placeholder left behind is an unresolved defect the build
-	// must never ship. Runs after the link pass so it observes the post-resolution
-	// files.
-	if err := scanOrphanCrossBoundaryLinkSentinels(assembledByDispatch); err != nil {
-		return nil, err
-	}
-
 	// Flush the retained (and possibly link-patched) assembled output into the
 	// result, reattaching each group's disk-write prefix. Groups iterate in
 	// orderedDispatch order for a deterministic walk.
@@ -1868,6 +1873,25 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	result.RenderedView = newRenderedView(
 		result.HydratedView, assembledOutput{result: result}, input.artifacts,
 	)
+
+	// The rules declared over what this render assembled are invoked here, against
+	// the boundary, provider and path axes the attribution just recorded. It is the
+	// first point holding both the presentation and the enumeration, and it is after
+	// the cross-boundary link pass on purpose: a resolved link replaces its own
+	// placeholder, so a reading taken before resolution would object to every marker
+	// that pass was about to remove.
+	//
+	// The enumeration is checked for absence here rather than inside: an absent one
+	// held behind the axis interface is a present value that answers nothing, and a
+	// rule invoked zero times reports exactly what a rule that ran and approved
+	// reports.
+	if renderedAxes := newRenderedStageCoordinates(
+		result, releaseFileOf(input.ResolveResult),
+	); renderedAxes != nil {
+		if err := runRenderedStageRules(ctx, result.RenderedView, renderedAxes); err != nil {
+			return nil, err
+		}
+	}
 
 	return result, nil
 }

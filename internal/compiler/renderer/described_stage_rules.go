@@ -192,3 +192,70 @@ func runDescribedStageRules(
 func describedStageHalt(objections []constraint.Objection) error {
 	return objectionsAsHalt(objections, "pipeline steps that cannot run as declared")
 }
+
+// authoredProvidesAxes is the axis pair the rule over an authored provides
+// template is invoked once per: the node set, and the keys each node's Recipe
+// publishes.
+//
+// It is a second set beside the one above rather than two more members of it,
+// because the two readings answer different questions and are guarded
+// differently. The set above is about what a build's plugins report, so a render
+// that resolves no plugin has nothing to read and every rule over it is skipped;
+// this one is about text an author wrote, which is there whether a plugin was
+// ever loaded or not. Folding the axes together would put this rule behind the
+// plugin guard, and a rule skipped by a guard reports exactly what a rule that
+// ran and approved reports.
+type authoredProvidesAxes interface {
+	constraint.NodeEnumerator
+	constraint.ProvidesKeyEnumerator
+}
+
+// runAuthoredProvidesRule invokes the rule declared over the text a Recipe wrote
+// for each of its provides keys, and returns what it raised as the render's halt.
+//
+// It runs before anything is evaluated, which is what the rule reads for: the
+// value a refused template would produce is never produced, so the authored text
+// is the only input that can carry the question. Asking afterwards would mean
+// asking about a value the refusal exists to prevent.
+//
+// # Why it is not part of the plugin-report reading beside it
+//
+// That reading is skipped for a render given no plugin resolution, because every
+// fact it reads comes from a plugin describing itself and a render that loaded
+// none would have every rule refuse a build that renders today. Nothing about a
+// provides template depends on a plugin, so this reading carries no such guard:
+// it is asked of every render holding the presentation and the enumeration a rule
+// over this stage needs, whether or not that render resolved a plugin.
+//
+// It is asked after that reading rather than before it, which keeps the order the
+// build reported these two classes of fault in before either was a declared rule:
+// a step that cannot run at all is reported ahead of an entry that reaches outside
+// its data.
+//
+// # Every offending entry is reported, not the first one
+//
+// The rule is invoked once per key, so a Recipe that reaches outside the
+// self-contained data in three entries raises three objections and an author
+// corrects all three from one build. Each objection carries its own position —
+// the Recipe, and the authored key inside it — which is why they are not folded
+// into one message: a position is something an author navigates to, and a single
+// message naming three of them can be navigated to none.
+//
+// The cancellation signal is the caller's own, so a long walk over a large graph
+// stops within one node of the caller asking it to.
+func runAuthoredProvidesRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates authoredProvidesAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	raised, err := constraint.RunOnNodeProvidesKeys(
+		ctx.Err, coordinates, coordinates, view, ProvidesTemplateSelfContained,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(raised, "provides entries that reach outside the data they are evaluated against")
+}

@@ -254,18 +254,18 @@ func TestTheRefusedArtifactAxisWouldNarrowThisRule(t *testing.T) {
 	}
 }
 
-// TestTheArtifactLinkPlaceholderRuleAndTheAssembledScanReportOneCondition is the
-// two-reading comparison: the declared rule reading a projected artifact's bytes,
-// and the hand-written scan reading an assembled file's, over the same bytes.
+// TestTheArtifactAndAssembledLinkPlaceholderRulesReportOneCondition is the
+// two-reading comparison: the rule reading a projected artifact's bytes, and the
+// rule reading an assembled file's, over the same bytes.
 //
 // The two are not one reading behind one interface — they are invoked over
 // different subject sets at different points, which is the whole reason the
-// declared one is worth having. What must hold between them is that they report
-// the SAME condition: a build carrying no marker is admitted by both, a byte
-// sequence carrying one is refused by both, and the condition each names is the
-// same matchable one, so an author who removes one placeholder is answering one
-// finding rather than two unrelated ones.
-func TestTheArtifactLinkPlaceholderRuleAndTheAssembledScanReportOneCondition(t *testing.T) {
+// earlier one is worth having. What must hold between them is that they report the
+// SAME condition: a build carrying no marker is admitted by both, a byte sequence
+// carrying one is refused by both, and the condition each names is the same
+// matchable one, so an author who removes one placeholder is answering one finding
+// rather than two unrelated ones.
+func TestTheArtifactAndAssembledLinkPlaceholderRulesReportOneCondition(t *testing.T) {
 	t.Parallel()
 
 	const node = "discriminating"
@@ -292,8 +292,10 @@ func TestTheArtifactLinkPlaceholderRuleAndTheAssembledScanReportOneCondition(t *
 		if len(objections) != 0 {
 			t.Errorf("the declared rule raised %d objection(s) over a render that completed: %v", len(objections), objections)
 		}
-		if err := scanOrphanCrossBoundaryLinkSentinels(assembledGroupHolding(clean)); err != nil {
-			t.Errorf("the hand-written scan refused the same bytes the declared rule admitted: %v", err)
+		if err := orphanCrossBoundaryLinkHalt(t, assembledOutputHolding(
+			[]string{"prod"}, "helm-chart", map[string][]byte{"artifacts/one.yaml": clean},
+		)); err != nil {
+			t.Errorf("the assembled-position rule refused the same bytes the artifact-position rule admitted: %v", err)
 		}
 	})
 
@@ -321,10 +323,12 @@ func TestTheArtifactLinkPlaceholderRuleAndTheAssembledScanReportOneCondition(t *
 			t.Fatal("the traversal presented no artifact; a finding from it would certify nothing")
 		}
 
-		scanErr := scanOrphanCrossBoundaryLinkSentinels(assembledGroupHolding(offending))
+		scanErr := orphanCrossBoundaryLinkHalt(t, assembledOutputHolding(
+			[]string{"prod"}, "helm-chart", map[string][]byte{"artifacts/one.yaml": offending},
+		))
 		if scanErr == nil {
-			t.Fatal("the hand-written scan admitted bytes the declared rule refused; the two readings " +
-				"do not report one condition")
+			t.Fatal("the assembled-position rule admitted bytes the artifact-position rule refused; the " +
+				"two readings do not report one condition")
 		}
 
 		// The condition is the same matchable one from both readings, which is what
@@ -332,11 +336,11 @@ func TestTheArtifactLinkPlaceholderRuleAndTheAssembledScanReportOneCondition(t *
 		// thing for an author to learn.
 		want := ErrOrphanCrossBoundaryLinkSentinel()
 		if !errors.Is(scanErr, want) {
-			t.Errorf("the hand-written scan's condition = %v, want the unresolved cross-boundary marker condition", scanErr)
+			t.Errorf("the assembled-position rule's condition = %v, want the unresolved cross-boundary marker condition", scanErr)
 		}
 		for _, o := range objections {
 			if !errors.Is(o.Sentinel(), want) {
-				t.Errorf("the declared rule's condition = %v, want the same one the hand-written scan names", o.Sentinel())
+				t.Errorf("the artifact-position rule's condition = %v, want the same one the assembled-position rule names", o.Sentinel())
 			}
 			// The detail carries the two coordinates the locator does not reach on
 			// its own: which node's build position, and which artifact inside the
@@ -355,21 +359,4 @@ func TestTheArtifactLinkPlaceholderRuleAndTheAssembledScanReportOneCondition(t *
 			}
 		}
 	})
-}
-
-// assembledGroupHolding is the hand-written scan's own input shape, holding one
-// file with the given bytes.
-//
-// The scan takes the render's retained assembled output rather than a fact, so
-// driving it means handing it that shape. One file is enough: the scan halts on
-// the first offender, so a second would be unreachable and would state nothing
-// this comparison needs.
-func assembledGroupHolding(content []byte) map[dispatchKey]*assembledGroup {
-	key := dispatchKey{Path: "prod", Provider: "helm-chart"}
-	return map[dispatchKey]*assembledGroup{
-		key: {
-			provider: key.Provider,
-			files:    map[string]AssembledFile{"artifacts/one.yaml": {Content: content}},
-		},
-	}
 }

@@ -37,12 +37,36 @@ import (
 // reporting the same class of fault in two shapes, which is exactly what a reader
 // comparing them cannot tell from a deliberate difference.
 //
-// The category is fixed rather than taken from the caller. Every rule turned into
-// a halt here is about what an entity declares, so the fault is in a catalog
-// document and the remedy is an edit to one; a caller wanting another category
-// would be reporting a different class of fault and owes its own reading rather
-// than a parameter here.
+// The category is this function's rather than its caller's, and it is the catalog
+// one. Every rule reaching here is about what an entity declares, so the fault is
+// in a catalog document and the remedy is an edit to one; the category is
+// therefore a property of the readings that use this entry rather than a choice
+// each of them makes.
+//
+// A rule reporting a different class of fault reaches the same rendering through
+// its own entry naming its own category — see [objectionsAsTranslationHalt],
+// which is what a rule about output the compiler produced rather than about
+// authoring needs. That is why the rendering below takes the category while this
+// entry does not: the two callers differ on the attribution and on nothing else,
+// so parameterising the attribution is what keeps the wording, the position and
+// the envelope shape a single mechanic instead of two that agree today.
 func objectionsAsHalt(objections []constraint.Objection, envelope string) error {
+	return objectionsAsCategorisedHalt(objections, cerrors.CatalogError, envelope)
+}
+
+// objectionsAsCategorisedHalt is the whole of that rendering, with the fault's
+// attribution supplied.
+//
+// It is unexported and takes the category as its only variable so no reading can
+// arrive at a different message shape by writing its own loop: the per-objection
+// wrap, the position it is reported at, and the envelope several findings are
+// joined under are one mechanic here and cannot be re-implemented per category.
+// The category itself is genuinely per-reading — a rule about a catalog document
+// and a rule about produced output send an author to different places — which is
+// the one axis on which the callers legitimately differ.
+func objectionsAsCategorisedHalt(
+	objections []constraint.Objection, category cerrors.Category, envelope string,
+) error {
 	if len(objections) == 0 {
 		return nil
 	}
@@ -50,7 +74,7 @@ func objectionsAsHalt(objections []constraint.Objection, envelope string) error 
 	for _, o := range objections {
 		halts = append(halts, cerrors.Wrap(
 			o.Sentinel(),
-			cerrors.CatalogError,
+			category,
 			cerrors.SourceLocation{File: o.SourceFile(), Locator: o.Locator()},
 			constraint.ObjectionMessage(o),
 		))
@@ -60,7 +84,7 @@ func objectionsAsHalt(objections []constraint.Objection, envelope string) error 
 	}
 	return cerrors.Wrap(
 		stderrors.Join(halts...),
-		cerrors.CatalogError,
+		category,
 		cerrors.SourceLocation{},
 		envelope,
 	)

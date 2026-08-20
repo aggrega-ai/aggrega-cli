@@ -8,10 +8,16 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 )
 
-// ErrProvidesSelfContainment names the condition only. The wrapping
-// diagnostic spells out which roots the provides surface admits, derived
-// from the allowlists themselves, so the permitted set is stated once and
-// cannot drift from the check that enforces it.
+// ErrProvidesSelfContainment names the condition only. The diagnostic that
+// carries it names the expression the entry has to change, and is positioned at
+// the Recipe the entry was written in and the authored key inside it — so the
+// finding is something an author navigates to rather than a message to read.
+//
+// The reference is refused before anything is evaluated, which is why the halt
+// exists at all: the value such a template would produce is never produced, so
+// without the refusal the entry would render empty rather than fail. An entry that
+// slips past the refusal still does not render empty — the evaluator checks the
+// same references against the same declared scope, and the two share one walk.
 func ErrProvidesSelfContainment() error { return errProvidesSelfContainment }
 
 var errProvidesSelfContainment = cerrors.Register("compiler-renderer/provides-self-containment", cerrors.Meta{
@@ -660,8 +666,13 @@ var errRenderNondeterministic = cerrors.Register("compiler-renderer/render-nonde
 // (for example spliced into a larger string rather than a whole scalar), or
 // an edge was stamped with no matching resolve. A build-internal placeholder
 // is never valid shipped output, so the build halts here rather than emitting
-// it. The wrapping chain names the offending file and its dispatch path.
-// Category: TRANSLATION_ERROR. Match with
+// it. The diagnostic names the provider that wrote the file and the output path
+// it stands at, and is positioned at the boundary the output was assembled for —
+// a path is unique only within a boundary and a provider together, so all three
+// are what identify one file. Every offending file is reported rather than the
+// first. Category: TRANSLATION_ERROR, because a placeholder the host stamped and
+// a provider failed to resolve is a fault on the translation side with nothing in
+// any catalog document to correct. Match with
 // errors.Is(err, ErrOrphanCrossBoundaryLinkSentinel()).
 func ErrOrphanCrossBoundaryLinkSentinel() error { return errOrphanCrossBoundaryLinkSentinel }
 

@@ -25,8 +25,8 @@ type GraphCoordinates interface {
 
 // describedStageCoordinates derives the coordinates the described stage adds to
 // the ones the finalised graph already carries: the steps of each pipeline a
-// build declares, the boundary set, and the attachments each boundary declares
-// on itself.
+// build declares, the keys each node's Recipe publishes, the boundary set, and
+// the attachments each boundary declares on itself.
 //
 // It extends the graph stage's enumeration rather than restating it, the way a
 // stage's presentation extends the presentation below it. The node axis and the
@@ -35,10 +35,11 @@ type GraphCoordinates interface {
 // reach.
 //
 // Every axis returns a deterministic order and each states which. A pipeline's
-// steps keep the order the entity declares them in; the boundary set keeps the
-// deployment's own order, enclosing scope before the scopes nested inside it;
-// a boundary's attachments keep the order that boundary declares them in. No
-// axis here ranges a plain Go map.
+// steps keep the order the entity declares them in; a Recipe's provides keys keep
+// the order that Recipe declares them in; the boundary set keeps the deployment's
+// own order, enclosing scope before the scopes nested inside it; a boundary's
+// attachments keep the order that boundary declares them in. No axis here ranges
+// a plain Go map.
 //
 // The pipelines are read through the same binding the render resolves entities
 // with, so a pipeline enumerated here is the pipeline the render runs. A step
@@ -100,9 +101,28 @@ func newDescribedStageCoordinates(
 	}
 	if resolved != nil {
 		c.release = resolved.Release
-		c.releaseFile = resolved.ReleasePath
 	}
+	c.releaseFile = releaseFileOf(resolved)
 	return c
+}
+
+// releaseFileOf is the deployment document a boundary coordinate is positioned
+// at, empty when the render was given no resolve result.
+//
+// A boundary is declared in that document and nowhere else, so it is the only
+// position such a coordinate can carry. An empty one leaves a finding
+// unpositioned rather than mispositioned, which is what the position field admits
+// where no document applies.
+//
+// One home because two stages need it: the boundary axis this file derives, and
+// the axis over what a render assembled. A second reading of the same field would
+// agree today and would be free to differ the next time the absent case is
+// decided — one of them defaulting where the other leaves empty.
+func releaseFileOf(resolved *resolver.ResolveResult) string {
+	if resolved == nil {
+		return ""
+	}
+	return resolved.ReleasePath
 }
 
 // PipelineSteps returns the steps of a node's own Recipe pipeline, in the order
@@ -119,6 +139,40 @@ func (c *describedStageCoordinates) PipelineSteps(node string) []constraint.Auth
 		return nil
 	}
 	return stepCoordinatesOf(recipe.Spec.Pipeline, recipe.Metadata.Name)
+}
+
+// ProvidesKeys returns the keys a node's Recipe publishes, in the order that
+// Recipe declares them.
+//
+// Declared order is the fact rather than an incidental property of it: the
+// entries are evaluated in the order the document writes them, so a rule invoked
+// once per key reports its findings in the order an author reads the block.
+//
+// The Recipe is the one the render bound to the node, and it is the same map the
+// presentation reads the authored text out of — so a key enumerated here is a key
+// that presentation can answer, and a rule cannot be invoked about an entry whose
+// text nothing would supply.
+//
+// Each coordinate is positioned at the Recipe rather than at the Aggregate the
+// component was authored in, because the entry is written in the Recipe and that
+// is the document an author edits. The Recipe's name stands in for its path: the
+// catalog loader does not retain the path on the parsed document, and a logical
+// identifier a reader can act on is what the position field admits where no file
+// applies.
+func (c *describedStageCoordinates) ProvidesKeys(node string) []constraint.AuthoredCoordinate {
+	recipe, held := c.recipes[node]
+	if !held || recipe == nil {
+		return nil
+	}
+	keys := recipe.Spec.Provides.Keys()
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]constraint.AuthoredCoordinate, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, constraint.AuthoredCoordinate{Value: key, SourceFile: recipe.Metadata.Name})
+	}
+	return out
 }
 
 // AttachmentPipelineSteps returns the steps of the pipeline one attachment's
@@ -270,7 +324,9 @@ func stepCoordinatesOf(steps []types.PipelineStep, sourceFile string) []constrai
 // the invocation that needed it.
 var (
 	_ describedStageAxes                                  = (*describedStageCoordinates)(nil)
+	_ authoredProvidesAxes                                = (*describedStageCoordinates)(nil)
 	_ constraint.NodeEnumerator                           = (*describedStageCoordinates)(nil)
+	_ constraint.ProvidesKeyEnumerator                    = (*describedStageCoordinates)(nil)
 	_ constraint.AttachmentEnumerator                     = (*describedStageCoordinates)(nil)
 	_ constraint.PipelineStepEnumerator                   = (*describedStageCoordinates)(nil)
 	_ constraint.AttachmentPipelineStepEnumerator         = (*describedStageCoordinates)(nil)

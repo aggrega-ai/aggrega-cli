@@ -6,6 +6,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -68,13 +69,14 @@ func describedRenderFactory(string) (renderer.Provider, error) {
 	return &describedRenderEngine{}, nil
 }
 
-// describedProvidesKeys supplies the provides-key axis for the traversal below.
+// describedProvidesKeys supplies the provides-key axis for the traversals below.
 //
-// The node axis is the enumeration the production path itself builds; only this
-// one coordinate is supplied here, because no production implementation of it
-// exists yet. It reads the keys from the Recipe the compilation bound, in the
-// order that document declares them, so the order is the authored one rather
-// than one this test invents.
+// The production enumeration supplies this axis too, and is what the render
+// invokes the rule through; it is unexported by the package that builds it, so a
+// traversal driven from here supplies its own. It reads the keys from the Recipe
+// the compilation bound, in the order that document declares them, so the order is
+// the authored one rather than one this test invents — and the arm that exercises
+// the production axis drives the render instead of the traversal.
 type describedProvidesKeys struct {
 	recipeFor func(node string) *types.Recipe
 }
@@ -231,24 +233,49 @@ func TestDescribedPresentationAnswersARuleFromTheCompiledBuild(t *testing.T) {
 	})
 
 	t.Run("the same rule raises on a document the render refuses", func(t *testing.T) {
-		// The rule's finding must be observable, not merely its silence. This
-		// arm reads the hand-written path's verdict off the real build and the
-		// rule's verdict off the same text, and requires both to refuse.
+		// The rule's finding must be observable, not merely its silence, and the
+		// arm above establishes only the silence. The pair discriminates: the same
+		// rule, invoked through the same traversal over the same subject shape,
+		// admits what the corpus carries and refuses a template reaching outside
+		// the self-contained data.
+		//
+		// A build carrying the offending text halts before the render can publish
+		// anything, so the text is substituted into a presentation answering that
+		// one fact rather than compiled — which is why the corpus arm above is what
+		// exercises the production presentation.
 		const offending = `{{ .metadata.name }}`
-		if renderer.CheckProvidesSelfContainment(offending, "api-recipe") == nil {
-			t.Fatal("the corpus's offending template is admitted by the path that runs; the comparison below would be vacuous")
-		}
-		objections := renderer.ProvidesTemplateSelfContained.Run(
-			describedTextOnlyView{text: offending}, providesKeySubjectFor(t),
+		objections, err := constraint.RunOnNodeProvidesKeys(
+			context.Background().Err,
+			staticNodes{{ID: "api", SourceFile: "aggregate.yaml", AuthoredName: "api"}},
+			describedProvidesKeys{recipeFor: func(string) *types.Recipe {
+				provides := types.OrderedMap[string]{}
+				provides.Set("endpoint", offending)
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "api-recipe"},
+					Spec:     types.RecipeSpec{Provides: provides},
+				}
+			}},
+			constraint.DescribedView(describedTextOnlyView{text: offending}),
+			renderer.ProvidesTemplateSelfContained,
 		)
+		if err != nil {
+			t.Fatalf("traversal: %v", err)
+		}
 		if len(objections) != 1 {
-			t.Fatalf("rule raised %d objection(s) on a template the running path refuses, want exactly 1", len(objections))
+			t.Fatalf("rule raised %d objection(s) on a template outside the self-contained data, want exactly 1", len(objections))
 		}
 		if !errors.Is(objections[0].Sentinel(), renderer.ErrProvidesSelfContainment()) {
 			t.Errorf("objection sentinel = %v, want the self-containment condition", objections[0].Sentinel())
 		}
 		if detail := objections[0].Detail(); len(detail) == 0 || detail[0] != ".metadata.name" {
 			t.Errorf("objection detail = %v, want the offending expression %q", detail, ".metadata.name")
+		}
+		// The position an author navigates to: the Recipe, and the entry inside it.
+		if got := objections[0].SourceFile(); got != "api-recipe" {
+			t.Errorf("objection position = %q, want the Recipe declaring the entry", got)
+		}
+		if got := objections[0].Locator(); got != ".spec.provides.endpoint" {
+			t.Errorf("objection locator = %q, want the authored entry", got)
 		}
 	})
 }
@@ -302,40 +329,6 @@ type describedTextOnlyView struct {
 
 func (v describedTextOnlyView) AuthoredNodeProvides(_ string, _ string) string { return v.text }
 
-// providesKeySubjectFor produces the subject the rule is invoked with, through
-// the framework's own traversal so the subject is minted where every subject is.
-func providesKeySubjectFor(t *testing.T) constraint.NodeProvidesKeySubject {
-	t.Helper()
-	var captured constraint.NodeProvidesKeySubject
-	_, err := constraint.RunOnNodeProvidesKeys(
-		nil,
-		staticNodes{{ID: "api", SourceFile: "aggregate.yaml", AuthoredName: "api"}},
-		describedProvidesKeys{recipeFor: func(string) *types.Recipe {
-			provides := types.OrderedMap[string]{}
-			provides.Set("endpoint", "")
-			return &types.Recipe{
-				Metadata: types.RecipeMetadata{Name: "api-recipe"},
-				Spec:     types.RecipeSpec{Provides: provides},
-			}
-		}},
-		constraint.DescribedView(nil),
-		constraint.Check[constraint.DescribedView, constraint.NodeProvidesKeySubject]{
-			Sentinel: renderer.ErrProvidesSelfContainment(),
-			Run: func(_ constraint.DescribedView, s constraint.NodeProvidesKeySubject) []constraint.Objection {
-				captured = s
-				return nil
-			},
-		},
-	)
-	if err != nil {
-		t.Fatalf("subject traversal: %v", err)
-	}
-	if captured == nil {
-		t.Fatal("the traversal minted no subject")
-	}
-	return captured
-}
-
 // staticNodes is a fixed node axis, used only where the subject rather than the
 // graph is the thing under construction.
 type staticNodes []constraint.NodeInstance
@@ -360,5 +353,163 @@ func TestGraphStageCoordinatesSupplyTheNodeAxis(t *testing.T) {
 	)
 	if n := len(coordinatesOf(t, out, catalogLookup).Nodes()); n == 0 {
 		t.Fatal("the compilation enumerated no node; every traversal over it would be silent")
+	}
+}
+
+// renderEnumeratedFixture renders the compiled fixture with the enumeration the
+// compilation produced wired in, which is what the build itself does.
+//
+// It is separate from the helper beside it because the two answer different
+// questions. That one presents a render given no enumeration, which is the shape
+// most of this package's proofs need; this one is the production wiring, and it is
+// the only shape under which the rules declared over the presentation are invoked
+// at all.
+func renderEnumeratedFixture(
+	t *testing.T,
+	out *stepsOneToFourOutput,
+	catalogLookup resolver.CatalogLookup,
+	recipeLookup renderer.RecipeLookup,
+) (*renderer.RenderResult, error) {
+	t.Helper()
+	if out.GraphCoordinates == nil {
+		t.Fatal("the compilation produced no enumeration of the finalised graph; no rule over the presentation can be invoked")
+	}
+	return renderer.RenderAll(context.Background(), renderer.RendererInput{
+		Graph:            out.IRGraph,
+		GraphView:        out.GraphView,
+		GraphCoordinates: out.GraphCoordinates,
+		FeatureOrder:     out.FeatureOrder,
+		ResolveResult:    out.ResolveResult,
+		CatalogLookup:    catalogLookup,
+	}, recipeLookup, describedRenderFactory)
+}
+
+// withExtraProvidesEntry binds every node to its own Recipe with one further
+// provides entry carrying the given template, leaving the bound document itself
+// untouched.
+//
+// The entry is added rather than an existing one rewritten, so the Recipe still
+// publishes everything its Component declares and the only thing the render sees
+// differently is the entry under test.
+func withExtraProvidesEntry(base renderer.RecipeLookup, key, template string) renderer.RecipeLookup {
+	return renderer.RecipeLookup{
+		Recipe: func(instance, componentType string) (*types.Recipe, bool) {
+			recipe, found := base.Recipe(instance, componentType)
+			if !found || recipe == nil {
+				return recipe, found
+			}
+			substituted := *recipe
+			provides := types.OrderedMap[string]{}
+			for k, v := range recipe.Spec.Provides.All() {
+				provides.Set(k, v)
+			}
+			provides.Set(key, template)
+			substituted.Spec.Provides = provides
+			return &substituted, true
+		},
+		FeatureRecipe: base.FeatureRecipe,
+	}
+}
+
+// TestTheRenderInvokesTheAuthoredProvidesRule is the production-path proof: the
+// render itself, given the enumeration the compilation produced, asks the rule
+// declared over what a Recipe wrote for each of its provides keys.
+//
+// It is the arm no unit-level invocation can stand in for. Everything else about
+// this rule can be exercised by driving the traversal directly, and none of that
+// establishes that the BUILD reaches it — which is the whole difference between a
+// declared rule and an enforced one.
+func TestTheRenderInvokesTheAuthoredProvidesRule(t *testing.T) {
+	clean := readAggregate(t)
+	recipeLookup := fixtureRecipeLookup(t)
+	fixture := workspaceFixture{
+		aggregatePath: invocationAggregatePath,
+		releasePath:   invocationReleasePath,
+		manifestPath:  invocationManifestPath,
+		catalogPath:   invocationCatalogPath,
+	}
+
+	t.Run("the fixture as authored renders", func(t *testing.T) {
+		out, catalogLookup := compileWorkspace(t, fixture, clean)
+		res, err := renderEnumeratedFixture(t, out, catalogLookup, recipeLookup)
+		if err != nil {
+			t.Fatalf("the render refused a workspace whose provides entries are self-contained: %+v", err)
+		}
+		if res == nil {
+			t.Fatal("the render produced no result")
+		}
+	})
+
+	t.Run("an entry reaching outside the self-contained data halts the render", func(t *testing.T) {
+		out, catalogLookup := compileWorkspace(t, fixture, clean)
+		_, err := renderEnumeratedFixture(t, out, catalogLookup,
+			withExtraProvidesEntry(recipeLookup, "reaches_outside", `{{ .metadata.name }}`))
+		if err == nil {
+			t.Fatal("the render admitted a provides entry reaching outside the data it is evaluated against")
+		}
+		if !errors.Is(err, renderer.ErrProvidesSelfContainment()) {
+			t.Fatalf("halt condition = %+v, want the self-containment condition", err)
+		}
+		// The position an author navigates to, carried through the whole render.
+		var chain []string
+		for e := err; e != nil; e = errors.Unwrap(e) {
+			chain = append(chain, e.Error())
+		}
+		text := strings.Join(chain, " | ")
+		for _, want := range []string{".metadata.name", ".spec.provides.reaches_outside"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("the halt omits %q: %s", want, text)
+			}
+		}
+	})
+}
+
+// TestTheRenderPresentsTheAssembledStageOnTheProductionPath pins the wiring the
+// rule over assembled output depends on.
+//
+// That rule reads facts answered by the presentation of what the render produced,
+// so a render publishing none leaves it uninvoked — and the fault it refuses, a
+// build-internal link placeholder surviving into output, has no second reading to
+// fall back on. The dependency is therefore load-bearing rather than incidental,
+// and it is a property of what the caller supplies rather than of the render, so
+// it is pinned here where the production wiring is available.
+//
+// A render given no presentation of the finalised graph publishes none of its own,
+// which is the state the assertion below exists to keep out of the build path.
+func TestTheRenderPresentsTheAssembledStageOnTheProductionPath(t *testing.T) {
+	clean := readAggregate(t)
+	recipeLookup := fixtureRecipeLookup(t)
+	out, catalogLookup := compileWorkspace(t, workspaceFixture{
+		aggregatePath: invocationAggregatePath,
+		releasePath:   invocationReleasePath,
+		manifestPath:  invocationManifestPath,
+		catalogPath:   invocationCatalogPath,
+	}, clean)
+
+	// The compilation's own products, which the render is handed.
+	if out.GraphView == nil {
+		t.Fatal("the compilation published no presentation of the finalised graph; every stage above it presents nothing")
+	}
+	if out.GraphCoordinates == nil {
+		t.Fatal("the compilation published no enumeration of the finalised graph; no rule over a later stage is invoked")
+	}
+
+	res, err := renderEnumeratedFixture(t, out, catalogLookup, recipeLookup)
+	if err != nil {
+		t.Fatalf("render: %+v", err)
+	}
+	if res.DescribedView == nil {
+		t.Fatal("the render published no presentation of what its plugins report")
+	}
+	if res.RenderedView == nil {
+		t.Fatal("the render published no presentation of what it assembled; the rule over assembled output would not be invoked")
+	}
+	// And the attribution the enumeration is derived from, without which the rule
+	// is invoked over no subject at all.
+	if len(res.Contributions) == 0 {
+		t.Fatal("the render recorded no assembly attribution; the rule over assembled output would reach no output path")
+	}
+	if len(res.Files) == 0 {
+		t.Fatal("the render wrote no file; a rule over assembled output would certify nothing")
 	}
 }

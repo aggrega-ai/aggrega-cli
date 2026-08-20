@@ -9,17 +9,17 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
-	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// providesScope is the reference set a provides template is checked against. The
-// universe is ProvidesContext — the same type the provides pass evaluates against
-// — so the roots the check admits are exactly the surface that pass exposes, and
-// .context is gated one level down by ProvidesContextBlock's own fields rather
-// than by a second list beside it. A field added to that block therefore becomes
-// reachable from a provides template with no edit here.
+// providesScope is the reference set a provides template is checked against, and
+// the rule declared over a base Recipe's provides entries is what evaluates it.
+// The universe is ProvidesContext — the same type the provides pass evaluates
+// against — so the roots the scope admits are exactly the surface that pass
+// exposes, and .context is gated one level down by ProvidesContextBlock's own
+// fields rather than by a second list beside it. A field added to that block
+// therefore becomes reachable from a provides template with no edit here.
 //
 // One root the type defines is excluded, and the reason is ordering rather than
 // taste: attachment_name. No attachment is being resolved during a base Recipe's
@@ -32,9 +32,9 @@ import (
 // .locals is admitted, and admitting it is also an ordering property: a node's
 // locals are resolved in the pass preamble, ahead of that node's provides, so a
 // provides template reading .locals receives resolved values. That holds on both
-// paths that populate the pillar — the base Recipe pass this check guards, and the
+// paths that populate the pillar — the base Recipe pass this scope governs, and the
 // attachment FeatureRecipe path, which resolves its own locals before its provides
-// and does not run this check.
+// and is not read against this scope at all.
 //
 // Admitting the root admits an OPEN keyed map, so the root check alone cannot refuse
 // a key the block never declared. The key-level refusal is a separate check run once
@@ -43,68 +43,6 @@ import (
 var providesScope = templateScope{
 	data:    ProvidesContext{},
 	exclude: []string{"attachment_name"},
-}
-
-// CheckProvidesSelfContainment verifies a provides template references only the
-// self-contained Pass-1 roots: .context.instance_id, .values, .infra, .locals —
-// resolved in the pass preamble, ahead of provides — and static text. Any other
-// root halts with ErrProvidesSelfContainment naming the offending expression — a
-// non-wired .context.* key (.context.inject, .context.uses, .context.annotations,
-// .context.labels, .context.metadata, …), a non-wired top-level root (.metadata,
-// .provides, …), or .attachment_name, which names no attachment during a base
-// Recipe's provides pass. The check is a positive allowlist over the template's
-// parsed field accesses, so a reference to a root the provides context does not
-// expose is a Loud Guardrail rather than a silent empty render. The halt is
-// structural ("root not in the provides context"), never a judgment about what the
-// referenced value means.
-//
-// The check is providesScope, evaluated by the same walk and the same
-// type-derived derivation the evaluator applies to every other template surface —
-// this surface differs only in the narrowing it declares, not in how a reference
-// is identified. Sharing the walk is what keeps a defensive wrapper from reading
-// as a reference to a root named after the key it guards: only the wrapped
-// expression reaches the context root, so the trailing key of a chained fallback
-// is not mistaken for a root.
-func CheckProvidesSelfContainment(templateText, recipeID string) error {
-	if templateText == "" {
-		return nil
-	}
-	tree, err := gotmpl.ParseTree(templateText, "{{", "}}")
-	if err != nil {
-		// Malformed template: let provides evaluation report the parse error.
-		return nil
-	}
-	if v := providesScope.check(tree); v != nil {
-		return providesContainmentErr(recipeID, v.Ref.Path)
-	}
-	return nil
-}
-
-// providesAllowedRootsPhrase renders the scope's admitted set as the prose list
-// the self-containment diagnostic quotes. Derived from the scope rather than
-// restated so the message names exactly the references the check admits: a root
-// gated one level down contributes one entry per admitted key, and an open root
-// contributes itself.
-func providesAllowedRootsPhrase() string {
-	roots, ok := providesScope.admittedRoots()
-	if !ok {
-		return ""
-	}
-	out := make([]string, 0, len(roots))
-	for _, root := range roots {
-		if keys, gated := providesScope.admittedKeys(root); gated {
-			out = append(out, templateRootsPhrase("."+root, keys))
-			continue
-		}
-		out = append(out, "."+root)
-	}
-	return strings.Join(out, ", ")
-}
-
-func providesContainmentErr(recipeID, expr string) error {
-	return cerrors.Wrap(ErrProvidesSelfContainment(), cerrors.CatalogError, cerrors.SourceLocation{File: recipeID},
-		fmt.Sprintf("Recipe %q provides references %q — the provides block is self-contained and may reference only "+
-			"%s, and static text", recipeID, expr, providesAllowedRootsPhrase()))
 }
 
 // EvaluateAllProvides executes Pass 1: per node, resolve that node's locals and
@@ -136,18 +74,6 @@ func EvaluateAllProvides(
 	for _, nodeID := range nodeIDs {
 		recipe := recipes[nodeID]
 
-		// Check self-containment for each provides template. The check reads
-		// template text and evaluates nothing, so it runs ahead of the locals
-		// preamble: a provides template naming a root this surface refuses reports
-		// that refusal whatever else the Recipe declares.
-		if recipe != nil {
-			for key, tmplText := range recipe.Spec.Provides.All() {
-				if err := CheckProvidesSelfContainment(tmplText, recipe.Metadata.Name); err != nil {
-					return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q provides[%q]", nodeID, key))
-				}
-			}
-		}
-
 		// Build restricted context
 		values := types.OrderedMap[any]{}
 		if raw, ok := graph.Spec.ValuesMapping.Get(nodeID); ok {
@@ -169,9 +95,9 @@ func EvaluateAllProvides(
 			continue
 		}
 
-		// The self-containment check above admits .locals as a whole root; the block's
-		// key set is only known once the preamble has resolved it, so the key-level
-		// refusal runs here rather than beside the root check.
+		// The self-containment reading, taken before this pass, admits .locals as a
+		// whole root; the block's key set is only known once the preamble has resolved
+		// it, so the key-level refusal runs here rather than with the root reading.
 		if err := checkProvidesLocalsReferences(recipe.Spec.Provides, nodeLocals, func(key string) localsRefSite {
 			return localsRefSite{
 				Where: fmt.Sprintf("Recipe %q provides[%q]", recipe.Metadata.Name, key),

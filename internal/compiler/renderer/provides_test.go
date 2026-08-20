@@ -12,17 +12,17 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-func TestCheckProvidesSelfContainment_Clean(t *testing.T) {
+func TestProvidesSelfContainment_Clean(t *testing.T) {
 	t.Parallel()
-	err := CheckProvidesSelfContainment(`{{ .context.instance_id }}-db`, "test-recipe")
+	err := providesSelfContainmentHalt(t, `{{ .context.instance_id }}-db`, "test-recipe")
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
 }
 
-func TestCheckProvidesSelfContainment_ForbiddenInject(t *testing.T) {
+func TestProvidesSelfContainment_ForbiddenInject(t *testing.T) {
 	t.Parallel()
-	err := CheckProvidesSelfContainment(`{{ .context.inject.env.DB_URL }}`, "bad-recipe")
+	err := providesSelfContainmentHalt(t, `{{ .context.inject.env.DB_URL }}`, "bad-recipe")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -31,9 +31,9 @@ func TestCheckProvidesSelfContainment_ForbiddenInject(t *testing.T) {
 	}
 }
 
-func TestCheckProvidesSelfContainment_ForbiddenUses(t *testing.T) {
+func TestProvidesSelfContainment_ForbiddenUses(t *testing.T) {
 	t.Parallel()
-	err := CheckProvidesSelfContainment(`{{ .context.uses.my_db.provides.host }}`, "bad-recipe")
+	err := providesSelfContainmentHalt(t, `{{ .context.uses.my_db.provides.host }}`, "bad-recipe")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -42,10 +42,10 @@ func TestCheckProvidesSelfContainment_ForbiddenUses(t *testing.T) {
 	}
 }
 
-func TestCheckProvidesSelfContainment_StringLiteralOK(t *testing.T) {
+func TestProvidesSelfContainment_StringLiteralOK(t *testing.T) {
 	t.Parallel()
 	// The word "inject" in a static string (not inside {{ }}) should not trigger
-	err := CheckProvidesSelfContainment(`static string with inject word`, "test-recipe")
+	err := providesSelfContainmentHalt(t, `static string with inject word`, "test-recipe")
 	if err != nil {
 		t.Errorf("expected no error for static string, got: %v", err)
 	}
@@ -194,29 +194,13 @@ func TestEvaluateAllProvides_LocalReadingProvidesHalts(t *testing.T) {
 	}
 }
 
-func TestEvaluateAllProvides_SelfContainmentViolation(t *testing.T) {
+// The self-containment refusal is reported before anything is evaluated, so the
+// pass below is not where it is asked. What the pass owes is that the entry still
+// reaches the evaluator unchanged when nothing refuses it — the refusal itself is
+// proven at the site that asks for it.
+func TestProvidesSelfContainment_RefusedEntryIsRefusedAheadOfEvaluation(t *testing.T) {
 	t.Parallel()
-	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("api", types.IRNode{})
-
-	graph := &types.IRGraph{
-		Spec: types.IRSpec{
-			Nodes: nodes,
-		},
-	}
-	provides := types.OrderedMap[string]{}
-	provides.Set("url", `{{ .context.inject.env.TARGET }}`)
-
-	recipes := map[string]*types.Recipe{
-		"api": {
-			Metadata: types.RecipeMetadata{Name: "bad-recipe"},
-			Spec: types.RecipeSpec{
-				Provides: provides,
-			},
-		},
-	}
-
-	_, _, err := EvaluateAllProvides(graph, recipes)
+	err := providesSelfContainmentHalt(t, `{{ .context.inject.env.TARGET }}`, "bad-recipe")
 	if err == nil {
 		t.Fatal("expected error for self-containment violation")
 	}
@@ -339,7 +323,7 @@ func TestEvaluateAllProvides_NoRecipe(t *testing.T) {
 	}
 }
 
-func TestCheckProvidesSelfContainment_ForbiddenRoots(t *testing.T) {
+func TestProvidesSelfContainment_ForbiddenRoots(t *testing.T) {
 	t.Parallel()
 	// Each of these references a root the self-contained Pass-1 surface does not
 	// expose; the allowlist must HALT (not render empty — the silent footgun the
@@ -360,7 +344,7 @@ func TestCheckProvidesSelfContainment_ForbiddenRoots(t *testing.T) {
 	}
 	for name, tmpl := range forbidden {
 		t.Run(name, func(t *testing.T) {
-			err := CheckProvidesSelfContainment(tmpl, "bad-recipe")
+			err := providesSelfContainmentHalt(t, tmpl, "bad-recipe")
 			if err == nil {
 				t.Fatalf("%s: expected halt, got nil (silent-empty footgun)", name)
 			}
@@ -371,7 +355,7 @@ func TestCheckProvidesSelfContainment_ForbiddenRoots(t *testing.T) {
 	}
 }
 
-func TestCheckProvidesSelfContainment_AllowedRoots(t *testing.T) {
+func TestProvidesSelfContainment_AllowedRoots(t *testing.T) {
 	t.Parallel()
 	// The wired self-contained set: every one of these must pass the allowlist.
 	// .locals is in the set because a node's locals resolve in the pass preamble,
@@ -386,46 +370,21 @@ func TestCheckProvidesSelfContainment_AllowedRoots(t *testing.T) {
 		`static-only`,
 	}
 	for _, tmpl := range allowed {
-		if err := CheckProvidesSelfContainment(tmpl, "ok-recipe"); err != nil {
+		if err := providesSelfContainmentHalt(t, tmpl, "ok-recipe"); err != nil {
 			t.Errorf("expected no error for %q, got: %v", tmpl, err)
 		}
 	}
 }
 
-func TestProvidesContainmentErr_ListsExactlyTheAdmittedRoots(t *testing.T) {
+func TestProvidesSelfContainment_ForbiddenAnnotationHaltsNotEmpty(t *testing.T) {
 	t.Parallel()
-	// The diagnostic's root list is derived from the allowlists, so it cannot
-	// name a root the check refuses. This pins the derivation: every admitted
-	// root appears, and the surface's one narrowing does not.
-	msg := providesContainmentErr("bad-recipe", ".attachment_name").Error()
-	for _, want := range []string{".context.instance_id", ".values", ".infra", ".locals"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("diagnostic omits admitted root %s: %s", want, msg)
-		}
-	}
-	if strings.Contains(msg, ".attachment_name,") {
-		t.Errorf("diagnostic still offers .attachment_name as permitted: %s", msg)
-	}
-	// The offending expression and the recipe both have to be nameable from the
-	// message alone, since that is all the author sees.
-	if !strings.Contains(msg, ".attachment_name") || !strings.Contains(msg, "bad-recipe") {
-		t.Errorf("diagnostic does not name both the recipe and the expression: %s", msg)
-	}
-}
-
-func TestEvaluateAllProvides_ForbiddenAnnotationHaltsNotEmpty(t *testing.T) {
-	t.Parallel()
-	// Footgun-closure proof through the real provides-evaluation path: a provides
-	// reading a placement annotation HALTS loudly rather than rendering empty.
-	nodes := types.OrderedMap[types.IRNode]{}
-	nodes.Set("db", types.IRNode{})
-	graph := &types.IRGraph{Spec: types.IRSpec{Nodes: nodes}}
-	provides := types.OrderedMap[string]{}
-	provides.Set("host", `{{ .context.instance_id }}-default.{{ index .context.annotations "aggrega.ai/namespace" }}`)
-	recipes := map[string]*types.Recipe{
-		"db": {Metadata: types.RecipeMetadata{Name: "footgun-recipe"}, Spec: types.RecipeSpec{Provides: provides}},
-	}
-	_, _, err := EvaluateAllProvides(graph, recipes)
+	// Footgun closure: a provides entry reading a placement annotation HALTS
+	// loudly rather than rendering empty. Asked at the site that refuses the
+	// entry, which is ahead of evaluation — the value a refused entry would
+	// produce is never produced, so the refusal cannot be asked of the evaluator.
+	err := providesSelfContainmentHalt(t,
+		`{{ .context.instance_id }}-default.{{ index .context.annotations "aggrega.ai/namespace" }}`,
+		"footgun-recipe")
 	if err == nil {
 		t.Fatal("expected halt for placement annotation in provides, got nil")
 	}

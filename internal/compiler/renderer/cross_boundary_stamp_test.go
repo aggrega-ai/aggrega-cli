@@ -37,27 +37,26 @@ func TestClassifyCrossBoundaryLink(t *testing.T) {
 	}
 }
 
-func TestScanOrphanCrossBoundaryLinkSentinels(t *testing.T) {
+// TestAssembledOutputRetainingALinkPlaceholder covers the condition as the render
+// asks it: over the attribution the assembly recorded, through the rule declared
+// for it, which is what the build reaches.
+func TestAssembledOutputRetainingALinkPlaceholder(t *testing.T) {
 	sentinel := rendercore.CrossBoundaryLinkSentinel("api", "db", "database", "host")
 
-	t.Run("clean groups pass", func(t *testing.T) {
-		groups := map[dispatchKey]*assembledGroup{
-			{Path: "a", Provider: "cloudformation"}: {files: map[string]AssembledFile{
-				"cloudformation-stack.json": {Content: []byte(`{"Resources":{}}`)},
-			}},
-		}
-		if err := scanOrphanCrossBoundaryLinkSentinels(groups); err != nil {
-			t.Fatalf("clean groups: unexpected error %v", err)
+	t.Run("clean output passes", func(t *testing.T) {
+		res := assembledOutputHolding([]string{"a"}, "cloudformation", map[string][]byte{
+			"cloudformation-stack.json": []byte(`{"Resources":{}}`),
+		})
+		if err := orphanCrossBoundaryLinkHalt(t, res); err != nil {
+			t.Fatalf("clean output: unexpected error %v", err)
 		}
 	})
 
 	t.Run("surviving placeholder halts loudly", func(t *testing.T) {
-		groups := map[dispatchKey]*assembledGroup{
-			{Path: "a", Provider: "cloudformation"}: {files: map[string]AssembledFile{
-				"cloudformation-stack.json": {Content: []byte(`{"host":"` + sentinel + `"}`)},
-			}},
-		}
-		err := scanOrphanCrossBoundaryLinkSentinels(groups)
+		res := assembledOutputHolding([]string{"a"}, "cloudformation", map[string][]byte{
+			"cloudformation-stack.json": []byte(`{"host":"` + sentinel + `"}`),
+		})
+		err := orphanCrossBoundaryLinkHalt(t, res)
 		if err == nil {
 			t.Fatalf("surviving placeholder: expected error, got nil")
 		}
