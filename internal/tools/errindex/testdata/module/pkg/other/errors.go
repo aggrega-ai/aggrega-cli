@@ -12,5 +12,6 @@ func ErrPlain() error { return thing.ErrPlain() }
 func ErrOwn() error { return errOwn }
 
 var errOwn = cerrors.Register("other/own", cerrors.Meta{
-	Message: "declared here",
+	ShortCode: "E9004",
+	Message:   "declared here",
 })

@@ -18,7 +18,8 @@ import (
 func ErrTestFailed() error { return errTestFailed }
 
 var errTestFailed = cerrors.Register("compiler-jsonpatch/test-failed", cerrors.Meta{
-	Message: "jsonpatch: test operation failed",
+	ShortCode: "E0016",
+	Message:   "jsonpatch: test operation failed",
 })
 
 // Op is one RFC 6902 operation the engine applies. It is deliberately a

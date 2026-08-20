@@ -26,18 +26,19 @@ import (
 const errorsPackageDir = "pkg/errors"
 
 // Identity is one handle a caller can match: the package that declares the name,
-// the name itself, and the code and message the condition carries.
+// the name itself, and the two codes and the message the condition carries.
 //
 // A re-export declares no new condition. It forwards to one, and the value it
-// returns IS that condition's value, so it reports the same code and the same
-// message. Both are therefore resolved through the forward rather than left
+// returns IS that condition's value, so it reports the same codes and the same
+// message. All three are therefore resolved through the forward rather than left
 // empty: a handle that reports a code at run time and shows none here would read
 // as a condition without one. AliasOf is what distinguishes the two kinds — it
 // names the handle forwarded to, and only a re-export carries it.
 type Identity struct {
 	Pkg        string // module-relative directory, e.g. "pkg/resolver"
 	Name       string // exported identifier, e.g. "ErrParameterMissing"
-	Code       string // registered code, resolved through a re-export
+	Code       string // registered descriptive code, resolved through a re-export
+	ShortCode  string // registered short code, E and four digits, resolved through a re-export
 	Message    string // registered message, resolved through a re-export
 	AliasOf    string // "pkg/oci.ErrFetchNotFound" for a re-export, else empty
 	Importable bool   // reachable by `import` from outside this module
@@ -202,13 +203,14 @@ func requiresGuestTag(expr constraint.Expr) (bool, error) {
 	return true, nil
 }
 
-// registered is what one registration declares: the code the identity is
+// registered is what one registration declares: the two codes the identity is
 // registered under and the message it renders. It is keyed by the package-local
 // name the registration is bound to, which is the name the accessor beside it
 // returns and never a name a caller can reach.
 type registered struct {
-	code    string
-	message string
+	code      string
+	shortCode string
+	message   string
 }
 
 // accessorTarget is what an accessor's body yields. Exactly one field is set:
@@ -360,8 +362,20 @@ func scan(root, modulePath string) ([]Identity, error) {
 				"a caller matching the handle would match whatever that name holds rather than a declared condition",
 				acc.pkg, acc.name, acc.target.local)
 		}
+		if reg.shortCode == "" {
+			// Reported rather than served with an empty column, for the reason
+			// the missing-registration refusal above is reported: a condition
+			// that shows no short code here reads as a condition that has none,
+			// and the short code is the identifier a reader is given to quote.
+			// A registration reaching here without one cannot run either — the
+			// registration itself refuses it — so the tree is already broken and
+			// this is the earlier, cheaper place to say so.
+			return nil, fmt.Errorf("%s.%s registers no short code; "+
+				"every condition declares one, and a listing that showed none for this handle "+
+				"would read as a condition without one", acc.pkg, acc.name)
+		}
 		byHandle[acc.pkg+"."+acc.name] = &Identity{
-			Pkg: acc.pkg, Name: acc.name, Code: reg.code, Message: reg.message,
+			Pkg: acc.pkg, Name: acc.name, Code: reg.code, ShortCode: reg.shortCode, Message: reg.message,
 		}
 	}
 	// A re-export forwards to a DECLARING accessor and never to another
@@ -391,8 +405,8 @@ func scan(root, modulePath string) ([]Identity, error) {
 			return nil, fmt.Errorf("%s.%s re-exports %s, which registers no message", acc.pkg, acc.name, acc.target.alias)
 		}
 		byHandle[acc.pkg+"."+acc.name] = &Identity{
-			Pkg: acc.pkg, Name: acc.name, Code: origin.Code, Message: origin.Message,
-			AliasOf: acc.target.alias,
+			Pkg: acc.pkg, Name: acc.name, Code: origin.Code, ShortCode: origin.ShortCode,
+			Message: origin.Message, AliasOf: acc.target.alias,
 		}
 	}
 	for _, acc := range accessors {
@@ -527,13 +541,21 @@ func yieldsErrorAlone(ft *ast.FuncType) bool {
 	return ok && id.Name == "error"
 }
 
-// registration reports the package-local name, code and message of
-// `var errX = Register("…", Meta{Message: "…"})`.
+// registration reports the package-local name and the declared content of
+// `var errX = Register("…", Meta{ShortCode: "…", Message: "…"})`.
 //
-// The code is read from the call's first argument rather than from a type
-// ascribed to the declaration, because the code is what the call declares: a
-// registration binds an identity that carries the code, and the declaration
-// itself names no type at all.
+// The descriptive code is read from the call's first argument rather than from a
+// type ascribed to the declaration, because the code is what the call declares:
+// a registration binds an identity that carries the code, and the declaration
+// itself names no type at all. The short code is read from the metadata literal
+// beside the message, which is where the condition declares it.
+//
+// A registered message is what makes this a registration at all — a Meta literal
+// declaring no string message is a call this scan does not recognise. The short
+// code is extracted but NOT part of that test, deliberately: treating a missing
+// short code as "not a registration" would drop the whole identity out of the
+// index silently, which is the one outcome worse than reporting it. [scan]
+// refuses it by name instead, where the handle is known.
 func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, registered, bool) {
 	none := registered{}
 	if len(vs.Names) != 1 || len(vs.Values) != 1 {
@@ -555,26 +577,39 @@ func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, r
 	if !ok {
 		return "", none, false
 	}
+	out := registered{code: code}
+	found := false
 	for _, el := range meta.Elts {
 		kv, ok := el.(*ast.KeyValueExpr)
 		if !ok {
 			continue
 		}
 		key, ok := kv.Key.(*ast.Ident)
-		if !ok || key.Name != "Message" {
+		if !ok {
+			continue
+		}
+		if key.Name != "Message" && key.Name != "ShortCode" {
 			continue
 		}
 		str, ok := kv.Value.(*ast.BasicLit)
 		if !ok || str.Kind != token.STRING {
 			continue
 		}
-		message, uerr := strconv.Unquote(str.Value)
+		value, uerr := strconv.Unquote(str.Value)
 		if uerr != nil {
 			return "", none, false
 		}
-		return vs.Names[0].Name, registered{code: code, message: message}, true
+		if key.Name == "ShortCode" {
+			out.shortCode = value
+			continue
+		}
+		out.message = value
+		found = true
 	}
-	return "", none, false
+	if !found {
+		return "", none, false
+	}
+	return vs.Names[0].Name, out, true
 }
 
 // namesErrorsSymbol reports whether expr names sym in the package that declares

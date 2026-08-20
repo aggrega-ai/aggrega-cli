@@ -56,7 +56,8 @@ func ErrFetchNotFound() error { return oci.ErrFetchNotFound() }
 func ErrNotDocsBundle() error { return errNotDocsBundle }
 
 var errNotDocsBundle = cerrors.Register("docscache/not-docs-bundle", cerrors.Meta{
-	Message: "docscache: artifact is not a documentation bundle",
+	ShortCode: "E0123",
+	Message:   "docscache: artifact is not a documentation bundle",
 })
 
 // ErrPageNotFound reports that the requested page is absent from an otherwise
@@ -66,7 +67,8 @@ var errNotDocsBundle = cerrors.Register("docscache/not-docs-bundle", cerrors.Met
 func ErrPageNotFound() error { return errPageNotFound }
 
 var errPageNotFound = cerrors.Register("docscache/page-not-found", cerrors.Meta{
-	Message: "docscache: page not found in documentation bundle",
+	ShortCode: "E0124",
+	Message:   "docscache: page not found in documentation bundle",
 })
 
 // VerifyAtPull verifies a resolved documentation bundle's signature at pull

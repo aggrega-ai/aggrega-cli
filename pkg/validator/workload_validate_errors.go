@@ -20,7 +20,8 @@ import (
 func ErrWorkloadValidation() error { return errWorkloadValidation }
 
 var errWorkloadValidation = cerrors.Register("validator/workload-validation", cerrors.Meta{
-	Message: "workload validation failed",
+	ShortCode: "E0214",
+	Message:   "workload validation failed",
 })
 
 // ErrWorkloadFeaturesSchema: cross-entity check failure between Workload
@@ -32,7 +33,8 @@ var errWorkloadValidation = cerrors.Register("validator/workload-validation", ce
 func ErrWorkloadFeaturesSchema() error { return errWorkloadFeaturesSchema }
 
 var errWorkloadFeaturesSchema = cerrors.Register("validator/workload-features-schema", cerrors.Meta{
-	Message: "workload featuresSchema cross-check failed",
+	ShortCode: "E0213",
+	Message:   "workload featuresSchema cross-check failed",
 })
 
 // ErrSlotNotReferenceable: a Workload attachment reference names a slot
@@ -43,7 +45,8 @@ var errWorkloadFeaturesSchema = cerrors.Register("validator/workload-features-sc
 func ErrSlotNotReferenceable() error { return errSlotNotReferenceable }
 
 var errSlotNotReferenceable = cerrors.Register("validator/slot-not-referenceable", cerrors.Meta{
-	Message: "workload attachment slot is not referenceable",
+	ShortCode: "E0212",
+	Message:   "workload attachment slot is not referenceable",
 })
 
 // WorkloadValidationError carries the structured detail for a Workload

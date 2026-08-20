@@ -60,7 +60,8 @@ func ErrEntityEnvelope() error { return errEntityEnvelope }
 // on the other two, where the document may be perfectly well-formed, so it is
 // supplied by the path where it is true rather than carried here.
 var errEntityEnvelope = aggerrors.Register("validator-envelope/entity-envelope", aggerrors.Meta{
-	Message: "document envelope validation failed",
+	ShortCode: "E0215",
+	Message:   "document envelope validation failed",
 })
 
 // adviceCorrectDocument is the advice for the schema-violation path, the one

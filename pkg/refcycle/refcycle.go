@@ -20,7 +20,8 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 func ErrCycle() error { return errCycle }
 
 var errCycle = cerrors.Register("refcycle/cycle", cerrors.Meta{
-	Message: "circular reference expansion",
+	ShortCode: "E0146",
+	Message:   "circular reference expansion",
 })
 
 // Check reports whether key is already in flight within stack. When it is,

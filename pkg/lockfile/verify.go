@@ -33,7 +33,8 @@ import (
 func ErrLockfileDrift() error { return errLockfileDrift }
 
 var errLockfileDrift = cerrors.Register("lockfile/lockfile-drift", cerrors.Meta{
-	Message: "lockfile: out of date; it no longer matches the current catalog",
+	ShortCode: "E0130",
+	Message:   "lockfile: out of date; it no longer matches the current catalog",
 })
 
 // Verify checks every URI in the freshly-computed closure against

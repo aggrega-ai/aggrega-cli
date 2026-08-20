@@ -34,7 +34,8 @@ func ErrPersistentTemplateRequiresStatefulForm() error {
 }
 
 var errPersistentTemplateRequiresStatefulForm = cerrors.Register("compiler-rendercore/persistent-template-requires-stateful-form", cerrors.Meta{
-	Message: "persistentTemplate volume requires form: stateful",
+	ShortCode: "E0021",
+	Message:   "persistentTemplate volume requires form: stateful",
 })
 
 // ErrScheduledFormRequiresSchedule is the companion constraint that a
@@ -46,7 +47,8 @@ var errPersistentTemplateRequiresStatefulForm = cerrors.Register("compiler-rende
 func ErrScheduledFormRequiresSchedule() error { return errScheduledFormRequiresSchedule }
 
 var errScheduledFormRequiresSchedule = cerrors.Register("compiler-rendercore/scheduled-form-requires-schedule", cerrors.Meta{
-	Message: "form: scheduled requires a schedule",
+	ShortCode: "E0025",
+	Message:   "form: scheduled requires a schedule",
 })
 
 // ErrScheduleRequiresScheduledForm is the reverse companion constraint: a
@@ -57,7 +59,8 @@ var errScheduledFormRequiresSchedule = cerrors.Register("compiler-rendercore/sch
 func ErrScheduleRequiresScheduledForm() error { return errScheduleRequiresScheduledForm }
 
 var errScheduleRequiresScheduledForm = cerrors.Register("compiler-rendercore/schedule-requires-scheduled-form", cerrors.Meta{
-	Message: "schedule requires form: scheduled",
+	ShortCode: "E0024",
+	Message:   "schedule requires form: scheduled",
 })
 
 // ErrReferenceFormRequiresEndpoint is the companion constraint that a
@@ -68,7 +71,8 @@ var errScheduleRequiresScheduledForm = cerrors.Register("compiler-rendercore/sch
 func ErrReferenceFormRequiresEndpoint() error { return errReferenceFormRequiresEndpoint }
 
 var errReferenceFormRequiresEndpoint = cerrors.Register("compiler-rendercore/reference-form-requires-endpoint", cerrors.Meta{
-	Message: "form: reference requires an endpoint",
+	ShortCode: "E0023",
+	Message:   "form: reference requires an endpoint",
 })
 
 // ErrEndpointRequiresReferenceForm is the reverse companion constraint: an
@@ -79,7 +83,8 @@ var errReferenceFormRequiresEndpoint = cerrors.Register("compiler-rendercore/ref
 func ErrEndpointRequiresReferenceForm() error { return errEndpointRequiresReferenceForm }
 
 var errEndpointRequiresReferenceForm = cerrors.Register("compiler-rendercore/endpoint-requires-reference-form", cerrors.Meta{
-	Message: "endpoint requires form: reference",
+	ShortCode: "E0019",
+	Message:   "endpoint requires form: reference",
 })
 
 // ErrInvalidCronSchedule is emitted when a schedule fails the structural cron
@@ -90,7 +95,8 @@ var errEndpointRequiresReferenceForm = cerrors.Register("compiler-rendercore/end
 func ErrInvalidCronSchedule() error { return errInvalidCronSchedule }
 
 var errInvalidCronSchedule = cerrors.Register("compiler-rendercore/invalid-cron-schedule", cerrors.Meta{
-	Message: "schedule is not a valid cron expression",
+	ShortCode: "E0020",
+	Message:   "schedule is not a valid cron expression",
 })
 
 // NormalizeWorkloadForm maps an empty form to the stateless default and

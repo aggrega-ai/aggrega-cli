@@ -144,7 +144,8 @@ func validateIdentities(field string, ids []AdvertisedIdentity) error {
 func ErrNoTrustAdvertised() error { return errNoTrustAdvertised }
 
 var errNoTrustAdvertised = cerrors.Register("registrytrust/no-trust-advertised", cerrors.Meta{
-	Message: "registrytrust: registry advertises no trust config",
+	ShortCode: "E0148",
+	Message:   "registrytrust: registry advertises no trust config",
 })
 
 // ErrMalformedTrust reports that a registry served a trust document that
@@ -156,7 +157,8 @@ var errNoTrustAdvertised = cerrors.Register("registrytrust/no-trust-advertised",
 func ErrMalformedTrust() error { return errMalformedTrust }
 
 var errMalformedTrust = cerrors.Register("registrytrust/malformed-trust", cerrors.Meta{
-	Message: "registrytrust: advertised trust config is malformed",
+	ShortCode: "E0147",
+	Message:   "registrytrust: advertised trust config is malformed",
 })
 
 // fetchTimeout bounds the one-time well-known GET so a hung endpoint cannot

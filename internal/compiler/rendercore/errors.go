@@ -15,5 +15,6 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 func ErrPipelinePatchTargetNotStructured() error { return errPipelinePatchTargetNotStructured }
 
 var errPipelinePatchTargetNotStructured = cerrors.Register("compiler-rendercore/pipeline-patch-target-not-structured", cerrors.Meta{
-	Message: "pipeline PATCH target is not parseable structured YAML/JSON",
+	ShortCode: "E0022",
+	Message:   "pipeline PATCH target is not parseable structured YAML/JSON",
 })

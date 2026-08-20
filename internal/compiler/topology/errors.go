@@ -15,7 +15,8 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 func ErrSubAggregateLoad() error { return errSubAggregateLoad }
 
 var errSubAggregateLoad = cerrors.Register("compiler-topology/sub-aggregate-load", cerrors.Meta{
-	Message: "sub-aggregate load failed",
+	ShortCode: "E0072",
+	Message:   "sub-aggregate load failed",
 })
 
 // ErrMaxDepth fires from flattenAggregate when sub-aggregate inclusion
@@ -27,7 +28,8 @@ var errSubAggregateLoad = cerrors.Register("compiler-topology/sub-aggregate-load
 func ErrMaxDepth() error { return errMaxDepth }
 
 var errMaxDepth = cerrors.Register("compiler-topology/max-depth", cerrors.Meta{
-	Message: "max sub-aggregate nesting depth exceeded",
+	ShortCode: "E0068",
+	Message:   "max sub-aggregate nesting depth exceeded",
 })
 
 // ErrReleaseEdgeRetarget fires from the Release edge pass when a Release
@@ -42,7 +44,8 @@ var errMaxDepth = cerrors.Register("compiler-topology/max-depth", cerrors.Meta{
 func ErrReleaseEdgeRetarget() error { return errReleaseEdgeRetarget }
 
 var errReleaseEdgeRetarget = cerrors.Register("compiler-topology/release-edge-retarget", cerrors.Meta{
-	Message: "release edge retargets a developer-declared edge",
+	ShortCode: "E0071",
+	Message:   "release edge retargets a developer-declared edge",
 })
 
 // ErrUnboundReleaseEdgeConfig fires when a Release per-edge `uses` entry
@@ -65,7 +68,8 @@ var errReleaseEdgeRetarget = cerrors.Register("compiler-topology/release-edge-re
 func ErrUnboundReleaseEdgeConfig() error { return errUnboundReleaseEdgeConfig }
 
 var errUnboundReleaseEdgeConfig = cerrors.Register("compiler-topology/unbound-release-edge-config", cerrors.Meta{
-	Message: "release per-edge configuration has no edge to apply to",
+	ShortCode: "E0074",
+	Message:   "release per-edge configuration has no edge to apply to",
 })
 
 // ErrDanglingUsesTarget fires when a `uses` edge names a target component
@@ -81,7 +85,8 @@ var errUnboundReleaseEdgeConfig = cerrors.Register("compiler-topology/unbound-re
 func ErrDanglingUsesTarget() error { return errDanglingUsesTarget }
 
 var errDanglingUsesTarget = cerrors.Register("compiler-topology/dangling-uses-target", cerrors.Meta{
-	Message: "uses edge target does not exist",
+	ShortCode: "E0066",
+	Message:   "uses edge target does not exist",
 })
 
 // ErrSubAggregateNameCollision fires from flattenAggregate when a Set
@@ -97,7 +102,8 @@ var errDanglingUsesTarget = cerrors.Register("compiler-topology/dangling-uses-ta
 func ErrSubAggregateNameCollision() error { return errSubAggregateNameCollision }
 
 var errSubAggregateNameCollision = cerrors.Register("compiler-topology/sub-aggregate-name-collision", cerrors.Meta{
-	Message: "flattened node ID collision: rename one of the colliding instances so their flattened IDs differ",
+	ShortCode: "E0073",
+	Message:   "flattened node ID collision: rename one of the colliding instances so their flattened IDs differ",
 })
 
 // ErrUnnormalizedAggregate fires at the topology entry when an Aggregate
@@ -112,7 +118,8 @@ var errSubAggregateNameCollision = cerrors.Register("compiler-topology/sub-aggre
 func ErrUnnormalizedAggregate() error { return errUnnormalizedAggregate }
 
 var errUnnormalizedAggregate = cerrors.Register("compiler-topology/unnormalized-aggregate", cerrors.Meta{
-	Message: "aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)",
+	ShortCode: "E0075",
+	Message:   "aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)",
 })
 
 // ErrInvalidActive fires from flattenAggregate when a component's or a
@@ -133,7 +140,8 @@ var errUnnormalizedAggregate = cerrors.Register("compiler-topology/unnormalized-
 func ErrInvalidActive() error { return errInvalidActive }
 
 var errInvalidActive = cerrors.Register("compiler-topology/invalid-active", cerrors.Meta{
-	Message: "active toggle did not resolve to a boolean",
+	ShortCode: "E0067",
+	Message:   "active toggle did not resolve to a boolean",
 })
 
 // ErrUsesPrunedComponent fires from the origin-agnostic dangling-target
@@ -150,7 +158,8 @@ var errInvalidActive = cerrors.Register("compiler-topology/invalid-active", cerr
 func ErrUsesPrunedComponent() error { return errUsesPrunedComponent }
 
 var errUsesPrunedComponent = cerrors.Register("compiler-topology/uses-pruned-component", cerrors.Meta{
-	Message: "uses edge target was pruned because its active toggle resolved to false",
+	ShortCode: "E0077",
+	Message:   "uses edge target was pruned because its active toggle resolved to false",
 })
 
 // ErrReexportCycle fires from flattenAggregate when resolving a re-exported
@@ -165,7 +174,8 @@ var errUsesPrunedComponent = cerrors.Register("compiler-topology/uses-pruned-com
 func ErrReexportCycle() error { return errReexportCycle }
 
 var errReexportCycle = cerrors.Register("compiler-topology/reexport-cycle", cerrors.Meta{
-	Message: "re-exported component alias forms a cycle",
+	ShortCode: "E0070",
+	Message:   "re-exported component alias forms a cycle",
 })
 
 // ErrMutatorPatchRejected fires when a mutator plugin returns a JSON Patch
@@ -181,7 +191,8 @@ var errReexportCycle = cerrors.Register("compiler-topology/reexport-cycle", cerr
 func ErrMutatorPatchRejected() error { return errMutatorPatchRejected }
 
 var errMutatorPatchRejected = cerrors.Register("compiler-topology/mutator-patch-rejected", cerrors.Meta{
-	Message: "mutator patch rejected",
+	ShortCode: "E0069",
+	Message:   "mutator patch rejected",
 })
 
 // ErrUnplacedSubModule fires when a Release places none of a sub-module's
@@ -205,5 +216,6 @@ var errMutatorPatchRejected = cerrors.Register("compiler-topology/mutator-patch-
 func ErrUnplacedSubModule() error { return errUnplacedSubModule }
 
 var errUnplacedSubModule = cerrors.Register("compiler-topology/unplaced-sub-module", cerrors.Meta{
-	Message: "sub-module placed in no boundary: route it into a boundary under `aggregates`, or name its components there under `components`",
+	ShortCode: "E0076",
+	Message:   "sub-module placed in no boundary: route it into a boundary under `aggregates`, or name its components there under `components`",
 })

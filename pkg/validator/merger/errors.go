@@ -12,7 +12,8 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 func ErrCyclicExtension() error { return errCyclicExtension }
 
 var errCyclicExtension = cerrors.Register("validator-merger/cyclic-extension", cerrors.Meta{
-	Message: "merger: cyclic extends chain",
+	ShortCode: "E0219",
+	Message:   "merger: cyclic extends chain",
 })
 
 // ErrMaxDepth fires when ResolveChain walks a chain that exceeds 10
@@ -22,7 +23,8 @@ var errCyclicExtension = cerrors.Register("validator-merger/cyclic-extension", c
 func ErrMaxDepth() error { return errMaxDepth }
 
 var errMaxDepth = cerrors.Register("validator-merger/max-depth", cerrors.Meta{
-	Message: "merger: extends chain exceeds maximum depth",
+	ShortCode: "E0220",
+	Message:   "merger: extends chain exceeds maximum depth",
 })
 
 // ErrMergeInvalid fires on a structural merge failure that the per-
@@ -32,7 +34,8 @@ var errMaxDepth = cerrors.Register("validator-merger/max-depth", cerrors.Meta{
 func ErrMergeInvalid() error { return errMergeInvalid }
 
 var errMergeInvalid = cerrors.Register("validator-merger/merge-invalid", cerrors.Meta{
-	Message: "merger: invalid merge input",
+	ShortCode: "E0221",
+	Message:   "merger: invalid merge input",
 })
 
 // MergeError wraps a sentinel with merge-time context. Path names the

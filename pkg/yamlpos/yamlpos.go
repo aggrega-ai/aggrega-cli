@@ -29,7 +29,8 @@ import (
 func ErrPositionOutOfRange() error { return errPositionOutOfRange }
 
 var errPositionOutOfRange = cerrors.Register("yamlpos/position-out-of-range", cerrors.Meta{
-	Message: "position out of range",
+	ShortCode: "E0229",
+	Message:   "position out of range",
 })
 
 // Position matches the LSP shape: 0-based line + 0-based character

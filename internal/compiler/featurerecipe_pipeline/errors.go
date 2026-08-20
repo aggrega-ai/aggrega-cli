@@ -18,7 +18,8 @@ import (
 func ErrPipelineTargetAbsent() error { return errPipelineTargetAbsent }
 
 var errPipelineTargetAbsent = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-target-absent", cerrors.Meta{
-	Message: "pipeline patch targets a document not present in the set",
+	ShortCode: "E0011",
+	Message:   "pipeline patch targets a document not present in the set",
 })
 
 // ErrPipelineStepFailed is the walk's umbrella sentinel for a step that
@@ -30,7 +31,8 @@ var errPipelineTargetAbsent = cerrors.Register("compiler-featurerecipe-pipeline/
 func ErrPipelineStepFailed() error { return errPipelineStepFailed }
 
 var errPipelineStepFailed = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-step-failed", cerrors.Meta{
-	Message: "pipeline step failed",
+	ShortCode: "E0010",
+	Message:   "pipeline step failed",
 })
 
 // ErrPipelineContractViolation fires when a step's typed input or output does
@@ -44,7 +46,8 @@ var errPipelineStepFailed = cerrors.Register("compiler-featurerecipe-pipeline/pi
 func ErrPipelineContractViolation() error { return errPipelineContractViolation }
 
 var errPipelineContractViolation = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-contract-violation", cerrors.Meta{
-	Message: "pipeline step typed-I/O contract violation",
+	ShortCode: "E0009",
+	Message:   "pipeline step typed-I/O contract violation",
 })
 
 // ErrPipelineTargetOpaque fires when a patch addresses a unit the codec
@@ -61,5 +64,6 @@ var errPipelineContractViolation = cerrors.Register("compiler-featurerecipe-pipe
 func ErrPipelineTargetOpaque() error { return errPipelineTargetOpaque }
 
 var errPipelineTargetOpaque = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-target-opaque", cerrors.Meta{
-	Message: "pipeline patch targets an opaque (non-structured) unit",
+	ShortCode: "E0012",
+	Message:   "pipeline patch targets an opaque (non-structured) unit",
 })

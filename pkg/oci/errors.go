@@ -20,7 +20,8 @@ import (
 func ErrFetchNotFound() error { return errFetchNotFound }
 
 var errFetchNotFound = cerrors.Register("oci/fetch-not-found", cerrors.Meta{
-	Message: "oci: artifact not found at remote source",
+	ShortCode: "E0137",
+	Message:   "oci: artifact not found at remote source",
 })
 
 // ErrFetchUnauthorized is returned when registry authentication is
@@ -29,7 +30,8 @@ var errFetchNotFound = cerrors.Register("oci/fetch-not-found", cerrors.Meta{
 func ErrFetchUnauthorized() error { return errFetchUnauthorized }
 
 var errFetchUnauthorized = cerrors.Register("oci/fetch-unauthorized", cerrors.Meta{
-	Message: "oci: authentication required or failed",
+	ShortCode: "E0138",
+	Message:   "oci: authentication required or failed",
 })
 
 // ErrFetchNetworkUnreachable is returned when the transport layer
@@ -38,7 +40,8 @@ var errFetchUnauthorized = cerrors.Register("oci/fetch-unauthorized", cerrors.Me
 func ErrFetchNetworkUnreachable() error { return errFetchNetworkUnreachable }
 
 var errFetchNetworkUnreachable = cerrors.Register("oci/fetch-network-unreachable", cerrors.Meta{
-	Message: "oci: network unreachable",
+	ShortCode: "E0136",
+	Message:   "oci: network unreachable",
 })
 
 // ErrFetchIntegrity is returned when pulled bytes don't match the
@@ -48,7 +51,8 @@ var errFetchNetworkUnreachable = cerrors.Register("oci/fetch-network-unreachable
 func ErrFetchIntegrity() error { return errFetchIntegrity }
 
 var errFetchIntegrity = cerrors.Register("oci/fetch-integrity", cerrors.Meta{
-	Message: "oci: content digest mismatch",
+	ShortCode: "E0135",
+	Message:   "oci: content digest mismatch",
 })
 
 // ErrNoContentLayer is returned when an OCI manifest carries no layer of
@@ -61,7 +65,8 @@ var errFetchIntegrity = cerrors.Register("oci/fetch-integrity", cerrors.Meta{
 func ErrNoContentLayer() error { return errNoContentLayer }
 
 var errNoContentLayer = cerrors.Register("oci/no-content-layer", cerrors.Meta{
-	Message: "oci: manifest has no layer of the expected content media type",
+	ShortCode: "E0140",
+	Message:   "oci: manifest has no layer of the expected content media type",
 })
 
 // ErrAmbiguousContentLayer is returned when an OCI manifest carries more
@@ -72,7 +77,8 @@ var errNoContentLayer = cerrors.Register("oci/no-content-layer", cerrors.Meta{
 func ErrAmbiguousContentLayer() error { return errAmbiguousContentLayer }
 
 var errAmbiguousContentLayer = cerrors.Register("oci/ambiguous-content-layer", cerrors.Meta{
-	Message: "oci: manifest has multiple layers of the expected content media type",
+	ShortCode: "E0132",
+	Message:   "oci: manifest has multiple layers of the expected content media type",
 })
 
 // ErrCachedManifestIntegrity is returned when a cached OCI manifest blob no
@@ -86,7 +92,8 @@ var errAmbiguousContentLayer = cerrors.Register("oci/ambiguous-content-layer", c
 func ErrCachedManifestIntegrity() error { return errCachedManifestIntegrity }
 
 var errCachedManifestIntegrity = cerrors.Register("oci/cached-manifest-integrity", cerrors.Meta{
-	Message: "oci: cached manifest digest mismatch",
+	ShortCode: "E0133",
+	Message:   "oci: cached manifest digest mismatch",
 })
 
 // ErrImmutableTagConflict is returned by the publish path when the
@@ -101,7 +108,8 @@ var errCachedManifestIntegrity = cerrors.Register("oci/cached-manifest-integrity
 func ErrImmutableTagConflict() error { return errImmutableTagConflict }
 
 var errImmutableTagConflict = cerrors.Register("oci/immutable-tag-conflict", cerrors.Meta{
-	Message: "oci: tag already published with different content",
+	ShortCode: "E0139",
+	Message:   "oci: tag already published with different content",
 })
 
 // ErrUnknownEntityKind is returned by MediaTypeForKind for kind
@@ -110,7 +118,8 @@ var errImmutableTagConflict = cerrors.Register("oci/immutable-tag-conflict", cer
 func ErrUnknownEntityKind() error { return errUnknownEntityKind }
 
 var errUnknownEntityKind = cerrors.Register("oci/unknown-entity-kind", cerrors.Meta{
-	Message: "oci: unknown entity kind for mediatype dispatch",
+	ShortCode: "E0143",
+	Message:   "oci: unknown entity kind for mediatype dispatch",
 })
 
 // ErrEntityVersionPathMismatch is returned by the publish-time
@@ -123,7 +132,8 @@ var errUnknownEntityKind = cerrors.Register("oci/unknown-entity-kind", cerrors.M
 func ErrEntityVersionPathMismatch() error { return errEntityVersionPathMismatch }
 
 var errEntityVersionPathMismatch = cerrors.Register("oci/entity-version-path-mismatch", cerrors.Meta{
-	Message: "oci: entity per-version subdirectory mismatch",
+	ShortCode: "E0134",
+	Message:   "oci: entity per-version subdirectory mismatch",
 })
 
 // ErrOCILocationCollision fires when two DISTINCT catalog identities map to the
@@ -138,7 +148,8 @@ var errEntityVersionPathMismatch = cerrors.Register("oci/entity-version-path-mis
 func ErrOCILocationCollision() error { return errOCILocationCollision }
 
 var errOCILocationCollision = cerrors.Register("oci/oci-location-collision", cerrors.Meta{
-	Message: "oci: distinct catalog identities map to the same OCI repository location",
+	ShortCode: "E0141",
+	Message:   "oci: distinct catalog identities map to the same OCI repository location",
 })
 
 // ErrReferrerDiscoveryUnavailable is returned when an artifact's referrers
@@ -161,7 +172,8 @@ var errOCILocationCollision = cerrors.Register("oci/oci-location-collision", cer
 func ErrReferrerDiscoveryUnavailable() error { return errReferrerDiscoveryUnavailable }
 
 var errReferrerDiscoveryUnavailable = cerrors.Register("oci/referrer-discovery-unavailable", cerrors.Meta{
-	Message: "oci: referrer discovery could not be completed",
+	ShortCode: "E0142",
+	Message:   "oci: referrer discovery could not be completed",
 })
 
 // RemediationFor returns the operator-actionable remediation hint

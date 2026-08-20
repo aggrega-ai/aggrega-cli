@@ -11,7 +11,8 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 func ErrEmptySource() error { return errEmptySource }
 
 var errEmptySource = cerrors.Register("compiler-renderer-helm/empty-source", cerrors.Meta{
-	Message: "recipe source is empty string; use nil for sourceless mode or a non-empty path for sourced mode",
+	ShortCode: "E0242",
+	Message:   "recipe source is empty string; use nil for sourceless mode or a non-empty path for sourced mode",
 })
 
 // ErrRenderedFileCollision is emitted when two distinct rendered resources
@@ -25,7 +26,8 @@ var errEmptySource = cerrors.Register("compiler-renderer-helm/empty-source", cer
 func ErrRenderedFileCollision() error { return errRenderedFileCollision }
 
 var errRenderedFileCollision = cerrors.Register("compiler-renderer-helm/rendered-file-collision", cerrors.Meta{
-	Message: "two rendered resources derive the same output filename with differing content",
+	ShortCode: "E0243",
+	Message:   "two rendered resources derive the same output filename with differing content",
 })
 
 // StatefulSet governing-Service halt sentinels. A synthesized StatefulSet (any
@@ -40,7 +42,8 @@ var errRenderedFileCollision = cerrors.Register("compiler-renderer-helm/rendered
 func ErrStatefulSetNoHeadlessService() error { return errStatefulSetNoHeadlessService }
 
 var errStatefulSetNoHeadlessService = cerrors.Register("compiler-renderer-helm/stateful-set-no-headless-service", cerrors.Meta{
-	Message: "synthesized StatefulSet has no headless governing Service",
+	ShortCode: "E0245",
+	Message:   "synthesized StatefulSet has no headless governing Service",
 })
 
 // ErrStatefulSetAmbiguousHeadlessService is emitted when a Workload
@@ -49,5 +52,6 @@ var errStatefulSetNoHeadlessService = cerrors.Register("compiler-renderer-helm/s
 func ErrStatefulSetAmbiguousHeadlessService() error { return errStatefulSetAmbiguousHeadlessService }
 
 var errStatefulSetAmbiguousHeadlessService = cerrors.Register("compiler-renderer-helm/stateful-set-ambiguous-headless-service", cerrors.Meta{
-	Message: "synthesized StatefulSet has more than one headless Service",
+	ShortCode: "E0244",
+	Message:   "synthesized StatefulSet has more than one headless Service",
 })

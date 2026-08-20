@@ -44,7 +44,8 @@ const parseCapabilityPrefix = "parse:"
 func ErrNoParserForFormat() error { return errNoParserForFormat }
 
 var errNoParserForFormat = cerrors.Register("catalog/no-parser-for-format", cerrors.Meta{
-	Message: "no parser plugin advertises the requested format",
+	ShortCode: "E0098",
+	Message:   "no parser plugin advertises the requested format",
 })
 
 // ErrAmbiguousParserPlugin fires at resolution when a requested format is
@@ -58,7 +59,8 @@ var errNoParserForFormat = cerrors.Register("catalog/no-parser-for-format", cerr
 func ErrAmbiguousParserPlugin() error { return errAmbiguousParserPlugin }
 
 var errAmbiguousParserPlugin = cerrors.Register("catalog/ambiguous-parser-plugin", cerrors.Meta{
-	Message: "format is advertised by more than one parser plugin",
+	ShortCode: "E0091",
+	Message:   "format is advertised by more than one parser plugin",
 })
 
 // ParserPluginForFormat resolves a requested source format to the parser Plugin

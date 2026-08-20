@@ -32,7 +32,8 @@ const (
 func ErrLinkConsumerStackMissing() error { return errLinkConsumerStackMissing }
 
 var errLinkConsumerStackMissing = cerrors.Register("cloudformation-provider-cfncore/link-consumer-stack-missing", cerrors.Meta{
-	Message: "cloudformation-provider: cross-boundary link resolve received no consumer stack template",
+	ShortCode: "E0231",
+	Message:   "cloudformation-provider: cross-boundary link resolve received no consumer stack template",
 })
 
 // ErrLinkSentinelInterpolated is the loud failure a cross-boundary link resolve
@@ -44,7 +45,8 @@ var errLinkConsumerStackMissing = cerrors.Register("cloudformation-provider-cfnc
 func ErrLinkSentinelInterpolated() error { return errLinkSentinelInterpolated }
 
 var errLinkSentinelInterpolated = cerrors.Register("cloudformation-provider-cfncore/link-sentinel-interpolated", cerrors.Meta{
-	Message: "cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference",
+	ShortCode: "E0232",
+	Message:   "cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference",
 })
 
 // LinkPublish produces the producer-side wiring for one cross-boundary link on

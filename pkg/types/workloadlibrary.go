@@ -20,7 +20,8 @@ import (
 func ErrWorkloadEntryNotScalar() error { return errWorkloadEntryNotScalar }
 
 var errWorkloadEntryNotScalar = cerrors.Register("types/workload-entry-not-scalar", cerrors.Meta{
-	Message: "workloadlibrary: entry body must be a string scalar",
+	ShortCode: "E0199",
+	Message:   "workloadlibrary: entry body must be a string scalar",
 })
 
 //go:generate go run ../../internal/tools/typegen workloadlibrary_gen.go

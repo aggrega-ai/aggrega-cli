@@ -52,7 +52,8 @@ const DigestPrefixLen = 12
 func ErrEmptyWorkspaceRoot() error { return errEmptyWorkspaceRoot }
 
 var errEmptyWorkspaceRoot = cerrors.Register("sourceresolver-cacheslot/empty-workspace-root", cerrors.Meta{
-	Message: "cacheslot: empty workspaceRoot",
+	ShortCode: "E0187",
+	Message:   "cacheslot: empty workspaceRoot",
 })
 
 // Slot computes the absolute cache-slot directory path for a

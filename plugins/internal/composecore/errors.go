@@ -13,7 +13,8 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 func ErrEmptySource() error { return errEmptySource }
 
 var errEmptySource = cerrors.Register("compiler-renderer-compose/empty-source", cerrors.Meta{
-	Message: "recipe source is empty string; use nil for synthesized mode or a non-empty path for sourced mode",
+	ShortCode: "E0234",
+	Message:   "recipe source is empty string; use nil for synthesized mode or a non-empty path for sourced mode",
 })
 
 // ErrTranslationProbeNoPort is emitted when a probe http: shape resolves to a
@@ -22,7 +23,8 @@ var errEmptySource = cerrors.Register("compiler-renderer-compose/empty-source", 
 func ErrTranslationProbeNoPort() error { return errTranslationProbeNoPort }
 
 var errTranslationProbeNoPort = cerrors.Register("compiler-renderer-compose/translation-probe-no-port", cerrors.Meta{
-	Message: "TRANSLATION_ERROR: probe http: requires at least one container port; container declares none",
+	ShortCode: "E0236",
+	Message:   "TRANSLATION_ERROR: probe http: requires at least one container port; container declares none",
 })
 
 // ErrTranslationProbeShape is emitted when a ProbeSpec has no recognised shape
@@ -31,7 +33,8 @@ var errTranslationProbeNoPort = cerrors.Register("compiler-renderer-compose/tran
 func ErrTranslationProbeShape() error { return errTranslationProbeShape }
 
 var errTranslationProbeShape = cerrors.Register("compiler-renderer-compose/translation-probe-shape", cerrors.Meta{
-	Message: "TRANSLATION_ERROR: probe declares no shape (http/tcp/exec)",
+	ShortCode: "E0237",
+	Message:   "TRANSLATION_ERROR: probe declares no shape (http/tcp/exec)",
 })
 
 // ErrTranslationConfigMapMissingArtifact is emitted when a configmap volume's
@@ -49,7 +52,8 @@ var errTranslationProbeShape = cerrors.Register("compiler-renderer-compose/trans
 func ErrTranslationConfigMapMissingArtifact() error { return errTranslationConfigMapMissingArtifact }
 
 var errTranslationConfigMapMissingArtifact = cerrors.Register("compiler-renderer-compose/translation-config-map-missing-artifact", cerrors.Meta{
-	Message: "TRANSLATION_ERROR: configmap volume requires a file emitted via the Recipe's artifacts: input; none found",
+	ShortCode: "E0235",
+	Message:   "TRANSLATION_ERROR: configmap volume requires a file emitted via the Recipe's artifacts: input; none found",
 })
 
 // ErrUnsupportedComposeForm is emitted when a Workload declares a controller
@@ -61,7 +65,8 @@ var errTranslationConfigMapMissingArtifact = cerrors.Register("compiler-renderer
 func ErrUnsupportedComposeForm() error { return errUnsupportedComposeForm }
 
 var errUnsupportedComposeForm = cerrors.Register("compiler-renderer-compose/unsupported-compose-form", cerrors.Meta{
-	Message: "TRANSLATION_ERROR: compose cannot express this workload form",
+	ShortCode: "E0240",
+	Message:   "TRANSLATION_ERROR: compose cannot express this workload form",
 })
 
 // ErrUnsupportedComposeLifecycle is emitted when a container declares lifecycle
@@ -71,7 +76,8 @@ var errUnsupportedComposeForm = cerrors.Register("compiler-renderer-compose/unsu
 func ErrUnsupportedComposeLifecycle() error { return errUnsupportedComposeLifecycle }
 
 var errUnsupportedComposeLifecycle = cerrors.Register("compiler-renderer-compose/unsupported-compose-lifecycle", cerrors.Meta{
-	Message: "TRANSLATION_ERROR: compose has no lifecycle-hook primitive; container declares lifecycle hooks",
+	ShortCode: "E0241",
+	Message:   "TRANSLATION_ERROR: compose has no lifecycle-hook primitive; container declares lifecycle hooks",
 })
 
 // ErrUnsupportedComposeEnvFrom is emitted when a container declares envFrom
@@ -82,7 +88,8 @@ var errUnsupportedComposeLifecycle = cerrors.Register("compiler-renderer-compose
 func ErrUnsupportedComposeEnvFrom() error { return errUnsupportedComposeEnvFrom }
 
 var errUnsupportedComposeEnvFrom = cerrors.Register("compiler-renderer-compose/unsupported-compose-env-from", cerrors.Meta{
-	Message: "TRANSLATION_ERROR: compose has no env-from-object primitive; container declares envFrom",
+	ShortCode: "E0239",
+	Message:   "TRANSLATION_ERROR: compose has no env-from-object primitive; container declares envFrom",
 })
 
 // ErrUnconvertibleComposeQuantity is emitted when a container resources quantity
@@ -92,5 +99,6 @@ var errUnsupportedComposeEnvFrom = cerrors.Register("compiler-renderer-compose/u
 func ErrUnconvertibleComposeQuantity() error { return errUnconvertibleComposeQuantity }
 
 var errUnconvertibleComposeQuantity = cerrors.Register("compiler-renderer-compose/unconvertible-compose-quantity", cerrors.Meta{
-	Message: "TRANSLATION_ERROR: resources quantity cannot be converted to a compose deploy.resources value",
+	ShortCode: "E0238",
+	Message:   "TRANSLATION_ERROR: resources quantity cannot be converted to a compose deploy.resources value",
 })

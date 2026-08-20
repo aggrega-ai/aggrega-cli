@@ -26,7 +26,35 @@ const (
 	codeMergerCyclicExtension = "validator-merger/cyclic-extension"
 	codeDuplicate             = "resolver/duplicate-subject"
 	codeEmptyMessage          = "resolver/empty-message-subject"
+	codeEmptyShortCode        = "resolver/empty-short-code-subject"
+	codeMalformedShortCode    = "resolver/malformed-short-code-subject"
+	codeDuplicateShortCode    = "resolver/duplicate-short-code-subject"
 )
+
+// The short codes this file registers, distinct for the same reason the codes
+// above are: the registry indexes both identifiers, so a repeated short code is
+// a duplicate registration and panics at init just as a repeated code does.
+//
+// They are NOT allocations, and they sit in a high band so that nobody reads one
+// as a number taken off the published mapping. This test binary registers only
+// what these test files declare — the package under test registers nothing of
+// its own — so a test value has to be distinct from its siblings here and from
+// nothing else.
+const (
+	shortCyclicExtension       = "E9211"
+	shortMergerCyclicExtension = "E9212"
+	shortDuplicate             = "E9213"
+	shortEmptyMessage          = "E9214"
+	shortMalformedSubject      = "E9215"
+	shortDuplicateSubject      = "E9216"
+)
+
+// The short code a malformed-value refusal is probed with, and the reason it is
+// malformed: the shape is the letter E and exactly four decimal digits, so a
+// value carrying the right prefix and the wrong width is refused. It is written
+// as one constant rather than inline so the test asserts against the value the
+// refusal was given rather than against a second copy of it.
+const malformedShortCode = "E42"
 
 // The two messages below are the real, distinct texts carried today by two
 // independently declared rules that share one exported name in two different
@@ -38,9 +66,12 @@ const (
 )
 
 var (
-	identityCyclicExtension       = cerrors.Register(codeCyclicExtension, cerrors.Meta{Message: messageCyclicExtension})
-	identityMergerCyclicExtension = cerrors.Register(codeMergerCyclicExtension, cerrors.Meta{Message: messageMergerCyclicExtension})
-	identityDuplicate             = cerrors.Register(codeDuplicate, cerrors.Meta{Message: "the first registration of this code"})
+	identityCyclicExtension = cerrors.Register(codeCyclicExtension,
+		cerrors.Meta{ShortCode: shortCyclicExtension, Message: messageCyclicExtension})
+	identityMergerCyclicExtension = cerrors.Register(codeMergerCyclicExtension,
+		cerrors.Meta{ShortCode: shortMergerCyclicExtension, Message: messageMergerCyclicExtension})
+	identityDuplicate = cerrors.Register(codeDuplicate,
+		cerrors.Meta{ShortCode: shortDuplicate, Message: "the first registration of this code"})
 )
 
 func errCyclicExtension() error       { return identityCyclicExtension }
@@ -268,7 +299,10 @@ func TestRegister_PanicsOnADuplicateCode(t *testing.T) {
 	t.Parallel()
 
 	v := panicValue(func() {
-		cerrors.Register(codeDuplicate, cerrors.Meta{Message: "a second registration of the same code"})
+		cerrors.Register(codeDuplicate, cerrors.Meta{
+			ShortCode: shortDuplicate,
+			Message:   "a second registration of the same code",
+		})
 	})
 	if v == nil {
 		t.Fatalf("registering an already-registered code did not panic")
@@ -282,7 +316,10 @@ func TestRegister_PanicsOnAnEmptyCode(t *testing.T) {
 	t.Parallel()
 
 	v := panicValue(func() {
-		cerrors.Register("", cerrors.Meta{Message: "a message for no identity"})
+		cerrors.Register("", cerrors.Meta{
+			ShortCode: shortMalformedSubject,
+			Message:   "a message for no identity",
+		})
 	})
 	if v == nil {
 		t.Fatalf("registering an empty code did not panic")
@@ -293,7 +330,7 @@ func TestRegister_PanicsOnAnEmptyMessage(t *testing.T) {
 	t.Parallel()
 
 	v := panicValue(func() {
-		cerrors.Register(codeEmptyMessage, cerrors.Meta{})
+		cerrors.Register(codeEmptyMessage, cerrors.Meta{ShortCode: shortEmptyMessage})
 	})
 	if v == nil {
 		t.Fatalf("registering an empty message did not panic")
@@ -305,10 +342,170 @@ func TestRegister_PanicsOnAnEmptyMessage(t *testing.T) {
 	// door is unregistered, so registering it properly still succeeds. If the
 	// refusal had left a half-written entry behind, this second call would be
 	// refused as a duplicate.
+	//
+	// It also proves the SHORT-code index was left untouched, which is the half a
+	// single-index check would miss: the refused call above claimed
+	// shortEmptyMessage, so re-using it here is refused as a duplicate short code
+	// if the refusal wrote either index before finishing its checks.
 	if v := panicValue(func() {
-		cerrors.Register(codeEmptyMessage, cerrors.Meta{Message: "a message this time"})
+		cerrors.Register(codeEmptyMessage, cerrors.Meta{
+			ShortCode: shortEmptyMessage,
+			Message:   "a message this time",
+		})
 	}); v != nil {
-		t.Errorf("a refused registration left the code occupied; re-registering panicked with %v", v)
+		t.Errorf("a refused registration left one of the two indexes occupied; re-registering panicked with %v", v)
+	}
+}
+
+// TestRegister_PanicsOnAnEmptyShortCode covers the same door the empty-code
+// refusal covers, on the other identifier. A condition admitted without a short
+// code would print no identifier on the one surface the short code exists to
+// serve, and it would leave a hole in the published mapping that nothing else
+// reports.
+func TestRegister_PanicsOnAnEmptyShortCode(t *testing.T) {
+	t.Parallel()
+
+	v := panicValue(func() {
+		cerrors.Register(codeEmptyShortCode, cerrors.Meta{Message: "a message with no short code"})
+	})
+	if v == nil {
+		t.Fatalf("registering an empty short code did not panic")
+	}
+	if msg := fmt.Sprint(v); !strings.Contains(msg, codeEmptyShortCode) {
+		t.Errorf("panic %q does not name the offending code %q", msg, codeEmptyShortCode)
+	}
+}
+
+// TestRegister_PanicsOnAMalformedShortCode pins the shape rather than only the
+// presence. A value of another shape is one the published mapping cannot key and
+// a reader cannot recognise as an identifier at all, so admitting it would put a
+// condition on the wire under something that is not a short code.
+//
+// The probe carries the right prefix and the wrong width, which is the near miss
+// a check on the leading letter alone would admit.
+func TestRegister_PanicsOnAMalformedShortCode(t *testing.T) {
+	t.Parallel()
+
+	v := panicValue(func() {
+		cerrors.Register(codeMalformedShortCode, cerrors.Meta{
+			ShortCode: malformedShortCode,
+			Message:   "a message with a short code of the wrong shape",
+		})
+	})
+	if v == nil {
+		t.Fatalf("registering the malformed short code %q did not panic", malformedShortCode)
+	}
+	msg := fmt.Sprint(v)
+	if !strings.Contains(msg, malformedShortCode) {
+		t.Errorf("panic %q does not name the malformed short code %q", msg, malformedShortCode)
+	}
+	if !strings.Contains(msg, codeMalformedShortCode) {
+		t.Errorf("panic %q does not name the code %q it was declared for, so a reader cannot find the declaration",
+			msg, codeMalformedShortCode)
+	}
+}
+
+// TestRegister_PanicsOnADuplicateShortCode is the refusal a single index cannot
+// provide. The two identifiers are independent, so two conditions can collide on
+// the short code while their descriptive codes differ — and that is exactly the
+// pair a duplicate-code check alone reads as two distinct conditions.
+//
+// The probe therefore registers a code that is NOT a duplicate, so the only
+// refusal available is the short-code one. A test reusing a duplicated code as
+// well would pass on the wrong check.
+func TestRegister_PanicsOnADuplicateShortCode(t *testing.T) {
+	t.Parallel()
+
+	v := panicValue(func() {
+		cerrors.Register(codeDuplicateShortCode, cerrors.Meta{
+			ShortCode: shortCyclicExtension,
+			Message:   "a distinct condition claiming a short code already taken",
+		})
+	})
+	if v == nil {
+		t.Fatalf("registering the already-registered short code %q under a fresh code did not panic",
+			shortCyclicExtension)
+	}
+	msg := fmt.Sprint(v)
+	if !strings.Contains(msg, shortCyclicExtension) {
+		t.Errorf("panic %q does not name the duplicated short code %q", msg, shortCyclicExtension)
+	}
+	// Both sides of the collision are named, because a reader holding only one
+	// of them has to search the tree for the other.
+	if !strings.Contains(msg, codeDuplicateShortCode) || !strings.Contains(msg, codeCyclicExtension) {
+		t.Errorf("panic %q does not name both conditions in the collision (%q claiming, %q holding)",
+			msg, codeDuplicateShortCode, codeCyclicExtension)
+	}
+}
+
+// TestIdentity_ShortCodeIsReadableThroughWraps is ShortCodeOf's half of the wire
+// contract, and it is the same property CodeOf carries: the short code is an
+// output, readable from any error in the chain rather than only from the identity
+// itself, and it equals what the identity was registered under.
+//
+// The two reads are checked against ONE chain on purpose. They answer the same
+// question in two forms, so a chain from which they resolved different conditions
+// would make either answer meaningless.
+func TestIdentity_ShortCodeIsReadableThroughWraps(t *testing.T) {
+	t.Parallel()
+
+	inner := fmt.Errorf("reading the extends chain: %w", errCyclicExtension())
+	outer := fmt.Errorf("resolving the aggregate: %w", inner)
+
+	got, ok := cerrors.ShortCodeOf(outer)
+	if !ok {
+		t.Fatalf("no short code was readable from a chain carrying a registered identity: %v", outer)
+	}
+	if got != shortCyclicExtension {
+		t.Errorf("ShortCodeOf = %q; want the short code the identity was registered under, %q",
+			got, shortCyclicExtension)
+	}
+
+	// The same read through errors.As on the reporting interface, which is the
+	// shape a consumer outside this package writes.
+	var coded cerrors.CodedError
+	if !stderrors.As(outer, &coded) {
+		t.Fatalf("errors.As found no code-reporting error in the chain: %v", outer)
+	}
+	if coded.ErrorShortCode() != shortCyclicExtension {
+		t.Errorf("ErrorShortCode() = %q; want %q", coded.ErrorShortCode(), shortCyclicExtension)
+	}
+
+	// Both identifiers resolve to the same condition off the same chain.
+	if code, _ := cerrors.CodeOf(outer); code != codeCyclicExtension {
+		t.Errorf("the two reads disagree about which condition the chain names: CodeOf = %q, "+
+			"ShortCodeOf = %q; want %q and %q", code, got, codeCyclicExtension, shortCyclicExtension)
+	}
+
+	// Two identities sharing an exported accessor name in two packages carry two
+	// short codes, and the read must not collapse them.
+	if got, _ := cerrors.ShortCodeOf(fmt.Errorf("merging: %w", errMergerCyclicExtension())); got != shortMergerCyclicExtension {
+		t.Errorf("ShortCodeOf = %q; want the merger identity's own short code %q", got, shortMergerCyclicExtension)
+	}
+
+	// A chain carrying no registered identity reports no short code — the same
+	// fact CodeOf and MessageOf report about the same chain.
+	if got, ok := cerrors.ShortCodeOf(stderrors.New("an ordinary error")); ok {
+		t.Errorf("ShortCodeOf reported %q for a chain carrying no identity", got)
+	}
+	if _, ok := cerrors.ShortCodeOf(nil); ok {
+		t.Errorf("ShortCodeOf reported a short code for a nil error")
+	}
+}
+
+// TestIdentity_ForgingTheShortCodeStringYieldsNoIdentity extends the asymmetry
+// the split exists for to the second identifier. Neither identifier is an input
+// to matching, and the short code is the more tempting of the two to write back
+// because it is short enough to type.
+func TestIdentity_ForgingTheShortCodeStringYieldsNoIdentity(t *testing.T) {
+	t.Parallel()
+
+	forged := stderrors.New(shortCyclicExtension)
+	if stderrors.Is(forged, errCyclicExtension()) {
+		t.Errorf("an error built from the short code string matched the identity, so the short code is an input to matching")
+	}
+	if stderrors.Is(errCyclicExtension(), forged) {
+		t.Errorf("the identity matched an error built from its own short code string")
 	}
 }
 
@@ -330,7 +527,13 @@ func TestRegister_IsSafeUnderConcurrentUse(t *testing.T) {
 			defer wg.Done()
 			got[n] = cerrors.Register(
 				fmt.Sprintf("concurrency/registrant-%02d", n),
-				cerrors.Meta{Message: fmt.Sprintf("registrant %02d", n)},
+				cerrors.Meta{
+					// Both identifiers vary with n, because both are indexed:
+					// a fixed short code across the registrants would be
+					// refused as a duplicate rather than exercising the guard.
+					ShortCode: fmt.Sprintf("E93%02d", n),
+					Message:   fmt.Sprintf("registrant %02d", n),
+				},
 			)
 		}(i)
 
@@ -353,6 +556,14 @@ func TestRegister_IsSafeUnderConcurrentUse(t *testing.T) {
 		if !ok || code != fmt.Sprintf("concurrency/registrant-%02d", i) {
 			t.Errorf("identity %d reported code %q (found=%v); want %q",
 				i, code, ok, fmt.Sprintf("concurrency/registrant-%02d", i))
+		}
+		// The short-code index is written under the same lock and is checked
+		// here for the same reason: an unsynchronised second map would corrupt
+		// or lose entries exactly as the first one would.
+		short, ok := cerrors.ShortCodeOf(got[i])
+		if !ok || short != fmt.Sprintf("E93%02d", i) {
+			t.Errorf("identity %d reported short code %q (found=%v); want %q",
+				i, short, ok, fmt.Sprintf("E93%02d", i))
 		}
 	}
 }

@@ -44,7 +44,8 @@ import (
 func ErrUsesInjectForbidden() error { return errUsesInjectForbidden }
 
 var errUsesInjectForbidden = cerrors.Register("compiler-ir/uses-inject-forbidden", cerrors.Meta{
-	Message: "uses-edge inject dictates a delivery mechanism the socket does not permit",
+	ShortCode: "E0015",
+	Message:   "uses-edge inject dictates a delivery mechanism the socket does not permit",
 })
 
 // usesInjectLocator names the surface an edge's inject block was authored on, in

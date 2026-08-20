@@ -42,7 +42,8 @@ const importCapabilityPrefix = "import:"
 func ErrNoImporterForFormat() error { return errNoImporterForFormat }
 
 var errNoImporterForFormat = cerrors.Register("catalog/no-importer-for-format", cerrors.Meta{
-	Message: "no importer plugin advertises the requested format",
+	ShortCode: "E0097",
+	Message:   "no importer plugin advertises the requested format",
 })
 
 // ErrAmbiguousImporterPlugin fires at resolution when a requested format is
@@ -56,7 +57,8 @@ var errNoImporterForFormat = cerrors.Register("catalog/no-importer-for-format", 
 func ErrAmbiguousImporterPlugin() error { return errAmbiguousImporterPlugin }
 
 var errAmbiguousImporterPlugin = cerrors.Register("catalog/ambiguous-importer-plugin", cerrors.Meta{
-	Message: "format is advertised by more than one importer plugin",
+	ShortCode: "E0090",
+	Message:   "format is advertised by more than one importer plugin",
 })
 
 // importerCapabilityDiag is the importer socket's diagnostic set for the shared

@@ -35,19 +35,21 @@ func TestScan_ReadsDeclarationsRegistrationsAndReExports(t *testing.T) {
 	for _, tc := range []struct {
 		handle     string
 		code       string
+		shortCode  string
 		message    string
 		aliasOf    string
 		importable bool
 	}{
-		{handle: "pkg/thing.ErrPlain", code: "thing/plain", message: "a plain condition", importable: true},
-		{handle: "pkg/thing.ErrQuoted", code: "thing/quoted", message: "the `uses:` block is malformed", importable: true},
-		{handle: "pkg/other.ErrOwn", code: "other/own", message: "declared here", importable: true},
+		{handle: "pkg/thing.ErrPlain", code: "thing/plain", shortCode: "E9001", message: "a plain condition", importable: true},
+		{handle: "pkg/thing.ErrQuoted", code: "thing/quoted", shortCode: "E9002", message: "the `uses:` block is malformed", importable: true},
+		{handle: "pkg/other.ErrOwn", code: "other/own", shortCode: "E9004", message: "declared here", importable: true},
 		// A re-export registers nothing of its own. It forwards to a condition and
-		// returns that condition's value, so it reports the same code and the same
-		// message; both are resolved through the forward rather than left empty.
-		{handle: "pkg/other.ErrPlain", code: "thing/plain", aliasOf: "pkg/thing.ErrPlain", message: "a plain condition", importable: true},
-		{handle: "pkg/wrap.ErrHidden", code: "hidden/hidden", aliasOf: "internal/hidden.ErrHidden", message: "raised from a package no reader can import", importable: true},
-		{handle: "internal/hidden.ErrHidden", code: "hidden/hidden", message: "raised from a package no reader can import", importable: false},
+		// returns that condition's value, so it reports the same two codes and the
+		// same message; all three are resolved through the forward rather than
+		// left empty.
+		{handle: "pkg/other.ErrPlain", code: "thing/plain", shortCode: "E9001", aliasOf: "pkg/thing.ErrPlain", message: "a plain condition", importable: true},
+		{handle: "pkg/wrap.ErrHidden", code: "hidden/hidden", shortCode: "E9005", aliasOf: "internal/hidden.ErrHidden", message: "raised from a package no reader can import", importable: true},
+		{handle: "internal/hidden.ErrHidden", code: "hidden/hidden", shortCode: "E9005", message: "raised from a package no reader can import", importable: false},
 	} {
 		id, ok := got[tc.handle]
 		if !ok {
@@ -56,6 +58,9 @@ func TestScan_ReadsDeclarationsRegistrationsAndReExports(t *testing.T) {
 		}
 		if id.Code != tc.code {
 			t.Errorf("%s: code = %q, want %q", tc.handle, id.Code, tc.code)
+		}
+		if id.ShortCode != tc.shortCode {
+			t.Errorf("%s: shortCode = %q, want %q", tc.handle, id.ShortCode, tc.shortCode)
 		}
 		if id.Message != tc.message {
 			t.Errorf("%s: message = %q, want %q", tc.handle, id.Message, tc.message)
@@ -202,6 +207,85 @@ func TestScan_RefusesAHandleWithNoRegistrationBehindIt(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "pkg/thing.ErrOrphan") {
 		t.Errorf("error does not name the offending handle: %v", err)
+	}
+}
+
+// TestScan_RefusesARegistrationWithNoShortCode is the companion refusal: a
+// declaration that HAS a registration behind it but omits one of the two
+// identifiers that registration declares.
+//
+// It is refused rather than served with an empty column for the reason the
+// refusal above is refused — a blank cell reads as a condition that has no short
+// code, not as a declaration that forgot one — and the scan is the only place
+// that can say so, because it reads syntax rather than a running program.
+func TestScan_RefusesARegistrationWithNoShortCode(t *testing.T) {
+	t.Parallel()
+	_, err := scan("testdata/noshortcode", "example.test/noshortcode")
+	if err == nil {
+		t.Fatal("scan accepted a registration declaring no short code")
+	}
+	if !strings.Contains(err.Error(), "pkg/thing.ErrNoShortCode") {
+		t.Errorf("error does not name the offending handle: %v", err)
+	}
+	if !strings.Contains(err.Error(), "short code") {
+		t.Errorf("error does not say which identifier is missing, so a reader cannot act on it: %v", err)
+	}
+}
+
+// TestRenderIndex_CarriesBothIdentifiersOnEveryRecord pins the machine-readable
+// record shape, which is a published contract: two consumers decode it by
+// position and each pins the field count deliberately, so a silent change to the
+// width or the order breaks them rather than degrading them.
+//
+// A re-export is included because its short code is resolved through the forward
+// rather than declared, so it is the row a naive extraction leaves blank.
+func TestRenderIndex_CarriesBothIdentifiersOnEveryRecord(t *testing.T) {
+	t.Parallel()
+
+	ids, err := scan("testdata/module", "example.test/fixture")
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(renderIndex(ids), "\n"), "\n")
+	if len(lines) != len(ids) {
+		t.Fatalf("rendered %d record(s) for %d identities", len(lines), len(ids))
+	}
+
+	const wantFields = 5
+	seen := map[string][]string{}
+	for _, line := range lines {
+		fields := strings.Split(line, "\t")
+		if len(fields) != wantFields {
+			t.Fatalf("record %q has %d field(s), want %d; two consumers decode this by position",
+				line, len(fields), wantFields)
+		}
+		if fields[0] != "origin" && fields[0] != "alias" {
+			t.Errorf("record %q has an unknown kind %q", line, fields[0])
+		}
+		if fields[wantFields-1] == "" {
+			t.Errorf("record %q carries no short code", line)
+		}
+		seen[fields[1]+"."+fields[2]] = fields
+	}
+
+	for _, tc := range []struct {
+		handle string
+		want   []string
+	}{
+		{handle: "pkg/thing.ErrPlain", want: []string{"origin", "pkg/thing", "ErrPlain", "thing/plain", "E9001"}},
+		{handle: "internal/hidden.ErrHidden", want: []string{"origin", "internal/hidden", "ErrHidden", "hidden/hidden", "E9005"}},
+		// The re-export's fourth field is the handle it forwards to, and its
+		// short code is the forwarded condition's own.
+		{handle: "pkg/other.ErrPlain", want: []string{"alias", "pkg/other", "ErrPlain", "pkg/thing.ErrPlain", "E9001"}},
+	} {
+		got, ok := seen[tc.handle]
+		if !ok {
+			t.Errorf("%s: no record rendered", tc.handle)
+			continue
+		}
+		if strings.Join(got, "\t") != strings.Join(tc.want, "\t") {
+			t.Errorf("%s: record = %q, want %q", tc.handle, got, tc.want)
+		}
 	}
 }
 

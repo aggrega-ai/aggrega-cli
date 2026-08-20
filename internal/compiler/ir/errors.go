@@ -27,5 +27,6 @@ import (
 func ErrFeatureTypeMismatch() error { return errFeatureTypeMismatch }
 
 var errFeatureTypeMismatch = cerrors.Register("compiler-ir/feature-type-mismatch", cerrors.Meta{
-	Message: "feature type mismatch between Aggregate and Release",
+	ShortCode: "E0013",
+	Message:   "feature type mismatch between Aggregate and Release",
 })

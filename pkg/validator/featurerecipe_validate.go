@@ -32,7 +32,8 @@ import (
 func ErrFeatureRecipeRule1() error { return errFeatureRecipeRule1 }
 
 var errFeatureRecipeRule1 = cerrors.Register("validator/feature-recipe-values-mapping-requires-source", cerrors.Meta{
-	Message: "FeatureRecipe: valuesMapping requires source",
+	ShortCode: "E0204",
+	Message:   "FeatureRecipe: valuesMapping requires source",
 })
 
 // ErrFeatureRecipeEvalProviderConstraint: the eval provider executes
@@ -43,7 +44,8 @@ var errFeatureRecipeRule1 = cerrors.Register("validator/feature-recipe-values-ma
 func ErrFeatureRecipeEvalProviderConstraint() error { return errFeatureRecipeEvalProviderConstraint }
 
 var errFeatureRecipeEvalProviderConstraint = cerrors.Register("validator/feature-recipe-eval-provider-constraint", cerrors.Meta{
-	Message: "featurerecipe eval-provider constraint: render input-kind fields are forbidden when provider is eval",
+	ShortCode: "E0203",
+	Message:   "featurerecipe eval-provider constraint: render input-kind fields are forbidden when provider is eval",
 })
 
 // Both rules here report through NewShapeRuleError, so a FeatureRecipe failure

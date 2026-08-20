@@ -9,5 +9,6 @@ import cerrors "example.test/guestsplit/pkg/errors"
 func ErrCoreShared() error { return errCoreShared }
 
 var errCoreShared = cerrors.Register("thing-provider-thingcore/core-shared", cerrors.Meta{
-	Message: "raised from a core the host and the guest both build",
+	ShortCode: "E9103",
+	Message:   "raised from a core the host and the guest both build",
 })

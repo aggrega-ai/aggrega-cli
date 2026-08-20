@@ -43,7 +43,8 @@ func ErrFetchIntegrity() error { return oci.ErrFetchIntegrity() }
 func ErrUnknownKind() error { return errUnknownKind }
 
 var errUnknownKind = cerrors.Register("sourceresolver/unknown-kind", cerrors.Meta{
-	Message: "sourceresolver: no adapter registered for source kind",
+	ShortCode: "E0186",
+	Message:   "sourceresolver: no adapter registered for source kind",
 })
 
 // Wrap returns an error that satisfies errors.Is(returned, sentinel)

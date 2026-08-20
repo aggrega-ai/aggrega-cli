@@ -12,7 +12,8 @@ import cerrors "example.test/guestsplit/pkg/errors"
 func ErrGuestEntryOnly() error { return errGuestEntryOnly }
 
 var errGuestEntryOnly = cerrors.Register("thing-provider/guest-entry-only", cerrors.Meta{
-	Message: "raised from a guest entry point",
+	ShortCode: "E9102",
+	Message:   "raised from a guest entry point",
 })
 
 func main() {}

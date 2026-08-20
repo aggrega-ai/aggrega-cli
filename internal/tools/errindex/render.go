@@ -106,15 +106,25 @@ func renderRegion(ids []Identity) (string, error) {
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
-// renderIndex returns the machine-readable identity index, one record per line:
-// a kind, the declaring package, the name, and either the declared code value or
-// the qualified handle a re-export forwards to.
+// renderIndex returns the machine-readable identity index, one record of five
+// tab-separated fields per line: a kind, the declaring package, the name, either
+// the declared descriptive code or the qualified handle a re-export forwards to,
+// and the short code.
 //
 // It exists so that a consumer outside this module reads the identity set from
 // the one place that extracts it, rather than growing a second recogniser of the
 // same declaration syntax. Two recognisers of one population agree until the day
 // a declaration takes a shape only one of them reads, and the agreement up to
 // that day is exactly what makes the divergence invisible.
+//
+// The short code is a field of its own rather than folded into the fourth,
+// because the two identifiers are independent — neither is derivable from the
+// other — so a consumer wanting one must not have to split the other. It is
+// LAST so that the four fields a consumer already reads keep their positions;
+// the width still changed, and every consumer pins the width deliberately, so
+// each one moved with this. A re-export reports the short code it forwards to,
+// for the same reason it reports the forwarded descriptive code: the value it
+// returns IS that condition's value.
 func renderIndex(ids []Identity) string {
 	var b strings.Builder
 	for _, id := range ids {
@@ -122,7 +132,7 @@ func renderIndex(ids []Identity) string {
 		if id.AliasOf != "" {
 			kind, detail = "alias", id.AliasOf
 		}
-		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\n", kind, id.Pkg, id.Name, detail)
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n", kind, id.Pkg, id.Name, detail, id.ShortCode)
 	}
 	return b.String()
 }

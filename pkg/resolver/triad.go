@@ -21,7 +21,8 @@ import (
 func ErrDuplicateTriadIdentity() error { return errDuplicateTriadIdentity }
 
 var errDuplicateTriadIdentity = cerrors.Register("resolver/duplicate-triad-identity", cerrors.Meta{
-	Message: "duplicate Aggregate/Manifest identity (metadata.name) in the Release directory",
+	ShortCode: "E0152",
+	Message:   "duplicate Aggregate/Manifest identity (metadata.name) in the Release directory",
 })
 
 // ErrTriadRefUnresolvable fires when a bare-identity aggregate:/manifest:
@@ -30,7 +31,8 @@ var errDuplicateTriadIdentity = cerrors.Register("resolver/duplicate-triad-ident
 func ErrTriadRefUnresolvable() error { return errTriadRefUnresolvable }
 
 var errTriadRefUnresolvable = cerrors.Register("resolver/triad-ref-unresolvable", cerrors.Meta{
-	Message: "aggregate/manifest reference unresolvable",
+	ShortCode: "E0170",
+	Message:   "aggregate/manifest reference unresolvable",
 })
 
 // ResolvedAggregate is the result of resolving a Release's spec.aggregate

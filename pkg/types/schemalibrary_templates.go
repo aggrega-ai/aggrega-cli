@@ -16,7 +16,8 @@ import (
 func ErrTemplateNotFound() error { return errTemplateNotFound }
 
 var errTemplateNotFound = cerrors.Register("types/template-not-found", cerrors.Meta{
-	Message: "schemalibrary: template not found",
+	ShortCode: "E0194",
+	Message:   "schemalibrary: template not found",
 })
 
 // ErrTemplateParamMissing fires when a `$instantiate:` `$args:` binding
@@ -24,7 +25,8 @@ var errTemplateNotFound = cerrors.Register("types/template-not-found", cerrors.M
 func ErrTemplateParamMissing() error { return errTemplateParamMissing }
 
 var errTemplateParamMissing = cerrors.Register("types/template-param-missing", cerrors.Meta{
-	Message: "schemalibrary: template parameter missing",
+	ShortCode: "E0195",
+	Message:   "schemalibrary: template parameter missing",
 })
 
 // ErrTemplateParamTypeMismatch fires when a `$instantiate:` `$args:` binding
@@ -32,7 +34,8 @@ var errTemplateParamMissing = cerrors.Register("types/template-param-missing", c
 func ErrTemplateParamTypeMismatch() error { return errTemplateParamTypeMismatch }
 
 var errTemplateParamTypeMismatch = cerrors.Register("types/template-param-type-mismatch", cerrors.Meta{
-	Message: "schemalibrary: template parameter type mismatch",
+	ShortCode: "E0196",
+	Message:   "schemalibrary: template parameter type mismatch",
 })
 
 // ErrForbiddenKeyword fires when a schema entry uses a JSON Schema keyword
@@ -41,7 +44,8 @@ var errTemplateParamTypeMismatch = cerrors.Register("types/template-param-type-m
 func ErrForbiddenKeyword() error { return errForbiddenKeyword }
 
 var errForbiddenKeyword = cerrors.Register("types/forbidden-keyword", cerrors.Meta{
-	Message: "schemalibrary: forbidden JSON Schema keyword",
+	ShortCode: "E0190",
+	Message:   "schemalibrary: forbidden JSON Schema keyword",
 })
 
 // InstantiateTemplate substitutes the named template's body with the

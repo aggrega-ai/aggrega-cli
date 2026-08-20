@@ -29,7 +29,8 @@ import (
 func ErrInjectEntryAmbiguous() error { return errInjectEntryAmbiguous }
 
 var errInjectEntryAmbiguous = cerrors.Register("compiler-ir/inject-entry-ambiguous", cerrors.Meta{
-	Message: "inject entry carries both `value:` and `from:`; schema requires exactly one",
+	ShortCode: "E0014",
+	Message:   "inject entry carries both `value:` and `from:`; schema requires exactly one",
 })
 
 // ValidateInjectBlock walks a single InjectBlock's mechanisms (env, file,

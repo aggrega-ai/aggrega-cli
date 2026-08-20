@@ -78,7 +78,8 @@ import (
 func ErrOutputNameCollision() error { return errOutputNameCollision }
 
 var errOutputNameCollision = cerrors.Register("cloudformation-provider-cfncore/output-name-collision", cerrors.Meta{
-	Message: "cloudformation-provider: two entries an author wrote reach one stack Output name",
+	ShortCode: "E0233",
+	Message:   "cloudformation-provider: two entries an author wrote reach one stack Output name",
 })
 
 // ErrDuplicateMappingKey is the loud failure raised when a CloudFormation
@@ -90,7 +91,8 @@ var errOutputNameCollision = cerrors.Register("cloudformation-provider-cfncore/o
 func ErrDuplicateMappingKey() error { return errDuplicateMappingKey }
 
 var errDuplicateMappingKey = cerrors.Register("cloudformation-provider-cfncore/duplicate-mapping-key", cerrors.Meta{
-	Message: "cloudformation-provider: one mapping key is written more than once",
+	ShortCode: "E0230",
+	Message:   "cloudformation-provider: one mapping key is written more than once",
 })
 
 // StackTemplateName is the file name the assembled CloudFormation stack template

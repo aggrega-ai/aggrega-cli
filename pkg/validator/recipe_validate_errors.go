@@ -28,14 +28,16 @@ import (
 func ErrRecipeRule1() error { return errRecipeRule1 }
 
 var errRecipeRule1 = cerrors.Register("validator/recipe-values-mapping-requires-source", cerrors.Meta{
-	Message: "Recipe: valuesMapping requires source",
+	ShortCode: "E0209",
+	Message:   "Recipe: valuesMapping requires source",
 })
 
 // ErrRecipeRule5: at least one input kind must be present.
 func ErrRecipeRule5() error { return errRecipeRule5 }
 
 var errRecipeRule5 = cerrors.Register("validator/recipe-no-input-kind", cerrors.Meta{
-	Message: "Recipe: at least one input kind required",
+	ShortCode: "E0210",
+	Message:   "Recipe: at least one input kind required",
 })
 
 // ErrRecipeRule7: emission-time filename collision across input-kind
@@ -46,7 +48,8 @@ var errRecipeRule5 = cerrors.Register("validator/recipe-no-input-kind", cerrors.
 func ErrRecipeRule7() error { return errRecipeRule7 }
 
 var errRecipeRule7 = cerrors.Register("validator/recipe-filename-collision-across-input-kinds", cerrors.Meta{
-	Message: "Recipe: filename collision across input-kind origins at emission",
+	ShortCode: "E0211",
+	Message:   "Recipe: filename collision across input-kind origins at emission",
 })
 
 // ErrRecipeEvalProviderConstraint: the eval provider executes formatting
@@ -57,7 +60,8 @@ var errRecipeRule7 = cerrors.Register("validator/recipe-filename-collision-acros
 func ErrRecipeEvalProviderConstraint() error { return errRecipeEvalProviderConstraint }
 
 var errRecipeEvalProviderConstraint = cerrors.Register("validator/recipe-eval-provider-constraint", cerrors.Meta{
-	Message: "recipe eval-provider constraint: input-kind fields are forbidden when provider is eval",
+	ShortCode: "E0206",
+	Message:   "recipe eval-provider constraint: input-kind fields are forbidden when provider is eval",
 })
 
 // ErrRecipeOutputLabelReservedNamespace: an outputLabels key uses a
@@ -69,7 +73,8 @@ var errRecipeEvalProviderConstraint = cerrors.Register("validator/recipe-eval-pr
 func ErrRecipeOutputLabelReservedNamespace() error { return errRecipeOutputLabelReservedNamespace }
 
 var errRecipeOutputLabelReservedNamespace = cerrors.Register("validator/recipe-output-label-reserved-namespace", cerrors.Meta{
-	Message: "recipe output-labels constraint: key uses a reserved namespace",
+	ShortCode: "E0208",
+	Message:   "recipe output-labels constraint: key uses a reserved namespace",
 })
 
 // ErrRecipeOutputComponentLabelCollision: a key promoted through
@@ -81,5 +86,6 @@ var errRecipeOutputLabelReservedNamespace = cerrors.Register("validator/recipe-o
 func ErrRecipeOutputComponentLabelCollision() error { return errRecipeOutputComponentLabelCollision }
 
 var errRecipeOutputComponentLabelCollision = cerrors.Register("validator/recipe-output-component-label-collision", cerrors.Meta{
-	Message: "recipe output-component-labels constraint: key is also declared in outputLabels",
+	ShortCode: "E0207",
+	Message:   "recipe output-component-labels constraint: key is also declared in outputLabels",
 })

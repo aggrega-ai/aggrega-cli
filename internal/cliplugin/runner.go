@@ -34,7 +34,8 @@ import (
 func ErrNoResolver() error { return errNoResolver }
 
 var errNoResolver = cerrors.Register("cliplugin/no-resolver", cerrors.Meta{
-	Message: "cliplugin: no plugin resolver configured",
+	ShortCode: "E0001",
+	Message:   "cliplugin: no plugin resolver configured",
 })
 
 // Runner dispatches an installed CLI plugin. It composes plugin-URI resolution

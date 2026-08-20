@@ -26,7 +26,8 @@ import (
 func ErrQualifiedPluginReference() error { return errQualifiedPluginReference }
 
 var errQualifiedPluginReference = cerrors.Register("catalog/qualified-plugin-reference", cerrors.Meta{
-	Message: "wasm plugin reference must be the plugin coordinate identity (<pluginType>/<name>:<version>), not a registry-qualified or artifact path",
+	ShortCode: "E0102",
+	Message:   "wasm plugin reference must be the plugin coordinate identity (<pluginType>/<name>:<version>), not a registry-qualified or artifact path",
 })
 
 // ErrUnscopedPluginReference is returned when a Plugin reference carries no
@@ -39,7 +40,8 @@ var errQualifiedPluginReference = cerrors.Register("catalog/qualified-plugin-ref
 func ErrUnscopedPluginReference() error { return errUnscopedPluginReference }
 
 var errUnscopedPluginReference = cerrors.Register("catalog/unscoped-plugin-reference", cerrors.Meta{
-	Message: "wasm plugin reference must carry a pluginType scope (<pluginType>/<name>); an empty scope cannot bind to an OCI location",
+	ShortCode: "E0104",
+	Message:   "wasm plugin reference must carry a pluginType scope (<pluginType>/<name>); an empty scope cannot bind to an OCI location",
 })
 
 // ErrUnscopedRecipeReference is returned when a Recipe / FeatureRecipe reference
@@ -52,7 +54,8 @@ var errUnscopedPluginReference = cerrors.Register("catalog/unscoped-plugin-refer
 func ErrUnscopedRecipeReference() error { return errUnscopedRecipeReference }
 
 var errUnscopedRecipeReference = cerrors.Register("catalog/unscoped-recipe-reference", cerrors.Meta{
-	Message: "recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location",
+	ShortCode: "E0105",
+	Message:   "recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location",
 })
 
 // ErrAllVersionsRetracted is returned when every published version of an entity
@@ -67,7 +70,8 @@ var errUnscopedRecipeReference = cerrors.Register("catalog/unscoped-recipe-refer
 func ErrAllVersionsRetracted() error { return errAllVersionsRetracted }
 
 var errAllVersionsRetracted = cerrors.Register("catalog/all-versions-retracted", cerrors.Meta{
-	Message: "every published version this reference could select has been withdrawn",
+	ShortCode: "E0089",
+	Message:   "every published version this reference could select has been withdrawn",
 })
 
 // VersionExclusion is one published version a RetractionScreen removed from

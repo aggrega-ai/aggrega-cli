@@ -15,19 +15,22 @@ import (
 func ErrInheritanceMerge() error { return errInheritanceMerge }
 
 var errInheritanceMerge = cerrors.Register("validator/inheritance-merge", cerrors.Meta{
-	Message: "inheritance merge failed: resolve the conflicting field definitions across the extends chain",
+	ShortCode: "E0205",
+	Message:   "inheritance merge failed: resolve the conflicting field definitions across the extends chain",
 })
 
 func ErrCyclicExtension() error { return errCyclicExtension }
 
 var errCyclicExtension = cerrors.Register("validator/cyclic-extension", cerrors.Meta{
-	Message: "cyclic extends chain",
+	ShortCode: "E0202",
+	Message:   "cyclic extends chain",
 })
 
 func ErrAssertionNameCollision() error { return errAssertionNameCollision }
 
 var errAssertionNameCollision = cerrors.Register("validator/assertion-name-collision", cerrors.Meta{
-	Message: "assertion name declared twice across the extends chain: rename the extending entity's assertion, whose assertions add to the base's and never replace one",
+	ShortCode: "E0201",
+	Message:   "assertion name declared twice across the extends chain: rename the extending entity's assertion, whose assertions add to the base's and never replace one",
 })
 
 // ValidationDetail describes a validation failure: which condition it

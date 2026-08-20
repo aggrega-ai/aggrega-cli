@@ -9,5 +9,6 @@ import cerrors "example.test/guestsplit/pkg/errors"
 func ErrSuffixConstrained() error { return errSuffixConstrained }
 
 var errSuffixConstrained = cerrors.Register("thing-provider-thingcore/suffix-constrained", cerrors.Meta{
-	Message: "raised only where the file name restricts the build",
+	ShortCode: "E9104",
+	Message:   "raised only where the file name restricts the build",
 })

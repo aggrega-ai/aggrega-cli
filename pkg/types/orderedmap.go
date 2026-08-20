@@ -23,7 +23,8 @@ import (
 func ErrOrderedMapDecodeDepthExceeded() error { return errOrderedMapDecodeDepthExceeded }
 
 var errOrderedMapDecodeDepthExceeded = cerrors.Register("types/ordered-map-decode-depth-exceeded", cerrors.Meta{
-	Message: "OrderedMap: decode depth exceeded",
+	ShortCode: "E0192",
+	Message:   "OrderedMap: decode depth exceeded",
 })
 
 // orderedMapDecodeMaxDepth bounds nested-OrderedMap recursion in unmarshal

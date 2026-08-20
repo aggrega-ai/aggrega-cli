@@ -11,7 +11,8 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 func ErrProbe() error { return errProbe }
 
 var errProbe = cerrors.Register("errors-sealing-probe/reassign-accessor", cerrors.Meta{
-	Message: "the probe condition was reached",
+	ShortCode: "E0000",
+	Message:   "the probe condition was reached",
 })
 
 // Reassigning the accessor would silently stop every match against it, which is

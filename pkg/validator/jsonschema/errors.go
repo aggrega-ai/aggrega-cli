@@ -17,7 +17,8 @@ import (
 func ErrSchemaResolve() error { return errSchemaResolve }
 
 var errSchemaResolve = cerrors.Register("validator-jsonschema/schema-resolve", cerrors.Meta{
-	Message: "validator/jsonschema: schema resolution failed",
+	ShortCode: "E0218",
+	Message:   "validator/jsonschema: schema resolution failed",
 })
 
 // ErrInstanceValidation indicates the underlying library reported
@@ -29,7 +30,8 @@ var errSchemaResolve = cerrors.Register("validator-jsonschema/schema-resolve", c
 func ErrInstanceValidation() error { return errInstanceValidation }
 
 var errInstanceValidation = cerrors.Register("validator-jsonschema/instance-validation", cerrors.Meta{
-	Message: "validator/jsonschema: instance validation failed",
+	ShortCode: "E0217",
+	Message:   "validator/jsonschema: instance validation failed",
 })
 
 // ErrExtensionEval indicates an x-aggrega-when: or x-aggrega-
@@ -38,7 +40,8 @@ var errInstanceValidation = cerrors.Register("validator-jsonschema/instance-vali
 func ErrExtensionEval() error { return errExtensionEval }
 
 var errExtensionEval = cerrors.Register("validator-jsonschema/extension-eval", cerrors.Meta{
-	Message: "validator/jsonschema: x-aggrega extension evaluation failed",
+	ShortCode: "E0216",
+	Message:   "validator/jsonschema: x-aggrega extension evaluation failed",
 })
 
 // AdapterError wraps the underlying library or template evaluation

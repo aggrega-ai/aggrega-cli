@@ -60,7 +60,8 @@ func (e *CodedHostError) Unwrap() error { return e.Err }
 func ErrWasmManifestRejected() error { return errWasmManifestRejected }
 
 var errWasmManifestRejected = cerrors.Register("wasm/wasm-manifest-rejected", cerrors.Meta{
-	Message: "wasm: plugin rejected by the sandbox",
+	ShortCode: "E0085",
+	Message:   "wasm: plugin rejected by the sandbox",
 })
 
 // ErrWasmGuestPanic indicates that guest plugin code panicked during a
@@ -78,7 +79,8 @@ var errWasmManifestRejected = cerrors.Register("wasm/wasm-manifest-rejected", ce
 func ErrWasmGuestPanic() error { return errWasmGuestPanic }
 
 var errWasmGuestPanic = cerrors.Register("wasm/wasm-guest-panic", cerrors.Meta{
-	Message: "wasm: guest plugin panicked during call",
+	ShortCode: "E0083",
+	Message:   "wasm: guest plugin panicked during call",
 })
 
 // ErrWasmPluginExited indicates that a guest plugin invoked WASI
@@ -95,7 +97,8 @@ var errWasmGuestPanic = cerrors.Register("wasm/wasm-guest-panic", cerrors.Meta{
 func ErrWasmPluginExited() error { return errWasmPluginExited }
 
 var errWasmPluginExited = cerrors.Register("wasm/wasm-plugin-exited", cerrors.Meta{
-	Message: "wasm: plugin invoked proc_exit",
+	ShortCode: "E0086",
+	Message:   "wasm: plugin invoked proc_exit",
 })
 
 // ErrWasmGuestError indicates that a guest plugin ran to completion but
@@ -109,7 +112,8 @@ var errWasmPluginExited = cerrors.Register("wasm/wasm-plugin-exited", cerrors.Me
 func ErrWasmGuestError() error { return errWasmGuestError }
 
 var errWasmGuestError = cerrors.Register("wasm/wasm-guest-error", cerrors.Meta{
-	Message: "wasm: guest plugin reported an error",
+	ShortCode: "E0082",
+	Message:   "wasm: guest plugin reported an error",
 })
 
 // GuestReturnedError maps a guest-returned socket-output error message onto the
@@ -146,7 +150,8 @@ func GuestReturnedError(export, msg string) error {
 func ErrWasmDiagnosticSeverity() error { return errWasmDiagnosticSeverity }
 
 var errWasmDiagnosticSeverity = cerrors.Register("wasm/wasm-diagnostic-severity", cerrors.Meta{
-	Message: "wasm: guest plugin returned a diagnostic whose severity the contract does not declare",
+	ShortCode: "E0081",
+	Message:   "wasm: guest plugin returned a diagnostic whose severity the contract does not declare",
 })
 
 // GuestDiagnosticSeverities checks every diagnostic a guest returned against the
@@ -197,7 +202,8 @@ func GuestDiagnosticSeverities(plugin, export string, diags []abi.Diagnostic) er
 func ErrWasmContractMismatch() error { return errWasmContractMismatch }
 
 var errWasmContractMismatch = cerrors.Register("wasm/wasm-contract-mismatch", cerrors.Meta{
-	Message: "wasm: entity contract claim does not match plugin describe()",
+	ShortCode: "E0080",
+	Message:   "wasm: entity contract claim does not match plugin describe()",
 })
 
 // ErrWasmHostFunctionsStampMismatch indicates that a Plugin entity's stamped
@@ -222,7 +228,8 @@ var errWasmContractMismatch = cerrors.Register("wasm/wasm-contract-mismatch", ce
 func ErrWasmHostFunctionsStampMismatch() error { return errWasmHostFunctionsStampMismatch }
 
 var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm/wasm-host-functions-stamp-mismatch", cerrors.Meta{
-	Message: "wasm: stamped host-function record does not match .wasm imports",
+	ShortCode: "E0084",
+	Message:   "wasm: stamped host-function record does not match .wasm imports",
 })
 
 // ErrWasmPluginTypeMismatch indicates that the plugin type expected at a load
@@ -244,7 +251,8 @@ var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm/wasm-host-functio
 func ErrWasmPluginTypeMismatch() error { return errWasmPluginTypeMismatch }
 
 var errWasmPluginTypeMismatch = cerrors.Register("wasm/wasm-plugin-type-mismatch", cerrors.Meta{
-	Message: "wasm: declared plugin type does not match plugin describe()",
+	ShortCode: "E0087",
+	Message:   "wasm: declared plugin type does not match plugin describe()",
 })
 
 // ErrWasmCommandsMirrorMismatch indicates that a Plugin entity's recorded
@@ -271,7 +279,8 @@ var errWasmPluginTypeMismatch = cerrors.Register("wasm/wasm-plugin-type-mismatch
 func ErrWasmCommandsMirrorMismatch() error { return errWasmCommandsMirrorMismatch }
 
 var errWasmCommandsMirrorMismatch = cerrors.Register("wasm/wasm-commands-mirror-mismatch", cerrors.Meta{
-	Message: "wasm: recorded command mirror does not match plugin describe()",
+	ShortCode: "E0079",
+	Message:   "wasm: recorded command mirror does not match plugin describe()",
 })
 
 // ErrProducerConsumptionReentry indicates that a producer reached through the
@@ -289,7 +298,8 @@ var errWasmCommandsMirrorMismatch = cerrors.Register("wasm/wasm-commands-mirror-
 func ErrProducerConsumptionReentry() error { return errProducerConsumptionReentry }
 
 var errProducerConsumptionReentry = cerrors.Register("wasm/producer-consumption-reentry", cerrors.Meta{
-	Message: "producer-consumption re-entry denied: a producer reached through the host may not issue a further producer-consumption call",
+	ShortCode: "E0078",
+	Message:   "producer-consumption re-entry denied: a producer reached through the host may not issue a further producer-consumption call",
 })
 
 // ErrWasmPluginVersionMismatch indicates that a Plugin entity's recorded
@@ -315,5 +325,6 @@ var errProducerConsumptionReentry = cerrors.Register("wasm/producer-consumption-
 func ErrWasmPluginVersionMismatch() error { return errWasmPluginVersionMismatch }
 
 var errWasmPluginVersionMismatch = cerrors.Register("wasm/wasm-plugin-version-mismatch", cerrors.Meta{
-	Message: "wasm: entity metadata.version does not match plugin describe()",
+	ShortCode: "E0088",
+	Message:   "wasm: entity metadata.version does not match plugin describe()",
 })

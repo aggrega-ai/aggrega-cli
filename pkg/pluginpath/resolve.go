@@ -289,7 +289,8 @@ type PluginExportClaim struct {
 func ErrPluginBundleDigestMismatch() error { return errPluginBundleDigestMismatch }
 
 var errPluginBundleDigestMismatch = cerrors.Register("pluginpath/plugin-bundle-digest-mismatch", cerrors.Meta{
-	Message: "cached signature bundle does not match its recorded digest",
+	ShortCode: "E0144",
+	Message:   "cached signature bundle does not match its recorded digest",
 })
 
 // Lookup resolves a plugin URI to its resolved bytes. It is the seam each

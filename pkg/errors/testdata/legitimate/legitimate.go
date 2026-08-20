@@ -13,7 +13,11 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 func ErrProbe() error { return errProbe }
 
 var errProbe = cerrors.Register("errors-sealing-probe/legitimate", cerrors.Meta{
-	Message: "the probe condition was reached",
+	// E0000 is the illustrative short code: short codes are handed out from
+	// E0001 upward, so no real condition ever holds it. A fixture is not an
+	// allocation and must not read like one.
+	ShortCode: "E0000",
+	Message:   "the probe condition was reached",
 })
 
 // Match is the shape a consumer writes: it matches the identity through a wrap

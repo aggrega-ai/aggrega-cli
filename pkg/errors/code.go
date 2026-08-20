@@ -11,11 +11,12 @@ import (
 )
 
 // sealed is the identity of a halting condition. It is declared by registering
-// a code and a message together, and it is reached through an exported accessor
-// standing beside the registration:
+// a message and both of the condition's identifiers together, and it is reached
+// through an exported accessor standing beside the registration:
 //
 //	var errBudgetExceeded = Register("example/budget-exceeded", Meta{
-//		Message: "the declared budget was exceeded",
+//		ShortCode: "E0000",
+//		Message:   "the declared budget was exceeded",
 //	})
 //
 //	// ErrBudgetExceeded fires when …
@@ -23,7 +24,11 @@ import (
 //
 // The identity above is illustrative and names no package in this module,
 // deliberately. An example naming a real declaration is a second copy of that
-// declaration's value, and the two drift the moment either is edited.
+// declaration's value, and the two drift the moment either is edited. E0000 is
+// the illustrative short code for the same reason and can never be a real one:
+// short codes are handed out from E0001 upward, so nothing is ever registered
+// under E0000. Do not "correct" it to a plausible-looking number — a plausible
+// number is exactly what could also be somebody's real assignment.
 //
 // # Why the identity is a value no caller can construct
 //
@@ -47,8 +52,9 @@ import (
 // objects exist: the identity answers "which rule halted", the instance answers
 // "where".
 type sealed struct {
-	code    string
-	message string
+	code      string
+	shortCode string
+	message   string
 }
 
 // Error returns the message the identity was registered with.
@@ -60,12 +66,13 @@ type sealed struct {
 // diagnostic rather than as the defect it is, and registration refuses one.
 func (s *sealed) Error() string { return s.message }
 
-// ErrorCode returns the code the identity was registered under.
+// ErrorCode returns the descriptive code the identity was registered under —
+// the qualified, hyphenated one, such as `resolver/parameter-contract-violation`.
 //
-// The code is the durable identifier of the condition itself. It is
-// deliberately separate from the Go accessor that yields the identity, so the
-// two carry their stability independently: the accessor can be renamed or moved
-// without disturbing the code a condition was registered under.
+// It is a durable identifier of the condition itself, deliberately separate
+// from the Go accessor that yields the identity, so the two carry their
+// stability independently: the accessor can be renamed or moved without
+// disturbing the code a condition was registered under.
 //
 // It is reached from Go through CodeOf or the CodedError interface, and from
 // outside Go on the structured diagnostic the compiler-as-service daemon
@@ -76,15 +83,33 @@ func (s *sealed) Error() string { return s.message }
 // location and the message text.
 func (s *sealed) ErrorCode() string { return s.code }
 
-// CodedError is an error that reports the code of the halting condition it
-// names. Every registered identity satisfies it.
+// ErrorShortCode returns the short code the identity was registered under — the
+// compact one: the letter E and four digits.
 //
-// It is the interface to match with errors.As when the code is what is wanted
-// rather than the identity — see CodeOf, which is the usual way to ask.
+// It names exactly the same condition ErrorCode names, in a form short enough
+// to sit at the head of a diagnostic line without pushing the message off a
+// narrow terminal. The two are not alternatives and neither replaces the other:
+// the descriptive code says what the condition is at a glance and is what a
+// machine consumer matches on, while the short code is what a reader can quote
+// in a report, type into a search, and look up. Read whichever the surface
+// needs; both are fixed once the condition is published.
+//
+// It is reached from Go through ShortCodeOf or the CodedError interface, the
+// same way the descriptive code is.
+func (s *sealed) ErrorShortCode() string { return s.shortCode }
+
+// CodedError is an error that reports the identifiers of the halting condition
+// it names. Every registered identity satisfies it.
+//
+// It is the interface to match with errors.As when a condition's identifiers
+// are what is wanted rather than the identity itself — see CodeOf and
+// ShortCodeOf, which are the usual way to ask.
 type CodedError interface {
 	error
-	// ErrorCode returns the code of the condition the error names.
+	// ErrorCode returns the descriptive code of the condition the error names.
 	ErrorCode() string
+	// ErrorShortCode returns the short code of the condition the error names.
+	ErrorShortCode() string
 }
 
 // CodeOf returns the code reported by the first error in err's chain that
@@ -98,6 +123,26 @@ func CodeOf(err error) (string, bool) {
 	var coded CodedError
 	if stderrors.As(err, &coded) {
 		return coded.ErrorCode(), true
+	}
+	return "", false
+}
+
+// ShortCodeOf returns the short code reported by the first error in err's chain
+// that reports one, and whether any error in the chain did.
+//
+// It is CodeOf's counterpart and walks the same chain for the same reason: the
+// short code survives arbitrary wrapping, so a surface composing a diagnostic
+// many frames above the site that raised the failure still names the condition
+// underneath it. An error chain carrying no registered identity reports no
+// short code, which is a fact about the chain rather than a failure.
+//
+// The two reads answer the same question in two forms and never disagree about
+// which condition they found: both resolve the FIRST identity in the chain, so a
+// caller reading one and then the other is describing one condition and not two.
+func ShortCodeOf(err error) (string, bool) {
+	var coded CodedError
+	if stderrors.As(err, &coded) {
+		return coded.ErrorShortCode(), true
 	}
 	return "", false
 }
@@ -177,9 +222,22 @@ func ComposeMessage(condition error, values []string, advice string) string {
 
 // Meta is the metadata declared beside an identity at its registration.
 //
-// It carries the message and nothing else, deliberately. The two other
-// properties a halting condition has are derived rather than declared, because
-// neither is a property of the identity:
+// It carries the two things every halting condition has of its own and that
+// nothing else can supply, and each earns its place the same way:
+//
+//   - Message, the one sentence stating the condition. There is no source for
+//     it but the declaration, and every diagnostic naming the condition opens
+//     with it.
+//   - ShortCode, the compact identifier a reader quotes and looks up. It cannot
+//     be derived from the descriptive code beside it — a short code is a number
+//     handed out once and then fixed, precisely so that re-wording a condition
+//     or moving it between packages does not change what a user has already
+//     quoted — so, like the message, it is declared or it does not exist.
+//
+// The descriptive code is not here because it is the registration's own first
+// argument rather than metadata about it. The two other properties a halting
+// condition has are derived rather than declared, because neither is a property
+// of the identity:
 //
 //   - Which authoring artifact is at fault is derived from the entity kind
 //     involved in a particular failure — see ClassifyEntityKind. Declaring it
@@ -215,11 +273,105 @@ type Meta struct {
 	// It must not be empty: an empty sentence renders as a dangling separator
 	// inside an enclosing wrap, and registration refuses one.
 	Message string
+
+	// ShortCode is the condition's compact identifier: the letter E followed by
+	// exactly four decimal digits.
+	//
+	// # What it is for, given the condition already has a code
+	//
+	// The descriptive code says what the condition is; this one is short enough
+	// to print. A diagnostic wants its identifier at the head of the line, where
+	// the reader is already looking, and the descriptive code is too wide for
+	// that position: the longest in this module is 65 characters, which is most
+	// of a narrow terminal before the message has begun. Four digits fit
+	// anywhere and stay quotable — a user can read one out, type it into a
+	// search, or paste it into a report, which is the whole job.
+	//
+	// It is opaque by construction, and that is the price paid for the width: a
+	// four-digit number says nothing about the condition on its own, so it is
+	// usable only alongside the correspondence between short codes and the
+	// conditions they name. That correspondence is what the declarations here
+	// establish, and every surface that reports a short code carries it beside
+	// the condition rather than on its own.
+	//
+	// # One flat space, not one per category
+	//
+	// Short codes are globally unique across every category. They have to be: a
+	// condition has no category of its own. Which category a diagnostic prints
+	// is derived per occurrence from the entity kind involved — see
+	// ClassifyEntityKind — so one condition raised against two kinds prints two
+	// categories, and a per-category number would have to be two numbers for one
+	// condition. One flat space means a short code identifies a condition
+	// without needing its category to disambiguate it.
+	//
+	// # Allocation: what is enforced here, and what is convention
+	//
+	// Registration ENFORCES, by panicking at package initialisation: the value
+	// is present, it has the shape above, and no other condition already holds
+	// it. Those are the properties a program can check about itself.
+	//
+	// Everything else is CONVENTION, upheld by whoever adds a condition and by
+	// review, because none of it is checkable from inside the program:
+	//
+	//   - Numbers are handed out monotonically from E0001. Monotonic in
+	//     ALLOCATION order — the order conditions were added — and never in sort
+	//     order: a condition added later takes the next free number and is not
+	//     inserted among its neighbours, so the numbers in any listing will not
+	//     be contiguous within a package.
+	//   - A number is never reused. A retired condition's number stays retired,
+	//     so a user quoting it from an old report is never sent to a different
+	//     condition. This is also why no gap check exists and none should be
+	//     added: never-reusing GUARANTEES permanent gaps, so a no-gaps check
+	//     would refuse exactly the state the rule produces.
+	//   - The next free number is one greater than the highest already allocated.
+	//     Because gaps are permanent and the numbers are not contiguous within
+	//     any package, the highest is read off the whole declared set rather than
+	//     off the neighbours of the condition being added.
+	//
+	// It must not be empty, and registration refuses an empty one for the same
+	// reason it refuses an empty descriptive code: a condition with nothing to
+	// report identifies itself to nobody.
+	ShortCode string
 }
 
+// shortCodeLen and shortCodePrefix are the shape of a short code: the letter E
+// followed by exactly four decimal digits.
+//
+// The width is fixed rather than minimal so that short codes sort and align as
+// text. Zero-padding is what makes a one-digit number and a four-digit one line
+// up in a printed column, and order correctly in any listing that sorts them as
+// strings, which every listing does.
+const (
+	shortCodeLen    = 5
+	shortCodePrefix = 'E'
+)
+
+// wellFormedShortCode reports whether s has the shape of a short code.
+//
+// It checks the shape and nothing beyond it. Whether a particular value is one a
+// condition SHOULD have been given — the next free number, rather than a reused
+// or arbitrarily chosen one — is an allocation question, and allocation is
+// convention rather than enforcement for the reasons recorded on Meta.ShortCode.
+func wellFormedShortCode(s string) bool {
+	if len(s) != shortCodeLen || s[0] != shortCodePrefix {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// Both indexes hold the same identities, keyed by the two identifiers a
+// condition carries, because each key has to be checked for a collision on its
+// own. Two conditions could otherwise agree on a short code while their
+// descriptive codes differ, which the descriptive index alone cannot see.
 var (
-	registryMu sync.RWMutex
-	registry   = map[string]*sealed{}
+	registryMu     sync.RWMutex
+	registry       = map[string]*sealed{}
+	shortCodeIndex = map[string]*sealed{}
 )
 
 // Register declares the halting condition named by code, with the metadata in
@@ -227,7 +379,8 @@ var (
 // declaration, with the accessor that publishes it directly beside:
 //
 //	var errBudgetExceeded = Register("example/budget-exceeded", Meta{
-//		Message: "the declared budget was exceeded",
+//		ShortCode: "E0000",
+//		Message:   "the declared budget was exceeded",
 //	})
 //
 //	// ErrBudgetExceeded fires when …
@@ -235,7 +388,11 @@ var (
 //
 // The identity above is illustrative and names no package in this module,
 // deliberately. An example naming a real declaration is a second copy of that
-// declaration's value, and the two drift the moment either is edited.
+// declaration's value, and the two drift the moment either is edited. E0000 is
+// the illustrative short code for the same reason and can never be a real one:
+// short codes are handed out from E0001 upward, so nothing is ever registered
+// under E0000. Do not "correct" it to a plausible-looking number — a plausible
+// number is exactly what could also be somebody's real assignment.
 //
 // The returned type is unexported, and that is the design rather than an
 // oversight. A caller binds the result with type inference and never names it,
@@ -244,15 +401,31 @@ var (
 // the other half: a variable an importer can see is a variable an importer can
 // reassign, and a reassigned identity silently stops matching everywhere.
 //
-// A code value is chosen so that distinct conditions stay distinct. Two
-// conditions sharing one code become two identities whose codes collide on the
-// wire, and the second registration is refused outright. Codes are therefore
-// qualified by the declaring package as well as the rule, which keeps two
-// same-named rules in different packages apart, and are kebab-case in keeping
-// with every other identifier the platform defines.
+// # A condition carries two identifiers, and they are shaped for two jobs
 //
-// Register panics, rather than reporting an error, on each of three conditions.
-// All three are defects in how the program is assembled rather than anything a
+// Both are chosen so that distinct conditions stay distinct: two conditions
+// sharing either identifier become two identities a consumer outside Go cannot
+// tell apart, and the second registration is refused outright.
+//
+// The first argument is the DESCRIPTIVE code. It is qualified by the declaring
+// package as well as the rule, which keeps two same-named rules in different
+// packages apart, and it is kebab-case in keeping with every other descriptive
+// identifier the platform defines. It is the identifier to match on: it says
+// what the condition is, so a consumer branching on it reads as what it means.
+//
+// Meta.ShortCode is the SHORT code — the letter E and four digits. It names the
+// same condition in a form narrow enough to print at the head of a diagnostic
+// line, where a descriptive code reaching 65 characters would not fit. It is
+// deliberately the one platform-defined identifier that is not kebab-case,
+// because its whole purpose is width at the head of every diagnostic, and it is
+// opaque as a consequence: it is readable only against the correspondence
+// between short codes and conditions. Prefer the descriptive code wherever
+// width does not bind.
+//
+// # Refusals
+//
+// Register panics, rather than reporting an error, on each of the conditions
+// below. All are defects in how the program is assembled rather than anything a
 // user can cause, and registration runs at package initialisation, so a panic
 // fires on every run and every test before any input is read — it cannot reach
 // a release. An error return would be the weaker choice here for a mechanical
@@ -267,6 +440,22 @@ var (
 //     registrations for one code means two identities a consumer outside Go
 //     cannot tell apart; permitting the agreeing case would leave a hole that
 //     opens silently the day one of the messages is edited.
+//   - An empty short code, for the same reason an empty code is refused: the
+//     condition would print no identifier on the surface the short code exists
+//     to serve.
+//   - A malformed short code — anything but E followed by exactly four decimal
+//     digits. A value of another shape is one no reader can recognise as an
+//     identifier at all, and one nothing keying on the shape can look up.
+//   - A short code already registered. This is checked separately from the code
+//     above rather than folded into it: the two identifiers are independent, so
+//     a duplicated short code is entirely possible between conditions whose
+//     descriptive codes differ, and that is precisely the case a single check
+//     would miss.
+//
+// What Register does NOT check is whether a short code is the RIGHT one — the
+// next free number rather than a reused or arbitrary one. That is allocation,
+// and it is convention rather than enforcement; Meta.ShortCode records which
+// half is which and why a gap check would be wrong.
 func Register(code string, meta Meta) *sealed {
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -280,9 +469,27 @@ func Register(code string, meta Meta) *sealed {
 	if _, dup := registry[code]; dup {
 		panic(fmt.Sprintf("errors: Register called twice for code %q", code))
 	}
+	if meta.ShortCode == "" {
+		panic(fmt.Sprintf("errors: Register called with an empty short code for code %q", code))
+	}
+	if !wellFormedShortCode(meta.ShortCode) {
+		panic(fmt.Sprintf("errors: Register called with a malformed short code %q for code %q; "+
+			"a short code is the letter E followed by exactly four decimal digits",
+			meta.ShortCode, code))
+	}
+	if prev, dup := shortCodeIndex[meta.ShortCode]; dup {
+		panic(fmt.Sprintf("errors: Register called with short code %q for code %q, "+
+			"which is already registered for code %q; short codes are handed out from E0001 upward "+
+			"and never reused, so take the next number above the highest already allocated",
+			meta.ShortCode, code, prev.code))
+	}
 
-	id := &sealed{code: code, message: meta.Message}
+	// Neither index is written until every refusal above has passed, so a
+	// refused registration leaves both untouched and the two cannot disagree
+	// about which conditions exist.
+	id := &sealed{code: code, shortCode: meta.ShortCode, message: meta.Message}
 	registry[code] = id
+	shortCodeIndex[meta.ShortCode] = id
 
 	return id
 }

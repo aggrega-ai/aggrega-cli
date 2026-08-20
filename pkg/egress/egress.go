@@ -22,7 +22,8 @@ import (
 func ErrOfflineEgress() error { return errOfflineEgress }
 
 var errOfflineEgress = cerrors.Register("egress/offline-egress", cerrors.Meta{
-	Message: "egress: network access refused because the workspace is offline; remediation: unset workspace.offline (or AGGREGA_OFFLINE) or run `aggrega pull --release <release>` from a connected environment to populate the cache",
+	ShortCode: "E0125",
+	Message:   "egress: network access refused because the workspace is offline; remediation: unset workspace.offline (or AGGREGA_OFFLINE) or run `aggrega pull --release <release>` from a connected environment to populate the cache",
 })
 
 // RoundTripper returns the HTTP transport for network egress, derived from the

@@ -41,7 +41,8 @@ const (
 func ErrWellKnownAnnotationScope() error { return errWellKnownAnnotationScope }
 
 var errWellKnownAnnotationScope = cerrors.Register("types/well-known-annotation-scope", cerrors.Meta{
-	Message: "wellKnownAnnotations: a key is declared at a scope the provider's contract does not render",
+	ShortCode: "E0198",
+	Message:   "wellKnownAnnotations: a key is declared at a scope the provider's contract does not render",
 })
 
 // ValidateWellKnownAnnotationScopes reports whether every scope a provider

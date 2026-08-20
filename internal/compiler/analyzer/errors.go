@@ -25,7 +25,8 @@ import (
 func ErrSelectorViolation() error { return errSelectorViolation }
 
 var errSelectorViolation = cerrors.Register("compiler-analyzer/selector-violation", cerrors.Meta{
-	Message: "selector violation",
+	ShortCode: "E0007",
+	Message:   "selector violation",
 })
 
 // ErrSlotSelectorUnsatisfied is the ABI-stable sentinel for an attachment
@@ -48,7 +49,8 @@ var errSelectorViolation = cerrors.Register("compiler-analyzer/selector-violatio
 func ErrSlotSelectorUnsatisfied() error { return errSlotSelectorUnsatisfied }
 
 var errSlotSelectorUnsatisfied = cerrors.Register("compiler-analyzer/slot-selector-unsatisfied", cerrors.Meta{
-	Message: "attachment slot selector unsatisfied",
+	ShortCode: "E0008",
+	Message:   "attachment slot selector unsatisfied",
 })
 
 // ErrRequiredSlotUnfilled is the ABI-stable sentinel for an attachment
@@ -84,7 +86,8 @@ var errSlotSelectorUnsatisfied = cerrors.Register("compiler-analyzer/slot-select
 func ErrRequiredSlotUnfilled() error { return errRequiredSlotUnfilled }
 
 var errRequiredSlotUnfilled = cerrors.Register("compiler-analyzer/required-slot-unfilled", cerrors.Meta{
-	Message: "required attachment slot unfilled",
+	ShortCode: "E0006",
+	Message:   "required attachment slot unfilled",
 })
 
 // ErrPolicyViolation is the ABI-stable sentinel for a Step-4
@@ -100,7 +103,8 @@ var errRequiredSlotUnfilled = cerrors.Register("compiler-analyzer/required-slot-
 func ErrPolicyViolation() error { return errPolicyViolation }
 
 var errPolicyViolation = cerrors.Register("compiler-analyzer/policy-violation", cerrors.Meta{
-	Message: "policy violation",
+	ShortCode: "E0005",
+	Message:   "policy violation",
 })
 
 // ErrMalformedAttachmentRequirement is the ABI-stable sentinel for a
@@ -128,7 +132,8 @@ var errPolicyViolation = cerrors.Register("compiler-analyzer/policy-violation", 
 func ErrMalformedAttachmentRequirement() error { return errMalformedAttachmentRequirement }
 
 var errMalformedAttachmentRequirement = cerrors.Register("compiler-analyzer/malformed-attachment-requirement", cerrors.Meta{
-	Message: "malformed attachment requirement",
+	ShortCode: "E0003",
+	Message:   "malformed attachment requirement",
 })
 
 // ErrOverriddenAnnotation is the ABI-stable sentinel for a leaf of an
@@ -145,7 +150,8 @@ var errMalformedAttachmentRequirement = cerrors.Register("compiler-analyzer/malf
 func ErrOverriddenAnnotation() error { return errOverriddenAnnotation }
 
 var errOverriddenAnnotation = cerrors.Register("compiler-analyzer/overridden-annotation", cerrors.Meta{
-	Message: "annotation contribution overridden by an explicit value",
+	ShortCode: "E0004",
+	Message:   "annotation contribution overridden by an explicit value",
 })
 
 // ErrCatalogLookup is the ABI-stable sentinel reserved for catalog
@@ -160,5 +166,6 @@ var errOverriddenAnnotation = cerrors.Register("compiler-analyzer/overridden-ann
 func ErrCatalogLookup() error { return errCatalogLookup }
 
 var errCatalogLookup = cerrors.Register("compiler-analyzer/catalog-lookup", cerrors.Meta{
-	Message: "catalog lookup failed",
+	ShortCode: "E0002",
+	Message:   "catalog lookup failed",
 })

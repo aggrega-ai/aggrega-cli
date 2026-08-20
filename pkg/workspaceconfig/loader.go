@@ -22,7 +22,8 @@ import (
 func ErrConfigInvalid() error { return errConfigInvalid }
 
 var errConfigInvalid = cerrors.Register("workspaceconfig/config-invalid", cerrors.Meta{
-	Message: "workspaceconfig: file failed schema validation",
+	ShortCode: "E0224",
+	Message:   "workspaceconfig: file failed schema validation",
 })
 
 // ErrDuplicateProviderTarget reports that the composed provider list binds
@@ -36,7 +37,8 @@ var errConfigInvalid = cerrors.Register("workspaceconfig/config-invalid", cerror
 func ErrDuplicateProviderTarget() error { return errDuplicateProviderTarget }
 
 var errDuplicateProviderTarget = cerrors.Register("workspaceconfig/duplicate-provider-target", cerrors.Meta{
-	Message: "workspaceconfig: capability is bound to more than one provider plugin",
+	ShortCode: "E0225",
+	Message:   "workspaceconfig: capability is bound to more than one provider plugin",
 })
 
 // ErrCapabilityOnCrossCuttingSocket reports that a cross-cutting socket
@@ -50,7 +52,8 @@ var errDuplicateProviderTarget = cerrors.Register("workspaceconfig/duplicate-pro
 func ErrCapabilityOnCrossCuttingSocket() error { return errCapabilityOnCrossCuttingSocket }
 
 var errCapabilityOnCrossCuttingSocket = cerrors.Register("workspaceconfig/capability-on-cross-cutting-socket", cerrors.Meta{
-	Message: "workspaceconfig: a cross-cutting socket is bound by capability but attaches by uri",
+	ShortCode: "E0223",
+	Message:   "workspaceconfig: a cross-cutting socket is bound by capability but attaches by uri",
 })
 
 // ErrInertFieldOnProviderSocket reports that a provider-socket binding sets a
@@ -66,7 +69,8 @@ var errCapabilityOnCrossCuttingSocket = cerrors.Register("workspaceconfig/capabi
 func ErrInertFieldOnProviderSocket() error { return errInertFieldOnProviderSocket }
 
 var errInertFieldOnProviderSocket = cerrors.Register("workspaceconfig/inert-field-on-provider-socket", cerrors.Meta{
-	Message: "workspaceconfig: a provider socket binding sets a field with no referent on that socket",
+	ShortCode: "E0228",
+	Message:   "workspaceconfig: a provider socket binding sets a field with no referent on that socket",
 })
 
 // ErrGovernanceRoleInvalid reports that a governance attachment declares no
@@ -82,7 +86,8 @@ var errInertFieldOnProviderSocket = cerrors.Register("workspaceconfig/inert-fiel
 func ErrGovernanceRoleInvalid() error { return errGovernanceRoleInvalid }
 
 var errGovernanceRoleInvalid = cerrors.Register("workspaceconfig/governance-role-invalid", cerrors.Meta{
-	Message: "workspaceconfig: a governance attachment declares no role or an unknown role",
+	ShortCode: "E0227",
+	Message:   "workspaceconfig: a governance attachment declares no role or an unknown role",
 })
 
 // ErrDuplicateRegistryAlias reports that a registry alias is already used by a
@@ -93,7 +98,8 @@ var errGovernanceRoleInvalid = cerrors.Register("workspaceconfig/governance-role
 func ErrDuplicateRegistryAlias() error { return errDuplicateRegistryAlias }
 
 var errDuplicateRegistryAlias = cerrors.Register("workspaceconfig/duplicate-registry-alias", cerrors.Meta{
-	Message: "workspaceconfig: registry alias is already used by another host",
+	ShortCode: "E0226",
+	Message:   "workspaceconfig: registry alias is already used by another host",
 })
 
 // ErrAmbiguousRegistryAlias reports that a registry token matched the alias of
@@ -105,7 +111,8 @@ var errDuplicateRegistryAlias = cerrors.Register("workspaceconfig/duplicate-regi
 func ErrAmbiguousRegistryAlias() error { return errAmbiguousRegistryAlias }
 
 var errAmbiguousRegistryAlias = cerrors.Register("workspaceconfig/ambiguous-registry-alias", cerrors.Meta{
-	Message: "workspaceconfig: registry alias matches more than one host",
+	ShortCode: "E0222",
+	Message:   "workspaceconfig: registry alias matches more than one host",
 })
 
 // Load reads the workspace's .aggrega-config.yaml file at path,

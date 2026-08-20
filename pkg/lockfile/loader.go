@@ -20,7 +20,8 @@ import (
 func ErrLockfileInvalid() error { return errLockfileInvalid }
 
 var errLockfileInvalid = cerrors.Register("lockfile/lockfile-invalid", cerrors.Meta{
-	Message: "lockfile: file failed schema validation",
+	ShortCode: "E0131",
+	Message:   "lockfile: file failed schema validation",
 })
 
 // DiagnosticSeverity classifies a non-fatal observation surfaced by

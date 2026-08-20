@@ -19,7 +19,8 @@ import (
 func ErrPolicySettingsInvalid() error { return errPolicySettingsInvalid }
 
 var errPolicySettingsInvalid = cerrors.Register("compiler-pipeline/policy-settings-invalid", cerrors.Meta{
-	Message: "policy attachment settings do not satisfy the plugin's declared settings schema",
+	ShortCode: "E0018",
+	Message:   "policy attachment settings do not satisfy the plugin's declared settings schema",
 })
 
 // ErrAnnotationInjectionRejected is the ABI-stable sentinel for an
@@ -34,5 +35,6 @@ var errPolicySettingsInvalid = cerrors.Register("compiler-pipeline/policy-settin
 func ErrAnnotationInjectionRejected() error { return errAnnotationInjectionRejected }
 
 var errAnnotationInjectionRejected = cerrors.Register("compiler-pipeline/annotation-injection-rejected", cerrors.Meta{
-	Message: "annotation-transform plugin output was rejected: an injection targets a component coordinate the host did not supply",
+	ShortCode: "E0017",
+	Message:   "annotation-transform plugin output was rejected: an injection targets a component coordinate the host did not supply",
 })

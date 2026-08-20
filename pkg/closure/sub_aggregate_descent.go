@@ -32,7 +32,8 @@ const maxSubAggregateDepth = 10
 func ErrSubAggregateDepth() error { return errSubAggregateDepth }
 
 var errSubAggregateDepth = cerrors.Register("closure/sub-aggregate-depth", cerrors.Meta{
-	Message: "resolve: sub-aggregate inclusion depth exceeded",
+	ShortCode: "E0113",
+	Message:   "resolve: sub-aggregate inclusion depth exceeded",
 })
 
 // AggregateLoader loads the parsed body of a resolved (pinned) sub-aggregate so
@@ -54,7 +55,8 @@ type AggregateLoader interface {
 func ErrNoAggregateLoader() error { return errNoAggregateLoader }
 
 var errNoAggregateLoader = cerrors.Register("closure/no-aggregate-loader", cerrors.Meta{
-	Message: "resolve: catalog lookup cannot load resolved sub-aggregate bodies",
+	ShortCode: "E0108",
+	Message:   "resolve: catalog lookup cannot load resolved sub-aggregate bodies",
 })
 
 // RequireAggregateLoader adapts a Lookup to the AggregateLoader the

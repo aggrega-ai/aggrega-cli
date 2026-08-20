@@ -21,7 +21,8 @@ import (
 func ErrArtifactsLibraryEntryShape() error { return errArtifactsLibraryEntryShape }
 
 var errArtifactsLibraryEntryShape = cerrors.Register("types/artifacts-library-entry-shape", cerrors.Meta{
-	Message: "artifactslibrary: entry must be a mapping of filename to a string body",
+	ShortCode: "E0189",
+	Message:   "artifactslibrary: entry must be a mapping of filename to a string body",
 })
 
 //go:generate go run ../../internal/tools/typegen artifactslibrary_gen.go

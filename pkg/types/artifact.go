@@ -18,7 +18,8 @@ import (
 func ErrArtifactEntryShape() error { return errArtifactEntryShape }
 
 var errArtifactEntryShape = cerrors.Register("types/artifact-entry-shape", cerrors.Meta{
-	Message: "artifacts entry: shape must be a string scalar or {$import: <local-path>}",
+	ShortCode: "E0188",
+	Message:   "artifacts entry: shape must be a string scalar or {$import: <local-path>}",
 })
 
 // ArtifactEntry carries one Recipe artifact entry with three content-

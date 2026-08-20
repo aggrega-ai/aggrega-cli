@@ -20,7 +20,8 @@ import (
 func ErrMappingEntryNotScalar() error { return errMappingEntryNotScalar }
 
 var errMappingEntryNotScalar = cerrors.Register("types/mapping-entry-not-scalar", cerrors.Meta{
-	Message: "mappinglibrary: entry body must be a string scalar",
+	ShortCode: "E0191",
+	Message:   "mappinglibrary: entry body must be a string scalar",
 })
 
 //go:generate go run ../../internal/tools/typegen mappinglibrary_gen.go

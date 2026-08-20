@@ -155,7 +155,8 @@ type RecipeLoaderSource interface {
 func ErrNoRecipeLoader() error { return errNoRecipeLoader }
 
 var errNoRecipeLoader = cerrors.Register("closure/no-recipe-loader", cerrors.Meta{
-	Message: "resolve: catalog lookup cannot load resolved recipe and plugin bodies",
+	ShortCode: "E0109",
+	Message:   "resolve: catalog lookup cannot load resolved recipe and plugin bodies",
 })
 
 // RequireRecipeLoader adapts a Lookup to the RecipeLoader the recipe axis needs,
@@ -243,7 +244,8 @@ type ResolvedSource struct {
 func ErrSourceTemplateAtLockTime() error { return errSourceTemplateAtLockTime }
 
 var errSourceTemplateAtLockTime = cerrors.Register("closure/source-template-at-lock-time", cerrors.Meta{
-	Message: "resolve: source-template evaluation failure at lock time",
+	ShortCode: "E0110",
+	Message:   "resolve: source-template evaluation failure at lock time",
 })
 
 // ErrSourceTemplateParse marks a source-template that fails to PARSE (malformed
@@ -253,7 +255,8 @@ var errSourceTemplateAtLockTime = cerrors.Register("closure/source-template-at-l
 func ErrSourceTemplateParse() error { return errSourceTemplateParse }
 
 var errSourceTemplateParse = cerrors.Register("closure/source-template-parse", cerrors.Meta{
-	Message: "resolve: source-template parse error",
+	ShortCode: "E0111",
+	Message:   "resolve: source-template parse error",
 })
 
 // ErrSourceTemplateProvidesRef marks a source-template that references
@@ -264,7 +267,8 @@ var errSourceTemplateParse = cerrors.Register("closure/source-template-parse", c
 func ErrSourceTemplateProvidesRef() error { return errSourceTemplateProvidesRef }
 
 var errSourceTemplateProvidesRef = cerrors.Register("closure/source-template-provides-ref", cerrors.Meta{
-	Message: "resolve: source-template references .provides (invalid reverse reference)",
+	ShortCode: "E0112",
+	Message:   "resolve: source-template references .provides (invalid reverse reference)",
 })
 
 // ResolvedRef captures a single catalog-entity or Wasm-plugin
@@ -407,7 +411,8 @@ type LibraryResolution struct {
 func ErrMVSConflict() error { return errMVSConflict }
 
 var errMVSConflict = cerrors.Register("closure/mvs-conflict", cerrors.Meta{
-	Message: "resolve: minimum version selection conflict — incompatible library version requirements",
+	ShortCode: "E0107",
+	Message:   "resolve: minimum version selection conflict — incompatible library version requirements",
 })
 
 // ErrUnresolvableURI reports a URI in the Release's closure that names
@@ -422,7 +427,8 @@ var errMVSConflict = cerrors.Register("closure/mvs-conflict", cerrors.Meta{
 func ErrUnresolvableURI() error { return errUnresolvableURI }
 
 var errUnresolvableURI = cerrors.Register("closure/unresolvable-uri", cerrors.Meta{
-	Message: "resolve: no entity in the catalog matches this URI",
+	ShortCode: "E0114",
+	Message:   "resolve: no entity in the catalog matches this URI",
 })
 
 // ErrInvalidLibraryRef surfaces when a $ref: or $import: value
@@ -432,7 +438,8 @@ var errUnresolvableURI = cerrors.Register("closure/unresolvable-uri", cerrors.Me
 func ErrInvalidLibraryRef() error { return errInvalidLibraryRef }
 
 var errInvalidLibraryRef = cerrors.Register("closure/invalid-library-ref", cerrors.Meta{
-	Message: "resolve: invalid library reference URI",
+	ShortCode: "E0106",
+	Message:   "resolve: invalid library reference URI",
 })
 
 // inputs bundles the four loaded structures ComputeClosure walks.

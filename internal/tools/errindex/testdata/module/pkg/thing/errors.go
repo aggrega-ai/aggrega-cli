@@ -5,7 +5,8 @@ import cerrors "example.test/fixture/pkg/errors"
 func ErrPlain() error { return errPlain }
 
 var errPlain = cerrors.Register("thing/plain", cerrors.Meta{
-	Message: "a plain condition",
+	ShortCode: "E9001",
+	Message:   "a plain condition",
 })
 
 // A message quoting authoring syntax, so the rendering is exercised against a
@@ -13,7 +14,8 @@ var errPlain = cerrors.Register("thing/plain", cerrors.Meta{
 func ErrQuoted() error { return errQuoted }
 
 var errQuoted = cerrors.Register("thing/quoted", cerrors.Meta{
-	Message: "the `uses:` block is malformed",
+	ShortCode: "E9002",
+	Message:   "the `uses:` block is malformed",
 })
 
 // A registered condition published under a name that is not an identity. The
@@ -23,5 +25,6 @@ var errQuoted = cerrors.Register("thing/quoted", cerrors.Meta{
 func NotAnIdentity() error { return notAnIdentity }
 
 var notAnIdentity = cerrors.Register("thing/not-an-identity", cerrors.Meta{
-	Message: "not an identity",
+	ShortCode: "E9003",
+	Message:   "not an identity",
 })

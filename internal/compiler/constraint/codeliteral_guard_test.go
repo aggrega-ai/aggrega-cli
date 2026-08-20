@@ -69,13 +69,25 @@ import (
 // deciding whether to flip it needs, neither of which is recoverable from the
 // constant alone.
 //
-// The population it would refuse is EMPTY. Criterion: a string literal equal to
-// a registered code, appearing as an operand of == or !=, as a case expression,
-// or as a map key. Scope: every Go file this module holds, test files included,
-// outside the declaring package and the generated files. Measured 2026-08-08
-// over the 1515 files that scope admits: zero. So promotion refuses nothing that
-// exists today, and the usual reason to hold a new guard at report — that the
-// tree must be cleaned first — does not apply here.
+// The population it would refuse is NOT empty, and it used to be. Criterion: a
+// string literal equal to a registered code, appearing as an operand of == or
+// !=, as a case expression, or as a map key. Scope: every Go file this module
+// holds, test files included, outside the declaring package and the generated
+// files. Measured 2026-08-08 over the 1515 files that scope admits: zero.
+// Re-measured 2026-08-20 over the 1695 files it now admits: six, every one of
+// them in the daemon's own diagnostic-code test, each asserting that the wire
+// field carries the code its condition is registered under.
+//
+// So the original argument for promoting this constant no longer stands, and it
+// is left recorded rather than quietly replaced, because the earlier figure is
+// what a reader would otherwise still be trusting. Whether those six are a
+// violation at all is a real question rather than a formality: this guard's
+// subject is production code that silently stops matching after a
+// re-registration, and its remedy — read the code off the error through the
+// accessor — is exactly what the production path already does and what a test of
+// the published wire value exists to check independently of it. A test whose
+// failure IS the alarm has the opposite failure mode from the one the guard
+// hunts. Promotion therefore waits on a decision about that, not on a cleanup.
 //
 // The cost of leaving it false is larger than it looks, and it is measured
 // rather than assumed. A passing Go package prints nothing in a routine run: not
@@ -196,10 +208,17 @@ func registeredCodes(t *testing.T) map[string]bool {
 			strings.Join(identityIndexArgs, " "), moduleRoot, err, stderr.String())
 	}
 
+	// The width is pinned rather than read past. A record that gained or lost a
+	// field is a record whose meaning may have moved, and reading field 3 out of
+	// a shape this no longer recognises would silently match against the wrong
+	// column. Pinning it means a widened index empties this set, which the
+	// refusal below then reports as the instrument failure it is.
+	const indexFields = 5
+
 	codes := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
 		fields := strings.Split(line, "\t")
-		if len(fields) != 4 || fields[0] != "origin" || fields[3] == "" {
+		if len(fields) != indexFields || fields[0] != "origin" || fields[3] == "" {
 			continue
 		}
 		codes[fields[3]] = true

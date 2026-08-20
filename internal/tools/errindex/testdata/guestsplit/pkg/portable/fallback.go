@@ -12,5 +12,6 @@ import cerrors "example.test/guestsplit/pkg/errors"
 func ErrNonUnixFallback() error { return errNonUnixFallback }
 
 var errNonUnixFallback = cerrors.Register("portable/non-unix-fallback", cerrors.Meta{
-	Message: "raised where the platform has no unix primitive",
+	ShortCode: "E9101",
+	Message:   "raised where the platform has no unix primitive",
 })

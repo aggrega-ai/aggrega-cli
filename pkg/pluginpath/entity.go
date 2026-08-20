@@ -18,7 +18,8 @@ import (
 func ErrPluginEntityNotFound() error { return errPluginEntityNotFound }
 
 var errPluginEntityNotFound = cerrors.Register("pluginpath/plugin-entity-not-found", cerrors.Meta{
-	Message: "plugin reference is not a Plugin entity",
+	ShortCode: "E0145",
+	Message:   "plugin reference is not a Plugin entity",
 })
 
 // EntityLookup adapts the artifact-resolving cascade into an entity-fronted

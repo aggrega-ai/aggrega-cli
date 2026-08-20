@@ -15,7 +15,8 @@ import (
 func ErrProvidesSelfContainment() error { return errProvidesSelfContainment }
 
 var errProvidesSelfContainment = cerrors.Register("compiler-renderer/provides-self-containment", cerrors.Meta{
-	Message: "provides block references a root outside the self-contained set",
+	ShortCode: "E0057",
+	Message:   "provides block references a root outside the self-contained set",
 })
 
 // ErrTemplateUnknownRoot is the halt raised when a template references a
@@ -29,7 +30,8 @@ var errProvidesSelfContainment = cerrors.Register("compiler-renderer/provides-se
 func ErrTemplateUnknownRoot() error { return errTemplateUnknownRoot }
 
 var errTemplateUnknownRoot = cerrors.Register("compiler-renderer/template-unknown-root", cerrors.Meta{
-	Message: "template references a root the render context does not define",
+	ShortCode: "E0060",
+	Message:   "template references a root the render context does not define",
 })
 
 // ErrLocalsForwardReference is the Loud Guardrail halt raised when a locals
@@ -50,7 +52,8 @@ var errTemplateUnknownRoot = cerrors.Register("compiler-renderer/template-unknow
 func ErrLocalsForwardReference() error { return errLocalsForwardReference }
 
 var errLocalsForwardReference = cerrors.Register("compiler-renderer/locals-forward-reference", cerrors.Meta{
-	Message: "locals entry references a sibling defined later in the same block",
+	ShortCode: "E0042",
+	Message:   "locals entry references a sibling defined later in the same block",
 })
 
 // ErrLocalsUnknownReference is the Loud Guardrail halt raised when a template
@@ -68,31 +71,36 @@ var errLocalsForwardReference = cerrors.Register("compiler-renderer/locals-forwa
 func ErrLocalsUnknownReference() error { return errLocalsUnknownReference }
 
 var errLocalsUnknownReference = cerrors.Register("compiler-renderer/locals-unknown-reference", cerrors.Meta{
-	Message: "template references a key the locals block does not declare",
+	ShortCode: "E0043",
+	Message:   "template references a key the locals block does not declare",
 })
 
 func ErrProvidesEvaluation() error { return errProvidesEvaluation }
 
 var errProvidesEvaluation = cerrors.Register("compiler-renderer/provides-evaluation", cerrors.Meta{
-	Message: "provides template evaluation failed",
+	ShortCode: "E0056",
+	Message:   "provides template evaluation failed",
 })
 
 func ErrSelfInjectKeyCollision() error { return errSelfInjectKeyCollision }
 
 var errSelfInjectKeyCollision = cerrors.Register("compiler-renderer/self-inject-key-collision", cerrors.Meta{
-	Message: "duplicate delivery key across self-inject and uses-inject",
+	ShortCode: "E0059",
+	Message:   "duplicate delivery key across self-inject and uses-inject",
 })
 
 func ErrAttachmentInjectKeyCollision() error { return errAttachmentInjectKeyCollision }
 
 var errAttachmentInjectKeyCollision = cerrors.Register("compiler-renderer/attachment-inject-key-collision", cerrors.Meta{
-	Message: "duplicate delivery key across attachment-inject and another inject source",
+	ShortCode: "E0034",
+	Message:   "duplicate delivery key across attachment-inject and another inject source",
 })
 
 func ErrUnmappedCustomMechanism() error { return errUnmappedCustomMechanism }
 
 var errUnmappedCustomMechanism = cerrors.Register("compiler-renderer/unmapped-custom-mechanism", cerrors.Meta{
-	Message: "custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping",
+	ShortCode: "E0062",
+	Message:   "custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping",
 })
 
 // ErrProvidesContractUnfulfilled is the Loud Guardrail halt raised at render
@@ -115,7 +123,8 @@ var errUnmappedCustomMechanism = cerrors.Register("compiler-renderer/unmapped-cu
 func ErrProvidesContractUnfulfilled() error { return errProvidesContractUnfulfilled }
 
 var errProvidesContractUnfulfilled = cerrors.Register("compiler-renderer/provides-contract-unfulfilled", cerrors.Meta{
-	Message: "realizer does not publish a provides key its abstract entity's schema.provides contract declares",
+	ShortCode: "E0055",
+	Message:   "realizer does not publish a provides key its abstract entity's schema.provides contract declares",
 })
 
 // ErrMappingImportShape fires when a valuesMapping $import: (or a recursive
@@ -124,7 +133,8 @@ var errProvidesContractUnfulfilled = cerrors.Register("compiler-renderer/provide
 func ErrMappingImportShape() error { return errMappingImportShape }
 
 var errMappingImportShape = cerrors.Register("compiler-renderer/mapping-import-shape", cerrors.Meta{
-	Message: "valuesMapping $import: is not a bare-name mapping-library reference (<Library>#/mappings/<entry>)",
+	ShortCode: "E0045",
+	Message:   "valuesMapping $import: is not a bare-name mapping-library reference (<Library>#/mappings/<entry>)",
 })
 
 // ErrMappingLibraryNotFound fires when a bare-name mapping-library import
@@ -133,7 +143,8 @@ var errMappingImportShape = cerrors.Register("compiler-renderer/mapping-import-s
 func ErrMappingLibraryNotFound() error { return errMappingLibraryNotFound }
 
 var errMappingLibraryNotFound = cerrors.Register("compiler-renderer/mapping-library-not-found", cerrors.Meta{
-	Message: "mapping-library import references a MappingLibrary not present in the catalog",
+	ShortCode: "E0046",
+	Message:   "mapping-library import references a MappingLibrary not present in the catalog",
 })
 
 // ErrMappingEntryNotFound fires when a bare-name mapping-library import names
@@ -141,7 +152,8 @@ var errMappingLibraryNotFound = cerrors.Register("compiler-renderer/mapping-libr
 func ErrMappingEntryNotFound() error { return errMappingEntryNotFound }
 
 var errMappingEntryNotFound = cerrors.Register("compiler-renderer/mapping-entry-not-found", cerrors.Meta{
-	Message: "mapping-library import references an entry not present in the MappingLibrary",
+	ShortCode: "E0044",
+	Message:   "mapping-library import references an entry not present in the MappingLibrary",
 })
 
 // ErrWorkloadImportShape fires when a workload $import: (or a recursive
@@ -150,7 +162,8 @@ var errMappingEntryNotFound = cerrors.Register("compiler-renderer/mapping-entry-
 func ErrWorkloadImportShape() error { return errWorkloadImportShape }
 
 var errWorkloadImportShape = cerrors.Register("compiler-renderer/workload-import-shape", cerrors.Meta{
-	Message: "workload $import: is not a bare-name workload-library reference (<Library>#/workloads/<entry>)",
+	ShortCode: "E0064",
+	Message:   "workload $import: is not a bare-name workload-library reference (<Library>#/workloads/<entry>)",
 })
 
 // ErrWorkloadLibraryNotFound fires when a bare-name workload-library import
@@ -159,7 +172,8 @@ var errWorkloadImportShape = cerrors.Register("compiler-renderer/workload-import
 func ErrWorkloadLibraryNotFound() error { return errWorkloadLibraryNotFound }
 
 var errWorkloadLibraryNotFound = cerrors.Register("compiler-renderer/workload-library-not-found", cerrors.Meta{
-	Message: "workload-library import references a WorkloadLibrary not present in the catalog",
+	ShortCode: "E0065",
+	Message:   "workload-library import references a WorkloadLibrary not present in the catalog",
 })
 
 // ErrWorkloadEntryNotFound fires when a bare-name workload-library import names
@@ -167,7 +181,8 @@ var errWorkloadLibraryNotFound = cerrors.Register("compiler-renderer/workload-li
 func ErrWorkloadEntryNotFound() error { return errWorkloadEntryNotFound }
 
 var errWorkloadEntryNotFound = cerrors.Register("compiler-renderer/workload-entry-not-found", cerrors.Meta{
-	Message: "workload-library import references an entry not present in the WorkloadLibrary",
+	ShortCode: "E0063",
+	Message:   "workload-library import references an entry not present in the WorkloadLibrary",
 })
 
 // ErrArtifactImportShape fires when an artifacts entry `$import:` value is
@@ -178,7 +193,8 @@ var errWorkloadEntryNotFound = cerrors.Register("compiler-renderer/workload-entr
 func ErrArtifactImportShape() error { return errArtifactImportShape }
 
 var errArtifactImportShape = cerrors.Register("compiler-renderer/artifact-import-shape", cerrors.Meta{
-	Message: "artifacts $import: is not a bare-name artifacts-library reference (<Library>#/artifacts/<entry>)",
+	ShortCode: "E0027",
+	Message:   "artifacts $import: is not a bare-name artifacts-library reference (<Library>#/artifacts/<entry>)",
 })
 
 // ErrArtifactsLibraryNotFound fires when a bare-name artifacts-library import
@@ -187,7 +203,8 @@ var errArtifactImportShape = cerrors.Register("compiler-renderer/artifact-import
 func ErrArtifactsLibraryNotFound() error { return errArtifactsLibraryNotFound }
 
 var errArtifactsLibraryNotFound = cerrors.Register("compiler-renderer/artifacts-library-not-found", cerrors.Meta{
-	Message: "artifacts-library import references an ArtifactsLibrary not present in the catalog",
+	ShortCode: "E0031",
+	Message:   "artifacts-library import references an ArtifactsLibrary not present in the catalog",
 })
 
 // ErrArtifactsLibraryEntryNotFound fires when a bare-name artifacts-library
@@ -195,7 +212,8 @@ var errArtifactsLibraryNotFound = cerrors.Register("compiler-renderer/artifacts-
 func ErrArtifactsLibraryEntryNotFound() error { return errArtifactsLibraryEntryNotFound }
 
 var errArtifactsLibraryEntryNotFound = cerrors.Register("compiler-renderer/artifacts-library-entry-not-found", cerrors.Meta{
-	Message: "artifacts-library import references a bundle not present in the ArtifactsLibrary",
+	ShortCode: "E0030",
+	Message:   "artifacts-library import references a bundle not present in the ArtifactsLibrary",
 })
 
 // ErrArtifactOutputCollision fires when one Recipe's artifacts map emits two
@@ -223,7 +241,8 @@ var errArtifactsLibraryEntryNotFound = cerrors.Register("compiler-renderer/artif
 func ErrArtifactOutputCollision() error { return errArtifactOutputCollision }
 
 var errArtifactOutputCollision = cerrors.Register("compiler-renderer/artifact-output-collision", cerrors.Meta{
-	Message: "artifacts output filename collision: two artifact outputs resolve to the same filename",
+	ShortCode: "E0028",
+	Message:   "artifacts output filename collision: two artifact outputs resolve to the same filename",
 })
 
 // ErrArtifactPillarNotDeclared fires when an artifacts entry's template reads a
@@ -253,7 +272,8 @@ var errArtifactOutputCollision = cerrors.Register("compiler-renderer/artifact-ou
 func ErrArtifactPillarNotDeclared() error { return errArtifactPillarNotDeclared }
 
 var errArtifactPillarNotDeclared = cerrors.Register("compiler-renderer/artifact-pillar-not-declared", cerrors.Meta{
-	Message: "artifact template references a pillar the Recipe does not declare",
+	ShortCode: "E0029",
+	Message:   "artifact template references a pillar the Recipe does not declare",
 })
 
 // ErrAssembledOutputCollision fires when two contributors to one assembly
@@ -276,7 +296,8 @@ var errArtifactPillarNotDeclared = cerrors.Register("compiler-renderer/artifact-
 func ErrAssembledOutputCollision() error { return errAssembledOutputCollision }
 
 var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-output-collision", cerrors.Meta{
-	Message: "assembled output collision: two contributors write the same output path",
+	ShortCode: "E0032",
+	Message:   "assembled output collision: two contributors write the same output path",
 })
 
 // ErrDerivedKeyCollision fires when one derived name is declared more than once
@@ -309,7 +330,8 @@ var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-
 func ErrDerivedKeyCollision() error { return errDerivedKeyCollision }
 
 var errDerivedKeyCollision = cerrors.Register("compiler-renderer/derived-key-collision", cerrors.Meta{
-	Message: "derived name collision: one name is derived more than once in one key space",
+	ShortCode: "E0038",
+	Message:   "derived name collision: one name is derived more than once in one key space",
 })
 
 // ErrCircularImport is the $import-surface name for a mapping-library import
@@ -333,7 +355,8 @@ func ErrCircularImport() error { return refcycle.ErrCycle() }
 func ErrHostInLibraryImport() error { return errHostInLibraryImport }
 
 var errHostInLibraryImport = cerrors.Register("compiler-renderer/host-in-library-import", cerrors.Meta{
-	Message: "library $import: carries a registry host; reference the library by bare-name identity",
+	ShortCode: "E0040",
+	Message:   "library $import: carries a registry host; reference the library by bare-name identity",
 })
 
 // ErrProviderNodeInputInvalid is the Loud Guardrail halt a provider
@@ -349,7 +372,8 @@ var errHostInLibraryImport = cerrors.Register("compiler-renderer/host-in-library
 func ErrProviderNodeInputInvalid() error { return errProviderNodeInputInvalid }
 
 var errProviderNodeInputInvalid = cerrors.Register("compiler-renderer/provider-node-input-invalid", cerrors.Meta{
-	Message: "provider rejected node input",
+	ShortCode: "E0054",
+	Message:   "provider rejected node input",
 })
 
 // ErrUnknownProvider is the compiler-level fatal halt produced by the
@@ -361,7 +385,8 @@ var errProviderNodeInputInvalid = cerrors.Register("compiler-renderer/provider-n
 func ErrUnknownProvider() error { return errUnknownProvider }
 
 var errUnknownProvider = cerrors.Register("compiler-renderer/unknown-provider", cerrors.Meta{
-	Message: "unknown provider",
+	ShortCode: "E0061",
+	Message:   "unknown provider",
 })
 
 // ErrPathCollision fires when two boundaries with the same evaluated
@@ -377,7 +402,8 @@ var errUnknownProvider = cerrors.Register("compiler-renderer/unknown-provider", 
 func ErrPathCollision() error { return errPathCollision }
 
 var errPathCollision = cerrors.Register("compiler-renderer/path-collision", cerrors.Meta{
-	Message: "dispatch path produced multiple provider outputs",
+	ShortCode: "E0048",
+	Message:   "dispatch path produced multiple provider outputs",
 })
 
 // ErrInstanceIDCollision fires when two contributors from different
@@ -391,7 +417,8 @@ var errPathCollision = cerrors.Register("compiler-renderer/path-collision", cerr
 func ErrInstanceIDCollision() error { return errInstanceIDCollision }
 
 var errInstanceIDCollision = cerrors.Register("compiler-renderer/instance-id-collision", cerrors.Meta{
-	Message: "multiple contributors share an instance ID at the same dispatch path",
+	ShortCode: "E0041",
+	Message:   "multiple contributors share an instance ID at the same dispatch path",
 })
 
 // ErrChartNameMismatch fires when two or more boundaries' contributing
@@ -404,7 +431,8 @@ var errInstanceIDCollision = cerrors.Register("compiler-renderer/instance-id-col
 func ErrChartNameMismatch() error { return errChartNameMismatch }
 
 var errChartNameMismatch = cerrors.Register("compiler-renderer/chart-name-mismatch", cerrors.Meta{
-	Message: "merged-path assembly has conflicting assembly-name annotation values",
+	ShortCode: "E0036",
+	Message:   "merged-path assembly has conflicting assembly-name annotation values",
 })
 
 // ErrPathTemplateInvalidField fires before a path template
@@ -425,7 +453,8 @@ var errChartNameMismatch = cerrors.Register("compiler-renderer/chart-name-mismat
 func ErrPathTemplateInvalidField() error { return errPathTemplateInvalidField }
 
 var errPathTemplateInvalidField = cerrors.Register("compiler-renderer/path-template-invalid-field", cerrors.Meta{
-	Message: "path template references a field not in the documented allowlist",
+	ShortCode: "E0049",
+	Message:   "path template references a field not in the documented allowlist",
 })
 
 // ErrFRTemplateInvalidField fires when the boundary-scope FeatureRecipe
@@ -442,7 +471,8 @@ var errPathTemplateInvalidField = cerrors.Register("compiler-renderer/path-templ
 func ErrFRTemplateInvalidField() error { return errFRTemplateInvalidField }
 
 var errFRTemplateInvalidField = cerrors.Register("compiler-renderer/fr-template-invalid-field", cerrors.Meta{
-	Message: "FeatureRecipe template references a per-component-only field with executionScope: boundary",
+	ShortCode: "E0039",
+	Message:   "FeatureRecipe template references a per-component-only field with executionScope: boundary",
 })
 
 // ErrAssertionFailed wraps a build halt triggered by {{ fail "..." }}
@@ -458,7 +488,8 @@ var errFRTemplateInvalidField = cerrors.Register("compiler-renderer/fr-template-
 func ErrAssertionFailed() error { return errAssertionFailed }
 
 var errAssertionFailed = cerrors.Register("compiler-renderer/assertion-failed", cerrors.Meta{
-	Message: "assertion failed",
+	ShortCode: "E0033",
+	Message:   "assertion failed",
 })
 
 // ErrPipelineTargetNotEmitted fires when a pipeline PATCH step addresses a
@@ -470,7 +501,8 @@ var errAssertionFailed = cerrors.Register("compiler-renderer/assertion-failed", 
 func ErrPipelineTargetNotEmitted() error { return errPipelineTargetNotEmitted }
 
 var errPipelineTargetNotEmitted = cerrors.Register("compiler-renderer/pipeline-target-not-emitted", cerrors.Meta{
-	Message: "pipeline PATCH targets a document the node did not emit",
+	ShortCode: "E0052",
+	Message:   "pipeline PATCH targets a document the node did not emit",
 })
 
 // ErrPipelineHostScopeUnavailable fires when a pipeline step performs a
@@ -482,7 +514,8 @@ var errPipelineTargetNotEmitted = cerrors.Register("compiler-renderer/pipeline-t
 func ErrPipelineHostScopeUnavailable() error { return errPipelineHostScopeUnavailable }
 
 var errPipelineHostScopeUnavailable = cerrors.Register("compiler-renderer/pipeline-host-scope-unavailable", cerrors.Meta{
-	Message: "pipeline /host operation from a step with no host component",
+	ShortCode: "E0050",
+	Message:   "pipeline /host operation from a step with no host component",
 })
 
 // ErrPipelinePatchPreAssembly fires when a pipeline PATCH addresses a
@@ -512,7 +545,8 @@ var errPipelineHostScopeUnavailable = cerrors.Register("compiler-renderer/pipeli
 func ErrPipelinePatchPreAssembly() error { return errPipelinePatchPreAssembly }
 
 var errPipelinePatchPreAssembly = cerrors.Register("compiler-renderer/pipeline-patch-pre-assembly", cerrors.Meta{
-	Message: "pipeline PATCH targets an assembler provider's pre-assembly fragments",
+	ShortCode: "E0051",
+	Message:   "pipeline PATCH targets an assembler provider's pre-assembly fragments",
 })
 
 // ErrPluginProviderIncompatible fires when a pipeline step's plugin declares
@@ -536,7 +570,8 @@ var errPipelinePatchPreAssembly = cerrors.Register("compiler-renderer/pipeline-p
 func ErrPluginProviderIncompatible() error { return errPluginProviderIncompatible }
 
 var errPluginProviderIncompatible = cerrors.Register("compiler-renderer/plugin-provider-incompatible", cerrors.Meta{
-	Message: "pipeline plugin is not compatible with the rendering provider",
+	ShortCode: "E0053",
+	Message:   "pipeline plugin is not compatible with the rendering provider",
 })
 
 // ErrBoundaryAssemblerMissing fires when a provider that self-reports assembling
@@ -554,7 +589,8 @@ var errPluginProviderIncompatible = cerrors.Register("compiler-renderer/plugin-p
 func ErrBoundaryAssemblerMissing() error { return errBoundaryAssemblerMissing }
 
 var errBoundaryAssemblerMissing = cerrors.Register("compiler-renderer/boundary-assembler-missing", cerrors.Meta{
-	Message: "provider expected to assemble its dispatch group provides no boundary assembler",
+	ShortCode: "E0035",
+	Message:   "provider expected to assemble its dispatch group provides no boundary assembler",
 })
 
 // ErrArtifactContentMismatch is the Loud Guardrail halt raised at build when
@@ -571,7 +607,8 @@ var errBoundaryAssemblerMissing = cerrors.Register("compiler-renderer/boundary-a
 func ErrArtifactContentMismatch() error { return errArtifactContentMismatch }
 
 var errArtifactContentMismatch = cerrors.Register("compiler-renderer/artifact-content-mismatch", cerrors.Meta{
-	Message: "imported artifact content does not match the recipe's recorded digest",
+	ShortCode: "E0026",
+	Message:   "imported artifact content does not match the recipe's recorded digest",
 })
 
 // ErrCrossProviderLinkUnsupported marks a cross-boundary uses edge whose two
@@ -590,7 +627,8 @@ var errArtifactContentMismatch = cerrors.Register("compiler-renderer/artifact-co
 func ErrCrossProviderLinkUnsupported() error { return errCrossProviderLinkUnsupported }
 
 var errCrossProviderLinkUnsupported = cerrors.Register("compiler-renderer/cross-provider-link-unsupported", cerrors.Meta{
-	Message: "cross-boundary link between endpoints rendered by different providers is not supported",
+	ShortCode: "E0037",
+	Message:   "cross-boundary link between endpoints rendered by different providers is not supported",
 })
 
 // ErrRenderNondeterministic is the Loud Guardrail halt the verify-determinism
@@ -608,7 +646,8 @@ var errCrossProviderLinkUnsupported = cerrors.Register("compiler-renderer/cross-
 func ErrRenderNondeterministic() error { return errRenderNondeterministic }
 
 var errRenderNondeterministic = cerrors.Register("compiler-renderer/render-nondeterministic", cerrors.Meta{
-	Message: "provider render is not deterministic",
+	ShortCode: "E0058",
+	Message:   "provider render is not deterministic",
 })
 
 // ErrOrphanCrossBoundaryLinkSentinel is the Loud Guardrail halt raised when
@@ -627,5 +666,6 @@ var errRenderNondeterministic = cerrors.Register("compiler-renderer/render-nonde
 func ErrOrphanCrossBoundaryLinkSentinel() error { return errOrphanCrossBoundaryLinkSentinel }
 
 var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("compiler-renderer/orphan-cross-boundary-link-sentinel", cerrors.Meta{
-	Message: "assembled output retains an unresolved cross-boundary link placeholder",
+	ShortCode: "E0047",
+	Message:   "assembled output retains an unresolved cross-boundary link placeholder",
 })

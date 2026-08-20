@@ -17,7 +17,8 @@ import (
 func ErrValuesMappingShape() error { return errValuesMappingShape }
 
 var errValuesMappingShape = cerrors.Register("types/values-mapping-shape", cerrors.Meta{
-	Message: "valuesmapping: shape must be a string scalar or {$import: <path-or-library-identity>}",
+	ShortCode: "E0197",
+	Message:   "valuesmapping: shape must be a string scalar or {$import: <path-or-library-identity>}",
 })
 
 // ValuesMapping carries one of three content-shape-dispatched forms per
