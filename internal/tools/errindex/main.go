@@ -47,9 +47,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/docsplice"
 )
 
-// regionID names the generated region within the published page. It is the id
-// carried by the page's BEGIN/END markers.
-const regionID = "error-identities"
+// regionID and shortCodeRegionID name the two generated regions within the
+// published page. Each is the id carried by that region's BEGIN/END markers.
+//
+// They are two regions on one page rather than two pages because they are two
+// views of one correspondence, and the page already tells a reader that the
+// condition a code names is looked up here. A second page would be a second home
+// for one lookup.
+//
+// Each is spliced by its own id, so the curated prose between them — which
+// introduces the table that follows it — survives both writes untouched.
+const (
+	regionID          = "error-identities"
+	shortCodeRegionID = "condition-short-codes"
+)
 
 // pageRelPath is the published page, relative to the documentation tree root.
 const pageRelPath = "language-reference/errors/sentinels.md"
@@ -92,6 +103,10 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
+	shortCodeRegion, err := renderShortCodeRegion(ids)
+	if err != nil {
+		fail(err)
+	}
 
 	// The coverage declarations are read and checked before anything is
 	// written, so a correspondence that resolves to nothing never leaves a
@@ -112,13 +127,25 @@ func main() {
 	}
 
 	page := filepath.Join(*out, pageRelPath)
-	content, err := os.ReadFile(page)
-	if err != nil {
-		fail(err)
-	}
-	written, err := docsplice.WriteFile(page, string(content), regionID, region)
-	if err != nil {
-		fail(err)
+
+	// The regions are spliced one at a time, each by its own id, and the page is
+	// re-read before each splice so the second sees the bytes the first wrote.
+	// Splicing is idempotent, so a run over an already-current page writes
+	// nothing and leaves the file's modification time where it found it.
+	written := false
+	for _, r := range []struct{ id, body string }{
+		{regionID, region},
+		{shortCodeRegionID, shortCodeRegion},
+	} {
+		content, err := os.ReadFile(page)
+		if err != nil {
+			fail(err)
+		}
+		wrote, err := docsplice.WriteFile(page, string(content), r.id, r.body)
+		if err != nil {
+			fail(err)
+		}
+		written = written || wrote
 	}
 
 	// The size of the set this run read is reported beside what it did with it.

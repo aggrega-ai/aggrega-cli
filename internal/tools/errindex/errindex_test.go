@@ -901,3 +901,327 @@ func TestReadEntries_DoesNotReadAFencedSampleAsAHeading(t *testing.T) {
 // able to serve a stale pass. It would also be the only one able to skip
 // itself when the sibling tree is absent. The fixture tests above prove every
 // rule the resolver applies, which is the part that belongs in this package.
+
+// shortCodeRows returns the short code of every row in a rendered short-code
+// region, in the order the region carries them.
+//
+// It reads the first cell rather than matching a whole row, so a test asserting
+// coverage cannot be satisfied by a row whose other cells moved.
+func shortCodeRows(t *testing.T, region string) []string {
+	t.Helper()
+	var out []string
+	for _, line := range strings.Split(region, "\n") {
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		cells := strings.Split(strings.Trim(line, "|"), " | ")
+		if len(cells) != 3 {
+			t.Fatalf("row does not carry three cells: %q", line)
+		}
+		for i, c := range cells {
+			if strings.TrimSpace(strings.Trim(strings.TrimSpace(c), "`")) == "" {
+				t.Errorf("row cell %d is empty: %q", i, line)
+			}
+		}
+		out = append(out, strings.Trim(strings.TrimSpace(cells[0]), "`"))
+	}
+	return out
+}
+
+// TestRenderShortCodeRegion_CoversAConditionTheByPackageTablesCannot is the
+// property the short-code table exists for, and the page's prose promises. The
+// by-package region is keyed on an importable name and therefore cannot carry a
+// condition declared where the module keeps it unreachable; this one is keyed on
+// the short code, which every condition declares, so it carries that condition
+// too.
+//
+// The two identities are built here rather than scanned, because the case needs
+// an unreachable origin that NO importable name re-exports, and the shared
+// fixture deliberately has the opposite: its unreachable origin is re-exported
+// from a package a reader can import, which puts the forwarded condition on the
+// by-package tables after all. That fixture is right for what it tests and adding
+// a second unreachable origin to it would change the population every other test
+// over it asserts against, so the distinction is drawn on identities constructed
+// for it.
+func TestRenderShortCodeRegion_CoversAConditionTheByPackageTablesCannot(t *testing.T) {
+	t.Parallel()
+	reachable := Identity{
+		Pkg: "pkg/thing", Name: "ErrReachable", Code: "thing/reachable",
+		ShortCode: "E0001", Message: "declared where a reader can import it", Importable: true,
+	}
+	// Unreachable and re-exported nowhere: the shape that has no matchable name
+	// to put in the by-package region's left-hand column.
+	unreachable := Identity{
+		Pkg: "internal/deep", Name: "ErrUnreachable", Code: "deep/unreachable",
+		ShortCode: "E0002", Message: "declared where no reader can import it",
+	}
+	ids := []Identity{reachable, unreachable}
+
+	region, err := renderShortCodeRegion(ids)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion: %v", err)
+	}
+	if !strings.Contains(region, "| Code | Condition | Message |") {
+		t.Errorf("region does not head its columns:\n%s", region)
+	}
+	for _, want := range []string{
+		"| `E0001` | `thing/reachable` | `declared where a reader can import it` |",
+		"| `E0002` | `deep/unreachable` | `declared where no reader can import it` |",
+	} {
+		if !strings.Contains(region, want) {
+			t.Errorf("region omits %s:\n%s", want, region)
+		}
+	}
+
+	// The by-package region carries the reachable one and cannot carry the other,
+	// so the two regions really do differ rather than both happening to be
+	// complete. Calibrated in both directions: an assertion that it omits the
+	// unreachable condition would also pass over an empty region.
+	byPkg, err := renderRegion(ids)
+	if err != nil {
+		t.Fatalf("renderRegion: %v", err)
+	}
+	if !strings.Contains(byPkg, "`thing/reachable`") {
+		t.Fatalf("the by-package region carries nothing at all, so the omission below proves nothing:\n%s", byPkg)
+	}
+	if strings.Contains(byPkg, "deep/unreachable") {
+		t.Errorf("the by-package region names a condition no reader can match:\n%s", byPkg)
+	}
+}
+
+// TestRenderShortCodeRegion_KeysOneCodeToOneRow holds the table's key property. A
+// re-export reports the short code of the condition it forwards to, so admitting
+// re-exports would put two rows under one code and leave a reader unable to tell
+// which condition they are holding — in the one table whose whole job is to
+// resolve that code.
+func TestRenderShortCodeRegion_KeysOneCodeToOneRow(t *testing.T) {
+	t.Parallel()
+	ids, err := scan("testdata/module", "example.test/fixture")
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	region, err := renderShortCodeRegion(ids)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion: %v", err)
+	}
+	rows := shortCodeRows(t, region)
+
+	// The fixture re-exports two conditions, so a region admitting re-exports
+	// would carry more rows than there are conditions. Calibration first: the
+	// fixture must actually contain a re-export, or this asserts nothing.
+	reExports, origins := 0, 0
+	for _, id := range ids {
+		if id.AliasOf != "" {
+			reExports++
+			continue
+		}
+		origins++
+	}
+	if reExports == 0 {
+		t.Fatal("the fixture declares no re-export, so this test cannot detect one being admitted")
+	}
+	if len(rows) != origins {
+		t.Errorf("region carries %d rows for %d conditions and %d re-exports:\n%s",
+			len(rows), origins, reExports, region)
+	}
+	seen := map[string]int{}
+	for _, c := range rows {
+		seen[c]++
+	}
+	for code, n := range seen {
+		if n != 1 {
+			t.Errorf("short code %s heads %d rows; a lookup keyed on it cannot name one condition", code, n)
+		}
+	}
+}
+
+// TestRenderShortCodeRegion_OrdersByShortCode pins the ordering the page's prose
+// promises. Ordering as text is correct only because a short code is zero-padded
+// to a fixed width; the assertion is against a numerically-sorted expectation, so
+// a code that stopped being padded would fail here rather than silently sorting
+// into the wrong place.
+func TestRenderShortCodeRegion_OrdersByShortCode(t *testing.T) {
+	t.Parallel()
+	ids := []Identity{
+		{Pkg: "pkg/a", Name: "ErrTen", Code: "a/ten", ShortCode: "E0010", Message: "ten", Importable: true},
+		{Pkg: "pkg/a", Name: "ErrTwo", Code: "a/two", ShortCode: "E0002", Message: "two", Importable: true},
+		{Pkg: "internal/b", Name: "ErrNine", Code: "b/nine", ShortCode: "E0009", Message: "nine"},
+	}
+	region, err := renderShortCodeRegion(ids)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion: %v", err)
+	}
+	got := shortCodeRows(t, region)
+	want := []string{"E0002", "E0009", "E0010"}
+	if !slices.Equal(got, want) {
+		t.Errorf("rows ordered %v, want %v", got, want)
+	}
+}
+
+// TestRenderShortCodeRegion_IsAFunctionOfTheDeclarationsAlone proves the region
+// does not depend on the order the declarations were walked in. A generated page
+// whose bytes move with map iteration order drifts against its own drift gate on
+// alternate runs, which reads as a stale page rather than as the non-determinism
+// it is.
+func TestRenderShortCodeRegion_IsAFunctionOfTheDeclarationsAlone(t *testing.T) {
+	t.Parallel()
+	ids, err := scan("testdata/module", "example.test/fixture")
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	first, err := renderShortCodeRegion(ids)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion: %v", err)
+	}
+	shuffled := slices.Clone(ids)
+	slices.Reverse(shuffled)
+	second, err := renderShortCodeRegion(shuffled)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion (reversed input): %v", err)
+	}
+	if first != second {
+		t.Errorf("region depends on input order:\n--- walked ---\n%s\n--- reversed ---\n%s", first, second)
+	}
+}
+
+// TestRenderShortCodeRegion_RefusesADuplicateShortCode covers the one way this
+// table can mislead rather than merely be incomplete. Registration already
+// refuses a duplicate at package initialisation, so reaching the renderer with
+// one means the extraction went wrong — and publishing two conditions under one
+// key is worse than refusing, because the reader has no way to tell which row is
+// theirs.
+func TestRenderShortCodeRegion_RefusesADuplicateShortCode(t *testing.T) {
+	t.Parallel()
+	_, err := renderShortCodeRegion([]Identity{
+		{Pkg: "pkg/a", Name: "ErrFirst", Code: "a/first", ShortCode: "E0001", Message: "first", Importable: true},
+		{Pkg: "pkg/b", Name: "ErrSecond", Code: "b/second", ShortCode: "E0001", Message: "second", Importable: true},
+	})
+	if err == nil {
+		t.Fatal("renderShortCodeRegion accepted two conditions under one short code")
+	}
+	for _, want := range []string{"pkg/a.ErrFirst", "pkg/b.ErrSecond", "E0001"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal does not name %s: %v", want, err)
+		}
+	}
+}
+
+// TestRenderShortCodeRegion_RefusesADeclaredStringCarryingATableSeparator is the
+// by-package region's refusal applied to this table's cells. Both regions route
+// the check through one function, so this holds the third cell that only this
+// table renders.
+func TestRenderShortCodeRegion_RefusesADeclaredStringCarryingATableSeparator(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		what string
+		id   Identity
+	}{
+		{what: "message", id: Identity{Pkg: "pkg/thing", Name: "ErrPiped", Code: "thing/piped", ShortCode: "E0001", Message: "a | b"}},
+		{what: "code", id: Identity{Pkg: "pkg/thing", Name: "ErrPiped", Code: "thing/a | b", ShortCode: "E0001", Message: "a message"}},
+		{what: "short code", id: Identity{Pkg: "pkg/thing", Name: "ErrPiped", Code: "thing/piped", ShortCode: "E|001", Message: "a message"}},
+	} {
+		_, err := renderShortCodeRegion([]Identity{tc.id})
+		if err == nil {
+			t.Fatalf("renderShortCodeRegion accepted a %s carrying a table separator", tc.what)
+		}
+		if !strings.Contains(err.Error(), "pkg/thing.ErrPiped") {
+			t.Errorf("%s: error does not name the offending handle: %v", tc.what, err)
+		}
+		if !strings.Contains(err.Error(), tc.what) {
+			t.Errorf("%s: error does not name which declared string carried it: %v", tc.what, err)
+		}
+	}
+}
+
+// TestRenderShortCodeRegion_LiveModuleCoversEveryDeclaredCondition is the
+// acceptance-grade check: the fixture proves the rule, and this proves it holds
+// for what actually ships. Every declared condition has exactly one row and no
+// re-export adds one, asserted as set identity rather than as a count — a count
+// written here would be a second copy of a figure the declarations already carry,
+// and it would need editing every time a condition is added.
+func TestRenderShortCodeRegion_LiveModuleCoversEveryDeclaredCondition(t *testing.T) {
+	t.Parallel()
+	modulePath, err := modulePathOf("../../..")
+	if err != nil {
+		t.Fatalf("module path: %v", err)
+	}
+	ids, err := scan("../../..", modulePath)
+	if err != nil {
+		t.Fatalf("scan module: %v", err)
+	}
+	region, err := renderShortCodeRegion(ids)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion: %v", err)
+	}
+
+	declared := map[string]string{}
+	reExports := 0
+	for _, id := range ids {
+		if id.AliasOf != "" {
+			reExports++
+			continue
+		}
+		declared[id.ShortCode] = id.Handle()
+	}
+	// Calibration: both walks below read as "nothing is wrong" over an empty set,
+	// so the inputs are proven non-empty before either verdict is believed.
+	if len(declared) == 0 {
+		t.Fatal("the module declared no condition; the scan is broken, not the rule")
+	}
+	if reExports == 0 {
+		t.Fatal("the module declares no re-export, so the exclusion below asserts nothing")
+	}
+
+	rows := shortCodeRows(t, region)
+	if len(rows) == 0 {
+		t.Fatal("the rendered region carries no rows; the comparison below would certify nothing")
+	}
+	onPage := map[string]bool{}
+	for _, c := range rows {
+		if onPage[c] {
+			t.Errorf("short code %s heads more than one row", c)
+		}
+		onPage[c] = true
+	}
+	for code, handle := range declared {
+		if !onPage[code] {
+			t.Errorf("%s declares %s and the region carries no row for it", handle, code)
+		}
+	}
+	for code := range onPage {
+		if _, ok := declared[code]; !ok {
+			t.Errorf("the region carries a row for %s, which no condition declares", code)
+		}
+	}
+	// A re-export reports its origin's short code, so admitting one would show up
+	// here as more rows than declared conditions even with every code accounted
+	// for above.
+	if len(rows) != len(declared) {
+		t.Errorf("region carries %d rows for %d declared conditions", len(rows), len(declared))
+	}
+
+	// The wider corpus is a live property, not only a constructed one: the module
+	// really does declare conditions the by-package region cannot carry, and the
+	// page's prose tells a reader this table covers them. Asserted as a non-empty
+	// difference rather than against a number — a figure written here would be a
+	// second copy of what the declarations already determine, and it would need
+	// editing whenever a condition moves between packages.
+	byPkg, err := renderRegion(ids)
+	if err != nil {
+		t.Fatalf("renderRegion: %v", err)
+	}
+	onlyHere := 0
+	for _, id := range ids {
+		if id.AliasOf != "" || strings.Contains(byPkg, codeSpan(id.Code)) {
+			continue
+		}
+		onlyHere++
+		if !onPage[id.ShortCode] {
+			t.Errorf("%s appears in neither region, so it is published nowhere", id.Handle())
+		}
+	}
+	if onlyHere == 0 {
+		t.Fatal("every declared condition already has a row in the by-package region, so this table's " +
+			"wider corpus is untested here and the page's claim about it rests on nothing")
+	}
+}

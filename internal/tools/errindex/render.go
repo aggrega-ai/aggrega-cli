@@ -9,6 +9,28 @@ import (
 	"strings"
 )
 
+// cell pairs a declared string with the name a refusal calls it by, so the
+// separator check below can report which of a row's columns broke it.
+type cell struct{ what, text string }
+
+// rejectTableSeparator refuses a declared string that would break the table row
+// it is about to be rendered into.
+//
+// It is one function rather than one check per column, and one function rather
+// than one per region: a separator breaks a row identically whichever cell
+// carries it and whichever table the cell is in, so a second copy of the refusal
+// would only be a second place for the two to disagree.
+func rejectTableSeparator(id Identity, cells []cell) error {
+	for _, c := range cells {
+		if strings.Contains(c.text, "|") {
+			return fmt.Errorf("%s: the registered %s contains a table separator, "+
+				"which no escaping renders correctly inside a cell; reword the %s",
+				id.Handle(), c.what, c.what)
+		}
+	}
+	return nil
+}
+
 // renderRegion returns the body of the generated region: one section per
 // package a reader can import, each listing the names that package exports and,
 // for each, the code it is registered under and the message it renders.
@@ -68,19 +90,11 @@ func renderRegion(ids []Identity) (string, error) {
 		sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 		var reExports []Identity
 		for _, id := range rows {
-			// Both declared strings are checked, and the check is one loop rather
-			// than one per column: a separator breaks a row identically whichever
-			// cell carries it, and a second copy of the refusal would be a second
-			// place for the two to disagree.
-			for _, cell := range []struct{ what, text string }{
+			if err := rejectTableSeparator(id, []cell{
 				{"code", id.Code},
 				{"message", id.Message},
-			} {
-				if strings.Contains(cell.text, "|") {
-					return "", fmt.Errorf("%s: the registered %s contains a table separator, "+
-						"which no escaping renders correctly inside a cell; reword the %s",
-						id.Handle(), cell.what, cell.what)
-				}
+			}); err != nil {
+				return "", err
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s |\n",
 				codeSpan(id.Name+"()"), codeSpan(id.Code), codeSpan(id.Message))
@@ -102,6 +116,81 @@ func renderRegion(ids []Identity) (string, error) {
 					codeSpan(id.Name+"()"), codeSpan(id.AliasOf+"()"))
 			}
 		}
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// renderShortCodeRegion returns the body of the short-code region: one row per
+// declared condition, ordered by short code, carrying that code, the descriptive
+// code naming the same condition, and the message it renders.
+//
+// # Why this table's corpus is wider than the by-package one
+//
+// [renderRegion] is keyed on a name a reader can import, so it can only carry a
+// condition that HAS such a name — a condition declared where the module makes it
+// unreachable, and re-exported nowhere reachable, has nothing to put in its
+// left-hand column. This table is keyed on the short code instead, and every
+// condition declares one because registration refuses a condition without one.
+// So the two corpora differ by construction rather than by policy, and this one
+// is the whole declared set.
+//
+// That difference is the reason the wider table has to exist. A short code says
+// nothing about its condition on its own, so a reader holding one can do nothing
+// with it but look it up; a lookup surface covering only the conditions that also
+// happen to have an importable accessor would be silent for a large minority of
+// the codes it is supposed to resolve, which defeats the purpose of publishing it.
+//
+// # No category column, and it is not an omission
+//
+// A condition has no category to put in one. Which category a diagnostic reports
+// is derived per occurrence from the entity kind the failure is about, so one
+// condition reached from two kinds reports two categories and any single value
+// here would be false for it. The page says so in the reader's terms and points
+// at where the category vocabulary is taught.
+//
+// # Ordering
+//
+// Rows are ordered by short code, as text. A short code is zero-padded to a
+// fixed width precisely so that a text sort is also a numeric one, so this needs
+// no numeric parse and cannot disagree with one.
+//
+// Re-exports are excluded. A re-export is another name for a condition already
+// listed, not a second condition, and it reports the short code of the condition
+// it forwards to — so including one would put two rows under a single code and
+// make the key ambiguous in the one table whose whole job is to resolve it.
+func renderShortCodeRegion(ids []Identity) (string, error) {
+	rows := make([]Identity, 0, len(ids))
+	for _, id := range ids {
+		if id.AliasOf != "" {
+			continue
+		}
+		rows = append(rows, id)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ShortCode < rows[j].ShortCode })
+
+	// A duplicate short code would render two rows under one key and leave a
+	// reader unable to tell which condition they are holding. Registration
+	// already refuses one at package initialisation, so reaching here means the
+	// extraction — not the declaration — has gone wrong, and reporting it is
+	// cheaper than publishing an ambiguous table.
+	seen := make(map[string]string, len(rows))
+	var b strings.Builder
+	b.WriteString("| Code | Condition | Message |\n| --- | --- | --- |\n")
+	for _, id := range rows {
+		if prev, dup := seen[id.ShortCode]; dup {
+			return "", fmt.Errorf("%s and %s both report the short code %s, so a lookup keyed on it "+
+				"cannot name one condition", prev, id.Handle(), id.ShortCode)
+		}
+		seen[id.ShortCode] = id.Handle()
+		if err := rejectTableSeparator(id, []cell{
+			{"short code", id.ShortCode},
+			{"code", id.Code},
+			{"message", id.Message},
+		}); err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&b, "| %s | %s | %s |\n",
+			codeSpan(id.ShortCode), codeSpan(id.Code), codeSpan(id.Message))
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
 }
