@@ -89,6 +89,92 @@ func runVec[T any, PT cborRT[T]](t *testing.T, file string, skipRef bool) {
 	}
 }
 
+// registeredVectors holds the name of every vector the suite registers. The
+// registration path records it itself so the completeness check below compares
+// the corpus on disk against what the suite actually covers, rather than against
+// a list of names maintained beside the registrations: such a list is a second
+// copy of the same information, and the copy is what goes stale.
+var registeredVectors = map[string]bool{}
+
+// vec registers one vector as its own subtest. The wrapping is load-bearing
+// rather than cosmetic: runVec's reference-encoder comparison ends the test on
+// failure, so registering vectors directly in one test body lets the first
+// failing vector mask every vector after it. Per-vector subtests make each
+// vector's verdict independent, which is what lets the suite report which
+// vectors anchor rather than only whether the corpus as a whole does.
+func vec[T any, PT cborRT[T]](t *testing.T, file string, skipRef bool) {
+	t.Helper()
+	// Recorded here rather than inside the subtest closure, and regardless of
+	// skipRef. Outside the closure, because a -run filter selecting a subset of
+	// subtests never executes the ones it filters out, so recording inside would
+	// under-report the coverage and fail the completeness check on a legitimate
+	// scoped run; it also keeps this map written only from the parent's serial
+	// body. Regardless of skipRef, because the check asserts that a vector is
+	// registered, not that it is anchored against the reference encoder — a
+	// vector deliberately carved out of that comparison is still covered here.
+	registeredVectors[file] = true
+	t.Run(file, func(t *testing.T) {
+		runVec[T, PT](t, file, skipRef)
+	})
+}
+
+// assertCorpusFullyRegistered compares the vectors present in the shared suite
+// directory against the vectors this suite registers, and names any the suite
+// does not cover. It guards against a vector being added to the shared tree and
+// wired into no assertion here: without it, a new vector would simply never be
+// anchored against the reference encoder and nothing would say so. That is not a
+// hypothetical failure mode — it is how the unanchored part of this corpus grew,
+// held only by the three codecs agreeing with each other while every gate stayed
+// green.
+//
+// Both sides are derived rather than written down. The disk side is read from the
+// directory; the registered side is recorded by the registration path itself. A
+// check comparing a census against a constant a maintainer keeps in step with it
+// proves only that two hand-written numbers agree.
+//
+// The directory is read rather than pattern-matched because a pattern match
+// reports no error for a directory that is not there: a moved or mistyped path
+// would match nothing, find nothing missing, and pass. An empty corpus and a
+// fully covered one must never be indistinguishable, so finding no vectors at all
+// is its own failure. Reading the directory also yields entries sorted by name,
+// so the reported set is deterministic without sorting it.
+//
+// Only the disk-to-registered direction is asserted. The opposite direction — a
+// registration naming a vector that has no file — is already fatal in runVec,
+// which reads the hex golden and cannot proceed without it, so asserting it again
+// here would duplicate a guarantee that already holds.
+func assertCorpusFullyRegistered(t *testing.T) {
+	t.Helper()
+
+	const ext = ".cbor.hex"
+	entries, err := os.ReadDir(testdataDir)
+	if err != nil {
+		t.Fatalf("read the vector directory %s: %v", testdataDir, err)
+	}
+	onDisk := 0
+	var unregistered []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ext) {
+			continue
+		}
+		onDisk++
+		if name := strings.TrimSuffix(e.Name(), ext); !registeredVectors[name] {
+			unregistered = append(unregistered, name)
+		}
+	}
+	if onDisk == 0 {
+		t.Fatalf("found no %s vectors under %s, so this check certifies nothing: an empty "+
+			"discovery is a broken instrument, not a covered corpus", ext, testdataDir)
+	}
+	if len(unregistered) > 0 {
+		t.Errorf("%d of %d vectors in the shared suite are registered by no assertion here: %s.\n"+
+			"Register every vector, so none is left held only by the codecs agreeing with each "+
+			"other: all three are emitted by one generator, so a generator-level mistake appears "+
+			"identically in each and their agreement stays green.",
+			len(unregistered), onDisk, strings.Join(unregistered, ", "))
+	}
+}
+
 // checkOrUpdateHex writes the canonical hex under AGGREGA_UPDATE_GOLDEN, else
 // asserts the committed hex matches.
 func checkOrUpdateHex(t *testing.T, file string, cborBytes []byte) {
@@ -111,45 +197,112 @@ func checkOrUpdateHex(t *testing.T, file string, cborBytes []byte) {
 	}
 }
 
-// TestSuite_CBORVectors iterates the shared vector suite. FRPStepOutput is carved
-// out of the fxamacker assertion: its patch operand is a bare opaque JSON value
-// (any), which the R10 rule carries as a CBOR byte-string of the verbatim JSON
-// bytes, whereas fxamacker encodes a Go any as its native CBOR type — a
-// deliberate representation difference, so FRPStepOutput is proven by the
-// cross-language hex match plus its round-trip, not by the fxamacker byte oracle.
+// TestSuite_CBORVectors iterates the shared vector suite. Every vector on disk is
+// registered here, so the oracle covers the whole corpus rather than the subset
+// that happened to be wired: a vector held only by the three codecs agreeing with
+// each other is not independently attested at all, because all three are emitted
+// by one generator and a generator-level mistake appears identically in each while
+// the three-way hex match stays green. That coverage is enforced rather than
+// merely intended — assertCorpusFullyRegistered, called at the end of this
+// function, fails if the directory holds a vector no registration here names.
+//
+// FRPStepOutput is the one vector carved out of the fxamacker assertion: its patch
+// operand is a bare opaque JSON value (any), which the R10 rule carries as a CBOR
+// byte-string of the verbatim JSON bytes, whereas fxamacker encodes a Go any as
+// its native CBOR type — a deliberate representation difference, so FRPStepOutput
+// is proven by the cross-language hex match plus its round-trip, not by the
+// fxamacker byte oracle. The carve-out is specific to that vector rather than to
+// its type: the other two FRPStepOutput vectors leave the patch list absent, never
+// reach the opaque path, and so agree with the reference encoder exactly.
 func TestSuite_CBORVectors(t *testing.T) {
-	runVec[abi.CLIRunInput](t, "CLIRunInput", false)
-	runVec[abi.FRPStepInput](t, "FRPStepInput", false)
-	runVec[abi.FRPStepOutput](t, "FRPStepOutput", true)
-	runVec[abi.MutatorInput](t, "MutatorInput", false)
-	runVec[abi.MutatorOutput](t, "MutatorOutput", false)
-	runVec[abi.LinterInput](t, "LinterInput", false)
-	runVec[abi.LinterOutput](t, "LinterOutput", false)
-	runVec[abi.IRGraph](t, "IRGraph", false)
-	runVec[abi.PolicyInput](t, "PolicyInput", false)
-	runVec[abi.PolicyOutput](t, "PolicyOutput", false)
-	runVec[abi.RenderNodeInput](t, "RenderNodeInput", false)
-	runVec[abi.RenderNodeOutput](t, "RenderNodeOutput", false)
-	runVec[abi.IRNodeProjection](t, "IRNodeProjectionSensitiveRenderedKeys", false)
-	runVec[abi.IRFeatureEntry](t, "IRFeatureEntrySensitiveAuthoredLeaves", false)
-	runVec[abi.AssembleBoundaryInput](t, "AssembleBoundaryInput", false)
-	runVec[abi.AssembleBoundaryOutput](t, "AssembleBoundaryOutput", false)
-	runVec[abi.LinkPublishInput](t, "LinkPublishInput", false)
-	runVec[abi.LinkPublishOutput](t, "LinkPublishOutput", false)
-	runVec[abi.LinkResolveInput](t, "LinkResolveInput", false)
-	runVec[abi.LinkResolveOutput](t, "LinkResolveOutput", false)
-	runVec[abi.PluginDescriptor](t, "PluginDescriptorCLI", false)
-	runVec[abi.PluginDescriptor](t, "PluginDescriptorProvider", false)
-	runVec[abi.PluginDescriptor](t, "PluginDescriptorMinimal", false)
-	runVec[abi.PluginDescriptor](t, "PluginDescriptorMoo", false)
-	runVec[abi.ParseInput](t, "ParseInput", false)
-	runVec[abi.ParseOutput](t, "ParseOutput", false)
-	runVec[abi.ParseOutput](t, "ParseOutputBare", false)
-	runVec[abi.ImportInput](t, "ImportInput", false)
-	runVec[abi.ImportOutput](t, "ImportOutput", false)
-	runVec[abi.ParseSourceResponse](t, "ParseSourceResponse", false)
-	runVec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponse", false)
-	runVec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponseContent", false)
+	vec[abi.CLIRunInput](t, "CLIRunInput", false)
+	vec[abi.FRPStepInput](t, "FRPStepInput", false)
+	vec[abi.FRPStepOutput](t, "FRPStepOutput", true)
+	vec[abi.MutatorInput](t, "MutatorInput", false)
+	vec[abi.MutatorOutput](t, "MutatorOutput", false)
+	vec[abi.LinterInput](t, "LinterInput", false)
+	vec[abi.LinterOutput](t, "LinterOutput", false)
+	vec[abi.IRGraph](t, "IRGraph", false)
+	vec[abi.PolicyInput](t, "PolicyInput", false)
+	vec[abi.PolicyOutput](t, "PolicyOutput", false)
+	vec[abi.RenderNodeInput](t, "RenderNodeInput", false)
+	vec[abi.RenderNodeOutput](t, "RenderNodeOutput", false)
+	vec[abi.IRNodeProjection](t, "IRNodeProjectionSensitiveRenderedKeys", false)
+	vec[abi.IRFeatureEntry](t, "IRFeatureEntrySensitiveAuthoredLeaves", false)
+	vec[abi.AssembleBoundaryInput](t, "AssembleBoundaryInput", false)
+	vec[abi.AssembleBoundaryOutput](t, "AssembleBoundaryOutput", false)
+	vec[abi.LinkPublishInput](t, "LinkPublishInput", false)
+	vec[abi.LinkPublishOutput](t, "LinkPublishOutput", false)
+	vec[abi.LinkResolveInput](t, "LinkResolveInput", false)
+	vec[abi.LinkResolveOutput](t, "LinkResolveOutput", false)
+	vec[abi.PluginDescriptor](t, "PluginDescriptorCLI", false)
+	vec[abi.PluginDescriptor](t, "PluginDescriptorProvider", false)
+	vec[abi.PluginDescriptor](t, "PluginDescriptorMinimal", false)
+	vec[abi.PluginDescriptor](t, "PluginDescriptorMoo", false)
+	vec[abi.ParseInput](t, "ParseInput", false)
+	vec[abi.ParseOutput](t, "ParseOutput", false)
+	vec[abi.ParseOutput](t, "ParseOutputBare", false)
+	vec[abi.ImportInput](t, "ImportInput", false)
+	vec[abi.ImportOutput](t, "ImportOutput", false)
+	vec[abi.ParseSourceResponse](t, "ParseSourceResponse", false)
+	vec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponse", false)
+	vec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponseContent", false)
+
+	// The socket payloads whose governance and label-transform vectors the suite
+	// carried without an oracle anchor.
+	vec[abi.RenderPolicyInput](t, "RenderPolicyInput", false)
+	vec[abi.AnnotationTransformInput](t, "AnnotationTransformInput", false)
+	vec[abi.AnnotationTransformOutput](t, "AnnotationTransformOutput", false)
+	vec[abi.MutatorInput](t, "MutatorInputSources", false)
+
+	// The failure-envelope vectors: one per socket output type that declares an
+	// error member, each with that member populated and the success members left
+	// at their zero value.
+	vec[abi.AnnotationTransformOutput](t, "ErrorEnvelopeAnnotationTransformOutput", false)
+	vec[abi.AssembleBoundaryOutput](t, "ErrorEnvelopeAssembleBoundaryOutput", false)
+	vec[abi.FRPStepOutput](t, "ErrorEnvelopeFRPStepOutput", false)
+	vec[abi.ImportOutput](t, "ErrorEnvelopeImportOutput", false)
+	vec[abi.LinterOutput](t, "ErrorEnvelopeLinterOutput", false)
+	vec[abi.MutatorOutput](t, "ErrorEnvelopeMutatorOutput", false)
+	vec[abi.ParseOutput](t, "ErrorEnvelopeParseOutput", false)
+	vec[abi.PolicyOutput](t, "ErrorEnvelopePolicyOutput", false)
+	vec[abi.RenderNodeOutput](t, "ErrorEnvelopeRenderNodeOutput", false)
+	vec[abi.SourceFileResponse](t, "ErrorEnvelopeSourceFileResponse", false)
+	vec[abi.SourcePackResponse](t, "ErrorEnvelopeSourcePackResponse", false)
+	vec[abi.ValidateNodeOutput](t, "ErrorEnvelopeValidateNodeOutput", false)
+
+	// The map-order probe vectors: one per payload declaring a map field, with
+	// every such map populated by the probe key set. Their whole purpose is
+	// pinning map-key sort order, so they are the vectors an oracle anchor is
+	// worth most to — a sort order attested only by codecs that all sort the same
+	// way because one generator emitted them is attested by its own assumption.
+	vec[abi.AnnotationTarget](t, "MapOrderAnnotationTarget", false)
+	vec[abi.ArtifactProjectionEntry](t, "MapOrderArtifactProjectionEntry", false)
+	vec[abi.BoundaryEnvOverridesInput](t, "MapOrderBoundaryEnvOverridesInput", false)
+	vec[abi.BoundaryEnvOverridesOutput](t, "MapOrderBoundaryEnvOverridesOutput", false)
+	vec[abi.DocumentSet](t, "MapOrderDocumentSet", false)
+	vec[abi.EmittedEntity](t, "MapOrderEmittedEntity", false)
+	vec[abi.FRPStepInput](t, "MapOrderFRPStepInput", false)
+	vec[abi.FRPStepOutput](t, "MapOrderFRPStepOutput", false)
+	vec[abi.IRFeatureEntry](t, "MapOrderIRFeatureEntry", false)
+	vec[abi.IRNode](t, "MapOrderIRNode", false)
+	vec[abi.IRNodeProjection](t, "MapOrderIRNodeProjection", false)
+	vec[abi.IRSpec](t, "MapOrderIRSpec", false)
+	vec[abi.LinkEdge](t, "MapOrderLinkEdge", false)
+	vec[abi.LinkPublishOutput](t, "MapOrderLinkPublishOutput", false)
+	vec[abi.LinkResolveInput](t, "MapOrderLinkResolveInput", false)
+	vec[abi.MutatorGraph](t, "MapOrderMutatorGraph", false)
+	vec[abi.MutatorNode](t, "MapOrderMutatorNode", false)
+	vec[abi.RenderedNode](t, "MapOrderRenderedNode", false)
+	vec[abi.SubChart](t, "MapOrderSubChart", false)
+	vec[abi.WorkloadProjection](t, "MapOrderWorkloadProjection", false)
+
+	// Last, after every registration above: the registrations are what this
+	// checks, so it cannot be a test of its own. Nothing guarantees the order in
+	// which two top-level tests run, so a separate test could run before the
+	// registrations had recorded anything and pass on an empty comparison — the
+	// vacuous green this check exists to make impossible.
+	assertCorpusFullyRegistered(t)
 }
 
 // floatVector is one entry of the shared float-boundary suite: a label, the f64's
