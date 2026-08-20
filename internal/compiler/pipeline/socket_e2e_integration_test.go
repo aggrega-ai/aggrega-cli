@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -348,6 +349,51 @@ func TestPolicySocketHaltE2E(t *testing.T) {
 	}
 	if ce.Category != cerrors.PolicyError {
 		t.Errorf("policy halt category = %q, want %q", ce.Category, cerrors.PolicyError)
+	}
+}
+
+// TestPolicySocketGuestReportedErrorE2E proves the guest-reported error envelope
+// end-to-end with a real compiled guest. The reference policy fixture's
+// report_incomplete export emits a PolicyOutput carrying an error message and no
+// verdicts — the shape a plugin returns when it ran but could not finish
+// evaluating — and the host converges that onto the guest-error taxonomy: the
+// halt wraps ErrWasmGuestError and carries the guest's own message and the export
+// it was dispatched through. The attachment names its entry function, which is
+// how a policy attachment selects an export other than the socket's default.
+//
+// The convergence onto the sentinel is the property under test, not merely that
+// an error surfaced. Two assertions pin it from both sides: the halt IS an
+// ErrWasmGuestError, and it is NOT an ErrPolicyViolation — a plugin that could
+// not complete reached no verdict, so the verdict sentinel would misreport an
+// incomplete run as a rule that fired.
+func TestPolicySocketGuestReportedErrorE2E(t *testing.T) {
+	ctx := context.Background()
+	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
+		URI:      "proof://policy",
+		Role:     plugintype.RoleIRVerdict,
+		Function: "report_incomplete",
+	}}
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy": "policy-go.wasm"})
+
+	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	if err == nil {
+		t.Fatalf("a guest that reported an error on its output: expected a halt, got nil")
+	}
+	if !errors.Is(err, wasm.ErrWasmGuestError()) {
+		t.Fatalf("guest-reported error did not converge on ErrWasmGuestError:\n%v", err)
+	}
+	const wantMsg = "fixture rule set could not be evaluated: no rule source was supplied"
+	if !strings.Contains(err.Error(), wantMsg) {
+		t.Errorf("halt does not carry the guest's own message %q:\n%v", wantMsg, err)
+	}
+	// The dispatched export reaches the surfaced error, so a plugin author reading
+	// the halt knows which entry point reported the failure.
+	if !strings.Contains(err.Error(), "report_incomplete") {
+		t.Errorf("halt does not name the dispatched export:\n%v", err)
+	}
+	if errors.Is(err, analyzer.ErrPolicyViolation()) {
+		t.Errorf("a guest that could not complete reached no verdict, yet the halt carries ErrPolicyViolation:\n%v", err)
 	}
 }
 
