@@ -103,10 +103,13 @@ type PluginProvider struct {
 	// platform-native annotation keys (the aggrega.ai/ namespace): the keys
 	// its engine reads, each with the scope it is read at and the behavior
 	// applied when the annotation is absent. The published support matrix is
-	// rendered from these entries. The compiler reads the claim in one way —
-	// a declared scope naming an input kind Contract.InputKinds does not
-	// claim halts the load through ValidateWellKnownAnnotationScopes — and
-	// branches on nothing else in it. Absent declares no support claim.
+	// rendered from these entries. The compiler reads the claim in exactly two
+	// ways and branches on nothing else in it: a declared scope naming an input
+	// kind Contract.InputKinds does not claim halts the load through
+	// ValidateWellKnownAnnotationScopes, and a render asks
+	// WellKnownAnnotationHonoured whether the claim covers an authored key on the
+	// node's input kind, advising the author when it does not. Neither reads the
+	// annotation's value. Absent declares no support claim.
 	// Entries preserve author order.
 	WellKnownAnnotations []WellKnownAnnotation `json:"wellKnownAnnotations,omitempty" yaml:"wellKnownAnnotations,omitempty"`
 	// Contract is the provider's self-declared render-behavior contract: the

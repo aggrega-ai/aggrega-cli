@@ -85,6 +85,60 @@ func ValidateWellKnownAnnotationScopes(p Plugin) error {
 	return nil
 }
 
+// WellKnownAnnotationHonoured reports whether a provider's own support claim
+// covers key for a node rendering at the given input-kind scope. It is the one
+// read of that claim outside the load-time contradiction check: a render surface
+// asks it to tell an author whose annotation reaches a provider that cannot act
+// on it, so the answer must be derived from the declaration and never from a
+// second table restating it.
+//
+// The claim covers the key when the provider declares an entry for it and that
+// entry either names this input-kind scope, names the boundary scope, or names no
+// scope at all. The last two are not laxity:
+//
+//   - A boundary-scoped key is resolved once for the whole boundary rather than
+//     on any node's render path, so it is genuinely honoured for every node
+//     beneath that boundary whatever input kind each of them renders. Since a
+//     boundary annotation reaches every such node's merged annotations, comparing
+//     against the input-kind scope alone would report a key the provider does act
+//     on as one it ignores.
+//   - An entry with no scope states only that the engine reads the key
+//     somewhere. It makes no claim about any one path, so there is nothing to
+//     contradict and nothing honest to report.
+//
+// A provider that declares a support claim which names no entry for the key is
+// not covered: it has said which keys it reads, and this is not one of them.
+//
+// 🔴 An ABSENT claim is a different thing from a claim that omits the key, and
+// reports covered. A provider that declares no support claim at all has said
+// nothing, and inferring "this key is not read" from silence would put a negative
+// claim in the provider author's mouth and report it to a deployment author as
+// the provider's own word. The residue is real and is not papered over: a
+// provider that reads none of these keys and declares nothing is indistinguishable
+// here from one that reads them all, so its authors get no advisory. That gap is
+// closed by the provider declaring its claim, never by this read guessing at one.
+// A nil provider block reports covered for the same reason, one level up: an
+// entity that is not a provider makes no render claim to compare against.
+func WellKnownAnnotationHonoured(p Plugin, key, inputKindScope string) bool {
+	if p.Spec.Provider == nil || len(p.Spec.Provider.WellKnownAnnotations) == 0 {
+		return true
+	}
+	for _, a := range p.Spec.Provider.WellKnownAnnotations {
+		if a.Key != key {
+			continue
+		}
+		if len(a.Scope) == 0 {
+			return true
+		}
+		for _, scope := range a.Scope {
+			if scope == inputKindScope || scope == WellKnownAnnotationScopeBoundary {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // inputKindClaim resolves a declared scope to the contract.inputKinds field it
 // constrains and whether that field is claimed. It reports an empty field name
 // for a scope that names no input kind — the boundary scope — so the caller

@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+#
+# One deployment authoring three annotations against one target, so a build shows
+# all three outcomes at once:
+#
+#   aggrega.ai/chart-name            — the target claims it, so it is acted on
+#   aggrega.ai/namespace             — the target claims no such key, so it is not
+#   compliance.aggrega.ai/data-class — authored vocabulary, passed through
+#
+# The middle one is the case an author most needs told about: a platform key that
+# reaches nothing and, without a word, is indistinguishable from a typo.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod-release-annotation-support-advisory
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregate.yaml
+  manifest: ../manifests/helm-chart-sourced.yaml
+  boundaries:
+    # One boundary holding two components, so a single authored line is seen
+    # cascading: the advisory is raised once per node that cannot act on it,
+    # because the fact being reported is per node.
+    app-ns:
+      directory: ./dist/app
+      annotations:
+        aggrega.ai/chart-name: "app-platform"
+        aggrega.ai/namespace: "app-zone"
+        compliance.aggrega.ai/data-class: "internal"
+      components:
+        frontend:
+          infra:
+            replicas: 2
+            port: 3003
+          features:
+            cross-namespace-routing:
+              type: core/k8s-dns-resolver
+              infra:
+                target_var: "API_HOST"
+        backend:
+          infra:
+            replicas: 3
+            port: 8082
+    data-ns:
+      directory: ./dist/data
+      annotations:
+        aggrega.ai/chart-name: "data-platform"
+        aggrega.ai/namespace: "database-zone"
+        compliance.aggrega.ai/data-class: "restricted"
+      components:
+        data.main-db:
+          infra:
+            replicas: 1

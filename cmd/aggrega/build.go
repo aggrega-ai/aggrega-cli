@@ -62,7 +62,7 @@ type buildFlags struct {
 const (
 	flagNoUnsupportedFieldWarnings = "no-unsupported-field-warnings"
 
-	helpNoUnsupportedFieldWarnings = "Silence the unsupported-field warning class: the per-field notices a lower-fidelity target (such as compose) emits for authored Workload fields it cannot honor. Other render warnings still surface. Display-only; does not change the rendered output"
+	helpNoUnsupportedFieldWarnings = "Silence the unsupported-field warning class: the notices a target raises for something you authored that it cannot honor — a Workload field it cannot express (as a lower-fidelity target such as compose does), or an aggrega.ai/ annotation it does not act on for the node's input kind. Other render warnings still surface. Display-only; does not change the rendered output"
 )
 
 // helpTraceUnredacted names the replacement text by calling for it rather than

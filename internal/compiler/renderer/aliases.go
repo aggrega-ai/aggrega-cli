@@ -16,6 +16,12 @@ import rendercore "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercor
 // display consumers match the class by the single definition in rendercore.
 const UnsupportedFieldCode = rendercore.UnsupportedFieldCode
 
+// UnhonorableAnnotationDiagnostic re-exports the constructor for the advisory
+// raised when a target's support claim does not cover an authored platform
+// annotation, so the render orchestration package builds it from the single
+// definition in rendercore and it carries the class code by construction.
+var UnhonorableAnnotationDiagnostic = rendercore.UnhonorableAnnotationDiagnostic
+
 // SensitiveByValueCode re-exports the stable code carried by every
 // sensitive-by-value advisory, so the render orchestration package and its
 // display consumers match the class by the single definition in rendercore.

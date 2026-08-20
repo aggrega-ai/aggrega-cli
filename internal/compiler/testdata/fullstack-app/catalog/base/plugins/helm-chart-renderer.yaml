@@ -10,6 +10,16 @@ spec:
   provider:
     capabilities:
       - helm-chart
+    # This provider's annotation support claim, matching what the published
+    # helm-chart provider declares: the assembled chart's name, resolved once for
+    # the whole boundary rather than on any node's render path. It reads no
+    # node-scoped annotation, so no other key is claimed here.
+    wellKnownAnnotations:
+      - key: aggrega.ai/chart-name
+        purpose: Name of the assembled umbrella Helm chart.
+        defaultBehavior: The leaf boundary name is used.
+        scope:
+          - boundary
   # BOTH exports: render_node copies each sourced sub-chart into a file set;
   # assemble_boundary merges the dispatch group's sub-charts into a single
   # umbrella Chart.yaml + values.yaml. The dual-export signal routes the

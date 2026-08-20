@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
@@ -236,5 +237,39 @@ func TestPublishRenderDiagnostics_TranslatesRatherThanCopies(t *testing.T) {
 	if got[0].Severity != "warning" {
 		t.Errorf("published severity = %q; want the editor wire's %q (a copy of the plugin wire's %q is the defect)",
 			got[0].Severity, "warning", abi.SeverityWarn)
+	}
+}
+
+// TestPublishRenderDiagnostics_CarriesUnhonorableAnnotationAdvisory proves the
+// advisory raised for an authored platform annotation the target cannot act on
+// reaches the editor's problem list, not the terminal alone. It drives the bridge
+// with the diagnostic the render's own constructor builds — located as the render
+// locates it — and reads the published layer, so the assertion covers the whole
+// crossing rather than the formatter in isolation.
+func TestPublishRenderDiagnostics_CarriesUnhonorableAnnotationAdvisory(t *testing.T) {
+	t.Parallel()
+	s := layeredServer()
+	var out bytes.Buffer
+	ctx, flush := serializerContext(t, &out)
+	const file = "/w/release.yaml"
+
+	d := rendercore.UnhonorableAnnotationDiagnostic("helm-chart", "aggrega.ai/namespace", "sourced")
+	d.Location = &renderer.DiagnosticLocation{URI: "frontend", Kind: "helm-chart"}
+	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d})
+	flush()
+
+	got := s.snapshotDiagnostics(file)
+	if len(got) != 1 {
+		t.Fatalf("published %d diagnostics; want 1", len(got))
+	}
+	if got[0].Severity != "warning" {
+		t.Errorf("published severity = %q; want the editor wire's %q", got[0].Severity, "warning")
+	}
+	// The editor entry carries the same line a terminal build prints, so an author
+	// reading either surface is told the key, the target and the input kind.
+	for _, want := range []string{"aggrega.ai/namespace", "helm-chart", "sourced", "frontend"} {
+		if !strings.Contains(got[0].Message, want) {
+			t.Errorf("published editor message %q does not name %s", got[0].Message, want)
+		}
 	}
 }

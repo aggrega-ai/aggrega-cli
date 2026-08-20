@@ -1059,6 +1059,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
+		// The node's input kind is settled now, and the resolved provider and the
+		// deployment's authored annotations were already in hand — so this is the
+		// one point that holds every fact the advisory needs. It reports the
+		// platform annotations this node carries that its target's own support
+		// claim does not cover for this input kind: authored directives that reach
+		// no consumer, which without a word are indistinguishable from a typo.
+		// A degradation, never a refusal: the annotations pass through untouched
+		// and no rendered byte moves.
+		if kind, ok := classifyNodeInputKind(hasSource, hasWorkload, hasArtifacts); ok {
+			warnUnhonorableAnnotations(nodeID, providerRef, providerName, kind,
+				node.ReleaseAnnotations, input.CatalogLookup.ProviderPlugin,
+				nodeCtx.UnsupportedFieldSink)
+		}
+
 		// Advertised-only per-node input validation. When the resolved provider's
 		// guest declares the optional input-validation export, run it once here —
 		// after the capability gate, before any Phase B render pass — so a provider
@@ -1919,23 +1933,20 @@ func resolveFeatureRecipes(
 // rejection switch. The consequence for whoever debugs one: an engine that is
 // handed a kind its own report did not declare has been mis-routed — that is a
 // defect on this path, not something the author of the Recipe can fix.
+//
+// The classification itself lives in classifyNodeInputKind, which the
+// annotation-support advisory reads too, so the precedence and the input kind's
+// user-facing name are each stated once rather than once per reader.
 func gateInputKind(nodeID, providerName string, engine Provider, hasSource, hasWorkload, hasArtifacts bool) error {
-	caps := engine.Contract()
-	switch {
-	case hasSource:
-		if !caps.Sourced {
-			return unsupportedInputKindError(nodeID, providerName, "sourced", caps)
-		}
-	case hasWorkload:
-		if !caps.Synthesized {
-			return unsupportedInputKindError(nodeID, providerName, "synthesised", caps)
-		}
-	case hasArtifacts:
-		if !caps.ArtifactsStandalone {
-			return unsupportedInputKindError(nodeID, providerName, "artifacts-only", caps)
-		}
+	kind, ok := classifyNodeInputKind(hasSource, hasWorkload, hasArtifacts)
+	if !ok {
+		return nil
 	}
-	return nil
+	caps := engine.Contract()
+	if kind.claimedBy(caps) {
+		return nil
+	}
+	return unsupportedInputKindError(nodeID, providerName, kind.Display, caps)
 }
 
 // routeNodeInputDiagnostics splits a provider's per-node input-validation
