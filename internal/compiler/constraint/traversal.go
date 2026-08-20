@@ -890,10 +890,10 @@ func RunOnBoundaryAttachmentPipelineSteps[V View](
 //
 // The locator is .spec.artifacts.<name> in the Recipe's own file, where <name>
 // is the output name the entry resolves to — the same value the subject carries
-// as its artifact coordinate. An entry written inline resolves to its own
-// authored key, so for that form the two are one value; an entry supplied by an
-// imported file resolves to that file's base name, and one supplied by a library
-// bundle resolves to a name per file the bundle holds.
+// as its artifact coordinate. An entry written inline and one supplied by an
+// imported file each resolve to their own authored key, so for those forms the
+// two are one value; one supplied by a library bundle resolves to a name per file
+// the bundle holds, each nested under that key.
 //
 // An output name is a filename, so on this axis the name ordinarily carries the
 // dialect's separator — and it carries it as ONE authored key, which the dialect

@@ -361,11 +361,14 @@ func (e *Engine) SynthesizeWorkload(
 // entries in author order; the guest preserves it), so the guest's file order is
 // preserved — never re-sorted.
 //
-// The input-kind origin of each placed file is reconstructed by base-name match
-// against the projection's import-origin entries: a file whose base name is an
-// imported entry's name is artifacts-import, and any other file — an inline entry
-// or a guest-emitted companion such as terraform's standalone provenance file —
-// is artifacts-inline, matching the host's prior classification. The Intermediate
+// The input-kind origin of each placed file is read back from its path through
+// [renderer.ArtifactOriginIndex], which matches the whole output name the
+// projection carries and tolerates a directory the guest prepended: a file the
+// index attributes to an imported entry is artifacts-import, one attributed to an
+// inline entry is artifacts-inline, and a file no entry claims — a guest-emitted
+// companion such as terraform's standalone provenance file — is artifacts-inline
+// as well. The reading lives there rather than here so every adapter on the
+// artifacts seam attributes a file the same way. The Intermediate
 // marking is classified from the guest's boundary-assembly self-report
 // (renderer.RenderIsIntermediate): a fragment-merging provider (compose) marks its
 // artifacts intermediate; a flat-output (helm, terraform) or nesting (helm-chart)
@@ -389,23 +392,14 @@ func (e *Engine) EmitArtifacts(
 	}
 	e.surfaceDerivedKeys(nodeCtx, out.DerivedKeys)
 
-	importNames := make(map[string]bool, len(proj.Entries))
-	for _, ent := range proj.Entries {
-		if ent.Origin == "import" {
-			importNames[ent.Name] = true
-		}
-	}
+	origins := renderer.NewArtifactOriginIndex(proj)
 
 	intermediate := renderer.RenderIsIntermediate(e)
 	emitted := make([]renderer.EmittedFile, 0, len(out.Files))
 	for _, f := range out.Files {
-		origin := renderer.EmitOriginArtifactsInline
-		if importNames[filepath.Base(f.Path)] {
-			origin = renderer.EmitOriginArtifactsImport
-		}
 		emitted = append(emitted, renderer.EmittedFile{
 			Name:         f.Path,
-			Origin:       origin,
+			Origin:       origins.For(f.Path),
 			Body:         f.Content,
 			Intermediate: intermediate,
 		})

@@ -83,9 +83,16 @@ func sourceRecipe(name string, source any) *types.Recipe {
 	}
 }
 
+// writeArtifactFile writes an artifact fixture at name under dir and returns its
+// absolute path. name may carry directory segments — the two files a
+// same-base-name import proof needs differ only in the directory that holds them —
+// so the intermediate directories are created rather than assumed.
 func writeArtifactFile(t *testing.T, dir, name, body string) string {
 	t.Helper()
-	p := filepath.Join(dir, name)
+	p := filepath.Join(dir, filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(p), err)
+	}
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatalf("write %s: %v", p, err)
 	}

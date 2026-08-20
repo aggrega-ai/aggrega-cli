@@ -169,11 +169,11 @@ func newRenderedView(
 // reaches a Recipe's entries in the order that document declares them, and a
 // library bundle's files in the order the bundle declares them, so the order this
 // returns is the order somebody wrote. The names are the output names each entry
-// resolved to, whichever form the entry took: an entry written inline resolves to
-// its own authored key, one supplied by an imported file to that file's base name,
-// and one supplied by a library bundle to a name per file the bundle holds — so
-// there a single entry contributes several names and its authored key is none of
-// them.
+// resolved to, whichever form the entry took: an entry written inline and one
+// supplied by an imported file each resolve to their own authored key, and one
+// supplied by a library bundle to a name per file the bundle holds, each nested
+// under that key — so there a single entry contributes several names and its
+// authored key is the prefix they share rather than any one of them.
 //
 // The set is the RENDER's rather than the Recipe's. An entry whose template
 // evaluated to nothing is not here, because the walk emits no file for it; a rule

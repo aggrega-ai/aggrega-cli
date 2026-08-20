@@ -56,8 +56,9 @@ type oneRecordedArtifact struct {
 	nodeID string
 
 	// outputName is the name the entry resolved to, which is the coordinate every
-	// artifact fact is keyed by — never the authored key, which for an imported or
-	// bundle-supplied entry names no output at all.
+	// artifact fact is keyed by. It is the authored key itself for an inline or an
+	// imported entry, and for a bundle-supplied one the key with the bundle's own
+	// filename nested under it, where the key alone names no output.
 	outputName string
 
 	// sourceFile positions a finding at the document the entry was written in. It
@@ -195,8 +196,9 @@ type oneRecordedAttachmentArtifact struct {
 	key nodeAttachmentKey
 
 	// outputName is the name the entry resolved to, which is the coordinate every
-	// artifact fact is keyed by — never the authored key, which for an imported or
-	// bundle-supplied entry names no output at all.
+	// artifact fact is keyed by. It is the authored key itself for an inline or an
+	// imported entry, and for a bundle-supplied one the key with the bundle's own
+	// filename nested under it, where the key alone names no output.
 	outputName string
 
 	// sourceFile positions a finding at the document the entry was written in,

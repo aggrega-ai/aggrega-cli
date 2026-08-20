@@ -198,11 +198,28 @@ var errArtifactsLibraryEntryNotFound = cerrors.Register("compiler-renderer/artif
 	Message: "artifacts-library import references a bundle not present in the ArtifactsLibrary",
 })
 
-// ErrArtifactOutputCollision fires when two artifact outputs resolve to the
-// same output filename — two bundle files, or a bundle file and another
-// artifacts entry. A collision halts loudly rather than one output silently
-// overwriting another (a Loud Guardrail, per the No Ghost Infrastructure
+// ErrArtifactOutputCollision fires when one Recipe's artifacts map emits two
+// outputs under the same filename. A collision halts loudly rather than one output
+// silently overwriting another (a Loud Guardrail, per the No Ghost Infrastructure
 // invariant).
+//
+// What it covers is a residue, and saying so is part of the contract. An artifact
+// output is named by the key it was authored under — a bundle's files nested under
+// that key — and a mapping key is unique within one document, so a collision
+// between two entries that each name their own output cannot arise. Two classes
+// remain, and both are the author's own name rather than one a derivation
+// produced:
+//
+//   - A key that is not a single path segment can spell the nested name another
+//     key's bundle produces (`widgets/crd.yaml` authored beside a `widgets` entry
+//     whose bundle carries `crd.yaml`).
+//   - Content that reached the projection without the duplicate-key refusal a
+//     decoded document gets.
+//
+// It is raised per Recipe over that Recipe's own artifacts, which is why it is
+// distinct from the collision between two contributors to one assembled output.
+// Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrArtifactOutputCollision()).
 func ErrArtifactOutputCollision() error { return errArtifactOutputCollision }
 
 var errArtifactOutputCollision = cerrors.Register("compiler-renderer/artifact-output-collision", cerrors.Meta{

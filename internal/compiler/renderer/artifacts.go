@@ -18,7 +18,6 @@ package renderer
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -66,19 +65,27 @@ type ArtifactsEmitter interface {
 // emitting surface shares — to each entry. Format, provenance placement, path, and
 // final bytes are the guest's concern via [ArtifactsEmitter.EmitArtifacts].
 //
+// The author-declared map key names the output, in every form. A mapping key is
+// unique within one document, so the key set is the output-name set and an author
+// reads the name they wrote rather than a name derived from something else.
 // Each entry resolves by content-shape (per the file-import vocabulary):
-//   - Mode 1 (inline): output name is the author-declared map key.
-//   - Mode 2 (local file $import): output name is the imported file's base name;
-//     the artifactDigests file-pin is verified.
+//   - Mode 1 (inline): output name is the key.
+//   - Mode 2 (local file $import): output name is the key; the imported file's own
+//     name selects the content and does not name the output, so two entries
+//     importing different files that share a base name are two distinct outputs.
+//     The artifactDigests file-pin is verified.
 //   - Mode 3 (library $import, `<Library>#/artifacts/<entry>`): the referenced
-//     ArtifactsLibrary bundle expands into one output per file, each named by the
-//     bundle's authored filename (not the consumption key). The library version
-//     is lockfile-pinned, so no artifactDigests file-pin applies. A host-bearing
-//     `oci://…` reference is rejected (ErrHostInLibraryImport).
+//     ArtifactsLibrary bundle expands into one output per file, each nested under
+//     the consumption key as `<key>/<filename>` — one key names many files, so
+//     the key alone cannot name them and the pair identifies both the consumption
+//     and the file within the bundle. The library version is lockfile-pinned, so
+//     no artifactDigests file-pin applies. A host-bearing `oci://…` reference is
+//     rejected (ErrHostInLibraryImport).
 //
 // origin records which form the entry took so a guest that rejects one form can
 // halt on it. Two outputs resolving to the same filename halt loudly with
-// ErrArtifactOutputCollision.
+// ErrArtifactOutputCollision — a residual class rather than the common one, since
+// the naming above makes the key set the name set.
 //
 // cancelled is the caller's own cancellation signal, read by the traversal that
 // asks the rule declared over this stage's facts about each entry, so a walk over
@@ -96,10 +103,16 @@ func buildArtifactsProjection(
 	annotations := BuildAggregaProvenanceAnnotations(nodeCtx, recipeURI(state))
 
 	var proj ArtifactsProjection
-	// seen tracks every emitted output filename so a collision — two bundle
-	// files, or a bundle file and another artifacts entry, resolving to the same
-	// output name — halts loudly rather than one output silently overwriting
-	// another (a Loud Guardrail per the No Ghost Infrastructure invariant).
+	// seen tracks every emitted output filename so a collision halts loudly rather
+	// than one output silently overwriting another (a Loud Guardrail per the No
+	// Ghost Infrastructure invariant).
+	//
+	// What reaches it is a residue, not the common case: the output name is the
+	// authored key, and a mapping key is unique within one document, so the
+	// derivation cannot manufacture a collision. What survives is a name the
+	// author wrote twice — a key that is not a single path segment can spell the
+	// nested name another key's bundle produces — and any input that reached this
+	// walk without the duplicate-key refusal a decoded document gets.
 	//
 	// Deliberately narrow, and deliberately not the only collision check: this
 	// map spans one Recipe's own artifacts entries, so it sees a Recipe naming
@@ -201,10 +214,13 @@ func buildArtifactsProjection(
 				cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
 				fmt.Sprintf("Recipe %q artifact %q $import %q", state.RecipeName, key, entry.Import))
 		case entry.IsLibraryImport():
-			// Mode 3: a bundle expands into one output per file. Each file's name
-			// is the bundle's authored filename (not the consumption key); the
-			// library version is lockfile-pinned, so no artifactDigests file-pin
-			// applies here (that check guards only mode-2 local-file imports).
+			// Mode 3: a bundle expands into one output per file, each nested under
+			// the key the bundle was consumed at. One key names many files, so the
+			// key alone cannot name them and the bundle's own filename alone does
+			// not say which consumption it came from — the pair does, and nesting
+			// is what keeps both halves readable in the output. The library version
+			// is lockfile-pinned, so no artifactDigests file-pin applies here (that
+			// check guards only mode-2 local-file imports).
 			bundle, err := resolveArtifactLibraryImport(entry.Import, state.ArtifactsLibraries)
 			if err != nil {
 				return ArtifactsProjection{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
@@ -212,7 +228,7 @@ func buildArtifactsProjection(
 			}
 			for _, fname := range bundle.Files.Keys() {
 				body, _ := bundle.Files.Get(fname)
-				if err := emit(fname, "import", body); err != nil {
+				if err := emit(key+"/"+fname, "import", body); err != nil {
 					return ArtifactsProjection{}, err
 				}
 			}
@@ -225,7 +241,6 @@ func buildArtifactsProjection(
 			name := key
 			origin := "inline"
 			if entry.Import != "" {
-				name = filepath.Base(entry.Import)
 				origin = "import"
 				// Build-verify: an imported artifact whose recipe carries a recorded
 				// pin must still hash to that pin — a file edited after resolution
@@ -246,6 +261,63 @@ func buildArtifactsProjection(
 		}
 	}
 	return proj, nil
+}
+
+// ArtifactOriginIndex answers, for one file a provider guest placed, which
+// authoring form of the node's artifacts produced it. The guest owns the output
+// path, so the projection entry a placed file came from is read back from the path
+// rather than carried on it; this index is the one home for that reading, so every
+// adapter on the [ArtifactsEmitter] seam attributes a file identically.
+//
+// The reading is exact on the whole output name and tolerant of a directory the
+// guest prepended — a provider whose format needs its manifests under a
+// subdirectory places them there, while the name the projection carries is
+// unchanged. It is deliberately NOT a match on the name's last segment: a name
+// with more than one segment has no last-segment entry to find, and two entries
+// whose names end alike are indistinguishable that way.
+//
+// Its bound, stated because it cannot be closed from here: a file the guest
+// emitted for itself, whose path ends in an entry's whole name, is attributed to
+// that entry. Nothing on the placed file distinguishes the two, so a guest's own
+// companion output is best named so it cannot be mistaken for an authored one.
+type ArtifactOriginIndex struct {
+	byName map[string]EmitOrigin
+}
+
+// NewArtifactOriginIndex indexes a projection's entries by the output name the
+// host resolved for each, once per emission, so the per-file reading is a lookup
+// rather than a walk.
+func NewArtifactOriginIndex(proj ArtifactsProjection) ArtifactOriginIndex {
+	byName := make(map[string]EmitOrigin, len(proj.Entries))
+	for _, ent := range proj.Entries {
+		origin := EmitOriginArtifactsInline
+		if ent.Origin == "import" {
+			origin = EmitOriginArtifactsImport
+		}
+		byName[ent.Name] = origin
+	}
+	return ArtifactOriginIndex{byName: byName}
+}
+
+// For reports the input-kind origin of the file a guest placed at path. A path
+// claimed by no entry — a companion the guest emitted for itself — reports the
+// inline tag, which is what the host reports for output it did not project.
+func (ix ArtifactOriginIndex) For(path string) EmitOrigin {
+	if origin, ok := ix.byName[path]; ok {
+		return origin
+	}
+	// The scan runs forwards so the longest trailing run of segments is tried
+	// first: a shorter suffix of the same path is a different, less specific name,
+	// and the most specific entry naming this file is the one that produced it.
+	for i := 0; i < len(path); i++ {
+		if path[i] != '/' {
+			continue
+		}
+		if origin, ok := ix.byName[path[i+1:]]; ok {
+			return origin
+		}
+	}
+	return EmitOriginArtifactsInline
 }
 
 // preCheckArtifactTemplateParses surfaces a template that does not parse as a

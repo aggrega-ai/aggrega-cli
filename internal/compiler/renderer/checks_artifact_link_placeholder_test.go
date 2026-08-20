@@ -129,12 +129,12 @@ func linkPlaceholderRecordingCheck(
 // enumeration assertion for this rule's subject set.
 //
 // It states what the enumeration must CONTAIN: one invocation per output name the
-// render projected, in walk order, and no invocation for an authored key that
-// names no output. The corpus is the one whose three authored keys resolve to four
-// output names, two of the keys naming no output at all — so the ruled design and
-// the refused one yield different lists here, where on a corpus whose keys all
-// happen to equal their output names they would yield the same one and every
-// assertion would pass under both.
+// render projected, in walk order, and no invocation for a name that carries no
+// output. The corpus is the one whose three authored keys resolve to four output
+// names, one of the keys naming no output of its own — so the ruled design and the
+// refused one yield different lists here, where on a corpus whose key set is its
+// output-name set they would yield the same one and every assertion would pass
+// under both.
 func TestTheArtifactLinkPlaceholderRuleIsInvokedOncePerProjectedOutput(t *testing.T) {
 	t.Parallel()
 
@@ -174,9 +174,9 @@ func TestTheArtifactLinkPlaceholderRuleIsInvokedOncePerProjectedOutput(t *testin
 
 	// Stated in the other direction as well, because a superset would satisfy the
 	// comparison above if the order happened to match.
-	for _, key := range axisKeysNamingNoOutput {
-		if slices.Contains(invokedOver, key) {
-			t.Errorf("the rule was invoked over the authored key %q, which names no artifact this Recipe projects", key)
+	for _, name := range axisNamesCarryingNoOutput {
+		if slices.Contains(invokedOver, name) {
+			t.Errorf("the rule was invoked over %q, which names no artifact this Recipe projects", name)
 		}
 	}
 
@@ -229,18 +229,16 @@ func TestTheRefusedArtifactAxisWouldNarrowThisRule(t *testing.T) {
 	}
 
 	// The refused design's cost is stated concretely rather than as a count: the
-	// outputs it never reaches, and the names it substitutes for them.
-	for _, missed := range []string{"renamed-policy.yaml", "bundle-one.yaml", "bundle-two.yaml"} {
+	// outputs it never reaches, and the name it substitutes for them.
+	for _, missed := range []string{"bundle-slot/bundle-one.yaml", "bundle-slot/bundle-two.yaml"} {
 		if slices.Contains(invokedOver, missed) {
-			t.Errorf("the refused axis reached %q; it is expected to miss every output whose name "+
-				"is not its own authored key, and this test's premise is that it does", missed)
+			t.Errorf("the refused axis reached %q; it is expected to miss every output an authored "+
+				"key expands into, and this test's premise is that it does", missed)
 		}
 	}
-	for _, key := range axisKeysNamingNoOutput {
-		if !slices.Contains(invokedOver, key) {
-			t.Errorf("the refused axis did not present the authored key %q; the needle is not the "+
-				"design it is meant to stand for", key)
-		}
+	if !slices.Contains(invokedOver, axisBundleKey) {
+		t.Errorf("the refused axis did not present the authored key %q; the needle is not the "+
+			"design it is meant to stand for", axisBundleKey)
 	}
 
 	// And the reason a cross-check cannot detect the narrowing: the narrowed rule
@@ -250,9 +248,9 @@ func TestTheRefusedArtifactAxisWouldNarrowThisRule(t *testing.T) {
 			"axis raises NOTHING, which is why an agreement between two readings cannot detect it",
 			raisedOver)
 	}
-	if len(res.RenderedView.ArtifactProjectionContent(node, "policy")) != 0 {
-		t.Error("the content fact answers bytes for the authored key \"policy\"; the refused design's " +
-			"failure mode depends on it answering nothing there")
+	if len(res.RenderedView.ArtifactProjectionContent(node, axisBundleKey)) != 0 {
+		t.Errorf("the content fact answers bytes for the authored key %q; the refused design's "+
+			"failure mode depends on it answering nothing there", axisBundleKey)
 	}
 }
 

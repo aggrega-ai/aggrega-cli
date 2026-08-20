@@ -58,8 +58,9 @@ var errArtifactEntryShape = cerrors.Register("types/artifact-entry-shape", cerro
 // carrying no import has no reference to show.
 //
 // The owning Recipe.Spec.Artifacts is an OrderedMap[ArtifactEntry]
-// keyed by output filename. File-loaded entries derive their map-key
-// name from the input path's basename.
+// keyed by output filename: the key names the output for an inline or a
+// file-loaded entry, and prefixes it for each file a library bundle
+// expands into.
 type ArtifactEntry struct {
 	Inline         string `json:"-" yaml:"-"`
 	Import         string `json:"-" yaml:"-"`

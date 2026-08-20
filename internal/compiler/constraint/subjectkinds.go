@@ -996,13 +996,13 @@ type NodeArtifactSubject interface {
 	// ArtifactName is the artifact the check was invoked for, named by the
 	// output name the entry resolves to.
 	//
-	// An entry written inline resolves to its own authored key, so for that form
-	// the two are one value. An entry supplied by an imported file resolves to
-	// that file's base name, and an entry supplied by a library bundle expands
-	// into one artifact per file the bundle holds, each named by the bundle's own
-	// filename — so there the authored key names no artifact at all. Keying a
-	// check by the output name is what lets it reach every artifact a node
-	// projects rather than only the ones whose two names coincide.
+	// An entry written inline and an entry supplied by an imported file each
+	// resolve to their own authored key, so for those forms the two are one
+	// value. An entry supplied by a library bundle expands into one artifact per
+	// file the bundle holds, each nested under the key as <key>/<filename> — so
+	// there the authored key names no artifact on its own. Keying a check by the
+	// output name is what lets it reach every artifact a node projects rather
+	// than only the ones whose two names coincide.
 	ArtifactName() string
 
 	nodeArtifact()
@@ -1050,10 +1050,10 @@ type NodeAttachmentArtifactSubject interface {
 
 	// ArtifactName is the artifact the check was invoked for, named by the output
 	// name the entry resolves to — on the same reading the node's own artifact
-	// kind carries: an inline entry resolves to its own authored key, an imported
-	// file to that file's base name, and a library bundle to one name per file it
-	// holds. Which artifacts block the name belongs to is said by the kind it is
-	// reached within.
+	// kind carries: an inline entry and an imported file each resolve to their
+	// own authored key, and a library bundle to one name per file it holds, each
+	// nested under that key. Which artifacts block the name belongs to is said by
+	// the kind it is reached within.
 	ArtifactName() string
 
 	nodeAttachmentArtifact()
@@ -1114,9 +1114,9 @@ type BoundaryAttachmentArtifactSubject interface {
 
 	// ArtifactName is the artifact the check was invoked for, named by the output
 	// name the entry resolves to — on the same reading every artifact kind
-	// carries: an inline entry resolves to its own authored key, an imported file
-	// to that file's base name, and a library bundle to one name per file it
-	// holds.
+	// carries: an inline entry and an imported file each resolve to their own
+	// authored key, and a library bundle to one name per file it holds, each
+	// nested under that key.
 	ArtifactName() string
 
 	boundaryAttachmentArtifact()

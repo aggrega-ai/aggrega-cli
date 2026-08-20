@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -25,12 +26,18 @@ metadata:
 `
 )
 
-// TestArtifactsLibraryImport_ByteIdenticalToInline is the load-bearing proof (R5,
-// Invariant 8): a bundle imported at one artifacts entry expands into N outputs
-// that are byte-identical to the equivalent inline artifacts. The library
+// TestArtifactsLibraryImport_ByteIdenticalToInline is the load-bearing proof
+// (Invariant 8): a bundle imported at one artifacts entry expands into N outputs
+// whose CONTENT is byte-identical to the equivalent inline artifacts. The library
 // indirection resolves in buildArtifactsProjection — the resolver returns each
 // bundle file body verbatim, then the SAME preCheck + EvalTemplate runs per file —
-// so the projection entries match name-for-name and byte-for-byte.
+// so the projection entries match byte-for-byte in the same order.
+//
+// Content-identity and name-identity are two claims and only the first holds. A
+// bundle's output is nested under the key it was consumed at, because one key
+// expands into many files and the key alone cannot name them; an inline entry's
+// key names exactly one file. So the names differ by construction and the bytes do
+// not, and a proof conflating the two would fail for the wrong reason.
 func TestArtifactsLibraryImport_ByteIdenticalToInline(t *testing.T) {
 	t.Parallel()
 
@@ -47,7 +54,7 @@ func TestArtifactsLibraryImport_ByteIdenticalToInline(t *testing.T) {
 	// Library: one artifacts entry importing a bundle of the same two files.
 	tmplCtx2, libState, nodeCtx2 := newArtifactsCtx()
 	resetArtifacts(libState)
-	libState.Recipe.Spec.Artifacts.Set("ignored-slot-key", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
+	libState.Recipe.Spec.Artifacts.Set("widgets", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
 	libState.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
 		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml", "widget-rbac.yaml"},
@@ -63,18 +70,28 @@ func TestArtifactsLibraryImport_ByteIdenticalToInline(t *testing.T) {
 	}
 	for i := range inlineProj.Entries {
 		in, lib := inlineProj.Entries[i], libProj.Entries[i]
-		if in.Name != lib.Name {
-			t.Errorf("entry[%d] name: inline=%q library=%q", i, in.Name, lib.Name)
-		}
 		if string(in.Content) != string(lib.Content) {
 			t.Errorf("entry[%d] %q not byte-identical:\n--- inline ---\n%s\n--- library ---\n%s", i, in.Name, in.Content, lib.Content)
 		}
+		// Content-identity is only a proof if the bodies are the evaluated ones: two
+		// unevaluated templates are also byte-identical, and so are two empty
+		// strings.
+		if !strings.Contains(string(lib.Content), "name: api-") {
+			t.Errorf("entry[%d] body was not evaluated against the render context:\n%s", i, lib.Content)
+		}
 	}
-	// Sanity: the template evaluated (.context.instance_id → api), so byte-identity
-	// is over rendered content, and each bundle file emits under its own filename
-	// (OUTPUT-NAMING = filenames-as-authored), not the consumption slot key.
-	if libProj.Entries[0].Name != "widget-crd.yaml" {
-		t.Errorf("bundle file 0 name = %q; want widget-crd.yaml (not the consumption key)", libProj.Entries[0].Name)
+	// The names differ, and they differ in the stated way: each bundle file is
+	// nested under the key the bundle was consumed at, while the inline equivalent
+	// is named by its own key.
+	wantInline := []string{"widget-crd.yaml", "widget-rbac.yaml"}
+	wantLib := []string{"widgets/widget-crd.yaml", "widgets/widget-rbac.yaml"}
+	for i := range wantLib {
+		if got := inlineProj.Entries[i].Name; got != wantInline[i] {
+			t.Errorf("inline entry[%d] name = %q; want %q", i, got, wantInline[i])
+		}
+		if got := libProj.Entries[i].Name; got != wantLib[i] {
+			t.Errorf("bundle entry[%d] name = %q; want %q (nested under the consumption key)", i, got, wantLib[i])
+		}
 	}
 }
 
@@ -138,24 +155,51 @@ func TestArtifactsLibraryImport_LoudFailures(t *testing.T) {
 	}
 }
 
-// TestArtifactsLibraryImport_OutputCollisionHalts proves that two artifact outputs
-// resolving to the same filename halt loudly rather than silently overwriting: an
-// inline entry named the same as a bundle file collides.
-func TestArtifactsLibraryImport_OutputCollisionHalts(t *testing.T) {
+// TestArtifactsLibraryImport_InlineAndBundleFileDoNotCollide proves the input that
+// used to be the collision no longer is one: an inline entry whose key is a bundle
+// file's filename, beside an entry importing that bundle, emits BOTH files.
+//
+// The two names are distinguishable because the bundle's file is nested under the
+// key it was consumed at, so the inline entry's own key is free to be that
+// filename. This is the collision reached by construction rather than by refusal;
+// the refusal is retained for what the naming does not make impossible, which is
+// proved separately.
+func TestArtifactsLibraryImport_InlineAndBundleFileDoNotCollide(t *testing.T) {
 	t.Parallel()
 
 	tmplCtx, state, nodeCtx := newArtifactsCtx()
 	resetArtifacts(state)
-	// An inline artifact named widget-crd.yaml, plus a bundle that also emits a
-	// widget-crd.yaml file → the same output filename twice.
+	// An inline artifact named widget-crd.yaml, plus a bundle that also carries a
+	// widget-crd.yaml file — the same filename authored twice, at two forms.
 	state.Recipe.Spec.Artifacts.Set("widget-crd.yaml", types.ArtifactEntry{Inline: albCRDBody})
 	state.Recipe.Spec.Artifacts.Set("slot", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
 	state.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
 		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
 			[]string{"widget-crd.yaml"}, []string{albCRDBody}),
 	}
-	_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
-	if !errors.Is(err, ErrArtifactOutputCollision()) {
-		t.Fatalf("expected ErrArtifactOutputCollision; got %v", err)
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
+	if err != nil {
+		t.Fatalf("an inline entry beside a bundle carrying the same filename halted: %v", err)
+	}
+	got := []string{}
+	for _, ent := range proj.Entries {
+		got = append(got, ent.Name)
+	}
+	want := []string{"widget-crd.yaml", "slot/widget-crd.yaml"}
+	if len(got) != len(want) {
+		t.Fatalf("emitted %v; want both outputs %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("entry[%d] = %q; want %q", i, got[i], want[i])
+		}
+	}
+	// A pair of empty bodies also fails to collide, because a body that renders to
+	// nothing is skipped before any name is registered. Both entries carrying real
+	// bytes is what makes the absence of a halt a statement about the names.
+	for _, ent := range proj.Entries {
+		if len(ent.Content) == 0 {
+			t.Errorf("entry %q carries no bytes, so it never reached the name registration", ent.Name)
+		}
 	}
 }

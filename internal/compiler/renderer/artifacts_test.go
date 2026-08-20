@@ -169,7 +169,7 @@ data:
 	}
 }
 
-// ----- host projection: imported entry (name is the file base name) -----
+// ----- host projection: imported entry (name is the authored key) -----
 
 func TestBuildArtifactsProjection_ImportEntry(t *testing.T) {
 	t.Parallel()
@@ -184,15 +184,20 @@ metadata:
 		t.Fatalf("WriteFile: %v", err)
 	}
 	resetArtifacts(state)
-	state.Recipe.Spec.Artifacts.Set("whatever-key", types.ArtifactEntry{Import: p})
+	// The key deliberately differs from the imported file's own name: the key names
+	// the output, and the imported file's name selects the content.
+	state.Recipe.Spec.Artifacts.Set("network-policy.yaml", types.ArtifactEntry{Import: p})
 
 	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
 	if err != nil {
 		t.Fatalf("buildArtifactsProjection: %v", err)
 	}
 	e := proj.Entries[0]
-	if e.Name != "policy.yaml" {
-		t.Errorf("Name = %q, want policy.yaml (imported file base name)", e.Name)
+	if e.Name != "network-policy.yaml" {
+		t.Errorf("Name = %q, want network-policy.yaml (the authored key)", e.Name)
+	}
+	if !strings.Contains(string(e.Content), "name: deny-all") {
+		t.Errorf("content did not come from the imported file:\n%s", e.Content)
 	}
 	if e.Origin != "import" {
 		t.Errorf("Origin = %q, want import", e.Origin)

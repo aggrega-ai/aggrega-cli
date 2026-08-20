@@ -21,10 +21,11 @@ const (
 
 // The authored keys and the output names this fixture separates.
 //
-// Two of the three forms are authored under a key that is NOT an output name, and
-// that divergence is the whole point: on a corpus where every key happens to equal
-// its output name, an axis enumerating keys and an axis enumerating output names
-// are the same list, and every assertion over either passes under both designs.
+// The bundle form is authored under a key that is NOT an output name — one key
+// expands into one output per bundle file — and that divergence is the whole
+// point: on a corpus where the key set and the output-name set are the same list,
+// an axis enumerating keys and an axis enumerating output names are
+// indistinguishable, and every assertion over either passes under both designs.
 var (
 	// axisAuthoredKeys is what the Recipe's artifacts block is keyed by.
 	axisAuthoredKeys = []string{"inline.yaml", "policy", "bundle-slot"}
@@ -33,12 +34,17 @@ var (
 	// Recipe's entry order, and within the bundle entry the order that bundle
 	// declares its files. One entry expands to two, so this list is LONGER than
 	// the authored one.
-	axisOutputNames = []string{"inline.yaml", "renamed-policy.yaml", "bundle-one.yaml", "bundle-two.yaml"}
+	axisOutputNames = []string{"inline.yaml", "policy", "bundle-slot/bundle-one.yaml", "bundle-slot/bundle-two.yaml"}
 
-	// axisKeysNamingNoOutput are the authored keys that name no artifact at all.
-	// A rule invoked for one of these would be asked about a name every artifact
-	// fact holds nothing for.
-	axisKeysNamingNoOutput = []string{"policy", "bundle-slot"}
+	// axisBundleKey is the authored key that names no single output on its own: the
+	// bundle it consumes expands into one output per file, each nested under it.
+	axisBundleKey = "bundle-slot"
+
+	// axisNamesCarryingNoOutput are names no artifact axis may present. The bundle
+	// key names an expansion rather than a file, and the imported file's own name
+	// selects an entry's content without naming its output. A rule invoked for
+	// either would be asked about a name every artifact fact holds nothing for.
+	axisNamesCarryingNoOutput = []string{axisBundleKey, "renamed-policy.yaml"}
 )
 
 // discriminatingArtifactCorpus renders one node whose Recipe exercises all three
@@ -46,8 +52,9 @@ var (
 // output name wherever the form permits it.
 //
 // The imported file is written under a name that differs from the key its entry is
-// authored under, and the bundle is consumed under a key that is the name of none
-// of the files it holds.
+// authored under — so an axis that reached for the file's name instead of the key's
+// would present a name nothing holds — and the bundle is consumed under a key that
+// is the name of none of the files it holds.
 func discriminatingArtifactCorpus(t *testing.T, node string) *RenderResult {
 	t.Helper()
 
@@ -84,10 +91,10 @@ func discriminatingArtifactCorpus(t *testing.T, node string) *RenderResult {
 // nothing is raised — which is indistinguishable from a rule that ran and
 // approved. So what the axis must CONTAIN is asserted here directly.
 //
-// The fixture's three entries resolve to four outputs, and two of its three
-// authored keys name no output. An axis built from the authored block would
-// therefore enumerate three names, two of which no artifact fact holds anything
-// for, and would miss both expanded bundle files outright.
+// The fixture's three entries resolve to four outputs, and one of its three
+// authored keys names no output of its own. An axis built from the authored block
+// would therefore enumerate three names, one of which no artifact fact holds
+// anything for, and would miss both expanded bundle files outright.
 func TestTheArtifactAxisEnumeratesOutputNamesAndNotAuthoredKeys(t *testing.T) {
 	t.Parallel()
 
@@ -119,11 +126,11 @@ func TestTheArtifactAxisEnumeratesOutputNamesAndNotAuthoredKeys(t *testing.T) {
 	}
 
 	// Stated in the other direction as well, because a superset would satisfy the
-	// comparison above if the order happened to match: the keys that name no
+	// comparison above if the order happened to match: a name that carries no
 	// output must not appear at all.
-	for _, key := range axisKeysNamingNoOutput {
-		if slices.Contains(got, key) {
-			t.Errorf("the axis enumerates the authored key %q, which names no artifact this Recipe projects", key)
+	for _, name := range axisNamesCarryingNoOutput {
+		if slices.Contains(got, name) {
+			t.Errorf("the axis enumerates %q, which names no artifact this Recipe projects", name)
 		}
 	}
 
@@ -178,9 +185,9 @@ func TestTheProjectedArtifactAxisEnumeratesEveryExpandedOutput(t *testing.T) {
 	if !slices.Equal(got, axisOutputNames) {
 		t.Errorf("the projected axis enumerates %v, want %v", got, axisOutputNames)
 	}
-	for _, key := range axisKeysNamingNoOutput {
-		if slices.Contains(got, key) {
-			t.Errorf("the projected axis enumerates the authored key %q, which names no projected artifact", key)
+	for _, name := range axisNamesCarryingNoOutput {
+		if slices.Contains(got, name) {
+			t.Errorf("the projected axis enumerates %q, which names no projected artifact", name)
 		}
 	}
 

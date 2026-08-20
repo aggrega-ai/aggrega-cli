@@ -10,24 +10,24 @@ import (
 // ArtifactAxis enumerates the artifacts one node projects, so a rule declared
 // over a single artifact can be invoked once per artifact a build carries.
 //
-// # The coordinate is the output name, never the authored key
+// # The coordinate is the output name, which a bundle's key is only the prefix of
 //
-// A Recipe's artifacts block is keyed by whatever the author chose, and only one
-// of the three ways an entry can be written makes that key the name of an output.
-// An entry written inline resolves to its own key. An entry supplied by an
-// imported file resolves to that file's base name, which nothing requires to
-// match the key it was written under. An entry supplied by a library bundle
-// expands into one artifact per file the bundle holds, each named by the bundle's
-// own filename — so one authored key becomes many outputs and is itself the name
-// of none of them.
+// A Recipe's artifacts block is keyed by whatever the author chose, and the key
+// names the output. An entry written inline resolves to its own key, and so does
+// an entry supplied by an imported file — the imported file selects the content
+// and does not name the output, so for both of those forms the coordinate and the
+// authored key are one value. An entry supplied by a library bundle expands into
+// one artifact per file the bundle holds, each nested under the key as
+// <key>/<filename> — so there one authored key becomes many outputs and names
+// none of them on its own, only the prefix they share.
 //
 // Every artifact fact is keyed by the output name, so an axis enumerating
-// authored keys would ask those facts about names they hold nothing for. The
-// answer would be an empty template and an empty byte string, from which a rule
-// collects nothing and raises nothing — and a rule that raises nothing reads
-// exactly like a rule that ran and approved. For a bundle every expanded file
-// would be missed outright. Enumerating output names is what makes the axis and
-// the facts one set.
+// authored keys would ask those facts about names they hold nothing for wherever
+// the two diverge. The answer would be an empty template and an empty byte
+// string, from which a rule collects nothing and raises nothing — and a rule that
+// raises nothing reads exactly like a rule that ran and approved. For a bundle
+// every expanded file would be missed outright. Enumerating output names is what
+// makes the axis and the facts one set.
 //
 // # It reads what the render recorded, and must not be changed to resolve again
 //
