@@ -541,9 +541,20 @@ func TestTheFeatureCarriedArtifactIsRefusedByTheDeclaredRule(t *testing.T) {
 // input, and it is worth being exact about the bound: a reference of one segment to
 // an undeclared pillar does not fail evaluation at all — it renders the literal
 // placeholder into the artifact — so in this state that shape would ship a file
-// nobody asked for. The state is reachable only by assembling a render's input
-// directly, which nothing outside this module can do, and the single assembler
-// inside it publishes the presentation unconditionally.
+// nobody asked for, and the build reports success while doing it.
+//
+// How far that state is out of reach is stated carefully, because an earlier
+// version of this comment overstated it and the overstatement is what held the
+// deletion in place. What is true: the per-node projection this reading needs is
+// unexported, it is installed unconditionally at one site, and no caller outside
+// this package can withhold it. What is NOT true is that the state is therefore
+// unreachable from outside — the value that silences all three readings is the
+// presentation of the finalised graph, which arrives on an EXPORTED input field,
+// and an absent one there disables the chain the whole way down without any site
+// refusing it. Whether a real compilation can present nothing there is not
+// established either way here, so this bound says what the code guarantees and
+// stops: the readings are silent whenever that presentation is absent, and nothing
+// in the render path checks that it is present.
 //
 // It does not run in parallel: it replaces package-level declarations.
 func TestNoPillarReadingRunsInABuildThatPublishesNoPresentation(t *testing.T) {
