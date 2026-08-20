@@ -273,3 +273,123 @@ func TestPublishRenderDiagnostics_CarriesUnhonorableAnnotationAdvisory(t *testin
 		}
 	}
 }
+
+// TestPublishRenderDiagnostics_ForwardsTheAdvisoryCodeVerbatim is the acceptance
+// for the code on the render layer. An advisory arrives already carrying a
+// machine-matchable code, and before the forward existed the published entry
+// dropped it — a client saw a code that was available one hop upstream and
+// absent on the wire, and had to recover the class from the message text.
+//
+// Two things are asserted together and neither alone would be enough. The two
+// real advisory constructors pin the published class codes as literals, because
+// those strings are a contract with a client that ships separately and an
+// assertion against the constants would agree with whatever they happened to
+// hold. The synthetic third case pins that the value is carried through
+// unchanged rather than mapped, which no assertion over a fixed class can show:
+// a translation table that happened to cover both real classes would satisfy
+// them and fail here.
+func TestPublishRenderDiagnostics_ForwardsTheAdvisoryCodeVerbatim(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		diag     renderer.Diagnostic
+		wantCode string
+	}{
+		{
+			name:     "a fidelity advisory publishes its class code",
+			diag:     rendercore.UnhonorableAnnotationDiagnostic("helm-chart", "aggrega.ai/namespace", "sourced"),
+			wantCode: "unsupported-field",
+		},
+		{
+			name:     "a sensitive-delivery advisory publishes its own class code",
+			diag:     rendercore.SensitiveByValueDiagnostic("db", "env", "DB_PASSWORD"),
+			wantCode: "sensitive-by-value",
+		},
+		{
+			name:     "a code the host does not model is carried through unchanged",
+			diag:     renderer.Diagnostic{Severity: abi.SeverityWarn, Message: "an advisory", Code: "some-future-class"},
+			wantCode: "some-future-class",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := layeredServer()
+			var out bytes.Buffer
+			ctx, flush := serializerContext(t, &out)
+			const file = "/w/release.yaml"
+
+			s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{tc.diag})
+			flush()
+
+			got := s.snapshotDiagnostics(file)
+			if len(got) != 1 {
+				t.Fatalf("published %d diagnostics; want 1", len(got))
+			}
+			if got[0].Code != tc.wantCode {
+				t.Errorf("published code = %q; want %q", got[0].Code, tc.wantCode)
+			}
+			// The code has to be readable without parsing prose, so it is
+			// asserted as its own key in the marshalled payload and asserted
+			// absent from the message: a message carrying the code would satisfy
+			// a careless reading of "the entry carries its code" while leaving
+			// the client parsing text to recover it.
+			raw, err := json.Marshal(publishDiagnosticsParams{File: file, Diagnostics: got})
+			if err != nil {
+				t.Fatalf("marshal payload: %v", err)
+			}
+			if want := `"code":"` + tc.wantCode + `"`; !strings.Contains(string(raw), want) {
+				t.Errorf("payload does not carry %s as a key of its own\npayload: %s", want, raw)
+			}
+			if strings.Contains(got[0].Message, tc.wantCode) {
+				t.Errorf("published message %q embeds the code; it belongs in the key alone", got[0].Message)
+			}
+		})
+	}
+}
+
+// TestPublishRenderDiagnostics_OmitsTheKeyWhenTheAdvisoryCarriesNoCode pins the
+// omission half of the published contract. An advisory whose raiser assigned no
+// code must leave the key off the wire entirely rather than send it empty: the
+// documented posture is that a client branches on the key only when it is
+// present, and an empty string is a value a client would branch on.
+func TestPublishRenderDiagnostics_OmitsTheKeyWhenTheAdvisoryCarriesNoCode(t *testing.T) {
+	t.Parallel()
+	s := layeredServer()
+	var out bytes.Buffer
+	ctx, flush := serializerContext(t, &out)
+	const file = "/w/release.yaml"
+
+	defer flush()
+
+	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{
+		{Severity: abi.SeverityWarn, Message: "an advisory naming no class"},
+	})
+
+	got := s.snapshotDiagnostics(file)
+	if len(got) != 1 {
+		t.Fatalf("published %d diagnostics; want 1", len(got))
+	}
+	if got[0].Code != "" {
+		t.Errorf("published code = %q; want the empty string for an advisory carrying none", got[0].Code)
+	}
+	raw, err := json.Marshal(publishDiagnosticsParams{File: file, Diagnostics: got})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if strings.Contains(string(raw), `"code"`) {
+		t.Errorf("payload carries a code key for an advisory that assigned none\npayload: %s", raw)
+	}
+	// The needle: the same assertion over an advisory that DOES carry a code must
+	// find the key, so the absence above is a fact about the payload rather than
+	// about the way it is being read.
+	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{
+		{Severity: abi.SeverityWarn, Message: "an advisory naming a class", Code: "some-class"},
+	})
+	coded, err := json.Marshal(publishDiagnosticsParams{File: file, Diagnostics: s.snapshotDiagnostics(file)})
+	if err != nil {
+		t.Fatalf("marshal coded payload: %v", err)
+	}
+	if !strings.Contains(string(coded), `"code":"some-class"`) {
+		t.Fatalf("the coded control payload carries no code key, so the absence above measures the assertion rather than the wire\npayload: %s", coded)
+	}
+}

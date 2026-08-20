@@ -210,19 +210,32 @@ func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 // other layer", which is why it is stamped at each layer's own boundary rather
 // than at the construction sites.
 //
-// Code carries the code of the condition the entry reports, so a client
-// recognises the condition without matching Message. It is the string that
-// condition is registered under, so it is the value a Go consumer of the same
-// failure reads with errors.CodeOf. The wire name is the one a
-// machine-matchable code independent of the message already carries on the
-// other structured surfaces here — the publishing linter's findings and the
-// plugin diagnostic shape — so one concept keeps one spelling across them.
+// Code carries a stable, machine-matchable code for what the entry reports,
+// independent of Message, so a client recognises it without matching prose. One
+// key carries the code whoever assigned it, because a consumer asking what a
+// finding is does not care who named it, and two keys for one question is a
+// fracture rather than a distinction. Which kind of code is in hand follows from
+// Source, which already names the layer that raised the entry. On the semantic
+// layer the value is the string the failing condition is registered under, so it
+// is what a Go consumer of the same failure reads with errors.CodeOf. On the
+// build layer it is whatever code the render advisory arrived carrying — assigned
+// wherever that advisory was raised, a rendering plugin or the render itself, so
+// the code names what the finding is and not who found it — and such a code names
+// a class of advisory rather than a registered condition, so it is not a value
+// errors.CodeOf ever reports.
 //
-// It is absent when the failure behind the entry names no such condition, which
-// is a fact about that failure rather than a gap: a buffer no YAML parser will
-// read, and a stage that reports a failure without naming a condition, have
-// none to report. So a client treats the key as optional and branches on it
-// only when it is there — the same posture the end-position keys ask for.
+// The wire name is the one a machine-matchable code independent of the message
+// already carries on the other structured surfaces here — the publishing linter's
+// findings and the plugin diagnostic shape — so one concept keeps one spelling
+// across them.
+//
+// It is absent when nothing that produced the entry assigned a code, which is a
+// fact about the entry rather than a gap, and both kinds have that case: a
+// failure naming no registered condition — a buffer no YAML parser will read, and
+// a stage that reports a failure without naming a condition, have none to report
+// — and an advisory whose raiser assigned none. So a client treats the key as
+// optional and branches on it only when it is there — the same posture the
+// end-position keys ask for.
 //
 // It is not the numeric code on a JSON-RPC error envelope, which names a state
 // of the workspace rather than a condition and travels on a different object.

@@ -29,6 +29,15 @@ import (
 // whose severities are error/warning/info. The two vocabularies serve different
 // boundaries and are deliberately separate, so this is the one place a value
 // crosses between them.
+//
+// The code gets the opposite treatment, and the contrast with the severity one
+// paragraph above is the point: a severity is a member of a closed set each wire
+// declares for itself, so crossing wires means translating it, while a code is an
+// opaque machine-matchable string that means the same thing on both sides.
+// Translating one would mint a second spelling for a single identity. So the
+// entry publishes whatever the advisory arrived carrying, verbatim, and carries
+// nothing where the advisory carried nothing — the empty string and the omitted
+// key being the same statement on this wire.
 func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diags []renderer.Diagnostic) {
 	byFile := map[string][]Diagnostic{}
 	if file != "" && len(diags) > 0 {
@@ -39,6 +48,7 @@ func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diag
 				Column:   1,
 				Severity: editorSeverity(d.Severity),
 				Message:  renderer.RenderDiagnosticText(d),
+				Code:     d.Code,
 			})
 		}
 		byFile[file] = mapped
