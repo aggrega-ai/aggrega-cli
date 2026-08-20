@@ -230,8 +230,9 @@ func ComposeMessage(condition error, values []string, advice string) string {
 // nothing else can supply, and each earns its place the same way:
 //
 //   - Message, the one sentence stating the condition. There is no source for
-//     it but the declaration, and every diagnostic naming the condition opens
-//     with it.
+//     it but the declaration. It is the wording a diagnostic leads with where
+//     the raise path composes one — see the field's own documentation for the
+//     shape, and for which raise paths do not follow it yet.
 //   - ShortCode, the compact identifier a reader quotes and looks up. It cannot
 //     be derived from the descriptive code beside it — a short code is a number
 //     handed out once and then fixed, precisely so that re-wording a condition
@@ -258,11 +259,18 @@ type Meta struct {
 	// Message is the text the identity's Error method returns: one sentence
 	// stating the condition, in the words a reader of a diagnostic sees.
 	//
-	// It is the single home of that wording, and the composition rule is what
-	// makes that true rather than aspirational: a diagnostic naming the
-	// condition OPENS with this sentence and appends whatever the occurrence
-	// supplies after it — the document, the authored key, the offending value,
-	// the advice. The split is forced by what each side can carry. This
+	// It is the single home of that wording, and the composition rule gives
+	// that home a shape: a diagnostic composed through ComposeMessage OPENS
+	// with this sentence and appends whatever the occurrence supplies after it
+	// — the document, the authored key, the offending value, the advice.
+	//
+	// The shape is the rule composition follows, and NOT yet a property of
+	// every printed diagnostic. A raise path that builds its own message text
+	// rather than composing one can print this sentence later in the line, or
+	// leave it to a trailing cause line, or omit it — measured, several do. So
+	// read this as where the wording lives and what composition does with it,
+	// never as a guarantee about every line a user sees. The split is forced
+	// by what each side can carry. This
 	// sentence is one static string per condition, so it cannot name the
 	// occurrence; the occurrence's values mean nothing without the sentence
 	// that says which rule they are about. Composing the wording a second time
