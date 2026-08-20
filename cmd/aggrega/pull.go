@@ -377,13 +377,6 @@ func pullRun(cfg pullConfig) error {
 	aggregate := aggRes.Aggregate
 
 	lockfilePath := lockfile.PathFor(cfg.ReleasePath)
-	// A targeted upgrade names specific entities and holds the rest, so it reads
-	// the prior lockfile (that is what preserves the other pins and the recorded
-	// external inputs). A bare upgrade is a full refresh: it re-resolves every
-	// entity from current registry state and so reads nothing forward from the
-	// previous pin set.
-	targeted := cfg.Upgrade && len(cfg.UpgradeTargets) > 0
-	fullRefresh := cfg.Upgrade && !targeted
 	if cfg.Verify {
 		// Verify-only: a missing lockfile is fatal — the flag
 		// presumes one exists. The no-lockfile case is what the
@@ -407,63 +400,26 @@ func pullRun(cfg pullConfig) error {
 	} else {
 		externals = lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
 	}
-	// The prior lockfile is read exactly once, here, and every later consumer
-	// reads this value rather than the file: the reuse-check just below, and the
-	// deprecation and external-input carry-forwards at the end of the pull. A full
-	// refresh reads nothing — floating every pin and carrying forward neither the
-	// recorded deprecations nor the external inputs IS what a bare --upgrade
-	// means, and expressing that as one decision here is what keeps the three
+	// The prior lockfile is read exactly once — by this one decision, which performs
+	// that read and hands the value back — and every later consumer reads what it
+	// returned rather than the file: the reuse verification handed to the closure
+	// lookup below, and the deprecation and external-input carry-forwards at the end
+	// of the pull. Which pins are honored, and whether the prior lockfile is read at
+	// all, is that decision's to make: a bare --upgrade floats every pin and carries
+	// forward neither the recorded deprecations nor the external inputs, and holding
+	// the read together with the policy that governs it is what keeps the three
 	// consumers from disagreeing about it.
 	//
-	// The file on disk is left untouched either way. It is replaced only by the
-	// single write at the end of a successful pull, so a refresh that cannot
-	// complete leaves the previous pins in place rather than destroying pins it
-	// never replaced.
-	var prior *lockfile.Lockfile
-	if !fullRefresh {
-		if lf, _, lerr := lockfile.LoadLockfile(lockfilePath); lerr == nil {
-			prior = lf
-		}
+	// The file on disk is left untouched by the decision. It is replaced only by the
+	// single write at the end of a successful pull, so a refresh that cannot complete
+	// leaves the previous pins in place rather than destroying pins it never replaced.
+	pinReuse, err := catalog.PinReuseFromLockfile(lockfilePath, cfg.ReleasePath,
+		catalog.PinReuseMode{Upgrade: cfg.Upgrade, UpgradeTargets: cfg.UpgradeTargets, VerifyOnly: cfg.Verify},
+		func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) })
+	if err != nil {
+		return err
 	}
-
-	// Re-pull reuse-check: when a prior lockfile exists, verify reused
-	// cache slots against its pins so a slot that has drifted from its
-	// pin is re-fetched and re-pinned from authoritative registry bytes
-	// rather than laundered into the new lockfile. Skipped under
-	// --verify (read-only — lockfile.Verify covers drift below) and when
-	// there is no prior pin set to honor (first pull, or a full refresh):
-	// there both establish pins from scratch, with nothing to verify against.
-	var reuse *catalog.ReuseVerification
-	if !cfg.Verify {
-		if targeted {
-			// Targeted upgrade holds every non-named pin, so a prior lockfile is
-			// required — there must be a pin set to hold. Reducing that set (dropping
-			// the named pins) is the whole mechanism: a URI absent from PriorPins
-			// floats to its highest-satisfying version, every URI still present is
-			// honored, and the prior lockfile's recorded external inputs are carried
-			// forward below.
-			if prior == nil {
-				return fmt.Errorf("no lockfile to upgrade at %s; run `aggrega pull --release %s` first to create one", lockfilePath, cfg.ReleasePath)
-			}
-			pins := catalog.PinsFromLockfile(prior)
-			for _, target := range cfg.UpgradeTargets {
-				if _, ok := pins[target]; !ok {
-					return fmt.Errorf("entity %q is not pinned in the lockfile; nothing to upgrade", target)
-				}
-				delete(pins, target)
-			}
-			reuse = &catalog.ReuseVerification{
-				PriorPins: pins,
-				Warn:      func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) },
-			}
-		} else if prior != nil {
-			reuse = &catalog.ReuseVerification{
-				PriorPins: catalog.PinsFromLockfile(prior),
-				Warn:      func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) },
-			}
-		}
-	}
-	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, registrySeeds, reuse)
+	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, registrySeeds, pinReuse.Verification)
 	progress.phase(pullPhaseClosure)
 	// Reference shape is judged before the walk, for the same reason the shared
 	// closure resolver judges it: a mapping value the reference grammar cannot
@@ -770,7 +726,7 @@ func pullRun(cfg pullConfig) error {
 			// re-discovery below overwrites it with a fresh finding. Without this, a
 			// build's honoring auto-pull would silently drop a recorded deprecation
 			// and mask a deprecated dependency.
-			carryForwardDeprecation(lf, prior)
+			carryForwardDeprecation(lf, pinReuse.Prior)
 			// Carry forward the prior lockfile's external-input pins. These are
 			// render-time remote-input pins recorded by build and acquire, not
 			// part of the catalog closure buildLockfile materialises, so a pull
@@ -778,7 +734,7 @@ func pullRun(cfg pullConfig) error {
 			// the next build to re-acquire from the network. A bare --upgrade is a
 			// full refresh and reads no prior lockfile, so this carries nothing and
 			// the pins refresh on the next build.
-			carryForwardExternalInputs(lf, prior)
+			carryForwardExternalInputs(lf, pinReuse.Prior)
 			// Lock-time signature verification: verify each registry-resolved
 			// entity's signature against the registry's trust policy, record
 			// the verified fact, and cache the bundle for air-gapped re-verify.

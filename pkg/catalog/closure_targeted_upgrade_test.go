@@ -39,7 +39,8 @@ func TestClosureLookup_TargetedUpgradeFloatsOnlyDropped(t *testing.T) {
 	}
 
 	// Targeted upgrade of entity A == drop A from the pin set fed to the reuse
-	// lookup (exactly what pullRun does via delete(pins, target)); B stays.
+	// lookup (the reduction PinReuseFromLockfile performs for a named target);
+	// B stays.
 	reduced := map[string]catalog.Pin{uriB: fullPins[uriB]}
 	reuse := &catalog.ReuseVerification{PriorPins: reduced}
 	lookup := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, reuse)
