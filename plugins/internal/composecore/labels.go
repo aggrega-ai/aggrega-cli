@@ -44,19 +44,24 @@ var composeOmittedProvenanceKeys = []string{
 //     Recipe's nodeCtx; services authored deliberately at higher levels
 //     map to the appropriate authoring context.
 //
-// Services NOT present in the origins map are left untouched. This is
-// load-bearing for two future-proofing cases:
+// Services NOT present in the origins map are left untouched. That
+// skip serves multi-FeatureRecipe composition, where one
+// FeatureRecipe's fragment may carry services contributed by an
+// upstream FeatureRecipe: the upstream emission step would have
+// already populated origins for its services, and the downstream
+// injection step skips those, deferring to the authoritative
+// provenance set upstream. It awaits a caller that builds the map per
+// service; the single-origin builder below is the only one that ships.
 //
-//  1. Catalog authors that deliberately set aggrega.ai/* labels on
-//     specific services in a base compose file. Treating "absent from
-//     origins" as "author-managed, do not stamp" preserves the
-//     author's intent without the compiler having to use label-
-//     presence as a heuristic for ownership.
-//  2. Multi-FR composition where one FR's fragment may carry services
-//     contributed by an upstream FR. The upstream FR's emission step
-//     would have already populated origins for its services; the
-//     downstream FR's injection step skips those, deferring to the
-//     authoritative provenance set upstream.
+// The skip is not a way to preserve a catalog author's hand-set
+// aggrega.ai/* labels on a base compose service. Single-origin
+// rendering maps every service in the merged document to the one node
+// context, so no service is absent from origins and the origin-derived
+// keys overwrite the author's aggrega.ai/* values. The one repair that
+// would change that is reading label presence as a claim of ownership,
+// and it is refused: it would have the compiler infer meaning from
+// label content. Author-set keys outside the aggrega.ai/* space
+// survive regardless, as the merge rule below states.
 //
 // Existing label keys on a service are merged with — not replaced by —
 // the origin-derived labels: author-set non-aggrega.ai/* keys
@@ -81,8 +86,8 @@ func injectAggregaLabelsIntoServices(doc map[string]any, origins map[string]rend
 	for name, svcRaw := range services {
 		origin, hasOrigin := origins[name]
 		if !hasOrigin {
-			// Service not registered in origins map: author-managed;
-			// preserve as-is.
+			// No recorded origin means no provenance to stamp; an
+			// upstream contributor's labels stand.
 			continue
 		}
 		svc, ok := asStringMap(svcRaw)

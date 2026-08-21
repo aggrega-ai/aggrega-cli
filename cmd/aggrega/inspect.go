@@ -155,9 +155,36 @@ func dispatchInspect(rw *workspaceconfig.ResolvedWorkspace, identifier string, c
 }
 
 // isPathInput returns true when the identifier names a filesystem path
-// rather than a catalog component name. Path heuristics: a leading
+// rather than a catalog entity name. Path heuristics: a leading
 // directory marker (./, ../, /) or a YAML extension on the trailing
 // segment.
+//
+// The shape test is deliberately not routed through one of the shared
+// path discriminators. Each of those answers a question about a
+// different authored surface, and the divergence is the point:
+//
+//   - resolver.IsRelativePathRef, the discriminator for a Release's
+//     aggregate: and manifest: pointers, recognises ./ and ../ only.
+//     It is false for a bare foo.yaml, so routing through it would
+//     send `inspect foo.yaml` to the catalog branch and report that no
+//     catalog entity matched — for a file in the working directory.
+//   - The plugin-URI discriminator adds a leading / and is false for a
+//     bare foo.yaml too, so it loses the same input.
+//   - The classifier behind a Recipe's source: treats any token
+//     carrying no remote scheme as local, so it is true for
+//     core/devtool/adminer and for core/helm-renderer:0.4.1. Routing
+//     through it would send every catalog identifier to the file
+//     branch, where the read fails on something that was never a path.
+//
+// Probing the filesystem for the argument is worse than any of them,
+// because it fails quietly rather than loudly. Where a file happens to
+// sit at a path spelling the identifier, the probe takes the file
+// branch, which renders the entity as authored, while the catalog
+// branch resolves extends chains and carries the deprecation advisory.
+// Both print an entity, so the downgrade leaves no error to read.
+//
+// The argument is a person's typed input and nothing records what they
+// meant, so a shape test on it is the whole of what is available.
 func isPathInput(identifier string) bool {
 	if strings.HasPrefix(identifier, "./") || strings.HasPrefix(identifier, "../") || strings.HasPrefix(identifier, "/") {
 		return true
