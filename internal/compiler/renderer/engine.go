@@ -313,12 +313,20 @@ func AssemblesBoundary(engine Provider) bool {
 // Empty when no cascade value resolves; helmchart umbrella falls back to
 // path-derived naming.
 type BoundaryInfo struct {
-	BoundaryPath           string
-	AggregateName          string
-	SubCharts              []SubChartInfo
-	IntermediatesByNode    map[string][]EmittedFile
-	NodeAnnotations        map[string]map[string]string
-	NodeComponent          map[string]string
+	BoundaryPath        string
+	AggregateName       string
+	SubCharts           []SubChartInfo
+	IntermediatesByNode map[string][]EmittedFile
+	NodeAnnotations     map[string]map[string]string
+	NodeComponent       map[string]string
+	// NodeSyncWave is each contributing node's deployment wave, keyed by node
+	// id exactly as NodeAnnotations and NodeComponent are. It travels per node
+	// rather than once per BoundaryInfo because a dispatch group can merge
+	// contributors from several boundaries, each with its own wave, which is
+	// precisely the case where one assembled artifact holds more than one. A
+	// node whose boundary declares no wave carries 0, the field's documented
+	// default, so a missing entry and a declared zero are the same state.
+	NodeSyncWave           map[string]int
 	ContributingBoundaries []string
 	Edges                  []IREdgeInfo
 	ChartName              string

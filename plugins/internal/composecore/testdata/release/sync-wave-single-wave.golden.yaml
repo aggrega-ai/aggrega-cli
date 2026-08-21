@@ -1,0 +1,39 @@
+services:
+  app:
+    image: app:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: app
+      aggrega.ai/environment: test-env
+    networks:
+      - cluster
+    depends_on:
+      - db
+  db:
+    image: postgres:15
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: db
+      aggrega.ai/environment: test-env
+    networks:
+      - cluster
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - nc -z localhost 5432
+  migrate:
+    image: migrate:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: migrate
+      aggrega.ai/environment: test-env
+    networks:
+      - cluster
+networks:
+  cluster: {}

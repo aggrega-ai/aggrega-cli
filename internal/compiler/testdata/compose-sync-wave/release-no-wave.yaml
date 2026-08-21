@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: compose-sync-wave-no-wave-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: compose-sync-wave-app
+  manifest: compose-sync-wave-manifest
+  # The same three boundaries collapsing onto the same directory:, with no wave
+  # declared anywhere. Every contributor carries the field's default, so the
+  # assembled file must be exactly what it would be without wave ordering.
+  boundaries:
+    data:
+      directory: ./dist/cluster
+      components:
+        migrator: {}
+    core:
+      directory: ./dist/cluster
+      components:
+        store: {}
+    edge:
+      directory: ./dist/cluster
+      components:
+        frontend: {}

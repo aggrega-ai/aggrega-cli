@@ -215,7 +215,7 @@ type ArtifactProjectionEntry struct {
 	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty" cbor:"annotations,omitempty"`
 }
 
-// AssembleBoundaryInput The payload a Provider guest receives on its assemble_boundary export — the export that merges the per-node render outputs at one dispatch group into a single assembled artifact (an umbrella chart, a merged compose file). It carries the per-node render outputs and their merged annotations, the dispatch-group output path the assembled artifact lands at, the graph's uses edges for per-service dependency inference, and the render-time context. Not every provider declares the export: providers that emit only flat per-node output omit it.
+// AssembleBoundaryInput The payload a Provider guest receives on its assemble_boundary export — the export that merges the per-node render outputs at one dispatch group into a single assembled artifact (an umbrella chart, a merged compose file). It carries the per-node render outputs with their merged annotations and deployment waves, the dispatch-group output path the assembled artifact lands at, the graph's uses edges for per-service dependency inference, and the render-time context. Not every provider declares the export: providers that emit only flat per-node output omit it.
 type AssembleBoundaryInput struct {
 	// Boundary Optional per-render boundary metadata a guest may consult. A dispatch group can merge contributors from multiple boundaries, so there is no single boundary; the field is carry-only-consumed and absent when the host merges across boundaries. Opaque at this schema layer; the guest reads the boundary-context shape through the render-context wire contract.
 	Boundary renderctx.BoundaryContext `json:"boundary,omitempty" yaml:"boundary,omitempty" cbor:"boundary,omitempty"`
@@ -235,7 +235,7 @@ type AssembleBoundaryInput struct {
 	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty" cbor:"aggregate_name,omitempty"`
 }
 
-// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, and the render output the render_node export produced for it.
+// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, its deployment wave, and the render output the render_node export produced for it.
 type RenderedNode struct {
 	// ID The node's absolute id within the topology graph.
 	ID string `json:"id" yaml:"id" cbor:"id"`
@@ -244,6 +244,8 @@ type RenderedNode struct {
 	Rendered RenderNodeOutput `json:"rendered" yaml:"rendered" cbor:"rendered"`
 	// Annotations The node's merged annotations, so a boundary assembler can attribute per-node placement (e.g. the compose network derived from the aggrega.ai/namespace annotation).
 	Annotations types.OrderedMap[string] `json:"annotations,omitempty" yaml:"annotations,omitempty" cbor:"annotations,omitempty"`
+	// SyncWave The deployment wave this node inherited from its containing boundary (default 0; negative permitted), so a boundary assembler can order the contributors it merges relative to one another. A dispatch group can merge contributors from several boundaries, each carrying its own wave, so the wave travels with every node here rather than once for the whole payload. An assembler whose output shape expresses no ordering ignores it.
+	SyncWave int `json:"sync_wave,omitempty" yaml:"sync_wave,omitempty" cbor:"sync_wave,omitempty"`
 }
 
 type RenderEdge struct {
@@ -2797,6 +2799,14 @@ func (t RenderedNode) MarshalJSON() ([]byte, error) {
 			buf.Write(enc)
 		}
 	}
+	if t.SyncWave != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"sync_wave\":")
+		buf.WriteString(strconv.FormatInt(int64(t.SyncWave), 10))
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -2845,6 +2855,12 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 					return err
 				}
 			}
+		case "sync_wave":
+			if n, err := readInt(dec); err != nil {
+				return err
+			} else {
+				t.SyncWave = int(n)
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -2864,7 +2880,7 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *RenderedNode) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "id", "type", "rendered", "annotations"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "id", "type", "rendered", "annotations", "sync_wave"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -6816,6 +6832,9 @@ func (t RenderedNode) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	n := 3
+	if t.SyncWave != 0 {
+		n++
+	}
 	if !t.Annotations.IsZero() {
 		n++
 	}
@@ -6828,6 +6847,10 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORTextString(dst, "rendered")
 	if dst, err = t.Rendered.appendCBOR(dst); err != nil {
 		return nil, err
+	}
+	if t.SyncWave != 0 {
+		dst = appendCBORTextString(dst, "sync_wave")
+		dst = appendCBORInt(dst, int64(t.SyncWave))
 	}
 	if !t.Annotations.IsZero() {
 		dst = appendCBORTextString(dst, "annotations")
@@ -6900,6 +6923,12 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 					om.Set(mk, mv)
 				}
 				t.Annotations = om
+			}
+		case "sync_wave":
+			if v, err := dec.readInt(); err != nil {
+				return err
+			} else {
+				t.SyncWave = int(v)
 			}
 		default:
 			if err := dec.skip(); err != nil {

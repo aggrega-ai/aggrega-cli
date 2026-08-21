@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: frontend-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/frontend
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: frontend:1.0
+        ports:
+          p: 8080
+    services:
+      frontend:
+        type: ClusterIP
+        ports:
+          p: 8080

@@ -61,9 +61,11 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // inserted in sorted-key order, so the wire payload is byte-identical across runs
 // of identical input (the determinism contract). The boundary metadata is left
 // unset: a dispatch group can merge contributors from multiple boundaries, so the
-// per-render boundary is carry-only and not synthesized here. A duplicate output
-// path from the guest is a loud error rather than a silent last-writer-wins
-// overwrite.
+// per-render boundary is carry-only and not synthesized here. Each node's
+// deployment wave travels with the node for that same reason — a merged group has
+// no single boundary to read one wave off, and the multi-boundary case is exactly
+// where one assembled artifact holds more than one wave. A duplicate output path
+// from the guest is a loud error rather than a silent last-writer-wins overwrite.
 //
 // When the provider projects sub-charts (an umbrella assembler), the adapter
 // populates the wire's sub-chart carriers and umbrella scalars from the holder's
@@ -91,6 +93,7 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 			Type:        info.NodeComponent[id],
 			Rendered:    renderer.RenderNodeOutput{Files: files},
 			Annotations: orderedAnnotations(info.NodeAnnotations[id]),
+			SyncWave:    info.NodeSyncWave[id],
 		})
 	}
 

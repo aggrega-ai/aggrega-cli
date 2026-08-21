@@ -7,11 +7,12 @@
 // single docker-compose.yaml at the dispatch path.
 //
 // AssembleBoundaryCore takes exactly the inputs the merge consumes — the per-node
-// fragments, the per-node annotations, the IR edges, the boundary-path fallback,
-// and the yaml indent — rather than a host-shaped carrier the caller would have
-// to build, so the compose provider plugin reaches the merge directly. This file
-// carries no build tag: it compiles for the host and for the wasip1 guest alike,
-// so it imports no host-only capability (no filesystem, no network).
+// fragments, the per-node annotations, the per-node deployment wave, the IR edges,
+// the boundary-path fallback, and the yaml indent — rather than a host-shaped
+// carrier the caller would have to build, so the compose provider plugin reaches
+// the merge directly. This file carries no build tag: it compiles for the host
+// and for the wasip1 guest alike, so it imports no host-only capability (no
+// filesystem, no network).
 //
 // Merge contract.
 //
@@ -38,6 +39,14 @@
 //     whatever the fragment already carried — a synthesised init-container
 //     chain — through DependsOn, which owns the merge rule and the emitted
 //     shape.
+//   - depends_on from the deployment wave. When the contributing nodes carry
+//     more than one distinct wave, each service waits on every service of the
+//     immediately-preceding populated wave, gated on that service's health
+//     where it declares a healthcheck and on its start where it does not.
+//     Compose resolves the remaining ordering transitively, so a three-wave
+//     group chains rather than fanning out to every earlier wave. A group whose
+//     nodes all carry one wave records nothing, so a dispatch group where no
+//     boundary declared a wave emits byte-identical output.
 //   - Author order. Map-shaped top-level fields (services, volumes,
 //     networks) are alphabetised by yaml.v3 on marshal — the
 //     alphabetical-by-derivation-key principle for synthesised
@@ -56,6 +65,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -74,17 +84,24 @@ type serviceContrib struct {
 // AssembleBoundaryCore reads per-node fragments and emits a single
 // docker-compose.yaml at the dispatch path. intermediatesByNode is keyed by
 // nodeID; nodeAnnotations gives each node's merged annotation map (read for the
-// `aggrega.ai/namespace` network discriminator); edges is the IR's directed
+// `aggrega.ai/namespace` network discriminator); nodeSyncWave gives each node's
+// deployment wave, keyed the same way, for wave-derived ordering (a node with no
+// entry carries the field's documented default of 0); edges is the IR's directed
 // `uses` edges for depends_on inference; boundaryPath is the network-name
 // fallback used when a node carries no namespace annotation; yamlIndent is the
 // indentation width for the assembled artifact.
+//
+// It returns the assembled files, the advisories the merge raised, and an error.
+// The advisories are out-of-band: every one of them leaves the emitted bytes
+// exactly as they would have been without it.
 func AssembleBoundaryCore(
 	intermediatesByNode map[string][]rendercore.EmittedFile,
 	nodeAnnotations map[string]map[string]string,
+	nodeSyncWave map[string]int,
 	edges []rendercore.IREdgeInfo,
 	boundaryPath string,
 	yamlIndent int,
-) (map[string][]byte, error) {
+) (map[string][]byte, []renderctx.Diagnostic, error) {
 	merged := ComposeFile{
 		Services: map[string]Service{},
 		Volumes:  map[string]Volume{},
@@ -97,6 +114,12 @@ func AssembleBoundaryCore(
 	// service's owning boundary without re-walking the input.
 	contribsByService := map[string][]serviceContrib{}
 	boundaryByService := map[string]string{}
+
+	// waveByService records the deployment wave of the node that contributed
+	// each service, so wave-derived ordering reads a service's wave without
+	// re-walking the input. A node contributes every service it synthesised —
+	// its own and each init-container service — so all of them share its wave.
+	waveByService := map[string]int{}
 
 	// Sorted list of every contributing node.
 	allNodeIDs := make([]string, 0, len(intermediatesByNode))
@@ -119,7 +142,7 @@ func AssembleBoundaryCore(
 		fragments := intermediatesByNode[nid]
 		frag, err := parseNodeFragment(nid, fragments)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if frag == nil {
 			continue
@@ -144,6 +167,7 @@ func AssembleBoundaryCore(
 		for svcName, svc := range frag.Services {
 			contribsByService[svcName] = append(contribsByService[svcName], serviceContrib{boundary: networkName, nodeID: nid})
 			boundaryByService[svcName] = networkName
+			waveByService[svcName] = nodeSyncWave[nid]
 
 			// Append the network to the service's networks list. Sidecars
 			// with network_mode: service:<main> keep network_mode (compose
@@ -158,25 +182,124 @@ func AssembleBoundaryCore(
 
 	// Collision check.
 	if err := checkServiceCollisions(contribsByService); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Every service-level configs: reference resolves to a declared top-level
 	// configs: entry, or the build halts.
 	if err := checkConfigReferences(merged); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// depends_on inference: walk IR edges, project onto contributing
 	// services. Edge endpoints not in the dispatch group are skipped.
 	applyDependsOn(&merged, edges, boundaryByService)
 
+	// depends_on from the deployment wave, recorded after the edge-derived
+	// entries so the two layers keep their own order (DependsOn emits in the
+	// order dependencies are recorded).
+	diags := applyWaveOrdering(&merged, waveByService)
+
 	body, err := marshalDeterministic(&merged, yamlIndent)
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{}, "compose: assemble-boundary marshal")
+		return nil, diags, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{}, "compose: assemble-boundary marshal")
 	}
 
-	return map[string][]byte{AssembledOutputFile: body}, nil
+	return map[string][]byte{AssembledOutputFile: body}, diags, nil
+}
+
+// applyWaveOrdering records the ordering a declared deployment wave expresses, as
+// `depends_on` between services of the merged file, and returns one advisory per
+// service whose ordering could only be expressed in a weaker form.
+//
+// Reach. Compose `depends_on` is service-to-service inside one file, and one
+// dispatch path produces one file, so this orders every service in the merged
+// output and nothing outside it. Contributors that merge into a different file
+// are unreachable from here and are not approximated.
+//
+// Fan-out. Services are grouped by their contributing node's wave. Each service
+// waits on every service of the immediately-preceding populated wave, never on
+// every earlier wave: compose resolves the rest transitively, so a three-wave
+// group chains through the middle wave and the emitted lists stay proportional
+// to one wave rather than to the whole group.
+//
+// Condition. A wave means the earlier group is up before the later one starts,
+// which is readiness rather than process launch, so the wait is gated on the
+// target's health where the target declares a `healthcheck`. A service without
+// one can never report healthy, so gating on health there would emit a wait
+// nothing can satisfy and the merged file would never come up; those waits are
+// gated on the target's start instead, and each such target is named in a
+// returned advisory so the author learns which part of the wave they declared is
+// honoured only as start ordering. Nothing is refused and nothing is rewritten:
+// the weaker condition is visible in the emitted file beside the stronger one.
+//
+// Order. Targets are sorted alphabetically before they are recorded, for the same
+// reason applyDependsOn sorts its own: a set of same-wave services carries no
+// author order, so alphabetical is what makes the output stable. Recording runs
+// after the edge-derived pass, so the emitted layers are the fragment's own
+// init-container chain, then the edge-derived entries, then these. Where a wave
+// names a target the service already depends on through an edge, DependsOn keeps
+// the single entry it already has and supplies the condition to it, so the wave's
+// requirement is expressed without a duplicate entry.
+//
+// A group whose services all carry one wave records nothing at all, so output for
+// a dispatch group where no boundary declared a wave is unchanged.
+func applyWaveOrdering(merged *ComposeFile, waveByService map[string]int) []renderctx.Diagnostic {
+	servicesByWave := map[int][]string{}
+	for svcName := range waveByService {
+		if _, contributes := merged.Services[svcName]; !contributes {
+			continue
+		}
+		servicesByWave[waveByService[svcName]] = append(servicesByWave[waveByService[svcName]], svcName)
+	}
+	if len(servicesByWave) < 2 {
+		return nil
+	}
+
+	waves := make([]int, 0, len(servicesByWave))
+	for w := range servicesByWave {
+		waves = append(waves, w)
+	}
+	sort.Ints(waves)
+	for _, w := range waves {
+		sort.Strings(servicesByWave[w])
+	}
+
+	// Targets whose ordering degraded to start-only, collected in the order the
+	// waves and then the service names are walked, so the advisory list is
+	// deterministic. A target reached from more than one later service is named
+	// once: the fact is about the target, not about each dependent.
+	var startOnly []string
+	seenStartOnly := map[string]struct{}{}
+
+	for i := 1; i < len(waves); i++ {
+		predecessors := servicesByWave[waves[i-1]]
+		for _, svcName := range servicesByWave[waves[i]] {
+			svc := merged.Services[svcName]
+			for _, target := range predecessors {
+				condition := conditionStarted
+				if merged.Services[target].Healthcheck != nil {
+					condition = conditionHealthy
+				} else if _, seen := seenStartOnly[target]; !seen {
+					seenStartOnly[target] = struct{}{}
+					startOnly = append(startOnly, target)
+				}
+				svc.DependsOn.Require(target, condition)
+			}
+			merged.Services[svcName] = svc
+		}
+	}
+
+	if len(startOnly) == 0 {
+		return nil
+	}
+	diags := make([]renderctx.Diagnostic, 0, len(startOnly))
+	for _, target := range startOnly {
+		diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName, "syncWave", fmt.Sprintf(
+			"service %q declares no healthcheck, so services in later waves wait for it to start rather than for it to report healthy",
+			target)))
+	}
+	return diags
 }
 
 // parseNodeFragment locates Intermediate fragments in a node's intermediate-

@@ -82,7 +82,7 @@ func TestComposeAssemble_SingleBoundary(t *testing.T) {
 		ContributingBoundaries: []string{"default"},
 	}
 
-	files, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
+	files, _, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.NodeSyncWave, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err != nil {
 		t.Fatalf("AssembleBoundary: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestComposeAssemble_MergedPath(t *testing.T) {
 		ContributingBoundaries: []string{"core", "edge"},
 	}
 
-	files, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
+	files, _, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.NodeSyncWave, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err != nil {
 		t.Fatalf("AssembleBoundary: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestComposeAssemble_DependsOnFromUsesEdges(t *testing.T) {
 		},
 	}
 
-	files, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
+	files, _, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.NodeSyncWave, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err != nil {
 		t.Fatalf("AssembleBoundary: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestComposeAssemble_ServiceCollision_Errors(t *testing.T) {
 		ContributingBoundaries: []string{"a", "b"},
 	}
 
-	_, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
+	_, _, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.NodeSyncWave, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err == nil {
 		t.Fatal("expected TRANSLATION_ERROR for service collision across contributors")
 	}
@@ -244,7 +244,7 @@ func TestComposeAssemble_NoNamespaceAnnotation_FallsBackToBoundaryPath(t *testin
 		ContributingBoundaries: []string{"STAGE-01"},
 	}
 
-	files, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.Edges, info.BoundaryPath, info.YAMLIndent)
+	files, _, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.NodeSyncWave, info.Edges, info.BoundaryPath, info.YAMLIndent)
 	if err != nil {
 		t.Fatalf("AssembleBoundary: %v", err)
 	}
@@ -379,4 +379,162 @@ func mapKeys(m map[string][]byte) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// waveWorkload builds a one-container Workload publishing a single port, with a
+// healthcheck when withHealth is set. The healthcheck is what makes the
+// difference between the two wave-derived conditions observable.
+func waveWorkload(image string, port int, withHealth bool) *types.Workload {
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: image}
+	c.Ports.Set("p", port)
+	if withHealth {
+		c.Health = &types.HealthSpec{Live: &types.ProbeSpec{TCP: port}}
+	}
+	w.Containers.Set("main", c)
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("p", port)
+	w.Services.Set("svc", svc)
+	return w
+}
+
+// TestComposeAssemble_SyncWaveOrdersServices proves a declared deployment wave
+// orders the services of the merged compose file through depends_on, with the
+// ruled condition on each entry, and that the ordering fans out to the
+// immediately-preceding populated wave only.
+//
+// Three contributors at three waves: migrate at -1 (no healthcheck), db at 0
+// (healthcheck), app at 1. So db waits on migrate gated on migrate's START —
+// migrate cannot report healthy — and app waits on db gated on db's HEALTH. app
+// must NOT name migrate: compose chains that through db, and an all-pairs fan-out
+// would grow with the size of the whole group rather than with one wave.
+func TestComposeAssemble_SyncWaveOrdersServices(t *testing.T) {
+	t.Parallel()
+
+	info := renderer.BoundaryInfo{
+		BoundaryPath:  "cluster",
+		AggregateName: "waved-app",
+		IntermediatesByNode: map[string][]renderer.EmittedFile{
+			"migrate": makeFragment(t, "migrate", waveWorkload("migrate:1.0", 9000, false), nil),
+			"db":      makeFragment(t, "db", waveWorkload("postgres:15", 5432, true), nil),
+			"app":     makeFragment(t, "app", waveWorkload("app:1.0", 8080, false), nil),
+		},
+		NodeAnnotations:        map[string]map[string]string{"migrate": {}, "db": {}, "app": {}},
+		NodeSyncWave:           map[string]int{"migrate": -1, "db": 0, "app": 1},
+		Edges:                  []renderer.IREdgeInfo{{Source: "app", Target: "db"}},
+		ContributingBoundaries: []string{"cluster"},
+		YAMLIndent:             2,
+	}
+
+	files, diags, err := AssembleBoundaryCore(info.IntermediatesByNode, info.NodeAnnotations, info.NodeSyncWave, info.Edges, info.BoundaryPath, info.YAMLIndent)
+	if err != nil {
+		t.Fatalf("AssembleBoundary: %v", err)
+	}
+	body := string(files[AssembledOutputFile])
+
+	// The edge app->db and the wave app->db name the same pair, so one entry
+	// carries the wave's condition rather than the pair appearing twice.
+	if strings.Count(body, "db:") < 1 || strings.Count(body, "condition: service_healthy") != 1 {
+		t.Errorf("expected exactly one service_healthy entry (app waiting on db)\n--- merged ---\n%s", body)
+	}
+	if strings.Count(body, "condition: service_started") != 1 {
+		t.Errorf("expected exactly one service_started entry (db waiting on migrate)\n--- merged ---\n%s", body)
+	}
+	// app must not reach past db to migrate.
+	appBlock := serviceBlock(t, body, "app")
+	if strings.Contains(appBlock, "migrate") {
+		t.Errorf("wave ordering fanned out past the immediately-preceding wave; app names migrate:\n%s", appBlock)
+	}
+	// migrate is in the lowest wave, so it waits on nothing.
+	if strings.Contains(serviceBlock(t, body, "migrate"), "depends_on") {
+		t.Errorf("the lowest wave must wait on nothing:\n%s", serviceBlock(t, body, "migrate"))
+	}
+
+	if len(diags) != 1 {
+		t.Fatalf("expected exactly one advisory naming the start-only target; got %d: %+v", len(diags), diags)
+	}
+	for _, want := range []string{`"compose"`, "syncWave", `service "migrate"`, "declares no healthcheck", "wait for it to start"} {
+		if !strings.Contains(diags[0].Message, want) {
+			t.Errorf("advisory does not mention %q; got %q", want, diags[0].Message)
+		}
+	}
+
+	goldenCheckAssembled(t, "sync-wave-three-waves", files[AssembledOutputFile])
+}
+
+// TestComposeAssemble_SyncWaveSingleWaveEmitsNoOrdering proves the byte-identity
+// property the wave ordering must preserve: the very same contributors with no
+// wave declared anywhere produce output carrying no wave-derived dependency and
+// no advisory, so the assembled bytes are what they would be without the feature.
+//
+// The comparison is against a committed golden, and the two goldens must differ:
+// a parity of two empty sets would pass whatever the emission did.
+func TestComposeAssemble_SyncWaveSingleWaveEmitsNoOrdering(t *testing.T) {
+	t.Parallel()
+
+	intermediates := map[string][]renderer.EmittedFile{
+		"migrate": makeFragment(t, "migrate", waveWorkload("migrate:1.0", 9000, false), nil),
+		"db":      makeFragment(t, "db", waveWorkload("postgres:15", 5432, true), nil),
+		"app":     makeFragment(t, "app", waveWorkload("app:1.0", 8080, false), nil),
+	}
+	annotations := map[string]map[string]string{"migrate": {}, "db": {}, "app": {}}
+	edges := []renderer.IREdgeInfo{{Source: "app", Target: "db"}}
+
+	// Every form of "no wave": an absent map, an all-zero map, and a map whose
+	// single non-default value is shared by every contributor. All three carry one
+	// distinct wave, so all three must emit identically.
+	forms := map[string]map[string]int{
+		"absent":  nil,
+		"zeroes":  {"migrate": 0, "db": 0, "app": 0},
+		"uniform": {"migrate": 4, "db": 4, "app": 4},
+	}
+	var reference string
+	for _, name := range []string{"absent", "uniform", "zeroes"} {
+		files, diags, err := AssembleBoundaryCore(intermediates, annotations, forms[name], edges, "cluster", 2)
+		if err != nil {
+			t.Fatalf("AssembleBoundary(%s): %v", name, err)
+		}
+		if len(diags) != 0 {
+			t.Errorf("form %q raised advisories with no wave ordering to report: %+v", name, diags)
+		}
+		body := string(files[AssembledOutputFile])
+		if strings.Contains(body, "condition:") {
+			t.Errorf("form %q emitted a gated depends_on with a single distinct wave\n--- merged ---\n%s", name, body)
+		}
+		if reference == "" {
+			reference = body
+			continue
+		}
+		if body != reference {
+			t.Errorf("form %q is not byte-identical to the absent-wave form\n--- got ---\n%s\n--- want ---\n%s", name, body, reference)
+		}
+	}
+
+	goldenCheckAssembled(t, "sync-wave-single-wave", []byte(reference))
+}
+
+// serviceBlock returns the lines of the assembled document belonging to one
+// service: the service's own key line and every following line indented deeper,
+// stopping at the next key at the same indentation. It exists so an assertion can
+// say "app does not name migrate" without a whole-document substring search,
+// which cannot tell which service an occurrence belongs to.
+func serviceBlock(t *testing.T, body, service string) string {
+	t.Helper()
+	lines := strings.Split(body, "\n")
+	head := "  " + service + ":"
+	for i, line := range lines {
+		if line != head {
+			continue
+		}
+		block := []string{line}
+		for _, next := range lines[i+1:] {
+			if next != "" && !strings.HasPrefix(next, "   ") {
+				break
+			}
+			block = append(block, next)
+		}
+		return strings.Join(block, "\n")
+	}
+	t.Fatalf("service %q not found in the assembled document:\n%s", service, body)
+	return ""
 }

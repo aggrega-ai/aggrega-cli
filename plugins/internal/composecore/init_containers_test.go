@@ -467,12 +467,13 @@ func TestComposeAssemble_InitChainAndEdgeDependency(t *testing.T) {
 	dbSvc.Ports.Set("pg", 5432)
 	db.Services.Set("db", dbSvc)
 
-	files, err := AssembleBoundaryCore(
+	files, _, err := AssembleBoundaryCore(
 		map[string][]rendercore.EmittedFile{
 			"api": makeFragment(t, "api", api, nil),
 			"db":  makeFragment(t, "db", db, nil),
 		},
 		map[string]map[string]string{},
+		nil,
 		[]rendercore.IREdgeInfo{{Source: "api", Target: "db"}},
 		"default",
 		0,

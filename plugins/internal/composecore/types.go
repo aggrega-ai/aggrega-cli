@@ -61,11 +61,20 @@ type Service struct {
 
 // Compose `depends_on` conditions, as the Compose Specification defines them.
 // conditionStarted is the specification's stated equivalent of the short form;
-// conditionCompletedSuccessfully waits until the dependency has run to
-// successful completion, which is the primitive a run-to-completion init
-// service is waited on with.
+// conditionHealthy waits until the dependency's own healthcheck reports healthy,
+// which is readiness rather than process launch and is therefore what a
+// deployment wave means; conditionCompletedSuccessfully waits until the
+// dependency has run to successful completion, which is the primitive a
+// run-to-completion init service is waited on with.
+//
+// conditionHealthy is satisfiable only by a service that declares a
+// `healthcheck`. A service without one can never report healthy, so a producer
+// choosing this condition checks [Service.Healthcheck] on the service it names
+// and falls back to conditionStarted rather than emitting a wait nothing can
+// satisfy.
 const (
 	conditionStarted               = "service_started"
+	conditionHealthy               = "service_healthy"
 	conditionCompletedSuccessfully = "service_completed_successfully"
 )
 

@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: compose-sync-wave-app
+  version: "1.0.0"
+spec:
+  components:
+    migrator:
+      type: core/migrator
+    store:
+      type: core/store
+    frontend:
+      type: core/frontend
+      # The frontend reads the store's endpoint, so it also carries an ordinary
+      # edge-derived dependency on it. The wave names the same pair, which is why
+      # this fixture also shows what the two together emit.
+      uses:
+        stores:
+          primary:
+            target: store

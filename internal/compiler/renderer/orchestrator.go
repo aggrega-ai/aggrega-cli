@@ -235,11 +235,19 @@ type dispatchKey struct {
 //
 // intermediates carries Intermediate=true EmittedFiles separately from files
 // so the orchestrator never writes them at the dispatch path directly; they
-// flow only to the BoundaryAssembler at finalization. nodeAnnotations and
-// nodeComponent are the per-node metadata the assembler needs to assemble
-// its input (annotations for per-boundary network derivation, component for
-// per-node info). engineByNode lets the assembly pass map node-IDs to their
-// engine instances for any provider-specific lookups.
+// flow only to the BoundaryAssembler at finalization. nodeAnnotations,
+// nodeComponent and nodeSyncWave are the per-node metadata the assembler needs
+// to assemble its input (annotations for per-boundary network derivation,
+// component for per-node info, sync wave so an assembler can order the
+// contributors it merges relative to one another). engineByNode lets the
+// assembly pass map node-IDs to their engine instances for any
+// provider-specific lookups.
+//
+// nodeSyncWave is keyed like nodeAnnotations and populated at the same site
+// from the same node render context. A node whose boundary declares no wave
+// carries the zero value, which is that field's documented default, so an
+// absent entry and a declared zero are the same state by definition rather
+// than by convention.
 //
 // contributingBoundaries records every boundary path whose components fed
 // into this dispatch group — used for diagnostic messages on collision /
@@ -255,6 +263,7 @@ type pendingDispatch struct {
 	intermediates          map[string][]EmittedFile
 	nodeAnnotations        map[string]map[string]string
 	nodeComponent          map[string]string
+	nodeSyncWave           map[string]int
 	subCharts              []SubChartInfo
 	assembler              BoundaryAssembler
 	assemblerCandidates    []assemblerCandidate
@@ -1305,6 +1314,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				intermediates:   map[string][]EmittedFile{},
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
+				nodeSyncWave:    map[string]int{},
 				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, key)
@@ -1357,6 +1367,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		dispatch[key].derivedKeys.putAll(state.DerivedKeys, state.DerivedKeyRepeats, nodeProducerLabel(nodeID))
 		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
 		dispatch[key].nodeComponent[nodeID] = node.Component
+		dispatch[key].nodeSyncWave[nodeID] = nodeCtx.SyncWave
 		dispatch[key].engineByNode[nodeID] = engine
 		dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{
 			InstanceID: nodeID,
@@ -1545,6 +1556,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				intermediates:   map[string][]EmittedFile{},
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
+				nodeSyncWave:    map[string]int{},
 				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, dKey)
@@ -1750,6 +1762,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				IntermediatesByNode:    pd.intermediates,
 				NodeAnnotations:        pd.nodeAnnotations,
 				NodeComponent:          pd.nodeComponent,
+				NodeSyncWave:           pd.nodeSyncWave,
 				ContributingBoundaries: pd.contributingBoundaries,
 				Edges:                  edges,
 				ChartName:              chartName,

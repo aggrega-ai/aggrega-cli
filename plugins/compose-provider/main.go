@@ -189,17 +189,22 @@ func boundaryEnvOverrides() int32 {
 }
 
 // assembleBoundaryFromInput reconstructs the compose assemble core's inputs from
-// the wire AssembleBoundaryInput and runs the same filesystem-free merge core the
-// in-tree compose engine runs, returning the assembled docker-compose.yaml's bytes
-// as a RenderedFile. Each rendered node contributes its render_node fragment files
-// (keyed by node id) and its merged annotations (read for the per-node network
-// discriminator); the graph's uses edges feed depends_on inference; the boundary
-// path is the network-name fallback for a node with no namespace annotation; the
-// render context carries the indentation width. Compose emits a flat assembled
-// file, so NestPerNode is false.
+// the wire AssembleBoundaryInput and runs the filesystem-free merge core,
+// returning the assembled docker-compose.yaml's bytes as a RenderedFile. Each
+// rendered node contributes its render_node fragment files (keyed by node id),
+// its merged annotations (read for the per-node network discriminator) and its
+// deployment wave (read for wave-derived ordering between the contributors); the
+// graph's uses edges feed depends_on inference; the boundary path is the
+// network-name fallback for a node with no namespace annotation; the render
+// context carries the indentation width. Compose emits a flat assembled file, so
+// NestPerNode is false.
+//
+// The merge's advisories travel back on the output's diagnostics, which the host
+// routes to the build's advisory stream. They never affect the emitted bytes.
 func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
 	intermediatesByNode := make(map[string][]rendercore.EmittedFile, len(in.RenderedNodes))
 	nodeAnnotations := make(map[string]map[string]string, len(in.RenderedNodes))
+	nodeSyncWave := make(map[string]int, len(in.RenderedNodes))
 	for i := range in.RenderedNodes {
 		rn := in.RenderedNodes[i]
 		files := make([]rendercore.EmittedFile, 0, len(rn.Rendered.Files))
@@ -208,6 +213,7 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 		}
 		intermediatesByNode[rn.ID] = files
 		nodeAnnotations[rn.ID] = orderedStringMapToPlain(&rn.Annotations)
+		nodeSyncWave[rn.ID] = rn.SyncWave
 	}
 
 	edges := make([]rendercore.IREdgeInfo, 0, len(in.Edges))
@@ -215,12 +221,15 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 		edges = append(edges, rendercore.IREdgeInfo{Source: e.Source, Target: e.Target})
 	}
 
-	files, err := composecore.AssembleBoundaryCore(intermediatesByNode, nodeAnnotations, edges, in.BoundaryPath, in.Context.YAMLIndent)
+	files, diags, err := composecore.AssembleBoundaryCore(intermediatesByNode, nodeAnnotations, nodeSyncWave, edges, in.BoundaryPath, in.Context.YAMLIndent)
 	if err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
 
-	out := rendercore.AssembleBoundaryOutput{Files: make([]rendercore.RenderedFile, 0, len(files))}
+	out := rendercore.AssembleBoundaryOutput{
+		Files:       make([]rendercore.RenderedFile, 0, len(files)),
+		Diagnostics: diags,
+	}
 	for _, path := range sortedKeys(files) {
 		// The compose boundary merges to a single structured docker-compose
 		// document, so every assembled file is YAML. Declaring the format lets

@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: store-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/store
+  provides:
+    host: "{{ .context.instance_id }}"
+    port: 5432
+  # A health: block, so the synthesised service declares a healthcheck and a
+  # wave-derived dependency on it can be gated on its health.
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: postgres:15
+        ports:
+          p: 5432
+        health:
+          live:
+            tcp: 5432
+    services:
+      store:
+        type: ClusterIP
+        ports:
+          p: 5432

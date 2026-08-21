@@ -56,10 +56,10 @@ func TestComposeAssemble_ConfigMapVolumeMissingArtifactHalts(t *testing.T) {
 
 	frag := makeFragment(t, "api", configMapVolumeWorkload(), nil)
 
-	_, err := AssembleBoundaryCore(
+	_, _, err := AssembleBoundaryCore(
 		map[string][]renderer.EmittedFile{"api": frag},
 		map[string]map[string]string{"api": {}},
-		nil, "default", 2,
+		nil, nil, "default", 2,
 	)
 	if err == nil {
 		t.Fatal("assemble accepted a configmap volume with no declared config; want a halt")
@@ -84,10 +84,10 @@ func TestComposeAssemble_ConfigMapVolumeWithArtifactRenders(t *testing.T) {
 	frag := makeFragment(t, "api", configMapVolumeWorkload(), nil)
 	frag = append(frag, artifactConfigFragment("app-settings", "mode: production\nregion: eu-west-1"))
 
-	files, err := AssembleBoundaryCore(
+	files, _, err := AssembleBoundaryCore(
 		map[string][]renderer.EmittedFile{"api": frag},
 		map[string]map[string]string{"api": {}},
-		nil, "default", 2,
+		nil, nil, "default", 2,
 	)
 	if err != nil {
 		t.Fatalf("AssembleBoundary: %v", err)
@@ -109,10 +109,10 @@ func TestComposeAssemble_ConfigDeclaredByAnotherNodeResolves(t *testing.T) {
 	producer := makeFragment(t, "seeder", producerW, nil)
 	producer = append(producer, artifactConfigFragment("app-settings", "mode: production"))
 
-	files, err := AssembleBoundaryCore(
+	files, _, err := AssembleBoundaryCore(
 		map[string][]renderer.EmittedFile{"api": consumer, "seeder": producer},
 		map[string]map[string]string{"api": {}, "seeder": {}},
-		nil, "default", 2,
+		nil, nil, "default", 2,
 	)
 	if err != nil {
 		t.Fatalf("AssembleBoundary rejected a config declared by a sibling node: %v", err)
@@ -146,7 +146,7 @@ func TestComposeAssemble_UnresolvedConfigsReportedDeterministically(t *testing.T
 
 	var first string
 	for range 8 {
-		_, err := AssembleBoundaryCore(intermediates, annotations, nil, "default", 2)
+		_, _, err := AssembleBoundaryCore(intermediates, annotations, nil, nil, "default", 2)
 		if err == nil {
 			t.Fatal("assemble accepted two unresolved config references; want a halt")
 		}
@@ -193,10 +193,10 @@ configs:
 		Intermediate: true,
 	}
 
-	if _, err := AssembleBoundaryCore(
+	if _, _, err := AssembleBoundaryCore(
 		map[string][]renderer.EmittedFile{"gateway": {fragment}},
 		map[string]map[string]string{"gateway": {}},
-		nil, "default", 2,
+		nil, nil, "default", 2,
 	); err != nil {
 		t.Fatalf("AssembleBoundary rejected a fragment declaring both halves: %v", err)
 	}

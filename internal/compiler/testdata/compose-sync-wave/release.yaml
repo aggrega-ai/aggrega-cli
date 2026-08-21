@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: compose-sync-wave-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: compose-sync-wave-app
+  manifest: compose-sync-wave-manifest
+  # Three boundaries sharing one directory:, so they collapse into a single
+  # docker-compose.yaml. Each declares a different wave, which is the only shape
+  # in which one compose file holds more than one.
+  boundaries:
+    data:
+      directory: ./dist/cluster
+      syncWave: -1
+      components:
+        migrator: {}
+    core:
+      directory: ./dist/cluster
+      syncWave: 0
+      components:
+        store: {}
+    edge:
+      directory: ./dist/cluster
+      syncWave: 1
+      components:
+        frontend: {}
