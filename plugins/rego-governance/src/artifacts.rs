@@ -137,7 +137,10 @@ mod tests {
     fn an_artifact_without_a_tree_is_read_as_a_document_stream() {
         let art = artifact("k8s.yaml", "kind: Service\n---\nkind: Deployment\n", None);
         let projected = project(&art);
-        assert_eq!(projected["documents"][0]["kind"], serde_json::json!("Service"));
+        assert_eq!(
+            projected["documents"][0]["kind"],
+            serde_json::json!("Service")
+        );
         assert_eq!(
             projected["documents"][1]["kind"],
             serde_json::json!("Deployment")

@@ -44,6 +44,13 @@ anyhow = "1"
 # Embedded Rego evaluator. Pure-Rust and evaluated entirely in-guest, so the
 # host runs no policy engine and carries no policy-language logic.
 regorus = "0.10.1"
+# Reads a bundled policy archive an operator attached: the archive arrives
+# base64-encoded because the source wire carries text, so it is decoded, then
+# decompressed, then read as a tar archive. Pure-Rust backends only, so the
+# guest compiles to WebAssembly with no native library.
+base64 = "0.22"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+tar = { version = "0.4", default-features = false }
 
 [profile.release]
 # Optimise for size: the embedded evaluator dominates the artifact. Whole-program

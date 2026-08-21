@@ -127,7 +127,9 @@ impl Translation {
             return Ok(Self::conventional());
         };
         let rules: Vec<Rule> = serde_json::from_value(field.clone()).map_err(|err| {
-            anyhow::anyhow!("the {SETTINGS_FIELD} setting is not a list of decision-key rules: {err}")
+            anyhow::anyhow!(
+                "the {SETTINGS_FIELD} setting is not a list of decision-key rules: {err}"
+            )
         })?;
         if rules.is_empty() {
             anyhow::bail!(
@@ -150,15 +152,22 @@ fn is_known_severity(severity: &str) -> bool {
 
 /// The JSON Schema fragment that types the translation setting, built from the
 /// same severity constants [`Translation::new`] validates against so the shape
-/// the host enforces ahead of dispatch and the shape this module accepts have one
+/// checked ahead of the policy running and the shape this module accepts have one
 /// definition.
 ///
 /// The schema constrains the translation field only and leaves the rest of the
 /// settings object open, because the remaining fields are the policy's own data
-/// and the socket declares no shape for them.
+/// and nothing outside the policy declares a shape for them.
+///
+/// It admits an attachment that carries **no** settings at all, as well as one
+/// that carries a settings object. That is not cosmetic: settings are optional
+/// for this plugin — a policy written to the conventional collection names needs
+/// none — and a settings value is checked against this schema whether or not the
+/// attachment declares one, so a schema admitting only an object would refuse
+/// every attachment that configured nothing.
 pub fn settings_schema() -> String {
     format!(
-        r#"{{"type":"object","properties":{{"{field}":{{"type":"array","minItems":1,"items":{{"type":"object","properties":{{"key":{{"type":"string","minLength":1}},"severity":{{"type":"string","enum":["{halt}","{warn}","{info}"]}}}},"required":["key","severity"],"additionalProperties":false}}}}}}}}"#,
+        r#"{{"type":["object","null"],"properties":{{"{field}":{{"type":"array","minItems":1,"items":{{"type":"object","properties":{{"key":{{"type":"string","minLength":1}},"severity":{{"type":"string","enum":["{halt}","{warn}","{info}"]}}}},"required":["key","severity"],"additionalProperties":false}}}}}}}}"#,
         field = SETTINGS_FIELD,
         halt = SEVERITY_HALT,
         warn = SEVERITY_WARN,
@@ -240,8 +249,8 @@ mod tests {
         let settings = raw(
             r#"{"translation":[{"key":"blocked","severity":"halt"},{"key":"noted","severity":"info"}]}"#,
         );
-        let translation =
-            Translation::from_settings(Some(&settings)).expect("a well-formed override is accepted");
+        let translation = Translation::from_settings(Some(&settings))
+            .expect("a well-formed override is accepted");
         let pairs: Vec<(&str, &str)> = translation
             .rules()
             .iter()
@@ -271,8 +280,8 @@ mod tests {
     #[test]
     fn an_empty_translation_is_refused() {
         let settings = raw(r#"{"translation":[]}"#);
-        let err =
-            Translation::from_settings(Some(&settings)).expect_err("an empty translation is refused");
+        let err = Translation::from_settings(Some(&settings))
+            .expect_err("an empty translation is refused");
         assert!(err.to_string().contains("at least one"), "{err}");
     }
 
@@ -307,12 +316,34 @@ mod tests {
     }
 
     #[test]
+    fn the_declared_schema_admits_an_attachment_that_configures_nothing() {
+        // Settings are optional for this plugin, and a settings value is checked
+        // against this schema whether or not the attachment declares one. A
+        // schema admitting only an object would therefore refuse every
+        // attachment that configured nothing — which is the common case.
+        let schema = settings_schema();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&schema).expect("the declared schema is valid JSON");
+        let admitted = parsed["type"]
+            .as_array()
+            .expect("the declared schema admits more than one kind of value");
+        assert!(
+            admitted.contains(&serde_json::json!("null")),
+            "an attachment with no settings must be admitted: {schema}"
+        );
+        assert!(
+            admitted.contains(&serde_json::json!("object")),
+            "an attachment with settings must be admitted: {schema}"
+        );
+    }
+
+    #[test]
     fn the_declared_schema_admits_the_closed_severity_set_only() {
         let schema = settings_schema();
         let parsed: serde_json::Value =
             serde_json::from_str(&schema).expect("the declared schema is valid JSON");
-        let enumerated = &parsed["properties"][SETTINGS_FIELD]["items"]["properties"]["severity"]
-            ["enum"];
+        let enumerated =
+            &parsed["properties"][SETTINGS_FIELD]["items"]["properties"]["severity"]["enum"];
         assert_eq!(
             enumerated,
             &serde_json::json!([SEVERITY_HALT, SEVERITY_WARN, SEVERITY_INFO])

@@ -10,22 +10,30 @@
 //! becomes the policy's `input` document.
 //!
 //! Reading decisions. Every package the attached files declare is evaluated to
-//! its object, and each translation rule's decision key is read off that object.
-//! Reading a key off an evaluated object rather than querying the rule path
-//! matters: querying a rule a policy does not declare is itself an error and is
-//! indistinguishable from a real failure, whereas an absent key is simply an
-//! absent verdict.
+//! its object, and each decision key is read off that object. Reading a key off
+//! an evaluated object rather than querying the rule path matters: querying a
+//! rule a policy does not declare is itself an error and is indistinguishable
+//! from a real failure, whereas an absent key is simply an absent decision.
+//!
+//! One evaluation, four roles. [`evaluated_packages`] is the whole engine
+//! contract: it loads the policy, evaluates it, and hands back each package's
+//! object. What is read off those objects is the only thing that differs between
+//! what the plugin is attached at — messages under a severity-mapped key when it
+//! reports verdicts, decision objects under a named key when it computes a
+//! change — so the loading, the data wiring, the determinism argument and the
+//! failure behaviour are written once and shared.
 //!
 //! Loud failure. When evaluating a package fails — most often because the policy
 //! calls a builtin this engine does not implement — the failure propagates rather
-//! than being reported as a verdict. That distinction is the point: "this policy
+//! than being reported as a decision. That distinction is the point: "this policy
 //! could not be evaluated" must never read as "this policy allows the build".
 
-use aggrega_abi::PolicySource;
+use aggrega_abi::{AnnotationSource, MutatorSource, PolicySource};
 use aggrega_pdk_rust::Diagnostic;
 use regorus::Value;
 use serde_json::value::RawValue;
 
+use crate::bundle;
 use crate::translation::{translate_into, Translation};
 
 /// The module path used for an attached file that arrives without one.
@@ -45,31 +53,100 @@ pub fn settings_value(settings: Option<&RawValue>) -> serde_json::Value {
     }
 }
 
-/// Evaluates the attached policies against one input document and translates the
-/// decisions they reach into diagnostics.
+/// One attached file as the evaluator reads it: a name and its text.
 ///
-/// Determinism. Packages are evaluated in the order the engine reports them,
-/// translation rules in their declared order, and a rule's messages in the order
-/// the evaluated collection yields — a set yields its members sorted, an array
-/// keeps author order. Nothing here iterates a hash map.
-pub fn evaluate(
-    sources: &[PolicySource],
+/// Each of the plugin's roles receives its own source type on the wire, all with
+/// the same two fields, so this borrowed view is what lets one evaluator serve
+/// every role without copying content or restating the loading rules per role.
+#[derive(Debug, Clone, Copy)]
+pub struct Source<'a> {
+    /// The attached file's name.
+    pub path: &'a str,
+    /// The file's text, exactly as it was attached.
+    pub content: &'a str,
+}
+
+impl<'a> From<&'a PolicySource> for Source<'a> {
+    fn from(source: &'a PolicySource) -> Self {
+        Source {
+            path: source.path.as_str(),
+            content: source.content.as_str(),
+        }
+    }
+}
+
+impl<'a> From<&'a MutatorSource> for Source<'a> {
+    fn from(source: &'a MutatorSource) -> Self {
+        Source {
+            path: source.path.as_str(),
+            content: source.content.as_str(),
+        }
+    }
+}
+
+impl<'a> From<&'a AnnotationSource> for Source<'a> {
+    fn from(source: &'a AnnotationSource) -> Self {
+        Source {
+            path: source.path.as_str(),
+            content: source.content.as_str(),
+        }
+    }
+}
+
+/// Loads the attached policies, evaluates them, and returns each distinct
+/// package's evaluated object in first-seen order.
+///
+/// This is the single evaluation core every role shares. Callers differ only in
+/// what they read off the returned objects.
+///
+/// Attached files are either policy text or an encoded archive holding a whole
+/// policy set; an archive's own name says which, and its policy files and data
+/// documents are read out of it in place. The attachment's settings and any data
+/// an archive carried become the policy's `data` document, and the payload the
+/// role delivers becomes its `input` document.
+///
+/// Determinism. Packages come back in the order the engine reports them, which
+/// follows the order the files were added, and the files arrive in a fixed
+/// order. Nothing here iterates a hash map.
+pub fn evaluated_packages(
+    sources: &[Source<'_>],
     settings: Option<&RawValue>,
     input: &serde_json::Value,
-    translation: &Translation,
-) -> anyhow::Result<Vec<Diagnostic>> {
+) -> anyhow::Result<Vec<Value>> {
     let mut engine = regorus::Engine::new();
+    let mut archived_data: Vec<serde_json::Value> = Vec::new();
 
-    // Each attached file is a policy module; its content is the raw policy text.
     for source in sources {
         let path = if source.path.is_empty() {
             UNNAMED_SOURCE_PATH
         } else {
-            source.path.as_str()
+            source.path
         };
+        if bundle::is_encoded_archive(path) {
+            let opened = bundle::read(path, source.content)?;
+            for module in opened.modules {
+                engine
+                    .add_policy(module.path.clone(), module.content)
+                    .map_err(|err| {
+                        anyhow::anyhow!(
+                            "attached archive {path:?} member {:?} did not load as a policy: {err}",
+                            module.path
+                        )
+                    })?;
+            }
+            archived_data.extend(opened.data);
+            continue;
+        }
         engine
-            .add_policy(path.to_string(), source.content.clone())
+            .add_policy(path.to_string(), source.content.to_string())
             .map_err(|err| anyhow::anyhow!("policy source {path:?} did not load: {err}"))?;
+    }
+
+    // An archive's data documents become part of the policy's data document,
+    // added before the attachment's settings so a settings key that collides
+    // with one the archive carried is reported against the settings.
+    for document in archived_data {
+        engine.add_data(Value::from_json_str(&serde_json::to_string(&document)?)?)?;
     }
 
     // The attachment's settings become the policy's data document.
@@ -80,10 +157,10 @@ pub fn evaluate(
         }
     }
 
-    // The socket's payload becomes the policy's input document.
+    // The role's payload becomes the policy's input document.
     engine.set_input(Value::from_json_str(&serde_json::to_string(input)?)?);
 
-    let mut results = Vec::new();
+    let mut evaluated = Vec::new();
     let mut seen: Vec<String> = Vec::new();
     for package in engine.get_packages()? {
         // A package is reported once per module that declares it, so two files
@@ -94,7 +171,27 @@ pub fn evaluate(
             continue;
         }
         seen.push(package.clone());
-        let evaluated = eval_package(&mut engine, &package)?;
+        evaluated.push(eval_package(&mut engine, &package)?);
+    }
+    Ok(evaluated)
+}
+
+/// Evaluates the attached policies against one input document and translates the
+/// decisions they reach into diagnostics. This is what the plugin reports when it
+/// is attached to render a verdict.
+///
+/// Determinism. Packages are evaluated in the order the engine reports them,
+/// translation rules in their declared order, and a rule's messages in the order
+/// the evaluated collection yields — a set yields its members sorted, an array
+/// keeps author order. Nothing here iterates a hash map.
+pub fn evaluate(
+    sources: &[Source<'_>],
+    settings: Option<&RawValue>,
+    input: &serde_json::Value,
+    translation: &Translation,
+) -> anyhow::Result<Vec<Diagnostic>> {
+    let mut results = Vec::new();
+    for evaluated in evaluated_packages(sources, settings, input)? {
         translate_into(
             translation,
             |key| messages_for(&evaluated, key),
@@ -102,6 +199,26 @@ pub fn evaluate(
         )?;
     }
     Ok(results)
+}
+
+/// Evaluates the attached policies against one input document and returns every
+/// decision object collected under `key`, across every package, in package order
+/// then collection order. This is what the plugin reads when it is attached to
+/// compute a change rather than to report a verdict.
+///
+/// A package that does not declare `key` contributes nothing, so a policy set
+/// split across packages need not declare the key in all of them.
+pub fn decisions(
+    sources: &[Source<'_>],
+    settings: Option<&RawValue>,
+    input: &serde_json::Value,
+    key: &str,
+) -> anyhow::Result<Vec<serde_json::Value>> {
+    let mut collected = Vec::new();
+    for evaluated in evaluated_packages(sources, settings, input)? {
+        collected.extend(values_for(&evaluated, key)?);
+    }
+    Ok(collected)
 }
 
 /// Evaluates one package reference to its object value. A package that evaluates
@@ -116,13 +233,18 @@ fn eval_package(engine: &mut regorus::Engine, package: &str) -> anyhow::Result<V
         .unwrap_or(Value::Undefined))
 }
 
-/// Reads the messages one decision key collects off an evaluated package object.
+/// Reads the members one decision key collects off an evaluated package object.
 ///
 /// An absent or undefined key yields nothing, so a policy that does not declare a
-/// key the translation names simply reaches no decision under it. A key holding
-/// anything other than a collection of message strings is a malformed policy and
-/// fails rather than contributing a stringified or dropped message.
-fn messages_for(package_object: &Value, key: &str) -> anyhow::Result<Vec<String>> {
+/// key simply reaches no decision under it. A key holding anything that is not a
+/// collection is a malformed policy and fails rather than contributing a single
+/// coerced entry.
+///
+/// A set yields its members in sorted order and an array keeps author order.
+/// Either is a deterministic sequence, which is why this is the one place a
+/// decision key is read: every role reads its decisions through it and so shares
+/// the same ordering guarantee.
+fn collection_members<'a>(package_object: &'a Value, key: &str) -> anyhow::Result<Vec<&'a Value>> {
     let Ok(object) = package_object.as_object() else {
         return Ok(Vec::new());
     };
@@ -132,15 +254,39 @@ fn messages_for(package_object: &Value, key: &str) -> anyhow::Result<Vec<String>
     if value == &Value::Undefined {
         return Ok(Vec::new());
     }
-    // A set yields its members in sorted order; an array keeps author order.
-    // Either is a deterministic sequence.
     if let Ok(set) = value.as_set() {
-        return set.iter().map(|m| message(key, m)).collect();
+        return Ok(set.iter().collect());
     }
     if let Ok(array) = value.as_array() {
-        return array.iter().map(|m| message(key, m)).collect();
+        return Ok(array.iter().collect());
     }
-    anyhow::bail!("decision key {key:?} must hold a set or array of message strings")
+    anyhow::bail!("decision key {key:?} must hold a set or array of decisions")
+}
+
+/// Reads the messages one decision key collects off an evaluated package object.
+///
+/// A key holding anything other than message strings is a malformed policy and
+/// fails rather than contributing a stringified or dropped message.
+fn messages_for(package_object: &Value, key: &str) -> anyhow::Result<Vec<String>> {
+    collection_members(package_object, key)?
+        .into_iter()
+        .map(|member| message(key, member))
+        .collect()
+}
+
+/// Reads the decisions one decision key collects off an evaluated package
+/// object, as values a role can interpret.
+fn values_for(package_object: &Value, key: &str) -> anyhow::Result<Vec<serde_json::Value>> {
+    collection_members(package_object, key)?
+        .into_iter()
+        .map(|member| {
+            serde_json::to_value(member).map_err(|err| {
+                anyhow::anyhow!(
+                    "decision key {key:?} collected a decision that cannot be read: {err}"
+                )
+            })
+        })
+        .collect()
 }
 
 /// Reads one collected message, requiring it to be a string so a malformed
@@ -159,10 +305,10 @@ mod tests {
     use super::*;
     use aggrega_pdk_rust::{SEVERITY_HALT, SEVERITY_INFO, SEVERITY_WARN};
 
-    fn source(content: &str) -> PolicySource {
-        PolicySource {
-            path: "policy.rego".to_string(),
-            content: content.to_string(),
+    fn source(content: &str) -> Source<'_> {
+        Source {
+            path: "policy.rego",
+            content,
         }
     }
 
@@ -365,13 +511,13 @@ deny contains msg if {
 
     #[test]
     fn two_files_sharing_a_package_report_each_decision_once() {
-        let a = PolicySource {
-            path: "a.rego".to_string(),
-            content: "package proof\n\ndeny contains msg if { msg := \"from a\" }\n".to_string(),
+        let a = Source {
+            path: "a.rego",
+            content: "package proof\n\ndeny contains msg if { msg := \"from a\" }\n",
         };
-        let b = PolicySource {
-            path: "b.rego".to_string(),
-            content: "package proof\n\naudit contains msg if { msg := \"from b\" }\n".to_string(),
+        let b = Source {
+            path: "b.rego",
+            content: "package proof\n\naudit contains msg if { msg := \"from b\" }\n",
         };
         let results = evaluate(
             &[a, b],
@@ -388,13 +534,13 @@ deny contains msg if {
     fn packages_are_evaluated_in_the_order_their_sources_arrive() {
         // The host supplies sources sorted by path, and each becomes a module in
         // that order, so the reported decisions follow the source order.
-        let first = PolicySource {
-            path: "a.rego".to_string(),
-            content: "package alpha\n\ndeny contains msg if { msg := \"alpha\" }\n".to_string(),
+        let first = Source {
+            path: "a.rego",
+            content: "package alpha\n\ndeny contains msg if { msg := \"alpha\" }\n",
         };
-        let second = PolicySource {
-            path: "b.rego".to_string(),
-            content: "package beta\n\ndeny contains msg if { msg := \"beta\" }\n".to_string(),
+        let second = Source {
+            path: "b.rego",
+            content: "package beta\n\ndeny contains msg if { msg := \"beta\" }\n",
         };
         let results = evaluate(
             &[first, second],
