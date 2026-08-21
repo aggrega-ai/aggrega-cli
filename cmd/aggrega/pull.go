@@ -527,7 +527,7 @@ func pullRun(cfg pullConfig) error {
 	// and reads its rule inputs live, so only the digest is recorded — enough to
 	// audit the inputs that shaped a verdict and to surface a changed rule file as
 	// a lockfile diff on the next pull.
-	verdictInputs, err := resolveVerdictInputs(wsCfg.Plugins.VerdictGovernanceRefs())
+	verdictInputs, err := resolveVerdictInputs(wsCfg.VerdictAttachments())
 	if err != nil {
 		return err
 	}
@@ -958,27 +958,41 @@ func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catal
 	return out, nil
 }
 
-// resolveVerdictInputs records, for each verdict-role governance attachment, the
-// content digest of every external rule input it reads at compile time — a
-// Kyverno / Rego file supplied through the attachment's with.sources. Unlike a
-// transform attachment this is PROVENANCE, not a build input: the verdict plugin
-// is cache-not-pin and reads its rule inputs LIVE, so the lockfile records only
-// the digest (never the content), so the inputs that shaped an accept/reject
-// decision are auditable and a changed rule file surfaces as a lockfile diff on
-// the next pull. An attachment that declares no sources contributes no entry.
-// Digests are recorded in source base-name order for a deterministic record.
+// resolveVerdictInputs records, for each verdict-role governance attachment in
+// the workspace's verdict attachment set, the content digest of every external
+// rule input it reads at compile time — a Kyverno / Rego file supplied through
+// the attachment's with.sources. Unlike a transform attachment this is
+// PROVENANCE, not a build input: the verdict plugin is cache-not-pin and reads
+// its rule inputs LIVE, so the lockfile records only the digest (never the
+// content), so the inputs that shaped an accept/reject decision are auditable
+// and a changed rule file surfaces as a lockfile diff on the next pull. An
+// attachment that declares no sources contributes no entry. Digests are recorded
+// in source base-name order for a deterministic record.
 //
 // The verdict plugin is cache-not-pin and so is absent from the entities /
 // plugins sections; the record therefore identifies the attachment by its
 // authored URI (self-standing provenance), not by a resolved coordinate that
 // would join into those sections.
-func resolveVerdictInputs(refs []workspaceconfig.PluginRef) ([]lockfile.VerdictInput, error) {
-	if len(refs) == 0 {
+func resolveVerdictInputs(atts []workspaceconfig.VerdictAttachment) ([]lockfile.VerdictInput, error) {
+	if len(atts) == 0 {
 		return nil, nil
 	}
 	var out []lockfile.VerdictInput
-	for _, ref := range refs {
-		if ref.URI == "" || ref.With == nil || len(ref.With.Sources) == 0 {
+	for _, att := range atts {
+		// The record identifies an attachment by (plugin, role), so it can carry only
+		// an attachment that HAS a role: a linter attachment is a verdict attachment
+		// and is read from the same set, but it has no role to key by, so its rule
+		// inputs are not recorded here. The narrowing is on what the record can
+		// identify, never a second answer to which attachments are verdict
+		// attachments. It reads the socket rather than the role string, because the
+		// governance socket is the only one whose verdict membership is decided by a
+		// role — a role authored onto any other socket's attachment resolves to none
+		// of the roles this record can key by.
+		if att.Socket != workspaceconfig.SocketGovernance {
+			continue
+		}
+		ref := att.Ref
+		if ref.With == nil || len(ref.With.Sources) == 0 {
 			continue
 		}
 		vi := lockfile.VerdictInput{
@@ -1025,43 +1039,35 @@ func resolveVerdictInputs(refs []workspaceconfig.PluginRef) ([]lockfile.VerdictI
 // a manifest digest and is signature-verified; a local / embedded gate carries
 // none and skips signature, exactly as the pinned path skips a non-registry item.
 //
-// A capability-only / empty-URI attachment carries nothing to fetch and is
-// skipped; a plugin that does not resolve from the registry (a local / embedded /
-// absent gate the build resolves in place) is skipped rather than treated as a
-// closure gap — a verdict gate is not on the pinned axis a missing closure entity
-// would halt.
+// A capability-only / empty-URI attachment carries nothing to fetch and nothing to
+// identify, so the verdict attachment set omits it; a plugin that does not resolve
+// from the registry (a local / embedded / absent gate the build resolves in place)
+// is skipped rather than treated as a closure gap — a verdict gate is not on the
+// pinned axis a missing closure entity would halt.
 func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, lookup closure.Lookup, lazyView *catalog.LazyLookup, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) error {
-	for _, socket := range cfg.PluginSockets() {
-		verdictRefs := socket.RefsByTier(workspaceconfig.SocketTierVerdict)
-		if len(verdictRefs) == 0 {
+	for _, att := range cfg.VerdictAttachments() {
+		ref := att.Ref
+		entRes, err := lookup.ResolveCatalogEntity(ref.URI, "plugin")
+		if err != nil {
+			return fmt.Errorf("cache %s socket plugin %q: %w", att.Socket, ref.URI, err)
+		}
+		if entRes.NotFound {
 			continue
 		}
-		for _, ref := range verdictRefs {
-			if ref.URI == "" {
-				continue
-			}
-			entRes, err := lookup.ResolveCatalogEntity(ref.URI, "plugin")
-			if err != nil {
-				return fmt.Errorf("cache %s socket plugin %q: %w", socket.Socket, ref.URI, err)
-			}
-			if entRes.NotFound {
-				continue
-			}
-			bare, version, _ := strings.Cut(ref.URI, ":")
-			if version == "" {
-				version = entRes.ResolvedVersion
-			}
-			artRes, err := lookup.ResolvePlugin(bare, version)
-			if err != nil {
-				return fmt.Errorf("cache %s socket plugin artifact %q: %w", socket.Socket, ref.URI, err)
-			}
-			if artRes.NotFound {
-				return fmt.Errorf("cache %s socket plugin artifact %q: entity resolved but its .wasm did not: %w",
-					socket.Socket, ref.URI, closure.ErrUnresolvableURI())
-			}
-			if err := verifyCachedVerdictSocketPlugin(ctx, cfg, lazyView, ref.URI, artRes.ManifestDigest, workspaceRoot, cacheDir, targetFor, diagOut); err != nil {
-				return fmt.Errorf("verify %s socket plugin %q: %w", socket.Socket, ref.URI, err)
-			}
+		bare, version, _ := strings.Cut(ref.URI, ":")
+		if version == "" {
+			version = entRes.ResolvedVersion
+		}
+		artRes, err := lookup.ResolvePlugin(bare, version)
+		if err != nil {
+			return fmt.Errorf("cache %s socket plugin artifact %q: %w", att.Socket, ref.URI, err)
+		}
+		if artRes.NotFound {
+			return fmt.Errorf("cache %s socket plugin artifact %q: entity resolved but its .wasm did not: %w",
+				att.Socket, ref.URI, closure.ErrUnresolvableURI())
+		}
+		if err := verifyCachedVerdictSocketPlugin(ctx, cfg, lazyView, ref.URI, artRes.ManifestDigest, workspaceRoot, cacheDir, targetFor, diagOut); err != nil {
+			return fmt.Errorf("verify %s socket plugin %q: %w", att.Socket, ref.URI, err)
 		}
 	}
 	return nil

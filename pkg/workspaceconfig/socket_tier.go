@@ -159,3 +159,38 @@ func (c Config) PluginSockets() []PluginSocket {
 		{SocketImporter, c.Plugins.Importer},
 	}
 }
+
+// VerdictAttachment is one verdict attachment together with the socket it is
+// attached at: the socket is carried rather than re-derived because a consumer
+// that needs to name the attachment's socket must not re-answer the tier
+// question to get it.
+type VerdictAttachment struct {
+	Socket Socket
+	Ref    PluginRef
+}
+
+// VerdictAttachments returns every attachment this config binds at the verdict
+// tier, across every plugin socket, in socket order and then authored order —
+// the verdict governance roles (ir-verdict / render-verdict) and the linter
+// socket alike, because the verdict tier is a property of the attachment rather
+// than of one socket. An attachment carrying no plugin URI is omitted: it has
+// nothing to fetch and nothing to identify.
+//
+// It is the one spelling of "the verdict attachment set", so the pull's plugin
+// caching and the recorded provenance of what shaped a verdict read the same
+// answer and cannot disagree about which attachments are verdict attachments. A
+// consumer deriving the set from one socket's attachment list answers a narrower
+// question than the name states, which is why the set is read here rather than
+// re-derived.
+func (c Config) VerdictAttachments() []VerdictAttachment {
+	var out []VerdictAttachment
+	for _, ps := range c.PluginSockets() {
+		for _, ref := range ps.RefsByTier(SocketTierVerdict) {
+			if ref.URI == "" {
+				continue
+			}
+			out = append(out, VerdictAttachment{Socket: ps.Socket, Ref: ref})
+		}
+	}
+	return out
+}
