@@ -154,7 +154,7 @@ type DocumentView interface {
 	// order with each other.
 	//
 	// Keyed by document; read from
-	// resolver.LintUnreadParameters(rawAggregate).
+	// resolver.lintUnreadParameters(rawAggregate).
 	RawAggregateText(document string) []byte
 
 	// DeclaredParameterKeys are the parameter names the Aggregate's contract

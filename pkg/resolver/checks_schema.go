@@ -54,7 +54,7 @@ func pillarObjections(
 	payload types.OrderedMap[any],
 	parameters map[string]any,
 ) []constraint.Objection {
-	findings := pillarConformanceFindings(contract, pillar, payload, parameters, false)
+	findings := pillarConformanceFindings(contract, pillar, payload, parameters)
 	if len(findings) == 0 {
 		return nil
 	}

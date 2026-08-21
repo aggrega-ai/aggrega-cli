@@ -112,7 +112,7 @@ func handWrittenReading(t *testing.T, fixture, aggregateName string) []*Resolver
 	if err != nil {
 		t.Fatalf("load parameter contract: %v", err)
 	}
-	return LintUnreadParameters(raw, contract, aggregateName)
+	return lintUnreadParameters(raw, contract, aggregateName)
 }
 
 // The framework's reading and the hand-written reading beside it must agree

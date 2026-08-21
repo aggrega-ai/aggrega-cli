@@ -185,7 +185,7 @@ var facts = []factDecl{
 	{
 		Name:        "raw-aggregate-text",
 		Stage:       "document",
-		SourceField: "resolver.LintUnreadParameters(rawAggregate)",
+		SourceField: "resolver.lintUnreadParameters(rawAggregate)",
 		Subject:     []string{"document"},
 		Params:      []paramDecl{{Name: "document", Type: "string"}},
 		Returns:     "[]byte",

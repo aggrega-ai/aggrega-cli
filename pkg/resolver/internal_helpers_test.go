@@ -384,48 +384,6 @@ func TestValidateAnnotationBindingTargets_CatalogMissErrors(t *testing.T) {
 	}
 }
 
-// TestCollectUsesInjectDeliveryKeys_EmptyUsesReturnsEmpty pins the
-// short-circuit: an empty UsesSocketValue map returns an empty result
-// without walking the dispatch table.
-func TestCollectUsesInjectDeliveryKeys_EmptyUsesReturnsEmpty(t *testing.T) {
-	t.Parallel()
-	uses := types.OrderedMap[types.UsesSocketValue]{}
-	got := collectUsesInjectDeliveryKeys(uses)
-	if len(got) != 0 {
-		t.Errorf("empty uses: expected empty result; got %v", got)
-	}
-}
-
-// TestCollectUsesInjectDeliveryKeys_VerboseFormShapes pins the verbose-
-// form dispatch: every entry's Inject block contributes its keys to
-// the result map by mechanism. Sorted keys per mechanism for
-// deterministic output.
-func TestCollectUsesInjectDeliveryKeys_VerboseFormShapes(t *testing.T) {
-	t.Parallel()
-	envMap := &types.OrderedMap[any]{}
-	envMap.Set("VAR_A", "from_a")
-	envMap.Set("VAR_B", "from_b")
-	fileMap := &types.OrderedMap[any]{}
-	fileMap.Set("/etc/config.json", "config")
-	uses := types.OrderedMap[types.UsesSocketValue]{}
-	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
-	verbose.Set("primary", types.VerboseUsesEntry{
-		Target: "backend",
-		Inject: &types.InjectBlock{
-			Env:  envMap,
-			File: fileMap,
-		},
-	})
-	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
-	got := collectUsesInjectDeliveryKeys(uses)
-	if len(got["env"]) != 2 || got["env"][0] != "VAR_A" || got["env"][1] != "VAR_B" {
-		t.Errorf("env keys: expected [VAR_A, VAR_B]; got %v", got["env"])
-	}
-	if len(got["file"]) != 1 || got["file"][0] != "/etc/config.json" {
-		t.Errorf("file keys: expected one entry; got %v", got["file"])
-	}
-}
-
 // TestValidateComponentInstanceNames_AttachmentNames pins the attachment-name
 // branch: every invalid attachment instance name produces one error, whatever
 // the attachment produces, because there is one attachment block to walk.

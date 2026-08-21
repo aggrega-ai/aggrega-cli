@@ -160,35 +160,6 @@ func TestValidateInstanceNames_FeatureNames(t *testing.T) {
 	}
 }
 
-func TestValidateTargetRef_Valid(t *testing.T) {
-	tests := []string{
-		"component-name",
-		"nested-agg.component",
-		"deep.nested.agg.comp",
-		"a1.b2.c3",
-	}
-	for _, ref := range tests {
-		if err := ValidateTargetRef(ref, "test", ".field"); err != nil {
-			t.Errorf("expected valid target ref %q, got error: %v", ref, err)
-		}
-	}
-}
-
-func TestValidateTargetRef_Invalid(t *testing.T) {
-	tests := []string{
-		".leading-dot",
-		"trailing-dot.",
-		"double..dot",
-		"bad name",
-		"bad@char.comp",
-	}
-	for _, ref := range tests {
-		if err := ValidateTargetRef(ref, "test", ".field"); err == nil {
-			t.Errorf("expected invalid target ref %q to fail", ref)
-		}
-	}
-}
-
 func TestValidateInstanceNames_Nil(t *testing.T) {
 	errs := ValidateInstanceNames(normalized(t, nil))
 	if len(errs) != 0 {

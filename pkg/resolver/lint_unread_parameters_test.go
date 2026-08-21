@@ -45,7 +45,7 @@ func TestLintUnreadParameters_UnreferencedParameterIsReported(t *testing.T) {
       values:
         name: "{{ .parameters.read_one }}"
 `)
-	got := LintUnreadParameters(raw, contractOf("read_one", "never_read"), "demo")
+	got := lintUnreadParameters(raw, contractOf("read_one", "never_read"), "demo")
 	if want := []string{".spec.parameters.never_read"}; !equalStrings(fieldsOf(got), want) {
 		t.Fatalf("fields = %v; want %v", fieldsOf(got), want)
 	}
@@ -73,7 +73,7 @@ func TestLintUnreadParameters_ReferencedParameterIsNotReported(t *testing.T) {
       values:
         size: "{{ .parameters.db_size }}"
 `)
-	if got := LintUnreadParameters(raw, contractOf("db_size"), "demo"); len(got) != 0 {
+	if got := lintUnreadParameters(raw, contractOf("db_size"), "demo"); len(got) != 0 {
 		t.Fatalf("referenced parameter reported unread: %v", fieldsOf(got))
 	}
 }
@@ -96,7 +96,7 @@ func TestLintUnreadParameters_DefaultedButUnreferencedStillReported(t *testing.T
 	contract := types.OrderedMap[any]{}
 	contract.Set("replicas", map[string]any{"type": "integer", "default": 3})
 
-	got := LintUnreadParameters(raw, contract, "demo")
+	got := lintUnreadParameters(raw, contract, "demo")
 	if want := []string{".spec.parameters.replicas"}; !equalStrings(fieldsOf(got), want) {
 		t.Fatalf("defaulted-but-unread parameter not reported: fields = %v; want %v",
 			fieldsOf(got), want)
@@ -122,7 +122,7 @@ func TestLintUnreadParameters_UnparseableTextReportsNothing(t *testing.T) {
 	if _, err := gotmpl.CollectTemplateFieldAccesses(string(raw)); err == nil {
 		t.Fatalf("planted text parses; the needle does not exercise the parse-failure path")
 	}
-	if got := LintUnreadParameters(raw, contractOf("a", "b", "c"), "demo"); len(got) != 0 {
+	if got := lintUnreadParameters(raw, contractOf("a", "b", "c"), "demo"); len(got) != 0 {
 		t.Fatalf("parse failure produced %d advisories (blind verdict): %v",
 			len(got), fieldsOf(got))
 	}
@@ -138,7 +138,7 @@ func TestLintUnreadParameters_WholeMapReadReportsNothing(t *testing.T) {
       values:
         all: "{{ range $k, $v := .parameters }}{{ $k }}{{ end }}"
 `)
-	if got := LintUnreadParameters(raw, contractOf("a", "b"), "demo"); len(got) != 0 {
+	if got := lintUnreadParameters(raw, contractOf("a", "b"), "demo"); len(got) != 0 {
 		t.Fatalf("whole-map read still reported keys: %v", fieldsOf(got))
 	}
 }
@@ -153,7 +153,7 @@ func TestLintUnreadParameters_NestedReadMarksTopLevelDeclaration(t *testing.T) {
       values:
         host: "{{ .parameters.database.host }}"
 `)
-	if got := LintUnreadParameters(raw, contractOf("database"), "demo"); len(got) != 0 {
+	if got := lintUnreadParameters(raw, contractOf("database"), "demo"); len(got) != 0 {
 		t.Fatalf("nested read did not mark the top-level declaration: %v", fieldsOf(got))
 	}
 }
@@ -173,7 +173,7 @@ func TestLintUnreadParameters_OrderIsDeterministicAcrossAuthorOrder(t *testing.T
 		{"gamma", "alpha", "beta"},
 		{"beta", "gamma", "alpha"},
 	} {
-		got := fieldsOf(LintUnreadParameters(raw, contractOf(order...), "demo"))
+		got := fieldsOf(lintUnreadParameters(raw, contractOf(order...), "demo"))
 		if !equalStrings(got, want) {
 			t.Errorf("author order %v produced %v; want %v", order, got, want)
 		}
@@ -183,7 +183,7 @@ func TestLintUnreadParameters_OrderIsDeterministicAcrossAuthorOrder(t *testing.T
 func TestLintUnreadParameters_NoDeclaredParametersReportsNothing(t *testing.T) {
 	t.Parallel()
 	raw := []byte("spec:\n  components: {}\n")
-	if got := LintUnreadParameters(raw, types.OrderedMap[any]{}, "demo"); got != nil {
+	if got := lintUnreadParameters(raw, types.OrderedMap[any]{}, "demo"); got != nil {
 		t.Fatalf("empty contract produced advisories: %v", fieldsOf(got))
 	}
 }
@@ -209,7 +209,7 @@ func TestLintUnreadParameters_ParsesTextTheInterpolationAccepts(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("interpolation rejected the planted text, so it is the wrong needle: %v", err)
 	}
-	got := LintUnreadParameters(raw, contractOf("given", "unused_one"), "demo")
+	got := lintUnreadParameters(raw, contractOf("given", "unused_one"), "demo")
 	if want := []string{".spec.parameters.unused_one"}; !equalStrings(fieldsOf(got), want) {
 		t.Fatalf("fields = %v; want %v (a parse failure here would report nothing at all)",
 			fieldsOf(got), want)

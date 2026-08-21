@@ -10,8 +10,21 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// LintUnreadParameters reports every parameter an Aggregate declares that no
+// lintUnreadParameters reports every parameter an Aggregate declares that no
 // reference in that Aggregate's own text reads.
+//
+// 🔴 It is NOT the production reading. The rule reaches a build through the
+// declared check the advisory suite invokes; this is the second, independent
+// implementation the equivalence cross-check compares that reading against, and
+// it is retained for exactly that. A cross-check sharing an implementation with
+// what it checks cannot see the two drift apart, so this must not be folded into
+// the declared check or re-expressed in terms of it — and it must not be wired
+// into a build, which would report one authoring fault twice. It is unexported
+// so that no caller outside this package can restore it to a production path.
+//
+// What the two legitimately share is one definition of what counts as a read:
+// both reach the same reference census. What the cross-check compares are their
+// conclusions.
 //
 // A declared parameter is the authoring surface for varying one value per
 // deployment: the Release fulfils the declaration, and a
@@ -54,7 +67,7 @@ import (
 // of the file.
 //
 // Returns nil when the Aggregate declares no parameters.
-func LintUnreadParameters(rawAggregate []byte, contract types.OrderedMap[any], aggregateName string) []*ResolverError {
+func lintUnreadParameters(rawAggregate []byte, contract types.OrderedMap[any], aggregateName string) []*ResolverError {
 	if contract.Len() == 0 {
 		return nil
 	}

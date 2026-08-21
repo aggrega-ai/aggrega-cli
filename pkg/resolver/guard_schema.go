@@ -188,25 +188,7 @@ func ValidatePillarConformance(
 	parameters map[string]any,
 	entity, fieldPrefix, schemaLabel string,
 ) []*ResolverError {
-	return validatePillarConformance(compiled, pillar, instance, parameters, entity, fieldPrefix, schemaLabel, false)
-}
-
-// ValidatePillarConformanceStructural is the predicate-inert variant of
-// ValidatePillarConformance: it validates the unconditional structural
-// constraints (type, range, enum, required, closed-ness) but does NOT evaluate
-// the conditional extension predicates (x-aggrega-when / x-aggrega-validate).
-// It is for callers that lack the correct parameter context for those
-// predicates and must therefore validate structure only rather than evaluate
-// them against a wrong or empty context. Same diagnostics and default-awareness
-// as the full entry; only predicate evaluation is suppressed.
-func ValidatePillarConformanceStructural(
-	compiled compactform.Schema,
-	pillar string,
-	instance types.OrderedMap[any],
-	parameters map[string]any,
-	entity, fieldPrefix, schemaLabel string,
-) []*ResolverError {
-	return validatePillarConformance(compiled, pillar, instance, parameters, entity, fieldPrefix, schemaLabel, true)
+	return validatePillarConformance(compiled, pillar, instance, parameters, entity, fieldPrefix, schemaLabel)
 }
 
 // CompileComponentSchema compiles a Component type's declared schema for
@@ -271,9 +253,8 @@ func validatePillarConformance(
 	instance types.OrderedMap[any],
 	parameters map[string]any,
 	entity, fieldPrefix, schemaLabel string,
-	skipPredicates bool,
 ) []*ResolverError {
-	findings := pillarConformanceFindings(compiled, pillar, instance, parameters, skipPredicates)
+	findings := pillarConformanceFindings(compiled, pillar, instance, parameters)
 	errs := make([]*ResolverError, 0, len(findings))
 	for _, f := range findings {
 		field := fieldPrefix
@@ -340,7 +321,6 @@ func pillarConformanceFindings(
 	pillar string,
 	instance types.OrderedMap[any],
 	parameters map[string]any,
-	skipPredicates bool,
 ) []pillarFinding {
 	pillarSchema, ok := pillarSubSchema(compiled, pillar)
 	if !ok {
@@ -373,7 +353,7 @@ func pillarConformanceFindings(
 		return nil // a genuinely uncompilable schema is surfaced at catalog load, not here
 	}
 
-	rpt, err := v.Validate(wrapped, &jsonvalidator.Context{Parameters: parameters, Surround: wrapped, SkipPredicates: skipPredicates})
+	rpt, err := v.Validate(wrapped, &jsonvalidator.Context{Parameters: parameters, Surround: wrapped})
 	if err != nil || rpt == nil || len(rpt.Findings) == 0 {
 		return nil
 	}

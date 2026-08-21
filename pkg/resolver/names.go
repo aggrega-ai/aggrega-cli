@@ -22,16 +22,6 @@ import (
 // inside sub-aggregate data-layer), so authored names cannot contain it.
 var instanceNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-// targetRefPattern validates a target reference that may cross nested
-// aggregate boundaries (e.g., a uses.target field referring to a component
-// inside a sub-aggregate). The reference is a dot-separated path of
-// segments, each of which must match instanceNamePattern.
-//
-// The pattern structure forbids leading dots, trailing dots, and consecutive
-// dots — every segment is required to be non-empty. A bare component name
-// (no dots) is accepted as a single-segment path.
-var targetRefPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
-
 // ValidateInstanceNames walks every user-authored dictionary key in the
 // Aggregate (top-level aggregates, top-level subsystems, then recursively into
 // each subsystem's components, features, secrets, and nested subsystems) and
@@ -126,28 +116,6 @@ func ValidateInstanceNames(na types.NormalizedAggregate) []*ResolverError {
 
 	sortResolverErrors(errs)
 	return errs
-}
-
-// ValidateTargetRef checks that a target reference — typically a uses.target
-// value or a Feature appliesTo type field that may cross nested aggregate
-// boundaries — matches targetRefPattern. The entity and field arguments
-// are attached to the returned ResolverError so callers can identify the
-// offending location.
-//
-// Returns nil for a valid reference.
-//
-// No production call sites today; intended for future uses-target
-// validation wiring.
-func ValidateTargetRef(ref, entity, field string) *ResolverError {
-	if !targetRefPattern.MatchString(ref) {
-		return &ResolverError{
-			Entity:  entity,
-			Field:   field,
-			Message: fmt.Sprintf("target reference %q is invalid: each segment must match %s, separated by dots", ref, instanceNamePattern.String()),
-			Err:     ErrInvalidTargetRef(),
-		}
-	}
-	return nil
 }
 
 func validateComponentInstanceNames(entity, compName string, comp types.ComponentInstance) []*ResolverError {

@@ -4,8 +4,6 @@
 package resolver
 
 import (
-	"sort"
-
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -73,12 +71,13 @@ func injectMechanismPayloads(inject *types.InjectBlock) types.OrderedMap[any] {
 
 // appendInjectDeliveryKeys appends the delivery-key names carried by one
 // mechanism payload onto result[mech]. It is the single place either
-// delivery-key collector knows the payload shapes a mechanism value can arrive
-// in, so the two cannot recognise different shapes: a payload shape one
-// collector walks is a shape both walk. That matters because the collectors
-// feed a collision check, and a collector that returns no keys for a shape it
-// does not recognise makes the check approve a declaration it never examined —
-// indistinguishable, from the outside, from a check that examined it and found
+// delivery-key reading knows the payload shapes a mechanism value can arrive in
+// — a component's own injection block on one side, a connection's authored
+// delivery payload on the other — so the two cannot recognise different shapes:
+// a payload shape one reading walks is a shape both walk. That matters because
+// both feed a collision rule, and a reading that returns no keys for a shape it
+// does not recognise makes the rule approve a declaration it never examined —
+// indistinguishable, from the outside, from a rule that examined it and found
 // nothing wrong.
 //
 // The recognised shapes are the ordered mapping form, the two plain-map forms,
@@ -117,79 +116,4 @@ func appendInjectDeliveryKeys(result map[string][]string, mech string, raw any) 
 			result[mech] = append(result[mech], in)
 		}
 	}
-}
-
-// sortDeliveryKeys sorts each mechanism's key slice so downstream walks over
-// the collected keys iterate deterministically.
-func sortDeliveryKeys(result map[string][]string) {
-	for mech := range result {
-		sort.Strings(result[mech])
-	}
-}
-
-// collectInjectDeliveryKeys returns delivery-key names indexed by mechanism
-// name. The outer iteration walks core mechanisms (env, file, arg) followed
-// by custom mechanisms from Additional in author order via OrderedMap.All();
-// the per-mechanism inner delivery-key slice is sorted alphabetically for
-// deterministic iteration of the keys downstream callers walk. Returns an
-// empty map when inject is nil or carries no recognized shape. Does not
-// mutate the input.
-func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
-	result := map[string][]string{}
-	if inject == nil {
-		return result
-	}
-	appendInjectDeliveryKeys(result, "env", inject.Env)
-	appendInjectDeliveryKeys(result, "file", inject.File)
-	appendInjectDeliveryKeys(result, "arg", inject.Arg)
-	for k, v := range inject.Additional.All() {
-		appendInjectDeliveryKeys(result, k, v)
-	}
-	sortDeliveryKeys(result)
-	return result
-}
-
-// collectUsesInjectDeliveryKeys returns delivery-key names indexed by
-// mechanism name across every uses-level inject block on a component. The
-// outer iteration walks core mechanisms (env, file, arg) followed by custom
-// mechanisms from Additional in author order via OrderedMap.All(); the
-// per-mechanism inner delivery-key slice is sorted alphabetically for
-// deterministic iteration. Returns an empty map when uses is empty or no
-// verbose-form socket carries inject directives. Does not mutate the input.
-//
-// Compact-form sockets (string arrays) carry no inject directives and are
-// skipped. Verbose-form sockets walk the typed VerboseUsesEntry slice and
-// extract delivery keys from each entry's optional Inject block.
-func collectUsesInjectDeliveryKeys(uses types.OrderedMap[types.UsesSocketValue]) map[string][]string {
-	result := map[string][]string{}
-	if uses.Len() == 0 {
-		return result
-	}
-	for _, val := range uses.All() {
-		if val.Verbose.Len() == 0 {
-			continue
-		}
-		for _, entry := range val.Verbose.All() {
-			if entry.Inject == nil {
-				continue
-			}
-			appendInjectDeliveryKeys(result, "env", entry.Inject.Env)
-			appendInjectDeliveryKeys(result, "file", entry.Inject.File)
-			appendInjectDeliveryKeys(result, "arg", entry.Inject.Arg)
-			for mech, mechRaw := range entry.Inject.Additional.All() {
-				appendInjectDeliveryKeys(result, mech, mechRaw)
-			}
-		}
-	}
-	sortDeliveryKeys(result)
-	return result
-}
-
-func contains(slice []string, s string) bool {
-	for _, v := range slice {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
