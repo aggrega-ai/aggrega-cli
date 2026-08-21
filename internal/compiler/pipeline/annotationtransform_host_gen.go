@@ -227,6 +227,19 @@ func (t *AnnotationTransformInput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSONStrict decodes AnnotationTransformInput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *AnnotationTransformInput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "targets", "binding_keys", "sources", "settings"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
 // MarshalJSON encodes AnnotationTransformOutput in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t AnnotationTransformOutput) MarshalJSON() ([]byte, error) {
@@ -314,6 +327,19 @@ func (t *AnnotationTransformOutput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSONStrict decodes AnnotationTransformOutput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *AnnotationTransformOutput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "injections", "error"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
 // MarshalJSON encodes AnnotationTarget in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t AnnotationTarget) MarshalJSON() ([]byte, error) {
@@ -392,6 +418,19 @@ func (t *AnnotationTarget) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// UnmarshalJSONStrict decodes AnnotationTarget exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *AnnotationTarget) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "boundary_path", "component_name", "annotations"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
 }
 
 // MarshalJSON encodes AnnotationInjection in field-declaration order, omitting
@@ -478,6 +517,19 @@ func (t *AnnotationInjection) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSONStrict decodes AnnotationInjection exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *AnnotationInjection) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "boundary_path", "component_name", "annotation_key", "annotation_value"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
 // MarshalJSON encodes AnnotationSource in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t AnnotationSource) MarshalJSON() ([]byte, error) {
@@ -536,6 +588,19 @@ func (t *AnnotationSource) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// UnmarshalJSONStrict decodes AnnotationSource exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *AnnotationSource) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "path", "content"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
 }
 
 // EncodeCBOR encodes AnnotationTransformInput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -1037,6 +1102,37 @@ func readRaw(dec *json.Decoder, data []byte) (json.RawMessage, error) {
 	out := make(json.RawMessage, len(value))
 	copy(out, value)
 	return out, nil
+}
+
+// refuseUndeclaredJSONKeys walks the top-level keys of a JSON object and
+// reports the first one the declared key set does not contain. It reads only
+// the object's own keys — it never descends into a value — so it is the shape
+// check for a payload whose identity is carried by which keys it holds.
+func refuseUndeclaredJSONKeys(data []byte, declared ...string) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, d := range declared {
+			if key == d {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("abi: unexpected field %q", key)
+		}
+		if _, err := readRaw(dec, data); err != nil {
+			return err
+		}
+	}
+	return expectDelim(dec, '}')
 }
 
 // readString decodes the next token as a JSON string.

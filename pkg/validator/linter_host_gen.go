@@ -174,6 +174,19 @@ func (t *LinterInput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSONStrict decodes LinterInput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *LinterInput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "rule_id", "entity_kind", "proposed", "previous", "source_path", "policies"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
 // MarshalJSON encodes LinterOutput in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t LinterOutput) MarshalJSON() ([]byte, error) {
@@ -261,6 +274,19 @@ func (t *LinterOutput) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// UnmarshalJSONStrict decodes LinterOutput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *LinterOutput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "findings", "error"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
 }
 
 // MarshalJSON encodes Policies in field-declaration order, omitting
@@ -405,6 +431,19 @@ func (t *Policies) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// UnmarshalJSONStrict decodes Policies exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *Policies) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "allow_dynamic_refs", "allow_id_overrides", "allow_direct_x_aggrega_extensions", "allow_aggrega_ai_prefix", "allow_nonstandard_names", "allow_category_mismatches"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
 }
 
 // EncodeCBOR encodes LinterInput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -782,6 +821,37 @@ func readRaw(dec *json.Decoder, data []byte) (json.RawMessage, error) {
 	out := make(json.RawMessage, len(value))
 	copy(out, value)
 	return out, nil
+}
+
+// refuseUndeclaredJSONKeys walks the top-level keys of a JSON object and
+// reports the first one the declared key set does not contain. It reads only
+// the object's own keys — it never descends into a value — so it is the shape
+// check for a payload whose identity is carried by which keys it holds.
+func refuseUndeclaredJSONKeys(data []byte, declared ...string) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, d := range declared {
+			if key == d {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("abi: unexpected field %q", key)
+		}
+		if _, err := readRaw(dec, data); err != nil {
+			return err
+		}
+	}
+	return expectDelim(dec, '}')
 }
 
 // readString decodes the next token as a JSON string.

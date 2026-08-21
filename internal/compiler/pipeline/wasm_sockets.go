@@ -136,8 +136,10 @@ func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.P
 // between topology construction and IR build so the auto-tagged labels flow into
 // the IR. An unconfigured socket is a no-op (returns nil before any resolution),
 // which keeps a build with no mutator attachment byte-identical to a build
-// without the socket. A resolution, load, output-unmarshal, or patch-confinement
-// failure halts the build loudly.
+// without the socket. A resolution, load, or patch-confinement failure halts the
+// build loudly, as does an output that is not this socket's shape — a dispatched
+// export whose output carries a field the label-transform shape does not declare
+// is refused rather than read as an empty patch list.
 func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, topo *topology.TopologyResult) error {
 	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleLabelTransform)
 	if len(refs) == 0 {
@@ -170,8 +172,8 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
 		var mo topology.MutatorOutput
-		if err := json.Unmarshal(out, &mo); err != nil {
-			return fmt.Errorf("label-transform: plugin %q output: %w", ref.URI, err)
+		if err := wasm.DecodeGuestOutput(export, out, &mo); err != nil {
+			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(export, mo.Error); err != nil {
 			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
@@ -192,9 +194,11 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 // violations use: RunPipeline joins Errors into a build-halting error, while the
 // Tier-4 validation path surfaces them as diagnostics — so a policy rejection
 // halts a build without breaking daemon responsiveness. Policy never mutates.
-// An unconfigured socket is a no-op. A resolution, load, or output-unmarshal
-// failure halts the build loudly (a misconfigured plugin is a build fault, not a
-// policy verdict).
+// An unconfigured socket is a no-op. A resolution or load failure halts the build
+// loudly (a misconfigured plugin is a build fault, not a policy verdict), and so
+// does an output that is not this socket's shape: an attachment whose entry
+// function names an export returning some other envelope is refused rather than
+// read as a verdict list that happens to be empty, which is a legitimate allow.
 func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, analysis *analyzer.AnalysisResult) error {
 	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleIRVerdict)
 	if len(refs) == 0 {
@@ -232,8 +236,8 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
 		var po abi.PolicyOutput
-		if err := json.Unmarshal(out, &po); err != nil {
-			return fmt.Errorf("ir-verdict: plugin %q output: %w", ref.URI, err)
+		if err := wasm.DecodeGuestOutput(export, out, &po); err != nil {
+			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(export, po.Error); err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
@@ -263,9 +267,11 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 // IR-stage gate uses, so the halt carries ErrPolicyViolation exactly as an
 // IR-stage halt does. warn and info print to the diagnostic sink and the build
 // proceeds. An IR-stage or stage-absent plugin is skipped here (it ran at the IR
-// stage). An unconfigured socket is a no-op. A resolution, load, source-read, or
-// output-unmarshal failure halts the build loudly (a misconfigured attachment is
-// a build fault, not a policy verdict).
+// stage). An unconfigured socket is a no-op. A resolution, load or source-read
+// failure halts the build loudly (a misconfigured attachment is a build fault,
+// not a policy verdict), and so does an output that is not this socket's shape —
+// refused rather than read as an empty verdict list, which is a legitimate
+// allow.
 func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string]renderer.AssembledFile) error {
 	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleRenderVerdict)
 	if len(refs) == 0 {
@@ -304,8 +310,8 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
 		var po abi.PolicyOutput
-		if err := json.Unmarshal(out, &po); err != nil {
-			return fmt.Errorf("render-verdict: plugin %q output: %w", ref.URI, err)
+		if err := wasm.DecodeGuestOutput(export, out, &po); err != nil {
+			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(export, po.Error); err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)

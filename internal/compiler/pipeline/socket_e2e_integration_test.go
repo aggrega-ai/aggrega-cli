@@ -822,6 +822,97 @@ func TestGovernanceEngineAllFourRolesRenderVerdictHaltsE2E(t *testing.T) {
 	}
 }
 
+// verdictExportOverrideInputs attaches the four-role governance proof at the
+// ir-verdict role ALONE, with the attachment's entry function overridden to the
+// named export. Only the export varies across the cases: the same guest, the
+// same role, the same payload and the same settings, so whatever differs in the
+// outcome is attributable to the export's output shape and to nothing else.
+func verdictExportOverrideInputs(t *testing.T, export string) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
+	t.Helper()
+	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
+		URI:      governanceMultiroleURI,
+		Role:     plugintype.RoleIRVerdict,
+		Function: export,
+		With:     &workspaceconfig.PluginRefWith{Settings: map[string]any{"severity": analyzer.SeverityInfo}},
+	}}
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{governanceMultiroleURI: "governance-multirole-go.wasm"})
+	return inputs, buildLookup, recipeLookup, subAgg
+}
+
+// TestVerdictRoleRefusesForeignExportOutputE2E is the needle for the socket
+// output-shape refusal. The four-role governance guest declares three governance
+// exports, so an attachment naming any of them passes the load-time export check
+// — the entry-function override is a documented capability and the host does not
+// restrict it to the role's own default export. What the host must not do is read
+// an output the role's shape does not describe as if it were a result.
+//
+// The verdict export reports its verdict and the build proceeds. The two
+// non-verdict exports each return a well-formed output of a DIFFERENT shape:
+// mutate returns label patches, transform_annotations returns annotation
+// injections. Neither carries a verdict, and neither is an empty verdict list —
+// an empty list is a legitimate allow, which is exactly why a "no verdict fired"
+// outcome cannot be distinguished from a misdirected export by counting results.
+// So each must halt, and the halt must name the export the attachment dispatched
+// AND the field that does not belong, because those two together are what tells
+// the reader which line of configuration to change.
+func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("verdict export reports its verdict", func(t *testing.T) {
+		var res *pipeline.Result
+		stderr := captureStderr(t, func() {
+			inputs, buildLookup, recipeLookup, subAgg := verdictExportOverrideInputs(t, "validate")
+			r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+			if err != nil {
+				t.Fatalf("the role's own verdict export: unexpected halt: %v", err)
+			}
+			res = r
+		})
+		if res == nil || len(res.Artifacts) == 0 {
+			t.Fatalf("verdict-export build produced no artifacts")
+		}
+		if !strings.Contains(stderr, governanceMultiroleVerdictMsg) {
+			t.Errorf("the verdict export's verdict did not record:\n%s", stderr)
+		}
+	})
+
+	// Each case names the field the guest's real output carries and the verdict
+	// shape does not, so the assertion tracks what the guest actually emits.
+	for _, tc := range []struct {
+		export       string
+		foreignField string
+	}{
+		{export: "mutate", foreignField: "patches"},
+		{export: "transform_annotations", foreignField: "injections"},
+	} {
+		t.Run(tc.export, func(t *testing.T) {
+			var err error
+			stderr := captureStderr(t, func() {
+				inputs, buildLookup, recipeLookup, subAgg := verdictExportOverrideInputs(t, tc.export)
+				_, err = pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+			})
+			if err == nil {
+				t.Fatalf("export %q returns a %q-bearing output, which is not the verdict shape: expected a halt, got a clean build.\nstderr was:\n%s",
+					tc.export, tc.foreignField, stderr)
+			}
+			msg := err.Error()
+			// The halt text is what the reader acts on, so it is recorded rather
+			// than only asserted against.
+			t.Logf("halt: %s", msg)
+			if !strings.Contains(msg, tc.export) {
+				t.Errorf("the halt does not name the export the attachment dispatched (%q):\n%v", tc.export, msg)
+			}
+			if !strings.Contains(msg, tc.foreignField) {
+				t.Errorf("the halt does not name the field that does not belong (%q):\n%v", tc.foreignField, msg)
+			}
+			if strings.Contains(stderr, governanceMultiroleVerdictMsg) {
+				t.Errorf("a non-verdict export must reach no verdict at all, yet a verdict recorded:\n%s", stderr)
+			}
+		})
+	}
+}
+
 // assertArtifactsByteIdentical fails unless a and b carry the same path set and
 // byte-identical content for every path.
 func assertArtifactsByteIdentical(t *testing.T, a, b map[string][]byte) {

@@ -1413,13 +1413,13 @@ func resolveCodecFields(n schemaNode, vocab map[string]string) []codecField {
 	return fields
 }
 
-// emitCodec writes a dispatch-free streaming JSON codec — MarshalJSON and
-// UnmarshalJSON — for one def struct type. Composite fields (named structs,
-// slices of named structs, maps) are walked by generated code, and each
-// nested def value is decoded by a direct call to that type's own generated
-// UnmarshalJSON rather than a json.Decoder.Decode dispatch — so no stdlib
-// interface-dispatch through reflect remains on the decode path. Scalar leaf
-// fields are decoded by hand from a single json.Token. The generated code
+// emitCodec writes a dispatch-free streaming JSON codec — MarshalJSON,
+// UnmarshalJSON and UnmarshalJSONStrict — for one def struct type. Composite
+// fields (named structs, slices of named structs, maps) are walked by generated
+// code, and each nested def value is decoded by a direct call to that type's own
+// generated UnmarshalJSON rather than a json.Decoder.Decode dispatch — so no
+// stdlib interface-dispatch through reflect remains on the decode path. Scalar
+// leaf fields are decoded by hand from a single json.Token. The generated code
 // references no `reflect` symbol — the dispatch-free guarantee is by
 // construction.
 //
@@ -1430,6 +1430,7 @@ func emitCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[stri
 	fields := resolveCodecFields(n, vocab)
 	emitMarshal(b, typeName, fields, defTypes)
 	emitUnmarshal(b, typeName, fields, defTypes)
+	emitUnmarshalStrict(b, typeName, fields)
 }
 
 // emitMarshal writes T.MarshalJSON: it builds the JSON object manually in
@@ -1649,6 +1650,37 @@ func emitUnmarshal(b *strings.Builder, typeName string, fields []codecField, def
 	b.WriteString("}\n\n")
 }
 
+// emitUnmarshalStrict writes T.UnmarshalJSONStrict: the same decode as
+// UnmarshalJSON, preceded by a pass that refuses a top-level key the type's
+// shape does not declare instead of skipping it. The declared key set is written
+// from the same resolved field slice that drives UnmarshalJSON's case arms, so
+// the two cannot disagree about what the shape declares — adding a schema field
+// moves both at once.
+//
+// Two entry points rather than one strict decoder: UnmarshalJSON is what every
+// round-trip, golden vector and cross-language parity fixture reads, and a
+// payload carrying a field the reader does not know is a normal forward-compatible
+// read there. The strict entry point exists for the narrower case where the
+// payload's identity is carried by its keys — a plugin's output read at a socket —
+// and where skipping an unknown key produces an empty result that no consumer can
+// tell from a real one.
+func emitUnmarshalStrict(b *strings.Builder, typeName string, fields []codecField) {
+	fmt.Fprintf(b, "// UnmarshalJSONStrict decodes %s exactly as UnmarshalJSON does, except\n", typeName)
+	fmt.Fprintf(b, "// that a top-level key this shape does not declare is refused rather than\n")
+	fmt.Fprintf(b, "// skipped, naming the offending key. It is the entry point for a payload\n")
+	fmt.Fprintf(b, "// whose identity is carried by the keys it holds, where skipping an unknown\n")
+	fmt.Fprintf(b, "// key would yield an empty value indistinguishable from a real one. The\n")
+	fmt.Fprintf(b, "// check reads the object's own keys and does not descend.\n")
+	fmt.Fprintf(b, "func (t *%s) UnmarshalJSONStrict(data []byte) error {\n", typeName)
+	b.WriteString("\tif err := refuseUndeclaredJSONKeys(data")
+	for _, f := range fields {
+		fmt.Fprintf(b, ", %q", f.key)
+	}
+	b.WriteString("); err != nil {\n\t\treturn err\n\t}\n")
+	b.WriteString("\treturn t.UnmarshalJSON(data)\n")
+	b.WriteString("}\n\n")
+}
+
 // emitUnmarshalField writes the per-field decode for one key. Maps and slices
 // are token-walked element-wise; each element decodes through emitDecodeValue,
 // which calls a nested def type's own generated UnmarshalJSON directly rather
@@ -1804,6 +1836,28 @@ func emitCodecHelpers(b *strings.Builder) {
 	b.WriteString("\tout := make(json.RawMessage, len(value))\n")
 	b.WriteString("\tcopy(out, value)\n")
 	b.WriteString("\treturn out, nil\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("// refuseUndeclaredJSONKeys walks the top-level keys of a JSON object and\n")
+	b.WriteString("// reports the first one the declared key set does not contain. It reads only\n")
+	b.WriteString("// the object's own keys — it never descends into a value — so it is the shape\n")
+	b.WriteString("// check for a payload whose identity is carried by which keys it holds.\n")
+	b.WriteString("func refuseUndeclaredJSONKeys(data []byte, declared ...string) error {\n")
+	b.WriteString("\tdec := json.NewDecoder(bytes.NewReader(data))\n")
+	b.WriteString("\tif err := expectDelim(dec, '{'); err != nil {\n\t\treturn err\n\t}\n")
+	b.WriteString("\tfor dec.More() {\n")
+	b.WriteString("\t\tkey, err := readKey(dec)\n")
+	b.WriteString("\t\tif err != nil {\n\t\t\treturn err\n\t\t}\n")
+	b.WriteString("\t\tfound := false\n")
+	b.WriteString("\t\tfor _, d := range declared {\n")
+	b.WriteString("\t\t\tif key == d {\n\t\t\t\tfound = true\n\t\t\t\tbreak\n\t\t\t}\n")
+	b.WriteString("\t\t}\n")
+	b.WriteString("\t\tif !found {\n")
+	b.WriteString("\t\t\treturn fmt.Errorf(\"abi: unexpected field %q\", key)\n")
+	b.WriteString("\t\t}\n")
+	b.WriteString("\t\tif _, err := readRaw(dec, data); err != nil {\n\t\t\treturn err\n\t\t}\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\treturn expectDelim(dec, '}')\n")
 	b.WriteString("}\n\n")
 
 	b.WriteString("// readString decodes the next token as a JSON string.\n")

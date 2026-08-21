@@ -259,8 +259,8 @@ func runStep(
 	}
 
 	var out FRPStepOutput
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) unmarshal output: %w", ErrPipelineStepFailed(), step.ID, index, err)
+	if err := wasm.DecodeGuestOutput(step.Function, raw, &out); err != nil {
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
 	if gerr := wasm.GuestReturnedError(step.Function, out.Error); gerr != nil {

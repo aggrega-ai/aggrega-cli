@@ -116,6 +116,38 @@ var errWasmGuestError = cerrors.Register("wasm/wasm-guest-error", cerrors.Meta{
 	Message:   "wasm: guest plugin reported an error",
 })
 
+// GuestOutput is a socket-output envelope the host decodes strictly. The single
+// method is the generated codec's strict decode entry point: it refuses a
+// top-level field the envelope's shape does not declare instead of skipping it.
+type GuestOutput interface {
+	UnmarshalJSONStrict(data []byte) error
+}
+
+// DecodeGuestOutput decodes a guest's socket output into dst and returns a
+// wrapped error naming the export when the bytes are not the shape the socket
+// reads.
+//
+// It is the first of the three guest-envelope contract checks a socket runs at
+// one boundary, ahead of GuestReturnedError and GuestDiagnosticSeverities: the
+// output has to be this socket's shape before its error field or its diagnostics
+// mean anything. It refuses rather than skips because skipping is silent in the
+// one direction that matters. A socket's entry function is overridable per
+// attachment, so an override can name an export whose output is a different
+// shape entirely — and a lenient decode reads such an output into an empty
+// envelope, which is itself a legitimate result (no verdict fired, no finding
+// raised). The two are then byte-indistinguishable, and the build proceeds as if
+// the plugin had approved it.
+//
+// export is the guest function the output came back from. The returned error
+// names it, and the codec names the field that does not belong; together the two
+// identify the entry function the attachment should have named instead.
+func DecodeGuestOutput(export string, out []byte, dst GuestOutput) error {
+	if err := dst.UnmarshalJSONStrict(out); err != nil {
+		return fmt.Errorf("call %q: the output is not the shape this socket reads: %w", export, err)
+	}
+	return nil
+}
+
 // GuestReturnedError maps a guest-returned socket-output error message onto the
 // host taxonomy: it returns an error wrapping ErrWasmGuestError (naming the
 // export and carrying the message) when msg is non-empty, and nil when msg is

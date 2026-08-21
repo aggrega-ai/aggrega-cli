@@ -45,7 +45,9 @@ const lintExportName = "lint_rules"
 // descriptor halts here with a loud guardrail. A non-nil spec.Contract arms
 // the load gate's describe()-vs-entity cross-check, and spec's caps bound the
 // plugin's memory and per-call wall time. Returns a wrapped error on
-// loader/gate failure, plugin call failure, or output unmarshal failure.
+// loader/gate failure, plugin call failure, or an output that is not this
+// socket's shape — an export whose output carries a field the linter shape does
+// not declare is refused rather than read as an empty finding list.
 //
 // export is the entry function to dispatch to; an empty export selects the
 // socket's default (lintExportName), mirroring a linter attachment that names
@@ -77,8 +79,8 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterI
 	}
 
 	var output LinterOutput
-	if err := json.Unmarshal(out, &output); err != nil {
-		return nil, fmt.Errorf("publishing_linter: unmarshal output: %w", err)
+	if err := wasm.DecodeGuestOutput(export, out, &output); err != nil {
+		return nil, fmt.Errorf("publishing_linter: %w", err)
 	}
 	if err := wasm.GuestReturnedError(export, output.Error); err != nil {
 		return nil, fmt.Errorf("publishing_linter: %w", err)
@@ -138,8 +140,8 @@ func DispatchPublishingLinterBatch(spec wasm.PluginSpec, export string, inputs [
 			return nil, fmt.Errorf("publishing_linter: call %s input[%d]: %w", export, i, err)
 		}
 		var output LinterOutput
-		if err := json.Unmarshal(out, &output); err != nil {
-			return nil, fmt.Errorf("publishing_linter: unmarshal output[%d]: %w", i, err)
+		if err := wasm.DecodeGuestOutput(export, out, &output); err != nil {
+			return nil, fmt.Errorf("publishing_linter: input[%d]: %w", i, err)
 		}
 		if err := wasm.GuestReturnedError(export, output.Error); err != nil {
 			return nil, fmt.Errorf("publishing_linter: input[%d]: %w", i, err)

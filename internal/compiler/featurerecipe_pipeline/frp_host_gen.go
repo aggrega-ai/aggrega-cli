@@ -260,6 +260,19 @@ func (t *FRPStepInput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSONStrict decodes FRPStepInput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *FRPStepInput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "documents", "step_input", "context", "step_index", "preceding_steps"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
 // MarshalJSON encodes FRPStepOutput in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t FRPStepOutput) MarshalJSON() ([]byte, error) {
@@ -451,6 +464,19 @@ func (t *FRPStepOutput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSONStrict decodes FRPStepOutput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *FRPStepOutput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "patches", "side_effects", "diagnostics", "outputs", "error"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
 // MarshalJSON encodes DocumentSet in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t DocumentSet) MarshalJSON() ([]byte, error) {
@@ -527,6 +553,19 @@ func (t *DocumentSet) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// UnmarshalJSONStrict decodes DocumentSet exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *DocumentSet) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "own", "host"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
 }
 
 // MarshalJSON encodes Unit in field-declaration order, omitting
@@ -617,6 +656,19 @@ func (t *Unit) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// UnmarshalJSONStrict decodes Unit exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *Unit) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "token", "bytes", "media_type", "tree"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
 }
 
 // MarshalJSON encodes JSONPatchOp in field-declaration order, omitting
@@ -739,6 +791,19 @@ func (t *JSONPatchOp) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSONStrict decodes JSONPatchOp exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *JSONPatchOp) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "scope", "key", "op", "path", "value", "from"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
 // MarshalJSON encodes SideEffect in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t SideEffect) MarshalJSON() ([]byte, error) {
@@ -837,6 +902,19 @@ func (t *SideEffect) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSONStrict decodes SideEffect exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *SideEffect) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "kind", "scope", "crd", "file"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
 // MarshalJSON encodes SideEffectFile in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t SideEffectFile) MarshalJSON() ([]byte, error) {
@@ -895,6 +973,19 @@ func (t *SideEffectFile) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// UnmarshalJSONStrict decodes SideEffectFile exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *SideEffectFile) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "path", "content"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
 }
 
 // MarshalJSON encodes PrecedingStep in field-declaration order, omitting
@@ -994,6 +1085,19 @@ func (t *PrecedingStep) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// UnmarshalJSONStrict decodes PrecedingStep exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *PrecedingStep) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "index", "plugin_uri", "side_effects"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
 }
 
 // EncodeCBOR encodes FRPStepInput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -1959,6 +2063,37 @@ func readRaw(dec *json.Decoder, data []byte) (json.RawMessage, error) {
 	out := make(json.RawMessage, len(value))
 	copy(out, value)
 	return out, nil
+}
+
+// refuseUndeclaredJSONKeys walks the top-level keys of a JSON object and
+// reports the first one the declared key set does not contain. It reads only
+// the object's own keys — it never descends into a value — so it is the shape
+// check for a payload whose identity is carried by which keys it holds.
+func refuseUndeclaredJSONKeys(data []byte, declared ...string) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, d := range declared {
+			if key == d {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("abi: unexpected field %q", key)
+		}
+		if _, err := readRaw(dec, data); err != nil {
+			return err
+		}
+	}
+	return expectDelim(dec, '}')
 }
 
 // readString decodes the next token as a JSON string.

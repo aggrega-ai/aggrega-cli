@@ -35,8 +35,10 @@ const injectedByAnnotationKey = "aggrega.ai/injected-by"
 // annotation-driven expansion already has (Invariant 4). An unconfigured socket
 // is a no-op (returns nil before any resolution), which keeps a build with no
 // annotation-transform attachment byte-identical to a build without the socket. A
-// resolution, load, output-unmarshal, or confinement failure halts the build
-// loudly.
+// resolution, load, or confinement failure halts the build loudly, as does an
+// output that is not this socket's shape — a dispatched export whose output
+// carries a field the annotation-transform shape does not declare is refused
+// rather than read as an empty injection list.
 func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, rr *resolver.ResolveResult) error {
 	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleAnnotationTransform)
 	if len(refs) == 0 {
@@ -75,8 +77,8 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
 		var ao AnnotationTransformOutput
-		if err := json.Unmarshal(out, &ao); err != nil {
-			return fmt.Errorf("annotation-transform: plugin %q output: %w", ref.URI, err)
+		if err := wasm.DecodeGuestOutput(export, out, &ao); err != nil {
+			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(export, ao.Error); err != nil {
 			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
