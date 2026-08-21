@@ -20,7 +20,22 @@
     "declaration is nested inside a YAML text block that only a YAML parser can open.",
     "The plugin has no YAML parser, so the divergence is real and is recorded here",
     "rather than hidden: the plugin side asserts it collects `expect` MINUS these, and",
-    "that it reports exactly these as unreadable."
+    "that it reports exactly these as unreadable.",
+    "",
+    "`pillarKeyCases` is the second question this file holds: which property names one",
+    "pillar of an authored spec.schema EXPOSES. The compiler answers it by compiling",
+    "the pillar and reading the property map the compilation produces; the plugin",
+    "answers it by classifying the pillar's own authored node. `expectKeys` is the",
+    "compiler-side truth, measured from the compiler's own reader.",
+    "",
+    "`guestReadable` records which side of one line each case sits on. A pillar node",
+    "that is a reference, a composition, or an escaped body authored as YAML text is a",
+    "shape the plugin cannot enumerate: a reference target is merged in before either",
+    "reader sees the entity, a composition carries its properties inside its branches,",
+    "and a text body needs a YAML parser this crate does not have. For those the",
+    "plugin reports UNKNOWN rather than a key set, which is why the divergence is",
+    "recorded here rather than hidden. Every other case is a shape both readers must",
+    "agree on exactly."
   ],
   "leafCases": [
     {
@@ -386,6 +401,134 @@
       "slot": { "sensitive": 1 },
       "expectSensitive": false,
       "compilerDecodes": false
+    }
+  ],
+  "pillarKeyCases": [
+    {
+      "name": "pillar-exposes-its-implicit-properties",
+      "why": "The ordinary shape: every key of the pillar's object scope is a published key.",
+      "schema": {"provides": {"endpoint": {"type": "string"}, "model": {"type": "string"}}},
+      "expectKeys": ["endpoint", "model"],
+      "guestReadable": true
+    },
+    {
+      "name": "no-provides-pillar-is-an-empty-contract",
+      "why": "An entity that declares no provides pillar declares no output contract. Empty is an answer, not an absence of one.",
+      "schema": {"values": {"model": {"type": "string"}}},
+      "expectKeys": [],
+      "guestReadable": true
+    },
+    {
+      "name": "empty-provides-pillar-is-an-empty-contract",
+      "why": "As above, written explicitly.",
+      "schema": {"provides": {}},
+      "expectKeys": [],
+      "guestReadable": true
+    },
+    {
+      "name": "pillar-that-is-not-a-mapping-declares-nothing",
+      "why": "A scalar where an object scope belongs exposes no property on either side.",
+      "schema": {"provides": "whatever"},
+      "expectKeys": [],
+      "guestReadable": true
+    },
+    {
+      "name": "pillar-property-named-like-a-compact-keyword-makes-the-pillar-a-leaf",
+      "why": "A pillar whose only key is a compact-form keyword classifies as a constraint leaf rather than an object scope, so it exposes nothing. This is the case a naive reader gets wrong in the direction of over-reporting.",
+      "schema": {"provides": {"format": {"type": "string"}}},
+      "expectKeys": [],
+      "guestReadable": true
+    },
+    {
+      "name": "pillar-with-explicit-properties-exposes-them",
+      "why": "A structural JSON Schema keyword steers the pillar to the authored-JSON-Schema reading, where the property map is explicit.",
+      "schema": {"provides": {"properties": {"endpoint": {"type": "string"}}}},
+      "expectKeys": ["endpoint"],
+      "guestReadable": true
+    },
+    {
+      "name": "pillar-declaring-jsonschema-mode-exposes-its-properties",
+      "why": "An explicit mode overrides the content-shape heuristic on both sides.",
+      "schema": {"provides": {"$mode": "jsonschema", "properties": {"endpoint": {"type": "string"}}}},
+      "expectKeys": ["endpoint"],
+      "guestReadable": true
+    },
+    {
+      "name": "pillar-declaring-compact-mode-becomes-a-leaf",
+      "why": "The opposite mode on the same content: a leaf exposes no property map, so the authored keys are not published keys.",
+      "schema": {"provides": {"$mode": "compact", "endpoint": {"type": "string"}}},
+      "expectKeys": [],
+      "guestReadable": true
+    },
+    {
+      "name": "definitions-blocks-are-reference-scopes-not-properties",
+      "why": "A definitions block sitting on the pillar names reference targets rather than data, so it contributes no published key.",
+      "schema": {"provides": {"endpoint": {"type": "string"}, "$defs": {"Endpoint": {"type": "string"}}}},
+      "expectKeys": ["endpoint"],
+      "guestReadable": true
+    },
+    {
+      "name": "legacy-definitions-block-is-also-a-reference-scope",
+      "why": "The older spelling of the same block, which a reader excluding only one of the two would get wrong.",
+      "schema": {"provides": {"endpoint": {"type": "string"}, "definitions": {"Endpoint": {"type": "string"}}}},
+      "expectKeys": ["endpoint"],
+      "guestReadable": true
+    },
+    {
+      "name": "a-nested-property-adds-no-top-level-key",
+      "why": "Only the pillar's own level is a published key. A property below one is reached by a dotted path, not by an inject from: reference.",
+      "schema": {"provides": {"auth": {"type": "object", "properties": {"token": {"type": "string"}}}}},
+      "expectKeys": ["auth"],
+      "guestReadable": true
+    },
+    {
+      "name": "escaped-mapping-body-exposes-its-properties",
+      "why": "An escaped body authored as a mapping replaces the node it sits on and is authored JSON Schema both readers can open.",
+      "schema": {"provides": {"$jsonschema": {"type": "object", "properties": {"endpoint": {"type": "string"}}}}},
+      "expectKeys": ["endpoint"],
+      "guestReadable": true
+    },
+    {
+      "name": "escaped-text-body-is-unreadable-in-the-guest",
+      "why": "The same body authored as YAML text. The compiler parses it and reads the contract; the plugin has no YAML parser and reports unknown.",
+      "schema": {"provides": {"$jsonschema": "type: object\nproperties:\n  endpoint:\n    type: string\n"}},
+      "expectKeys": ["endpoint"],
+      "guestReadable": false
+    },
+    {
+      "name": "reference-pillar-is-unreadable-in-the-guest",
+      "why": "A pillar that is a bare reference. The compiler leaves the pointer in place and so exposes no property map; the plugin cannot know that and reports unknown rather than guessing empty.",
+      "schema": {"provides": {"$ref": "#/$defs/Contract"}, "$defs": {"Contract": {"properties": {"endpoint": {"type": "string"}}}}},
+      "expectKeys": [],
+      "guestReadable": false
+    },
+    {
+      "name": "reference-pillar-with-sibling-properties-is-unreadable-in-the-guest",
+      "why": "A reference carrying a sibling property map. The compiler compiles that map as compact-form content and nests the result, so the names it exposes are the compiled wrapper's keys rather than the authored property. Pinned as measured; the plugin reports unknown.",
+      "schema": {"provides": {"$ref": "#/$defs/Contract", "properties": {"endpoint": {"type": "string"}}}, "$defs": {"Contract": {"type": "object"}}},
+      "expectKeys": ["additionalProperties", "properties", "type"],
+      "guestReadable": false
+    },
+    {
+      "name": "all-of-pillar-is-unreadable-in-the-guest",
+      "why": "A composition on the pillar node itself. Its branches carry the properties, and neither reader enters a pillar through a branch.",
+      "schema": {"provides": {"allOf": [{"properties": {"endpoint": {"type": "string"}}}]}},
+      "expectKeys": [],
+      "guestReadable": false
+    },
+    {
+      "name": "any-of-pillar-is-unreadable-in-the-guest",
+      "why": "The same shape under the second list-valued composition keyword, because the three are a set and a reader can handle one and miss another.",
+      "schema": {"provides": {"anyOf": [{"properties": {"endpoint": {"type": "string"}}}]}},
+      "expectKeys": [],
+      "guestReadable": false
+    },
+    {
+      "name": "one-of-pillar-is-unreadable-in-the-guest",
+      "why": "And the third.",
+      "schema": {"provides": {"oneOf": [{"properties": {"endpoint": {"type": "string"}}}]}},
+      "expectKeys": [],
+      "guestReadable": false
     }
   ]
 }

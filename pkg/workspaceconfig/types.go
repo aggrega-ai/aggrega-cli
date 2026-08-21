@@ -660,6 +660,9 @@ type PublishingDisciplineConfig struct {
 	AllowAggregaAIPrefix          bool `yaml:"allow_aggrega_ai_prefix"`
 	AllowNonstandardNames         bool `yaml:"allow_nonstandard_names"`
 	AllowCategoryMismatches       bool `yaml:"allow_category_mismatches"`
+	// AllowUndeclaredRecipeProvides relaxes the check that every key a Recipe
+	// publishes is declared by the Component it implements.
+	AllowUndeclaredRecipeProvides bool `yaml:"allow_undeclared_recipe_provides"`
 }
 
 // ParseCacheConfig carries the daemon's parse-cache eviction caps. Both

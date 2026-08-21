@@ -20,7 +20,7 @@ import (
 	"unicode/utf8"
 )
 
-// LinterInput The payload the host hands the publishing-linter plugin on each invocation. rule_id selects which rule the plugin dispatches to. entity_kind identifies the entity kind being linted (Component, Feature, Recipe, FeatureRecipe, SchemaLibrary, MappingLibrary, Aggregate). proposed carries the parsed entity structure being classified (the host parses YAML to JSON before sending; the plugin never sees raw bytes). previous carries the parsed previous-version entity for the schema-evolution rule; omitted when not applicable. policies carries the per-workspace publishing-discipline configuration the rule consults.
+// LinterInput The payload the host hands the publishing-linter plugin on each invocation. rule_id selects which rule the plugin dispatches to. entity_kind identifies the entity kind being linted (Component, Feature, Recipe, FeatureRecipe, SchemaLibrary, MappingLibrary, Aggregate). proposed carries the parsed entity structure being classified (the host parses YAML to JSON before sending; the plugin never sees raw bytes). previous carries the parsed previous-version entity for the schema-evolution rule; omitted when not applicable. implemented_component carries a related entity of a different kind — the Component a linted Recipe realizes — for rules that compare an entity against a contract another entity declares; omitted when not applicable. policies carries the per-workspace publishing-discipline configuration the rule consults.
 type LinterInput struct {
 	// RuleID The rule the plugin should dispatch to. At v0.1.0 the only recognised value is 'schema-evolution'; the recognised set expands as further rules ship. Unknown rule_ids produce an 'unknown_rule' finding in the output.
 	RuleID string `json:"rule_id" yaml:"rule_id" cbor:"rule_id"`
@@ -30,6 +30,8 @@ type LinterInput struct {
 	Proposed json.RawMessage `json:"proposed" yaml:"proposed" cbor:"proposed"`
 	// Previous Parsed structure of the previous-version entity, for rules that perform pairwise comparison (schema-evolution). Omitted when the rule does not need a previous-version reference (e.g., first publication, structural-only rules).
 	Previous json.RawMessage `json:"previous,omitempty" yaml:"previous,omitempty" cbor:"previous,omitempty"`
+	// ImplementedComponent Parsed structure of the Component a linted Recipe names in spec.implements, resolved by the host. It is a related entity of a DIFFERENT kind from the one being linted, which is what distinguishes it from previous: previous carries another version of the same entity, while this carries the Component whose declared output contract the Recipe realizes. The host resolves it through the same catalog lookup a build uses, keyed on the Component's name, so all three pin forms spec.implements accepts (unversioned, exact, major-compatible range) reach the same entry. Omitted when the linted entity is not a Recipe, when it names no Component, or when no Component of that name is reachable in the workspace's catalog directories. An absent value means the comparison is unavailable, not that the contract is empty: a rule that reads this field emits no finding when it is absent.
+	ImplementedComponent json.RawMessage `json:"implemented_component,omitempty" yaml:"implemented_component,omitempty" cbor:"implemented_component,omitempty"`
 	// SourcePath Filesystem path the entity was loaded from. Populated by host callers walking the catalog filesystem; consumed by path-aware rules (e.g., category-matches-directory). Omitted when the caller has no path context.
 	SourcePath string `json:"source_path,omitempty" yaml:"source_path,omitempty" cbor:"source_path,omitempty"`
 	// Policies The per-workspace publishing-discipline configuration the rule consults. The guest realizes it as the typed Policies object; the host pipes it through as an opaque payload it assembles from the workspace config and CLI overrides.
@@ -58,6 +60,8 @@ type Policies struct {
 	AllowNonstandardNames bool `json:"allow_nonstandard_names,omitempty" yaml:"allow_nonstandard_names,omitempty" cbor:"allow_nonstandard_names,omitempty"`
 	// AllowCategoryMismatches When true, suppress the category-matches-directory rule's findings. The standard-catalog convention requires Components under core/<category>/ to declare component.aggrega.ai/category={category} matching the directory segment, where {category} is one of the 15 closed-set values. Workspaces with legitimate persistent exceptions opt out here. Default false.
 	AllowCategoryMismatches bool `json:"allow_category_mismatches,omitempty" yaml:"allow_category_mismatches,omitempty" cbor:"allow_category_mismatches,omitempty"`
+	// AllowUndeclaredRecipeProvides When true, suppress the provides-declared-by-component rule's findings. That rule reports each key a Recipe publishes in spec.provides that the Component named by its spec.implements does not declare in the provides pillar of its spec.schema. Publishing beyond the declared contract is accepted at build time, so the finding is advisory; a workspace whose Recipes deliberately publish keys their Component does not declare opts out here. Default false.
+	AllowUndeclaredRecipeProvides bool `json:"allow_undeclared_recipe_provides,omitempty" yaml:"allow_undeclared_recipe_provides,omitempty" cbor:"allow_undeclared_recipe_provides,omitempty"`
 }
 
 // MarshalJSON encodes LinterInput in field-declaration order, omitting
@@ -91,6 +95,14 @@ func (t LinterInput) MarshalJSON() ([]byte, error) {
 		first = false
 		buf.WriteString("\"previous\":")
 		buf.Write(t.Previous)
+	}
+	if len(t.ImplementedComponent) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"implemented_component\":")
+		buf.Write(t.ImplementedComponent)
 	}
 	if t.SourcePath != "" {
 		if !first {
@@ -150,6 +162,12 @@ func (t *LinterInput) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Previous = raw
 			}
+		case "implemented_component":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				t.ImplementedComponent = raw
+			}
 		case "source_path":
 			if s, err := readString(dec); err != nil {
 				return err
@@ -181,7 +199,7 @@ func (t *LinterInput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *LinterInput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "rule_id", "entity_kind", "proposed", "previous", "source_path", "policies"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "rule_id", "entity_kind", "proposed", "previous", "implemented_component", "source_path", "policies"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -367,6 +385,18 @@ func (t Policies) MarshalJSON() ([]byte, error) {
 			buf.WriteString("false")
 		}
 	}
+	if t.AllowUndeclaredRecipeProvides != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"allow_undeclared_recipe_provides\":")
+		if t.AllowUndeclaredRecipeProvides {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -421,6 +451,12 @@ func (t *Policies) UnmarshalJSON(data []byte) error {
 			} else {
 				t.AllowCategoryMismatches = v
 			}
+		case "allow_undeclared_recipe_provides":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.AllowUndeclaredRecipeProvides = v
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -440,7 +476,7 @@ func (t *Policies) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *Policies) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "allow_dynamic_refs", "allow_id_overrides", "allow_direct_x_aggrega_extensions", "allow_aggrega_ai_prefix", "allow_nonstandard_names", "allow_category_mismatches"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "allow_dynamic_refs", "allow_id_overrides", "allow_direct_x_aggrega_extensions", "allow_aggrega_ai_prefix", "allow_nonstandard_names", "allow_category_mismatches", "allow_undeclared_recipe_provides"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -466,6 +502,9 @@ func (t LinterInput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.SourcePath != "" {
 		n++
 	}
+	if len(t.ImplementedComponent) != 0 {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	dst = appendCBORTextString(dst, "rule_id")
 	dst = appendCBORTextString(dst, t.RuleID)
@@ -484,6 +523,10 @@ func (t LinterInput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.SourcePath != "" {
 		dst = appendCBORTextString(dst, "source_path")
 		dst = appendCBORTextString(dst, t.SourcePath)
+	}
+	if len(t.ImplementedComponent) != 0 {
+		dst = appendCBORTextString(dst, "implemented_component")
+		dst = appendCBORByteString(dst, t.ImplementedComponent)
 	}
 	return dst, nil
 }
@@ -529,6 +572,12 @@ func (t *LinterInput) decodeCBOR(dec *cborDec) error {
 				return err
 			} else {
 				t.Previous = json.RawMessage(v)
+			}
+		case "implemented_component":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.ImplementedComponent = json.RawMessage(v)
 			}
 		case "source_path":
 			if s, err := dec.readTextString(); err != nil {
@@ -664,6 +713,9 @@ func (t Policies) appendCBOR(dst []byte) ([]byte, error) {
 	if t.AllowCategoryMismatches != false {
 		n++
 	}
+	if t.AllowUndeclaredRecipeProvides != false {
+		n++
+	}
 	if t.AllowDirectXAggregaExtensions != false {
 		n++
 	}
@@ -687,6 +739,10 @@ func (t Policies) appendCBOR(dst []byte) ([]byte, error) {
 	if t.AllowCategoryMismatches != false {
 		dst = appendCBORTextString(dst, "allow_category_mismatches")
 		dst = appendCBORBool(dst, t.AllowCategoryMismatches)
+	}
+	if t.AllowUndeclaredRecipeProvides != false {
+		dst = appendCBORTextString(dst, "allow_undeclared_recipe_provides")
+		dst = appendCBORBool(dst, t.AllowUndeclaredRecipeProvides)
 	}
 	if t.AllowDirectXAggregaExtensions != false {
 		dst = appendCBORTextString(dst, "allow_direct_x_aggrega_extensions")
@@ -748,6 +804,12 @@ func (t *Policies) decodeCBOR(dec *cborDec) error {
 				return err
 			} else {
 				t.AllowCategoryMismatches = v
+			}
+		case "allow_undeclared_recipe_provides":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.AllowUndeclaredRecipeProvides = v
 			}
 		default:
 			if err := dec.skip(); err != nil {

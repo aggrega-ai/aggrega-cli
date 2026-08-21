@@ -80,9 +80,10 @@ func workspaceOrResolve(ws *workspaceconfig.ResolvedWorkspace) (*workspaceconfig
 }
 
 // lintEntityHeader is the minimum YAML envelope lint parses out of the proposed
-// entity file: kind, metadata.name, metadata.version, metadata.labels, and
-// spec.capability. It extends the publishable-entity header shape for the
-// core-plugin evolution-gate exemption.
+// entity file: kind, metadata.name, metadata.version, metadata.labels,
+// spec.capability, and spec.implements. It extends the publishable-entity header
+// shape for the core-plugin evolution-gate exemption and for resolving the
+// Component a Recipe realizes.
 type lintEntityHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
@@ -93,6 +94,10 @@ type lintEntityHeader struct {
 	} `yaml:"metadata"`
 	Spec struct {
 		Capability string `yaml:"capability"`
+		// Implements is the Component reference a Recipe declares. It carries a
+		// version pin in any of the three forms the reference accepts, so it is
+		// resolved through the catalog lookup rather than compared as a string.
+		Implements string `yaml:"implements"`
 	} `yaml:"spec"`
 }
 
@@ -115,6 +120,7 @@ func defaultRuleIDs(prePublish bool) []string {
 		"x-aggrega-discouragement",
 		"plugin-default-limits",
 		"secret-slot-declares-sensitive",
+		"provides-declared-by-component",
 	}
 	if prePublish {
 		return append([]string{"schema-evolution"}, rules...)
@@ -178,16 +184,21 @@ func RunEntity(cfg Config) error {
 	}
 	wsCfg := rw.Config()
 
+	// A lazy lookup over the workspace catalog dirs serves two unrelated reads:
+	// the Plugin entity a configured linter URI names, and the Component a linted
+	// Recipe realizes. It is constructed unconditionally because it indexes
+	// nothing until it is asked something — the walk happens on the first query,
+	// which for a non-Recipe entity on the --plugin path never comes.
+	dirs := workspaceconfig.ResolveCatalogDirs(nil, wsCfg, rw.Root())
+	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
+
 	// The workspace-config linter URI is a Plugin entity URI; the entity-front
-	// derives the entity's artifact reference from its identity. A lazy lookup over
-	// the workspace catalog dirs serves the entity by URI. The --plugin override
-	// path is artifact-direct and never consults this, so the catalog is built only
-	// for the URI path.
+	// derives the entity's artifact reference from its identity. The --plugin
+	// override path is artifact-direct and never consults the catalog for the
+	// plugin, so the feeders below stay nil there.
 	var pluginByURI func(uri string) (types.Plugin, bool)
 	var cacheResolvers []func(uri string) (pluginpath.ResolvedPlugin, error)
 	if cfg.PluginPath == "" {
-		dirs := workspaceconfig.ResolveCatalogDirs(nil, wsCfg, rw.Root())
-		lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 		pluginByURI = lazyView.PluginByURI
 		cacheResolvers = []func(uri string) (pluginpath.ResolvedPlugin, error){
 			linterCacheResolve(rw.Root(), wsCfg, lazyView.PluginFromCacheByURI),
@@ -248,7 +259,15 @@ func RunEntity(cfg Config) error {
 		firstPublication = previousVersion == ""
 	}
 
-	inputs := buildRuleInputs(header.Kind, proposedJSON, previousJSON, policies, cfg.EntityPath, prePublish)
+	inputs := buildRuleInputs(ruleInputSources{
+		Kind:                 header.Kind,
+		Proposed:             proposedJSON,
+		Previous:             previousJSON,
+		ImplementedComponent: implementedComponentJSON(header, lazyView.Component),
+		Policies:             policies,
+		EntityPath:           cfg.EntityPath,
+		PrePublish:           prePublish,
+	})
 	export := ""
 	if len(wsCfg.Plugins.Linter) > 0 {
 		export = wsCfg.Plugins.Linter[0].Function
@@ -529,6 +548,7 @@ func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve fu
 		"allow_aggrega_ai_prefix":           resolve("allow-aggrega-ai-prefix", ws.AllowAggregaAIPrefix),
 		"allow_nonstandard_names":           resolve("allow-nonstandard-names", ws.AllowNonstandardNames),
 		"allow_category_mismatches":         resolve("allow-category-mismatches", ws.AllowCategoryMismatches),
+		"allow_undeclared_recipe_provides":  resolve("allow-undeclared-recipe-provides", ws.AllowUndeclaredRecipeProvides),
 	}
 	out, _ := json.Marshal(policies)
 	return out
@@ -611,34 +631,97 @@ func fetchPreviousRegistryVersion(
 	return previousJSON, latest, nil
 }
 
+// ruleInputSources is the per-entity material buildRuleInputs distributes over
+// the rule set.
+//
+// The fields are grouped rather than passed positionally because four of them
+// share one type: a transposed pair of JSON documents compiles cleanly and hands
+// a rule the wrong entity, which then reports about something it was never
+// looking at. A keyed literal at each call site cannot make that mistake.
+type ruleInputSources struct {
+	// Kind is the linted entity's own kind, which scopes each rule.
+	Kind string
+	// Proposed is the entity being linted, parsed to JSON.
+	Proposed json.RawMessage
+	// Previous is the same entity at its previously published version, present
+	// only in --pre-publish mode.
+	Previous json.RawMessage
+	// ImplementedComponent is the Component a linted Recipe realizes; absent for
+	// every other kind and whenever the reference does not resolve.
+	ImplementedComponent json.RawMessage
+	// Policies is the effective per-workspace suppression set.
+	Policies json.RawMessage
+	// EntityPath is where the linted entity was read from.
+	EntityPath string
+	// PrePublish selects the rule set: the pre-publish set additionally carries
+	// the rule that needs previously published bytes.
+	PrePublish bool
+}
+
 // buildRuleInputs builds one LinterInput per rule the host dispatches to. The
 // schema-evolution rule (only in --pre-publish) gets the previous bytes;
-// category-matches-directory gets source_path. Other rules get the same shared
-// proposed bytes + policies.
-func buildRuleInputs(
-	kind string,
-	proposed, previous, policies json.RawMessage,
-	entityPath string,
-	prePublish bool,
-) []validator.LinterInput {
-	rules := defaultRuleIDs(prePublish)
+// category-matches-directory gets source_path; provides-declared-by-component
+// gets the implemented Component. Other rules get the same shared proposed bytes
+// + policies.
+//
+// A per-rule field is assigned only on the arm that consumes it, so the payload
+// a rule receives names exactly what that rule reads.
+func buildRuleInputs(src ruleInputSources) []validator.LinterInput {
+	rules := defaultRuleIDs(src.PrePublish)
 	inputs := make([]validator.LinterInput, 0, len(rules))
 	for _, r := range rules {
 		input := validator.LinterInput{
 			RuleID:     r,
-			EntityKind: kind,
-			Proposed:   proposed,
-			Policies:   policies,
+			EntityKind: src.Kind,
+			Proposed:   src.Proposed,
+			Policies:   src.Policies,
 		}
 		switch r {
 		case "schema-evolution":
-			input.Previous = previous
+			input.Previous = src.Previous
 		case "category-matches-directory":
-			input.SourcePath = entityPath
+			input.SourcePath = src.EntityPath
+		case "provides-declared-by-component":
+			input.ImplementedComponent = src.ImplementedComponent
 		}
 		inputs = append(inputs, input)
 	}
 	return inputs
+}
+
+// implementedComponentJSON resolves the Component a linted Recipe names in
+// spec.implements and returns it as the JSON the payload carries.
+//
+// What the guest receives is the RESOLVED Component — the entity the catalog
+// lookup produces, with any extends chain already folded in — rather than the
+// bytes on disk. An extending Component writes an inheritance marker where its
+// pillar content would be, so its own file does not carry the provides contract
+// the entity actually declares; marshalling the resolved entity back through the
+// same YAML-to-JSON conversion the proposed entity goes through hands the guest
+// one shape for both.
+//
+// Four cases return nil, and the field is then omitted from the payload: an
+// entity that is not a Recipe, a Recipe naming no Component, a caller with no
+// catalog to resolve against, and a reference the lookup does not surface. A
+// rule reading the field treats its absence as an unavailable comparison rather
+// than as an empty contract.
+func implementedComponentJSON(header lintEntityHeader, componentByURI func(uri string) (types.Component, bool)) json.RawMessage {
+	if header.Kind != "Recipe" || header.Spec.Implements == "" || componentByURI == nil {
+		return nil
+	}
+	comp, ok := componentByURI(header.Spec.Implements)
+	if !ok {
+		return nil
+	}
+	entityYAML, err := yaml.Marshal(comp)
+	if err != nil {
+		return nil
+	}
+	entityJSON, _, err := yamlToLinterJSON(entityYAML)
+	if err != nil {
+		return nil
+	}
+	return entityJSON
 }
 
 // aggregateFindings flattens the per-rule finding slices into a single ordered

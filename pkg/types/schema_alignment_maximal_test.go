@@ -468,6 +468,7 @@ func maximalAggregaConfig() workspaceconfig.Config {
 				AllowAggregaAIPrefix:          true,
 				AllowNonstandardNames:         true,
 				AllowCategoryMismatches:       true,
+				AllowUndeclaredRecipeProvides: true,
 			},
 		},
 		ParseCache:  workspaceconfig.ParseCacheConfig{MaxEntries: 1000, MaxBytes: 100_000_000},

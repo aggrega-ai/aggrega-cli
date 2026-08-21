@@ -382,11 +382,15 @@ func TestLooksLikeOCIURI(t *testing.T) {
 }
 
 // TestEffectivePolicies pins effectivePolicies' consumption of the policy
-// resolver across all 7 workspace flags (6 allow_* + 1 enforce_*). Per flag: the
-// workspace value passes through when the resolver echoes it, a resolver forcing
-// false emits false, and a resolver forcing true emits true. The resolver's own
-// tri-state precedence (the cobra --X/--no-X flag pairs) is covered separately at
-// the command layer.
+// resolver across every workspace suppression flag. Per flag: the workspace value
+// passes through when the resolver echoes it, a resolver forcing false emits
+// false, and a resolver forcing true emits true. The resolver's own tri-state
+// precedence (the cobra --X/--no-X flag pairs) is covered separately at the
+// command layer.
+//
+// The table names each flag rather than reflecting over the config struct,
+// because the flag-base name and the wire key are the two things under test and
+// neither is derivable from the Go field.
 func TestEffectivePolicies(t *testing.T) {
 	flagBases := []struct {
 		flag      string
@@ -399,6 +403,9 @@ func TestEffectivePolicies(t *testing.T) {
 		{"allow-aggrega-ai-prefix", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowAggregaAIPrefix = v }, "allow_aggrega_ai_prefix"},
 		{"allow-nonstandard-names", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowNonstandardNames = v }, "allow_nonstandard_names"},
 		{"allow-category-mismatches", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowCategoryMismatches = v }, "allow_category_mismatches"},
+		{"allow-undeclared-recipe-provides", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) {
+			c.AllowUndeclaredRecipeProvides = v
+		}, "allow_undeclared_recipe_provides"},
 	}
 	for _, tc := range flagBases {
 		// Cell 1: workspace=true, resolver echoes workspace → effective=true
@@ -491,7 +498,7 @@ func TestDefaultRuleIDs(t *testing.T) {
 	defaultRules := defaultRuleIDs(false)
 	prePublishRules := defaultRuleIDs(true)
 
-	wantDefault := []string{"annotation-prefix", "name-shape", "dynamic-refs", "id-overrides", "category-matches-directory", "x-aggrega-discouragement", "plugin-default-limits", "secret-slot-declares-sensitive"}
+	wantDefault := []string{"annotation-prefix", "name-shape", "dynamic-refs", "id-overrides", "category-matches-directory", "x-aggrega-discouragement", "plugin-default-limits", "secret-slot-declares-sensitive", "provides-declared-by-component"}
 	if len(defaultRules) != len(wantDefault) {
 		t.Fatalf("default mode rule count: got %d; want %d", len(defaultRules), len(wantDefault))
 	}

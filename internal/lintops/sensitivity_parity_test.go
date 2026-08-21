@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// The compiler half of the sensitivity-declaration parity check.
+// The compiler half of the authored-schema parity check.
 //
-// Two readers answer "which leaves does this schema declare sensitive" and
-// neither can call the other: the compiler reads the compiled schema, where the
-// declaration has become an extension keyword, while the publishing-linter
-// guest reads the authored entity because it cannot run schema compilation. The
-// duplication is structural, so it is held by a shared expectation rather than
-// by eye.
+// Two readers answer questions about an entity's schema and neither can call
+// the other: the compiler reads the compiled schema, while the
+// publishing-linter guest reads the authored entity because it cannot run
+// schema compilation. The duplication is structural, so it is held by a shared
+// expectation rather than by eye.
+//
+// Two such questions live here, because they are the same duplication over the
+// same bytes and one handshake holds both: which leaves a schema declares
+// sensitive, and which property names one pillar of a schema exposes. Splitting
+// them into two fixtures would mean two copies of the handshake below, and the
+// handshake is itself a mechanic that must have one home.
 //
 // This file is one of the two halves. Both read
 // plugins/publishing-linter/tests/fixtures/sensitivity_parity.json — the ONE
@@ -66,7 +71,7 @@ const sensitivityParityGuestHalf = "../../plugins/publishing-linter/tests/sensit
 // disagree with itself, and disagreement is the signal. When the fixture
 // changes, both copies move, and a run that updates only one is exactly the
 // half-verified state this pins.
-const sensitivityParityFixtureRevision = "daa8128427d906ef"
+const sensitivityParityFixtureRevision = "29c12bd61856f53b"
 
 type sensitivityParityCases struct {
 	LeafCases []struct {
@@ -84,6 +89,18 @@ type sensitivityParityCases struct {
 		ExpectSensitive bool            `json:"expectSensitive"`
 		CompilerDecodes bool            `json:"compilerDecodes"`
 	} `json:"slotCases"`
+	PillarKeyCases []struct {
+		Name   string          `json:"name"`
+		Schema json.RawMessage `json:"schema"`
+		// ExpectKeys is the compiler's own answer, so this half is what
+		// establishes it and what fails when compilation moves it out from
+		// under the guest.
+		ExpectKeys []string `json:"expectKeys"`
+		// GuestReadable records which side of the enumerable/unenumerable line
+		// a case sits on. Only the guest can assert its own half of that, the
+		// same way only the compiler asserts CompilerDecodes above.
+		GuestReadable bool `json:"guestReadable"`
+	} `json:"pillarKeyCases"`
 }
 
 func readSensitivityParityFixture(t *testing.T) []byte {
@@ -270,6 +287,80 @@ func TestSensitivityParityFixtureCoversEveryDivergenceShape(t *testing.T) {
 	}
 }
 
+// TestProvidesPillarKeyParityAgainstSharedFixture runs every shared pillar-key
+// case through the compiler's own reader — the exported entry point a build
+// uses, not a private helper, so what is pinned is the answer the inject guard
+// actually acts on. The expectation in the fixture is the compiler's truth by
+// definition, so this test is what establishes it.
+//
+// It also asserts the case names that carry the shapes the two readers can
+// genuinely disagree on. Dropping one of those would silence the case that
+// motivates holding this pair together at all, and a shrunken fixture reads as a
+// passing one.
+func TestProvidesPillarKeyParityAgainstSharedFixture(t *testing.T) {
+	t.Parallel()
+	cases := loadSensitivityParityCases(t)
+	if len(cases.PillarKeyCases) < 15 {
+		t.Fatalf("the shared fixture lost pillar-key cases (%d left); it is the only source of cases for both sides", len(cases.PillarKeyCases))
+	}
+
+	present := map[string]bool{}
+	for _, c := range cases.PillarKeyCases {
+		present[c.Name] = true
+
+		var node yaml.Node
+		if err := yaml.Unmarshal(c.Schema, &node); err != nil {
+			t.Errorf("%s: schema does not parse: %v", c.Name, err)
+			continue
+		}
+		inner := node
+		if node.Kind == yaml.DocumentNode && len(node.Content) == 1 {
+			inner = *node.Content[0]
+		}
+		comp := types.Component{Spec: types.ComponentSpec{Schema: inner}}
+		got := resolver.ComponentProvidesKeys(comp, nil)
+		if !sameSet(got, c.ExpectKeys) {
+			t.Errorf("%s: compiler exposed %v, shared expectation %v",
+				c.Name, sortedKeys(got), c.ExpectKeys)
+		}
+	}
+
+	for _, required := range []string{
+		// A pillar node whose own shape decides whether it exposes anything at
+		// all. Each is a spelling a reader can classify wrongly in a way that
+		// changes the answer rather than merely the path.
+		"pillar-exposes-its-implicit-properties",
+		"pillar-property-named-like-a-compact-keyword-makes-the-pillar-a-leaf",
+		"pillar-with-explicit-properties-exposes-them",
+		"pillar-declaring-jsonschema-mode-exposes-its-properties",
+		"pillar-declaring-compact-mode-becomes-a-leaf",
+		// The two definition-block spellings, which name reference targets
+		// rather than data. A reader excluding one and not the other reports a
+		// definitions block as a published key.
+		"definitions-blocks-are-reference-scopes-not-properties",
+		"legacy-definitions-block-is-also-a-reference-scope",
+		// An empty contract, which is a real answer and not an absent one.
+		"no-provides-pillar-is-an-empty-contract",
+		// The escaped body in both authored forms: the mapping both readers can
+		// open, and the text form only a YAML parser can.
+		"escaped-mapping-body-exposes-its-properties",
+		"escaped-text-body-is-unreadable-in-the-guest",
+		// The reference forms, whose compiled answer is not what an author
+		// would predict from the authored text.
+		"reference-pillar-is-unreadable-in-the-guest",
+		"reference-pillar-with-sibling-properties-is-unreadable-in-the-guest",
+		// One case per list-valued composition keyword, because the three are a
+		// set and a reader can handle one and miss another.
+		"all-of-pillar-is-unreadable-in-the-guest",
+		"any-of-pillar-is-unreadable-in-the-guest",
+		"one-of-pillar-is-unreadable-in-the-guest",
+	} {
+		if !present[required] {
+			t.Errorf("the shared fixture no longer carries the %q case; that shape is where the two readers can diverge", required)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------
 // The cross-half handshake
 // ---------------------------------------------------------------------
@@ -430,6 +521,7 @@ func sensitivityParityPinnedValue(t *testing.T, source, declaration, where strin
 var sensitivityParityGuestChecks = []string{
 	"leaf_cases_match_the_shared_expectation",
 	"slot_cases_match_the_shared_expectation",
+	"pillar_key_cases_match_the_shared_expectation",
 	"both_halves_pin_the_same_fixture_revision",
 }
 

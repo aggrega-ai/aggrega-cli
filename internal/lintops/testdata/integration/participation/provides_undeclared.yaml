@@ -1,0 +1,23 @@
+# A Recipe that publishes one provides key beyond what its Component declares.
+# Paired with provides_undeclared_component.yaml, which declares endpoint and
+# model and nothing else.
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: broker-gateway
+  version: 1.0.0
+  description: >
+    Publishes a third provides key the Component it implements does not declare,
+    so the provides-declared-by-component rule has something to report.
+spec:
+  capability: helm
+  implements: core/ai-model/broker:1.0.0
+  provides:
+    endpoint: "{{ .infra.endpoint }}"
+    model: "{{ .values.model }}"
+    provider: "{{ .values.provider_name }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    form: reference
+    endpoint: "{{ .infra.endpoint }}"

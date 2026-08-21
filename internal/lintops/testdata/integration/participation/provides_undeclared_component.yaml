@@ -1,0 +1,21 @@
+# The Component the paired Recipe implements. Its provides pillar declares the
+# two keys of the family contract and no third one, which is what makes the
+# Recipe's third key reportable.
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/ai-model/broker
+  version: 1.0.0
+  labels:
+    component.aggrega.ai/type: resource
+    component.aggrega.ai/category: ai-model
+spec:
+  schema:
+    values:
+      model: { type: string }
+      provider_name: { type: string }
+    infra:
+      endpoint: { type: string }
+    provides:
+      endpoint: { type: string, required: true }
+      model: { type: string, required: true }

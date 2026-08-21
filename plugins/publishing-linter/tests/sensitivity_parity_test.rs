@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-//! The plugin half of the sensitivity-declaration parity check, plus the
+//! The plugin half of the authored-schema parity check, plus the
 //! vocabulary pins the plugin's reader depends on.
+//!
+//! The shared fixture holds two questions over the same bytes — which
+//! leaves a schema declares sensitive, and which property names one
+//! pillar exposes — because they are the same structural duplication and
+//! one handshake holds both. A second fixture would mean a second copy of
+//! that handshake.
 //!
 //! Three subjects, three mechanisms, chosen per subject rather than
 //! uniformly:
@@ -46,6 +52,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use publishing_linter::rules::provides_declared_by_component::PROVIDES_KEY as PROVIDES_PILLAR;
 use publishing_linter::rules::secret_slot_declares_sensitive as slot_rule;
 use publishing_linter::sensitivity::{
     self, DeclaredSensitiveLeaves, BRANCH_LIST_KEYWORDS, BRANCH_NODE_KEYWORDS, COMPACT_KEYWORDS,
@@ -87,7 +94,7 @@ fn load_fixture() -> Value {
 /// copy cannot disagree with itself, and disagreement is the signal.
 /// When the fixture changes, both copies move, and a change that updates
 /// only one is exactly the half-verified state this pins.
-const SENSITIVITY_PARITY_FIXTURE_REVISION: &str = "daa8128427d906ef";
+const SENSITIVITY_PARITY_FIXTURE_REVISION: &str = "29c12bd61856f53b";
 
 fn string_set(v: Option<&Value>) -> BTreeSet<String> {
     v.and_then(Value::as_array)
@@ -199,6 +206,69 @@ fn slot_cases_match_the_shared_expectation() {
     assert!(
         failures.is_empty(),
         "sensitivity slot-declaration parity violated:\n  {}",
+        failures.join("\n  ")
+    );
+}
+
+#[test]
+fn pillar_key_cases_match_the_shared_expectation() {
+    let fixture = load_fixture();
+    let cases = fixture
+        .get("pillarKeyCases")
+        .and_then(Value::as_array)
+        .expect("pillarKeyCases is an array");
+    assert!(
+        cases.len() >= 15,
+        "the shared fixture lost pillar-key cases ({} left); it is the only source of \
+         cases for both sides, so a deletion here silently narrows both",
+        cases.len()
+    );
+
+    let mut failures: Vec<String> = Vec::new();
+    let mut readable_seen = 0usize;
+    let mut unreadable_seen = 0usize;
+    for case in cases {
+        let name = case.get("name").and_then(Value::as_str).unwrap_or("<unnamed>");
+        let schema = case.get("schema").expect("case carries a schema");
+        let readable = case
+            .get("guestReadable")
+            .and_then(Value::as_bool)
+            .expect("case carries guestReadable");
+        let got = sensitivity::pillar_property_names(schema, PROVIDES_PILLAR);
+
+        match (readable, got) {
+            (true, Some(keys)) => {
+                readable_seen += 1;
+                let want = string_set(case.get("expectKeys"));
+                if keys != want {
+                    failures.push(format!(
+                        "{name}: guest exposed {keys:?}, shared expectation {want:?}"
+                    ));
+                }
+            }
+            (true, None) => failures.push(format!(
+                "{name}: the shared expectation says this pillar is enumerable here, but the \
+                 guest reported it unknown"
+            )),
+            (false, None) => unreadable_seen += 1,
+            (false, Some(keys)) => failures.push(format!(
+                "{name}: the shared expectation says the guest cannot enumerate this pillar, \
+                 but it returned {keys:?}. Reporting a key set for a shape it cannot read is \
+                 how the rule over this reader invents an undeclared key"
+            )),
+        }
+    }
+
+    // Both halves of the line have to be populated, or one arm of the match
+    // above is never taken and the check reports on a set it never saw.
+    assert!(
+        readable_seen > 0 && unreadable_seen > 0,
+        "the shared cases must cover both sides of the enumerable/unenumerable line; \
+         saw {readable_seen} enumerable and {unreadable_seen} unenumerable"
+    );
+    assert!(
+        failures.is_empty(),
+        "pillar-key parity violated:\n  {}",
         failures.join("\n  ")
     );
 }
@@ -634,6 +704,7 @@ const COMPILER_HALF_CHECKS: &[&str] = &[
     "TestSensitivityLeafParityAgainstSharedFixture",
     "TestSensitivitySlotParityAgainstSharedFixture",
     "TestSensitivityParityFixtureCoversEveryDivergenceShape",
+    "TestProvidesPillarKeyParityAgainstSharedFixture",
     "TestBothHalvesPinTheSameFixtureRevision",
 ];
 

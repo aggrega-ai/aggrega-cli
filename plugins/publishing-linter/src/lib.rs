@@ -80,6 +80,9 @@ pub fn lint_rules(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
         "secret-slot-declares-sensitive" => {
             rules::secret_slot_declares_sensitive::classify(&input)
         }
+        "provides-declared-by-component" => {
+            rules::provides_declared_by_component::classify(&input)
+        }
         other => vec![Diagnostic {
             rule_id: "unknown_rule".to_string(),
             severity: "halt".to_string(),

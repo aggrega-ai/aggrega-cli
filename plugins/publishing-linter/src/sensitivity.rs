@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-//! Reads sensitivity declarations out of an authored entity's schema.
+//! Reads an authored entity's schema the way the compiler compiles it.
 //!
-//! Two declarations carry the axis, and this module reads both from the
-//! authored entity JSON a rule receives:
+//! This module owns the classification of an authored mapping — whether it is a
+//! constraint leaf, an object scope, authored JSON Schema, a reference, a
+//! composition or an escaped body — and the keyword vocabularies that
+//! classification turns on. Two readers are built on it: the sensitivity
+//! declarations below, and [`pillar_property_names`], which answers which
+//! properties one pillar exposes. Both re-derive something the compiler
+//! computes and neither can call it, so both are held by the same shared
+//! expectation; the reason and the mechanism are in the section below.
+//!
+//! Two declarations carry the sensitivity axis, and this module reads both from
+//! the authored entity JSON a rule receives:
 //!
 //!   - a schema leaf in `values`, `infra` or `provides` declaring
 //!     `sensitive: true`, meaning that datum is secret material;
@@ -227,6 +236,61 @@ pub fn declared_sensitive_leaves(schema: &Value) -> DeclaredSensitiveLeaves {
 /// not a declaration there either.
 pub fn slot_declares_sensitive(slot: &Value) -> bool {
     slot.get(SENSITIVE_KEY) == Some(&Value::Bool(true))
+}
+
+/// `pillar_property_names` reads the property names one pillar of an
+/// authored `spec.schema` exposes.
+///
+/// It answers the same question the compiler answers by compiling that
+/// pillar and reading the property map the compilation produces. The
+/// compiler is the source of truth for it, and this reader cannot call
+/// the compiler, so the two are held by the shared expectation described
+/// at the top of this module — the same handshake the sensitivity
+/// readers are held by.
+///
+/// Only the pillar's OWN node is classified, and only its first level of
+/// properties is read. A declaration nested below a property does not add
+/// a name at this level, and neither reader descends for one.
+///
+/// The two return shapes are different answers and must not be collapsed:
+///
+///   - `Some(set)` — the names the pillar exposes, and the set is empty
+///     when the schema declares no such pillar or the pillar exposes no
+///     property. An empty set is a real answer: it says the entity
+///     declares no contract on that axis.
+///   - `None` — the pillar's own node is a shape this reader cannot
+///     enumerate: a reference, whose target is merged in before the
+///     compiler sees it and is therefore unreachable here; a composition,
+///     whose branches carry the properties; or an escaped body authored as
+///     YAML text, which needs a parser this crate does not carry. `None`
+///     means unknown, never empty, so a caller that must not be wrong
+///     stays silent rather than reading silence as an absent contract.
+pub fn pillar_property_names(schema: &Value, pillar: &str) -> Option<BTreeSet<String>> {
+    let Some(node) = schema.as_object().and_then(|root| root.get(pillar)) else {
+        return Some(BTreeSet::new());
+    };
+    let Some(obj) = node.as_object() else {
+        return Some(BTreeSet::new());
+    };
+    // An escaped body replaces the node it sits on, exactly as it does in the
+    // sensitivity walk: a body authored as a mapping is read on as authored
+    // JSON Schema, and a body authored as YAML text cannot be opened here.
+    let (obj, shape) = match shape_of(obj) {
+        Shape::Escape => match obj.get("$jsonschema") {
+            Some(Value::Object(body)) => (body, Shape::Passthrough),
+            _ => return None,
+        },
+        other => (obj, other),
+    };
+    match shape {
+        Shape::Reference | Shape::Composition => None,
+        _ => Some(
+            child_properties(obj, shape)
+                .into_iter()
+                .map(|(name, _)| name.clone())
+                .collect(),
+        ),
+    }
 }
 
 /// How the compiler classifies one authored mapping. The variants are

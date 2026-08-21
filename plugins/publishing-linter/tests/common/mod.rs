@@ -31,7 +31,30 @@ pub fn fixture(
         entity_kind: entity_kind.to_string(),
         proposed: to_raw_value(&proposed).expect("encode proposed"),
         previous: previous.map(|v| to_raw_value(&v).expect("encode previous")),
+        implemented_component: None,
         source_path: source_path.into().unwrap_or_default(),
         policies: policies.unwrap_or_default(),
+    }
+}
+
+/// `fixture_implementing` builds an input for a rule that compares the
+/// linted entity against a related entity of a DIFFERENT kind — the
+/// Component a Recipe implements — rather than against another version of
+/// the same entity.
+///
+/// `implemented_component` is `None` for the case where the host resolved
+/// none, which is a distinct case from a Component that declares nothing:
+/// the first says the comparison is unavailable, the second says the
+/// contract is empty.
+pub fn fixture_implementing(
+    entity_kind: &str,
+    proposed: Value,
+    implemented_component: Option<Value>,
+    policies: Option<Policies>,
+) -> LinterInput {
+    LinterInput {
+        implemented_component: implemented_component
+            .map(|v| to_raw_value(&v).expect("encode implemented component")),
+        ..fixture(entity_kind, proposed, None, policies, None)
     }
 }

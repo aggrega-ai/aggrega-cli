@@ -165,6 +165,7 @@ func participationCases() []participationCase {
 		{ruleID: "x-aggrega-discouragement", fixtureFile: "x_aggrega_in_schema.yaml"},
 		{ruleID: "plugin-default-limits", fixtureFile: "plugin_default_limits.yaml"},
 		{ruleID: "secret-slot-declares-sensitive", fixtureFile: "secret_slot_unmarked.yaml"},
+		{ruleID: "provides-declared-by-component", fixtureFile: "provides_undeclared.yaml"},
 	}
 }
 
@@ -227,9 +228,15 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 		Proposed:   proposedJSON,
 		Policies:   policies,
 	}
-	// Provide the source path for category-matches-directory.
-	if c.ruleID == "category-matches-directory" {
+	// Two rules need more than the proposed entity. The path-aware rule needs
+	// where the entity was read from; the contract-comparing rule needs the
+	// related entity of the other kind, which the host resolves in production and
+	// which is supplied here from the fixture that pairs with this one.
+	switch c.ruleID {
+	case "category-matches-directory":
 		input.SourcePath = "aggrega-hub/aggrega-catalog/component/" + header.Metadata.Name + ".yaml"
+	case "provides-declared-by-component":
+		input.ImplementedComponent = implementedComponentFixture(t)
 	}
 	pluginBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
@@ -257,9 +264,25 @@ func buildParticipationPolicies() json.RawMessage {
 		"allow_aggrega_ai_prefix":           false,
 		"allow_nonstandard_names":           false,
 		"allow_category_mismatches":         false,
+		"allow_undeclared_recipe_provides":  false,
 	}
 	out, _ := json.Marshal(policies)
 	return out
+}
+
+// implementedComponentFixture returns the Component that pairs with the
+// provides-declared-by-component participation fixture, in the JSON shape the
+// payload carries. It is a second fixture rather than a second document in the
+// first because the rule compares two entities, and the harness reads one entity
+// per case.
+func implementedComponentFixture(t *testing.T) json.RawMessage {
+	t.Helper()
+	componentJSON, _, err := yamlToLinterJSON(
+		readFixture(t, "participation", "provides_undeclared_component.yaml"))
+	if err != nil {
+		t.Fatalf("yaml→json for the paired component fixture: %v", err)
+	}
+	return componentJSON
 }
 
 // TestMultiRuleCrossTalk verifies the dispatcher correctly
@@ -348,8 +371,11 @@ func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []b
 			Proposed:   proposedJSON,
 			Policies:   policies,
 		}
-		if ruleID == "category-matches-directory" {
+		switch ruleID {
+		case "category-matches-directory":
 			input.SourcePath = entityPath
+		case "provides-declared-by-component":
+			input.ImplementedComponent = implementedComponentFixture(t)
 		}
 		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
 		if err != nil {

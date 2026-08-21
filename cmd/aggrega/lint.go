@@ -26,10 +26,13 @@ type lintFlags struct {
 	pluginPath  string
 	catalogDirs []string
 
-	// Tri-state policy override flags. Each of the six `allow_*`
-	// policy keys gets a paired CLI flag. These fields exist as the flags'
-	// bind targets; the effective value is decided by makeResolverFromCobra
-	// per cobra Flags().Changed() state rather than read from here.
+	// Tri-state policy override flags. Every `allow_*` policy key in the
+	// workspace config's lint.publishing_discipline block gets a paired CLI
+	// flag, so the two surfaces stay in step as keys are added; the pairing
+	// is what effectivePolicies resolves against, keyed on the flag's base
+	// name. These fields exist as the flags' bind targets; the effective
+	// value is decided by makeResolverFromCobra per cobra Flags().Changed()
+	// state rather than read from here.
 	allowDynamicRefs          bool
 	noAllowDynamicRefs        bool
 	allowIDOverrides          bool
@@ -42,6 +45,9 @@ type lintFlags struct {
 	noAllowNonstandardNames   bool
 	allowCategoryMismatches   bool
 	noAllowCategoryMismatches bool
+
+	allowUndeclaredRecipeProvides   bool
+	noAllowUndeclaredRecipeProvides bool
 
 	output string
 }
@@ -74,8 +80,7 @@ previous registry version is fetched and the schema-evolution
 classification is compared against the proposed version bump; mismatches
 halt. --pre-publish applies to the single-entity shape only. Per-workspace
 policy flags from .aggrega-config.yaml's lint.publishing_discipline block
-can be overridden per invocation via the --allow-*/--no-allow-* and
---enforce-*/--no-enforce-* flag pairs.
+can be overridden per invocation via the --allow-*/--no-allow-* flag pairs.
 
 All three shapes accept -o json, which replaces the human report on standard
 output with one structured document: every finding with its severity, the rule
@@ -183,6 +188,8 @@ under either format.`,
 	c.Flags().BoolVar(&opts.noAllowNonstandardNames, "no-allow-nonstandard-names", false, "Force allow_nonstandard_names=false")
 	c.Flags().BoolVar(&opts.allowCategoryMismatches, "allow-category-mismatches", false, "Force allow_category_mismatches=true")
 	c.Flags().BoolVar(&opts.noAllowCategoryMismatches, "no-allow-category-mismatches", false, "Force allow_category_mismatches=false")
+	c.Flags().BoolVar(&opts.allowUndeclaredRecipeProvides, "allow-undeclared-recipe-provides", false, "Force allow_undeclared_recipe_provides=true")
+	c.Flags().BoolVar(&opts.noAllowUndeclaredRecipeProvides, "no-allow-undeclared-recipe-provides", false, "Force allow_undeclared_recipe_provides=false")
 
 	return c
 }

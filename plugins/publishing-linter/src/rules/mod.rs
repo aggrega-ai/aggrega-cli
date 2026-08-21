@@ -17,6 +17,7 @@ pub mod dynamic_refs;
 pub mod id_overrides;
 pub mod name_shape;
 pub mod plugin_default_limits;
+pub mod provides_declared_by_component;
 pub mod schema_library_walker;
 pub mod secret_slot_declares_sensitive;
 pub mod x_aggrega_discouragement;
