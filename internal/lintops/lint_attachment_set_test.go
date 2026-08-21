@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -203,7 +204,7 @@ func TestResolveLinterPluginsHaltsOnAnyAttachment(t *testing.T) {
 		wp.Metadata.PluginType = "linter"
 		return wp, true
 	}
-	if _, err := ResolveLinterPlugins("", wsCfg, pluginByURI); err == nil {
+	if _, err := ResolveLinterPlugins("", wsCfg, pluginpath.PinMaps{}, pluginByURI); err == nil {
 		t.Fatal("a second attachment that resolves to nothing must halt the resolution; got nil")
 	}
 }
@@ -217,7 +218,7 @@ func TestResolveLinterPluginsHaltsOnAnyAttachment(t *testing.T) {
 func TestResolveLinterPluginsSkipsAttachmentWithoutURI(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{{Function: "some_export"}}
-	attachments, err := ResolveLinterPlugins("", wsCfg, nil)
+	attachments, err := ResolveLinterPlugins("", wsCfg, pluginpath.PinMaps{}, nil)
 	if err != nil {
 		t.Fatalf("an attachment carrying no URI leaves the socket unconfigured, which resolves the built-in; got: %v", err)
 	}

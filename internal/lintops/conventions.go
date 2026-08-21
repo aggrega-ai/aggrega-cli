@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -122,8 +123,11 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 	wsCfg := rw.Config()
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
-	attachments, err := ResolveLinterPlugins("", wsCfg, lazyView.PluginByURI,
-		linterCacheResolve(rw.Root(), wsCfg, lazyView.PluginFromCacheByURI))
+	// No digests are recorded as trusted on this path yet; the socket resolves
+	// pin-free until something supplies them.
+	var trusted pluginpath.PinMaps
+	attachments, err := ResolveLinterPlugins("", wsCfg, trusted, lazyView.PluginByURI,
+		linterCacheResolve(rw.Root(), wsCfg, trusted, lazyView.PluginFromCacheByURI))
 	if err != nil {
 		return err
 	}

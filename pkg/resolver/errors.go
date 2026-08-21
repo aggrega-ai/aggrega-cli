@@ -352,6 +352,38 @@ var errUnnormalizedRelease = cerrors.Register("resolver/unnormalized-release", c
 	Message:   "release reached resolve un-normalized (non-empty root components alongside a synthesized default boundary)",
 })
 
+// ErrVerdictPluginTrustMismatch reports that the digest recorded as trusted for a
+// plugin returning an accept-or-reject verdict disagrees with the digest that
+// plugin's cached manifest reports for the same identity. The two are compared
+// before the executable is read, and a disagreement halts the resolution.
+//
+// The comparison is what makes the recorded digest an authority rather than a
+// restatement. Without a recorded digest, a verdict plugin's bytes are checked
+// against a pin derived from the very manifest whose bytes it then validates —
+// self-consistent by construction, and therefore unable to notice that the whole
+// artifact has been replaced. Comparing the recorded digest against the
+// manifest-derived one is what turns that into a check with an outside opinion,
+// and this sentinel names the case where the two opinions differ.
+//
+// It is distinct from a content-digest mismatch (oci.ErrFetchIntegrity), which
+// reports resolved BYTES disagreeing with the digest claimed for them: here no
+// bytes have been read, and they may well agree with the manifest — what
+// disagrees is which artifact is being resolved at all. Keeping the two apart is
+// the point, because the remediations are opposite: one is a corrupted or
+// tampered artifact, the other is a legitimately changed plugin whose new
+// identity has not been reviewed and recorded yet.
+//
+// The recorded digest reaches the comparison as an ordinary per-plugin pin, so
+// this package neither reads nor names the file the record lives in; the
+// remediation is to review what changed and re-record the trusted identity, or
+// to restore the artifact the record names.
+func ErrVerdictPluginTrustMismatch() error { return errVerdictPluginTrustMismatch }
+
+var errVerdictPluginTrustMismatch = cerrors.Register("resolver/verdict-plugin-trust-mismatch", cerrors.Meta{
+	ShortCode: "E0246",
+	Message:   "the digest recorded as trusted for this plugin does not match the digest its cached manifest reports",
+})
+
 // ResolverError carries entity and field context alongside a sentinel error.
 // Entity follows the convention "<Kind> <metadata.name>" (e.g.
 // "Aggregate my-app", "Release prod"); Field is a JSON-path-style locator

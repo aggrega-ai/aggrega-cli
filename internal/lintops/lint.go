@@ -198,13 +198,17 @@ func RunEntity(cfg Config) error {
 	// the feeders below stay nil there.
 	var pluginByURI func(uri string) (types.Plugin, bool)
 	var cacheResolvers []func(uri string) (pluginpath.ResolvedPlugin, error)
+	// No digests are recorded as trusted on this path yet: reading the record is
+	// its own concern, and the socket resolves pin-free until something supplies
+	// one. Threading the empty set here rather than branching keeps one call shape.
+	var trusted pluginpath.PinMaps
 	if cfg.PluginPath == "" {
 		pluginByURI = lazyView.PluginByURI
 		cacheResolvers = []func(uri string) (pluginpath.ResolvedPlugin, error){
-			linterCacheResolve(rw.Root(), wsCfg, lazyView.PluginFromCacheByURI),
+			linterCacheResolve(rw.Root(), wsCfg, trusted, lazyView.PluginFromCacheByURI),
 		}
 	}
-	attachments, err := ResolveLinterPlugins(cfg.PluginPath, wsCfg, pluginByURI, cacheResolvers...)
+	attachments, err := ResolveLinterPlugins(cfg.PluginPath, wsCfg, trusted, pluginByURI, cacheResolvers...)
 	if err != nil {
 		return err
 	}
@@ -408,9 +412,11 @@ func linterAttachmentRefs(wsCfg workspaceconfig.Config) []workspaceconfig.Plugin
 // entity's identity. The --plugin override path does not consult it — the escape
 // hatch is artifact-direct.
 //
-// The linter passes NO digest pins: it lints a not-yet-pinned proposed entity
-// at publish time, so there is no lockfile to verify the plugin against. It
-// wires no puller — the linter resolves locally (embed / colocated / local).
+// The linter reads no lockfile: it lints a not-yet-pinned proposed entity at
+// publish time, so there is nothing in a lockfile to verify the plugin against.
+// It wires no puller either, so it never reaches a registry: an attachment
+// resolves from the bytes in the binary or from the already-populated content
+// cache, and the --plugin escape hatch from the explicit path it names.
 //
 // The linter socket is a verdict socket: a configured, non-embedded linter guest
 // is cached at pull but not pinned (cache-not-pin), so every configured-URI
@@ -423,14 +429,62 @@ func linterAttachmentRefs(wsCfg workspaceconfig.Config) []workspaceconfig.Plugin
 // direct invocation that omits it falls back to a working-directory-anchored
 // resolver built from wsCfg.
 //
+// # What a recorded trusted digest adds, per case
+//
+// trusted carries the digests recorded as trusted for the plugins that return an
+// accept-or-reject verdict, keyed by plugin identity. Supplied and non-empty, it
+// turns the first arm from a pin-free read into one that verifies the resolved
+// bytes against the recorded digest; supplied empty — the ordinary case, and the
+// case when nothing has recorded anything yet — resolution is pin-free exactly as
+// before. An absent record is a first-run state rather than a fault, and never a
+// pin of zero. The cases differ, and none of them is "unverified until now":
+//
+//   - A configured attachment whose plugin is served from the pull-populated
+//     content cache is already digest-checked today, against a pin synthesized
+//     from that plugin's own cached manifest. What a recorded digest adds there is
+//     the comparison against the recorded identity, which is what makes the pin an
+//     authority instead of a restatement of the artifact it is checking.
+//   - A configured attachment served by the embed tier is checked against nothing
+//     today. That tier fronts the cache and consults no manifest, so a resolution
+//     it satisfies has no digest to verify against — and this socket resolves an
+//     attachment through exactly two tiers, embed and the content cache, because it
+//     wires neither co-located directories nor a puller and an artifact reference
+//     is never a local path. So the embed tier is where a recorded digest adds a
+//     check that did not exist, and only for a plugin a record actually names.
+//   - The --plugin override is out of reach, and by construction rather than by
+//     policy: it is artifact-direct, resolving through the cascade's override by an
+//     empty reference, while a recorded digest is addressed by a plugin identity.
+//     The record-to-pin conversion refuses an empty address, so no record reaches
+//     it.
+//   - The unconfigured socket's built-in default is out of reach because an
+//     unconfigured socket declares no attachment, so nothing records an identity
+//     for it. Note what this is NOT: the built-in resolves by its own identity,
+//     which is as addressable as any other, so a record standing at that identity
+//     would govern the built-in's bytes. It is out of reach because nothing writes
+//     such a record, not because it could not be named.
+//
+// A registry-fetched plugin is separately signature- and host-function-verified
+// when it is pulled. A recorded digest adds an identity check to resolution; it
+// does not introduce integrity checking where integrity checking already existed.
+//
 // A resolution failure at ANY attachment halts the whole resolution: an
 // attachment the operator configured and the gate cannot load is a loud
 // guardrail, never an attachment to quietly drop.
-func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, pluginByURI func(uri string) (types.Plugin, bool), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) ([]LinterAttachment, error) {
+func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, trusted pluginpath.PinMaps, pluginByURI func(uri string) (types.Plugin, bool), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) ([]LinterAttachment, error) {
 	refs := linterAttachmentRefs(wsCfg)
+	// The posture is named from what the caller actually supplied rather than
+	// fixed at the construction: with recorded digests in hand the first arm
+	// verifies resolved bytes against them, and with none it stays the pin-free
+	// read it has always been. Naming a pinned posture over an empty set would
+	// read as a pin nobody has, which is the confusion the posture axis exists to
+	// prevent.
+	posture := pluginpath.PinPostureNone
+	if len(trusted.Pins) > 0 {
+		posture = pluginpath.PinPostureVerifyOnRead
+	}
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
 		Override: cliFlag,
-	}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
+	}, posture, trusted)
 	// The --plugin override is the artifact-direct escape hatch: resolve it
 	// verbatim through the cascade override, never the entity model. The cascade
 	// override path sets no Contract/Limits, so the load gets a nil claim and
@@ -479,7 +533,7 @@ func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, pluginBy
 	// exactly as the policy socket does. The caller threads a workspace-root-
 	// anchored resolver; a direct invocation falls back to one anchored at the
 	// working directory.
-	cr := linterCacheResolveOrDefault(wsCfg, cacheResolve)
+	cr := linterCacheResolveOrDefault(wsCfg, trusted, cacheResolve)
 	lookup := resolver.VerdictLookup(front, cr)
 	attachments := make([]LinterAttachment, 0, len(refs))
 	for _, ref := range refs {
@@ -522,13 +576,19 @@ func dispatchLinterAttachments(attachments []LinterAttachment, inputs []validato
 // is read from the content cache by URI and its .wasm is digest-checked against
 // the cached manifest. workspaceRoot and wsCfg anchor the content cache; cacheRead
 // reads a Plugin entity from that cache by URI.
-func linterCacheResolve(workspaceRoot string, wsCfg workspaceconfig.Config, cacheRead func(uri string) (types.Plugin, string, bool, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
+//
+// trusted is threaded on so the fallback arm compares the same recorded digests
+// the first arm verifies against. The two arms are the same socket resolving the
+// same attachment through different tiers, so a record honoured by one and
+// ignored by the other would make the check depend on which tier happened to
+// serve the bytes.
+func linterCacheResolve(workspaceRoot string, wsCfg workspaceconfig.Config, trusted pluginpath.PinMaps, cacheRead func(uri string) (types.Plugin, string, bool, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
 	sources := resolver.VerdictPluginTierSources{
 		WorkspaceRoot: workspaceRoot,
 		CacheDir:      wsCfg.ResolvedArtifactCacheDir(),
 	}
 	return func(uri string) (pluginpath.ResolvedPlugin, error) {
-		return resolver.ResolveVerdictPluginFromCache(sources, cacheRead, uri)
+		return resolver.ResolveVerdictPluginFromCache(sources, trusted, cacheRead, uri)
 	}
 }
 
@@ -537,12 +597,12 @@ func linterCacheResolve(workspaceRoot string, wsCfg workspaceconfig.Config, cach
 // same catalog view it already built — and otherwise constructs a fallback for a
 // direct invocation, anchored at the working directory and reading the content
 // cache the workspace config names.
-func linterCacheResolveOrDefault(wsCfg workspaceconfig.Config, cacheResolve []func(uri string) (pluginpath.ResolvedPlugin, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
+func linterCacheResolveOrDefault(wsCfg workspaceconfig.Config, trusted pluginpath.PinMaps, cacheResolve []func(uri string) (pluginpath.ResolvedPlugin, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
 	if len(cacheResolve) > 0 && cacheResolve[0] != nil {
 		return cacheResolve[0]
 	}
 	lazyView := catalog.NewLazyLookup("", wsCfg.ResolvedArtifactCacheDir(), nil, nil)
-	return linterCacheResolve("", wsCfg, lazyView.PluginFromCacheByURI)
+	return linterCacheResolve("", wsCfg, trusted, lazyView.PluginFromCacheByURI)
 }
 
 // pluginUnderDeclarationAdvisory reports, as advisory notices, where a Plugin
@@ -559,6 +619,12 @@ func pluginUnderDeclarationAdvisory(entityBytes []byte, wsCfg workspaceconfig.Co
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped (entity does not parse as a Plugin)\n")
 		return
 	}
+	// Deliberately pin-free, and it stays that way even where the gate plugins
+	// around it verify against recorded digests. The artifact resolved here belongs
+	// to the entity being LINTED — the audited subject, not the gate doing the
+	// auditing — so a record of the identities trusted for the gates holds nothing
+	// addressed to it. And this advisory never halts and never changes the exit
+	// status, so a mismatch would have nothing it could do about one.
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
 	resolved, err := cascade.Resolve(entity.ArtifactReference())
 	if err != nil {

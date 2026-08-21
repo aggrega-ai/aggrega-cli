@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package pluginstrust
+
+import "github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+
+// PinMaps projects every record into the per-plugin pin maps a resolution site
+// threads into a plugin resolver, so a resolution can be checked against the
+// recorded identity without any resolver learning that this file exists.
+//
+// It is the single home of the record-to-pin conversion, and it needs no lookup
+// to perform one: a record is addressed by the plugin's identity coordinate, and
+// a resolver's pin maps are keyed by the artifact reference a plugin resolves
+// to — and those are the same string, because a Plugin entity's artifact
+// reference IS its identity coordinate (types.Plugin.ArtifactReference returns
+// types.Plugin.Coordinate, which derives `<pluginType>/<name>` through the single
+// types.PluginCoordinate rule). So converting a record is re-keying it, with no
+// entity read, no version derivation and no second copy of the address rule.
+//
+// That identity is invisible at this call site — nothing here mentions a Plugin
+// entity — so it is asserted by a guard test rather than left to a reader to
+// notice. Were the derivation ever to change, the conversion would silently pin
+// nothing; the guard is what makes it fail loudly instead.
+//
+// Both maps carry the recorded digest. Pins is the digest the resolved bytes are
+// verified against. PinVersions addresses the cache slot, whose second segment
+// for a plugin artifact is that same content digest — the recorded version and
+// the recorded digest name the same content for a `.wasm` — so the pinned slot
+// and the recorded one are the same slot. BundleDigests is deliberately left
+// empty: a signature bundle is not something this record carries.
+//
+// A record whose coordinate is empty addresses no plugin and is skipped, for the
+// same reason Upsert refuses to write one: every empty address would collide
+// with every other.
+//
+// A nil receiver holds no records and yields empty maps, so a caller that has
+// loaded no file need not branch before asking — the same contract Find offers.
+func (t *Trust) PinMaps() pluginpath.PinMaps {
+	pins := make(map[string]string)
+	versions := make(map[string]string)
+	if t != nil {
+		for _, p := range t.Plugins {
+			if p.Plugin == "" {
+				continue
+			}
+			pins[p.Plugin] = p.Digest
+			versions[p.Plugin] = p.Digest
+		}
+	}
+	return pluginpath.PinMaps{Pins: pins, PinVersions: versions}
+}

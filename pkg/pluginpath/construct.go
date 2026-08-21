@@ -27,10 +27,12 @@ const (
 	PinPostureLockfile
 
 	// PinPostureVerifyOnRead is the cache-not-pin read: the caller supplies
-	// per-URI pins synthesized from the cached manifest rather than from a
-	// lockfile, so a guest cached at pull but never pinned still resolves with
-	// its bytes digest-checked on read. Signature-bundle digests are a
-	// lockfile-only fact and do not participate under this posture.
+	// per-URI pins from a source other than the lockfile — synthesized from the
+	// cached manifest, or taken from a record of the identities trusted for the
+	// gates that return an accept-or-reject verdict — so a guest cached at pull
+	// but never pinned still resolves with its bytes digest-checked on read.
+	// Signature-bundle digests are a lockfile-only fact and do not participate
+	// under this posture.
 	PinPostureVerifyOnRead
 )
 
@@ -61,11 +63,14 @@ type ResolutionContext struct {
 
 // PinMaps groups the already-derived per-URI pin maps a pinned construction site
 // threads into a Resolver. Each map is keyed by the plugin URI the cascade
-// resolves by. The caller derives these from its own pin source — the build
-// reads them from the lockfile; the cache-not-pin read synthesizes them from the
-// cached manifest — so this package stays unaware of where pins originate. Every
-// field is optional: a nil or empty map disables the corresponding check exactly
-// as it does on the Resolver.
+// resolves by. The caller derives these from its own pin source — the build reads
+// them from the lockfile; the cache-not-pin read synthesizes them from the cached
+// manifest; a gate returning an accept-or-reject verdict takes them from the
+// record of the identities trusted for such gates — so this package stays unaware
+// of where pins originate. The list is illustrative rather than closed, which is
+// the whole point of the type: a new pin source needs no change here. Every field
+// is optional: a nil or empty map disables the corresponding check exactly as it
+// does on the Resolver.
 type PinMaps struct {
 	// Pins maps a plugin URI to its digest pin; resolved bytes verify against it
 	// at every tier.

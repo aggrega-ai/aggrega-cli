@@ -73,7 +73,11 @@ func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.C
 		WorkspaceRoot: inputs.WorkspaceRoot,
 		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
 	}
-	return resolver.ResolveVerdictPluginFromCache(sources, catalogLookup.PluginFromCache, entityURI)
+	// No digests are recorded as trusted on this path yet: reading the record is
+	// its own concern, and the socket resolves against the manifest-derived digest
+	// alone until something supplies one.
+	var trusted pluginpath.PinMaps
+	return resolver.ResolveVerdictPluginFromCache(sources, trusted, catalogLookup.PluginFromCache, entityURI)
 }
 
 // invokeSocketPlugin loads a plugin through the shared describe() gate, invokes
