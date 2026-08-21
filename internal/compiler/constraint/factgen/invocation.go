@@ -499,20 +499,26 @@ func writeInvocationSection(b *strings.Builder, c chain) error {
 	switch {
 	case state.InvokedCount() == 0:
 		b.WriteString("**No declared check is invoked from a production path.** Every check below is\n")
-		b.WriteString("declared-only: the rule it names is enforced by a hand-written function beside\n")
-		b.WriteString("the declaration, and the declaration is what makes the placement in the rest\n")
+		b.WriteString("declared-only, and the declaration is what makes the placement in the rest\n")
 		b.WriteString("of this table computable. So a stage row says where a check declaring that\n")
 		b.WriteString("stage's view would be invoked, and nothing in this table reports a rule as\n")
 		b.WriteString("enforced.\n\n")
 	case state.DeclaredOnly() == 0:
+		// This arm says nothing about hand-written enforcement, and the omission is
+		// deliberate rather than an oversight to be helpfully filled in. The count
+		// this arm is chosen by reads declared checks and traversal-entry calls; a
+		// hand-written function is neither and names nothing to a traversal entry,
+		// so it lies outside the read's corpus by construction. A sentence here
+		// asserting that such a function is gone would be an inference from a
+		// measurement that cannot see one, printed with the authority of a derived
+		// page. What the read establishes is invocation, so invocation is all this
+		// says.
 		b.WriteString("**Every declared check is invoked from a production path.** Each check below\n")
-		b.WriteString("runs at the stage its declared view fixes, and the hand-written function that\n")
-		b.WriteString("once enforced its rule is gone rather than standing beside it.\n\n")
+		b.WriteString("runs at the stage its declared view fixes.\n\n")
 	default:
 		b.WriteString("**Some declared checks are invoked and some are not, and the column below is\n")
-		b.WriteString("the only place that difference is visible.** A declared-only check's rule is\n")
-		b.WriteString("enforced by a hand-written function beside the declaration; an invoked check\n")
-		b.WriteString("runs at the stage its declared view fixes.\n\n")
+		b.WriteString("the only place that difference is visible.** An invoked check runs at the\n")
+		b.WriteString("stage its declared view fixes.\n\n")
 	}
 
 	b.WriteString("| Check | Declared in | Stage | Invoked |\n")
