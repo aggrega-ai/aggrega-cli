@@ -53,7 +53,10 @@ const (
 	// topology-graph node labels (declaring mutate); attached at a verdict role it
 	// renders an accept/reject verdict over the IR graph or the rendered artifacts
 	// (declaring validate). The role it is attached at, not its type, fixes what it
-	// may emit; the role's required export gates which roles a guest can serve.
+	// may emit. The role also supplies the export a governance attachment
+	// dispatches when it names no entry function of its own, so a guest declaring
+	// only one role's export cannot serve another role by default -- but an
+	// attachment that does name an entry function dispatches that one instead.
 	PluginTypeGovernance = plugintype.Governance
 
 	// PluginTypeCLI is a CLI plugin: it contributes a runtime aggrega <cmd>
@@ -133,9 +136,8 @@ var pipelineStepExportName = minExportName(plugintype.PipelineStep)
 // calls transform_annotations, the label-transform role calls mutate, and a
 // verdict role calls validate. They are the single source for the default a role
 // applies when a governance attachment leaves its entry function unset; they read
-// the name from the canonical governance role→export rule so the export the
-// dispatch requires and the socket default read one name rather than each
-// re-spelling the literal.
+// the name from the canonical governance role→export rule so the socket default
+// and that rule read one name rather than each re-spelling the literal.
 var (
 	TransformAnnotationsExport = governanceRoleExportName(plugintype.RoleAnnotationTransform)
 	MutateExport               = governanceRoleExportName(plugintype.RoleLabelTransform)

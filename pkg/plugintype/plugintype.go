@@ -104,12 +104,19 @@ func GovernanceRoleTier(role Role) (Tier, bool) {
 	}
 }
 
-// GovernanceRoleExport reports the entry-function export name a governance
-// plugin must declare to serve role, and whether role is a known governance
-// role. It is the single home of the role→export rule: the annotation-transform
-// role calls transform_annotations; the label-transform role calls mutate; a
-// verdict role calls validate. The host enforces the role's required export at
-// dispatch — a guest that does not declare it does not serve the role.
+// GovernanceRoleExport reports the default entry-function export name for a
+// governance role, and whether role is a known governance role. It is the single
+// home of the role→export rule: the annotation-transform role calls
+// transform_annotations; the label-transform role calls mutate; a verdict role
+// calls validate.
+//
+// The name is a default rather than a requirement, and the distinction is
+// load-bearing. It applies when a governance attachment leaves its entry
+// function unset; an attachment that names one dispatches that function instead.
+// At dispatch the host checks one thing about that function: that the guest
+// advertised it in describe(). It refuses a call to one the guest did not. But
+// nothing relates the dispatched function back to the role, so an attachment may
+// point a role at any function its guest declares.
 func GovernanceRoleExport(role Role) (string, bool) {
 	switch role {
 	case RoleAnnotationTransform:
@@ -156,9 +163,9 @@ const (
 // MinExport is a plugin type's minimum-export rule: the export name the host
 // requires a plugin of this type to declare, or a name prefix at least one
 // export must carry. IsPrefix distinguishes the two: false means Name is an
-// exact export name; true means Name is a prefix. A type whose required export
-// is fixed by its attachment role rather than by the type itself declares no
-// rule and leaves both fields zero.
+// exact export name; true means Name is a prefix. A type whose dispatched export
+// comes from its attachment rather than from the type itself declares no rule and
+// leaves both fields zero.
 type MinExport struct {
 	// Name is the exact required export name, or the required prefix when
 	// IsPrefix is true.
@@ -223,10 +230,11 @@ var entries = []Entry{
 	{
 		Type:  Governance,
 		Label: "governance",
-		// Governance has no single minimum export: the required export is the
-		// attachment role's (mutate for a transform role, validate for a verdict
-		// role), enforced at dispatch via GovernanceRoleExport. The zero MinExport
-		// rule admits any governance guest at load; the role gates the export.
+		// Governance has no single minimum export: which export a governance
+		// attachment dispatches is the attachment's own entry function, defaulting
+		// to the role's when it names none (see GovernanceRoleExport). The zero
+		// MinExport rule admits any governance guest at load, and the role
+		// constrains only that default -- not the export finally dispatched.
 		MinExport: MinExport{},
 		Socket:    "governance",
 		// The registry Tier is the conservative fallback for a governance ref with

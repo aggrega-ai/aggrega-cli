@@ -400,9 +400,10 @@ func TestPolicySocketGuestReportedErrorE2E(t *testing.T) {
 // TestVerdictRoleConfinesMutateOnlyGuestE2E proves the verdict role is
 // structurally non-mutating: a governance guest built only to transform (it
 // exports mutate and emits label patches) cannot mutate when attached at a
-// verdict role. The verdict dispatch path has no mutate/patch code path — it
-// demands the role's validate export — so a mutate-only guest is rejected loudly
-// at the verdict step rather than silently mutating the build. This is the
+// verdict role. The verdict dispatch path has no mutate/patch code path, and this
+// attachment names no entry function, so the role's default validate export is
+// the one dispatched — which a mutate-only guest does not declare, so it is
+// rejected loudly at the verdict step rather than silently mutating the build. This is the
 // structural replacement for the retired plugin-type-identity guard: confinement
 // is a property of the role's host code, not of what the guest declares itself to
 // be.
