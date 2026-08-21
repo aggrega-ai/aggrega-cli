@@ -77,6 +77,7 @@ const (
 	KindRecipe           Kind = "Recipe"
 	KindFeatureRecipe    Kind = "FeatureRecipe"
 	KindPlugin           Kind = "Plugin"
+	KindPluginsTrust     Kind = "PluginsTrust"
 	KindSchemaLibrary    Kind = "SchemaLibrary"
 	KindMappingLibrary   Kind = "MappingLibrary"
 	KindWorkloadLibrary  Kind = "WorkloadLibrary"
@@ -108,6 +109,7 @@ var schemaSource = map[Kind]string{
 	KindRecipe:           schemas.RecipeV1alpha1,
 	KindFeatureRecipe:    schemas.FeatureRecipeV1alpha1,
 	KindPlugin:           schemas.PluginV1alpha1,
+	KindPluginsTrust:     schemas.PluginsTrustV1alpha1,
 	KindSchemaLibrary:    schemas.SchemaLibraryV1alpha1,
 	KindMappingLibrary:   schemas.MappingLibraryV1alpha1,
 	KindWorkloadLibrary:  schemas.WorkloadLibraryV1alpha1,

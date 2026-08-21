@@ -11,6 +11,7 @@ package types_test
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -608,6 +609,20 @@ func maximalLockfile() lockfile.Lockfile {
 				Field:        "spec.source",
 				RequestedRef: "v1.0.0",
 			}},
+		}},
+	}
+}
+
+// maximalPluginsTrust populates every field of the trust record: the schema
+// version and one fully-populated record. The record's three fields are all
+// required by the schema, so a single record covers the whole surface.
+func maximalPluginsTrust() pluginstrust.Trust {
+	return pluginstrust.Trust{
+		Version: pluginstrust.CurrentVersion,
+		Plugins: []pluginstrust.TrustedPlugin{{
+			Plugin:          "governance/aggrega-security-baseline",
+			ResolvedVersion: "1.0.0",
+			Digest:          pinDigest,
 		}},
 	}
 }

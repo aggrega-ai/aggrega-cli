@@ -44,6 +44,7 @@ import (
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	clischemas "github.com/aggrega-ai/aggrega-cli/pkg/schemas/jsonschema"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
@@ -288,6 +289,19 @@ func alignmentCases() []alignmentCase {
 			roots:      []reflect.Type{reflect.TypeOf(lockfile.Lockfile{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalLockfile()},
+		},
+		{
+			// The trust record is hand-written against its schema and carries no
+			// envelope, exactly like the pin record above, and its typed decode does
+			// not reject unknown fields either. A schema property with no Go field
+			// would validate, be dropped by the decode, and be reported by nothing —
+			// and since the record is what a later resolution is compared against, a
+			// dropped field reads as agreement.
+			kind:       envelope.KindPluginsTrust,
+			schema:     schemas.PluginsTrustV1alpha1,
+			roots:      []reflect.Type{reflect.TypeOf(pluginstrust.Trust{})},
+			exceptions: map[string]string{},
+			maximals:   []any{maximalPluginsTrust()},
 		},
 		{
 			// The workspace configuration file carries no envelope — it is flat

@@ -37,6 +37,7 @@ var nonEntitySchemaTokens = map[string]string{
 	"cache-metadata":            "bookkeeping for the artifact cache",
 	"template-context":          "the shape handed to a template, not a document a user writes",
 	"path-template-context":     "the shape handed to a path template, not a document a user writes",
+	"plugins-trust":             "a generated record of the plugin identity trusted for each verdict-returning attachment, not authored by hand",
 	"wasm-annotation-transform": "a plugin wire contract",
 	"wasm-cli":                  "a plugin wire contract",
 	"wasm-describe":             "a plugin wire contract",
@@ -125,6 +126,7 @@ func TestEveryEntityKindHasAnEnvelopeSchema(t *testing.T) {
 	nonEntityEnvelopeKinds := map[envelope.Kind]string{
 		envelope.KindAggregaConfig: "workspace configuration",
 		envelope.KindLockfile:      "a generated build artifact",
+		envelope.KindPluginsTrust:  "a generated record of trusted plugin identities",
 		envelope.KindIR:            "the emitted intermediate representation",
 	}
 

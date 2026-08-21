@@ -45,6 +45,7 @@ import (
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -82,6 +83,22 @@ func closureCases() []closureCase {
 				"entities[].signature.bundle_digest",
 				// Reached only through one array nested inside another.
 				"source_artifacts[].referenced_by[].entity",
+			},
+		},
+		{
+			// The trust record is hand-written and its typed decode does not reject
+			// unknown fields, the same position the pin record is in. A field the
+			// schema refuses would surface as a build that halts on a record the
+			// product itself wrote.
+			kind:       envelope.KindPluginsTrust,
+			schema:     schemas.PluginsTrustV1alpha1,
+			root:       reflect.TypeOf(pluginstrust.Trust{}),
+			exceptions: map[string]string{},
+			canaries: []string{
+				// Reached only by descending the record array, which is the whole
+				// shape here: a walk that stopped at the document root would find
+				// only `version` and report agreement.
+				"plugins[].resolved_version",
 			},
 		},
 		{
