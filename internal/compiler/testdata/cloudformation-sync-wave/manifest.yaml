@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: cloudformation-sync-wave-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/network: network-recipe:1.0.0
+        core/store: store-recipe:1.0.0
+        core/app: app-recipe:1.0.0

@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-sync-wave-no-wave-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: cloudformation-sync-wave-app
+  manifest: cloudformation-sync-wave-manifest
+  # The same three boundaries collapsing onto the same directory:, with no wave
+  # declared anywhere. Every contributor carries the field's default, so the
+  # assembled template must be exactly what it would be without wave ordering.
+  boundaries:
+    foundation:
+      directory: ./dist/stack
+      components:
+        network: {}
+    data:
+      directory: ./dist/stack
+      components:
+        store: {}
+    edge:
+      directory: ./dist/stack
+      components:
+        app: {}

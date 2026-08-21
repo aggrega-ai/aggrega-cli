@@ -1,0 +1,30 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-sync-wave-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: cloudformation-sync-wave-app
+  manifest: cloudformation-sync-wave-manifest
+  # Three boundaries sharing one directory:, so their fragments assemble into a
+  # single stack template. Each declares a different wave, which is the only shape
+  # in which one stack holds more than one. The waves are neither contiguous nor
+  # all non-negative, so the chaining is shown to follow the populated waves in
+  # order rather than counting from zero.
+  boundaries:
+    foundation:
+      directory: ./dist/stack
+      syncWave: -1
+      components:
+        network: {}
+    data:
+      directory: ./dist/stack
+      syncWave: 0
+      components:
+        store: {}
+    edge:
+      directory: ./dist/stack
+      syncWave: 5
+      components:
+        app: {}

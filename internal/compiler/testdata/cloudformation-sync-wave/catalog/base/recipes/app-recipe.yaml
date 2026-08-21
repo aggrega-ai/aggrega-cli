@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: app-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/app
+  artifacts:
+    template.yaml: |
+      Resources:
+        AppParameter:
+          Type: AWS::SSM::Parameter
+          Properties:
+            Name: "{{ .values.parameter_name }}"
+            Type: String
+            Value: !Ref StoreBucket

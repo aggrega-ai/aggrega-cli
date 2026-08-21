@@ -34,10 +34,14 @@
 // pure-JSON long-form CloudFormation stack template: the fragments' Resources
 // merge into one Resources map under the logical ids their Recipes authored, and
 // each node's provides entries become stack Outputs named for the contributing
-// node and the entry together. All CloudFormation domain logic — short-form
-// intrinsic expansion, resource merging, output naming, and the
-// provides-to-Outputs projection — lives in the cfncore package the guest calls,
-// so the Wasm host stays blind to CloudFormation semantics.
+// node and the entry together. Where the contributing nodes declare more than one
+// deployment wave, the merge also records that ordering as DependsOn between the
+// merged resources, so the earlier wave's resources are created before the later
+// wave's are begun and deleted after them; a group carrying one wave records
+// nothing. All CloudFormation domain logic — short-form intrinsic expansion,
+// resource merging, output naming, the provides-to-Outputs projection, and the
+// wave ordering — lives in the cfncore package the guest calls, so the Wasm host
+// stays blind to CloudFormation semantics.
 //
 // A logical id is unique within one template while several nodes assemble into
 // one stack, so render_node returns the names each node's fragments will be
@@ -137,7 +141,7 @@ func descriptor() aggrega.PluginDescriptor {
 				Name:         "assemble_boundary",
 				InputPattern: "b",
 				Stability:    "experimental",
-				Description:  "merges the per-node CloudFormation fragments at one dispatch group into a single stack template",
+				Description:  "merges the per-node CloudFormation fragments at one dispatch group into a single stack template, ordering the merged resources by the declared deployment wave",
 			},
 			{
 				Name:         "link_publish",
@@ -319,7 +323,7 @@ func assembleBoundary() int32 {
 		for _, f := range rn.Rendered.Files {
 			files = append(files, f.Content)
 		}
-		nodes = append(nodes, cfncore.NodeFragment{NodeID: rn.ID, Files: files})
+		nodes = append(nodes, cfncore.NodeFragment{NodeID: rn.ID, Files: files, SyncWave: rn.SyncWave})
 	}
 
 	stack, err := cfncore.AssembleStack(nodes)

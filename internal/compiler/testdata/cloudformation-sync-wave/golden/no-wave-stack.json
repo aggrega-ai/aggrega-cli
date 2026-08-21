@@ -1,0 +1,42 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "AppParameter": {
+      "Properties": {
+        "Name": "/app/store-name",
+        "Type": "String",
+        "Value": {
+          "Ref": "StoreBucket"
+        }
+      },
+      "Type": "AWS::SSM::Parameter"
+    },
+    "NetworkSubnet": {
+      "Properties": {
+        "CidrBlock": "10.0.1.0/24",
+        "VpcId": {
+          "Ref": "NetworkVpc"
+        }
+      },
+      "Type": "AWS::EC2::Subnet"
+    },
+    "NetworkVpc": {
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16"
+      },
+      "Type": "AWS::EC2::VPC"
+    },
+    "StoreBucket": {
+      "Type": "AWS::S3::Bucket"
+    },
+    "StorePolicy": {
+      "DependsOn": "StoreBucket",
+      "Properties": {
+        "Bucket": {
+          "Ref": "StoreBucket"
+        }
+      },
+      "Type": "AWS::S3::BucketPolicy"
+    }
+  }
+}

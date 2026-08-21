@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: network-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/network
+  # Two resources from one node, so the assembled template shows a later wave
+  # naming every resource of the wave before it rather than just one.
+  artifacts:
+    template.yaml: |
+      Resources:
+        NetworkVpc:
+          Type: AWS::EC2::VPC
+          Properties:
+            CidrBlock: 10.0.0.0/16
+        NetworkSubnet:
+          Type: AWS::EC2::Subnet
+          Properties:
+            VpcId: !Ref NetworkVpc
+            CidrBlock: 10.0.1.0/24

@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/app
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      parameter_name:
+        type: string
+        default: /app/store-name
+        description: Name of the parameter the application stores the store's name under.

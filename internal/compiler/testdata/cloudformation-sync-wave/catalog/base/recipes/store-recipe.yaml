@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: store-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/store
+  # StorePolicy already declares its own dependency on StoreBucket. A wave must
+  # extend that list rather than replace it, so this pair is what shows an
+  # authored ordering surviving alongside the wave's.
+  artifacts:
+    template.yaml: |
+      Resources:
+        StoreBucket:
+          Type: AWS::S3::Bucket
+        StorePolicy:
+          Type: AWS::S3::BucketPolicy
+          DependsOn: StoreBucket
+          Properties:
+            Bucket: !Ref StoreBucket

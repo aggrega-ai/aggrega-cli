@@ -106,13 +106,20 @@ const StackTemplateName = "cloudformation-stack.json"
 const templateFormatVersion = "2010-09-09"
 
 // NodeFragment is one node's contribution to a dispatch group's assembled stack:
-// the node id and the serialized bytes of each per-node fragment the render pass
-// produced for it. The node id scopes the output names the fragment's provides
-// and Outputs entries land under, so two nodes contributing the same entry name
-// address separate outputs.
+// the node id, the serialized bytes of each per-node fragment the render pass
+// produced for it, and the deployment wave its boundary declared. The node id
+// scopes the output names the fragment's provides and Outputs entries land under,
+// so two nodes contributing the same entry name address separate outputs.
+//
+// SyncWave travels per node rather than once per assembly because a dispatch
+// group can merge contributors from several boundaries, each declaring its own
+// wave — which is precisely the case where one assembled stack holds more than
+// one. A node whose boundary declares no wave carries 0, the field's documented
+// default, so a missing wave and a declared zero are the same state.
 type NodeFragment struct {
-	NodeID string
-	Files  [][]byte
+	NodeID   string
+	Files    [][]byte
+	SyncWave int
 }
 
 // Key spaces the guest declares its derived names into. Each is a name this core
@@ -271,6 +278,11 @@ func isTemplateFile(path string) bool {
 // outside the assembled stack is piped through as whatever intrinsic the fragment
 // authored.
 //
+// Where the contributing nodes carry more than one deployment wave, the merge also
+// records that ordering as DependsOn between the assembled stack's resources — see
+// [applyWaveOrdering]. A group whose nodes all carry one wave records nothing, so a
+// dispatch group where no boundary declared a wave assembles byte-identical bytes.
+//
 // Two nodes authoring one resource logical id never reach this merge: the guest
 // declares each node's names ([DeclaredNames]) and the host halts on a duplicate
 // before any assembly runs. What still reaches it is one contributor authoring a
@@ -289,6 +301,7 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	// the insert below walks them in exactly the order a single pass would have.
 	type fragmentEntrySet struct {
 		nodeID    string
+		wave      int
 		resources []stackEntry
 		outputs   []stackEntry
 	}
@@ -309,7 +322,7 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			sets = append(sets, fragmentEntrySet{nodeID: node.NodeID, resources: res, outputs: outs})
+			sets = append(sets, fragmentEntrySet{nodeID: node.NodeID, wave: node.SyncWave, resources: res, outputs: outs})
 		}
 	}
 
@@ -319,11 +332,17 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 
 	resources := map[string]any{}
 	outputs := map[string]any{}
+	// waveByResource records the wave of the node that contributed each resource,
+	// so the ordering pass reads a resource's wave without re-walking the input. A
+	// node contributes every resource its fragments authored, so all of them share
+	// its wave.
+	waveByResource := map[string]int{}
 	for _, set := range sets {
 		for _, e := range set.resources {
 			if err := insertEntry(resources, KeySpaceResourceLogicalIDs, set.nodeID, e); err != nil {
 				return nil, err
 			}
+			waveByResource[e.key] = set.wave
 		}
 		for _, e := range set.outputs {
 			if err := insertEntry(outputs, KeySpaceOutputLogicalIDs, set.nodeID, e); err != nil {
@@ -335,6 +354,8 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	if len(resources) == 0 {
 		return nil, fmt.Errorf("cloudformation-provider: assembled stack carries no Resources")
 	}
+
+	applyWaveOrdering(resources, waveByResource)
 
 	stack := map[string]any{
 		"AWSTemplateFormatVersion": templateFormatVersion,

@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-sync-wave-app
+  version: "1.0.0"
+  description: >
+    Three components whose CloudFormation fragments assemble into one stack. The
+    network is provisioned before the store, and the store before the application
+    that reads it. The network contributes two resources and the store contributes
+    two, one of which already depends on the other, so the assembled template shows
+    both what a wave adds and what it leaves alone.
+spec:
+  components:
+    network:
+      type: core/network
+    store:
+      type: core/store
+    app:
+      type: core/app
+      values:
+        parameter_name: /app/store-name
