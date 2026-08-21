@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -259,4 +260,132 @@ func codeSpan(s string) string {
 		return fence + " " + s + " " + fence
 	}
 	return fence + s + fence
+}
+
+// renderHaltRegion returns the body of the halting-conditions page's generated
+// region: one row per condition that page documents, carrying the short code a
+// build prints, the sentence the diagnostic opens with, and the entry that
+// documents it.
+//
+// # Why this region exists at all
+//
+// A condition's wording is declared once, beside its identity, and every
+// diagnostic that names the condition opens with that sentence. The page's own
+// entries quote a whole emitted message — the sentence plus the document, the
+// locator and the advice a particular occurrence supplied — which is what an
+// author needs to recognise output they are looking at, and which no declaration
+// can supply. So the entries are not a transcription of the declarations and
+// cannot be produced from them.
+//
+// The one part that IS a transcription is the leading sentence, and this region
+// is its home on this page: rendered from the declaration, so the page cannot
+// state a sentence the build does not open with, and comparable byte for byte
+// rather than by reading prose.
+//
+// # Its corpus is the page's, not the declared set
+//
+// Membership comes from the page's own coverage declarations, so the region lists
+// exactly the conditions this page documents and nothing else. That is what keeps
+// it from becoming a second, divergent copy of the whole-set table published on
+// the sentinel reference: the two answer different questions — that one resolves
+// any code a build prints, this one resolves a code to the entry that teaches the
+// authoring fix.
+//
+// A condition documented by more than one entry is one row naming both. Two
+// conditions documented by a single entry are two rows naming it, which is how a
+// pair of conditions registering different wording under one entry becomes
+// visible on the page instead of being averaged into one sentence.
+//
+// # Rows name their entry rather than linking to it
+//
+// The third column carries the entry's heading as text and not as an in-page
+// link. Rendering a heading as a link means reproducing the anchor the site's
+// markdown renderer derives from it, and that derivation belongs to the renderer:
+// a second implementation of it here would agree until a heading took a shape the
+// two read differently, and the disagreement would surface as a broken link on a
+// published page. The heading is quoted exactly, so a reader searches the page
+// for it and lands on the entry. Do not "improve" this into a generated anchor.
+//
+// # Ordering
+//
+// Rows are ordered by short code, as text, which is also the numeric order
+// because a short code is zero-padded to a fixed width. The short code is what a
+// build prints, so it is the key a reader arrives holding.
+func renderHaltRegion(ids []Identity, entries []pageEntry) (string, error) {
+	byHandle := make(map[string]Identity, len(ids))
+	for _, id := range ids {
+		byHandle[id.Handle()] = id
+	}
+
+	// Headings are collected per condition in page order, so a condition
+	// documented twice names its entries in the order the page introduces them.
+	headings := map[string][]string{}
+	var order []string
+	for _, e := range entries {
+		for _, h := range e.Handles {
+			id, ok := byHandle[h]
+			if !ok {
+				// Unreachable through the generator, which resolves every
+				// declaration before this runs and refuses one naming nothing.
+				// Reported rather than skipped so that a caller wiring this
+				// renderer up on its own cannot get a quietly short region.
+				return "", fmt.Errorf("%s declares coverage of %s, which no declaration matches", haltsRelPath, h)
+			}
+			// A declaration may name a re-export, which is the same condition
+			// under a second name. It is credited to the condition it forwards
+			// to, so naming either name places one row.
+			origin := h
+			if id.AliasOf != "" {
+				origin = id.AliasOf
+			}
+			if e.Heading == "" {
+				// A row whose third column is empty points a reader at nothing
+				// while reading as a resolved correspondence, which is worse
+				// than an absent row: it cannot be told apart from a working
+				// one. The declaration needs an entry to sit under.
+				return "", fmt.Errorf("%s declares coverage of %s under no heading, so the region has no entry to name",
+					haltsRelPath, h)
+			}
+			if _, seen := headings[origin]; !seen {
+				order = append(order, origin)
+			}
+			if !slices.Contains(headings[origin], e.Heading) {
+				headings[origin] = append(headings[origin], e.Heading)
+			}
+		}
+	}
+	if len(order) == 0 {
+		return "", fmt.Errorf("%s declares coverage of no condition, so there is no region to render", haltsRelPath)
+	}
+
+	rows := make([]Identity, 0, len(order))
+	for _, h := range order {
+		id, ok := byHandle[h]
+		if !ok {
+			return "", fmt.Errorf("%s resolves to %s, which no declaration matches", haltsRelPath, h)
+		}
+		rows = append(rows, id)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ShortCode < rows[j].ShortCode })
+
+	var b strings.Builder
+	b.WriteString("| Short code | Opens with | Documented under |\n| --- | --- | --- |\n")
+	for _, id := range rows {
+		named := headings[id.Handle()]
+		if err := rejectTableSeparator(id, []cell{
+			{"short code", id.ShortCode},
+			{"message", id.Message},
+		}); err != nil {
+			return "", err
+		}
+		for _, h := range named {
+			if strings.Contains(h, "|") {
+				return "", fmt.Errorf("the entry heading %q contains a table separator, "+
+					"which no escaping renders correctly inside a cell; reword the heading", h)
+			}
+		}
+		fmt.Fprintf(&b, "| %s | %s | %s |\n",
+			codeSpan(id.ShortCode), codeSpan(id.Message), strings.Join(named, "; "))
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
 }

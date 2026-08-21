@@ -1225,3 +1225,353 @@ func TestRenderShortCodeRegion_LiveModuleCoversEveryDeclaredCondition(t *testing
 			"wider corpus is untested here and the page's claim about it rests on nothing")
 	}
 }
+
+// haltRows returns one record per row of the halting-conditions region, each the
+// row's three cells with their code fences removed, and refuses a row whose shape
+// or emptiness would make a later comparison certify nothing.
+func haltRows(t *testing.T, region string) [][3]string {
+	t.Helper()
+	var out [][3]string
+	for _, line := range strings.Split(region, "\n") {
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		cells := strings.Split(strings.Trim(line, "|"), " | ")
+		if len(cells) != 3 {
+			t.Fatalf("row does not carry three cells: %q", line)
+		}
+		var row [3]string
+		for i, c := range cells {
+			row[i] = strings.TrimSpace(strings.Trim(strings.TrimSpace(c), "`"))
+			if row[i] == "" {
+				t.Errorf("row cell %d is empty: %q", i, line)
+			}
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func haltRegionIn(t *testing.T, ids []Identity, docsRoot string) (string, error) {
+	t.Helper()
+	return renderHaltRegion(ids, entriesIn(t, docsRoot))
+}
+
+// TestRenderHaltRegion_CarriesThePagesCorpusAndNotTheDeclaredSet is the property
+// that separates this region from the whole-set table on the sentinel reference.
+// This page teaches an authoring fix per entry, so its region resolves a code to
+// an entry — and a row for a condition no entry documents would resolve to
+// nothing while reading as a resolved correspondence.
+func TestRenderHaltRegion_CarriesThePagesCorpusAndNotTheDeclaredSet(t *testing.T) {
+	t.Parallel()
+	ids := fixtureIdentities(t)
+	// Calibration: the fixture has to declare more conditions than the page
+	// covers, or the assertion below passes on a page that happens to cover
+	// everything and asserts nothing about scoping.
+	declared := 0
+	for _, id := range ids {
+		if id.AliasOf == "" {
+			declared++
+		}
+	}
+	if declared < 2 {
+		t.Fatalf("the fixture declares %d conditions; the scoping below would assert nothing", declared)
+	}
+
+	root := haltsPageIn(t, `# Halts
+
+### A plain thing went wrong
+
+<!-- covers: pkg/thing.ErrPlain -->
+
+Prose.
+`)
+	region, err := haltRegionIn(t, ids, root)
+	if err != nil {
+		t.Fatalf("renderHaltRegion: %v", err)
+	}
+	rows := haltRows(t, region)
+	if len(rows) != 1 {
+		t.Fatalf("region carries %d rows for a page covering one condition: %q", len(rows), region)
+	}
+	want := [3]string{"E9001", "a plain condition", "A plain thing went wrong"}
+	if rows[0] != want {
+		t.Errorf("row = %q, want %q", rows[0], want)
+	}
+}
+
+// TestRenderHaltRegion_CreditsAReExportToTheConditionItForwardsTo mirrors the
+// coverage resolution: a declaration may name either name, and both name one
+// condition, so either spelling places one row carrying the forwarded code and
+// the forwarded sentence.
+func TestRenderHaltRegion_CreditsAReExportToTheConditionItForwardsTo(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, `# Halts
+
+### Something went wrong
+
+<!-- covers: pkg/other.ErrPlain -->
+
+Prose.
+`)
+	region, err := haltRegionIn(t, fixtureIdentities(t), root)
+	if err != nil {
+		t.Fatalf("renderHaltRegion: %v", err)
+	}
+	rows := haltRows(t, region)
+	if len(rows) != 1 {
+		t.Fatalf("region carries %d rows for one re-exported condition: %q", len(rows), region)
+	}
+	if rows[0][0] != "E9001" || rows[0][1] != "a plain condition" {
+		t.Errorf("row = %q, want the forwarded code and sentence", rows[0])
+	}
+}
+
+// TestRenderHaltRegion_NamesEveryEntryThatDocumentsOneCondition covers the
+// several-entries-one-condition shape the live page has: one condition met in
+// more than one way, each way with its own entry. One row names both, in the
+// order the page introduces them, because a reader holding the code needs every
+// entry that could explain it rather than whichever one the page happened to
+// declare first.
+func TestRenderHaltRegion_NamesEveryEntryThatDocumentsOneCondition(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, `# Halts
+
+### Met while loading
+
+<!-- covers: pkg/thing.ErrPlain -->
+
+Prose.
+
+### Met while rendering
+
+<!-- covers: pkg/thing.ErrPlain -->
+
+Prose.
+`)
+	region, err := haltRegionIn(t, fixtureIdentities(t), root)
+	if err != nil {
+		t.Fatalf("renderHaltRegion: %v", err)
+	}
+	rows := haltRows(t, region)
+	if len(rows) != 1 {
+		t.Fatalf("one condition documented twice produced %d rows: %q", len(rows), region)
+	}
+	if rows[0][2] != "Met while loading; Met while rendering" {
+		t.Errorf("entry cell = %q, want both entries in page order", rows[0][2])
+	}
+}
+
+// TestRenderHaltRegion_KeepsTwoConditionsUnderOneEntryAsTwoRows is the shape
+// that makes a real disagreement visible on the page rather than averaged away.
+// Two conditions may register different wording and be documented by a single
+// entry; no one sentence is true of both, so the region carries a row each and a
+// reader tells them apart by the sentence rather than by the shared heading.
+func TestRenderHaltRegion_KeepsTwoConditionsUnderOneEntryAsTwoRows(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, `# Halts
+
+### One entry, two conditions
+
+<!-- covers: pkg/thing.ErrPlain, pkg/other.ErrOwn -->
+
+Prose.
+`)
+	region, err := haltRegionIn(t, fixtureIdentities(t), root)
+	if err != nil {
+		t.Fatalf("renderHaltRegion: %v", err)
+	}
+	rows := haltRows(t, region)
+	if len(rows) != 2 {
+		t.Fatalf("two conditions under one entry produced %d rows: %q", len(rows), region)
+	}
+	for _, r := range rows {
+		if r[2] != "One entry, two conditions" {
+			t.Errorf("row %q does not name the entry that documents it", r)
+		}
+	}
+	if rows[0][1] == rows[1][1] {
+		t.Errorf("both rows carry the same sentence, so the disagreement is invisible: %q", region)
+	}
+}
+
+// TestRenderHaltRegion_OrdersByShortCode fixes the order a reader arrives
+// expecting: they hold the code the build printed, and a short code is padded to
+// a fixed width so a text order is the numeric one.
+func TestRenderHaltRegion_OrdersByShortCode(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, `# Halts
+
+### Declared later, lower code
+
+<!-- covers: pkg/other.ErrOwn -->
+
+Prose.
+
+### Declared earlier, higher code
+
+<!-- covers: pkg/thing.ErrQuoted -->
+
+Prose.
+`)
+	region, err := haltRegionIn(t, fixtureIdentities(t), root)
+	if err != nil {
+		t.Fatalf("renderHaltRegion: %v", err)
+	}
+	rows := haltRows(t, region)
+	if len(rows) != 2 {
+		t.Fatalf("region carries %d rows: %q", len(rows), region)
+	}
+	if rows[0][0] != "E9002" || rows[1][0] != "E9004" {
+		t.Errorf("rows are ordered %s then %s, want E9002 then E9004", rows[0][0], rows[1][0])
+	}
+}
+
+// TestRenderHaltRegion_RefusesADeclarationUnderNoHeading refuses rather than
+// dropping the row. A row whose entry cell is empty points a reader at nothing
+// while reading exactly like a resolved correspondence, and a silently short
+// region reads exactly like a complete one.
+func TestRenderHaltRegion_RefusesADeclarationUnderNoHeading(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, `<!-- covers: pkg/thing.ErrPlain -->
+
+Prose with no heading above the declaration.
+`)
+	_, err := haltRegionIn(t, fixtureIdentities(t), root)
+	if err == nil {
+		t.Fatal("a declaration under no heading was rendered rather than refused")
+	}
+	if !strings.Contains(err.Error(), "under no heading") {
+		t.Errorf("refusal does not say what it refused: %v", err)
+	}
+}
+
+// TestRenderHaltRegion_RefusesAPageDocumentingNothing refuses an empty region for
+// the reason the generator refuses an empty identity set: an empty table reads as
+// "nothing is documented" whether that is true or the declaration form moved.
+func TestRenderHaltRegion_RefusesAPageDocumentingNothing(t *testing.T) {
+	t.Parallel()
+	_, err := renderHaltRegion(fixtureIdentities(t), nil)
+	if err == nil {
+		t.Fatal("a page documenting no condition was rendered rather than refused")
+	}
+	if !strings.Contains(err.Error(), "no condition") {
+		t.Errorf("refusal does not say what it refused: %v", err)
+	}
+}
+
+// TestRenderHaltRegion_RefusesAHeadingCarryingATableSeparator covers the one
+// cell whose text comes from the page rather than from a declaration. The
+// declared strings are refused by the shared separator check; a heading is not
+// declared anywhere, so it needs its own.
+func TestRenderHaltRegion_RefusesAHeadingCarryingATableSeparator(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, `# Halts
+
+### A heading with a | separator in it
+
+<!-- covers: pkg/thing.ErrPlain -->
+
+Prose.
+`)
+	_, err := haltRegionIn(t, fixtureIdentities(t), root)
+	if err == nil {
+		t.Fatal("a heading carrying a table separator was rendered rather than refused")
+	}
+	if !strings.Contains(err.Error(), "table separator") {
+		t.Errorf("refusal does not say what it refused: %v", err)
+	}
+}
+
+// TestRenderHaltRegion_LiveModuleAgreesWithThePagesOwnDeclarations is the
+// end-to-end reading: the region rendered over the module the compiler is built
+// from and the page as committed. It is the one test that can catch a
+// disagreement between the two halves of the region's key — a code that no
+// declaration carries, and a documented condition the region left out.
+func TestRenderHaltRegion_LiveModuleAgreesWithThePagesOwnDeclarations(t *testing.T) {
+	t.Parallel()
+	const docsRoot = "../../../../aggrega-docs"
+	if _, err := os.Stat(filepath.Join(docsRoot, haltsRelPath)); err != nil {
+		t.Skipf("the published page is not in this tree: %v", err)
+	}
+	modulePath, err := modulePathOf("../../..")
+	if err != nil {
+		t.Fatalf("module path: %v", err)
+	}
+	ids, err := scan("../../..", modulePath)
+	if err != nil {
+		t.Fatalf("scan module: %v", err)
+	}
+	entries, err := readEntries(docsRoot)
+	if err != nil {
+		t.Fatalf("readEntries: %v", err)
+	}
+	covered, err := resolveCoverage(ids, entries, docsRoot)
+	if err != nil {
+		t.Fatalf("resolveCoverage: %v", err)
+	}
+	region, err := renderHaltRegion(ids, entries)
+	if err != nil {
+		t.Fatalf("renderHaltRegion: %v", err)
+	}
+
+	byCode := map[string]Identity{}
+	for _, id := range ids {
+		if id.AliasOf == "" {
+			byCode[id.ShortCode] = id
+		}
+	}
+	// Calibration: every walk below reads as "nothing is wrong" over an empty
+	// set, so each input is proven non-empty before any verdict is believed.
+	if len(byCode) == 0 {
+		t.Fatal("the module declared no condition; the scan is broken, not the rule")
+	}
+	if len(covered) == 0 {
+		t.Fatal("the page documents no condition; the coverage read is broken, not the rule")
+	}
+	rows := haltRows(t, region)
+	if len(rows) == 0 {
+		t.Fatal("the rendered region carries no rows; the comparison below would certify nothing")
+	}
+
+	if len(rows) != len(covered) {
+		t.Errorf("region carries %d rows for %d documented conditions", len(rows), len(covered))
+	}
+	onPage := map[string]bool{}
+	for _, r := range rows {
+		if onPage[r[0]] {
+			t.Errorf("code %s heads more than one row", r[0])
+		}
+		onPage[r[0]] = true
+		id, ok := byCode[r[0]]
+		if !ok {
+			t.Errorf("the region carries a row for %s, which no condition declares", r[0])
+			continue
+		}
+		if id.Message != r[1] {
+			t.Errorf("%s carries %q on the page and %q at its declaration", r[0], r[1], id.Message)
+		}
+	}
+	for handle := range covered {
+		id, ok := byCode[idsShortCode(ids, handle)]
+		if !ok {
+			t.Errorf("%s is documented and no declaration carries its code", handle)
+			continue
+		}
+		if !onPage[id.ShortCode] {
+			t.Errorf("%s is documented and the region carries no row for %s", handle, id.ShortCode)
+		}
+	}
+}
+
+// idsShortCode returns the short code the identity behind handle declares, or
+// the empty string when nothing declares it. It exists so the assertion above
+// reports an unmatched handle rather than panicking on one.
+func idsShortCode(ids []Identity, handle string) string {
+	for _, id := range ids {
+		if id.Handle() == handle {
+			return id.ShortCode
+		}
+	}
+	return ""
+}
