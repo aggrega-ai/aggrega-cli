@@ -58,7 +58,7 @@ var lintToolSpec = toolSpec{
 		"consulting any registry; or pass `release` (a Release YAML path) to validate every catalog entity the Release " +
 		"reaches against its composed schemas. With `pre_publish` (entity mode only) the previous published version is " +
 		"fetched and the proposed version bump is verified against the schema-evolution classification, halting on a " +
-		"mismatch. `plugin` overrides the workspace-configured linter artifact with a filesystem path. The operation is " +
+		"mismatch. `plugin` overrides the workspace-configured linter attachments with a filesystem path. The operation is " +
 		"offline-first: a missing artifact fails loudly rather than reaching for a network. Use it before publishing an " +
 		"entity, or to check a whole Release's dependencies in one pass.",
 	inputSchema: `{
@@ -78,7 +78,7 @@ var lintToolSpec = toolSpec{
     },
     "plugin": {
       "type": "string",
-      "description": "Filesystem path to the publishing-linter .wasm artifact, overriding the workspace-configured linter plugin. Only meaningful in entity mode."
+      "description": "Filesystem path to the publishing-linter .wasm artifact, run in place of the workspace-configured linter attachments. Only meaningful in entity mode."
     },
     "workspace_root": {
       "type": "string",

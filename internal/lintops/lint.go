@@ -185,17 +185,17 @@ func RunEntity(cfg Config) error {
 	wsCfg := rw.Config()
 
 	// A lazy lookup over the workspace catalog dirs serves two unrelated reads:
-	// the Plugin entity a configured linter URI names, and the Component a linted
-	// Recipe realizes. It is constructed unconditionally because it indexes
+	// the Plugin entity each configured linter URI names, and the Component a
+	// linted Recipe realizes. It is constructed unconditionally because it indexes
 	// nothing until it is asked something — the walk happens on the first query,
 	// which for a non-Recipe entity on the --plugin path never comes.
 	dirs := workspaceconfig.ResolveCatalogDirs(nil, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 
-	// The workspace-config linter URI is a Plugin entity URI; the entity-front
-	// derives the entity's artifact reference from its identity. The --plugin
-	// override path is artifact-direct and never consults the catalog for the
-	// plugin, so the feeders below stay nil there.
+	// Every configured linter URI is a Plugin entity URI; the entity-front derives
+	// each entity's artifact reference from its identity. The --plugin override
+	// path is artifact-direct and never consults the catalog for the plugin, so
+	// the feeders below stay nil there.
 	var pluginByURI func(uri string) (types.Plugin, bool)
 	var cacheResolvers []func(uri string) (pluginpath.ResolvedPlugin, error)
 	if cfg.PluginPath == "" {
@@ -204,11 +204,10 @@ func RunEntity(cfg Config) error {
 			linterCacheResolve(rw.Root(), wsCfg, lazyView.PluginFromCacheByURI),
 		}
 	}
-	resolvedPlugin, err := ResolveLinterPlugin(cfg.PluginPath, wsCfg, pluginByURI, cacheResolvers...)
+	attachments, err := ResolveLinterPlugins(cfg.PluginPath, wsCfg, pluginByURI, cacheResolvers...)
 	if err != nil {
 		return err
 	}
-	pluginSpec := resolver.PluginSpec("publishing-linter", resolvedPlugin)
 
 	proposedBytes, err := os.ReadFile(cfg.EntityPath)
 	if err != nil {
@@ -268,11 +267,7 @@ func RunEntity(cfg Config) error {
 		EntityPath:           cfg.EntityPath,
 		PrePublish:           prePublish,
 	})
-	export := ""
-	if len(wsCfg.Plugins.Linter) > 0 {
-		export = wsCfg.Plugins.Linter[0].Function
-	}
-	rawFindings, err := validator.DispatchPublishingLinterBatch(pluginSpec, export, inputs)
+	rawFindings, err := dispatchLinterAttachments(attachments, inputs)
 	if err != nil {
 		return fmt.Errorf("aggrega lint: dispatch: %w", err)
 	}
@@ -344,22 +339,67 @@ func downgradeRuleToWarning(findings []abi.Diagnostic, ruleID string) []abi.Diag
 	return out
 }
 
-// ResolveLinterPlugin resolves the publishing-linter Wasm plugin, returning the
-// resolved plugin (its .wasm bytes plus any entity capability claim and runtime
-// limits) so the caller maps it onto the load spec. It is the linter's
-// per-socket URI feeder. The --plugin flag is the explicit escape-hatch
-// override: a direct artifact path read verbatim through the cascade's override,
-// bypassing the entity model. The workspace config's plugins.linter[0].uri is a
-// Plugin entity URI, resolved through the shared entity-front: entity URI →
-// artifact reference → the cascade (embed → colocated → local → cache), so the
-// linter sees the same entity model and the same tier model every plugin socket
-// does, including the embedded built-ins.
+// LinterAttachment is one resolved linter attachment: the plugin the
+// attachment's URI resolved to, paired with the export function that same
+// attachment names. The pair travels together because each attachment names its
+// own export, so a plugin taken from one attachment and an export taken from
+// another would run the wrong entry point — and a slice of plugins beside a
+// parallel slice of exports is precisely the shape that lets the two drift out
+// of step.
+//
+// An empty Export means the attachment named no function, and the socket's own
+// default export applies.
+type LinterAttachment struct {
+	Plugin pluginpath.ResolvedPlugin
+	Export string
+}
+
+// linterAttachmentRefs returns the linter attachments the lint gate runs, in
+// authored order. It is the one place that answers "which linter attachments do
+// we run": it reads the workspace's verdict attachment set — the single spelling
+// of that set — and keeps the entries attached at the linter socket. Reading the
+// set here rather than indexing the socket's own list is what makes the gate's
+// answer and every other consumer's answer the same answer by construction
+// instead of by coincidence.
+//
+// An attachment carrying no plugin URI is not in the set: it identifies no
+// plugin, so there is nothing for it to attach. Its export function names an
+// entry point on a plugin that was never named and is not carried either — the
+// unconfigured-socket fallback runs the built-in guest under that guest's own
+// default export.
+func linterAttachmentRefs(wsCfg workspaceconfig.Config) []workspaceconfig.PluginRef {
+	var refs []workspaceconfig.PluginRef
+	for _, attachment := range wsCfg.VerdictAttachments() {
+		if attachment.Socket == workspaceconfig.SocketLinter {
+			refs = append(refs, attachment.Ref)
+		}
+	}
+	return refs
+}
+
+// ResolveLinterPlugins resolves EVERY linter attachment the workspace
+// configures, in authored order, returning each attachment's plugin (its .wasm
+// bytes plus any entity capability claim and runtime limits) paired with the
+// export function that attachment names, so the caller maps each pair onto its
+// own load spec. It is the linter's per-socket URI feeder.
+//
+// The --plugin flag is the explicit escape-hatch override: a direct artifact
+// path read verbatim through the cascade's override, bypassing the entity model.
+// It resolves exactly ONE plugin however many attachments are configured — an
+// escape hatch that fanned out over a configured set would be a different
+// feature. It overrides the socket's uri and not its function, so the export
+// stays the one the first configured attachment names.
+//
+// A configured attachment's uri is a Plugin entity URI, resolved through the
+// shared entity-front: entity URI → artifact reference → the cascade (embed →
+// colocated → local → cache), so the linter sees the same entity model and the
+// same tier model every plugin socket does, including the embedded built-ins.
 //
 // Only the entity-URI path carries a capability claim and runtime limits: the
 // entity-front attaches them from the in-hand Plugin entity, so the linter load
 // gains the entity's describe()-vs-entity cross-check and its explicit caps. The
-// --plugin override path (artifact-direct) and the no-URI path carry a nil claim
-// and nil limits — the cross-check is skipped and the loader applies the
+// --plugin override path (artifact-direct) and the unconfigured path carry a nil
+// claim and nil limits — the cross-check is skipped and the loader applies the
 // platform default caps.
 //
 // pluginByURI serves a Plugin entity by URI from the catalog, supplied by the
@@ -373,15 +413,21 @@ func downgradeRuleToWarning(findings []abi.Diagnostic, ruleID string) []abi.Diag
 // wires no puller — the linter resolves locally (embed / colocated / local).
 //
 // The linter socket is a verdict socket: a configured, non-embedded linter guest
-// is cached at pull but not pinned (cache-not-pin), so the configured-URI path is
-// wrapped in the shared verdict-lookup — the pinned / Tier-1 cascade is tried
-// first, and an entity-URI that misses there falls through to the pull-populated
-// content cache, read by URI and digest-checked against the cached manifest. This
-// mirrors the policy socket exactly. The optional cacheResolve is the caller's
-// workspace-root-anchored cache resolver, threaded from the caller so the cache
-// read anchors at the resolved workspace root; a direct invocation that omits it
-// falls back to a working-directory-anchored resolver built from wsCfg.
-func ResolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByURI func(uri string) (types.Plugin, bool), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) (pluginpath.ResolvedPlugin, error) {
+// is cached at pull but not pinned (cache-not-pin), so every configured-URI
+// resolution is wrapped in the shared verdict-lookup — the pinned / Tier-1
+// cascade is tried first, and an entity-URI that misses there falls through to
+// the pull-populated content cache, read by URI and digest-checked against the
+// cached manifest. This mirrors the policy socket exactly. The optional
+// cacheResolve is the caller's workspace-root-anchored cache resolver, threaded
+// from the caller so the cache read anchors at the resolved workspace root; a
+// direct invocation that omits it falls back to a working-directory-anchored
+// resolver built from wsCfg.
+//
+// A resolution failure at ANY attachment halts the whole resolution: an
+// attachment the operator configured and the gate cannot load is a loud
+// guardrail, never an attachment to quietly drop.
+func ResolveLinterPlugins(cliFlag string, wsCfg workspaceconfig.Config, pluginByURI func(uri string) (types.Plugin, bool), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) ([]LinterAttachment, error) {
+	refs := linterAttachmentRefs(wsCfg)
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
 		Override: cliFlag,
 	}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
@@ -390,13 +436,17 @@ func ResolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 	// override path sets no Contract/Limits, so the load gets a nil claim and
 	// default caps — today's override behaviour.
 	if cliFlag != "" {
-		return cascade.Resolve("")
+		resolved, err := cascade.Resolve("")
+		if err != nil {
+			return nil, err
+		}
+		export := ""
+		if len(refs) > 0 {
+			export = refs[0].Function
+		}
+		return []LinterAttachment{{Plugin: resolved, Export: export}}, nil
 	}
-	uri := ""
-	if len(wsCfg.Plugins.Linter) > 0 {
-		uri = wsCfg.Plugins.Linter[0].URI
-	}
-	if uri == "" {
+	if len(refs) == 0 {
 		// Unconfigured socket. The per-socket capability-default policy decides
 		// whether an unconfigured socket prefers a capable embedded plugin: the
 		// linter opts in, so it falls back to the built-in publishing-linter
@@ -405,9 +455,13 @@ func ResolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 		// nil capability claim and the platform default caps. A socket that opted
 		// out would resolve no default here.
 		if !workspaceconfig.SocketPrefersCapabilityDefault(workspaceconfig.SocketLinter) {
-			return pluginpath.ResolvedPlugin{}, fmt.Errorf("no linter plugin configured and the linter socket does not fall back to an embedded default")
+			return nil, fmt.Errorf("no linter plugin configured and the linter socket does not fall back to an embedded default")
 		}
-		return cascade.Resolve(embedded.PublishingLinterURI)
+		resolved, err := cascade.Resolve(embedded.PublishingLinterURI)
+		if err != nil {
+			return nil, err
+		}
+		return []LinterAttachment{{Plugin: resolved}}, nil
 	}
 	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, *[]pluginpath.PluginCommandMirror, bool) {
 		if pluginByURI == nil {
@@ -426,7 +480,40 @@ func ResolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 	// anchored resolver; a direct invocation falls back to one anchored at the
 	// working directory.
 	cr := linterCacheResolveOrDefault(wsCfg, cacheResolve)
-	return resolver.VerdictLookup(front, cr)(uri)
+	lookup := resolver.VerdictLookup(front, cr)
+	attachments := make([]LinterAttachment, 0, len(refs))
+	for _, ref := range refs {
+		resolved, err := lookup(ref.URI)
+		if err != nil {
+			return nil, err
+		}
+		attachments = append(attachments, LinterAttachment{Plugin: resolved, Export: ref.Function})
+	}
+	return attachments, nil
+}
+
+// dispatchLinterAttachments runs inputs at every resolved linter attachment, in
+// authored order, returning the per-dispatch findings concatenated in that same
+// order — the first attachment's per-rule results, then the second's, and so on.
+// Each attachment is dispatched with ITS OWN export function, so one
+// attachment's entry point is never read off another.
+//
+// The concatenation is what the existing per-rule aggregation then flattens, so
+// no aggregation, severity or reporting rule changes because more than one
+// attachment ran. A dispatch failure at any attachment halts the run rather than
+// dropping that attachment's verdict: a gate the operator configured and the
+// host could not run is a loud failure, never a silent skip.
+func dispatchLinterAttachments(attachments []LinterAttachment, inputs []validator.LinterInput) ([][]abi.Diagnostic, error) {
+	var raw [][]abi.Diagnostic
+	for _, attachment := range attachments {
+		spec := resolver.PluginSpec("publishing-linter", attachment.Plugin)
+		findings, err := validator.DispatchPublishingLinterBatch(spec, attachment.Export, inputs)
+		if err != nil {
+			return nil, err
+		}
+		raw = append(raw, findings...)
+	}
+	return raw, nil
 }
 
 // linterCacheResolve returns the verdict-socket cache-not-pin resolver the linter

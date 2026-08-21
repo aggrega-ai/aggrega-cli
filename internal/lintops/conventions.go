@@ -18,8 +18,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -111,11 +109,11 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 // lintConventionsFiles runs the structural publishing-linter rules (the default
 // rule set minus schema-evolution — that rule needs a previous registry version
 // and stays single-entity, --pre-publish only) over each entity file in paths, at
-// warn severity, using the workspace's configured linter plugin and
-// publishing-discipline policy defaults. It is the shared core of the
+// warn severity, at every linter attachment the workspace configures and under
+// its publishing-discipline policy defaults. It is the shared core of the
 // whole-catalog and release-scoped conventions passes: both resolve a set of
 // entity files, then hand them here, reusing the same per-entity dispatch the
-// single-entity lint runs (buildRuleInputs + DispatchPublishingLinterBatch). A
+// single-entity lint runs (buildRuleInputs + dispatchLinterAttachments). A
 // convention finding is advisory and never halts; a plugin-load, read, or parse
 // failure is a real error and does halt. Findings are written to diagOut
 // (os.Stderr in production); the final summary is written to out (os.Stdout).
@@ -124,17 +122,12 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 	wsCfg := rw.Config()
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
-	resolvedPlugin, err := ResolveLinterPlugin("", wsCfg, lazyView.PluginByURI,
+	attachments, err := ResolveLinterPlugins("", wsCfg, lazyView.PluginByURI,
 		linterCacheResolve(rw.Root(), wsCfg, lazyView.PluginFromCacheByURI))
 	if err != nil {
 		return err
 	}
-	pluginSpec := resolver.PluginSpec("publishing-linter", resolvedPlugin)
 	policies := effectivePolicies(wsCfg.Lint.PublishingDiscipline, func(_ string, ws bool) bool { return ws })
-	export := ""
-	if len(wsCfg.Plugins.Linter) > 0 {
-		export = wsCfg.Plugins.Linter[0].Function
-	}
 
 	findingCount := 0
 	for _, path := range paths {
@@ -153,7 +146,7 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 			Policies:             policies,
 			EntityPath:           path,
 		})
-		rawFindings, err := validator.DispatchPublishingLinterBatch(pluginSpec, export, inputs)
+		rawFindings, err := dispatchLinterAttachments(attachments, inputs)
 		if err != nil {
 			return fmt.Errorf("aggrega lint: dispatch %s: %w", path, err)
 		}

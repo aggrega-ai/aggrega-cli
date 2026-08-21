@@ -172,7 +172,7 @@ under either format.`,
 	c.Flags().StringVar(&opts.entityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
 	c.Flags().BoolVar(&opts.prePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
 	c.Flags().StringVar(&opts.baseline, "baseline", "", "Diff the pre-publish evolution check against this specific already-published version instead of the auto-selected highest version below the one being published; must be a strict-SemVer tag present in the registry (requires --pre-publish)")
-	c.Flags().StringVar(&opts.pluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (overrides workspace plugins.linter[0].uri)")
+	c.Flags().StringVar(&opts.pluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (runs this artifact instead of the workspace plugins.linter attachments)")
 	c.Flags().StringVarP(&opts.output, "output", "o", "text", "Output format: text|json.")
 
 	// Tri-state allow_* flags

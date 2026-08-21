@@ -201,7 +201,7 @@ func TestIntegration_LinterCacheMiss_PulledGuestUnreachableAtLint(t *testing.T) 
 		)
 		resolved, err := wired.Resolve(artifactRef)
 		if err != nil {
-			t.Fatalf("cache-wired resolver could not resolve the guest; fault is NOT localised to resolveLinterPlugin construction: %v", err)
+			t.Fatalf("cache-wired resolver could not resolve the guest; fault is NOT localised to ResolveLinterPlugins construction: %v", err)
 		}
 		if len(resolved.Bytes) == 0 {
 			t.Fatalf("cache-wired resolver returned empty bytes for %s", artifactRef)
@@ -213,17 +213,21 @@ func TestIntegration_LinterCacheMiss_PulledGuestUnreachableAtLint(t *testing.T) 
 		// The linter socket's own resolver, entity translation supplied so the
 		// failure isolates to artifact resolution (not entity lookup): the entity is
 		// resolvable, its .wasm is in the cache — the ONLY missing piece is the
-		// cache tier in resolveLinterPlugin's resolver. This asserts the desired end
+		// cache tier in ResolveLinterPlugins' resolver. This asserts the desired end
 		// state (the guest resolves), so it FAILS while the resolver omits the cache
 		// tier and passes once it is wired.
 		pluginByURI := func(string) (types.Plugin, bool) { return entity, true }
-		resolved, err := lintops.ResolveLinterPlugin("", wsCfg, pluginByURI)
+		attachments, err := lintops.ResolveLinterPlugins("", wsCfg, pluginByURI)
 		if err != nil {
 			if errors.Is(err, oci.ErrFetchNotFound()) {
-				t.Fatalf("linter socket cannot resolve the pulled+cached guest %s: the content-cache tier is absent from resolveLinterPlugin's resolver: %v", linterURI, err)
+				t.Fatalf("linter socket cannot resolve the pulled+cached guest %s: the content-cache tier is absent from ResolveLinterPlugins' resolver: %v", linterURI, err)
 			}
 			t.Fatalf("linter socket cannot resolve the pulled+cached guest %s: %v", linterURI, err)
 		}
+		if len(attachments) != 1 {
+			t.Fatalf("one configured linter attachment should resolve to one attachment; got %d", len(attachments))
+		}
+		resolved := attachments[0].Plugin
 		if len(resolved.Bytes) == 0 {
 			t.Fatalf("linter socket resolved %s with empty bytes", linterURI)
 		}

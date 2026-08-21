@@ -225,6 +225,11 @@ spec:
 // entity claim and no runtime limits — so the load skips the cross-check and the
 // loader applies the platform default caps (the override-path no-regression
 // guard).
+//
+// It also pins the escape hatch's arity against the set-reading resolver: the
+// workspace configures TWO linter attachments and the override still resolves
+// exactly ONE plugin, that one being the artifact the flag names. An escape hatch
+// that fanned out over a configured set would be a different feature.
 func TestResolvePluginBytesOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "plugin.wasm")
@@ -233,17 +238,30 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 	wsCfg := workspaceconfig.Default()
+	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
+		{URI: "linter/first:1.0.0", Function: "lint_rules"},
+		{URI: "linter/second:1.0.0"},
+	}
 	// The --plugin override is the artifact-direct escape hatch; it never consults
 	// the entity model, so a nil entity lookup is fine.
-	got, err := ResolveLinterPlugin(path, wsCfg, nil)
+	attachments, err := ResolveLinterPlugins(path, wsCfg, nil)
 	if err != nil {
-		t.Fatalf("ResolveLinterPlugin: %v", err)
+		t.Fatalf("ResolveLinterPlugins: %v", err)
 	}
+	if len(attachments) != 1 {
+		t.Fatalf("the --plugin escape hatch must resolve exactly one plugin over a two-attachment config; got %d", len(attachments))
+	}
+	got := attachments[0].Plugin
 	if !bytes.Equal(got.Bytes, content) {
 		t.Errorf("got %q; want %q", got.Bytes, content)
 	}
 	if got.Contract != nil || got.Limits != nil {
 		t.Errorf("override path should carry no claim/limits; got capability=%v limits=%v", got.Contract, got.Limits)
+	}
+	// The flag overrides the socket's uri, not its function: the export stays the
+	// one the first configured attachment names.
+	if attachments[0].Export != "lint_rules" {
+		t.Errorf("override should keep the configured export; got %q", attachments[0].Export)
 	}
 	spec := resolver.PluginSpec("publishing-linter", got)
 	if spec.Contract != nil {
@@ -271,7 +289,7 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 		wp.Metadata.PluginType = "linter"
 		return wp, true
 	}
-	_, err := ResolveLinterPlugin("", wsCfg, pluginByURI)
+	_, err := ResolveLinterPlugins("", wsCfg, pluginByURI)
 	if err == nil {
 		t.Fatal("expected error for uncached OCI artifact; got nil")
 	}
@@ -293,7 +311,7 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 	pluginByURI := func(uri string) (types.Plugin, bool) {
 		return types.Plugin{}, false
 	}
-	_, err := ResolveLinterPlugin("", wsCfg, pluginByURI)
+	_, err := ResolveLinterPlugins("", wsCfg, pluginByURI)
 	if err == nil {
 		t.Fatal("expected error for a non-entity linter URI; got nil")
 	}
@@ -308,10 +326,17 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 // of the box rather than halting on an unconfigured path.
 func TestResolveLinterPluginDefaultsToEmbedded(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
-	resolved, err := ResolveLinterPlugin("", wsCfg, nil)
+	attachments, err := ResolveLinterPlugins("", wsCfg, nil)
 	if err != nil {
 		t.Fatalf("unset linter path should resolve the built-in; got error: %v", err)
 	}
+	if len(attachments) != 1 {
+		t.Fatalf("an empty attachment set should fall back to exactly one built-in; got %d", len(attachments))
+	}
+	if attachments[0].Export != "" {
+		t.Errorf("the built-in fallback names no export of its own; got %q", attachments[0].Export)
+	}
+	resolved := attachments[0].Plugin
 	if resolved.Tier != pluginpath.TierEmbed {
 		t.Errorf("built-in linter should resolve from the embed tier; got tier %q", resolved.Tier)
 	}
@@ -348,11 +373,14 @@ func TestResolveLinterPluginCarriesEntityRuntimeCap(t *testing.T) {
 		wp.Spec.Runtime = &types.PluginRuntime{MaxMemoryPages: 32, TimeoutMs: 250}
 		return wp, true
 	}
-	resolved, err := ResolveLinterPlugin("", wsCfg, pluginByURI)
+	attachments, err := ResolveLinterPlugins("", wsCfg, pluginByURI)
 	if err != nil {
-		t.Fatalf("ResolveLinterPlugin: %v", err)
+		t.Fatalf("ResolveLinterPlugins: %v", err)
 	}
-	spec := resolver.PluginSpec("publishing-linter", resolved)
+	if len(attachments) != 1 {
+		t.Fatalf("one configured attachment should resolve to one attachment; got %d", len(attachments))
+	}
+	spec := resolver.PluginSpec("publishing-linter", attachments[0].Plugin)
 	if spec.MaxMemoryPages != 32 || spec.TimeoutMs != 250 {
 		t.Fatalf("entity runtime caps not threaded; got pages=%d ms=%d (want 32 / 250)", spec.MaxMemoryPages, spec.TimeoutMs)
 	}
