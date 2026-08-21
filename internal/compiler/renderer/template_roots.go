@@ -346,12 +346,17 @@ func templateRootsPhrase(prefix string, names []string) string {
 // and one sentinel across every surface; only the artifact the author is sent to
 // differs.
 func templateUnknownRootErr(category cerrors.Category, name string, v *templateScopeViolation) error {
-	msg := fmt.Sprintf("template %q references %q — the render context defines %s",
-		name, v.Ref.Path, templateRootsPhrase("", v.Admitted))
+	values := []string{
+		fmt.Sprintf("template %q references %q", name, v.Ref.Path),
+		"the render context defines " + templateRootsPhrase("", v.Admitted),
+	}
 	if v.Level == scopeLevelKey {
 		root := "." + v.Ref.Segs[0]
-		msg = fmt.Sprintf("template %q references %q — %s defines %s",
-			name, v.Ref.Path, root, templateRootsPhrase(root, v.Admitted))
+		values = []string{
+			fmt.Sprintf("template %q references %q", name, v.Ref.Path),
+			root + " defines " + templateRootsPhrase(root, v.Admitted),
+		}
 	}
-	return cerrors.Wrap(ErrTemplateUnknownRoot(), category, cerrors.SourceLocation{File: name}, msg)
+	return cerrors.Wrap(ErrTemplateUnknownRoot(), category, cerrors.SourceLocation{File: name},
+		cerrors.ComposeMessage(ErrTemplateUnknownRoot(), values, ""))
 }

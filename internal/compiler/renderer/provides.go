@@ -104,6 +104,9 @@ func EvaluateAllProvides(
 				File:  recipe.Metadata.Name,
 			}
 		}); err != nil {
+			// A node locator over an already-composed diagnostic, the same shape as
+			// the locals frame above: the wrapped error states the condition, so
+			// restating it here would put one sentence on two adjacent lines.
 			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q provides", nodeID))
 		}
 
@@ -120,7 +123,11 @@ func EvaluateAllProvides(
 			val, err := evalTemplateString(tmplText, pCtx, fmt.Sprintf("provides[%q]", key))
 			if err != nil {
 				return nil, nil, cerrors.Wrap(ErrProvidesEvaluation(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-					fmt.Sprintf("node %q provides[%q]: %v", nodeID, key, err))
+					cerrors.ComposeMessage(ErrProvidesEvaluation(), []string{
+						fmt.Sprintf("node %q", nodeID),
+						fmt.Sprintf("provides[%q]", key),
+						fmt.Sprintf("%v", err),
+					}, ""))
 			}
 			resolved.Set(key, strings.TrimSpace(val))
 		}

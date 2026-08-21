@@ -182,7 +182,10 @@ func buildArtifactsProjection(
 		}
 		if _, dup := seen[outputName]; dup {
 			return cerrors.Wrap(ErrArtifactOutputCollision(), cerrors.CatalogError, cerrors.SourceLocation{File: outputName},
-				fmt.Sprintf("Recipe %q emits artifact output %q more than once", state.RecipeName, outputName))
+				cerrors.ComposeMessage(ErrArtifactOutputCollision(), []string{
+					fmt.Sprintf("Recipe %q", state.RecipeName),
+					fmt.Sprintf("artifact output %q emitted more than once", outputName),
+				}, ""))
 		}
 		seen[outputName] = struct{}{}
 		entry := ArtifactProjectionEntry{
@@ -212,7 +215,11 @@ func buildArtifactsProjection(
 			// location; reject a host-bearing reference (mirrors workload:).
 			return ArtifactsProjection{}, cerrors.Wrap(ErrHostInLibraryImport(),
 				cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
-				fmt.Sprintf("Recipe %q artifact %q $import %q", state.RecipeName, key, entry.Import))
+				cerrors.ComposeMessage(ErrHostInLibraryImport(), []string{
+					fmt.Sprintf("Recipe %q", state.RecipeName),
+					fmt.Sprintf("artifact %q", key),
+					fmt.Sprintf("$import %q", entry.Import),
+				}, ""))
 		case entry.IsLibraryImport():
 			// Mode 3: a bundle expands into one output per file, each nested under
 			// the key the bundle was consumed at. One key names many files, so the
@@ -250,8 +257,12 @@ func buildArtifactsProjection(
 					if got := digest.ContentDigest([]byte(tmplText)); got != pin.Digest {
 						return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactContentMismatch(),
 							cerrors.CatalogError, cerrors.SourceLocation{File: entry.Import},
-							fmt.Sprintf("Recipe %q artifact %q imported file %s digest %s does not match recorded pin %s",
-								state.RecipeName, key, entry.Import, got, pin.Digest))
+							cerrors.ComposeMessage(ErrArtifactContentMismatch(), []string{
+								fmt.Sprintf("Recipe %q", state.RecipeName),
+								fmt.Sprintf("artifact %q", key),
+								fmt.Sprintf("imported file %s", entry.Import),
+								fmt.Sprintf("digest %s does not match recorded pin %s", got, pin.Digest),
+							}, ""))
 					}
 				}
 			}

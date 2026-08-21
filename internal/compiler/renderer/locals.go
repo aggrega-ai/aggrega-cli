@@ -270,8 +270,12 @@ func localsForwardRefErr(site localsRefSite, path, referenced string, resolvedKe
 		remedy = "a locals entry cannot read itself; compute the value from .values and .infra directly"
 	}
 	return cerrors.Wrap(ErrLocalsForwardReference(), cerrors.CatalogError, cerrors.SourceLocation{File: site.File},
-		fmt.Sprintf("%s references %q, but the locals block defines %q later — entries resolve in author order and an entry reads only a sibling defined above it. Resolved at this point: %s. To fix: %s",
-			site.Where, path, referenced, available, remedy))
+		cerrors.ComposeMessage(ErrLocalsForwardReference(), []string{
+			fmt.Sprintf("%s references %q", site.Where, path),
+			fmt.Sprintf("the locals block defines %q later", referenced),
+			"entries resolve in author order and an entry reads only a sibling defined above it",
+			fmt.Sprintf("resolved at this point: %s", available),
+		}, remedy))
 }
 
 func localsUnknownRefErr(site localsRefSite, path, referenced string, declared []string) error {
@@ -283,8 +287,11 @@ func localsUnknownRefErr(site localsRefSite, path, referenced string, declared [
 		declares = "it declares " + templateRootsPhrase("."+localsContextRoot, declared)
 	}
 	return cerrors.Wrap(ErrLocalsUnknownReference(), cerrors.CatalogError, cerrors.SourceLocation{File: site.File},
-		fmt.Sprintf("%s references %q, but the locals block declares no %q — %s. To fix: correct the key name",
-			site.Where, path, referenced, declares))
+		cerrors.ComposeMessage(ErrLocalsUnknownReference(), []string{
+			fmt.Sprintf("%s references %q", site.Where, path),
+			fmt.Sprintf("the locals block declares no %q", referenced),
+			declares,
+		}, "correct the key name"))
 }
 
 // EvaluateRecipeLocals evaluates each entry in recipe.Spec.Locals as a Go template

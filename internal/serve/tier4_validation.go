@@ -310,6 +310,13 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 // exit-code-neutral advisories share this one position-recovery path, so an
 // advisory lands on its authoring site with the same fidelity a violation gets
 // rather than acquiring a second walker that drifts from this one.
+//
+// The text is the finding's own subject-free rendering rather than the raw field
+// it carries, so the diagnostic opens with the condition's registered sentence
+// exactly as the terminal's does. Reading the field instead would hand the editor
+// whatever that occurrence happened to supply — for a rule reporting through the
+// constraint framework, its detail values with no sentence at all — while the
+// same failure on a terminal named the condition.
 func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
 	line, col := 1, 1
 	var endLine, endCol int
@@ -322,7 +329,7 @@ func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, do
 		EndLine:   endLine,
 		EndColumn: endCol,
 		Severity:  severity,
-		Message:   ve.Message,
+		Message:   ve.MessageWithoutSubject(),
 		Code:      diagnosticCode(ve),
 	}
 }

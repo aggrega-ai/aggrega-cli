@@ -4,6 +4,8 @@
 package resolver
 
 import (
+	"strings"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 )
 
@@ -15,14 +17,29 @@ import (
 // shape a finding takes is decided at the boundary it crosses rather than inside
 // the rule. This is that decision for the boundary a resolve reports across.
 //
-// Every field is derived and none is re-typed. The message is rendered by the
-// one renderer every boundary shares, [constraint.ObjectionMessage], so a rule
-// carries one wording however many boundaries report it. The locator becomes the
-// field the finding positions at, which is what lets a front end place it on the
-// offending authoring key rather than at the head of the file. The sentinel
-// becomes the wrapped error, so a caller matching the finding by identity keeps
-// matching — both the caller that drops one rule's findings out of a halt set
-// and the caller that matches a rule through the error a failed resolve returns.
+// Every field is derived and none is re-typed. The sentinel becomes the wrapped
+// error, so a caller matching the finding by identity keeps matching — both the
+// caller that drops one rule's findings out of a halt set and the caller that
+// matches a rule through the error a failed resolve returns. The locator becomes
+// the field the finding positions at, which is what lets a front end place it on
+// the offending authoring key rather than at the head of the file.
+//
+// 🔴 The message is built from the rule's detail VALUES and never from
+// [constraint.ObjectionMessage]. The finding renders through the one composition
+// every diagnostic naming a condition follows, which reads the rule's registered
+// wording off the sentinel itself; [constraint.ObjectionMessage] already opens
+// with that same wording, so handing its result over as a value would state the
+// rule's sentence twice in one line. Taking the values instead is not a second
+// wording — it is the same rule reporting through a boundary that supplies
+// subject of its own, the document a finding is attributed to and the locator it
+// sits at, which the rule cannot know. The values arrive already spelled as a
+// message reads them, from [constraint.Objection.RenderedDetail], the same
+// spelling [constraint.ObjectionMessage] renders from: one wording, one detail
+// spelling, two shapes.
+//
+// They are joined with the separator the composition itself puts between values,
+// so a rule's values read as further entries in the finding's value list rather
+// than as one opaque entry inside it.
 //
 // The entity names the document the findings are about, and it is supplied
 // rather than derived because the rules reporting through here span both
@@ -39,8 +56,8 @@ import (
 // invoked from the package that holds that stage's product, and every such check
 // reporting into this finding shape reaches it here rather than re-deriving it.
 // A stage whose callers read a different diagnostic shape converts for itself and
-// shares the wording through [constraint.ObjectionMessage], so the two shapes
-// stay two shapes and the wording stays one.
+// shares the wording through the sentinel, so the two shapes stay two shapes and
+// the wording stays one.
 func FindingsFromObjections(
 	objections []constraint.Objection,
 	entity string,
@@ -53,7 +70,7 @@ func FindingsFromObjections(
 		out = append(out, &ResolverError{
 			Entity:  entity,
 			Field:   o.Locator(),
-			Message: constraint.ObjectionMessage(o),
+			Message: strings.Join(o.RenderedDetail(), ", "),
 			Err:     o.Sentinel(),
 		})
 	}

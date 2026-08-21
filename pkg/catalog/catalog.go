@@ -1042,7 +1042,8 @@ func (c *Catalog) claimIdentity(fullKey, desc, path string) error {
 		c.pathByIdentity = make(map[string]string)
 	}
 	if _, dup := c.pathByIdentity[fullKey]; dup {
-		return cerrors.Wrap(ErrDuplicateEntityIdentity(), cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("%s already declared in this catalog directory", desc))
+		return cerrors.Wrap(ErrDuplicateEntityIdentity(), cerrors.CatalogError, cerrors.SourceLocation{File: path},
+			cerrors.ComposeMessage(ErrDuplicateEntityIdentity(), []string{desc}, ""))
 	}
 	c.pathByIdentity[fullKey] = path
 	return nil

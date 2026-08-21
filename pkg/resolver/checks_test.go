@@ -254,15 +254,21 @@ func TestResolveAdvisoriesAreWhatTheDeclaredCheckRaised(t *testing.T) {
 			t.Errorf("advisory does not carry the rule's identity: %v", a)
 		}
 		registered := ErrUnreadParameter().Error()
-		if !strings.HasPrefix(a.Message, registered) {
-			t.Errorf("advisory message = %q; want it to open with %q, the text the identity "+
-				"was registered with", a.Message, registered)
+		rendered := a.Error()
+		if !strings.HasPrefix(rendered, registered) {
+			t.Errorf("advisory = %q; want it to open with %q, the text the identity "+
+				"was registered with", rendered, registered)
+		}
+		if n := strings.Count(rendered, registered); n != 1 {
+			t.Errorf("advisory = %q carries the registered text %d times; want exactly 1 — "+
+				"the composition reads it off the identity, so a value list carrying it too "+
+				"states it twice", rendered, n)
 		}
 		parameter := strings.TrimPrefix(a.Field, ".spec.parameters.")
-		if !strings.Contains(a.Message, `"`+parameter+`"`) {
-			t.Errorf("advisory message = %q; want it to name %q, the parameter the check "+
+		if !strings.Contains(rendered, `"`+parameter+`"`) {
+			t.Errorf("advisory = %q; want it to name %q, the parameter the check "+
 				"raised about — a message that is only the registered text reads the same "+
-				"for every unread parameter", a.Message, parameter)
+				"for every unread parameter", rendered, parameter)
 		}
 		if !strings.Contains(a.Entity, "unread-params-multi") {
 			t.Errorf("Entity does not name the Aggregate: %q", a.Entity)

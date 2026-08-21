@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -72,8 +73,24 @@ func TestResolverViolationToDiagnostic_FieldMatchesYAML(t *testing.T) {
 	if diag.Severity != "error" {
 		t.Errorf("Severity = %q; want %q", diag.Severity, "error")
 	}
-	if diag.Message != ve.Message {
-		t.Errorf("Message = %q; want %q", diag.Message, ve.Message)
+	// The editor's text opens with the condition's registered sentence, exactly as
+	// the terminal's does, and carries what this occurrence supplied after it. The
+	// subject is deliberately absent: the diagnostic is already positioned on the
+	// offending key, so spelling the path again inside the sentence would say it
+	// twice where a reader cannot scroll away from it.
+	registered := resolver.ErrParameterContractViolation().Error()
+	if !strings.HasPrefix(diag.Message, registered) {
+		t.Errorf("Message = %q; want it to open with %q, the condition's registered sentence",
+			diag.Message, registered)
+	}
+	if !strings.Contains(diag.Message, ve.Message) {
+		t.Errorf("Message = %q; want it to carry %q, what this occurrence supplied",
+			diag.Message, ve.Message)
+	}
+	if strings.Contains(diag.Message, ve.Entity) {
+		t.Errorf("Message = %q; want it NOT to name the entity %q — the diagnostic already "+
+			"points at the key, so the subject belongs to the position and not to the text",
+			diag.Message, ve.Entity)
 	}
 }
 
@@ -918,8 +935,14 @@ func TestAttachmentSlotNearMissPublishesAsEditorWarning(t *testing.T) {
 		t.Errorf("range = %d:%d-%d:%d; want 5:9-5:20 (spanning the key token)",
 			diag.Line, diag.Column, diag.EndLine, diag.EndColumn)
 	}
-	if diag.Message != advisory.Message {
-		t.Errorf("Message = %q; want %q", diag.Message, advisory.Message)
+	registered := resolver.ErrAttachmentSlotNearMiss().Error()
+	if !strings.HasPrefix(diag.Message, registered) {
+		t.Errorf("Message = %q; want it to open with %q — an advisory names its condition "+
+			"the same way a violation does", diag.Message, registered)
+	}
+	if !strings.Contains(diag.Message, advisory.Message) {
+		t.Errorf("Message = %q; want it to carry %q, the near miss this occurrence found",
+			diag.Message, advisory.Message)
 	}
 }
 

@@ -37,7 +37,11 @@ func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind str
 		return vm.Inline, nil
 	}
 	if vm.HasOCIPrefix() {
-		return "", cerrors.Wrap(ErrHostInLibraryImport(), cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("%s %q valuesMapping $import %q", entityKind, entityName, vm.Import))
+		return "", cerrors.Wrap(ErrHostInLibraryImport(), cerrors.CatalogError, cerrors.SourceLocation{File: entityName},
+			cerrors.ComposeMessage(ErrHostInLibraryImport(), []string{
+				fmt.Sprintf("%s %q", entityKind, entityName),
+				fmt.Sprintf("valuesMapping $import %q", vm.Import),
+			}, ""))
 	}
 	if vm.IsLibraryImport() {
 		text, err := resolveMappingLibraryImport(vm.Import, mappingLibs, nil)
@@ -73,7 +77,11 @@ func resolveWorkloadText(w types.WorkloadTemplate, entityName string, workloadLi
 		return w.Inline, nil
 	}
 	if w.HasOCIPrefix() {
-		return "", cerrors.Wrap(ErrHostInLibraryImport(), cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("Recipe %q workload $import %q", entityName, w.Import))
+		return "", cerrors.Wrap(ErrHostInLibraryImport(), cerrors.CatalogError, cerrors.SourceLocation{File: entityName},
+			cerrors.ComposeMessage(ErrHostInLibraryImport(), []string{
+				fmt.Sprintf("Recipe %q", entityName),
+				fmt.Sprintf("workload $import %q", w.Import),
+			}, ""))
 	}
 	if w.IsLibraryImport() {
 		text, err := resolveWorkloadLibraryImport(w.Import, workloadLibs, nil)

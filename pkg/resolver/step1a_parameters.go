@@ -80,9 +80,13 @@ func LoadAggregateParameterContractFromBytes(data []byte, sourcePath string) (ty
 // aggregateParameterViolations collapses a slice of parameter-contract
 // violations into a single *ResolverError. Single-violation case returns
 // the original error unchanged; multi-violation case constructs an
-// aggregated *ResolverError whose multi-line Message lists every
-// violation's Field and Message, prefixed by a header line naming the
-// violation count.
+// aggregated error whose Summary lists every violation's Field and Message
+// beneath a line carrying the violation count.
+//
+// That line carries the count and nothing else. What condition was met is what
+// the group's Sentinel says, and the group's own header renders that sentence
+// ahead of this summary — so naming the condition here would state it twice in
+// one report.
 //
 // The single-*ResolverError surface preserves errors.As(*ResolverError)
 // at the CLI's display layer (formatCompilerError at
@@ -101,7 +105,7 @@ func aggregateParameterViolations(verrs []*ResolverError) error {
 		return verrs[0]
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d parameter contract violations:", len(verrs))
+	fmt.Fprintf(&b, "%d violations:", len(verrs))
 	for _, v := range verrs {
 		fmt.Fprintf(&b, "\n  - %s: %s", v.Field, v.Message)
 	}

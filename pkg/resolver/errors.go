@@ -4,7 +4,7 @@
 package resolver
 
 import (
-	"fmt"
+	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -356,22 +356,102 @@ var errUnnormalizedRelease = cerrors.Register("resolver/unnormalized-release", c
 // Entity follows the convention "<Kind> <metadata.name>" (e.g.
 // "Aggregate my-app", "Release prod"); Field is a JSON-path-style locator
 // from the entity root (e.g. ".spec.components[\"web\"].features[\"audit\"]")
-// or empty for whole-entity errors. Message is a human-readable description.
-// Err carries one of the sentinel errors above so callers can match via
-// errors.Is. Error() formats Entity, Field (if non-empty), and Message;
-// Unwrap returns Err.
+// or empty for whole-entity errors. Err carries one of the sentinel errors
+// above so callers can match via errors.Is; Unwrap returns it.
+//
+// Message is what THIS occurrence supplied and nothing more — the key at fault,
+// the value that was read, what the check found. It is not a description of the
+// condition: that sentence is registered beside the condition's identity, and
+// Error reads it off Err rather than from anything a raise site writes. A raise
+// site that spells the condition out here would be writing a second copy of a
+// wording that already has a home, and the two would agree until one was
+// edited.
+//
+// A raise site that has nothing of its own to add leaves Message empty. That is
+// the shape for wrapping an error that is already a composed diagnostic for the
+// same condition: see Error for what such a finding renders.
 type ResolverError struct {
 	Entity  string // e.g. "Aggregate my-app"
 	Field   string // e.g. ".spec.components.bad name"
-	Message string // human-readable description
+	Message string // what this occurrence supplied, not a description of the condition
 	Err     error  // sentinel for errors.Is
 }
 
-func (e *ResolverError) Error() string {
-	if e.Field != "" {
-		return fmt.Sprintf("%s at %s: %s", e.Entity, e.Field, e.Message)
+// subjectValues renders the subject a finding is attributed to as the values a
+// composed message carries: the entity reference first, the locator after it,
+// each omitted when the finding carries none.
+//
+// It is one function rather than the same two appends in three methods because
+// the order those two values read in is part of the composed shape, and three
+// copies of it would agree until one was edited.
+func subjectValues(entity, field string) []string {
+	values := make([]string, 0, 3)
+	if entity != "" {
+		values = append(values, entity)
 	}
-	return fmt.Sprintf("%s: %s", e.Entity, e.Message)
+	if field != "" {
+		values = append(values, "at "+field)
+	}
+	return values
+}
+
+// Error renders the finding in the one composition every diagnostic naming a
+// condition follows: the condition's registered sentence first, then what this
+// occurrence supplied, read through [cerrors.ComposeMessage].
+//
+// The subject — the entity reference and the locator — is one of those values
+// rather than a prefix ahead of the sentence. Putting it in front would demote
+// the sentence to the middle of the line, and the sentence is the only part
+// that says which condition was met: a reader scanning a wall of diagnostics
+// reads the leftmost words of each, and an entity name is the part they already
+// know.
+//
+// A finding that supplied no Message contributed nothing of its own, and the
+// error it wraps is then the whole diagnostic — a report already composed for
+// this same condition by the surface that raised it, opening with the same
+// registered sentence and naming its own subject. Such a finding renders that
+// report as it stands rather than composing a second time, which would either
+// restate the sentence the report already opens with or drop the report's body
+// to avoid restating it. Which of the two shapes a finding takes follows from
+// the field the raise site populated and never from reading the text, so a
+// message that happens to begin with its own condition's sentence cannot be
+// mistaken for either. The subject still travels — structurally, on the finding
+// and into the source pointer ToCompilerError builds — which is where it
+// travels at every other boundary that composes this way.
+func (e *ResolverError) Error() string {
+	return e.compose(subjectValues(e.Entity, e.Field))
+}
+
+// compose renders the finding over the subject values the calling surface wants
+// carried in the text, and holds the arms both renderings share so neither can
+// drift from the other: which values follow the sentence, and what a finding
+// that supplied no Message of its own renders.
+func (e *ResolverError) compose(values []string) string {
+	if e.Message == "" && e.Err != nil {
+		return e.Err.Error()
+	}
+	if e.Message != "" {
+		values = append(values, e.Message)
+	}
+	return cerrors.ComposeMessage(e.Err, values, "")
+}
+
+// MessageWithoutSubject renders the finding for a surface that shows the subject
+// itself: the condition's registered sentence and what this occurrence supplied,
+// with the entity reference and the locator left out.
+//
+// An editor placing a diagnostic on the offending key already draws the file and
+// the position, and highlights the token; spelling the same path again inside the
+// sentence would say it twice in the one place a reader cannot scroll away from.
+// A terminal has nowhere else to put the subject, which is why Error carries it
+// and this does not.
+//
+// It is Error's composition minus the subject and not a second composition: both
+// read the wording off Err through the one composer, so a condition keeps one
+// wording however many surfaces report it, and the empty-Message arm behaves the
+// same way in both.
+func (e *ResolverError) MessageWithoutSubject() string {
+	return e.compose(nil)
 }
 
 func (e *ResolverError) Unwrap() error {
@@ -379,15 +459,16 @@ func (e *ResolverError) Unwrap() error {
 }
 
 // MultiResolverError carries the per-violation slice when a resolver
-// pass produces multiple ResolverError instances at once. Returned by
-// aggregateParameterViolations (and any future multi-violation
-// aggregator) in place of the previous single-summary ResolverError
-// when len(violations) > 1.
+// pass produces several ResolverError instances at once, so a document
+// offending in several places is reported once for all of them rather
+// than once for whichever was found first.
 //
-// Implements the error interface with the same multi-line summary
-// format the previous single-aggregate ResolverError produced so
-// existing callers reading err.Error() see no change in human-
-// readable output. Consumers needing the structured per-violation
+// It renders as a header and the findings beneath it — see Error for the
+// two shapes a group takes and why. Summary is the findings half only:
+// the lines that go beneath the header, never a description of the
+// condition, which Error composes from Sentinel.
+//
+// Consumers needing the structured per-violation
 // slice (e.g., the daemon's Tier-4 validate path mapping each
 // violation to source positions) extract it via:
 //
@@ -403,19 +484,41 @@ func (e *ResolverError) Unwrap() error {
 type MultiResolverError struct {
 	Entity     string           // e.g. "Aggregate my-app"
 	Field      string           // typically a parent JSON-path like ".spec.parameters"
-	Summary    string           // multi-line human-readable description
+	Summary    string           // the per-finding lines that go beneath the composed header
 	Sentinel   error            // domain sentinel for errors.Is on the parent (e.g., ErrParameterContractViolation)
 	Violations []*ResolverError // per-violation slice with structured Field locators preserved
 }
 
-// Error returns the multi-line summary so callers reading err.Error()
-// see the same format aggregateParameterViolations produced before
-// the structured-violations preservation refactor.
+// Error renders the group as a header and the findings beneath it, which is the
+// shape [cerrors.ComposeMessage] is built for when one report carries many
+// findings: the header is composed — the condition's registered sentence, then
+// this occurrence's subject — and Summary's per-finding lines follow it.
+//
+// A group carrying no Sentinel is a roll-up rather than a condition: it names a
+// stage or a conformance pass, counts what that pass found, and leaves the
+// conditions to the individual findings in Violations. There is no registered
+// sentence for such a group to open with, so it opens with its subject. That is
+// not an exception to the composition — it is what the composition renders when
+// the chain carries no identity, and it is the reason Sentinel is read here
+// rather than a sentence being invented for the roll-up.
 func (e *MultiResolverError) Error() string {
-	if e.Field != "" {
-		return fmt.Sprintf("%s at %s: %s", e.Entity, e.Field, e.Summary)
+	values := subjectValues(e.Entity, e.Field)
+	if e.Sentinel == nil {
+		subject := strings.Join(values, " ")
+		if subject == "" {
+			return e.Summary
+		}
+		return subject + ": " + e.Summary
 	}
-	return fmt.Sprintf("%s: %s", e.Entity, e.Summary)
+	header := cerrors.ComposeMessage(e.Sentinel, values, "")
+	switch {
+	case e.Summary == "":
+		return header
+	case header == "":
+		return e.Summary
+	default:
+		return header + ": " + e.Summary
+	}
 }
 
 // Unwrap returns the per-violation slice as []error so
@@ -445,12 +548,16 @@ func (e *MultiResolverError) Unwrap() []error {
 // is documented in pkg/errors's SourceLocation godoc as "the most
 // specific authoring locator available, file path or JSON path."
 //
+// The Message is exactly what Error renders — one composition feeding both
+// surfaces, so the two cannot diverge, and a chain walk that suppresses a frame
+// restating its cause is not defeated by two strings that say the same thing
+// differently.
+//
 // The inner error chain is preserved via cerrors.Wrap, so errors.Is
 // against the resolver's sentinel errors (ErrYAMLLoad, ErrSchemaConformance,
 // etc.) continues to match through the converted CompilerError.
 func (e *ResolverError) ToCompilerError() *cerrors.CompilerError {
 	cat := cerrors.ClassifyEntityCategory(e.Entity)
 	source := cerrors.SourceLocation{File: e.Field}
-	msg := fmt.Sprintf("%s: %s", e.Entity, e.Message)
-	return cerrors.Wrap(e, cat, source, msg)
+	return cerrors.Wrap(e, cat, source, e.Error())
 }

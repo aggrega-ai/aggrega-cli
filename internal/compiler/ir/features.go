@@ -784,7 +784,11 @@ func mergeContribution(
 			ErrFeatureTypeMismatch(),
 			cerrors.OpsError,
 			cerrors.SourceLocation{File: nodeID},
-			fmt.Sprintf("node %q attachment %q: existing type %q conflicts with %q", nodeID, instanceName, existing.Type, featType),
+			cerrors.ComposeMessage(ErrFeatureTypeMismatch(), []string{
+				fmt.Sprintf("node %q", nodeID),
+				fmt.Sprintf("attachment %q", instanceName),
+				fmt.Sprintf("existing type %q conflicts with %q", existing.Type, featType),
+			}, ""),
 		)
 	}
 

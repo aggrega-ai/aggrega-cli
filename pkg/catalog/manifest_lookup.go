@@ -1018,7 +1018,12 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 				continue
 			}
 			if !manifestMappingSatisfiedByAncestry(r.Spec.Implements, bases) {
-				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: recipe spec.implements is %q (expected %q, or a type %q extends)", compType, recipeURI, r.Spec.Implements, compType, compType)))
+				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath},
+					cerrors.ComposeMessage(ErrManifestImplementsMismatch(), []string{
+						fmt.Sprintf("manifest mapping %q -> %q", compType, recipeURI),
+						fmt.Sprintf("recipe spec.implements is %q", r.Spec.Implements),
+						fmt.Sprintf("expected %q, or a type %q extends", compType, compType),
+					}, "")))
 			}
 		}
 	}
@@ -1030,7 +1035,12 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 				continue // missing featurerecipe → resolution path's concern
 			}
 			if !manifestMappingConsistent(fr.Spec.Implements, featType) {
-				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest feature mapping %q -> %q: featurerecipe spec.implements is %q (expected %q)", featType, frURI, fr.Spec.Implements, featType)))
+				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath},
+					cerrors.ComposeMessage(ErrManifestImplementsMismatch(), []string{
+						fmt.Sprintf("manifest feature mapping %q -> %q", featType, frURI),
+						fmt.Sprintf("featurerecipe spec.implements is %q", fr.Spec.Implements),
+						fmt.Sprintf("expected %q", featType),
+					}, "")))
 			}
 		}
 	}

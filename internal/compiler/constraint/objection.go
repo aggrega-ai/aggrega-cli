@@ -109,12 +109,13 @@ func (o Objection) Locator() string { return o.locator }
 // objection, and it is nil when the check supplied no detail.
 //
 // It carries the values and not their captions. A caption says how a value reads
-// inside a sentence, which is a question only the rendered message asks: every
-// boundary that reads an objection structurally reads the sentinel to know which
-// rule spoke and the provenance to know where, and takes the wording whole from
-// [ObjectionMessage]. So a caption accessor would have no reader, and a field no
-// reader consumes is one nothing keeps honest. A boundary that comes to need the
-// captions separately is the point at which to expose them, against that reader.
+// inside a sentence, which is a question only a rendered message asks, and a
+// boundary reading an objection structurally asks the other one: it reads the
+// sentinel to know which rule spoke and the provenance to know where, and wants
+// the value itself rather than its presentation. A boundary that needs the
+// captions reads [Objection.RenderedDetail], which spells them the way a message
+// does; the two accessors are the two questions and neither substitutes for the
+// other.
 func (o Objection) Detail() []string {
 	if len(o.detail) == 0 {
 		return nil
@@ -122,6 +123,33 @@ func (o Objection) Detail() []string {
 	out := make([]string, 0, len(o.detail))
 	for _, d := range o.detail {
 		out = append(out, d.value)
+	}
+	return out
+}
+
+// RenderedDetail returns the check's detail values spelled as a message reads
+// them: each value quoted, with the rule's caption ahead of it where the rule
+// supplied one. The result is a copy, so a caller cannot reach back into the
+// objection, and it is nil when the check supplied no detail.
+//
+// It exists for a boundary that composes its own diagnostic AROUND the rule's
+// registered wording rather than taking the whole rendered message. Such a
+// boundary contributes subject of its own — the document a finding is attributed
+// to, the locator it is positioned at — and has to place the rule's values among
+// them, which needs the values in the form a message reads. [Objection.Detail]
+// deliberately does not give that form, and taking them from [ObjectionMessage]
+// would not give them at all: its result OPENS with the registered sentence, so
+// a composer that leads with that sentence itself would state it twice.
+//
+// [ObjectionMessage] renders from this, so a detail list has one spelling
+// however many boundaries read one.
+func (o Objection) RenderedDetail() []string {
+	if len(o.detail) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(o.detail))
+	for _, d := range o.detail {
+		out = append(out, d.render())
 	}
 	return out
 }
@@ -167,12 +195,9 @@ func (o Objection) Detail() []string {
 // with an empty parenthesis after it.
 func ObjectionMessage(o Objection) string {
 	registered := o.Sentinel().Error()
-	if len(o.detail) == 0 {
+	rendered := o.RenderedDetail()
+	if len(rendered) == 0 {
 		return registered
-	}
-	rendered := make([]string, 0, len(o.detail))
-	for _, d := range o.detail {
-		rendered = append(rendered, d.render())
 	}
 	return registered + " (" + strings.Join(rendered, ", ") + ")"
 }

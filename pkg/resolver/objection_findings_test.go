@@ -259,11 +259,13 @@ func fieldsFromRule(
 // conversion reading only the sentinel would report every violation of one rule
 // with identical text, whatever the author actually wrote.
 //
-// INVARIANT: a finding opens with the rule's registered wording and goes on to
-// name what the check raised about.
+// INVARIANT: a finding renders as the rule's registered wording ONCE, leading,
+// and goes on to name what the check raised about.
 // CONSEQUENCE: without the second half, two components with different faults
 // under one rule produce two findings a reader cannot tell apart, and the
-// offending value reaches the author from nowhere at all.
+// offending value reaches the author from nowhere at all. Without the "once",
+// the finding is being built from a rendered message that already opened with
+// that wording, and the author reads the same sentence twice in one line.
 func TestAFindingCarriesWhatTheCheckRaisedItAbout(t *testing.T) {
 	t.Parallel()
 
@@ -293,21 +295,30 @@ func TestAFindingCarriesWhatTheCheckRaisedItAbout(t *testing.T) {
 
 	registered := ErrGuardEntityViewInconsistency().Error()
 	for _, f := range findings {
-		if !strings.HasPrefix(f.Message, registered) {
-			t.Errorf("message = %q; want it to open with %q, the rule's own registered "+
-				"wording, so the wording has one home", f.Message, registered)
+		rendered := f.Error()
+		if !strings.HasPrefix(rendered, registered) {
+			t.Errorf("rendered = %q; want it to open with %q, the rule's own registered "+
+				"wording, so the wording has one home", rendered, registered)
+		}
+		if n := strings.Count(rendered, registered); n != 1 {
+			t.Errorf("rendered = %q carries the registered wording %d times; want exactly 1.\n"+
+				"INVARIANT: the wording is read off the sentinel by the composition and "+
+				"never handed to it as a value.\n"+
+				"CONSEQUENCE: a conversion that put an already-composed message into the "+
+				"value list states the rule's sentence twice in one line.",
+				rendered, n)
 		}
 	}
-	if a, b := findings[0].Message, findings[1].Message; a == b {
+	if a, b := findings[0].Error(), findings[1].Error(); a == b {
 		t.Errorf("both findings read %q.\n"+
 			"INVARIANT: a message names what its own check raised about.\n"+
 			"CONSEQUENCE: the detail is being dropped, and every violation of one rule "+
 			"reads identically however different the authoring faults are.", a)
 	}
 	for i, want := range []string{`"core/absent-one:1.0.0"`, `"core/absent-two:1.0.0"`} {
-		if !strings.Contains(findings[i].Message, want) {
-			t.Errorf("message = %q; want it to name %s, the type the check raised about",
-				findings[i].Message, want)
+		if rendered := findings[i].Error(); !strings.Contains(rendered, want) {
+			t.Errorf("rendered = %q; want it to name %s, the type the check raised about",
+				rendered, want)
 		}
 	}
 }
@@ -353,10 +364,14 @@ func TestAFindingWithNoDetailReadsAsTheRulesOwnWording(t *testing.T) {
 		t.Fatal("the rule raised nothing, so there is no message to read")
 	}
 	for _, f := range findings {
-		if want := ErrGuardEntityViewInconsistency().Error(); f.Message != want {
-			t.Errorf("message = %q; want %q exactly — a rule that supplied no value has "+
+		if f.Message != "" {
+			t.Errorf("Message = %q; want it empty — a rule that supplied no value "+
+				"contributed nothing for the finding to carry of its own", f.Message)
+		}
+		if want := ErrGuardEntityViewInconsistency().Error(); f.Error() != want {
+			t.Errorf("rendered = %q; want %q exactly — a rule that supplied no value has "+
 				"nothing to name, and rendering an empty list would put punctuation with "+
-				"nothing in it into what an author reads", f.Message, want)
+				"nothing in it into what an author reads", f.Error(), want)
 		}
 	}
 }

@@ -9,10 +9,10 @@ import (
 	"bytes"
 	"io"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // TestIntegration_LintRelease_ExtendsInheritsBaseConstraint proves, at the
@@ -127,18 +127,16 @@ spec:
 	if err == nil {
 		t.Fatalf("x=3 violates the base's minimum 5, inherited by the child; lint --release must halt. diagnostics:\n%s", out)
 	}
-	if !strings.Contains(out, "authored pillar does not conform to its declared schema") {
-		t.Errorf("expected a values-conformance diagnostic; got:\n%s", out)
-	}
-	if !strings.Contains(out, "is less than 5") {
-		t.Errorf("expected the diagnostic to name the inherited minimum; got:\n%s", out)
-	}
-	// The constraint is enforced on the child's instance, so the diagnostic is
-	// positioned at the child's own offending key rather than anywhere the base is
-	// named. The locator and the conformance wording are required adjacent: apart,
-	// they would also be satisfied by a conformance diagnostic about a different
-	// key that merely mentions this one somewhere else in the stream.
-	if !strings.Contains(out, `.spec.components.app.values.x: authored pillar does not conform to its declared schema`) {
-		t.Errorf("expected the conformance diagnostic at the child instance's own values key; got:\n%s", out)
-	}
+	// One assertion carries all three things this test has to show, and carries
+	// them together rather than as three independent searches of the stream. The
+	// diagnostic must open with the conformance condition's own sentence; it must
+	// name the inherited minimum, which is the only evidence that the base's
+	// constraint is the one being applied; and it must be positioned at the child
+	// instance's own offending key rather than anywhere the base is named.
+	// Requiring all three on the one composed line is what rules out a conformance
+	// diagnostic about a different key that merely mentions this one somewhere
+	// else in the stream.
+	assertComposedDiagnostic(t, out, resolver.ErrSchemaConformance(),
+		`at .spec.components.app.values.x`,
+		`is less than 5`)
 }

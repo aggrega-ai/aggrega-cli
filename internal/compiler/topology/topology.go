@@ -600,8 +600,8 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 						// developer owns the architecture they declared.
 						if entry.Target != "" && entry.Target != edges[idx].Target {
 							return nil, fmt.Errorf(
-								"release edge %s/%s/%s retargets developer-declared target %q to %q: %w",
-								nodeID, socket, alias, edges[idx].Target, entry.Target, ErrReleaseEdgeRetarget())
+								"%w: release edge %s/%s/%s retargets developer-declared target %q to %q",
+								ErrReleaseEdgeRetarget(), nodeID, socket, alias, edges[idx].Target, entry.Target)
 						}
 						if entry.Infra.Len() > 0 {
 							merged := types.OrderedMap[any]{}
@@ -708,12 +708,12 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		if _, exists := flat.Nodes.Get(e.Target); !exists {
 			if _, gone := flat.Pruned.Get(e.Target); gone {
 				return nil, fmt.Errorf(
-					"uses edge %s/%s/%s targets %q, which was pruned from the topology because its active toggle resolved to false: %w",
-					e.Source, e.Socket, e.Alias, e.Target, ErrUsesPrunedComponent())
+					"%w: uses edge %s/%s/%s targets %q, which was pruned from the topology because its active toggle resolved to false",
+					ErrUsesPrunedComponent(), e.Source, e.Socket, e.Alias, e.Target)
 			}
 			return nil, fmt.Errorf(
-				"uses edge %s/%s/%s targets %q, which is not a component in the topology: %w",
-				e.Source, e.Socket, e.Alias, e.Target, ErrDanglingUsesTarget())
+				"%w: uses edge %s/%s/%s targets %q, which is not a component in the topology",
+				ErrDanglingUsesTarget(), e.Source, e.Socket, e.Alias, e.Target)
 		}
 	}
 
@@ -1015,8 +1015,8 @@ func guardUnboundReleaseEdgeConfig(
 		node, isNode := flat.Nodes.Get(ref.NodeID)
 		if !isNode {
 			return fmt.Errorf(
-				"release edge %s/%s/%s sets infra on %q, which is not a component in the topology: %w",
-				ref.NodeID, ref.Socket, ref.Alias, ref.NodeID, ErrUnboundReleaseEdgeConfig())
+				"%w: release edge %s/%s/%s sets infra on %q, which is not a component in the topology",
+				ErrUnboundReleaseEdgeConfig(), ref.NodeID, ref.Socket, ref.Alias, ref.NodeID)
 		}
 		// Without a catalog view, or with a component type absent from it, whether
 		// the socket is declared cannot be answered — and the answer is what
@@ -1034,8 +1034,8 @@ func guardUnboundReleaseEdgeConfig(
 			continue
 		}
 		return fmt.Errorf(
-			"release edge %s/%s/%s sets infra but no edge is bound there: an entry without a target configures an edge that must already exist, so give the entry a target to wire the edge or remove the entry: %w",
-			ref.NodeID, ref.Socket, ref.Alias, ErrUnboundReleaseEdgeConfig())
+			"%w: release edge %s/%s/%s sets infra but no edge is bound there: an entry without a target configures an edge that must already exist, so give the entry a target to wire the edge or remove the entry",
+			ErrUnboundReleaseEdgeConfig(), ref.NodeID, ref.Socket, ref.Alias)
 	}
 	return nil
 }

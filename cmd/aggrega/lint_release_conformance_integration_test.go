@@ -9,10 +9,10 @@ import (
 	"bytes"
 	"io"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // composeRecipe returns a minimal compose Recipe implementing the given component
@@ -69,10 +69,16 @@ func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 		aggregate string
 		release   string // confRelease unless a case needs parameters
 		wantErr   bool
-		// wantDiag are fragments the diagnostic stream must contain, stated per
-		// case rather than shared, so each violating case pins its own fault
-		// instead of every case passing on one loose substring.
-		wantDiag []string
+		// wantCondition is the halting condition the case's diagnostic must open
+		// with, and wantValues are the occurrence values that must land on that
+		// same composed line: the offending key's locator and the constraint that
+		// failed. Both are stated per case rather than shared, so each violating
+		// case pins its own fault instead of every case passing on one loose
+		// substring — and the condition is named rather than its wording spelled
+		// out, so re-wording the condition cannot leave a case passing on text
+		// the product no longer prints.
+		wantCondition error
+		wantValues    []string
 	}{
 		{
 			name: "conforming_value_passes",
@@ -90,11 +96,12 @@ func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 				"comp.yaml":   confComp("test/conf-comp", "    values:\n      x: { type: integer, minimum: 5 }\n"),
 				"recipe.yaml": composeRecipe("conf", "test/conf-comp"),
 			},
-			manifest:  confManifest("test/conf-comp:1.0.0", "compose/conf:1.0.0"),
-			aggregate: confAggregate("test/conf-comp", "        x: 3"), // 3 < minimum 5
-			wantErr:   true,
-			wantDiag: []string{
-				`.spec.components.app.values.x: authored pillar does not conform to its declared schema`,
+			manifest:      confManifest("test/conf-comp:1.0.0", "compose/conf:1.0.0"),
+			aggregate:     confAggregate("test/conf-comp", "        x: 3"), // 3 < minimum 5
+			wantErr:       true,
+			wantCondition: resolver.ErrSchemaConformance(),
+			wantValues: []string{
+				`at .spec.components.app.values.x`,
 				`is less than 5`,
 			},
 		},
@@ -107,11 +114,12 @@ func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 				"child.yaml":  confChild("test/conf-child", "test/conf-parent"),
 				"recipe.yaml": composeRecipe("conf-child", "test/conf-child"),
 			},
-			manifest:  confManifest("test/conf-child:1.0.0", "compose/conf-child:1.0.0"),
-			aggregate: confAggregate("test/conf-child", "        x: 3"), // x=3 violates the INHERITED minimum 5
-			wantErr:   true,
-			wantDiag: []string{
-				`.spec.components.app.values.x: authored pillar does not conform to its declared schema`,
+			manifest:      confManifest("test/conf-child:1.0.0", "compose/conf-child:1.0.0"),
+			aggregate:     confAggregate("test/conf-child", "        x: 3"), // x=3 violates the INHERITED minimum 5
+			wantErr:       true,
+			wantCondition: resolver.ErrSchemaConformance(),
+			wantValues: []string{
+				`at .spec.components.app.values.x`,
 				`is less than 5`,
 			},
 		},
@@ -175,9 +183,10 @@ spec:
           infra:
             replicas: 1
 `,
-			wantErr: true,
-			wantDiag: []string{
-				`.spec.components.app.values.x: authored pillar does not conform to its declared schema`,
+			wantErr:       true,
+			wantCondition: resolver.ErrSchemaConformance(),
+			wantValues: []string{
+				`at .spec.components.app.values.x`,
 				`type: 3 has type`,
 			},
 		},
@@ -210,21 +219,17 @@ spec:
 			}
 			// The verdict error carries only the diagnostic count, so the
 			// diagnostic stream is where the fault is actually described. Each
-			// violating case states the fragments its own fault produces: the
-			// offending key's locator immediately followed by the conformance
-			// wording, plus the constraint that failed. Requiring the locator and
-			// the wording adjacent is what keeps this from passing on a
-			// conformance diagnostic about some other key of the same component.
+			// violating case names the condition its fault raises and the values
+			// that occurrence supplies: the offending key's locator and the
+			// constraint that failed. The diagnostic must open with the
+			// condition's own sentence and carry both values on that one line,
+			// which is what keeps this from passing on a conformance diagnostic
+			// about some other key of the same component.
 			if tc.wantErr {
-				if len(tc.wantDiag) == 0 {
-					t.Fatalf("%s: a violating case must state what its diagnostic says", tc.name)
+				if tc.wantCondition == nil || len(tc.wantValues) == 0 {
+					t.Fatalf("%s: a violating case must name the condition it raises and the values that occurrence supplies", tc.name)
 				}
-				for _, want := range tc.wantDiag {
-					if !strings.Contains(diag.String(), want) {
-						t.Errorf("%s: expected a values-conformance diagnostic containing %q; got err=%v diagnostics:\n%s",
-							tc.name, want, err, diag.String())
-					}
-				}
+				assertComposedDiagnostic(t, diag.String(), tc.wantCondition, tc.wantValues...)
 			}
 		})
 	}

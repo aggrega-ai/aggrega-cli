@@ -65,7 +65,10 @@ func LoadAggregate(path string) (*types.Aggregate, error) {
 // reads it from the raw bytes, which this does not modify.
 func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
-		return nil, &ResolverError{Entity: "Aggregate", Field: path, Message: eerr.Error(), Err: eerr}
+		// No Message: the envelope failure is already a composed diagnostic for
+		// this same condition, naming the kind, the file and every finding along
+		// it. Restating it here would state the condition's sentence twice.
+		return nil, &ResolverError{Entity: "Aggregate", Field: path, Err: eerr}
 	}
 	node, perr := envelope.ParseDecodable(data, path)
 	if perr != nil {
@@ -116,7 +119,8 @@ func LoadRelease(path string) (*types.Release, error) {
 // already hold the bytes (the same read-free split LoadManifestFromBytes has).
 func LoadReleaseFromBytes(data []byte, path string) (*types.Release, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindRelease, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
-		return nil, &ResolverError{Entity: "Release", Field: path, Message: eerr.Error(), Err: eerr}
+		// No Message: see LoadAggregateFromBytes.
+		return nil, &ResolverError{Entity: "Release", Field: path, Err: eerr}
 	}
 	var rel types.Release
 	if err := yaml.Unmarshal(data, &rel); err != nil {
@@ -350,7 +354,8 @@ func LoadManifest(path string) (*types.Manifest, error) {
 // callers that already hold the bytes (the same-directory triad scan).
 func LoadManifestFromBytes(data []byte, path string) (*types.Manifest, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindManifest, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
-		return nil, &ResolverError{Entity: "Manifest", Field: path, Message: eerr.Error(), Err: eerr}
+		// No Message: see LoadAggregateFromBytes.
+		return nil, &ResolverError{Entity: "Manifest", Field: path, Err: eerr}
 	}
 	var man types.Manifest
 	if err := yaml.Unmarshal(data, &man); err != nil {

@@ -945,16 +945,24 @@ func wrapPipelineErr(err error, nodeID string) error {
 
 func pipelineNotStructuredErr(nodeID, token string) error {
 	return cerrors.Wrap(ErrPipelinePatchTargetNotStructured(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-		fmt.Sprintf("node %q: %s: document %q", nodeID, ErrPipelinePatchTargetNotStructured().Error(), token))
+		cerrors.ComposeMessage(ErrPipelinePatchTargetNotStructured(), []string{
+			fmt.Sprintf("node %q", nodeID),
+			fmt.Sprintf("document %q", token),
+		}, ""))
 }
 
 func pipelinePreAssemblyErr(nodeID, token, scope string) error {
 	return cerrors.Wrap(ErrPipelinePatchPreAssembly(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-		fmt.Sprintf("node %q: %s (%s-scope document %q is rendered by an assembler provider; the post-assembly phase re-runs this PATCH once the documents are discrete)",
-			nodeID, ErrPipelinePatchPreAssembly().Error(), scope, token))
+		cerrors.ComposeMessage(ErrPipelinePatchPreAssembly(), []string{
+			fmt.Sprintf("node %q", nodeID),
+			fmt.Sprintf("%s-scope document %q is rendered by an assembler provider", scope, token),
+		}, "the post-assembly phase re-runs this PATCH once the documents are discrete"))
 }
 
 func pipelineHostScopeErr(nodeID, name string) error {
 	return cerrors.Wrap(ErrPipelineHostScopeUnavailable(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-		fmt.Sprintf("node %q: %s (emit %q)", nodeID, ErrPipelineHostScopeUnavailable().Error(), name))
+		cerrors.ComposeMessage(ErrPipelineHostScopeUnavailable(), []string{
+			fmt.Sprintf("node %q", nodeID),
+			fmt.Sprintf("emit %q", name),
+		}, ""))
 }

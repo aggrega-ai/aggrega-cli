@@ -241,7 +241,9 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	// Validate the interpolated document's envelope before typed
 	// unmarshal — post-interpolation is the final authored shape.
 	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, interpolated, in.AggregatePath); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
-		return nil, &ResolverError{Entity: "Aggregate", Field: in.AggregatePath, Message: eerr.Error(), Err: eerr}
+		// No Message: the envelope failure is already a composed diagnostic for
+		// this same condition. See LoadAggregateFromBytes.
+		return nil, &ResolverError{Entity: "Aggregate", Field: in.AggregatePath, Err: eerr}
 	}
 
 	// Unmarshal interpolated Aggregate
