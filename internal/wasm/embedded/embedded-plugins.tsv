@@ -20,10 +20,11 @@ provider	compose	./plugins/compose-provider	go
 provider	helm-chart	./plugins/helmchart-provider	go
 provider	terraform	./plugins/terraform-provider	go
 provider	cloudformation	./plugins/cloudformation-provider	go
-linter	publishing	plugins/publishing-linter	rust	../aggrega-pdk/rust
+linter	publishing	plugins/publishing-linter	rust	../aggrega-pdk/rust,../aggrega-abi/rust
 parser	hcl	./plugins/hcl-parser	go
 parser	toml	./plugins/toml-parser	go
 parser	yaml	./plugins/yaml-parser	go
 parser	json	./plugins/json-parser	go
 governance	label-injector	./plugins/label-injector-mutator	go
 governance	selector-tagger	./plugins/selector-tagger-mutator	go
+governance	rego	plugins/rego-governance	rust	../aggrega-pdk/rust,../aggrega-abi/rust

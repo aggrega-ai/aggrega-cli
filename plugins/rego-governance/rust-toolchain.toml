@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+#
+# The embedded Rego evaluator's dependency tree requires a newer Rust than the
+# shared plugin workspace floors itself to, so this crate selects its own
+# toolchain. rustup reads this file from the working directory, which is why the
+# embedded-plugin build enters a crate's directory before invoking cargo.
+[toolchain]
+channel = "stable"
+targets = ["wasm32-wasip1"]

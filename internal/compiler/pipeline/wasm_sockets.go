@@ -258,16 +258,19 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	return nil
 }
 
-// runRenderPolicySocket runs the render-stage policy socket after
-// RenderAll: for each configured policy plugin that declares the render stage,
+// runRenderPolicySocket runs the render-verdict governance socket after
+// RenderAll: for each governance attachment the operator authored at the
+// render-verdict role,
 // it hands the plugin the rendered artifacts (path-sorted into a canonical
 // order) plus the attachment's own sources and settings, and routes the returned
 // verdicts by severity. halt stops the build loudly — the runner returns a joined
 // error built from the same policyVerdictErrors → ToCompilerError conversion the
 // IR-stage gate uses, so the halt carries ErrPolicyViolation exactly as an
 // IR-stage halt does. warn and info print to the diagnostic sink and the build
-// proceeds. An IR-stage or stage-absent plugin is skipped here (it ran at the IR
-// stage). An unconfigured socket is a no-op. A resolution, load or source-read
+// proceeds. Which attachments run here is fixed by the authored role, never by
+// anything the guest self-reports: an attachment authored at the ir-verdict role
+// is dispatched at static analysis instead, and a guest serving both is attached
+// once per role. An unconfigured socket is a no-op. A resolution, load or source-read
 // failure halts the build loudly (a misconfigured attachment is a build fault,
 // not a policy verdict), and so does an output that is not this socket's shape —
 // refused rather than read as an empty verdict list, which is a legitimate

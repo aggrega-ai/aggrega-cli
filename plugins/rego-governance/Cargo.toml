@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+[package]
+name = "rego-governance"
+version = "0.1.0"
+edition = "2021"
+description = "Aggrega governance Wasm plugin: evaluate operator-authored Rego with an embedded Rego engine."
+license = "Apache-2.0"
+publish = false
+
+# This crate is a self-contained workspace root. It carries an embedded Rego
+# evaluator, so it resolves its dependency tree and its toolchain on its own
+# rather than inheriting either from a surrounding workspace. Nothing above this
+# directory declares a workspace, and the explicit table below keeps that true if
+# something ever does.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+# The plugin ABI surface: the descriptor encoder, the shared severity vocabulary,
+# and the generated wire types. Reusing the generated types single-sources the
+# wire shape with every other guest instead of restating it locally.
+aggrega-pdk-rust = { path = "../../../aggrega-pdk/rust" }
+# The render-facet input types are defined in the ABI codec crate and are not
+# re-exported by the plugin development kit, so the codec crate is depended on
+# directly for those.
+aggrega-abi = { path = "../../../aggrega-abi/rust" }
+extism-pdk = "1.4"
+serde = { version = "1", features = ["derive"] }
+# raw_value matches the ABI crate: the settings and artifact-tree fields are
+# carried verbatim as raw JSON.
+serde_json = { version = "1", features = ["raw_value"] }
+# Parses a rendered artifact the host handed over unparsed. YAML is a superset of
+# JSON, so one parser covers both formats the host leaves to the guest.
+serde_yaml = "0.9"
+# Error type shared with the ABI surface: the export macros wrap anyhow::Error
+# and the Rego engine returns anyhow::Result, so an evaluation failure
+# propagates through the export boundary unchanged.
+anyhow = "1"
+# Embedded Rego evaluator. Pure-Rust and evaluated entirely in-guest, so the
+# host runs no policy engine and carries no policy-language logic.
+regorus = "0.10.1"
+
+[profile.release]
+# Optimise for size: the embedded evaluator dominates the artifact. Whole-program
+# link-time optimisation with a single codegen unit lets dead code across the
+# dependency tree be discarded; aborting on panic and stripping symbols removes
+# the unwinding machinery and the symbol table, neither of which the guest needs.
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

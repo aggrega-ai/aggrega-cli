@@ -71,15 +71,27 @@ build_go() {
 # gzip it to the embed path, and extract its describe() descriptor. The built
 # artifact name is the crate directory basename with dashes mapped to
 # underscores (cargo's library-name convention).
+#
+# cargo runs with the crate directory as its working directory, which is how a
+# developer builds one of these crates by hand. It matters because rustup selects
+# the toolchain from a rust-toolchain.toml found in the WORKING DIRECTORY and
+# never from --manifest-path: run from elsewhere, a crate that pins its own
+# toolchain is silently compiled by whichever toolchain the invoking directory
+# selects, and a crate whose dependencies need the pinned one then fails to
+# resolve. The path-remap prefix stays anchored to the module root so the
+# reproducibility stamping is unchanged by where cargo runs.
 build_rust() {
   local name="$1" crate="$2"
-  local embed="$EMBED_DIR/$name.wasm.gz"
+  local embed="$EMBED_DIR/$name.wasm.gz" root="$PWD"
   local built="$crate/target/wasm32-wasip1/release/$(basename "$crate" | tr - _).wasm"
   echo "=== build $name (rust: cargo --target wasm32-wasip1) ==="
-  CARGO_INCREMENTAL=0 \
-  AGGREGA_VERSION="$_ver" AGGREGA_COMMIT="$_sha" \
-  RUSTFLAGS="--remap-path-prefix=$PWD=. -C strip=symbols" \
-    cargo build --release --manifest-path "$crate/Cargo.toml" --target wasm32-wasip1
+  (
+    cd "$crate" || exit 1
+    CARGO_INCREMENTAL=0 \
+    AGGREGA_VERSION="$_ver" AGGREGA_COMMIT="$_sha" \
+    RUSTFLAGS="--remap-path-prefix=$root=. -C strip=symbols" \
+      cargo build --release --target wasm32-wasip1
+  )
   compress_and_describe "$name" "$built" "$embed"
 }
 
