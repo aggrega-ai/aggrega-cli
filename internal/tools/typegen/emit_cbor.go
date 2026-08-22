@@ -13,8 +13,10 @@ import (
 // main.go. It emits a reflect-free, dispatch-free canonical-CBOR codec
 // (RFC 8949 §4.2.1 Core Deterministic Encoding; floats per CBOR CDE §4.2) for
 // each def struct type: EncodeCBOR / DecodeCBOR plus the value-level
-// appendCBOR / decodeCBOR they drive. It reuses the shared front-end
-// (resolveCodecFields); only the emission half is new.
+// appendCBOR / decodeCBOR they drive, and DecodeCBORStrict, a second decode
+// entry point that refuses a top-level key the shape does not declare rather
+// than skipping it. It reuses the shared front-end (resolveCodecFields); only
+// the emission half is new.
 //
 // The canonical rules, one rule-set across Go/Rust/TS:
 //
@@ -42,16 +44,18 @@ import (
 // the same value INDEPENDENTLY, which it cannot do if it dispatches to a codec
 // method the type carries. Non-interface names keep the oracle independent.
 
-// emitCBORCodec writes the canonical-CBOR codec — EncodeCBOR/appendCBOR and
-// DecodeCBOR/decodeCBOR — for one def struct type. The encode side emits fields
-// in canonical key order fixed at generation time; the decode side switches on
-// the wire key, so it is order-independent.
+// emitCBORCodec writes the canonical-CBOR codec — EncodeCBOR/appendCBOR,
+// DecodeCBOR/decodeCBOR, and the strict entry point DecodeCBORStrict — for one
+// def struct type. The encode side emits fields in canonical key order fixed at
+// generation time; the decode side switches on the wire key, so it is
+// order-independent.
 func emitCBORCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool, opaqueHostTypes map[string]string) {
 	fields := applyOpaqueHostTypes(resolveCodecFields(n, vocab), typeName, opaqueHostTypes)
 	sorted := append([]codecField(nil), fields...)
 	sort.SliceStable(sorted, func(i, j int) bool { return cborKeyLess(sorted[i].key, sorted[j].key) })
 	emitCBOREncode(b, typeName, sorted, defTypes)
 	emitCBORDecode(b, typeName, fields, defTypes)
+	emitCBORDecodeStrict(b, typeName, fields)
 }
 
 // applyOpaqueHostTypes stamps each field the target declared a host type for with
@@ -495,6 +499,50 @@ func emitCBORDecode(b *strings.Builder, typeName string, fields []codecField, de
 	b.WriteString("\treturn nil\n}\n\n")
 }
 
+// emitCBORDecodeStrict writes T.DecodeCBORStrict: the same decode as DecodeCBOR,
+// preceded by a pass that refuses a top-level key the type's shape does not
+// declare instead of skipping it. The declared key set is written from the same
+// resolved field slice that drives DecodeCBOR's case arms, so the two cannot
+// disagree about what the shape declares — adding a schema field moves both at
+// once.
+//
+// Two entry points rather than one strict decoder: DecodeCBOR is what every
+// round-trip, golden vector and cross-language parity fixture reads, and a
+// payload carrying a field the reader does not know is a normal
+// forward-compatible read there. The strict entry point exists for the narrower
+// case where the payload's identity is carried by its keys — a plugin's output
+// read at a socket — and where skipping an unknown key produces an empty result
+// that no consumer can tell from a real one.
+//
+// A pre-pass rather than a flag threaded through the reader, and the reason is
+// not economy. Keeping the refusal outside the decode body leaves one decode
+// implementation per type: the strict entry point checks the keys and then
+// delegates, so a nested value decodes through exactly the code the lenient path
+// uses. It also makes the top-level bound structural rather than conventional —
+// the pass reads the outer map's own keys and skips each value whole, so it
+// cannot reach a nested key even by accident.
+//
+// The Go backend only. The case it serves is a socket OUTPUT read at a boundary
+// whose entry function is configurable per attachment, and only the host reads
+// one: a guest decodes an input the host itself produced, which no configuration
+// can misdirect. So the Rust and TypeScript backends carry no equivalent.
+func emitCBORDecodeStrict(b *strings.Builder, typeName string, fields []codecField) {
+	fmt.Fprintf(b, "// DecodeCBORStrict decodes %s exactly as DecodeCBOR does, except\n", typeName)
+	fmt.Fprintf(b, "// that a top-level key this shape does not declare is refused rather than\n")
+	fmt.Fprintf(b, "// skipped, naming the offending key. It is the entry point for a payload\n")
+	fmt.Fprintf(b, "// whose identity is carried by the keys it holds, where skipping an unknown\n")
+	fmt.Fprintf(b, "// key would yield an empty value indistinguishable from a real one. The\n")
+	fmt.Fprintf(b, "// check reads the map's own keys and does not descend.\n")
+	fmt.Fprintf(b, "func (t *%s) DecodeCBORStrict(data []byte) error {\n", typeName)
+	b.WriteString("\tif err := refuseUndeclaredCBORKeys(data")
+	for _, f := range fields {
+		fmt.Fprintf(b, ", %q", f.key)
+	}
+	b.WriteString("); err != nil {\n\t\treturn err\n\t}\n")
+	b.WriteString("\treturn t.DecodeCBOR(data)\n")
+	b.WriteString("}\n\n")
+}
+
 // emitCBORDecodeField decodes one field into t.<field>. Every shape — including
 // a nested map or slice in value position — descends through emitCBORDecodeValue.
 func emitCBORDecodeField(b *strings.Builder, f codecField, indent string, defTypes map[string]bool) {
@@ -623,16 +671,17 @@ func emitCBORDecodeOpaqueAny(b *strings.Builder, dst, indent string) {
 	fmt.Fprintf(b, "%s\tif err := d2.Decode(&%s); err != nil {\n%s\t\treturn err\n%s\t}\n%s}\n", indent, dst, indent, indent, indent)
 }
 
-// emitCBORHelpers writes the shared CBOR read/write helpers and the float16
-// conversions the generated methods call. Emitted once per package (the
-// helpers-bearing file), like the JSON helpers.
+// emitCBORHelpers writes the shared CBOR read/write helpers, the float16
+// conversions, and the top-level key check the strict decode entry point calls.
+// Emitted once per package (the helpers-bearing file), like the JSON helpers.
 func emitCBORHelpers(b *strings.Builder) {
 	b.WriteString(cborHelpersSrc)
 }
 
 // cborHelpersSrc is the shared CBOR machinery: the append-side head/scalar/
-// float writers, the runtime key sort, and the cborDec reader. No runtime CBOR
-// library is used — the canonical rules are inline here.
+// float writers, the runtime key sort, the cborDec reader, and the top-level key
+// check the strict decode entry point runs ahead of the lenient body. No runtime
+// CBOR library is used — the canonical rules are inline here.
 const cborHelpersSrc = `// appendCBORHead appends a CBOR head: the major type in the top three bits and
 // the shortest length/argument encoding.
 func appendCBORHead(dst []byte, major byte, arg uint64) []byte {
@@ -1006,5 +1055,37 @@ func (d *cborDec) skip() error {
 		_ = ai
 		return fmt.Errorf("abi: cbor: cannot skip major %d", major)
 	}
+}
+
+// refuseUndeclaredCBORKeys walks the top-level keys of a CBOR map and reports the
+// first one the declared key set does not contain. It reads only the map's own
+// keys — each value is skipped whole rather than descended into — so it is the
+// shape check for a payload whose identity is carried by which keys it holds.
+func refuseUndeclaredCBORKeys(data []byte, declared ...string) error {
+	dec := &cborDec{data: data}
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, d := range declared {
+			if key == d {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("abi: unexpected field %q", key)
+		}
+		if err := dec.skip(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 `

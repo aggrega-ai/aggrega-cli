@@ -698,9 +698,10 @@ func TestOrderedMapValueTypeSpellings(t *testing.T) {
 // the way those types are already marshalled — a generated MarshalJSON emits
 // fields in schema order while the standard library emits them in struct order,
 // so installing one moves bytes on paths that reach committed output. And it does
-// emit the CBOR codec, one encode and one decode entry point per def, which is
-// the whole reason the mode was wanted: a qualified generated type needs a real
-// generated codec to dispatch to.
+// emit the CBOR codec — one encode entry point per def and two decode entry
+// points, the lenient one and the strict one — which is the whole reason the mode
+// was wanted: a qualified generated type needs a real generated codec to dispatch
+// to.
 //
 // The declaration check reads the emitted source rather than counting `type`
 // keywords blindly: the shared CBOR helpers legitimately declare their own
@@ -757,6 +758,7 @@ func TestCodecOnlyTargetEmitsCodecWithoutDeclarations(t *testing.T) {
 				for _, method := range []string{
 					") EncodeCBOR() ([]byte, error) {",
 					") DecodeCBOR(data []byte) error {",
+					") DecodeCBORStrict(data []byte) error {",
 				} {
 					emitted := strings.Contains(body, "func (t "+d.name+method) ||
 						strings.Contains(body, "func (t *"+d.name+method)
@@ -989,4 +991,186 @@ func TestCBORNamedScalarClassifiesByDeclaredKind(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCBORStrictDecodeEntryPointIsEmittedAndDelegates reads the strict CBOR
+// decode entry point out of every Go codec target's emitted source and holds it
+// to the three properties that make it what it is, none of which a byte-compare
+// against a committed file can see — that file could be wrong in exactly the way
+// the generator is.
+//
+// One: it exists for every def the target emits, because a socket output type
+// that lacked it would fall back to the lenient read at the one boundary where
+// skipping an unknown key is indistinguishable from a real result.
+//
+// Two: it DELEGATES. The emitted body runs the key check and then calls the
+// type's own DecodeCBOR, so there is one decode implementation per type rather
+// than two. A strict body that re-read the map itself would satisfy every
+// behavioural assertion while doubling the decode surface, and the second copy
+// would drift on exactly the field the first one handles specially.
+//
+// Three: the declared key list it checks against is the SAME set as the decode
+// switch's own case arms. That is the single-source property in the only form
+// worth asserting: both lists are emitted from one resolved field slice, so a
+// schema field added later moves both, and this gate fails if they ever stop
+// agreeing.
+func TestCBORStrictDecodeEntryPointIsEmittedAndDelegates(t *testing.T) {
+	goTargets := map[string]codecTarget{}
+	for outFile, tgt := range codecTargets {
+		if tgt.lang == "" || tgt.lang == "go" {
+			goTargets[outFile] = tgt
+		}
+	}
+	// A pass over an empty population certifies nothing.
+	if len(goTargets) == 0 {
+		t.Fatal("no Go codec target is registered, so this gate measured nothing")
+	}
+
+	checked := 0
+	for outFile, tgt := range goTargets {
+		t.Run(outFile, func(t *testing.T) {
+			src, err := generateFor(outFile)
+			if err != nil {
+				t.Fatalf("generate %s: %v", outFile, err)
+			}
+			body := string(src)
+
+			root, err := decodeNode(json.RawMessage(tgt.schema))
+			if err != nil {
+				t.Fatalf("decode schema %s: %v", tgt.schemaFile, err)
+			}
+			emitted := 0
+			for _, d := range root.defs {
+				if !tgt.emitsDef(d.name) {
+					continue
+				}
+				emitted++
+				strictBody, ok := funcBody(body, "func (t *"+d.name+") DecodeCBORStrict(data []byte) error {")
+				if !ok {
+					t.Errorf("%s emits no DecodeCBORStrict for %s, so a socket reading that shape has no "+
+						"entry point that refuses a foreign envelope", outFile, d.name)
+					continue
+				}
+				if !strings.Contains(strictBody, "return t.DecodeCBOR(data)") {
+					t.Errorf("%s's DecodeCBORStrict for %s does not delegate to DecodeCBOR: the strict entry "+
+						"point must check the keys and then run the one decode body, not carry a second one",
+						outFile, d.name)
+				}
+				if strings.Contains(strictBody, "dec.readMapHeader()") {
+					t.Errorf("%s's DecodeCBORStrict for %s reads the map itself: that is a second decode "+
+						"implementation for one type, which is what delegating exists to avoid", outFile, d.name)
+				}
+
+				declared := refusedKeys(strictBody)
+				decodeBody, ok := funcBody(body, "func (t *"+d.name+") decodeCBOR(dec *cborDec) error {")
+				if !ok {
+					t.Errorf("%s emits no decodeCBOR worker for %s, so the strict entry point's declared key "+
+						"set cannot be checked against the shape it guards", outFile, d.name)
+					continue
+				}
+				switched := switchedKeys(decodeBody)
+				if !sameKeySet(declared, switched) {
+					t.Errorf("%s: %s's strict key list %v differs from its decode switch's own case arms %v; "+
+						"the two are emitted from one field slice and disagreeing means a field is guarded "+
+						"but not decoded, or decoded but not guarded", outFile, d.name, declared, switched)
+				}
+			}
+			if emitted == 0 {
+				t.Fatalf("%s emits no def from schema %s, so this gate measured nothing", outFile, tgt.schemaFile)
+			}
+			if !strings.Contains(body, "func refuseUndeclaredCBORKeys(") && tgt.helpers {
+				t.Errorf("%s is its package's helpers-bearing file but emits no refuseUndeclaredCBORKeys, so "+
+					"every DecodeCBORStrict in that package calls a function that is not there", outFile)
+			}
+			checked += emitted
+		})
+	}
+	if checked == 0 {
+		t.Fatal("no def was checked across any Go target, so this gate measured nothing")
+	}
+}
+
+// funcBody returns the body of the emitted function whose signature line is
+// exactly header, from just after that line to the closing brace in column zero.
+// Generated Go is gofmt'd, so a lone "}" at column zero is the function's end and
+// nothing nested can produce one.
+func funcBody(src, header string) (string, bool) {
+	i := strings.Index(src, header)
+	if i < 0 {
+		return "", false
+	}
+	rest := src[i+len(header):]
+	end := strings.Index(rest, "\n}\n")
+	if end < 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
+// refusedKeys extracts the key literals a strict entry point's
+// refuseUndeclaredCBORKeys call names.
+func refusedKeys(strictBody string) []string {
+	const call = "refuseUndeclaredCBORKeys(data"
+	i := strings.Index(strictBody, call)
+	if i < 0 {
+		return nil
+	}
+	rest := strictBody[i+len(call):]
+	end := strings.Index(rest, ")")
+	if end < 0 {
+		return nil
+	}
+	return quotedLiterals(rest[:end])
+}
+
+// switchedKeys extracts the key literals the decode worker's own field switch
+// dispatches on. The anchor is the two-tab indent the field switch's case arms
+// carry, which no nested emission produces.
+func switchedKeys(decodeBody string) []string {
+	var keys []string
+	for _, line := range strings.Split(decodeBody, "\n") {
+		if !strings.HasPrefix(line, "\t\tcase \"") {
+			continue
+		}
+		keys = append(keys, quotedLiterals(line)...)
+	}
+	return keys
+}
+
+// quotedLiterals returns every double-quoted literal in s, unescaped only for the
+// characters a generated schema key can contain.
+func quotedLiterals(s string) []string {
+	var out []string
+	for {
+		i := strings.Index(s, `"`)
+		if i < 0 {
+			return out
+		}
+		s = s[i+1:]
+		j := strings.Index(s, `"`)
+		if j < 0 {
+			return out
+		}
+		out = append(out, s[:j])
+		s = s[j+1:]
+	}
+}
+
+// sameKeySet compares two key lists as sets, so the canonical-order sort the
+// encode side applies cannot make two equal sets look different.
+func sameKeySet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, k := range a {
+		seen[k]++
+	}
+	for _, k := range b {
+		seen[k]--
+		if seen[k] < 0 {
+			return false
+		}
+	}
+	return true
 }

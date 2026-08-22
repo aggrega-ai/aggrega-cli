@@ -440,8 +440,9 @@ func (t codecTarget) emitsDef(name string) bool {
 }
 
 // emitsCBOR reports whether a codec target carries the canonical-CBOR codec
-// alongside JSON — EncodeCBOR/DecodeCBOR plus a `cbor:"<key>[,omitempty]"`
-// struct tag in Go, and the hand-written CBOR encoders in Rust and TS. Every
+// alongside JSON — EncodeCBOR/DecodeCBOR/DecodeCBORStrict plus a
+// `cbor:"<key>[,omitempty]"` struct tag in Go, and the hand-written CBOR
+// encoders in Rust and TS. Every
 // target carries it: a socket payload is encoded by one side and decoded by the
 // other, so a target that lacked the codec would leave one end of that wire with
 // no way to speak it.

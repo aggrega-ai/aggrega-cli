@@ -4849,6 +4849,19 @@ func (t *RenderNodeInput) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes RenderNodeInput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *RenderNodeInput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "node", "context", "source_listing", "workload_projection", "artifacts_projection"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes IRNodeProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t IRNodeProjection) EncodeCBOR() ([]byte, error) {
@@ -5217,6 +5230,19 @@ func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes IRNodeProjection exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *IRNodeProjection) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "id", "type", "resolved_recipe", "values", "features", "sensitive_rendered_keys", "uses", "boundary_path", "sync_wave", "recipe_name", "recipe_version", "label_component_id", "output_labels", "provenance"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes NodeProvenance as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t NodeProvenance) EncodeCBOR() ([]byte, error) {
@@ -5322,6 +5348,19 @@ func (t *NodeProvenance) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes NodeProvenance exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *NodeProvenance) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "compiler_version", "aggregate_name", "environment", "provider_name", "provider_version"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes RenderNodeOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -5495,6 +5534,19 @@ func (t *RenderNodeOutput) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes RenderNodeOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *RenderNodeOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "files", "derived_keys", "diagnostics", "error"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes ValidateNodeOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t ValidateNodeOutput) EncodeCBOR() ([]byte, error) {
@@ -5587,6 +5639,19 @@ func (t *ValidateNodeOutput) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes ValidateNodeOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *ValidateNodeOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "diagnostics", "error"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes RenderedFile as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t RenderedFile) EncodeCBOR() ([]byte, error) {
@@ -5658,6 +5723,19 @@ func (t *RenderedFile) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes RenderedFile exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *RenderedFile) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "path", "content", "format"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes SourceFile as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t SourceFile) EncodeCBOR() ([]byte, error) {
@@ -5714,6 +5792,19 @@ func (t *SourceFile) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes SourceFile exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SourceFile) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "path", "content"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes SourceProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -5783,6 +5874,19 @@ func (t *SourceProjection) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes SourceProjection exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SourceProjection) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "files"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes SourceEntry as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t SourceEntry) EncodeCBOR() ([]byte, error) {
@@ -5839,6 +5943,19 @@ func (t *SourceEntry) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes SourceEntry exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SourceEntry) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "path", "is_dir"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes SourceListing as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -5929,6 +6046,19 @@ func (t *SourceListing) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes SourceListing exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SourceListing) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "root", "root_is_dir", "entries"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes SourcePackRequest as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t SourcePackRequest) EncodeCBOR() ([]byte, error) {
@@ -5985,6 +6115,19 @@ func (t *SourcePackRequest) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes SourcePackRequest exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SourcePackRequest) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "op", "path"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes SourcePackResponse as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -6075,6 +6218,19 @@ func (t *SourcePackResponse) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes SourcePackResponse exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SourcePackResponse) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "source_projection", "error", "error_code"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes SourceFileRequest as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t SourceFileRequest) EncodeCBOR() ([]byte, error) {
@@ -6123,6 +6279,19 @@ func (t *SourceFileRequest) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes SourceFileRequest exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SourceFileRequest) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "path"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes SourceFileResponse as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -6204,6 +6373,19 @@ func (t *SourceFileResponse) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes SourceFileResponse exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SourceFileResponse) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "content", "error", "error_code"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes FetchExternalInputResponse as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -6289,6 +6471,19 @@ func (t *FetchExternalInputResponse) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes FetchExternalInputResponse exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *FetchExternalInputResponse) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "content", "error", "error_code"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes WorkloadProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -6415,6 +6610,19 @@ func (t *WorkloadProjection) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes WorkloadProjection exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *WorkloadProjection) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "workload", "attachment_provides"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes ArtifactsProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t ArtifactsProjection) EncodeCBOR() ([]byte, error) {
@@ -6480,6 +6688,19 @@ func (t *ArtifactsProjection) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes ArtifactsProjection exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *ArtifactsProjection) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "entries"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes ArtifactProjectionEntry as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -6628,6 +6849,19 @@ func (t *ArtifactProjectionEntry) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes ArtifactProjectionEntry exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *ArtifactProjectionEntry) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "name", "origin", "content", "labels", "annotations"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes AssembleBoundaryInput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -6821,6 +7055,19 @@ func (t *AssembleBoundaryInput) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes AssembleBoundaryInput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *AssembleBoundaryInput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "boundary", "rendered_nodes", "context", "boundary_path", "edges", "sub_charts", "chart_name", "aggregate_name"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes RenderedNode as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t RenderedNode) EncodeCBOR() ([]byte, error) {
@@ -6939,6 +7186,19 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes RenderedNode exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *RenderedNode) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "id", "type", "rendered", "annotations", "sync_wave"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes RenderEdge as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t RenderEdge) EncodeCBOR() ([]byte, error) {
@@ -6995,6 +7255,19 @@ func (t *RenderEdge) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes RenderEdge exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *RenderEdge) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "source", "target"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes SubChart as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -7117,6 +7390,19 @@ func (t *SubChart) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes SubChart exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *SubChart) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "instance_id", "version", "values", "chart_yaml"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes AssembleBoundaryOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -7249,6 +7535,19 @@ func (t *AssembleBoundaryOutput) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes AssembleBoundaryOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *AssembleBoundaryOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "files", "diagnostics", "nest_per_node", "error"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes CarveInput as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t CarveInput) EncodeCBOR() ([]byte, error) {
@@ -7318,6 +7617,19 @@ func (t *CarveInput) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes CarveInput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *CarveInput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "name", "body", "yaml_indent"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes CarveOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -7392,6 +7704,19 @@ func (t *CarveOutput) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes CarveOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *CarveOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "units"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes ReassembleInput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -7539,6 +7864,19 @@ func (t *ReassembleInput) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes ReassembleInput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *ReassembleInput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "name", "body", "segs", "patched", "yaml_indent"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes ReassembleOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t ReassembleOutput) EncodeCBOR() ([]byte, error) {
@@ -7587,6 +7925,19 @@ func (t *ReassembleOutput) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes ReassembleOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *ReassembleOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "body"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes BoundaryEnvOverridesInput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -7714,6 +8065,19 @@ func (t *BoundaryEnvOverridesInput) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes BoundaryEnvOverridesInput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *BoundaryEnvOverridesInput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "internal_uses_edges", "infra"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes BoundaryEnvOverridesOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t BoundaryEnvOverridesOutput) EncodeCBOR() ([]byte, error) {
@@ -7825,6 +8189,19 @@ func (t *BoundaryEnvOverridesOutput) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes BoundaryEnvOverridesOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *BoundaryEnvOverridesOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "overrides"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes LinkEndpoint as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t LinkEndpoint) EncodeCBOR() ([]byte, error) {
@@ -7902,6 +8279,19 @@ func (t *LinkEndpoint) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes LinkEndpoint exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *LinkEndpoint) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "node", "boundary", "provider", "deployment"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes LinkEdge as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -8144,6 +8534,19 @@ func (t *LinkEdge) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes LinkEdge exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *LinkEdge) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "source", "target", "target_annotations", "source_annotations", "socket", "provides", "inject"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes LinkPatch as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t LinkPatch) EncodeCBOR() ([]byte, error) {
@@ -8226,6 +8629,19 @@ func (t *LinkPatch) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes LinkPatch exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *LinkPatch) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "file", "ops"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes LinkPublishInput as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t LinkPublishInput) EncodeCBOR() ([]byte, error) {
@@ -8275,6 +8691,19 @@ func (t *LinkPublishInput) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes LinkPublishInput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *LinkPublishInput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "edge"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes LinkPublishOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -8383,6 +8812,19 @@ func (t *LinkPublishOutput) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes LinkPublishOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *LinkPublishOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "handle", "patches"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // EncodeCBOR encodes LinkResolveInput as canonical CBOR (RFC 8949 §4.2.1; floats per
@@ -8501,6 +8943,19 @@ func (t *LinkResolveInput) decodeCBOR(dec *cborDec) error {
 	return nil
 }
 
+// DecodeCBORStrict decodes LinkResolveInput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *LinkResolveInput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "edge", "handle", "consumer_files"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
 // EncodeCBOR encodes LinkResolveOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
 // CBOR CDE §4.2), dispatch-free.
 func (t LinkResolveOutput) EncodeCBOR() ([]byte, error) {
@@ -8566,6 +9021,19 @@ func (t *LinkResolveOutput) decodeCBOR(dec *cborDec) error {
 		}
 	}
 	return nil
+}
+
+// DecodeCBORStrict decodes LinkResolveOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *LinkResolveOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "patches"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
 }
 
 // expectDelim reads the next token and asserts it is the given delimiter.
@@ -9188,4 +9656,36 @@ func (d *cborDec) skip() error {
 		_ = ai
 		return fmt.Errorf("abi: cbor: cannot skip major %d", major)
 	}
+}
+
+// refuseUndeclaredCBORKeys walks the top-level keys of a CBOR map and reports the
+// first one the declared key set does not contain. It reads only the map's own
+// keys — each value is skipped whole rather than descended into — so it is the
+// shape check for a payload whose identity is carried by which keys it holds.
+func refuseUndeclaredCBORKeys(data []byte, declared ...string) error {
+	dec := &cborDec{data: data}
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, d := range declared {
+			if key == d {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("abi: unexpected field %q", key)
+		}
+		if err := dec.skip(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
