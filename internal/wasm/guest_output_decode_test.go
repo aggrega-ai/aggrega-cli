@@ -4,10 +4,12 @@
 package wasm
 
 import (
+	stderrors "errors"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // TestDecodeGuestOutputRefusesUndeclaredField walks the socket-output decode
@@ -17,6 +19,12 @@ import (
 // overridable per attachment, so the export identifies which line of
 // configuration produced the wrong shape and the field identifies what the
 // output actually was.
+//
+// The refusal also carries the condition's identity, so a caller classifies it
+// with errors.Is rather than by matching the wording, and reads its code off the
+// chain. The identity is attached here, at the host boundary, rather than by the
+// codec: the codec's own refusal is the detail this wrap carries after the
+// condition's sentence.
 func TestDecodeGuestOutputRefusesUndeclaredField(t *testing.T) {
 	t.Parallel()
 
@@ -76,6 +84,20 @@ func TestDecodeGuestOutputRefusesUndeclaredField(t *testing.T) {
 			}
 			if !strings.Contains(msg, tc.wantField) {
 				t.Errorf("the refusal does not name the field that does not belong (%q):\n%v", tc.wantField, msg)
+			}
+			if !stderrors.Is(err, ErrWasmOutputShape()) {
+				t.Errorf("the refusal must be classifiable with errors.Is against its own condition:\n%v", msg)
+			}
+			want, ok := cerrors.CodeOf(ErrWasmOutputShape())
+			if !ok {
+				t.Fatalf("the condition reports no code, so what the refusal should report cannot be built")
+			}
+			if got, found := cerrors.CodeOf(err); !found || got != want {
+				t.Errorf("the refusal reports code %q (found=%v); want %q, the code the condition is registered under", got, found, want)
+			}
+			sentence := ErrWasmOutputShape().Error()
+			if n := strings.Count(msg, sentence); n != 1 {
+				t.Errorf("the condition's sentence appears %d times, want exactly 1\n%v", n, msg)
 			}
 		})
 	}

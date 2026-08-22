@@ -123,9 +123,35 @@ type GuestOutput interface {
 	UnmarshalJSONStrict(data []byte) error
 }
 
-// DecodeGuestOutput decodes a guest's socket output into dst and returns a
-// wrapped error naming the export when the bytes are not the shape the socket
-// reads.
+// ErrWasmOutputShape indicates that a guest plugin returned an output that is
+// not the shape the socket it was called at reads. The socket decodes against
+// the fields its own output shape declares and refuses everything else, so the
+// condition covers the whole class rather than one member of it: a top-level
+// field the shape does not declare, a field whose value is not the type the
+// shape declares, and bytes that are not a well-formed object at all.
+//
+// It halts rather than reading what it can, and the reason is that at this
+// boundary reading what it can is silent. A socket's entry function is
+// overridable per attachment, so an override can name an export whose output is
+// a different shape entirely — and skipping the fields that do not fit yields an
+// empty envelope, which is itself a legitimate outcome (no verdict fired, no
+// finding raised). The build would then proceed exactly as if the plugin had
+// approved it.
+//
+// The wrapping error names the export the output came back from and carries the
+// decode's own reason after it — the field that does not belong, or what about
+// the bytes could not be read — so an author sees which entry function was
+// called and what came back instead of this socket's shape.
+func ErrWasmOutputShape() error { return errWasmOutputShape }
+
+var errWasmOutputShape = cerrors.Register("wasm/wasm-output-shape", cerrors.Meta{
+	ShortCode: "E0248",
+	Message:   "wasm: guest plugin returned an output that is not the shape the socket reads",
+})
+
+// DecodeGuestOutput decodes a guest's socket output into dst and returns an
+// error wrapping ErrWasmOutputShape, naming the export, when the bytes are not
+// the shape the socket reads.
 //
 // It is the first of the three guest-envelope contract checks a socket runs at
 // one boundary, ahead of GuestReturnedError and GuestDiagnosticSeverities: the
@@ -140,10 +166,12 @@ type GuestOutput interface {
 //
 // export is the guest function the output came back from. The returned error
 // names it, and the codec names the field that does not belong; together the two
-// identify the entry function the attachment should have named instead.
+// identify the entry function the attachment should have named instead. The
+// condition's sentence is said once, by the sentinel: this wrap contributes the
+// export and the codec's own detail and repeats neither.
 func DecodeGuestOutput(export string, out []byte, dst GuestOutput) error {
 	if err := dst.UnmarshalJSONStrict(out); err != nil {
-		return fmt.Errorf("call %q: the output is not the shape this socket reads: %w", export, err)
+		return fmt.Errorf("call %q: %w: %s", export, ErrWasmOutputShape(), err)
 	}
 	return nil
 }

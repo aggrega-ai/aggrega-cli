@@ -5,10 +5,13 @@ package main
 
 import (
 	stderrors "errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -462,6 +465,87 @@ func TestFormatCompilerError_WorkloadValidation_SentenceSaidOnce(t *testing.T) {
 			}
 			if !strings.Contains(got, "declare a port list") {
 				t.Errorf("the finding's suggestion must survive the composition change\n--- got ---\n%s", got)
+			}
+		})
+	}
+}
+
+// TestFormatCompilerError_SocketOutputShape_ReachesTheReader renders the
+// socket-output shape refusal through the real formatter and pins what a reader
+// and a machine consumer each get out of it.
+//
+// The chain is built the way a socket really builds it — the host decode
+// boundary's own wrap, inside the wrap its caller adds — and nothing here
+// constructs an envelope, because no socket does. So the assertions are on the
+// line a reader reads and on the identity the chain carries, both of which
+// survive arbitrary wrapping.
+//
+// The payload is the misdirection the refusal exists to catch: a verdict role
+// whose entry function was overridden to name a label-transform export, so a
+// patch envelope comes back where a verdict envelope is read. Decoded leniently
+// it would have yielded an empty verdict list, which is a legitimate allow.
+func TestFormatCompilerError_SocketOutputShape_ReachesTheReader(t *testing.T) {
+	t.Parallel()
+
+	const (
+		export  = "mutate"
+		plugin  = "example/policy-guard:1.0.0"
+		payload = `{"patches":[{"op":"add","path":"/nodes/a/labels/x","value":"y"}]}`
+	)
+
+	for _, tc := range []struct {
+		// name is the socket whose wrap the row reproduces.
+		name string
+		// wrap is what that socket adds around the refusal, in the shape its
+		// own call site uses.
+		wrap func(error) error
+		// wantPrefix is what the socket's wrap contributes ahead of the refusal.
+		wantPrefix string
+	}{
+		{
+			name:       "the verdict role over the IR graph",
+			wrap:       func(err error) error { return fmt.Errorf("ir-verdict: plugin %q: %w", plugin, err) },
+			wantPrefix: `ir-verdict: plugin "` + plugin + `": `,
+		},
+		{
+			name:       "the publishing linter",
+			wrap:       func(err error) error { return fmt.Errorf("publishing_linter: %w", err) },
+			wantPrefix: "publishing_linter: ",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var out abi.PolicyOutput
+			refusal := wasm.DecodeGuestOutput(export, []byte(payload), &out)
+			if refusal == nil {
+				t.Fatal("the payload is not the shape the socket reads: expected a refusal, got nil")
+			}
+			err := tc.wrap(refusal)
+			got := formatCompilerError(err)
+
+			// The sentence is read off the condition rather than written out
+			// here, so this cannot pass against wording that has drifted from
+			// the identity the condition is registered with.
+			sentence := wasm.ErrWasmOutputShape().Error()
+			want := tc.wantPrefix + `call "` + export + `": ` + sentence + `: abi: unexpected field "patches"`
+			if !strings.Contains(got, want) {
+				t.Errorf("the rendered diagnostic does not carry the line a reader reads\n want %q\n--- got ---\n%s", want, got)
+			}
+			if n := strings.Count(got, sentence); n != 1 {
+				t.Errorf("the condition's sentence rendered %d times, want exactly 1\n--- got ---\n%s", n, got)
+			}
+			if !stderrors.Is(err, wasm.ErrWasmOutputShape()) {
+				t.Errorf("errors.Is against the condition must match through the socket's own wrap\n--- rendered ---\n%s", got)
+			}
+			wantCode, ok := cerrors.CodeOf(wasm.ErrWasmOutputShape())
+			if !ok {
+				t.Fatal("the condition reports no code, so what the chain should report cannot be built")
+			}
+			// This is the value the daemon's editor diagnostic publishes for
+			// this failure, read through the same call the daemon makes.
+			if code, found := cerrors.CodeOf(err); !found || code != wantCode {
+				t.Errorf("the chain reports code %q (found=%v); want %q", code, found, wantCode)
 			}
 		})
 	}
