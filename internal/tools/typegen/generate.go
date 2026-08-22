@@ -61,6 +61,7 @@ package main
 //go:generate go run . ../../../../aggrega-abi/rust/src/ir_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/ir_gen.ts
 //go:generate go run . ../../../pkg/types/ir_host_gen.go
+//go:generate go run . ../../compiler/analyzer/policy_host_gen.go
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/providerrender_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/providerrender_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/providerrender_gen.ts

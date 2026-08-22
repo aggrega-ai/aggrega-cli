@@ -156,6 +156,9 @@ var codecTargetPaths = map[string][]string{
 	// The host IR codec is committed inside aggrega-cli's core types package,
 	// alongside the hand-written declarations it attaches to.
 	"ir_host_gen.go": {"..", "..", "..", "pkg", "types"},
+	// The host policy codec is committed inside aggrega-cli's analyzer package,
+	// which assembles these payloads and declares them by hand.
+	"policy_host_gen.go": {"..", "..", "compiler", "analyzer"},
 }
 
 // TestTargetPathsNameRegisteredTargets checks the two path tables in the
@@ -730,6 +733,19 @@ func TestCodecOnlyTargetEmitsCodecWithoutDeclarations(t *testing.T) {
 			if len(root.defs) == 0 {
 				t.Fatalf("schema %s declares no defs, so this gate measured nothing", tgt.schemaFile)
 			}
+			// A target skipping every def would satisfy every assertion below by
+			// emitting nothing at all, so the population the gate reads is checked
+			// before it is read.
+			emittedDefs := 0
+			for _, d := range root.defs {
+				if tgt.emitsDef(d.name) {
+					emittedDefs++
+				}
+			}
+			if emittedDefs == 0 {
+				t.Fatalf("%s skips every def schema %s declares, so this gate measured nothing",
+					outFile, tgt.schemaFile)
+			}
 
 			for _, d := range root.defs {
 				if strings.Contains(body, "type "+d.name+" struct {") {
@@ -742,8 +758,22 @@ func TestCodecOnlyTargetEmitsCodecWithoutDeclarations(t *testing.T) {
 					") EncodeCBOR() ([]byte, error) {",
 					") DecodeCBOR(data []byte) error {",
 				} {
-					if !strings.Contains(body, "func (t "+d.name+method) &&
-						!strings.Contains(body, "func (t *"+d.name+method) {
+					emitted := strings.Contains(body, "func (t "+d.name+method) ||
+						strings.Contains(body, "func (t *"+d.name+method)
+					// A skipped def is asserted in the opposite direction, and both
+					// directions are needed: the absence proves the exclusion took effect,
+					// and the presence-for-everything-else proves it took effect only where
+					// it was asked for. A one-directional read would accept a skip that
+					// swallowed the whole schema.
+					if !tgt.emitsDef(d.name) {
+						if emitted {
+							t.Errorf("%s emits %s for the skipped def %s: the destination package does not "+
+								"declare that type, so the emitted codec cannot compile against it",
+								outFile, strings.TrimSuffix(strings.TrimPrefix(method, ") "), "() ([]byte, error) {"), d.name)
+						}
+						continue
+					}
+					if !emitted {
 						t.Errorf("%s emits no %s for %s, so a codec dispatching to that type has nothing "+
 							"to call", outFile, strings.TrimSuffix(strings.TrimPrefix(method, ") "), "() ([]byte, error) {"), d.name)
 					}
@@ -826,6 +856,92 @@ func TestCodecOnlyRefusesAnUnnamedOpaqueField(t *testing.T) {
 					"fail, so it certifies nothing", dropped)
 			} else if !strings.Contains(err.Error(), dropped[strings.IndexByte(dropped, '.')+1:]) {
 				t.Errorf("the refusal fired but does not name the missing field: %v", err)
+			}
+		})
+	}
+}
+
+// TestSkipDefsNameRealDefs reads the def-exclusion tables in the direction
+// generation cannot. Generation asks of each def whether it is skipped, so an entry
+// naming a def the schema no longer declares is compared against nothing and reports
+// nothing — leaving a target that reads as excluding something, while the schema it
+// names has moved on. The exclusion then silently covers nothing, and the def it was
+// written for is emitted again.
+func TestSkipDefsNameRealDefs(t *testing.T) {
+	for outFile, tgt := range codecTargets {
+		if len(tgt.skipDefs) == 0 {
+			continue
+		}
+		t.Run(outFile, func(t *testing.T) {
+			root, err := decodeNode(json.RawMessage(tgt.schema))
+			if err != nil {
+				t.Fatalf("decode schema %s: %v", tgt.schemaFile, err)
+			}
+			declared := map[string]bool{}
+			for _, d := range root.defs {
+				declared[d.name] = true
+			}
+			for _, name := range tgt.skipDefs {
+				if !declared[name] {
+					t.Errorf("skipDefs names %q, which schema %s does not declare: nothing compares that "+
+						"name against anything, so the entry is inert and records an exclusion that no "+
+						"longer applies to anything", name, tgt.schemaFile)
+				}
+			}
+		})
+	}
+}
+
+// TestSkipDefsRefusalCanFail demonstrates that the referenced-skipped-def refusal
+// can fail. A refusal satisfied by generation succeeding proves nothing unless
+// making the thing it guards actually stops it — and the failure it guards is
+// quiet: a field typed as a skipped def falls to the opaque arm and rides as a
+// byte-string of JSON bytes, while the counterpart encodes it structurally. Both
+// sides round-trip against themselves and neither can read the other.
+//
+// The perturbation adds a def that an emitted def genuinely references, so the
+// refusal is attributable to that reference rather than to a mangled target.
+func TestSkipDefsRefusalCanFail(t *testing.T) {
+	for outFile, tgt := range codecTargets {
+		if tgt.lang != "" || len(tgt.skipDefs) == 0 {
+			continue
+		}
+		t.Run(outFile, func(t *testing.T) {
+			root, err := decodeNode(json.RawMessage(tgt.schema))
+			if err != nil {
+				t.Fatalf("decode schema %s: %v", tgt.schemaFile, err)
+			}
+			// Find a def that another EMITTED def refers to, which is the only shape
+			// the refusal is about.
+			var referenced string
+			for _, d := range root.defs {
+				if !tgt.emitsDef(d.name) {
+					continue
+				}
+				for _, p := range d.node.props {
+					for _, tok := range typeTokens(goType(p.node, pascal(p.name), tgt.vocabulary)) {
+						if tok != d.name && tgt.emitsDef(tok) {
+							for _, other := range root.defs {
+								if other.name == tok {
+									referenced = tok
+								}
+							}
+						}
+					}
+				}
+			}
+			if referenced == "" {
+				t.Skipf("no emitted def in schema %s references another def, so there is nothing to "+
+					"perturb here", tgt.schemaFile)
+			}
+
+			weakened := tgt
+			weakened.skipDefs = append(append([]string(nil), tgt.skipDefs...), referenced)
+			if _, err := generateDefs(weakened); err == nil {
+				t.Fatalf("generation succeeded with the referenced def %q skipped; the refusal cannot "+
+					"fail, so it certifies nothing", referenced)
+			} else if !strings.Contains(err.Error(), referenced) {
+				t.Errorf("the refusal fired but does not name the referenced def: %v", err)
 			}
 		})
 	}

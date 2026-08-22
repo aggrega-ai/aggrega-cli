@@ -58,13 +58,24 @@ func emitCBORCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[
 // that type, keyed "<DefType>.<property>". A table entry naming a property this
 // def does not carry is left unapplied here and reported by the generator's own
 // registry gate, which reads the tables in the direction a lookup cannot.
+//
+// An entry whose host type IS the spelling the annotation already resolved to is
+// deliberately NOT stamped. The table records a DIVERGENCE between what the schema
+// states and what the destination package declares, and where there is none the
+// field's own arm is already right: an opaque field declared as the opaque type
+// carries its bytes verbatim, while the stamped path re-encodes them through the
+// value's own JSON marshalling, which compacts. The counterpart carries them
+// verbatim, so stamping such a field would put different bytes on the two ends of
+// the wire for the same value. The entry is still required — generation refuses an
+// unnamed opaque field, and answering "the declaration agrees" is how a target
+// says so — but it selects no different arm.
 func applyOpaqueHostTypes(fields []codecField, typeName string, opaqueHostTypes map[string]string) []codecField {
 	if len(opaqueHostTypes) == 0 {
 		return fields
 	}
 	out := append([]codecField(nil), fields...)
 	for i := range out {
-		if host, ok := opaqueHostTypes[typeName+"."+out[i].key]; ok {
+		if host, ok := opaqueHostTypes[typeName+"."+out[i].key]; ok && host != out[i].goType {
 			out[i].hostOpaqueType = host
 		}
 	}
@@ -253,6 +264,13 @@ func emitCBOREncodeValue(b *strings.Builder, src, goType, schemaType, indent str
 	case strings.HasPrefix(goType, "*"):
 		elem := goType[1:]
 		if defTypes[elem] {
+			// In-package only, and stated because the bound is not visible from the
+			// emitted line: a pointer to a QUALIFIED generated type emits this same
+			// unexported call and fails to compile on it. That is the intended
+			// outcome rather than an oversight — no schema declares such a field, so
+			// teaching this arm the cross-package form would add a path nothing
+			// exercises, and routing both arms through one emitter would change the
+			// shape of every pointer-to-def codec already committed.
 			fmt.Fprintf(b, "%sif %s == nil {\n%s\tdst = append(dst, 0xf6)\n%s} else if dst, err = %s.appendCBOR(dst); err != nil {\n%s\treturn nil, err\n%s}\n", indent, src, indent, indent, src, indent, indent)
 		} else {
 			// Pointer to a scalar: a present pointer encodes as the scalar (the
@@ -264,6 +282,15 @@ func emitCBOREncodeValue(b *strings.Builder, src, goType, schemaType, indent str
 				emitCBOREncodeOpaqueAny(b, src, indent)
 			}
 		}
+	case defTypes[goType] && crossPackageDefType(goType):
+		// A generated type declared in another package: its codec is generated
+		// there, so the dispatch goes through the exported entry point — the
+		// package-local worker and the streaming reader it takes are both
+		// unexported, and the reader is a distinct type per package besides. The
+		// nested encoding is a single complete CBOR item, so appending it is the
+		// same wire as encoding it in place.
+		fmt.Fprintf(b, "%sif enc, encErr := %s.EncodeCBOR(); encErr != nil {\n%s\treturn nil, encErr\n%s} else {\n%s\tdst = append(dst, enc...)\n%s}\n",
+			indent, src, indent, indent, indent, indent)
 	case defTypes[goType]:
 		fmt.Fprintf(b, "%sif dst, err = %s.appendCBOR(dst); err != nil {\n%s\treturn nil, err\n%s}\n", indent, src, indent, indent)
 	case isOrderedMap:
@@ -393,21 +420,47 @@ func emitCBOREncodeSlice(b *strings.Builder, src, elemType, indent string, defTy
 	fmt.Fprintf(b, "%s}\n", indent)
 }
 
+// crossPackageDefType reports whether a generated def type's spelling names
+// another package's type, which decides whether the dispatch may use the
+// package-local unexported worker or must go through the exported entry point.
+//
+// The test is the package selector, and it is exact rather than a heuristic: a
+// def name comes from a schema's $defs and is a bare Go identifier, and the
+// in-package cross-codec surface is same-package by its own contract, so every
+// spelling reaching the def-type arm from either of those is dotless. A dotted
+// one can only have come from a target naming a qualified type deliberately.
+//
+// It is consulted only inside that arm. A spelling like json.RawMessage carries a
+// selector too, but it is placed by an earlier arm and never reaches this one.
+func crossPackageDefType(goType string) bool {
+	return strings.Contains(goType, ".")
+}
+
 // cborFieldUsesErr reports whether the encode of the given type references the
 // shared `err` variable in appendCBOR (so it is declared only when used). Only a
 // nested def type or a pointer to one — encoded via `dst, err = v.appendCBOR(dst)`
 // — uses it, directly or through a map/slice. A bare opaque `any` can also fail,
 // but it uses its own locally-scoped error variable, so it does NOT require the
 // shared `err`.
+//
+// A cross-package def type is the same case as the bare opaque one: its dispatch
+// goes through the exported entry point and carries its own scoped error, so it
+// must NOT be reported as using the shared one — a field that were would declare
+// `err` for a body that never assigns it, and the emitted codec would not compile.
 func cborFieldUsesErr(goType string, defTypes map[string]bool) bool {
 	if valType, ok := orderedMapValueType(goType); ok {
 		return cborFieldUsesErr(valType, defTypes)
 	}
 	switch {
 	case strings.HasPrefix(goType, "*"):
+		// Left as the in-package answer on purpose: the pointer-to-def ENCODE arm is
+		// not taught the cross-package form (see emitCBOREncodeValue), so a qualified
+		// pointer field emits the unexported call and fails to compile on it. Reporting
+		// no shared `err` here would add a second, misleading "undefined: err" to that
+		// failure and bury the one that names the cause.
 		return defTypes[goType[1:]]
 	case defTypes[goType]:
-		return true
+		return !crossPackageDefType(goType)
 	case strings.HasPrefix(goType, "map["):
 		return cborFieldUsesErr(goType[strings.IndexByte(goType, ']')+1:], defTypes)
 	case goType == "[]byte":
@@ -493,6 +546,17 @@ func emitCBORDecodeValue(b *strings.Builder, dst, goType, schemaType, indent str
 				emitCBORDecodeOpaqueAny(b, dst, indent)
 			}
 		}
+	case defTypes[goType] && crossPackageDefType(goType):
+		// The mirror of the encode side. The other package's streaming worker is
+		// unexported and takes that package's own reader type, so the only reachable
+		// entry point takes a complete document: capture exactly one item off this
+		// reader and hand its bytes over. skip advances past one complete item
+		// whatever its shape, so the captured slice is that item and nothing else.
+		fmt.Fprintf(b, "%s{\n", indent)
+		fmt.Fprintf(b, "%s\tstart := dec.pos\n", indent)
+		fmt.Fprintf(b, "%s\tif err := dec.skip(); err != nil {\n%s\t\treturn err\n%s\t}\n", indent, indent, indent)
+		fmt.Fprintf(b, "%s\tif err := (&%s).DecodeCBOR(dec.data[start:dec.pos]); err != nil {\n%s\t\treturn err\n%s\t}\n", indent, dst, indent, indent)
+		fmt.Fprintf(b, "%s}\n", indent)
 	case defTypes[goType]:
 		fmt.Fprintf(b, "%sif err := (&%s).decodeCBOR(dec); err != nil {\n%s\treturn err\n%s}\n", indent, dst, indent, indent)
 	case isOrderedMap:

@@ -368,7 +368,75 @@ type codecTarget struct {
 	// realizes the annotation itself, so annotation and declaration cannot disagree
 	// there. A codecOnly target must list every bare-opaque field it carries —
 	// generation refuses otherwise, rather than emitting a guard for the wrong type.
+	//
+	// An entry whose value is the spelling the annotation already resolved to means
+	// "the declaration agrees", and selects no different arm — see
+	// applyOpaqueHostTypes.
 	opaqueHostTypes map[string]string
+	// crossPackageDefTypes names generated types, PACKAGE-QUALIFIED, whose codec is
+	// generated into a different package than this target's own — the graph a policy
+	// payload carries, whose codec is emitted into the compiler's core types package
+	// alongside the hand-written declarations it attaches to.
+	//
+	// It is a distinct surface from externalDefTypes, and the two are not
+	// interchangeable. That one is same-package by its own contract, so the dispatch
+	// it enables uses the package-local unexported worker; across a package boundary
+	// that worker is unreachable, and the streaming reader it takes is a separate
+	// type in every destination package besides. So a qualified reference needs its
+	// own emission through the exported entry point, which is what naming a type here
+	// selects. Widening externalDefTypes does not reach it either: the obstacle is the
+	// emitted CALL, not the lookup.
+	//
+	// The wire is identical either way. A nested encoding is one complete CBOR item,
+	// so appending the other package's encoding is byte-for-byte what encoding it in
+	// place would have produced — which is what lets a payload carrying a shared shape
+	// ride the wire as a structural map rather than as a byte-string of JSON bytes the
+	// counterpart cannot decode.
+	//
+	// Two bounds, stated because neither is visible from a target that works. The
+	// dispatch covers a field whose resolved type IS the qualified type, and a
+	// composite over it (a slice, a map, an order-preserving container), since those
+	// descend through the same value emitter. It does NOT cover a POINTER to one:
+	// that arm has its own emission and keeps the in-package form, so such a field
+	// fails to compile rather than emitting something wrong. And the decode side
+	// reads the destination package's own streaming reader directly, so that package
+	// must carry the shared CBOR helpers — any one file in it setting helpers is
+	// enough, since they are package-scoped.
+	//
+	// (Ignored by the Rust/TS backends, whose runtime resolves a referenced type by
+	// name within the crate/module the codecs share.)
+	crossPackageDefTypes []string
+	// skipDefs names $defs this target does not emit a codec for.
+	//
+	// It exists for the codecOnly mode, where the emitted codec attaches to
+	// declarations the destination package carries by hand. A def that package does
+	// not declare has nothing to attach to, so emitting its codec would not compile —
+	// and declaring the type here to satisfy the generator would be the wrong repair
+	// twice: it duplicates a type that already exists elsewhere, and where that
+	// elsewhere is a published package the duplicate would carry a SECOND codec for
+	// one wire shape, which is the divergence a single home exists to prevent. A
+	// socket whose input types are the compiler's own and whose output type is the
+	// published one is the ordinary shape of this, not an edge case.
+	//
+	// The exclusion is explicit rather than derived because the generator does not
+	// read its destination package's declarations. So the failure direction is chosen:
+	// a def added to a schema is emitted by default and breaks the build loudly if
+	// nothing declares it, while a def skipped here is named at the target where a
+	// reader of the target sees it. Two gates hold the table — generation refuses a
+	// skipped def that an emitted def references (which would otherwise dispatch to a
+	// codec that does not exist), and a registry gate reads it in the direction a
+	// lookup cannot, catching an entry naming a def the schema no longer declares.
+	skipDefs []string
+}
+
+// emitsDef reports whether this target emits a codec for the named $def.
+func (t codecTarget) emitsDef(name string) bool {
+	for _, skipped := range t.skipDefs {
+		if skipped == name {
+			return false
+		}
+	}
+	return true
 }
 
 // emitsCBOR reports whether a codec target carries the canonical-CBOR codec
@@ -550,6 +618,44 @@ var irOpaqueHostTypes = map[string]string{
 // plain scalars and string slices. Absence of an entry passes annotations
 // through verbatim.
 var policyGuestVocabulary = map[string]string{}
+
+// policyHostVocabulary maps the policy schema's graph annotation to the host
+// realization: the IR graph the Topology Builder emits, qualified, since the host
+// policy codec lands in the analyzer package while the graph and its codec are
+// declared in the core types package. Naming the qualified type here is only half
+// of what makes the graph ride the wire structurally — the target also names it in
+// crossPackageDefTypes, which is what selects a dispatch to the graph's own
+// generated codec instead of the opaque arm.
+//
+// Nothing else in this schema needs an entry: the remaining carries are scalars,
+// string slices, def-local shapes reached by $ref, and the opaque settings and
+// artifact-tree documents, whose host declarations are stated in
+// policyOpaqueHostTypes.
+var policyHostVocabulary = map[string]string{
+	"IRGraph": "types.IRGraph",
+}
+
+// policyOpaqueHostTypes gives the host declaration's own Go type for each policy
+// field the schema annotates with the opaque wire spelling.
+//
+// The two settings documents are the entries that do work. The schema states the
+// wire — a free-form document the host hands to the plugin without reading it —
+// while the analyzer holds each as a decoded map, so the omission decision has to
+// be asked of the map: a document's absence is an empty map here, not an empty byte
+// slice, and guarding on the wrong one contradicts the omitempty the declaration
+// promises.
+//
+// The artifact tree is the third shape a codec-only target has to be told about and
+// the one that carries no divergence: the schema states the opaque spelling and the
+// analyzer declares exactly that, so the entry records agreement. It selects no
+// different encoding — the bytes ride verbatim, which is what the counterpart
+// reads — and it is present because generation refuses an opaque field the target
+// says nothing about, and saying "the declaration agrees" is how a target answers.
+var policyOpaqueHostTypes = map[string]string{
+	"PolicyInput.settings":       "map[string]any",
+	"RenderPolicyInput.settings": "map[string]any",
+	"RenderedArtifact.tree":      "json.RawMessage",
+}
 
 // describeGuestVocabulary is empty: the descriptor's only non-scalar field is
 // settings_schema, whose x-aggrega-go-type: json.RawMessage annotation already
@@ -967,6 +1073,43 @@ var codecTargets = map[string]codecTarget{
 		vocabulary:       policyGuestVocabulary,
 		lang:             "ts",
 		externalDefTypes: []string{"IRGraph", "Diagnostic"},
+	},
+
+	// The host policy codec, committed into the analyzer package that assembles
+	// these payloads.
+	//
+	// codecOnly: that package declares the payload types by hand, so the codec
+	// attaches to those declarations rather than replacing them — which is what keeps
+	// their field order the author's and leaves the way they are already marshalled
+	// alone.
+	//
+	// crossPackageDefTypes carries the whole point of the target. The graph field is
+	// the IR graph, whose codec is generated into the core types package alongside
+	// the hand-written declarations it attaches to; naming it qualified here is what
+	// makes this codec dispatch to that one, so the graph rides the wire as a
+	// structural CBOR map — the shape the plugin side already decodes — rather than
+	// as a byte-string of JSON bytes it cannot read.
+	//
+	// skipDefs excludes the verdict envelope, which this package does not declare: the
+	// host reads a plugin's verdicts through the published type, and that type already
+	// carries a generated codec of its own. Emitting a second one here would put two
+	// codecs on one wire shape, and declaring the type to satisfy the generator would
+	// duplicate a published declaration. The exclusion also keeps the shared
+	// diagnostic out of this target entirely, since the envelope is the only place
+	// this schema mentions it.
+	//
+	// helpers: it is the only CBOR codec in that package, so it owns the shared CBOR
+	// helpers — which the graph dispatch's decode side reads directly.
+	"policy_host_gen.go": {
+		schema:               schemas.WasmPolicyV1alpha1,
+		schemaFile:           "wasm-policy-v1alpha1.schema.json",
+		pkg:                  "analyzer",
+		vocabulary:           policyHostVocabulary,
+		helpers:              true,
+		codecOnly:            true,
+		opaqueHostTypes:      policyOpaqueHostTypes,
+		crossPackageDefTypes: []string{"types.IRGraph"},
+		skipDefs:             []string{"PolicyOutput"},
 	},
 
 	// Provider render socket — guest codecs into aggrega-abi (Go/Rust/TS) and the
@@ -2413,6 +2556,9 @@ func generateDefs(t codecTarget) ([]byte, error) {
 // the annotation itself, so the two cannot disagree.
 func checkOpaqueHostTypes(t codecTarget, root schemaNode) error {
 	for _, d := range root.defs {
+		if !t.emitsDef(d.name) {
+			continue
+		}
 		for _, p := range d.node.props {
 			if goType(p.node, pascal(p.name), t.vocabulary) != "json.RawMessage" {
 				continue
@@ -2426,6 +2572,75 @@ func checkOpaqueHostTypes(t codecTarget, root schemaNode) error {
 		}
 	}
 	return nil
+}
+
+// checkSkippedDefsUnreferenced refuses a target that skips a $def another emitted
+// def references.
+//
+// The reference is the whole hazard. A skipped def is left out of the generated
+// def-type set, so a field typed as one no longer dispatches to a generated codec —
+// it falls to the opaque arm and rides as a byte-string of JSON bytes, while the
+// counterpart, which emits every def, encodes the same field structurally. Neither
+// side fails: each round-trips against itself, and the wire is undecodable in both
+// directions. That is precisely the failure a generated codec exists to make
+// impossible, so it is refused at generation rather than left to a wire test that
+// may not exist yet.
+//
+// A stale entry — one naming a def the schema no longer declares — is looked up by
+// nothing here and is caught by the registry gate, which reads the table in the
+// direction a lookup cannot.
+func checkSkippedDefsUnreferenced(t codecTarget, root schemaNode) error {
+	if len(t.skipDefs) == 0 {
+		return nil
+	}
+	skipped := map[string]bool{}
+	for _, name := range t.skipDefs {
+		skipped[name] = true
+	}
+	for _, d := range root.defs {
+		if !t.emitsDef(d.name) {
+			continue
+		}
+		for _, p := range d.node.props {
+			resolved := goType(p.node, pascal(p.name), t.vocabulary)
+			for _, tok := range typeTokens(resolved) {
+				if skipped[tok] {
+					return fmt.Errorf(
+						"schema %s: %s.%s resolves to %s, which names the skipped def %s: a field typed as a "+
+							"skipped def falls to the opaque arm and rides as a byte-string of JSON bytes, while "+
+							"the counterpart encodes it structurally — either emit %s here or carry the field "+
+							"opaquely on both ends",
+						t.schemaFile, d.name, p.name, resolved, tok, tok)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// typeTokens splits a resolved Go type spelling into its identifier tokens, so a
+// type name can be recognised wherever a composite buried it — a slice of it, a
+// map value, an order-preserving container, a pointer. Splitting on the
+// non-identifier characters is what keeps the match a whole name: a substring test
+// would report PolicyOutput inside PolicyOutputEnvelope.
+func typeTokens(spelling string) []string {
+	var tokens []string
+	var cur strings.Builder
+	flush := func() {
+		if cur.Len() > 0 {
+			tokens = append(tokens, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, r := range spelling {
+		if r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			cur.WriteRune(r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return tokens
 }
 
 // generateDefsGo produces the formatted Go source for a multi-type codec
@@ -2452,6 +2667,9 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if err := checkSkippedDefsUnreferenced(t, root); err != nil {
+		return nil, err
+	}
 
 	var body strings.Builder
 	used := map[string]bool{}
@@ -2467,6 +2685,9 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 	if !t.codecOnly {
 		var queue []pending
 		for _, d := range root.defs {
+			if !t.emitsDef(d.name) {
+				continue
+			}
 			queue = append(queue, pending{name: d.name, doc: d.node.Description, node: d.node})
 		}
 		emitQueue(&body, queue, used, t.vocabulary, t.emitsCBOR())
@@ -2477,13 +2698,25 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 	// UnmarshalJSON — from a scalar or an opaque passthrough. It also includes
 	// externalDefTypes: types emitted by another codec target into the same
 	// package, so a cross-codec in-package field (the policy graph's IRGraph)
-	// dispatches directly to its generated codec rather than through json.Marshal.
+	// dispatches directly to its generated codec rather than through json.Marshal;
+	// and crossPackageDefTypes, the same idea across a package boundary, which the
+	// emitter tells apart by the selector in the spelling.
+	//
+	// A skipped def is left OUT: nothing this target emits may reference it, which
+	// checkSkippedDefsUnreferenced has already established, so listing it would only
+	// let a later change dispatch to a codec that is not there.
 	defTypes := map[string]bool{}
 	for _, d := range root.defs {
+		if !t.emitsDef(d.name) {
+			continue
+		}
 		defTypes[d.name] = true
 	}
 	for _, ext := range t.externalDefTypes {
 		defTypes[ext] = true
+	}
+	for _, qualified := range t.crossPackageDefTypes {
+		defTypes[qualified] = true
 	}
 
 	// The dispatch-free streaming codec for each emitted def type, in the same
@@ -2497,6 +2730,9 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 	// marshalled, which is a change to existing bytes rather than a new codec.
 	if !t.codecOnly {
 		for _, d := range root.defs {
+			if !t.emitsDef(d.name) {
+				continue
+			}
 			emitCodec(&body, d.name, d.node, t.vocabulary, defTypes)
 		}
 	}
@@ -2506,6 +2742,9 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 	// is the whole emission.
 	if t.emitsCBOR() {
 		for _, d := range root.defs {
+			if !t.emitsDef(d.name) {
+				continue
+			}
 			emitCBORCodec(&body, d.name, d.node, t.vocabulary, defTypes, t.opaqueHostTypes)
 		}
 	}
