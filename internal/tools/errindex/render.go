@@ -311,7 +311,20 @@ func codeSpan(s string) string {
 // Rows are ordered by short code, as text, which is also the numeric order
 // because a short code is zero-padded to a fixed width. The short code is what a
 // build prints, so it is the key a reader arrives holding.
-func renderHaltRegion(ids []Identity, entries []pageEntry) (string, error) {
+//
+// # Why the conditions it placed rows for are returned beside the region
+//
+// The second result is the identity behind each row, which is a fact this
+// function already establishes in order to render at all. It is returned rather
+// than discarded because the caller derives the same set independently, from the
+// same declarations, and reports its size as a description of this region — so
+// the caller needs this function's answer to compare against its own.
+//
+// 🔴 The two derivations are deliberately NOT shared, and collapsing them into
+// one helper would be a regression dressed as a simplification. Their agreement
+// is the signal; a single implementation cannot disagree with itself, so
+// unifying them removes the only thing that would report a divergence.
+func renderHaltRegion(ids []Identity, entries []pageEntry) (string, []Identity, error) {
 	byHandle := make(map[string]Identity, len(ids))
 	for _, id := range ids {
 		byHandle[id.Handle()] = id
@@ -329,7 +342,7 @@ func renderHaltRegion(ids []Identity, entries []pageEntry) (string, error) {
 				// declaration before this runs and refuses one naming nothing.
 				// Reported rather than skipped so that a caller wiring this
 				// renderer up on its own cannot get a quietly short region.
-				return "", fmt.Errorf("%s declares coverage of %s, which no declaration matches", haltsRelPath, h)
+				return "", nil, fmt.Errorf("%s declares coverage of %s, which no declaration matches", haltsRelPath, h)
 			}
 			// A declaration may name a re-export, which is the same condition
 			// under a second name. It is credited to the condition it forwards
@@ -343,7 +356,7 @@ func renderHaltRegion(ids []Identity, entries []pageEntry) (string, error) {
 				// while reading as a resolved correspondence, which is worse
 				// than an absent row: it cannot be told apart from a working
 				// one. The declaration needs an entry to sit under.
-				return "", fmt.Errorf("%s declares coverage of %s under no heading, so the region has no entry to name",
+				return "", nil, fmt.Errorf("%s declares coverage of %s under no heading, so the region has no entry to name",
 					haltsRelPath, h)
 			}
 			if _, seen := headings[origin]; !seen {
@@ -355,14 +368,14 @@ func renderHaltRegion(ids []Identity, entries []pageEntry) (string, error) {
 		}
 	}
 	if len(order) == 0 {
-		return "", fmt.Errorf("%s declares coverage of no condition, so there is no region to render", haltsRelPath)
+		return "", nil, fmt.Errorf("%s declares coverage of no condition, so there is no region to render", haltsRelPath)
 	}
 
 	rows := make([]Identity, 0, len(order))
 	for _, h := range order {
 		id, ok := byHandle[h]
 		if !ok {
-			return "", fmt.Errorf("%s resolves to %s, which no declaration matches", haltsRelPath, h)
+			return "", nil, fmt.Errorf("%s resolves to %s, which no declaration matches", haltsRelPath, h)
 		}
 		rows = append(rows, id)
 	}
@@ -376,16 +389,16 @@ func renderHaltRegion(ids []Identity, entries []pageEntry) (string, error) {
 			{"short code", id.ShortCode},
 			{"message", id.Message},
 		}); err != nil {
-			return "", err
+			return "", nil, err
 		}
 		for _, h := range named {
 			if strings.Contains(h, "|") {
-				return "", fmt.Errorf("the entry heading %q contains a table separator, "+
+				return "", nil, fmt.Errorf("the entry heading %q contains a table separator, "+
 					"which no escaping renders correctly inside a cell; reword the heading", h)
 			}
 		}
 		fmt.Fprintf(&b, "| %s | %s | %s |\n",
 			codeSpan(id.ShortCode), codeSpan(id.Message), strings.Join(named, "; "))
 	}
-	return strings.TrimRight(b.String(), "\n"), nil
+	return strings.TrimRight(b.String(), "\n"), rows, nil
 }

@@ -1254,7 +1254,8 @@ func haltRows(t *testing.T, region string) [][3]string {
 
 func haltRegionIn(t *testing.T, ids []Identity, docsRoot string) (string, error) {
 	t.Helper()
-	return renderHaltRegion(ids, entriesIn(t, docsRoot))
+	region, _, err := renderHaltRegion(ids, entriesIn(t, docsRoot))
+	return region, err
 }
 
 // TestRenderHaltRegion_CarriesThePagesCorpusAndNotTheDeclaredSet is the property
@@ -1451,7 +1452,7 @@ Prose with no heading above the declaration.
 // "nothing is documented" whether that is true or the declaration form moved.
 func TestRenderHaltRegion_RefusesAPageDocumentingNothing(t *testing.T) {
 	t.Parallel()
-	_, err := renderHaltRegion(fixtureIdentities(t), nil)
+	_, _, err := renderHaltRegion(fixtureIdentities(t), nil)
 	if err == nil {
 		t.Fatal("a page documenting no condition was rendered rather than refused")
 	}
@@ -1483,95 +1484,173 @@ Prose.
 	}
 }
 
-// TestRenderHaltRegion_LiveModuleAgreesWithThePagesOwnDeclarations is the
-// end-to-end reading: the region rendered over the module the compiler is built
-// from and the page as committed. It is the one test that can catch a
-// disagreement between the two halves of the region's key — a code that no
-// declaration carries, and a documented condition the region left out.
-func TestRenderHaltRegion_LiveModuleAgreesWithThePagesOwnDeclarations(t *testing.T) {
+// documentedSet builds the second argument rejectCoverageDisagreement takes from
+// the handles alone. Only the handle participates in the comparison, so a test
+// naming the other fields would be describing something the check never reads.
+func documentedSet(handles ...string) []Identity {
+	out := make([]Identity, 0, len(handles))
+	for _, h := range handles {
+		i := strings.LastIndex(h, ".")
+		out = append(out, Identity{Pkg: h[:i], Name: h[i+1:]})
+	}
+	return out
+}
+
+// coveredSet builds the first argument, which is the shape resolveCoverage
+// returns.
+func coveredSet(handles ...string) map[string]bool {
+	out := make(map[string]bool, len(handles))
+	for _, h := range handles {
+		out[h] = true
+	}
+	return out
+}
+
+// TestRejectCoverageDisagreement_AcceptsTwoDerivationsNamingTheSameConditions is
+// the calibration every refusal below rests on. A check that refused everything
+// would pass each of those cases while breaking the generator outright, so the
+// accepting case is asserted first and separately.
+func TestRejectCoverageDisagreement_AcceptsTwoDerivationsNamingTheSameConditions(t *testing.T) {
 	t.Parallel()
-	const docsRoot = "../../../../aggrega-docs"
-	if _, err := os.Stat(filepath.Join(docsRoot, haltsRelPath)); err != nil {
-		t.Skipf("the published page is not in this tree: %v", err)
+	covered := coveredSet("pkg/thing.ErrPlain", "pkg/other.ErrOwn")
+	documented := documentedSet("pkg/other.ErrOwn", "pkg/thing.ErrPlain")
+	// Deliberately in a different order on the two sides: the sets are what
+	// agree, and a check sensitive to order would refuse a page whose entries
+	// were merely rearranged.
+	if err := rejectCoverageDisagreement(covered, documented); err != nil {
+		t.Errorf("two derivations naming the same conditions were refused: %v", err)
 	}
-	modulePath, err := modulePathOf("../../..")
-	if err != nil {
-		t.Fatalf("module path: %v", err)
-	}
-	ids, err := scan("../../..", modulePath)
-	if err != nil {
-		t.Fatalf("scan module: %v", err)
-	}
-	entries, err := readEntries(docsRoot)
-	if err != nil {
-		t.Fatalf("readEntries: %v", err)
-	}
-	covered, err := resolveCoverage(ids, entries, docsRoot)
-	if err != nil {
-		t.Fatalf("resolveCoverage: %v", err)
-	}
-	region, err := renderHaltRegion(ids, entries)
-	if err != nil {
-		t.Fatalf("renderHaltRegion: %v", err)
-	}
+}
 
-	byCode := map[string]Identity{}
-	for _, id := range ids {
-		if id.AliasOf == "" {
-			byCode[id.ShortCode] = id
-		}
+// TestRejectCoverageDisagreement_RefusesEitherDirection covers both, because they
+// are different defects with different repairs: a condition an entry documents
+// that the region omits leaves a reader who searches the page unable to resolve
+// the code they arrived holding, and a row for a condition no entry documents
+// resolves to an entry that is not there.
+func TestRejectCoverageDisagreement_RefusesEitherDirection(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		covered    map[string]bool
+		documented []Identity
+		want       string
+	}{
+		{
+			name:       "documented by an entry and carried by no row",
+			covered:    coveredSet("pkg/thing.ErrPlain", "pkg/other.ErrOwn"),
+			documented: documentedSet("pkg/thing.ErrPlain"),
+			want:       "carried by no row: pkg/other.ErrOwn",
+		},
+		{
+			name:       "carried by a row and documented by no entry",
+			covered:    coveredSet("pkg/thing.ErrPlain"),
+			documented: documentedSet("pkg/thing.ErrPlain", "pkg/other.ErrOwn"),
+			want:       "documented by no entry: pkg/other.ErrOwn",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := rejectCoverageDisagreement(tc.covered, tc.documented)
+			if err == nil {
+				t.Fatal("a disagreement between the two derivations was accepted rather than refused")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("refusal does not name what disagreed: %v", err)
+			}
+		})
 	}
-	// Calibration: every walk below reads as "nothing is wrong" over an empty
-	// set, so each input is proven non-empty before any verdict is believed.
-	if len(byCode) == 0 {
-		t.Fatal("the module declared no condition; the scan is broken, not the rule")
-	}
-	if len(covered) == 0 {
-		t.Fatal("the page documents no condition; the coverage read is broken, not the rule")
-	}
-	rows := haltRows(t, region)
-	if len(rows) == 0 {
-		t.Fatal("the rendered region carries no rows; the comparison below would certify nothing")
-	}
+}
 
-	if len(rows) != len(covered) {
-		t.Errorf("region carries %d rows for %d documented conditions", len(rows), len(covered))
+// TestRejectCoverageDisagreement_RefusesASwapOfEqualSize is the case a size
+// comparison passes. Two sets of the same size can name different conditions, so
+// comparing counts would report a page whose region carries a row for the wrong
+// condition as current — which is the correspondence that reads as verified while
+// describing nothing.
+func TestRejectCoverageDisagreement_RefusesASwapOfEqualSize(t *testing.T) {
+	t.Parallel()
+	covered := coveredSet("pkg/thing.ErrPlain", "pkg/other.ErrOwn")
+	documented := documentedSet("pkg/thing.ErrPlain", "pkg/thing.ErrQuoted")
+	// Calibration: the assertion below asserts nothing unless the two sides are
+	// genuinely the same size, which is the whole point of this case.
+	if len(covered) != len(documented) {
+		t.Fatalf("the two sides are %d and %d; this case asserts nothing unless they are equal",
+			len(covered), len(documented))
 	}
-	onPage := map[string]bool{}
-	for _, r := range rows {
-		if onPage[r[0]] {
-			t.Errorf("code %s heads more than one row", r[0])
-		}
-		onPage[r[0]] = true
-		id, ok := byCode[r[0]]
-		if !ok {
-			t.Errorf("the region carries a row for %s, which no condition declares", r[0])
-			continue
-		}
-		if id.Message != r[1] {
-			t.Errorf("%s carries %q on the page and %q at its declaration", r[0], r[1], id.Message)
-		}
+	err := rejectCoverageDisagreement(covered, documented)
+	if err == nil {
+		t.Fatal("a swap of equal size was accepted, so the check is comparing sizes rather than conditions")
 	}
-	for handle := range covered {
-		id, ok := byCode[idsShortCode(ids, handle)]
-		if !ok {
-			t.Errorf("%s is documented and no declaration carries its code", handle)
-			continue
-		}
-		if !onPage[id.ShortCode] {
-			t.Errorf("%s is documented and the region carries no row for %s", handle, id.ShortCode)
+	if !strings.Contains(err.Error(), "pkg/other.ErrOwn") || !strings.Contains(err.Error(), "pkg/thing.ErrQuoted") {
+		t.Errorf("refusal names only one side of the swap: %v", err)
+	}
+}
+
+// TestRejectCoverageDisagreement_NamesEveryDisagreementAtOnce keeps a page with
+// several defects repairable in one pass. Reporting the first would need as many
+// runs to fix as the page has faults, which is the shape resolveCoverage already
+// avoids for the same reason.
+func TestRejectCoverageDisagreement_NamesEveryDisagreementAtOnce(t *testing.T) {
+	t.Parallel()
+	covered := coveredSet("pkg/thing.ErrPlain", "pkg/other.ErrOwn")
+	documented := documentedSet("pkg/thing.ErrQuoted", "internal/hidden.ErrHidden")
+	err := rejectCoverageDisagreement(covered, documented)
+	if err == nil {
+		t.Fatal("four disagreements were accepted rather than refused")
+	}
+	for _, want := range []string{
+		"pkg/other.ErrOwn", "pkg/thing.ErrPlain", "internal/hidden.ErrHidden", "pkg/thing.ErrQuoted",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal omits %s: %v", want, err)
 		}
 	}
 }
 
-// idsShortCode returns the short code the identity behind handle declares, or
-// the empty string when nothing declares it. It exists so the assertion above
-// reports an unmatched handle rather than panicking on one.
-func idsShortCode(ids []Identity, handle string) string {
-	for _, id := range ids {
-		if id.Handle() == handle {
-			return id.ShortCode
-		}
+// TestRejectCoverageDisagreement_AgreesOverThePagesRealDerivations runs the two
+// derivations the generator actually uses over one page and hands their results
+// to the check, which is the reading the generator performs on every refresh.
+//
+// The page names one condition by the accessor that declares it and one by a
+// re-export, because that is where the two derivations could most plausibly part
+// company: each credits a re-export to the identity it forwards to, and they do
+// it in separate code. A page covering only origins would exercise neither.
+func TestRejectCoverageDisagreement_AgreesOverThePagesRealDerivations(t *testing.T) {
+	t.Parallel()
+	ids := fixtureIdentities(t)
+	root := haltsPageIn(t, `# Halts
+
+### Something quoted went wrong
+
+<!-- covers: pkg/thing.ErrQuoted -->
+
+Prose.
+
+### A plain thing went wrong
+
+<!-- covers: pkg/other.ErrPlain -->
+
+Prose.
+`)
+	entries := entriesIn(t, root)
+	covered, err := resolveCoverage(ids, entries, root)
+	if err != nil {
+		t.Fatalf("resolveCoverage: %v", err)
 	}
-	return ""
+	_, documented, err := renderHaltRegion(ids, entries)
+	if err != nil {
+		t.Fatalf("renderHaltRegion: %v", err)
+	}
+	// Calibration: both sides are proven non-empty and proven to carry the
+	// re-export's origin rather than the re-export, or the agreement below would
+	// hold over two empty sets and certify nothing.
+	if len(covered) != 2 || len(documented) != 2 {
+		t.Fatalf("the two derivations read %d and %d conditions from a page covering two",
+			len(covered), len(documented))
+	}
+	if !covered["pkg/thing.ErrPlain"] {
+		t.Errorf("the coverage derivation did not credit the re-export to its origin: %v", covered)
+	}
+	if err := rejectCoverageDisagreement(covered, documented); err != nil {
+		t.Errorf("the generator's own two derivations were reported as disagreeing: %v", err)
+	}
 }

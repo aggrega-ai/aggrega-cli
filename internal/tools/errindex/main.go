@@ -57,6 +57,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/docsplice"
 )
@@ -151,8 +153,17 @@ func main() {
 	// The halting-conditions region is rendered from the same read of the page
 	// that fed the two warn tiers, so the region's membership and the counts
 	// reported beneath it describe one state of one file.
-	haltRegion, err := renderHaltRegion(ids, entries)
+	haltRegion, documented, err := renderHaltRegion(ids, entries)
 	if err != nil {
+		fail(err)
+	}
+
+	// Both derivations of the documented-condition set are now in hand, from one
+	// read of one page, and they are compared before anything is written. Below,
+	// this run reports the size of one of them as a description of the region the
+	// other produced; an unchecked disagreement would make that figure describe a
+	// set the published bytes do not carry.
+	if err := rejectCoverageDisagreement(covered, documented); err != nil {
 		fail(err)
 	}
 
@@ -215,6 +226,67 @@ func main() {
 	// maintains that page rather than reasons to refuse the build.
 	reportGaps(os.Stderr, ids, covered, *gaps)
 	reportClaims(os.Stderr, ids, entries, *claims)
+}
+
+// rejectCoverageDisagreement refuses when the two derivations of the
+// documented-condition set do not name the same conditions.
+//
+// One side resolves the page's coverage declarations to the identities they
+// name; the other renders a row per condition the page documents. Both read the
+// same declarations and both credit a re-export to the identity it forwards to,
+// so over any page they BOTH accept they describe the same set — and that makes
+// their agreement checkable rather than merely intended. Either may refuse a
+// page the other would accept, which is why this runs only once both have
+// succeeded.
+//
+// 🔴 Do not "simplify" this by having one derivation call the other, or by
+// lifting the shared step into a helper both use. The comparison below is the
+// only thing that would report a divergence, and a single implementation cannot
+// diverge from itself: unifying them deletes the check while leaving it looking
+// like it is still there. The two are a deliberate near-duplicate for exactly
+// this reason.
+//
+// Both directions are reported, and named rather than counted. Two sets of equal
+// size can still name different conditions, so a size comparison would pass a
+// swap; and a refusal that says only that two numbers differ leaves whoever has
+// to repair the page with nowhere to start.
+func rejectCoverageDisagreement(covered map[string]bool, documented []Identity) error {
+	inRegion := make(map[string]bool, len(documented))
+	for _, id := range documented {
+		inRegion[id.Handle()] = true
+	}
+
+	var missingFromRegion, missingFromCoverage []string
+	for handle := range covered {
+		if !inRegion[handle] {
+			missingFromRegion = append(missingFromRegion, handle)
+		}
+	}
+	for handle := range inRegion {
+		if !covered[handle] {
+			missingFromCoverage = append(missingFromCoverage, handle)
+		}
+	}
+	if len(missingFromRegion) == 0 && len(missingFromCoverage) == 0 {
+		return nil
+	}
+
+	// Sorted, because the two walks above are over maps and a refusal whose
+	// wording moves between runs cannot be compared against a previous one.
+	var b strings.Builder
+	fmt.Fprintf(&b, "the conditions %s documents and the conditions its generated region carries disagree",
+		haltsRelPath)
+	if len(missingFromRegion) > 0 {
+		sort.Strings(missingFromRegion)
+		fmt.Fprintf(&b, "\n  documented by an entry and carried by no row: %s", strings.Join(missingFromRegion, ", "))
+	}
+	if len(missingFromCoverage) > 0 {
+		sort.Strings(missingFromCoverage)
+		fmt.Fprintf(&b, "\n  carried by a row and documented by no entry: %s", strings.Join(missingFromCoverage, ", "))
+	}
+	b.WriteString("\n  the region is the lookup from a code to the entry that teaches the authoring fix, so a " +
+		"condition on one side and not the other resolves to nothing while reading as a resolved correspondence")
+	return fmt.Errorf("%s", b.String())
 }
 
 func fail(err error) {
