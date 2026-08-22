@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# One of three alternative db-reader Recipes under this fixture's catalog
+# directory, each in its own subdirectory because they share one Recipe identity
+# (cloudformation/db-reader:1.0.0) and differ only in the Outputs block their
+# fragment authors. A build loads exactly one of them in place of the catalog's
+# own db-reader Recipe, so the Aggregate, Manifest and Release stay identical
+# across the three and the only variable is the authored Outputs block. Loading
+# two of them into one build gives one Recipe identity two definitions, which the
+# catalog resolves by keeping the one loaded first — so the other's Outputs block
+# would simply not be there.
+#
+# This variant authors an Export name a cross-boundary link also derives for the
+# same build: the app-b -> db edge injects the database's `host`, so the link
+# derives an export name for that key on the db component in the stack-a
+# boundary, and the Outputs entry below spells that same name. The two exports
+# would reach the deployment target competing for one name, so the build halts.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: db-reader
+  version: 1.0.0
+  description: >
+    The database-consuming application of this fixture, rendered as a
+    CloudFormation fragment that additionally authors its own Outputs entry
+    carrying an Export name. The Export name it declares is the one a
+    cross-boundary link derives for the database host in this same build, so the
+    stack would declare one export name twice — once from this entry and once
+    from the link's own publish.
+  maintainers:
+    - name: "Massimiliano Ferrero"
+      email: "m.ferrero@cognitio.it"
+spec:
+  capability: cloudformation
+  implements: example/compute/db-reader:1.0.0
+
+  # The resource's logical id, derived from this instance's own name so that two
+  # applications of this type deployed into one stack describe two parameters
+  # rather than one.
+  locals:
+    logical_id: '{{ regexReplaceAll "[^A-Za-z0-9]+" .context.instance_id " " | title | nospace }}'
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::SSM::Parameter
+          Properties:
+            Name: "{{ .values.parameter_name }}"
+            Type: String
+            Tier: "{{ .infra.tier }}"
+            # Whole-scalar injection: the database host arrives on the
+            # injection context and is stored as the parameter value.
+            Value: {{ .context.inject.env.DB_HOST }}
+      Outputs:
+        # An Outputs entry an author wrote, carried through as authored. Its
+        # Export name is the one the cross-boundary link derives for the
+        # database host of this deployment's stack-a boundary, so the two meet.
+        # The entry reaches the stack under a name assembled from this
+        # component and this entry key, which is not the name the link's own
+        # publish writes to — the collision is between the two Export names,
+        # not between two stack outputs.
+        db_endpoint:
+          Value: "{{ .values.parameter_name }}"
+          Export:
+            Name: aggrega--cloudformation-two-boundary--dist-zsstack-a-zscloudformation--db--host

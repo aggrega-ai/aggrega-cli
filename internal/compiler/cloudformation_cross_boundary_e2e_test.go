@@ -205,6 +205,11 @@ func TestCloudFormationFragment_Deterministic(t *testing.T) {
 // name is checked structurally (a well-formed aggrega- name carrying the component
 // segment and the provides-key segment) rather than pinned to a literal, so the
 // proof survives later additions to the name's composition.
+//
+// No Recipe this build reaches authors an Outputs entry of its own, so the only
+// export name in the emitted stacks is the one the link derives. That makes this
+// the build with no authored export name at all, against which the authored-export
+// cases next door vary exactly one thing.
 func TestCloudFormationTwoBoundary_CrossStackWiring(t *testing.T) {
 	in := cfnTwoBoundaryInput(t)
 

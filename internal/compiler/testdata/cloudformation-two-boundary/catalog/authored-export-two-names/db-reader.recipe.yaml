@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# One of three alternative db-reader Recipes under this fixture's catalog
+# directory, each in its own subdirectory because they share one Recipe identity
+# (cloudformation/db-reader:1.0.0) and differ only in the Outputs block their
+# fragment authors. A build loads exactly one of them in place of the catalog's
+# own db-reader Recipe, so the Aggregate, Manifest and Release stay identical
+# across the three and the only variable is the authored Outputs block. Loading
+# two of them into one build gives one Recipe identity two definitions, which the
+# catalog resolves by keeping the one loaded first — so the other's Outputs block
+# would simply not be there.
+#
+# This variant authors TWO Outputs entries carrying two different Export names,
+# each chosen to sit as close to a derived name as an authored name can while
+# still being a different string:
+#
+#   - one names a provides key of the database that no uses-edge injects across
+#     a boundary, so no export is derived for it and the name meets nothing;
+#   - one differs from the derived name by a single trailing character.
+#
+# Both publish. Together they hold the refusal to string equality against the
+# names the build actually derives: a name in the derived shape for a key no
+# edge injects is not a collision, and neither is a near miss.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: db-reader
+  version: 1.0.0
+  description: >
+    The database-consuming application of this fixture, rendered as a
+    CloudFormation fragment that additionally authors two Outputs entries
+    carrying two different Export names. Neither is a name this build derives,
+    so both publish as written.
+  maintainers:
+    - name: "Massimiliano Ferrero"
+      email: "m.ferrero@cognitio.it"
+spec:
+  capability: cloudformation
+  implements: example/compute/db-reader:1.0.0
+
+  # The resource's logical id, derived from this instance's own name so that two
+  # applications of this type deployed into one stack describe two parameters
+  # rather than one.
+  locals:
+    logical_id: '{{ regexReplaceAll "[^A-Za-z0-9]+" .context.instance_id " " | title | nospace }}'
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::SSM::Parameter
+          Properties:
+            Name: "{{ .values.parameter_name }}"
+            Type: String
+            Tier: "{{ .infra.tier }}"
+            # Whole-scalar injection: the database host arrives on the
+            # injection context and is stored as the parameter value.
+            Value: {{ .context.inject.env.DB_HOST }}
+      Outputs:
+        # An export name in the derived shape, naming the database's `port`
+        # provides key. No uses-edge injects `port` across a boundary in this
+        # deployment, so no export is derived for it and this name meets
+        # nothing.
+        db_port_endpoint:
+          Value: "{{ .values.parameter_name }}"
+          Export:
+            Name: aggrega--cloudformation-two-boundary--dist-zsstack-a-zscloudformation--db--port
+        # A near miss of the export name the link derives for the database
+        # host: one trailing character apart, and therefore a different name.
+        db_host_endpoint:
+          Value: "{{ .values.parameter_name }}"
+          Export:
+            Name: aggrega--cloudformation-two-boundary--dist-zsstack-a-zscloudformation--db--hosts

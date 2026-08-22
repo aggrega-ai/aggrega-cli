@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# One of three alternative db-reader Recipes under this fixture's catalog
+# directory, each in its own subdirectory because they share one Recipe identity
+# (cloudformation/db-reader:1.0.0) and differ only in the Outputs block their
+# fragment authors. A build loads exactly one of them in place of the catalog's
+# own db-reader Recipe, so the Aggregate, Manifest and Release stay identical
+# across the three and the only variable is the authored Outputs block. Loading
+# two of them into one build gives one Recipe identity two definitions, which the
+# catalog resolves by keeping the one loaded first — so the other's Outputs block
+# would simply not be there.
+#
+# This variant authors an Export name of its own that no derived name in the
+# build matches, which is the supported case: declaring an Export name on an
+# Outputs entry is ordinary authoring, and one that meets nothing publishes
+# unremarked.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: db-reader
+  version: 1.0.0
+  description: >
+    The database-consuming application of this fixture, rendered as a
+    CloudFormation fragment that additionally authors its own Outputs entry
+    carrying an Export name of its own choosing. Nothing the build derives
+    spells that name, so the entry publishes alongside the link's own export.
+  maintainers:
+    - name: "Massimiliano Ferrero"
+      email: "m.ferrero@cognitio.it"
+spec:
+  capability: cloudformation
+  implements: example/compute/db-reader:1.0.0
+
+  # The resource's logical id, derived from this instance's own name so that two
+  # applications of this type deployed into one stack describe two parameters
+  # rather than one.
+  locals:
+    logical_id: '{{ regexReplaceAll "[^A-Za-z0-9]+" .context.instance_id " " | title | nospace }}'
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::SSM::Parameter
+          Properties:
+            Name: "{{ .values.parameter_name }}"
+            Type: String
+            Tier: "{{ .infra.tier }}"
+            # Whole-scalar injection: the database host arrives on the
+            # injection context and is stored as the parameter value.
+            Value: {{ .context.inject.env.DB_HOST }}
+      Outputs:
+        # An Export name in the author's own vocabulary. It shares nothing with
+        # the names this build derives, so it is published as written.
+        db_endpoint:
+          Value: "{{ .values.parameter_name }}"
+          Export:
+            Name: platform-team--app-a--db-endpoint
