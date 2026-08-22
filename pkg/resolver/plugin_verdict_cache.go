@@ -59,6 +59,20 @@ type VerdictPluginTierSources struct {
 // parameter: the manifest-derived digest governs the bytes. An absent record is a
 // first-run state, not a fault, and never a pin of zero.
 //
+// The bound on all of that is the resolution tier, not the plugin: the
+// comparison governs the cache-not-pin read this function performs, and no
+// resolution outside it. A verdict attachment whose plugin the entity-fronted
+// cascade surfaces first — an embedded guest, a co-located artifact, an explicit
+// path, or a lockfile-pinned row — never reaches this function at all, because
+// VerdictLookup falls through to it only on a clean not-found miss, so it is
+// governed by whatever governs that resolution instead. Note that a lockfile pin
+// is not itself a tier: Resolver.verified applies it to whichever tier produced
+// the bytes, so "pinned" and "served from the cache" are not alternatives on one
+// axis. The record's
+// other half — refusing a configuration that no longer attaches a recorded
+// gate — is not tier-bound: it compares the configuration against the record
+// before any resolution runs.
+//
 // pluginFromCache reads a Plugin entity from the content cache by URI, returning
 // the parsed entity, the .wasm layer content digest, a found flag, and any read
 // error; the caller supplies it as a closure over its own cache-backed catalog
