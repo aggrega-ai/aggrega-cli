@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+#
+# Pinned to match the guests that consume this crate. Each of them selects the
+# stable channel because its embedded policy engine's dependency tree requires a
+# newer Rust than the shared plugin workspace floors itself to, and a shared crate
+# compiled by an older toolchain than its consumers would fail to resolve when
+# built on its own. rustup reads this file from the working directory, so it
+# applies when this crate is built or tested directly.
+[toolchain]
+channel = "stable"
+targets = ["wasm32-wasip1"]

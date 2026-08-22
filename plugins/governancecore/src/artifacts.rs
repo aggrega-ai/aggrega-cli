@@ -3,6 +3,9 @@
 
 //! Projection of rendered artifacts into the document shape a policy reads.
 //!
+//! Nothing here names a policy engine: the projection is what every engine's
+//! rendered-output facet reads, so it has one home rather than one per engine.
+//!
 //! A policy reasoning over rendered output wants the structured document, not the
 //! raw text: a rule reads a container image or a replica count out of a parsed
 //! object rather than by matching on the rendered characters. This module builds
@@ -81,14 +84,19 @@ fn serde_path_to_value(
     Ok(serde::Deserialize::deserialize(document)?)
 }
 
-/// Builds the Rego `input` document for the rendered-artifact facet: every
-/// artifact with its projected documents, plus the attachment's own sources and
-/// settings, so the whole payload is visible to a policy.
+/// Builds the input document for the rendered-artifact facet: every artifact
+/// with its projected documents, plus the attachment's own sources and settings,
+/// so the whole payload is visible to a policy.
+///
+/// The field names are the names a policy addresses, and they are the same names
+/// whichever engine evaluates it — which is why this assembly lives here rather
+/// than in an engine adapter. A policy moved between engines reads
+/// `artifacts`, `sources` and `settings` in both.
 ///
 /// Artifacts keep the order the host supplied, which is sorted by path, and the
 /// documents within each artifact keep document order — so identical input yields
 /// an identical input document.
-pub fn rego_input(payload: &aggrega_abi::RenderPolicyInput) -> serde_json::Value {
+pub fn render_input(payload: &aggrega_abi::RenderPolicyInput) -> serde_json::Value {
     let artifacts: Vec<serde_json::Value> = payload.artifacts.iter().map(project).collect();
     let sources: Vec<serde_json::Value> = payload
         .sources
@@ -98,7 +106,7 @@ pub fn rego_input(payload: &aggrega_abi::RenderPolicyInput) -> serde_json::Value
     json!({
         "artifacts": artifacts,
         "sources": sources,
-        "settings": crate::engine::settings_value(payload.settings.as_deref()),
+        "settings": crate::payload::settings_value(payload.settings.as_deref()),
     })
 }
 

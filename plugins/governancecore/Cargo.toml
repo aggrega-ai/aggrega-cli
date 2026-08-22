@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+[package]
+name = "governancecore"
+version = "0.1.0"
+edition = "2021"
+description = "Shared, policy-engine-free core for the governance Wasm plugins: payload reading, rendered-artifact projection, and the decision-key-to-severity translation contract."
+license = "Apache-2.0"
+publish = false
+
+# A self-contained workspace root, like each guest that consumes it. The guests
+# resolve their own dependency trees and their own toolchains because each embeds
+# a different policy engine; this crate is depended on by path from each of them,
+# so it must not be pulled into any one guest's workspace.
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# The shared severity vocabulary and the diagnostic type every socket reports
+# from. Depending on the plugin development kit rather than restating the
+# vocabulary is what keeps one definition of a severity.
+aggrega-pdk-rust = { path = "../../../aggrega-pdk/rust" }
+# The per-role payload types. The render-facet input types are defined in the ABI
+# codec crate and are not re-exported by the plugin development kit, so the codec
+# crate is depended on directly for those.
+aggrega-abi = { path = "../../../aggrega-abi/rust" }
+serde = { version = "1", features = ["derive"] }
+# raw_value matches the ABI crate: the settings and artifact-tree fields are
+# carried verbatim as raw JSON.
+serde_json = { version = "1", features = ["raw_value"] }
+# Reads a rendered artifact the host handed over unparsed. YAML is a superset of
+# JSON, so one parser covers both formats the host leaves to a guest.
+serde_yaml = "0.9"
+# Error type shared with the ABI surface, so a failure raised here propagates
+# through a guest's export boundary unchanged.
+anyhow = "1"

@@ -44,13 +44,13 @@
 //! than being reported as a decision. That distinction is the point: "this policy
 //! could not be evaluated" must never read as "this policy allows the build".
 
-use aggrega_abi::{AnnotationSource, MutatorSource, PolicySource};
 use aggrega_pdk_rust::Diagnostic;
+use governancecore::sources::Source;
+use governancecore::translation::{translate_into, Translation};
 use regorus::Value;
 use serde_json::value::RawValue;
 
 use crate::bundle;
-use crate::translation::{translate_into, Translation};
 
 /// The module path used for an attached file that arrives without one.
 const UNNAMED_SOURCE_PATH: &str = "policy.rego";
@@ -58,60 +58,6 @@ const UNNAMED_SOURCE_PATH: &str = "policy.rego";
 /// The import path a module declares to say it is written in the current rule
 /// syntax.
 const CURRENT_SYNTAX_IMPORT_PATH: &str = "rego.v1";
-
-/// Reads an attachment's settings as a JSON value for the policy's `data`
-/// document, yielding an empty object when the attachment declares none.
-///
-/// The settings are carried through exactly as the attachment wrote them. The
-/// translation is read out of the same object rather than removed from it, so a
-/// policy that reads its own settings sees precisely what it saw before a
-/// translation was configurable.
-pub fn settings_value(settings: Option<&RawValue>) -> serde_json::Value {
-    match settings {
-        Some(raw) => serde_json::from_str(raw.get()).unwrap_or_else(|_| serde_json::json!({})),
-        None => serde_json::json!({}),
-    }
-}
-
-/// One attached file as the evaluator reads it: a name and its text.
-///
-/// Each of the plugin's roles receives its own source type on the wire, all with
-/// the same two fields, so this borrowed view is what lets one evaluator serve
-/// every role without copying content or restating the loading rules per role.
-#[derive(Debug, Clone, Copy)]
-pub struct Source<'a> {
-    /// The attached file's name.
-    pub path: &'a str,
-    /// The file's text, exactly as it was attached.
-    pub content: &'a str,
-}
-
-impl<'a> From<&'a PolicySource> for Source<'a> {
-    fn from(source: &'a PolicySource) -> Self {
-        Source {
-            path: source.path.as_str(),
-            content: source.content.as_str(),
-        }
-    }
-}
-
-impl<'a> From<&'a MutatorSource> for Source<'a> {
-    fn from(source: &'a MutatorSource) -> Self {
-        Source {
-            path: source.path.as_str(),
-            content: source.content.as_str(),
-        }
-    }
-}
-
-impl<'a> From<&'a AnnotationSource> for Source<'a> {
-    fn from(source: &'a AnnotationSource) -> Self {
-        Source {
-            path: source.path.as_str(),
-            content: source.content.as_str(),
-        }
-    }
-}
 
 /// One package the attached policies declared, evaluated to its object.
 #[derive(Debug, Clone)]

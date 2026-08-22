@@ -4,8 +4,13 @@
 //! Reading the payload a role delivers into its own shape.
 //!
 //! Each role delivers a payload with a declared shape, and reading it through
-//! that shape rather than picking fields out by hand is what keeps this plugin
-//! and everything else on the wire agreeing about what the payload holds.
+//! that shape rather than picking fields out by hand is what keeps a plugin and
+//! everything else on the wire agreeing about what the payload holds.
+//!
+//! Two things are read here: the payload itself, through the shape its role
+//! declares, and the attachment's settings field out of that payload. Both are
+//! free of any policy-engine type, so every engine shares one reader rather than
+//! each carrying its own opinion about what the wire may contain.
 //!
 //! # Tolerating an absent value where the payload declares a list
 //!
@@ -56,6 +61,27 @@ pub fn read<T: DeserializeOwned>(
         }
     }
     Ok(serde_json::from_value(normalised)?)
+}
+
+/// Reads an attachment's settings as a JSON value for a policy to consume,
+/// yielding an empty object when the attachment declares none.
+///
+/// The settings are carried through exactly as the attachment wrote them.
+/// Anything a guest reads out of the settings for its own use — a translation,
+/// say — is read out of this same object rather than removed from it, so a policy
+/// that reads its own settings sees precisely what the attachment declared.
+///
+/// Settings that are present but unreadable as JSON yield the empty object
+/// rather than failing. The case cannot actually arise — a raw value is
+/// constructed only from text that parses, which the tests below assert — so this
+/// is a total function rather than a tolerance: it lets a caller read settings
+/// without handling an error that has no way to occur. Failing instead would put
+/// an unreachable error path in front of every caller.
+pub fn settings_value(settings: Option<&serde_json::value::RawValue>) -> serde_json::Value {
+    match settings {
+        Some(raw) => serde_json::from_str(raw.get()).unwrap_or_else(|_| serde_json::json!({})),
+        None => serde_json::json!({}),
+    }
 }
 
 #[cfg(test)]
@@ -114,6 +140,32 @@ mod tests {
             &["entries"],
         );
         assert!(outcome.is_err(), "{outcome:?}");
+    }
+
+    #[test]
+    fn absent_settings_read_as_an_empty_object() {
+        assert_eq!(settings_value(None), serde_json::json!({}));
+    }
+
+    #[test]
+    fn settings_are_read_exactly_as_the_attachment_wrote_them() {
+        let raw = serde_json::value::RawValue::from_string(r#"{"max_nodes":5}"#.to_string())
+            .expect("test JSON is valid");
+        assert_eq!(
+            settings_value(Some(&raw)),
+            serde_json::json!({"max_nodes": 5})
+        );
+    }
+
+    #[test]
+    fn a_settings_value_cannot_carry_text_that_is_not_readable_json() {
+        // Why settings_value's fallback is unreachable rather than merely
+        // unexercised: a raw value is constructed only from text that parses, so
+        // no caller can hand it unreadable content. Asserted here because it is
+        // the reason the fallback yields an empty object instead of failing — if
+        // this ever stops holding, the fallback becomes reachable and the choice
+        // needs revisiting.
+        assert!(serde_json::value::RawValue::from_string("{".to_string()).is_err());
     }
 
     #[test]

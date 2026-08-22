@@ -71,6 +71,7 @@ func TestManifestDerivedURIsAreStable(t *testing.T) {
 		"governance/label-injector",
 		"governance/selector-tagger",
 		"governance/rego",
+		"governance/cel",
 	}
 	got := embeddedArtifacts()
 	if len(got) != len(want) {

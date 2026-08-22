@@ -27,4 +27,5 @@ parser	yaml	./plugins/yaml-parser	go
 parser	json	./plugins/json-parser	go
 governance	label-injector	./plugins/label-injector-mutator	go
 governance	selector-tagger	./plugins/selector-tagger-mutator	go
-governance	rego	plugins/rego-governance	rust	../aggrega-pdk/rust,../aggrega-abi/rust
+governance	rego	plugins/rego-governance	rust	../aggrega-pdk/rust,../aggrega-abi/rust,plugins/governancecore
+governance	cel	plugins/cel-governance	rust	../aggrega-pdk/rust,../aggrega-abi/rust,plugins/governancecore

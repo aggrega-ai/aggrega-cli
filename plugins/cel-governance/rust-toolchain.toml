@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+#
+# The embedded expression evaluator declares a minimum Rust version newer than the
+# shared plugin workspace floors itself to, so this crate selects its own
+# toolchain. Without this file the crate is compiled by whichever toolchain the
+# invoking directory selects, and dependency resolution then fails with a minimum
+# version complaint that reads like an incompatibility with the WebAssembly target
+# rather than the toolchain choice it actually is. rustup reads this file from the
+# working directory, which is why the embedded-plugin build enters a crate's
+# directory before invoking cargo.
+[toolchain]
+channel = "stable"
+targets = ["wasm32-wasip1"]

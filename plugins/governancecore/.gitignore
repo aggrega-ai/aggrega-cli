@@ -1,0 +1,12 @@
+# Cargo build directory — local-only, regenerated on every build.
+target/
+
+# Editor temporaries.
+**/*.rs.bk
+
+# Cargo lock is NOT committed for this crate. It is a library consumed by path
+# from each governance guest, and a guest resolves the whole dependency set —
+# this crate's included — into its own committed lock. A lock here would be a
+# second, unused resolution of the same dependencies, and the copy is what goes
+# stale.
+Cargo.lock

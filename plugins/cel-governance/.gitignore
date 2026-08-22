@@ -1,0 +1,11 @@
+# Cargo build directory — local-only, regenerated on every build.
+target/
+
+# Editor temporaries.
+**/*.rs.bk
+
+# Cargo lock is committed for this crate (binary-shaped artifact —
+# the .wasm output is published downstream; reproducible builds
+# require the locked dependency set). Listed here as a NEGATIVE
+# ignore for clarity: Cargo.lock is tracked.
+!Cargo.lock

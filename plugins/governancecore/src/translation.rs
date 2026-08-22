@@ -4,12 +4,11 @@
 //! Translation from a policy's own decision keys to the verdict severities the
 //! governance socket reports from.
 //!
-//! A policy language names its decisions in its own vocabulary — a Rego policy
-//! conventionally collects its messages under `deny`, `warn` and `audit` — while
-//! the socket reports from one closed set of severities. This
-//! module is where one becomes the other, and it is deliberately free of any
-//! policy-engine type so every engine adapter shares one translation rather than
-//! restating it.
+//! A policy names its decisions in its own vocabulary — conventionally
+//! collecting its messages under `deny`, `warn` and `audit` — while the socket
+//! reports from one closed set of severities. This module is where one becomes
+//! the other, and it is deliberately free of any policy-engine type so every
+//! engine adapter shares one translation rather than restating it.
 //!
 //! The translation is data an operator supplies through the attachment's
 //! settings, not a rule compiled into an adapter. It defaults to the convention
@@ -56,12 +55,15 @@ impl Default for Translation {
 
 impl Translation {
     /// The translation applied when an attachment supplies none: the
-    /// conventional Rego collection names, mapped onto the socket's
+    /// conventional decision-key names, mapped onto the socket's
     /// severities — `deny` stops the build, `warn` surfaces alongside a
     /// build that still completes, and `audit` records the observation.
     ///
-    /// A policy written for that convention therefore evaluates identically
-    /// whether or not the operator configures a translation.
+    /// These names are the convention independently of which policy language
+    /// expresses them, which is why the default lives here rather than in an
+    /// engine adapter: a policy written for that convention evaluates identically
+    /// in either engine, and whether or not the operator configures a
+    /// translation.
     pub fn conventional() -> Self {
         Self {
             rules: vec![
@@ -227,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn the_conventional_translation_is_the_collection_convention() {
+    fn the_conventional_translation_is_the_decision_key_convention() {
         let rules = Translation::conventional();
         let pairs: Vec<(&str, &str)> = rules
             .rules()

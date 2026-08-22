@@ -21,6 +21,11 @@ crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [dependencies]
+# The part of a governance plugin that is the same whichever policy language it
+# evaluates: payload reading, the rendered-artifact projection, and the
+# decision-key-to-severity translation contract. Shared with the other governance
+# guests so an operator's translation settings mean the same thing in each.
+governancecore = { path = "../governancecore" }
 # The plugin ABI surface: the descriptor encoder, the shared severity vocabulary,
 # and the generated wire types. Reusing the generated types single-sources the
 # wire shape with every other guest instead of restating it locally.

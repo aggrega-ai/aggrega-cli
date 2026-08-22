@@ -138,12 +138,9 @@
 //! not be evaluated" must never read as "this policy allows the build".
 
 mod annotations;
-mod artifacts;
 mod bundle;
 mod engine;
 mod labels;
-mod payload;
-mod translation;
 
 use aggrega_abi::{
     AnnotationTransformInput, AnnotationTransformOutput, MutatorInput, MutatorOutput,
@@ -155,8 +152,10 @@ use aggrega_pdk_rust::{
 };
 use extism_pdk::{plugin_fn, FnResult};
 
-use engine::Source;
-use translation::Translation;
+use governancecore::artifacts::render_input;
+use governancecore::payload::read as read_payload;
+use governancecore::sources::project as project_sources;
+use governancecore::translation::{settings_schema, Translation};
 
 /// The static `describe()` self-report the host reads once when it loads the
 /// plugin.
@@ -192,7 +191,7 @@ fn descriptor() -> PluginDescriptor {
             },
         ],
         settings_schema: Some(
-            serde_json::value::RawValue::from_string(translation::settings_schema())
+            serde_json::value::RawValue::from_string(settings_schema())
                 .expect("the declared settings schema is valid JSON"),
         ),
         metadata: Some(Box::new(PluginDescriptorMeta {
@@ -230,18 +229,28 @@ pub fn validate(input: String) -> FnResult<String> {
 fn verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
     let payload: serde_json::Value = serde_json::from_str(raw)?;
     let results = if payload.get("artifacts").is_some() {
-        let rendered: RenderPolicyInput = payload::read(&payload, &["artifacts"])?;
+        let rendered: RenderPolicyInput = read_payload(&payload, &["artifacts"])?;
         let settings = rendered.settings.as_deref();
         let translation = Translation::from_settings(settings)?;
-        let input = artifacts::rego_input(&rendered);
-        engine::evaluate(&sources(&rendered.sources), settings, &input, &translation)?
+        let input = render_input(&rendered);
+        engine::evaluate(
+            &project_sources(&rendered.sources),
+            settings,
+            &input,
+            &translation,
+        )?
     } else {
-        let graph: PolicyInput = payload::read(&payload, &["precalculated_paths"])?;
+        let graph: PolicyInput = read_payload(&payload, &["precalculated_paths"])?;
         let settings = graph.settings.as_deref();
         let translation = Translation::from_settings(settings)?;
         // The whole payload is the policy's input document, so a policy reads
         // the graph and the routing paths under the names the wire gives them.
-        engine::evaluate(&sources(&graph.sources), settings, &payload, &translation)?
+        engine::evaluate(
+            &project_sources(&graph.sources),
+            settings,
+            &payload,
+            &translation,
+        )?
     };
     Ok(PolicyOutput {
         results,
@@ -275,7 +284,7 @@ fn label_changes(raw: &[u8]) -> anyhow::Result<MutatorOutput> {
         .map_err(|err| anyhow::anyhow!("reading the label-transform payload: {err}"))?;
     let payload = serde_json::to_value(&input)?;
     let decisions = engine::decisions(
-        &sources(&input.sources),
+        &project_sources(&input.sources),
         input.settings.as_deref(),
         &payload,
         labels::DECISION_KEY,
@@ -303,9 +312,9 @@ pub fn transform_annotations(input: String) -> FnResult<String> {
 /// them.
 fn annotation_injections(raw: &str) -> anyhow::Result<AnnotationTransformOutput> {
     let payload: serde_json::Value = serde_json::from_str(raw)?;
-    let input: AnnotationTransformInput = payload::read(&payload, &["targets", "binding_keys"])?;
+    let input: AnnotationTransformInput = read_payload(&payload, &["targets", "binding_keys"])?;
     let decisions = engine::decisions(
-        &sources(&input.sources),
+        &project_sources(&input.sources),
         input.settings.as_deref(),
         &payload,
         annotations::DECISION_KEY,
@@ -314,18 +323,6 @@ fn annotation_injections(raw: &str) -> anyhow::Result<AnnotationTransformOutput>
         injections: annotations::injections(&decisions)?,
         ..Default::default()
     })
-}
-
-/// Projects a role's own source entries into the view the evaluator reads.
-///
-/// Each role carries its own source type with the same two fields, so this is
-/// the one place the four payload shapes converge on a single reader — the
-/// alternative would be four copies of the loading rules, one per role.
-fn sources<'a, S>(entries: &'a [S]) -> Vec<Source<'a>>
-where
-    Source<'a>: From<&'a S>,
-{
-    entries.iter().map(Source::from).collect()
 }
 
 #[cfg(test)]
