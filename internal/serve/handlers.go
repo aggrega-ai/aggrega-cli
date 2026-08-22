@@ -61,6 +61,13 @@ type serverCapabilities struct {
 // anchored via an explicit --workspace-root (no marker consulted).
 // Additive only: clients that read only Capabilities continue to
 // work; the new fields are opt-in for clients that surface them.
+type initializeResult struct {
+	Capabilities    serverCapabilities `json:"capabilities"`
+	WorkspaceRoot   string             `json:"workspaceRoot"`
+	ConfigSource    string             `json:"configSource"`
+	WorkspaceMarker string             `json:"workspaceMarker,omitempty"`
+}
+
 // releaseCandidatesResult is the aggrega/releaseCandidates response: the
 // absolute paths of every Release-kind document under the workspace root,
 // determined by content (the file's `kind: Release` header), not by filename.
@@ -85,11 +92,43 @@ func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequ
 	return s.writeResult(ctx, req.ID, releaseCandidatesResult{Releases: releases})
 }
 
-type initializeResult struct {
-	Capabilities    serverCapabilities `json:"capabilities"`
-	WorkspaceRoot   string             `json:"workspaceRoot"`
-	ConfigSource    string             `json:"configSource"`
-	WorkspaceMarker string             `json:"workspaceMarker,omitempty"`
+// activeReleaseResult is the aggrega/activeRelease response: the absolute
+// path of the Release the workspace's disambiguation cascade selected.
+//
+// Release is always present on the wire and carries the empty string when the
+// cascade selected none, so one field answers both which Release is active and
+// whether any is. A field that appeared only once a Release resolved would
+// leave a client unable to tell "no Release in this workspace" from "the field
+// is missing for some other reason", and guessing between those two is exactly
+// what this method exists to stop.
+type activeReleaseResult struct {
+	Release string `json:"release"`
+}
+
+// dispatchActiveRelease returns the Release the workspace's disambiguation
+// cascade selected — the same answer the daemon itself acts on for every
+// operation that needs Release context. An editor showing the operator which
+// Release is active asks for it here rather than re-deriving it from one of
+// the cascade's inputs, because an input the cascade did not end up using
+// names a different Release than the one in force.
+//
+// Takes no params: the active Release is a property of the daemon's workspace
+// root. The cascade runs here on first use, which is what makes this a query
+// and not something the handshake could carry — the cascade walks the whole
+// workspace tree, and the handshake deliberately answers before that walk so
+// a large tree cannot delay it.
+//
+// A workspace with no active Release is a successful answer carrying an empty
+// path, never an error. A client refreshes an active-Release indicator on
+// events the operator did not ask about — the daemon restarting, the workspace
+// anchor changing, a marker file being edited — so answering with an error
+// would raise a remediation prompt on every one of them in a workspace that
+// legitimately holds no Release.
+func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest) error {
+	// The active-Release fields resolve lazily; every reader triggers the
+	// cascade first so none observes the zero value it would have populated.
+	s.ensureCascade()
+	return s.writeResult(ctx, req.ID, activeReleaseResult{Release: s.activeReleasePath})
 }
 
 // dispatchInitialize selects a position encoding from the client's

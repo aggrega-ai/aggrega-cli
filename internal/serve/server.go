@@ -44,6 +44,9 @@
 //	aggrega/releaseCandidates    lists the workspace's Release documents,
 //	                             selected by document kind rather than by
 //	                             filename
+//	aggrega/activeRelease        reports which Release the workspace's
+//	                             disambiguation cascade selected, or the
+//	                             empty path when it selected none
 //	aggrega/resolve              position to the definition it names
 //	aggrega/findReferences       position to the sites referencing it
 //	aggrega/findImplementations  position to the entities implementing it
@@ -458,21 +461,16 @@ type Server struct {
 	// + cascadeDiagnosticMessage to construct error-envelope text when
 	// activeRelease is nil.
 	//
-	// Subprocess-test coverage of the cascade-via-daemon wiring is
-	// deferred: no operation currently reads activeRelease and
-	// surfaces it through a wire response, so an external observer
-	// cannot assert "the cascade populated this field correctly".
-	// The cascade's correctness is pinned by direct unit tests on
-	// runManifestCascade in manifest_cascade_test.go; the lazy
-	// invocation itself is covered by compile + vet plus the
-	// implicit panic-free behavior the existing subprocess tests
-	// exercise. When a future operation reads activeRelease and
-	// surfaces it (Tier-4 validate's execution path, or a dedicated
-	// query like aggrega/activeRelease), add a subprocess test that
-	// constructs a workspace matching each cascade step's win
-	// condition and asserts the operation's response carries the
-	// expected Release. The pickup point is here when a consumer
-	// lands.
+	// The cascade's own correctness is pinned by direct unit tests on
+	// runManifestCascade in manifest_cascade_test.go. The wiring — that a
+	// request actually triggers the cascade and reports what it resolved —
+	// is observable from outside the process now that aggrega/activeRelease
+	// surfaces the resolved path on the wire. active_release_test.go drives
+	// that request against a server built WITHOUT the test harness's
+	// cascade suppression, so it observes the real lazy invocation: a
+	// resolved workspace, a workspace that resolves nothing, and a
+	// workspace where a configured authoring Release outranks a loadable
+	// marker.
 	activeRelease *types.Release
 
 	// activeReleasePath is the absolute filesystem path of the
