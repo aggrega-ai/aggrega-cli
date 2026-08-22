@@ -367,10 +367,12 @@ type LinkPatch struct {
 	Ops []frp.JSONPatchOp `json:"ops" yaml:"ops" cbor:"ops"`
 }
 
-// LinkPublishInput The payload a provider receives on its link_publish export: one cross-boundary link whose consumed endpoint's output is referenced across a boundary. The export returns the published identity the consumer resolves against and any producer-side artifact wiring the consumed endpoint's output needs.
+// LinkPublishInput The payload a provider receives on its link_publish export: one cross-boundary link whose consumed endpoint's output is referenced across a boundary, and that endpoint's assembled files. The export returns the published identity the consumer resolves against and any producer-side artifact wiring the consumed endpoint's output needs.
 type LinkPublishInput struct {
 	// Edge The cross-boundary link being published, read from the consumed (target) endpoint's side.
 	Edge LinkEdge `json:"edge" yaml:"edge" cbor:"edge"`
+	// ProducerFiles The consumed endpoint's assembled files, so the provider can read what that endpoint already declares and check the names it is about to publish against them. Each names its on-disk path and carries the assembled bytes. Absent when the host has no assembled producer output to hand the publish; a provider that needs no document to author its wiring ignores it.
+	ProducerFiles []RenderedFile `json:"producer_files,omitempty" yaml:"producer_files,omitempty" cbor:"producer_files,omitempty"`
 }
 
 // LinkPublishOutput The payload a provider returns from its link_publish export: the published identity handle the consumer resolves against, and the producer-side artifact wiring to apply to the consumed endpoint's assembled output.
@@ -4306,6 +4308,26 @@ func (t LinkPublishInput) MarshalJSON() ([]byte, error) {
 	} else {
 		buf.Write(enc)
 	}
+	if len(t.ProducerFiles) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"producer_files\":")
+		buf.WriteByte('[')
+		for i := range t.ProducerFiles {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.ProducerFiles[i]
+			if enc, err := ev.MarshalJSON(); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -4332,6 +4354,25 @@ func (t *LinkPublishInput) UnmarshalJSON(data []byte) error {
 					return err
 				}
 			}
+		case "producer_files":
+			t.ProducerFiles = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem RenderedFile
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.ProducerFiles = append(t.ProducerFiles, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -4351,7 +4392,7 @@ func (t *LinkPublishInput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *LinkPublishInput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "edge"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "edge", "producer_files"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -8653,11 +8694,24 @@ func (t LinkPublishInput) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t LinkPublishInput) appendCBOR(dst []byte) ([]byte, error) {
 	n := 1
+	if len(t.ProducerFiles) != 0 {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
 	dst = appendCBORTextString(dst, "edge")
 	if dst, err = t.Edge.appendCBOR(dst); err != nil {
 		return nil, err
+	}
+	if len(t.ProducerFiles) != 0 {
+		dst = appendCBORTextString(dst, "producer_files")
+		dst = appendCBORHead(dst, 4, uint64(len(t.ProducerFiles)))
+		for i := range t.ProducerFiles {
+			ev := t.ProducerFiles[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return dst, nil
 }
@@ -8684,6 +8738,22 @@ func (t *LinkPublishInput) decodeCBOR(dec *cborDec) error {
 			if err := (&t.Edge).decodeCBOR(dec); err != nil {
 				return err
 			}
+		case "producer_files":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]RenderedFile, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev RenderedFile
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.ProducerFiles = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -8700,7 +8770,7 @@ func (t *LinkPublishInput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *LinkPublishInput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "edge"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "edge", "producer_files"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

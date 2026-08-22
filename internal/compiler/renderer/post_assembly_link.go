@@ -103,9 +103,15 @@ func wireCrossBoundaryLinks(
 
 		linkEdge := buildLinkEdge(edge, srcKey, tgtKey, allProvides, nodeAnnotations[edge.Target], nodeAnnotations[edge.Source], deploymentID)
 
-		// Producer-side: publish on the consumed (target) end's guest, then apply
-		// its wiring to the target group's assembled files.
-		pubOut, err := nodeEngine[edge.Target].(CrossBoundaryLinker).LinkPublish(ctx, LinkPublishInput{Edge: linkEdge})
+		// Producer-side: publish on the consumed (target) end's guest against the
+		// target group's assembled files, then apply its wiring to those same
+		// files. The producer files let the guest read what the consumed endpoint
+		// already declares, so it can check the names it is about to publish
+		// against them.
+		pubOut, err := nodeEngine[edge.Target].(CrossBoundaryLinker).LinkPublish(ctx, LinkPublishInput{
+			Edge:          linkEdge,
+			ProducerFiles: assembledFilesToRendered(tgtGrp),
+		})
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: tgtKey.Path},
 				fmt.Sprintf("cross-boundary link publish for uses edge %q -> %q", edge.Source, edge.Target))

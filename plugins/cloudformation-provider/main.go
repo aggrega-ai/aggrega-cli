@@ -355,7 +355,7 @@ func linkPublish() int32 {
 		pdk.SetError(err)
 		return 1
 	}
-	out, err := cfncore.LinkPublish(in.Edge)
+	out, err := cfncore.LinkPublish(in.Edge, in.ProducerFiles)
 	if err != nil {
 		pdk.SetError(err)
 		return 1
