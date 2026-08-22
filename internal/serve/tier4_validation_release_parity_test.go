@@ -265,6 +265,7 @@ func writeServeReleaseParityWorkspace(t *testing.T, c serveReleaseParityCase) (r
 // diagnostic. Cancellation is not a finding.
 func serveCoreHasErrors(vr *compilerops.ValidateResult) bool {
 	if len(vr.ClosureExtendsErrors) > 0 || vr.PillarError != nil ||
+		vr.VerdictTrustError != nil ||
 		len(vr.ResolutionFindings) > 0 || len(vr.InputKindErrors) > 0 {
 		return true
 	}
@@ -344,6 +345,7 @@ func TestRunTier4ValidationReleaseCoreParity(t *testing.T) {
 				View:            view,
 				Closure:         resolved.Closure,
 				Release:         resolved.Release,
+				ReleasePath:     releasePath,
 				Manifest:        resolved.Manifest,
 				AggBytes:        resolved.AggBytes,
 				AggregatePath:   relAggPath,

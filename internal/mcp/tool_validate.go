@@ -229,6 +229,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 		View:            view,
 		Closure:         resolved.Closure,
 		Release:         resolved.Release,
+		ReleasePath:     releasePath,
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
 		AggregatePath:   resolved.AggregatePath,
@@ -372,6 +373,12 @@ func validateDiagnostics(vr *compilerops.ValidateResult) []string {
 	}
 	if vr.PillarError != nil {
 		out = append(out, vr.PillarError.Error())
+	}
+	// The verdict-plugin trust gate: the workspace configuration disagreed with the
+	// record of the plugin identities trusted for its verdict attachments, so no
+	// gate ran and nothing past this point was validated.
+	if vr.VerdictTrustError != nil {
+		out = append(out, vr.VerdictTrustError.Error())
 	}
 	if vr.Tier4 != nil {
 		for _, ve := range vr.Tier4.ResolveDiagnostics {

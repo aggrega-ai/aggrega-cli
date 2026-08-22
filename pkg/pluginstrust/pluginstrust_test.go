@@ -165,12 +165,12 @@ func TestWrittenRecordCarriesTheGeneratedHeader(t *testing.T) {
 	body := string(raw)
 
 	for _, want := range []string{
-		"aggrega pull",   // who writes it
-		"aggrega build",  // who reads it
-		"Commit this",    // why committing it matters
-		"verdict_inputs", // where the rule-input record lives instead
-		"no signature",   // what it does not carry
-		"lockfile",       // where the reproducibility pins live
+		"aggrega pull",              // who writes it
+		"runs one of those plugins", // who reads it
+		"Commit this",               // why committing it matters
+		"verdict_inputs",            // where the rule-input record lives instead
+		"no signature",              // what it does not carry
+		"lockfile",                  // where the reproducibility pins live
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the generated header does not mention %q:\n%s", want, body)

@@ -106,15 +106,17 @@ func VerdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, 
 // dispatches, and the digests recorded as trusted for the attachments that return
 // an accept-or-reject verdict.
 //
-// Every build surface calls this — the command-line build, the daemon, and the
-// editor's build tool — and it exists as one call because the two halves are one
-// act. Composing the attachment list without supplying the recorded digests
-// produces a build that runs every configured gate and holds none of them to the
-// identity that was reviewed, and it does so silently: the digests arrive as a
-// map, an unsupplied map is an empty one, and an empty one means "nothing is
-// recorded" rather than "nobody supplied this". No type checker and no test that
-// does not specifically look can tell the two apart, which is why the assignment
-// is not left to each surface to remember.
+// Every surface that runs those attachments calls this: a build — from the command
+// line, from the daemon, and from the editor's build tool — and a Release-scoped
+// validation, which runs the same pre-render pipeline and therefore dispatches the
+// same guests, from each of those same three front ends. It exists as one call
+// because the two halves are one act. Composing the attachment list without
+// supplying the recorded digests produces a run that dispatches every configured
+// gate and holds none of them to the identity that was reviewed, and it does so
+// silently: the digests arrive as a map, an unsupplied map is an empty one, and an
+// empty one means "nothing is recorded" rather than "nobody supplied this". No
+// type checker and no test that does not specifically look can tell the two apart,
+// which is why the assignment is not left to each surface to remember.
 //
 // What it composes, and why each half is shaped the way it is:
 //

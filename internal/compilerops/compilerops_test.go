@@ -67,6 +67,7 @@ func TestSharedOperationsAgainstFixture(t *testing.T) {
 		View:            view,
 		Closure:         resolved.Closure,
 		Release:         resolved.Release,
+		ReleasePath:     releasePath,
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
 		AggregatePath:   resolved.AggregatePath,

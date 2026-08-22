@@ -20,7 +20,8 @@ import (
 // writes it and who reads it, and why committing it matters. Each of those is
 // there because its absence is a question the reader of an unfamiliar generated
 // file has to answer from somewhere else.
-const header = `# Aggrega plugin trust record — written by "aggrega pull", read by "aggrega build".
+const header = `# Aggrega plugin trust record — written by "aggrega pull", read by every
+# command that runs one of those plugins.
 # Commit this file. Do not edit it by hand.
 #
 # WHAT IT RECORDS. For every plugin attached in a role that returns an
@@ -47,8 +48,9 @@ const header = `# Aggrega plugin trust record — written by "aggrega pull", rea
 # "aggrega pull" creates this file the first time it resolves one of these
 # attachments, and adds a record per attachment as it resolves it — so a file
 # covering only some of the configured attachments is an expected intermediate
-# state rather than a damaged one. "aggrega build" compares what it resolves
-# against these records and stops when the two disagree. Committing the file is
+# state rather than a damaged one. A command that runs one of these plugins
+# compares what it resolves against these records and stops when the two
+# disagree. Committing the file is
 # what makes that comparison reviewable: a record kept outside version control
 # is one nobody can inspect and nothing can compare against.
 #

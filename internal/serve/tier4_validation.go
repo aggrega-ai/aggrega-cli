@@ -124,6 +124,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		View:            view,
 		Closure:         resolved.Closure,
 		Release:         resolved.Release,
+		ReleasePath:     s.activeReleasePath,
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
 		AggregatePath:   relAggPath,
@@ -156,6 +157,22 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Severity: editorSeverityError,
 			Message:  "Dependencies: " + s.skipContext(view, vr.PillarError.Error()),
 			Code:     diagnosticCode(vr.PillarError),
+		}}
+	}
+
+	// The verdict-plugin trust gate — the workspace configuration disagreed with
+	// the record of the plugin identities trusted for its verdict attachments, so
+	// no gate ran and nothing past this point was validated. It is a fault in the
+	// configuration or in the record beside the Release rather than in the edited
+	// file, so it surfaces as a closure-level diagnostic at file:1:1, the same
+	// footing the two gates above use.
+	if vr.VerdictTrustError != nil {
+		return []Diagnostic{{
+			Line:     1,
+			Column:   1,
+			Severity: editorSeverityError,
+			Message:  "Dependencies: " + vr.VerdictTrustError.Error(),
+			Code:     diagnosticCode(vr.VerdictTrustError),
 		}}
 	}
 

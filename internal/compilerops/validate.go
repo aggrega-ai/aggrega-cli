@@ -21,12 +21,23 @@ import (
 // catalog closure the extends and pillar gates scope to. Release, Manifest,
 // AggBytes, and AggregatePath are the pipeline's Steps 1-4 inputs;
 // AggregatePath is a source-location label (no I/O). WorkspaceConfig and
-// CompilerVersion feed the pipeline's resolution and provenance.
+// CompilerVersion feed the pipeline's resolution and provenance. ReleasePath
+// locates the record the verdict-plugin trust gate reads and carries its own
+// contract below.
 type ValidateInputs struct {
-	View            *catalog.LazyLookup
-	Closure         closure.Closure
-	Release         *types.Release
-	Manifest        *types.Manifest
+	View     *catalog.LazyLookup
+	Closure  closure.Closure
+	Release  *types.Release
+	Manifest *types.Manifest
+	// ReleasePath is the path of the Release being validated. It locates the record
+	// of the plugin identities trusted for this Release's verdict attachments, which
+	// sits beside that Release, and it is required: validation runs the same
+	// pre-render phases a build runs, gate plugins included, so a validation that
+	// could not locate the record would run those gates unheld. The refusal for an
+	// unsupplied path is VerdictPluginTrust's, which is where the record's address is
+	// derived, so there is one refusal rather than a second guard here that could
+	// disagree with it.
+	ReleasePath     string
 	AggBytes        []byte
 	AggregatePath   string
 	WorkspaceConfig workspaceconfig.Config
@@ -37,9 +48,11 @@ type ValidateInputs struct {
 // run. A caller inspects the fields in sequence: a non-empty ClosureExtendsErrors
 // means the closure-scoped extends gate stopped validation there; otherwise a
 // non-nil PillarError means the closure-scoped schema-pillar gate stopped it;
-// otherwise Tier4 and RunErr carry the Steps 1-4 pipeline outcome and
-// ResolutionFindings carries the resolution-completeness findings over the built
-// IR graph.
+// otherwise a non-nil VerdictTrustError means the workspace configuration
+// disagreed with the record of the plugin identities trusted for its verdict
+// attachments and validation stopped before the pipeline ran; otherwise Tier4 and
+// RunErr carry the Steps 1-4 pipeline outcome and ResolutionFindings carries the
+// resolution-completeness findings over the built IR graph.
 //
 // InputKindErrors is an additional error class computed after the pipeline gates
 // (only when the extends and pillar gates both passed): each entry names a
@@ -59,6 +72,7 @@ type ValidateInputs struct {
 type ValidateResult struct {
 	ClosureExtendsErrors []error
 	PillarError          error
+	VerdictTrustError    error
 	Tier4                *pipeline.Tier4Result
 	RunErr               error
 	ResolutionFindings   []error
@@ -69,10 +83,10 @@ type ValidateResult struct {
 
 // Validate runs the semantic-validation core against explicit inputs: the
 // closure-scoped extends gate, the closure-scoped schema-pillar gate, the
-// Steps 1-4 pipeline (resolve, topology, IR, analyse), the
-// resolution-completeness findings over the built IR graph, the closure-scoped
-// input-kind capability check, and the exit-code-neutral advisory lines. It
-// stops at the first of the extends and pillar gates that fails and returns a
+// verdict-plugin trust gate, the Steps 1-4 pipeline (resolve, topology, IR,
+// analyse), the resolution-completeness findings over the built IR graph, the
+// closure-scoped input-kind capability check, and the exit-code-neutral advisory
+// lines. It stops at the first of those three gates that fails and returns a
 // discriminated result the caller maps into positioned diagnostics; it produces
 // no diagnostics itself.
 //
@@ -91,6 +105,37 @@ type ValidateResult struct {
 // narrowing accumulators (the narrowings are produced by the extends gate above,
 // so they are populated before this point).
 //
+// # The verdict-plugin trust gate, and why validation carries one at all
+//
+// The pipeline this runs is the same pre-render pipeline a build runs, and two of
+// its phases dispatch operator-attached guests: the label-transform role at
+// topology construction and the ir-verdict role at static analysis. A validation
+// that ran those guests without comparing their identity against the record of
+// what was reviewed would execute unreviewed bytes on a surface an editor calls on
+// every edit. So the configuration is held to the record, and the recorded
+// digests are carried into the sockets' resolution, exactly as a build does — one
+// composition serves both, so the two cannot come to disagree about which
+// attachments are verdict attachments or about which digests are trusted.
+//
+// The gate runs after the extends and pillar gates and immediately before the
+// pipeline. Those two gates dispatch no guest, so this placement refuses before
+// any guest could run while leaving every diagnostic they produce, and the order
+// they produce it in, exactly as it was. An absent record is a first-run state and
+// stays silent — see pluginstrust.LoadOrStart, which owns that distinction — so a
+// workspace that has never resolved a verdict attachment validates as it always
+// did.
+//
+// # The bound: only a Release-scoped validation is held to the record
+//
+// This is the core a Release-scoped validation runs, and it is the only validation
+// scope that dispatches an operator-attached guest. The whole-catalog and
+// single-entity scopes drive a synthesized single-entity harness whose workspace
+// configuration is workspaceconfig.Default(), which attaches nothing, so no
+// verdict attachment runs there and there is nothing for a record to hold. The
+// plugin scope inspects one artifact and runs no pipeline. The bound is therefore
+// that those scopes have nothing at stake rather than that they merely cannot
+// locate a record.
+//
 // Cancellation (the caller's shutdown drain) surfaces as a context error in
 // RunErr; no findings are computed on a cancelled run — resolution-completeness,
 // input-kind capability, and the advisory lines all stay empty.
@@ -106,16 +151,33 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		return r
 	}
 
+	inputs := pipeline.Inputs{
+		Release:           in.Release,
+		Manifest:          in.Manifest,
+		AggregateRawBytes: in.AggBytes,
+		AggregatePath:     in.AggregatePath,
+		WorkspaceConfig:   in.WorkspaceConfig,
+		CompilerVersion:   in.CompilerVersion,
+	}
+	// The governance attachment list the pipeline dispatches and the digests
+	// recorded as trusted for its verdict attachments arrive through the one
+	// composition every surface that runs those attachments calls. Composing them
+	// here rather than assigning the digests directly is what keeps this surface
+	// from becoming a second home for that assignment — an omitted one is an empty
+	// map, which is a legal value meaning nothing was recorded.
+	//
+	// This surface supplies no lockfile, so the composition's reconstruction half
+	// finds nothing to reconstruct from and the live attachment list stands as
+	// authored. That is the composition's documented no-lockfile behaviour rather
+	// than a special case here.
+	if err := ApplyGovernanceComposition(&inputs, in.View, in.ReleasePath); err != nil {
+		r.VerdictTrustError = err
+		return r
+	}
+
 	tier4, runErr := pipeline.RunTier4Pipeline(
 		ctx,
-		pipeline.Inputs{
-			Release:           in.Release,
-			Manifest:          in.Manifest,
-			AggregateRawBytes: in.AggBytes,
-			AggregatePath:     in.AggregatePath,
-			WorkspaceConfig:   in.WorkspaceConfig,
-			CompilerVersion:   in.CompilerVersion,
-		},
+		inputs,
 		in.View.AsCatalogLookup(),
 		in.View.RecipeLookupWithManifest(in.Manifest).Recipe,
 		in.View.SubAggregateLoader(),

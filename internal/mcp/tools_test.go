@@ -207,7 +207,8 @@ func TestValidateToolMatchesCompilerops(t *testing.T) {
 		t.Fatalf("ground-truth ResolveClosure: %v", cerr)
 	}
 	vr := compilerops.Validate(context.Background(), compilerops.ValidateInputs{
-		View: view, Closure: resolved.Closure, Release: resolved.Release, Manifest: resolved.Manifest,
+		View: view, Closure: resolved.Closure, Release: resolved.Release, ReleasePath: releasePath,
+		Manifest: resolved.Manifest,
 		AggBytes: resolved.AggBytes, AggregatePath: resolved.AggregatePath, WorkspaceConfig: wsCfg, CompilerVersion: "test",
 	})
 	if len(vr.ResolutionFindings) == 0 {

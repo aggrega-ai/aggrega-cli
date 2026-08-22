@@ -111,8 +111,11 @@ func writeCancelFixture(t *testing.T, path, body string) {
 
 // resolveCancelInputs materialises the input-kind fixture workspace, layers its
 // overlay ahead of the shared fullstack catalog (first-win), and resolves the
-// closure — the shared inputs both cancellation legs validate over.
-func resolveCancelInputs(t *testing.T) (view *catalog.LazyLookup, resolved *ResolvedClosure, wsCfg workspaceconfig.Config) {
+// closure — the shared inputs both cancellation legs validate over. The Release
+// path is returned because validation needs it to locate the record of the plugin
+// identities trusted for the workspace's verdict attachments; this fixture writes
+// no record, which is the ordinary first-run state and holds nothing.
+func resolveCancelInputs(t *testing.T) (view *catalog.LazyLookup, resolved *ResolvedClosure, wsCfg workspaceconfig.Config, releasePath string) {
 	t.Helper()
 
 	cwd, err := filepath.Abs(".")
@@ -124,9 +127,10 @@ func resolveCancelInputs(t *testing.T) (view *catalog.LazyLookup, resolved *Reso
 	catalogDir := filepath.Join(moduleRoot, "internal", "compiler", "testdata", "fullstack-app", "catalog")
 
 	root := t.TempDir()
+	releasePath = filepath.Join(root, "release.yaml")
 	writeCancelFixture(t, filepath.Join(root, "aggregate.yaml"), cancelBackendAggregate)
 	writeCancelFixture(t, filepath.Join(root, "manifest.yaml"), cancelInputKindManifest)
-	writeCancelFixture(t, filepath.Join(root, "release.yaml"), cancelDefaultRelease)
+	writeCancelFixture(t, releasePath, cancelDefaultRelease)
 
 	overlay := filepath.Join(root, "overlay")
 	writeCancelFixture(t, filepath.Join(overlay, "recipes", "api-sourceonly.yaml"), cancelInputKindRecipe)
@@ -141,14 +145,14 @@ func resolveCancelInputs(t *testing.T) (view *catalog.LazyLookup, resolved *Reso
 
 	res, cerr := ResolveClosure(ClosureInputs{
 		View:            view,
-		ReleasePath:     filepath.Join(root, "release.yaml"),
+		ReleasePath:     releasePath,
 		WorkspaceRoot:   root,
 		WorkspaceConfig: wsCfg,
 	})
 	if cerr != nil {
 		t.Fatalf("ResolveClosure: stage=%d %v", cerr.Stage, cerr)
 	}
-	return view, res, wsCfg
+	return view, res, wsCfg, releasePath
 }
 
 // TestValidateCancellationSuppressesFindings proves the cancellation guard
@@ -156,13 +160,14 @@ func resolveCancelInputs(t *testing.T) (view *catalog.LazyLookup, resolved *Reso
 // the input-kind capability errors the fixture genuinely triggers, while a
 // pre-cancelled context suppresses the entire post-pipeline finding block.
 func TestValidateCancellationSuppressesFindings(t *testing.T) {
-	view, resolved, wsCfg := resolveCancelInputs(t)
+	view, resolved, wsCfg, releasePath := resolveCancelInputs(t)
 
 	inputs := func() ValidateInputs {
 		return ValidateInputs{
 			View:            view,
 			Closure:         resolved.Closure,
 			Release:         resolved.Release,
+			ReleasePath:     releasePath,
 			Manifest:        resolved.Manifest,
 			AggBytes:        resolved.AggBytes,
 			AggregatePath:   resolved.AggregatePath,

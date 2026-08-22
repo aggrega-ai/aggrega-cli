@@ -261,6 +261,12 @@ func cliCoreUnderlyingDiagTexts(vr *compilerops.ValidateResult) []string {
 	if vr.PillarError != nil {
 		out = append(out, vr.PillarError.Error())
 	}
+	// The verdict-plugin trust gate rides the verdict error rather than diagOut,
+	// exactly as the pillar gate does, so it belongs in the underlying set and not
+	// in the diagOut-routed set below.
+	if vr.VerdictTrustError != nil {
+		out = append(out, vr.VerdictTrustError.Error())
+	}
 	if vr.Tier4 != nil {
 		for _, ve := range vr.Tier4.ResolveDiagnostics {
 			out = append(out, ve.Error())
@@ -339,6 +345,7 @@ func cliOracleValidate(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rele
 		View:            lazyView,
 		Closure:         resolved.Closure,
 		Release:         resolved.Release,
+		ReleasePath:     releasePath,
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
 		AggregatePath:   catalog.RelativeToWorkspace(wsRoot, resolved.AggregatePath),

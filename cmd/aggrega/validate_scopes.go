@@ -148,6 +148,7 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		View:            lazyView,
 		Closure:         resolved.Closure,
 		Release:         resolved.Release,
+		ReleasePath:     releasePath,
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
 		AggregatePath:   catalog.RelativeToWorkspace(wsRoot, resolved.AggregatePath),
@@ -159,8 +160,9 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 
 // renderReleaseValidation writes a release-scoped validation result's diagnostics
 // and advisories in gate order and returns the verdict error (nil on a clean
-// pass). The extends and schema-pillar gates halt at the first failure; when both
-// pass, the pipeline diagnostics (Step-1 resolve and value conformance, Step-4
+// pass). The extends, schema-pillar and verdict-plugin-trust gates halt at the
+// first failure, each returning its own text as the verdict error and writing
+// nothing to diagOut; when all three pass, the pipeline diagnostics (Step-1 resolve and value conformance, Step-4
 // analyze, a non-resolver phase error, and resolution-completeness findings), the
 // advisory `notice:` lines, and the input-kind `input-kind:` lines are considered
 // together, and any pipeline diagnostic or input-kind error yields a non-zero
@@ -189,6 +191,15 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, releasePath, verbos
 	}
 	if vr.PillarError != nil {
 		return fmt.Errorf("release dependency validation failed: %w", vr.PillarError)
+	}
+
+	// The verdict-plugin trust gate. Like the pillar gate, its text rides the
+	// verdict error rather than the diagnostic stream: it names a fault in the
+	// workspace configuration or in the record beside the Release rather than in
+	// any authored entity, so there is no source position for it to be reported at
+	// and nothing further was validated after it.
+	if vr.VerdictTrustError != nil {
+		return fmt.Errorf("release dependency validation failed: %w", vr.VerdictTrustError)
 	}
 
 	// A shutdown-drain cancellation is not a validation verdict; surface it as-is

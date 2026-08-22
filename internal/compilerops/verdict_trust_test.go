@@ -207,3 +207,83 @@ func TestBuildToBufferRefusesABuildWithNoReleasePath(t *testing.T) {
 		t.Fatal("a build with no Release path cannot locate the record and must refuse; got a clean build")
 	}
 }
+
+// TestValidateRefusesWithNoReleasePath holds the guarantee at the validation
+// surface that BuildToBuffer holds at the build surface: a validation that cannot
+// locate the record refuses rather than running the pipeline — whose topology and
+// static-analysis phases dispatch operator-attached guests — with every configured
+// gate unheld. The refusal lands on the result's own discriminant so each front end
+// maps it in gate order rather than reading it as a pipeline failure.
+func TestValidateRefusesWithNoReleasePath(t *testing.T) {
+	view, releasePath, workspaceRoot, wsCfg := fixtureWorkspace(t)
+	ctx := context.Background()
+
+	resolved, cerr := ResolveClosure(ClosureInputs{
+		View:            view,
+		ReleasePath:     releasePath,
+		WorkspaceRoot:   workspaceRoot,
+		WorkspaceConfig: wsCfg,
+	})
+	if cerr != nil {
+		t.Fatalf("ResolveClosure: stage=%d %v", cerr.Stage, cerr)
+	}
+
+	vr := Validate(ctx, ValidateInputs{
+		View:            view,
+		Closure:         resolved.Closure,
+		Release:         resolved.Release,
+		Manifest:        resolved.Manifest,
+		AggBytes:        resolved.AggBytes,
+		AggregatePath:   resolved.AggregatePath,
+		WorkspaceConfig: wsCfg,
+		CompilerVersion: "test",
+	})
+	if vr.VerdictTrustError == nil {
+		t.Fatal("a validation with no Release path cannot locate the record and must refuse; got a clean gate")
+	}
+	if vr.Tier4 != nil || vr.RunErr != nil {
+		t.Errorf("the refusal must stop validation before the pipeline; Tier4=%+v RunErr=%v", vr.Tier4, vr.RunErr)
+	}
+}
+
+// TestValidateWithAnAbsentRecordRunsTheWholePipeline is the absence half, and it is
+// the one an editor depends on: a workspace that has never resolved a verdict
+// attachment has no record, which is a first-run state rather than a fault, so the
+// validation must run exactly as it did before the record existed. A refusal here
+// would make the editor unusable on a fresh checkout.
+func TestValidateWithAnAbsentRecordRunsTheWholePipeline(t *testing.T) {
+	view, releasePath, workspaceRoot, wsCfg := fixtureWorkspace(t)
+	ctx := context.Background()
+
+	if _, err := os.Stat(pluginstrust.PathFor(releasePath)); !os.IsNotExist(err) {
+		t.Fatalf("the fixture has acquired a record, so the absence case would be vacuous: stat %v", err)
+	}
+
+	resolved, cerr := ResolveClosure(ClosureInputs{
+		View:            view,
+		ReleasePath:     releasePath,
+		WorkspaceRoot:   workspaceRoot,
+		WorkspaceConfig: wsCfg,
+	})
+	if cerr != nil {
+		t.Fatalf("ResolveClosure: stage=%d %v", cerr.Stage, cerr)
+	}
+
+	vr := Validate(ctx, ValidateInputs{
+		View:            view,
+		Closure:         resolved.Closure,
+		Release:         resolved.Release,
+		ReleasePath:     releasePath,
+		Manifest:        resolved.Manifest,
+		AggBytes:        resolved.AggBytes,
+		AggregatePath:   resolved.AggregatePath,
+		WorkspaceConfig: wsCfg,
+		CompilerVersion: "test",
+	})
+	if vr.VerdictTrustError != nil {
+		t.Fatalf("an absent record is a first-run state, not a fault; got %v", vr.VerdictTrustError)
+	}
+	if vr.Tier4 == nil || vr.Tier4.IRGraph == nil {
+		t.Fatalf("validation must run the whole pipeline over an unrecorded workspace: %+v", vr.Tier4)
+	}
+}
