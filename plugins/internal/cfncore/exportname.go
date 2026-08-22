@@ -8,9 +8,15 @@ import (
 	"unicode/utf8"
 )
 
-// exportNamePrefix is the fixed leading segment stamped on every assembled
-// export name, so a name this core produces is recognisable as Aggrega-authored
-// and never collides with an unrelated export in the same account and region.
+// exportNamePrefix is the fixed leading segment of every export and stack name
+// this core assembles, so those names share one recognisable shape.
+//
+// It reserves nothing. The segment is a fixed literal, so an authored Outputs
+// entry may carry an export name spelling it too, and a name carrying it is not
+// on that account one this core assembled. It is also constant across every name
+// assembled here, so it is no part of what tells two of those names apart — that
+// is the deployment identity segment following it. What an assembled name is
+// unique against, and where that stops, is set out on [ExportName].
 const exportNamePrefix = "aggrega"
 
 // exportSegmentSeparator joins the encoded segments of an export or stack name.
