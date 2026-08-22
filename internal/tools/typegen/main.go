@@ -320,6 +320,55 @@ type codecTarget struct {
 	// falling back to a reflective json.Marshal. (Ignored by the Rust/TS backends,
 	// whose runtime resolves the in-package type by name.)
 	externalDefTypes []string
+	// codecOnly emits the canonical-CBOR codec ALONE: no struct declarations, and
+	// no JSON codec either. It is the mode for a destination package that already
+	// declares these types by hand — the compiler's own core types, whose
+	// declarations are hand-written so their field order is the author's and not
+	// the schema's. A codec target ordinarily emits a type's declaration and its
+	// codec as one artifact, which would make such a package a declaration target
+	// and take that order away from it.
+	//
+	// The two exclusions are one decision, not two, and they share one reason: the
+	// destination package owns both the declarations AND the way those types are
+	// already marshalled. Emitting MarshalJSON/UnmarshalJSON onto them would
+	// silently reroute every existing encoding/json call on those types through a
+	// different encoder — the generated one emits fields in schema order, the
+	// standard library in Go struct order — which moves bytes on paths that reach
+	// committed output. A CBOR codec adds methods nothing was calling, so it moves
+	// none.
+	//
+	// The codec still needs the shared CBOR helpers, so a codecOnly target sets
+	// helpers as usual; the JSON helpers are skipped along with the JSON codec they
+	// serve. (Ignored by the Rust/TS backends, which emit no separate host codec.)
+	codecOnly bool
+	// opaqueHostTypes names, per "<DefType>.<property>", the Go type the
+	// destination package actually declares for a field whose x-aggrega-go-type
+	// annotation spells the OPAQUE wire realization rather than that package's own
+	// type.
+	//
+	// Why the annotation cannot simply be corrected: for an opaque field the
+	// neutral spelling is the DELIBERATE one. Annotating such a field with its host
+	// spelling was measured and refused — the host codec would then encode it
+	// structurally, the counterpart would have to declare a typed map to decode
+	// that, and a counterpart's own canonical re-emission sorts keys, so author
+	// order would be lost on a path reaching rendered artifacts. The narrowed form
+	// ships: annotate the host spelling only outside the opaque set. So for the
+	// opaque set the schema states the wire and this table states the host, and the
+	// two are different facts rather than one of them being wrong.
+	//
+	// It changes what the wire carries not at all. A listed field still rides as a
+	// CBOR byte-string of its verbatim JSON bytes, which for an order-preserving
+	// container is that container's own author-ordered encoding — so the order
+	// survives inside the bytes, which is the whole point of carrying it opaquely.
+	// The declared type is read for ONE purpose: the omission decision, which has
+	// to be asked of the real type, since the emptiness of an order-preserving
+	// container is not the emptiness of a byte slice.
+	//
+	// Only a codecOnly target needs it: a target that emits its own declarations
+	// realizes the annotation itself, so annotation and declaration cannot disagree
+	// there. A codecOnly target must list every bare-opaque field it carries —
+	// generation refuses otherwise, rather than emitting a guard for the wrong type.
+	opaqueHostTypes map[string]string
 }
 
 // emitsCBOR reports whether a codec target carries the canonical-CBOR codec
@@ -447,6 +496,52 @@ var irGuestVocabulary = map[string]string{
 	"OrderedMap[IRFeatureEntry]":                "map[string]IRFeatureEntry",
 	"OrderedMap[OrderedMap[IRFeatureEntry]]":    "map[string]map[string]IRFeatureEntry",
 	"OrderedMap[OrderedMap[IRBoundaryFeature]]": "map[string]map[string]IRBoundaryFeature",
+}
+
+// irHostVocabulary is empty, and empty is the correct content rather than a
+// placeholder. The IR schema's x-aggrega-go-type annotations already spell the
+// host types — the bare order-preserving container, the opaque json.RawMessage,
+// the named attachment-provenance string type, the pointer-broken recursive
+// field — because the compiler's core types package is where those types are
+// declared. A codec emitted into that package sees its own types unqualified, so
+// every annotation passes through verbatim and there is nothing to rewrite.
+//
+// The named attachment-provenance type needs no entry either. The guest maps it
+// to a bare string because a guest forwarding the value needs nothing more; the
+// host cannot, because the field's declaration is hand-written and rewriting the
+// codec's view of its type would not change the field. The codec instead reads
+// the value's kind from the schema's declared type and converts at the encode and
+// decode boundary, so both ends of the wire carry a CBOR text string.
+var irHostVocabulary = map[string]string{}
+
+// irOpaqueHostTypes gives the host declaration's own Go type for each IR field
+// the schema annotates with the opaque wire spelling. Ten fields, all of one
+// shape: an order-preserving container, or the typed inject block, whose contents
+// the wire never looks inside.
+//
+// This is where the deliberate asymmetry is written down. Every other annotation
+// in the IR schema states the host spelling and the guest vocabulary rewrites it;
+// these ten state the OPAQUE spelling, and that direction was ruled rather than
+// overlooked — annotating them with their host spelling was measured to work and
+// refused, because the counterpart would then decode a structural encoding and
+// re-emit it in sorted key order, losing author order on a path that reaches
+// rendered artifacts. So the schema states what the wire carries and this table
+// states what the compiler holds, which are two different facts.
+//
+// The order-preserving containers are what make the entries worth having: each
+// one's emptiness has to be asked of the container, not of a byte slice, or the
+// field would contradict the omitempty its own declaration promises.
+var irOpaqueHostTypes = map[string]string{
+	"IRNode.self_inject":              "*InjectBlock",
+	"IRNode.uses":                     "OrderedMap[UsesSocketValue]",
+	"IREdge.values":                   "OrderedMap[any]",
+	"IREdge.infra":                    "OrderedMap[any]",
+	"IREdge.inject":                   "OrderedMap[OrderedMap[string]]",
+	"IRFeatureEntry.values":           "OrderedMap[any]",
+	"IRFeatureEntry.infra":            "OrderedMap[any]",
+	"IRFeatureEntry.inject":           "OrderedMap[OrderedMap[string]]",
+	"IRFeatureEntry.sensitive_inject": "OrderedMap[OrderedMap[string]]",
+	"IRBoundaryFeature.infra":         "OrderedMap[any]",
 }
 
 // policyGuestVocabulary is empty: the policy schema's graph field is annotated
@@ -819,6 +914,31 @@ var codecTargets = map[string]codecTarget{
 		pkg:        "abi",
 		vocabulary: irGuestVocabulary,
 		lang:       "ts",
+	},
+	// The host IR codec, committed into the compiler's own core types package.
+	// codecOnly: that package declares all eleven IR types by hand, so the codec
+	// attaches to those declarations instead of replacing them — which is what
+	// keeps their field order the author's rather than the schema's. It is also
+	// why this target emits no JSON codec: the package's types are already
+	// marshalled by the standard library, and taking that over would move bytes
+	// this codec has no business moving.
+	//
+	// helpers: it is the only CBOR codec in that package, so it owns the shared
+	// CBOR helpers.
+	//
+	// This is the codec a host socket payload carrying the graph dispatches to,
+	// which is the whole reason it exists: a qualified generated type reaches its
+	// own generated codec, so the graph rides the wire as a structural CBOR map —
+	// the shape the guest side already decodes — rather than as a byte-string of
+	// JSON bytes.
+	"ir_host_gen.go": {
+		schema:          schemas.IRSchemaV1alpha1,
+		schemaFile:      "ir-v1alpha1.schema.json",
+		pkg:             "types",
+		vocabulary:      irHostVocabulary,
+		helpers:         true,
+		codecOnly:       true,
+		opaqueHostTypes: irOpaqueHostTypes,
 	},
 
 	// Policy socket — guest codec into aggrega-abi (Go/Rust/TS). The
@@ -1386,6 +1506,15 @@ type codecField struct {
 	// kind when the name is unclassifiable, instead of emitting the field
 	// unconditionally and contradicting its own omitempty tag.
 	schemaType string
+	// hostOpaqueType is the destination package's own declared Go type for an
+	// opaque field, when that differs from the opaque spelling the annotation
+	// carries. Set only for a codecOnly target, from its opaqueHostTypes table.
+	//
+	// Its presence says two things at once, and both matter: encode and decode take
+	// the opaque arm whatever the annotation resolved to, and the omission decision
+	// is asked of THIS type rather than of the annotation's. Empty everywhere else,
+	// so no target that realizes its own declarations is affected.
+	hostOpaqueType string
 }
 
 // resolveCodecFields resolves a def node's properties into codec field
@@ -2270,11 +2399,46 @@ func generateDefs(t codecTarget) ([]byte, error) {
 	}
 }
 
+// checkOpaqueHostTypes refuses a codecOnly target that carries an opaque field
+// the target names no host type for.
+//
+// It refuses rather than falling back because the fallback is silent and wrong:
+// the omission decision would be asked of the opaque spelling, so an
+// order-preserving container would be guarded as though it were a byte slice —
+// which either fails to compile or, where it happens to compile, contradicts the
+// omitempty the declaration promises. Listing the field is one line; discovering
+// that omission is wrong on one end of a wire is not.
+//
+// A target that emits its own declarations is exempt by construction: it realizes
+// the annotation itself, so the two cannot disagree.
+func checkOpaqueHostTypes(t codecTarget, root schemaNode) error {
+	for _, d := range root.defs {
+		for _, p := range d.node.props {
+			if goType(p.node, pascal(p.name), t.vocabulary) != "json.RawMessage" {
+				continue
+			}
+			if _, ok := t.opaqueHostTypes[d.name+"."+p.name]; !ok {
+				return fmt.Errorf(
+					"schema %s: %s.%s carries the opaque wire spelling and this codec emits no declaration for it, "+
+						"so the type it is declared as is not derivable here: name it in the target's opaqueHostTypes",
+					t.schemaFile, d.name, p.name)
+			}
+		}
+	}
+	return nil
+}
+
 // generateDefsGo produces the formatted Go source for a multi-type codec
 // package: one Go type per `$defs` entry (in declared order) plus, per type, a
-// reflect-free streaming JSON codec. The top-level `oneOf` wire-discriminator
-// is not a Go type and is ignored — the walk reads `$defs` only and never the
-// root's oneOf/type. The target's vocabulary rewrites x-aggrega-go-type values.
+// reflect-free streaming JSON codec and its canonical-CBOR twin. The top-level
+// `oneOf` wire-discriminator is not a Go type and is ignored — the walk reads
+// `$defs` only and never the root's oneOf/type. The target's vocabulary rewrites
+// x-aggrega-go-type values.
+//
+// A codecOnly target emits the CBOR codec alone, attaching it to declarations the
+// destination package already carries by hand. What that leaves out — the
+// declarations and the JSON codec — and why the two travel together is on the
+// codecTarget field.
 func generateDefsGo(t codecTarget) ([]byte, error) {
 	root, err := decodeNode(json.RawMessage(t.schema))
 	if err != nil {
@@ -2283,6 +2447,11 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 	if len(root.defs) == 0 {
 		return nil, fmt.Errorf("schema %s has no $defs to emit", t.schemaFile)
 	}
+	if t.codecOnly {
+		if err := checkOpaqueHostTypes(t, root); err != nil {
+			return nil, err
+		}
+	}
 
 	var body strings.Builder
 	used := map[string]bool{}
@@ -2290,11 +2459,18 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 	// object; emitStruct queues any anonymous nested objects breadth-first,
 	// though the $defs-shaped schema names every composite via a $ref so the
 	// nested-object queue stays empty in practice.
-	var queue []pending
-	for _, d := range root.defs {
-		queue = append(queue, pending{name: d.name, doc: d.node.Description, node: d.node})
+	//
+	// A codecOnly target skips this entirely: its destination package declares
+	// every type by hand, and the codec below attaches methods to those
+	// declarations. Emitting a second declaration would not merely duplicate them,
+	// it would not compile.
+	if !t.codecOnly {
+		var queue []pending
+		for _, d := range root.defs {
+			queue = append(queue, pending{name: d.name, doc: d.node.Description, node: d.node})
+		}
+		emitQueue(&body, queue, used, t.vocabulary, t.emitsCBOR())
 	}
-	emitQueue(&body, queue, used, t.vocabulary, t.emitsCBOR())
 
 	// defTypes names the generated def struct types, so the codec emitter can
 	// tell a nested generated type — decoded by a direct call to its own
@@ -2315,18 +2491,27 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 	// (map/struct/slice) and decodes each nested def value by a direct call to
 	// its own UnmarshalJSON, so no stdlib reflective struct-walk or
 	// interface-dispatch remains on the decode path.
-	for _, d := range root.defs {
-		emitCodec(&body, d.name, d.node, t.vocabulary, defTypes)
-	}
-	// The canonical-CBOR codec, parallel to the JSON codec above, for a guest
-	// target. Emitted per def type in the same declared order; the shared CBOR
-	// helpers land in the same helpers-bearing file the JSON helpers do.
-	if t.emitsCBOR() {
+	//
+	// Skipped for a codecOnly target: attaching MarshalJSON/UnmarshalJSON to
+	// hand-written declarations replaces however that package is already
+	// marshalled, which is a change to existing bytes rather than a new codec.
+	if !t.codecOnly {
 		for _, d := range root.defs {
-			emitCBORCodec(&body, d.name, d.node, t.vocabulary, defTypes)
+			emitCodec(&body, d.name, d.node, t.vocabulary, defTypes)
 		}
 	}
-	if t.helpers {
+	// The canonical-CBOR codec, parallel to the JSON codec above. Emitted per def
+	// type in the same declared order; the shared CBOR helpers land in the
+	// helpers-bearing file of the destination package. For a codecOnly target this
+	// is the whole emission.
+	if t.emitsCBOR() {
+		for _, d := range root.defs {
+			emitCBORCodec(&body, d.name, d.node, t.vocabulary, defTypes, t.opaqueHostTypes)
+		}
+	}
+	// The JSON helpers serve the JSON codec, so they follow it out of a codecOnly
+	// target rather than sitting there unreferenced.
+	if t.helpers && !t.codecOnly {
 		emitCodecHelpers(&body)
 	}
 	if t.helpers && t.emitsCBOR() {

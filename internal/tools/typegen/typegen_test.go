@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,6 +153,9 @@ var codecTargetPaths = map[string][]string{
 	// The host feature-recipe-pipeline step codec is committed inside aggrega-cli's
 	// featurerecipe_pipeline package.
 	"frp_host_gen.go": {"..", "..", "compiler", "featurerecipe_pipeline"},
+	// The host IR codec is committed inside aggrega-cli's core types package,
+	// alongside the hand-written declarations it attaches to.
+	"ir_host_gen.go": {"..", "..", "..", "pkg", "types"},
 }
 
 // TestTargetPathsNameRegisteredTargets checks the two path tables in the
@@ -675,6 +679,197 @@ func TestOrderedMapValueTypeSpellings(t *testing.T) {
 				t.Errorf("orderedMapValueType(%q) reported an ordered map with value type %q; it is not "+
 					"an order-preserving container and encoding it as one would emit a map head for a "+
 					"value that has none", spelling, got)
+			}
+		})
+	}
+}
+
+// TestCodecOnlyTargetEmitsCodecWithoutDeclarations invokes every codecOnly target
+// and reads what it produced, because the properties that make the mode safe are
+// invisible in a byte-compare against a committed file: that file could be wrong
+// in exactly the same way the generator is.
+//
+// Three properties, each of which the mode exists to hold. It emits no payload
+// declaration, so the destination package keeps its hand-written types and their
+// author-chosen field order. It emits no JSON codec, so nothing it adds displaces
+// the way those types are already marshalled — a generated MarshalJSON emits
+// fields in schema order while the standard library emits them in struct order,
+// so installing one moves bytes on paths that reach committed output. And it does
+// emit the CBOR codec, one encode and one decode entry point per def, which is
+// the whole reason the mode was wanted: a qualified generated type needs a real
+// generated codec to dispatch to.
+//
+// The declaration check reads the emitted source rather than counting `type`
+// keywords blindly: the shared CBOR helpers legitimately declare their own
+// reader, and a check that forbade every type declaration would fail on it and
+// teach the next reader to loosen the check that matters.
+func TestCodecOnlyTargetEmitsCodecWithoutDeclarations(t *testing.T) {
+	codecOnlyTargets := map[string]codecTarget{}
+	for outFile, tgt := range codecTargets {
+		if tgt.codecOnly {
+			codecOnlyTargets[outFile] = tgt
+		}
+	}
+	// A pass over an empty population certifies nothing.
+	if len(codecOnlyTargets) == 0 {
+		t.Fatal("no codecOnly target is registered, so this gate measured nothing")
+	}
+
+	for outFile, tgt := range codecOnlyTargets {
+		t.Run(outFile, func(t *testing.T) {
+			src, err := generateFor(outFile)
+			if err != nil {
+				t.Fatalf("generate %s: %v", outFile, err)
+			}
+			body := string(src)
+
+			root, err := decodeNode(json.RawMessage(tgt.schema))
+			if err != nil {
+				t.Fatalf("decode schema %s: %v", tgt.schemaFile, err)
+			}
+			if len(root.defs) == 0 {
+				t.Fatalf("schema %s declares no defs, so this gate measured nothing", tgt.schemaFile)
+			}
+
+			for _, d := range root.defs {
+				if strings.Contains(body, "type "+d.name+" struct {") {
+					t.Errorf("%s declares type %s: a codecOnly target must attach to the destination "+
+						"package's hand-written declaration, and emitting a second one both duplicates "+
+						"it and takes away the field order that declaration was hand-written to keep",
+						outFile, d.name)
+				}
+				for _, method := range []string{
+					") EncodeCBOR() ([]byte, error) {",
+					") DecodeCBOR(data []byte) error {",
+				} {
+					if !strings.Contains(body, "func (t "+d.name+method) &&
+						!strings.Contains(body, "func (t *"+d.name+method) {
+						t.Errorf("%s emits no %s for %s, so a codec dispatching to that type has nothing "+
+							"to call", outFile, strings.TrimSuffix(strings.TrimPrefix(method, ") "), "() ([]byte, error) {"), d.name)
+					}
+				}
+			}
+
+			for _, jsonMethod := range []string{
+				") MarshalJSON() ([]byte, error) {",
+				") UnmarshalJSON(data []byte) error {",
+				") UnmarshalJSONStrict(data []byte) error {",
+			} {
+				if strings.Contains(body, jsonMethod) {
+					t.Errorf("%s emits %s: a codecOnly target's destination package already marshals "+
+						"these types, and taking that over changes existing bytes rather than adding a "+
+						"transport", outFile, strings.TrimSpace(jsonMethod))
+				}
+			}
+		})
+	}
+}
+
+// TestOpaqueHostTypesNameRealFields reads the opaque host-type tables in the
+// direction generation cannot. Generation looks each field UP, so a field with no
+// entry fails loudly; an entry naming a field the schema no longer declares is
+// looked up by nothing and reports nothing, leaving a stale record of the
+// host-versus-wire split that reads as current.
+func TestOpaqueHostTypesNameRealFields(t *testing.T) {
+	for outFile, tgt := range codecTargets {
+		if len(tgt.opaqueHostTypes) == 0 {
+			continue
+		}
+		t.Run(outFile, func(t *testing.T) {
+			root, err := decodeNode(json.RawMessage(tgt.schema))
+			if err != nil {
+				t.Fatalf("decode schema %s: %v", tgt.schemaFile, err)
+			}
+			declared := map[string]bool{}
+			for _, d := range root.defs {
+				for _, p := range d.node.props {
+					declared[d.name+"."+p.name] = true
+				}
+			}
+			for key := range tgt.opaqueHostTypes {
+				if !declared[key] {
+					t.Errorf("opaqueHostTypes names %q, which schema %s does not declare: nothing looks "+
+						"that key up, so the entry is inert and records a coupling that no longer exists",
+						key, tgt.schemaFile)
+				}
+			}
+		})
+	}
+}
+
+// TestCodecOnlyRefusesAnUnnamedOpaqueField demonstrates the refusal can fail. A
+// gate satisfied by generation succeeding proves nothing unless removing the
+// thing it guards actually stops it — and the failure mode here is quiet: without
+// the entry the omission decision is asked of the opaque spelling, so an
+// order-preserving container is guarded as though it were a byte slice.
+func TestCodecOnlyRefusesAnUnnamedOpaqueField(t *testing.T) {
+	for outFile, tgt := range codecTargets {
+		if !tgt.codecOnly || len(tgt.opaqueHostTypes) == 0 {
+			continue
+		}
+		t.Run(outFile, func(t *testing.T) {
+			// Drop one entry and nothing else, so the refusal is attributable to the
+			// missing entry rather than to a mangled target.
+			var dropped string
+			short := map[string]string{}
+			for key, host := range tgt.opaqueHostTypes {
+				if dropped == "" {
+					dropped = key
+					continue
+				}
+				short[key] = host
+			}
+			weakened := tgt
+			weakened.opaqueHostTypes = short
+			if _, err := generateDefs(weakened); err == nil {
+				t.Fatalf("generation succeeded with %q missing from opaqueHostTypes; the refusal cannot "+
+					"fail, so it certifies nothing", dropped)
+			} else if !strings.Contains(err.Error(), dropped[strings.IndexByte(dropped, '.')+1:]) {
+				t.Errorf("the refusal fired but does not name the missing field: %v", err)
+			}
+		})
+	}
+}
+
+// TestCBORNamedScalarClassifiesByDeclaredKind fixes the classification a named
+// type over a scalar depends on. The codec places a value by the spelling of its
+// Go type, and a distinct named type is a spelling it cannot place — so without
+// this it reaches the opaque arm and puts a JSON fragment on the wire where the
+// counterpart reads a plain scalar. Nothing fails when that happens: the codec
+// compiles, round-trips against itself, and passes any one-sided test.
+func TestCBORNamedScalarClassifiesByDeclaredKind(t *testing.T) {
+	defTypes := map[string]bool{"IRGraph": true, "Diagnostic": true}
+	for _, tc := range []struct {
+		name       string
+		goType     string
+		schemaType string
+		want       string
+	}{
+		{name: "named string", goType: "AttachmentOrigin", schemaType: "string", want: "string"},
+		{name: "qualified named string", goType: "pipeline.DocumentScope", schemaType: "string", want: "string"},
+		{name: "named integer", goType: "SyncWave", schemaType: "integer", want: "int64"},
+		{name: "named number", goType: "Score", schemaType: "number", want: "float64"},
+		{name: "named boolean", goType: "Enabled", schemaType: "boolean", want: "bool"},
+
+		// Every spelling the encoder already places must be left alone, or this
+		// classification would displace a decision made correctly elsewhere.
+		{name: "builtin string", goType: "string", schemaType: "string", want: ""},
+		{name: "opaque", goType: "json.RawMessage", schemaType: "object", want: ""},
+		{name: "bare any", goType: "any", schemaType: "object", want: ""},
+		{name: "generated def", goType: "IRGraph", schemaType: "object", want: ""},
+		{name: "ordered container", goType: "OrderedMap[string]", schemaType: "object", want: ""},
+		{name: "plain map", goType: "map[string]string", schemaType: "object", want: ""},
+		{name: "slice", goType: "[]string", schemaType: "array", want: ""},
+		{name: "pointer", goType: "*CatalogMetadata", schemaType: "object", want: ""},
+		{name: "named object", goType: "renderctx.RenderContext", schemaType: "object", want: ""},
+
+		// A value reached inside a composite carries no declared type this far, so
+		// it must fall through rather than be guessed at.
+		{name: "no declared type", goType: "AttachmentOrigin", schemaType: "", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cborNamedScalar(tc.goType, tc.schemaType, defTypes); got != tc.want {
+				t.Errorf("cborNamedScalar(%q, %q) = %q, want %q", tc.goType, tc.schemaType, got, tc.want)
 			}
 		})
 	}

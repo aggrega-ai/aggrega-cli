@@ -46,12 +46,41 @@ import (
 // DecodeCBOR/decodeCBOR — for one def struct type. The encode side emits fields
 // in canonical key order fixed at generation time; the decode side switches on
 // the wire key, so it is order-independent.
-func emitCBORCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool) {
-	fields := resolveCodecFields(n, vocab)
+func emitCBORCodec(b *strings.Builder, typeName string, n schemaNode, vocab map[string]string, defTypes map[string]bool, opaqueHostTypes map[string]string) {
+	fields := applyOpaqueHostTypes(resolveCodecFields(n, vocab), typeName, opaqueHostTypes)
 	sorted := append([]codecField(nil), fields...)
 	sort.SliceStable(sorted, func(i, j int) bool { return cborKeyLess(sorted[i].key, sorted[j].key) })
 	emitCBOREncode(b, typeName, sorted, defTypes)
 	emitCBORDecode(b, typeName, fields, defTypes)
+}
+
+// applyOpaqueHostTypes stamps each field the target declared a host type for with
+// that type, keyed "<DefType>.<property>". A table entry naming a property this
+// def does not carry is left unapplied here and reported by the generator's own
+// registry gate, which reads the tables in the direction a lookup cannot.
+func applyOpaqueHostTypes(fields []codecField, typeName string, opaqueHostTypes map[string]string) []codecField {
+	if len(opaqueHostTypes) == 0 {
+		return fields
+	}
+	out := append([]codecField(nil), fields...)
+	for i := range out {
+		if host, ok := opaqueHostTypes[typeName+"."+out[i].key]; ok {
+			out[i].hostOpaqueType = host
+		}
+	}
+	return out
+}
+
+// cborOmitType returns the Go type the omission decision must be asked of. For a
+// field carried opaquely against a hand-written declaration that is the declared
+// type, not the opaque spelling the annotation resolved to: an order-preserving
+// container's emptiness is not a byte slice's, and guarding on the wrong one
+// either fails to compile or silently contradicts the field's own tag.
+func cborOmitType(f codecField) string {
+	if f.hostOpaqueType != "" {
+		return f.hostOpaqueType
+	}
+	return f.goType
 }
 
 // cborKeyLess orders two text-string map keys by the bytewise order of their
@@ -145,13 +174,13 @@ func emitCBOREncode(b *strings.Builder, typeName string, sorted []codecField, de
 
 	nRequired := 0
 	for _, f := range sorted {
-		if f.required || omitGuard("t."+f.field, f.goType, f.schemaType) == "" {
+		if f.required || omitGuard("t."+f.field, cborOmitType(f), f.schemaType) == "" {
 			nRequired++
 		}
 	}
 	fmt.Fprintf(b, "\tn := %d\n", nRequired)
 	for _, f := range sorted {
-		guard := omitGuard("t."+f.field, f.goType, f.schemaType)
+		guard := omitGuard("t."+f.field, cborOmitType(f), f.schemaType)
 		if !f.required && guard != "" {
 			fmt.Fprintf(b, "\tif %s {\n\t\tn++\n\t}\n", guard)
 		}
@@ -169,7 +198,7 @@ func emitCBOREncode(b *strings.Builder, typeName string, sorted []codecField, de
 		b.WriteString("\tvar err error\n")
 	}
 	for _, f := range sorted {
-		guard := omitGuard("t."+f.field, f.goType, f.schemaType)
+		guard := omitGuard("t."+f.field, cborOmitType(f), f.schemaType)
 		if !f.required && guard != "" {
 			fmt.Fprintf(b, "\tif %s {\n", guard)
 			emitCBOREncodeKV(b, f, "\t\t", defTypes)
@@ -185,13 +214,28 @@ func emitCBOREncode(b *strings.Builder, typeName string, sorted []codecField, de
 // its encoded value.
 func emitCBOREncodeKV(b *strings.Builder, f codecField, indent string, defTypes map[string]bool) {
 	fmt.Fprintf(b, "%sdst = appendCBORTextString(dst, %q)\n", indent, f.key)
-	emitCBOREncodeValue(b, "t."+f.field, f.goType, indent, defTypes)
+	if f.hostOpaqueType != "" {
+		// Carried opaquely against a hand-written declaration: the value's own JSON
+		// encoding is the verbatim payload, so it goes through the opaque arm rather
+		// than the arm the annotation's spelling would select. For an order-preserving
+		// container that encoding is author-ordered, which is how the order survives a
+		// wire whose counterpart never looks inside these bytes.
+		emitCBOREncodeOpaqueAny(b, "t."+f.field, indent)
+		return
+	}
+	emitCBOREncodeValue(b, "t."+f.field, f.goType, f.schemaType, indent, defTypes)
 }
 
 // emitCBOREncodeValue appends the canonical CBOR encoding of the lvalue src of
 // the given resolved Go type to dst.
-func emitCBOREncodeValue(b *strings.Builder, src, goType, indent string, defTypes map[string]bool) {
+//
+// schemaType is the JSON Schema `type` the field declared, and it is what lets a
+// named type over a scalar be encoded as that scalar; it is empty for a value
+// reached inside a composite, where the element's own declared type is not
+// carried this far. See cborNamedScalar.
+func emitCBOREncodeValue(b *strings.Builder, src, goType, schemaType, indent string, defTypes map[string]bool) {
 	omVal, isOrderedMap := orderedMapValueType(goType)
+	named := cborNamedScalar(goType, schemaType, defTypes)
 	switch {
 	case goType == "string":
 		fmt.Fprintf(b, "%sdst = appendCBORTextString(dst, %s)\n", indent, src)
@@ -215,7 +259,7 @@ func emitCBOREncodeValue(b *strings.Builder, src, goType, indent string, defType
 			// caller's omit guard drops a nil pointer).
 			switch elem {
 			case "string", "bool", "int", "int64", "float64", "[]byte":
-				emitCBOREncodeValue(b, "(*"+src+")", elem, indent, defTypes)
+				emitCBOREncodeValue(b, "(*"+src+")", elem, "", indent, defTypes)
 			default:
 				emitCBOREncodeOpaqueAny(b, src, indent)
 			}
@@ -229,12 +273,64 @@ func emitCBOREncodeValue(b *strings.Builder, src, goType, indent string, defType
 		emitCBOREncodeMap(b, src, valType, indent, defTypes)
 	case strings.HasPrefix(goType, "[]"):
 		emitCBOREncodeSlice(b, src, goType[2:], indent, defTypes)
+	case named != "":
+		// A named type over a scalar: encode the scalar it stands for, converting
+		// at the boundary. Without this the name matches no case above and the
+		// value falls to the opaque arm below, which would put a byte-string of
+		// JSON bytes on the wire where the other end reads a plain scalar.
+		emitCBOREncodeValue(b, named+"("+src+")", named, "", indent, defTypes)
 	default:
 		// Bare any / interface{}: an opaque value (R10). Marshal it to its JSON
 		// bytes and carry them as a byte-string, the json.RawMessage analog — the
 		// one residual stdlib encode, reached only for a value the guest authors.
 		emitCBOREncodeOpaqueAny(b, src, indent)
 	}
+}
+
+// cborNamedScalar returns the builtin scalar spelling a named type stands for, or
+// "" when goType is not such a type.
+//
+// The codec classifies a value by the SPELLING of its Go type, and a distinct
+// named type over a string (or an integer, a float, a bool) is a spelling it
+// cannot place — so it reaches the opaque arm and carries a JSON fragment where
+// the counterpart reads a scalar. The schema still says plainly what kind the
+// value is, so the kind is read from there and the encode/decode converts at the
+// boundary. This is the same fallback the omit decision already makes for the
+// same reason: the Go type is a name, and a name alone does not reveal the kind
+// underneath it.
+//
+// The alternative — rewriting the named type to its builtin through the target's
+// vocabulary — works only where the same target also emits the field's
+// declaration. Where the declaration is hand-written, rewriting the codec's view
+// of the type does not change the field, and the emitted conversion-free code
+// would not compile.
+//
+// Two guards keep this narrow. A composite spelling is excluded by construction
+// (a bracket, a star, a brace or a space marks one), and so is every spelling the
+// switch above already places, so no classification this function makes can
+// displace one made there.
+func cborNamedScalar(goType, schemaType string, defTypes map[string]bool) string {
+	if goType == "" || schemaType == "" || defTypes[goType] {
+		return ""
+	}
+	if strings.ContainsAny(goType, "[]*{} ") {
+		return ""
+	}
+	switch goType {
+	case "string", "int", "int64", "float64", "bool", "any", "interface{}", "json.RawMessage":
+		return ""
+	}
+	switch schemaType {
+	case "string":
+		return "string"
+	case "integer":
+		return "int64"
+	case "number":
+		return "float64"
+	case "boolean":
+		return "bool"
+	}
+	return ""
 }
 
 // emitCBOREncodeOpaqueAny appends a bare opaque value as a CBOR byte-string of
@@ -255,7 +351,7 @@ func emitCBOREncodeMap(b *strings.Builder, src, valType, indent string, defTypes
 	fmt.Fprintf(b, "%s\tfor _, k := range keys {\n", indent)
 	fmt.Fprintf(b, "%s\t\tdst = appendCBORTextString(dst, k)\n", indent)
 	fmt.Fprintf(b, "%s\t\tmv := %s[k]\n", indent, src)
-	emitCBOREncodeValue(b, "mv", valType, indent+"\t\t", defTypes)
+	emitCBOREncodeValue(b, "mv", valType, "", indent+"\t\t", defTypes)
 	fmt.Fprintf(b, "%s\t}\n", indent)
 	fmt.Fprintf(b, "%s}\n", indent)
 }
@@ -282,7 +378,7 @@ func emitCBOREncodeOrderedMap(b *strings.Builder, src, valType, indent string, d
 	fmt.Fprintf(b, "%s\tfor _, k := range keys {\n", indent)
 	fmt.Fprintf(b, "%s\t\tdst = appendCBORTextString(dst, k)\n", indent)
 	fmt.Fprintf(b, "%s\t\tmv, _ := %s.Get(k)\n", indent, src)
-	emitCBOREncodeValue(b, "mv", valType, indent+"\t\t", defTypes)
+	emitCBOREncodeValue(b, "mv", valType, "", indent+"\t\t", defTypes)
 	fmt.Fprintf(b, "%s\t}\n", indent)
 	fmt.Fprintf(b, "%s}\n", indent)
 }
@@ -293,7 +389,7 @@ func emitCBOREncodeSlice(b *strings.Builder, src, elemType, indent string, defTy
 	fmt.Fprintf(b, "%sdst = appendCBORHead(dst, 4, uint64(len(%s)))\n", indent, src)
 	fmt.Fprintf(b, "%sfor i := range %s {\n", indent, src)
 	fmt.Fprintf(b, "%s\tev := %s[i]\n", indent, src)
-	emitCBOREncodeValue(b, "ev", elemType, indent+"\t", defTypes)
+	emitCBOREncodeValue(b, "ev", elemType, "", indent+"\t", defTypes)
 	fmt.Fprintf(b, "%s}\n", indent)
 }
 
@@ -349,15 +445,27 @@ func emitCBORDecode(b *strings.Builder, typeName string, fields []codecField, de
 // emitCBORDecodeField decodes one field into t.<field>. Every shape — including
 // a nested map or slice in value position — descends through emitCBORDecodeValue.
 func emitCBORDecodeField(b *strings.Builder, f codecField, indent string, defTypes map[string]bool) {
-	emitCBORDecodeValue(b, "t."+f.field, f.goType, indent, defTypes)
+	if f.hostOpaqueType != "" {
+		// The mirror of the encode side: read the byte-string and let the declared
+		// type decode its own JSON, so an order-preserving container is rebuilt in the
+		// order the bytes carry.
+		emitCBORDecodeOpaqueAny(b, "t."+f.field, indent)
+		return
+	}
+	emitCBORDecodeValue(b, "t."+f.field, f.goType, f.schemaType, indent, defTypes)
 }
 
 // emitCBORDecodeValue decodes the next CBOR item into the lvalue dst of the given
 // resolved Go type. Maps and slices generate a block-scoped loop that builds the
 // collection and assigns it to dst, so a nested composite (a map of maps, a slice
 // of maps) decodes correctly rather than falling through to the opaque path.
-func emitCBORDecodeValue(b *strings.Builder, dst, goType, indent string, defTypes map[string]bool) {
+//
+// schemaType carries the field's declared JSON Schema type, so a named type over
+// a scalar decodes as that scalar and converts on assignment; it is empty for a
+// value reached inside a composite. See cborNamedScalar.
+func emitCBORDecodeValue(b *strings.Builder, dst, goType, schemaType, indent string, defTypes map[string]bool) {
 	omVal, isOrderedMap := orderedMapValueType(goType)
+	named := cborNamedScalar(goType, schemaType, defTypes)
 	switch {
 	case goType == "string":
 		fmt.Fprintf(b, "%sif s, err := dec.readTextString(); err != nil {\n%s\treturn err\n%s} else {\n%s\t%s = s\n%s}\n", indent, indent, indent, indent, dst, indent)
@@ -379,7 +487,7 @@ func emitCBORDecodeValue(b *strings.Builder, dst, goType, indent string, defType
 			switch elem {
 			case "string", "bool", "int", "int64", "float64", "[]byte":
 				fmt.Fprintf(b, "%s{\n%s\tvar sv %s\n", indent, indent, elem)
-				emitCBORDecodeValue(b, "sv", elem, indent+"\t", defTypes)
+				emitCBORDecodeValue(b, "sv", elem, "", indent+"\t", defTypes)
 				fmt.Fprintf(b, "%s\t%s = &sv\n%s}\n", indent, dst, indent)
 			default:
 				emitCBORDecodeOpaqueAny(b, dst, indent)
@@ -394,7 +502,7 @@ func emitCBORDecodeValue(b *strings.Builder, dst, goType, indent string, defType
 		fmt.Fprintf(b, "%s\tfor mi := 0; mi < mn; mi++ {\n", indent)
 		fmt.Fprintf(b, "%s\t\tmk, err := dec.readTextString()\n%s\t\tif err != nil {\n%s\t\t\treturn err\n%s\t\t}\n", indent, indent, indent, indent)
 		fmt.Fprintf(b, "%s\t\tvar mv %s\n", indent, omVal)
-		emitCBORDecodeValue(b, "mv", omVal, indent+"\t\t", defTypes)
+		emitCBORDecodeValue(b, "mv", omVal, "", indent+"\t\t", defTypes)
 		fmt.Fprintf(b, "%s\t\tom.Set(mk, mv)\n", indent)
 		fmt.Fprintf(b, "%s\t}\n", indent)
 		fmt.Fprintf(b, "%s\t%s = om\n", indent, dst)
@@ -407,7 +515,7 @@ func emitCBORDecodeValue(b *strings.Builder, dst, goType, indent string, defType
 		fmt.Fprintf(b, "%s\tfor mi := 0; mi < mn; mi++ {\n", indent)
 		fmt.Fprintf(b, "%s\t\tmk, err := dec.readTextString()\n%s\t\tif err != nil {\n%s\t\t\treturn err\n%s\t\t}\n", indent, indent, indent, indent)
 		fmt.Fprintf(b, "%s\t\tvar mv %s\n", indent, valType)
-		emitCBORDecodeValue(b, "mv", valType, indent+"\t\t", defTypes)
+		emitCBORDecodeValue(b, "mv", valType, "", indent+"\t\t", defTypes)
 		fmt.Fprintf(b, "%s\t\tm[mk] = mv\n", indent)
 		fmt.Fprintf(b, "%s\t}\n", indent)
 		fmt.Fprintf(b, "%s\t%s = m\n", indent, dst)
@@ -419,10 +527,20 @@ func emitCBORDecodeValue(b *strings.Builder, dst, goType, indent string, defType
 		fmt.Fprintf(b, "%s\ts := make(%s, 0, sn)\n", indent, goType)
 		fmt.Fprintf(b, "%s\tfor si := 0; si < sn; si++ {\n", indent)
 		fmt.Fprintf(b, "%s\t\tvar ev %s\n", indent, elemType)
-		emitCBORDecodeValue(b, "ev", elemType, indent+"\t\t", defTypes)
+		emitCBORDecodeValue(b, "ev", elemType, "", indent+"\t\t", defTypes)
 		fmt.Fprintf(b, "%s\t\ts = append(s, ev)\n", indent)
 		fmt.Fprintf(b, "%s\t}\n", indent)
 		fmt.Fprintf(b, "%s\t%s = s\n", indent, dst)
+		fmt.Fprintf(b, "%s}\n", indent)
+	case named != "":
+		// A named type over a scalar: decode the scalar it stands for into a local
+		// and convert on assignment. The mirror of the encode side's conversion —
+		// without it the name reaches the opaque arm below and the decode expects a
+		// byte-string where the wire carries a scalar.
+		fmt.Fprintf(b, "%s{\n", indent)
+		fmt.Fprintf(b, "%s\tvar nv %s\n", indent, named)
+		emitCBORDecodeValue(b, "nv", named, "", indent+"\t", defTypes)
+		fmt.Fprintf(b, "%s\t%s = %s(nv)\n", indent, dst, goType)
 		fmt.Fprintf(b, "%s}\n", indent)
 	default:
 		// bare any / interface{}: read the opaque byte-string and decode its JSON
