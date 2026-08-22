@@ -105,10 +105,29 @@ func closureCases() []closureCase {
 			// The workspace configuration file is hand-written against its schema
 			// as well, and carries no envelope, so its walk root is the
 			// configuration root type rather than an entity struct.
-			kind:       envelope.KindAggregaConfig,
-			schema:     schemas.AggregaConfigV1alpha1,
-			root:       reflect.TypeOf(workspaceconfig.Config{}),
-			exceptions: map[string]string{},
+			kind:   envelope.KindAggregaConfig,
+			schema: schemas.AggregaConfigV1alpha1,
+			root:   reflect.TypeOf(workspaceconfig.Config{}),
+			exceptions: map[string]string{
+				// One Go attachment type serves all eight socket lists, and the
+				// schema now declares two shapes across them: the sockets whose
+				// entry function an attachment may name declare `function`, and
+				// the sockets whose entry point is fixed do not. So the decoder
+				// accepts the tag at four positions the schema closes without it.
+				//
+				// Both halves of the divergence are covered, and the two halves
+				// are covered differently, which is why they are listed apart
+				// rather than as one entry. Schema validation runs on each file
+				// before the typed decode, so the value never reaches the decoder
+				// at any of the four. Behind that, a provider binding carrying
+				// `function` is refused a second time on the composed list — see
+				// the provider-socket inert-field check — while an importer entry
+				// has no second line, and the schema is its only gate.
+				"plugins.providers[].function":        "schema declares two attachment shapes over one Go type; refused by the schema before the decode, and again on the composed provider list",
+				"plugins.providers_append[].function": "schema declares two attachment shapes over one Go type; refused by the schema before the decode, and again on the composed provider list",
+				"plugins.importer[].function":         "schema declares two attachment shapes over one Go type; refused by the schema before the decode, which is the only gate on this socket",
+				"plugins.importer_append[].function":  "schema declares two attachment shapes over one Go type; refused by the schema before the decode, which is the only gate on this socket",
+			},
 			canaries: []string{
 				"lint.publishing_discipline.allow_dynamic_refs",
 				// Reached only through one array nested inside another.

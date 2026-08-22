@@ -413,6 +413,18 @@ func maximalWorkloadReference() types.Workload {
 // placements of the signing block (top level and per registry). The file carries
 // no envelope — it is flat top-level keys — which is why it is constructed from
 // the configuration root type rather than from an entity struct.
+//
+// The socket lists take three different attachment values rather than one shared
+// value, because the sockets do not admit the same fields and no single value is
+// valid at all eight positions. A socket whose entry function an attachment may
+// name declares `function`; a socket whose entry point is fixed does not declare
+// it, so the schema refuses an attachment carrying it there. The cross-cutting
+// sockets attach by uri and reject a capability binding, while a provider binding
+// is a capability binding and rejects both `function` and `with`. One capability
+// binds one provider across the composed list, so the base and append provider
+// lists name different capabilities. Each value therefore carries exactly what
+// its own position admits, which makes this instance a configuration the product
+// would really load rather than one only the schema tolerates.
 func maximalAggregaConfig() workspaceconfig.Config {
 	signing := workspaceconfig.SigningConfig{
 		FulcioURL:    "https://fulcio.example.com",
@@ -422,16 +434,30 @@ func maximalAggregaConfig() workspaceconfig.Config {
 		Required:     true,
 		Kinds:        []string{"Component", "Plugin"},
 	}
-	attachment := []workspaceconfig.PluginRef{{
-		URI:        "governance/label-normaliser",
-		Capability: "helm",
-		Function:   "mutate",
-		Role:       plugintype.RoleLabelTransform,
-		With: &workspaceconfig.PluginRefWith{
+	with := func() *workspaceconfig.PluginRefWith {
+		return &workspaceconfig.PluginRefWith{
 			Sources:  []string{"rules.rego"},
 			Settings: map[string]any{"prefix": "example.com/"},
-		},
+		}
+	}
+	selectableEntry := []workspaceconfig.PluginRef{{
+		URI:      "governance/label-normaliser",
+		Function: "mutate",
+		Role:     plugintype.RoleLabelTransform,
+		With:     with(),
 	}}
+	fixedEntry := []workspaceconfig.PluginRef{{
+		URI:  "importer/demo",
+		Role: plugintype.RoleLabelTransform,
+		With: with(),
+	}}
+	providerBinding := func(capability string) []workspaceconfig.PluginRef {
+		return []workspaceconfig.PluginRef{{
+			URI:        "provider/" + capability,
+			Capability: capability,
+			Role:       plugintype.RoleLabelTransform,
+		}}
+	}
 	return workspaceconfig.Config{
 		Workspace: workspaceconfig.WorkspaceConfig{
 			CatalogDirs:       []string{"./catalog"},
@@ -447,14 +473,14 @@ func maximalAggregaConfig() workspaceconfig.Config {
 			YAMLIndent:               2,
 		},
 		Plugins: workspaceconfig.PluginsConfig{
-			Governance:       attachment,
-			GovernanceAppend: attachment,
-			Linter:           attachment,
-			LinterAppend:     attachment,
-			Importer:         attachment,
-			ImporterAppend:   attachment,
-			Providers:        attachment,
-			ProvidersAppend:  attachment,
+			Governance:       selectableEntry,
+			GovernanceAppend: selectableEntry,
+			Linter:           selectableEntry,
+			LinterAppend:     selectableEntry,
+			Importer:         fixedEntry,
+			ImporterAppend:   fixedEntry,
+			Providers:        providerBinding("helm"),
+			ProvidersAppend:  providerBinding("compose"),
 			CLI: []workspaceconfig.CLIPluginRef{{
 				URI:    "oci://hub.aggrega.ai/plugin/cli/greet:1.2.0",
 				Digest: pinDigest,

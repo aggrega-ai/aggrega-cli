@@ -707,6 +707,17 @@ func checkCrossCuttingSocketAttach(plugins PluginsConfig) error {
 // error names the first offending binding deterministically for a given composed
 // config. The check keys only on field presence; it never resolves, loads, or
 // describes the referenced plugin.
+//
+// The two fields reach this check differently, and the difference is worth
+// stating because only one of them can still produce the message below. The
+// config schema declares `with` on a provider binding, so this check is the only
+// gate for it. The schema does not declare `function` there, and every config
+// file is validated against the schema before its typed decode, so a `function`
+// authored in a file is refused by that validation first and the branch below
+// does not run for it. The branch stays as the layer behind: the schema
+// distribution is a separately versioned artifact this module pins, so a build
+// resolving an older pin has no schema-level refusal, and this check is then the
+// only thing standing between the author and a field that names nothing.
 func checkInertProviderFields(providers []PluginRef) error {
 	for _, ref := range providers {
 		if ref.Function != "" {

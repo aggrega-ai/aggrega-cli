@@ -121,22 +121,15 @@ func TestResolveCapabilityOnProviderSocketResolves(t *testing.T) {
 	}
 }
 
-// TestResolveInertFieldOnProviderSocketHalts proves that setting a field with no
-// referent on a provider binding — `function:` or `with:` — halts resolution
-// loudly rather than silently dropping the value. A provider drives a fixed set
-// of phase-keyed exports (so `function:` names nothing) and takes its render
-// configuration from the Recipe (so `with:` misplaces render config), so both
-// fields are inert-by-design and rejected at authoring. Each field is covered so
-// both branches of the per-binding walk are exercised.
 // TestResolveGovernanceRoleMissingHalts proves a governance attachment authored
 // with no role halts resolution loudly rather than being silently dropped. The
 // role selects which pipeline runner (and facet) an attachment feeds, and the
 // dispatch reads attachments by role, so an attachment with no role would attach
 // to no runner and vanish without a diagnostic; catching it at load turns that
 // silent drop into a legible halt that names the attachment and the valid roles.
-// A role is optional on the shared attachment shape (linter / importer / provider
-// entries carry none), so its absence on a governance entry is caught here rather
-// than by the schema.
+// A role is optional on every attachment shape the schema declares (linter,
+// importer and provider entries carry none), so its absence on a governance entry
+// is caught here rather than by the schema.
 func TestResolveGovernanceRoleMissingHalts(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -178,13 +171,24 @@ func TestResolveGovernanceRoleUnknownHalts(t *testing.T) {
 	}
 }
 
+// TestResolveInertFieldOnProviderSocketHalts proves that setting a field with no
+// referent on a provider binding halts resolution loudly rather than silently
+// dropping the value. A provider takes its render configuration from the Recipe,
+// so `with:` on a provider binding misplaces render config across the authoring
+// boundary and is rejected at authoring.
+//
+// The table covers `with:` alone, and that is the whole reachable surface of this
+// check rather than a narrowing of the assertion. The other inert field on a
+// provider binding is `function:`, which the schema does not declare there at
+// all, so it is refused before the typed decode and never reaches this check —
+// asserted separately, against the class that now pins it, by
+// TestResolveFunctionOnFixedEntrySocketRefusedBySchema.
 func TestResolveInertFieldOnProviderSocketHalts(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		field string
 		yaml  string
 	}{
-		{"function", "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n      function: custom_render\n"},
 		{"with", "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n      with:\n        settings:\n          foo: bar\n"},
 	}
 	for _, tc := range cases {
@@ -225,7 +229,7 @@ func TestResolveInertFieldOnProviderSocketViaAppendHalts(t *testing.T) {
 		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n")
 	child := filepath.Join(root, "svc")
 	write(t, filepath.Join(child, ".aggrega-config.yaml"),
-		"plugins:\n  providers_append:\n    - capability: compose\n      uri: oci://h/compose:1\n      function: custom_render\n")
+		"plugins:\n  providers_append:\n    - capability: compose\n      uri: oci://h/compose:1\n      with:\n        settings:\n          foo: bar\n")
 
 	_, err := workspaceconfig.Resolve(child, "")
 	if err == nil {
@@ -234,8 +238,83 @@ func TestResolveInertFieldOnProviderSocketViaAppendHalts(t *testing.T) {
 	if !errors.Is(err, workspaceconfig.ErrInertFieldOnProviderSocket()) {
 		t.Fatalf("append-contributed halt must be ErrInertFieldOnProviderSocket; got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "function") || !strings.Contains(err.Error(), "compose") {
+	if !strings.Contains(err.Error(), "with") || !strings.Contains(err.Error(), "compose") {
 		t.Errorf("error must name the offending field and capability; got: %v", err)
+	}
+}
+
+// TestResolveFunctionOnFixedEntrySocketRefusedBySchema proves that `function:` is
+// not writable at all on a socket whose entry point the socket itself fixes. The
+// importer socket calls one entry function its socket contract names, and a
+// provider drives a fixed set of phase-keyed exports rather than one selectable
+// entry, so neither has an entry for `function:` to select. The schema declares
+// no such key on either list, and every config file is validated before its typed
+// decode, so the value is refused per file — including a file that contributes
+// only an `_append` layer, which is validated in its own right and not merely as
+// part of a merged result.
+//
+// The importer case is the one that changes what a user can ship: an authored
+// `function:` there used to be accepted, validated and then dropped, because the
+// socket reads the fixed export and never the field. The refusal must name the
+// offending key and the position that refused it, or a halt is indistinguishable
+// from any other malformed document.
+func TestResolveFunctionOnFixedEntrySocketRefusedBySchema(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		base     string
+		child    string
+		position string
+	}{
+		{
+			name:     "providers",
+			base:     "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n      function: custom_render\n",
+			position: "plugins.providers[0].function",
+		},
+		{
+			name:     "providers_append",
+			base:     "workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n",
+			child:    "plugins:\n  providers_append:\n    - capability: compose\n      uri: oci://h/compose:1\n      function: custom_render\n",
+			position: "plugins.providers_append[0].function",
+		},
+		{
+			name:     "importer",
+			base:     "workspace: {}\nplugins:\n  importer:\n    - uri: oci://h/imp:1\n      function: custom_import\n",
+			position: "plugins.importer[0].function",
+		},
+		{
+			name:     "importer_append",
+			base:     "workspace: {}\nplugins:\n  importer:\n    - uri: oci://h/imp:1\n",
+			child:    "plugins:\n  importer_append:\n    - uri: oci://h/imp2:1\n      function: custom_import\n",
+			position: "plugins.importer_append[0].function",
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			write(t, filepath.Join(root, ".aggrega-config.yaml"), tc.base)
+			start := root
+			if tc.child != "" {
+				start = filepath.Join(root, "svc")
+				write(t, filepath.Join(start, ".aggrega-config.yaml"), tc.child)
+			}
+
+			_, err := workspaceconfig.Resolve(start, "")
+			if err == nil {
+				t.Fatalf("Resolve over an entry in %s carrying function: returned nil; expected a loud halt", tc.name)
+			}
+			if !errors.Is(err, workspaceconfig.ErrConfigInvalid()) {
+				t.Fatalf("halt must be ErrConfigInvalid (the schema declares no such key here); got: %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.position) {
+				t.Errorf("error must name the refusing position %q; got: %v", tc.position, err)
+			}
+			if !strings.Contains(err.Error(), "function") {
+				t.Errorf("error must name the offending key; got: %v", err)
+			}
+		})
 	}
 }
 
