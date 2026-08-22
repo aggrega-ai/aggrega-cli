@@ -95,7 +95,7 @@ func VerdictPluginTrust(view *catalog.LazyLookup, wsCfg workspaceconfig.Config, 
 	if err != nil {
 		return pluginpath.PinMaps{}, err
 	}
-	if err := trust.HoldConfigurationToRecord(path, wsCfg.VerdictAttachments(), pluginCoordinateReader(view)); err != nil {
+	if err := trust.HoldConfigurationToRecord(releasePath, wsCfg.VerdictAttachments(), pluginCoordinateReader(view)); err != nil {
 		return pluginpath.PinMaps{}, err
 	}
 	return trust.PinMaps(), nil

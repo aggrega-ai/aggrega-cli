@@ -25,6 +25,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -65,9 +66,12 @@ Use --upgrade with no positional arguments to discard the existing lockfile and 
 every entity from current registry state, floating each dependency to the highest available
 version. Pass one or more entity URIs after --upgrade to upgrade only those: each named pin
 is dropped and re-resolved fresh while every other pin — and the recorded external inputs —
-is held unchanged. A named target may also be a plugin the workspace attaches in a role that
-returns an accept-or-reject verdict; such a plugin carries no lockfile pin, and naming it
-adopts the identity it resolves to. A URI given without --upgrade is a usage error.`,
+is held unchanged. A named target may also be a plugin that returns an accept-or-reject verdict;
+such a plugin carries no lockfile pin, and its identity is recorded beside the lockfile instead.
+Naming one the workspace still attaches adopts the identity it resolves to. Naming one the
+workspace no longer attaches drops its recorded identity — the one way to clear an entry that
+outlived the attachment it was recorded for. A bare --upgrade does both for every plugin at once.
+A URI given without --upgrade is a usage error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.verify && opts.upgrade {
 				return fmt.Errorf("--verify and --upgrade are mutually exclusive")
@@ -429,11 +433,23 @@ func pullRun(cfg pullConfig) error {
 	// that only returns an accept-or-reject verdict shapes no rendered output, so its
 	// identity is recorded beside the lockfile rather than pinned in it — and a
 	// named target checked against the pin set alone would be refused before the run
-	// could reach the record it governs. The attachments the workspace configures are
-	// therefore handed in as targets the decision accepts without a pin behind them.
+	// could reach the record it governs. The attachments the workspace configures,
+	// and the identities that record already holds, are therefore handed in as
+	// targets the decision accepts without a pin behind them.
+	//
+	// The record is read here rather than only at the two places that compare and
+	// write it, because a target naming a plugin the configuration no longer
+	// attaches has to be accepted for the run to be able to drop its entry — and the
+	// only place that target can come from is the record. A record that exists and
+	// does not satisfy its schema halts the pull at this point, which is the same
+	// fail-closed reading every other consumer of the file takes.
+	recordedTrust, _, err := pluginstrust.LoadOrStart(pluginstrust.PathFor(cfg.ReleasePath))
+	if err != nil {
+		return err
+	}
 	pinMode := catalog.PinReuseMode{Upgrade: cfg.Upgrade, UpgradeTargets: cfg.UpgradeTargets, VerifyOnly: cfg.Verify}
 	pinReuse, err := catalog.PinReuseFromLockfile(lockfilePath, cfg.ReleasePath, pinMode,
-		verdictAttachmentUpgradeTargets(wsCfg),
+		verdictUpgradeTargets(wsCfg, recordedTrust),
 		func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) })
 	if err != nil {
 		return err
@@ -787,9 +803,18 @@ func pullRun(cfg pullConfig) error {
 				return fmt.Errorf("write lockfile: %w", err)
 			}
 			// Record the identity resolved for each verdict-returning attachment,
-			// beside the lockfile just written. This runs only here, past the
-			// verify-only return above, so a verify-only pull records nothing.
-			trustedCount, err := recordVerdictPluginTrust(cfg.ReleasePath, verdictResolutions, pinMode, cfg.DiagOut)
+			// beside the lockfile just written, and drop any entry the configuration
+			// no longer accounts for when this run asked for that. This runs only
+			// here, past the verify-only return above, so a verify-only pull neither
+			// records nor drops anything.
+			//
+			// The attachment set goes in alongside the resolutions because the two
+			// answer different halves of one question. The resolutions say what was
+			// acquired, which is what gets recorded; the attachments say what the
+			// configuration still names, which is what keeps an entry from being
+			// dropped — and a detached plugin is precisely the case with an entry and
+			// no resolution.
+			trustedCount, err := recordVerdictPluginTrust(cfg.ReleasePath, wsCfg.VerdictAttachments(), verdictResolutions, pinMode, cfg.DiagOut)
 			if err != nil {
 				return err
 			}

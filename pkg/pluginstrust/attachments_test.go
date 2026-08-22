@@ -49,6 +49,11 @@ func resolvesTo(table map[string]string) func(string) (string, bool) {
 	}
 }
 
+// releaseFixture is the Release path the record sits beside in these tests. It is
+// nested in a directory so the record path the diagnostic prints is derived rather
+// than coincidentally equal to the Release path.
+var releaseFixture = filepath.Join("env", "prod.yaml")
+
 // TestHoldConfigurationToRecord_RefusesAGateTheConfigurationDropped is the
 // security core of the asymmetry: a record holding a plugin that no configured
 // attachment names refuses. Dropping a gate changes no rendered byte, so this
@@ -57,7 +62,7 @@ func resolvesTo(table map[string]string) func(string) (string, bool) {
 func TestHoldConfigurationToRecord_RefusesAGateTheConfigurationDropped(t *testing.T) {
 	record := recordOf("governance/opa-gate")
 
-	err := record.HoldConfigurationToRecord("plugins-trust.yaml", nil, resolvesTo(nil))
+	err := record.HoldConfigurationToRecord(releaseFixture, nil, resolvesTo(nil))
 	if err == nil {
 		t.Fatal("a record holding a gate no attachment names must refuse; got a clean pass")
 	}
@@ -69,8 +74,73 @@ func TestHoldConfigurationToRecord_RefusesAGateTheConfigurationDropped(t *testin
 	if !strings.Contains(err.Error(), "governance/opa-gate") {
 		t.Errorf("the refusal must name the plugin; got %v", err)
 	}
-	if !strings.Contains(err.Error(), "plugins-trust.yaml") {
-		t.Errorf("the refusal must name the record; got %v", err)
+	if !strings.Contains(err.Error(), PathFor(releaseFixture)) {
+		t.Errorf("the refusal must name the record beside the Release; got %v", err)
+	}
+}
+
+// TestHoldConfigurationToRecord_OffersTheExplicitUpgradeAndNotADeletion reads the
+// remedy the diagnostic prints, because the text is the only part of a diagnostic
+// a reader ever sees.
+//
+// It asserts three things and each one is a way the remedy has been wrong:
+//
+//   - The command is printed verbatim and runnable, naming the Release (`--release`
+//     is required on the pull command) and the dropped plugin by the coordinate the
+//     same sentence just named. A remedy the binary would refuse is not one.
+//   - The two remedies stay distinct: re-attach if the removal was a mistake, run
+//     the explicit upgrade if it was intended. Only the reader knows which.
+//   - It does NOT tell the reader to delete or hand-edit the record. The file's own
+//     opening lines say it is committed and not hand-edited, so an instruction to
+//     remove it would put two of our own surfaces in contradiction.
+func TestHoldConfigurationToRecord_OffersTheExplicitUpgradeAndNotADeletion(t *testing.T) {
+	record := recordOf("governance/opa-gate")
+
+	err := record.HoldConfigurationToRecord(releaseFixture, nil, resolvesTo(nil))
+	if err == nil {
+		t.Fatal("a record holding a gate no attachment names must refuse; got a clean pass")
+	}
+	msg := err.Error()
+
+	wantCommand := "aggrega pull --upgrade --release " + releaseFixture + " governance/opa-gate"
+	if !strings.Contains(msg, wantCommand) {
+		t.Errorf("the remedy must print the explicit upgrade verbatim and runnable;\nwant it to contain %q\ngot %v", wantCommand, err)
+	}
+	// The re-attach remedy, named as its own alternative rather than folded in.
+	for _, want := range []string{"Attach the plugin again", "plugins.governance", "plugins.linter"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the remedy must keep re-attaching as a distinct option and say where; missing %q in %v", want, err)
+		}
+	}
+	// The removal instruction that must be gone: the record is committed and not
+	// hand-edited, so nothing here may tell a reader to delete or edit it.
+	for _, forbidden := range []string{"remove " + PathFor(releaseFixture), "delete", "edit " + PathFor(releaseFixture)} {
+		if strings.Contains(msg, forbidden) {
+			t.Errorf("the remedy must not tell the reader to remove or edit the record; found %q in %v", forbidden, err)
+		}
+	}
+	// And it says why a plain pull is not the remedy, so a reader who tries one
+	// first is not left guessing.
+	if !strings.Contains(msg, "only an explicit upgrade removes an entry") {
+		t.Errorf("the remedy must say that a plain pull leaves the record alone; got %v", err)
+	}
+}
+
+// TestHoldConfigurationToRecord_NamesEveryDroppedGateOnOneUpgradeCommand: with
+// several gates dropped, the printed upgrade names all of them, so one run of one
+// command clears the record rather than one command per plugin — and a targeted
+// upgrade naming them together still holds every pin it did not name, which the
+// full refresh a reader would otherwise reach for does not.
+func TestHoldConfigurationToRecord_NamesEveryDroppedGateOnOneUpgradeCommand(t *testing.T) {
+	record := canonicalise(recordOf("linter/house-style", "governance/opa-gate"))
+
+	err := record.HoldConfigurationToRecord(releaseFixture, nil, resolvesTo(nil))
+	if err == nil {
+		t.Fatal("two dropped gates must refuse")
+	}
+	wantCommand := "aggrega pull --upgrade --release " + releaseFixture + " governance/opa-gate linter/house-style"
+	if !strings.Contains(err.Error(), wantCommand) {
+		t.Errorf("the remedy must name every dropped gate on one command;\nwant it to contain %q\ngot %v", wantCommand, err)
 	}
 }
 
@@ -85,7 +155,7 @@ func TestHoldConfigurationToRecord_AcceptsAnAttachedGate(t *testing.T) {
 	// a version suffix — the namespaced form a real workspace authors — so a
 	// predicate comparing the two as strings fails here.
 	table := map[string]string{"core/governance/opa-gate:1.2.0": "governance/opa-gate"}
-	if err := record.HoldConfigurationToRecord("plugins-trust.yaml",
+	if err := record.HoldConfigurationToRecord(releaseFixture,
 		attach("core/governance/opa-gate:1.2.0"), resolvesTo(table)); err != nil {
 		t.Fatalf("a recorded gate that is still attached must not refuse; got %v", err)
 	}
@@ -101,7 +171,7 @@ func TestHoldConfigurationToRecord_SaysNothingAboutAnAttachmentTheRecordDoesNotH
 		"governance/opa-gate:1.2.0": "governance/opa-gate",
 		"governance/new-gate:0.1.0": "governance/new-gate",
 	}
-	if err := record.HoldConfigurationToRecord("plugins-trust.yaml",
+	if err := record.HoldConfigurationToRecord(releaseFixture,
 		attach("governance/opa-gate:1.2.0", "governance/new-gate:0.1.0"), resolvesTo(table)); err != nil {
 		t.Fatalf("an attachment the record does not hold is a first sighting, not a fault; got %v", err)
 	}
@@ -114,7 +184,7 @@ func TestHoldConfigurationToRecord_NamesEveryDroppedGateInRecordOrder(t *testing
 	// canonicalise sorts by coordinate; assert against that order.
 	record := canonicalise(recordOf("linter/house-style", "governance/opa-gate"))
 
-	err := record.HoldConfigurationToRecord("plugins-trust.yaml", nil, resolvesTo(nil))
+	err := record.HoldConfigurationToRecord(releaseFixture, nil, resolvesTo(nil))
 	if err == nil {
 		t.Fatal("two dropped gates must refuse")
 	}
@@ -138,7 +208,7 @@ func TestHoldConfigurationToRecord_NamesEveryDroppedGateInRecordOrder(t *testing
 func TestHoldConfigurationToRecord_StaysSilentWhenAnAttachmentCannotBeIdentified(t *testing.T) {
 	record := recordOf("governance/opa-gate")
 
-	if err := record.HoldConfigurationToRecord("plugins-trust.yaml",
+	if err := record.HoldConfigurationToRecord(releaseFixture,
 		attach("governance/unreadable:1.0.0"), resolvesTo(nil)); err != nil {
 		t.Fatalf("an attachment whose plugin cannot be identified must suppress the refusal; got %v", err)
 	}
@@ -151,11 +221,11 @@ func TestHoldConfigurationToRecord_StaysSilentWhenAnAttachmentCannotBeIdentified
 // unbuildable.
 func TestHoldConfigurationToRecord_NoRecordRefusesNothing(t *testing.T) {
 	var absent *Trust
-	if err := absent.HoldConfigurationToRecord("plugins-trust.yaml", nil, resolvesTo(nil)); err != nil {
+	if err := absent.HoldConfigurationToRecord(releaseFixture, nil, resolvesTo(nil)); err != nil {
 		t.Errorf("a nil record refuses nothing; got %v", err)
 	}
 	empty := &Trust{Version: CurrentVersion}
-	if err := empty.HoldConfigurationToRecord("plugins-trust.yaml", nil, resolvesTo(nil)); err != nil {
+	if err := empty.HoldConfigurationToRecord(releaseFixture, nil, resolvesTo(nil)); err != nil {
 		t.Errorf("an empty record refuses nothing; got %v", err)
 	}
 }

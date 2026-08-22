@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -135,6 +136,26 @@ func recordedCoordinates(trust *pluginstrust.Trust) []string {
 		out = append(out, p.Plugin)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// attachingVerdictPlugins builds the verdict attachment set for the authored
+// references given, at the linter socket, whose every attachment is a verdict
+// attachment.
+//
+// A test states this alongside what the pull resolved because the two are
+// different facts and the write path needs both: the resolutions say what was
+// acquired, the attachments say what the configuration still names. A detached
+// plugin is exactly the case with a record entry and no resolution, so a test
+// that supplied only the resolutions could not express it.
+func attachingVerdictPlugins(uris ...string) []workspaceconfig.VerdictAttachment {
+	out := make([]workspaceconfig.VerdictAttachment, 0, len(uris))
+	for _, uri := range uris {
+		out = append(out, workspaceconfig.VerdictAttachment{
+			Socket: workspaceconfig.SocketLinter,
+			Ref:    workspaceconfig.PluginRef{URI: uri},
+		})
+	}
 	return out
 }
 
@@ -277,10 +298,12 @@ func TestVerdictTrustDeclinesWhatTheBinaryCarries(t *testing.T) {
 	releasePath := filepath.Join(root, "release.yaml")
 
 	var diag bytes.Buffer
-	recorded, err := recordVerdictPluginTrust(releasePath, []verdictPluginResolution{
-		{BareURI: carried, Coordinate: carried, Version: "1.0.0", Digest: "sha256:" + strings.Repeat("a", 64)},
-		{BareURI: "linter/acquired-probe", Coordinate: "linter/acquired-probe", Version: "2.0.0", Digest: "sha256:" + strings.Repeat("b", 64)},
-	}, catalog.PinReuseMode{}, &diag)
+	recorded, err := recordVerdictPluginTrust(releasePath,
+		attachingVerdictPlugins(carried, "linter/acquired-probe"),
+		[]verdictPluginResolution{
+			{BareURI: carried, Coordinate: carried, Version: "1.0.0", Digest: "sha256:" + strings.Repeat("a", 64)},
+			{BareURI: "linter/acquired-probe", Coordinate: "linter/acquired-probe", Version: "2.0.0", Digest: "sha256:" + strings.Repeat("b", 64)},
+		}, catalog.PinReuseMode{}, &diag)
 	if err != nil {
 		t.Fatalf("recordVerdictPluginTrust: %v", err)
 	}
@@ -306,9 +329,11 @@ func TestVerdictTrustDeclinesEverythingCarriedWritesNoFile(t *testing.T) {
 	releasePath := filepath.Join(root, "release.yaml")
 
 	var diag bytes.Buffer
-	recorded, err := recordVerdictPluginTrust(releasePath, []verdictPluginResolution{
-		{BareURI: carried, Coordinate: carried, Version: "1.0.0", Digest: "sha256:" + strings.Repeat("a", 64)},
-	}, catalog.PinReuseMode{}, &diag)
+	recorded, err := recordVerdictPluginTrust(releasePath,
+		attachingVerdictPlugins(carried),
+		[]verdictPluginResolution{
+			{BareURI: carried, Coordinate: carried, Version: "1.0.0", Digest: "sha256:" + strings.Repeat("a", 64)},
+		}, catalog.PinReuseMode{}, &diag)
 	if err != nil {
 		t.Fatalf("recordVerdictPluginTrust: %v", err)
 	}
@@ -336,12 +361,14 @@ func TestVerdictTrustDeclineAgreesWithTheBinary(t *testing.T) {
 	_, carriedByBinary := embedded.Lookup(embedded.PublishingLinterURI)
 
 	var diag bytes.Buffer
-	recorded, err := recordVerdictPluginTrust(releasePath, []verdictPluginResolution{{
-		BareURI:    embedded.PublishingLinterURI,
-		Coordinate: embedded.PublishingLinterURI,
-		Version:    "0.5.0",
-		Digest:     "sha256:" + strings.Repeat("c", 64),
-	}}, catalog.PinReuseMode{}, &diag)
+	recorded, err := recordVerdictPluginTrust(releasePath,
+		attachingVerdictPlugins(embedded.PublishingLinterURI),
+		[]verdictPluginResolution{{
+			BareURI:    embedded.PublishingLinterURI,
+			Coordinate: embedded.PublishingLinterURI,
+			Version:    "0.5.0",
+			Digest:     "sha256:" + strings.Repeat("c", 64),
+		}}, catalog.PinReuseMode{}, &diag)
 	if err != nil {
 		t.Fatalf("recordVerdictPluginTrust: %v", err)
 	}
@@ -375,10 +402,12 @@ func TestVerdictTrustFillsAMissingEntryAndHoldsAPresentOne(t *testing.T) {
 	}
 
 	var diag bytes.Buffer
-	if _, err := recordVerdictPluginTrust(releasePath, []verdictPluginResolution{
-		{BareURI: "linter/held-probe", Coordinate: "linter/held-probe", Version: "9.9.9", Digest: fresh},
-		{BareURI: "linter/added-probe", Coordinate: "linter/added-probe", Version: "2.0.0", Digest: added},
-	}, catalog.PinReuseMode{}, &diag); err != nil {
+	if _, err := recordVerdictPluginTrust(releasePath,
+		attachingVerdictPlugins("linter/held-probe", "linter/added-probe"),
+		[]verdictPluginResolution{
+			{BareURI: "linter/held-probe", Coordinate: "linter/held-probe", Version: "9.9.9", Digest: fresh},
+			{BareURI: "linter/added-probe", Coordinate: "linter/added-probe", Version: "2.0.0", Digest: added},
+		}, catalog.PinReuseMode{}, &diag); err != nil {
 		t.Fatalf("recordVerdictPluginTrust: %v", err)
 	}
 
@@ -445,9 +474,11 @@ func TestVerdictTrustRewritesOnlyWhenTheRunReresolves(t *testing.T) {
 				t.Fatalf("seed record: %v", err)
 			}
 
-			if _, err := recordVerdictPluginTrust(releasePath, []verdictPluginResolution{{
-				BareURI: "linter/held-probe", Coordinate: "linter/held-probe", Version: "9.9.9", Digest: fresh,
-			}}, tc.mode, io.Discard); err != nil {
+			if _, err := recordVerdictPluginTrust(releasePath,
+				attachingVerdictPlugins("linter/held-probe"),
+				[]verdictPluginResolution{{
+					BareURI: "linter/held-probe", Coordinate: "linter/held-probe", Version: "9.9.9", Digest: fresh,
+				}}, tc.mode, io.Discard); err != nil {
 				t.Fatalf("recordVerdictPluginTrust: %v", err)
 			}
 
@@ -475,7 +506,8 @@ func TestVerdictTrustCreationNoticeFiresOnceAndSaysWhatToDo(t *testing.T) {
 	}}
 
 	var first bytes.Buffer
-	if _, err := recordVerdictPluginTrust(releasePath, resolutions, catalog.PinReuseMode{}, &first); err != nil {
+	attached := attachingVerdictPlugins("linter/notice-probe")
+	if _, err := recordVerdictPluginTrust(releasePath, attached, resolutions, catalog.PinReuseMode{}, &first); err != nil {
 		t.Fatalf("first record: %v", err)
 	}
 	notice := first.String()
@@ -492,7 +524,7 @@ func TestVerdictTrustCreationNoticeFiresOnceAndSaysWhatToDo(t *testing.T) {
 	}
 
 	var second bytes.Buffer
-	if _, err := recordVerdictPluginTrust(releasePath, resolutions, catalog.PinReuseMode{}, &second); err != nil {
+	if _, err := recordVerdictPluginTrust(releasePath, attached, resolutions, catalog.PinReuseMode{}, &second); err != nil {
 		t.Fatalf("second record: %v", err)
 	}
 	if second.Len() != 0 {
@@ -513,10 +545,12 @@ func TestVerdictTrustRefusesAnUnreadableRecord(t *testing.T) {
 		t.Fatalf("write invalid record: %v", err)
 	}
 
-	_, err := recordVerdictPluginTrust(releasePath, []verdictPluginResolution{{
-		BareURI: "linter/probe", Coordinate: "linter/probe", Version: "1.0.0",
-		Digest: "sha256:" + strings.Repeat("5", 64),
-	}}, catalog.PinReuseMode{}, io.Discard)
+	_, err := recordVerdictPluginTrust(releasePath,
+		attachingVerdictPlugins("linter/probe"),
+		[]verdictPluginResolution{{
+			BareURI: "linter/probe", Coordinate: "linter/probe", Version: "1.0.0",
+			Digest: "sha256:" + strings.Repeat("5", 64),
+		}}, catalog.PinReuseMode{}, io.Discard)
 	if err == nil {
 		t.Fatal("a record that fails its schema must halt rather than be replaced")
 	}
@@ -793,15 +827,23 @@ func TestVerdictTrustHoldRefusesAnUnreadableRecord(t *testing.T) {
 	}
 }
 
-// TestVerdictAttachmentUpgradeTargetsAreTheAuthoredReferences pins what a targeted
-// upgrade may name for a plugin the lockfile does not pin: the attachment's
-// authored reference with any version suffix removed.
+// TestVerdictUpgradeTargetsCoverAttachmentsAndTheRecord pins what a targeted
+// upgrade may name for a plugin the lockfile does not pin: every configured
+// attachment's authored reference with any version suffix removed, AND every
+// identity coordinate the record holds.
 //
-// The version-suffix row is the load-bearing one. A target carrying the suffix
-// would be a string the re-resolution never matches, so the upgrade would be
-// admitted and then re-resolve nothing — accepted and inert, which is the outcome
-// hardest to notice.
-func TestVerdictAttachmentUpgradeTargetsAreTheAuthoredReferences(t *testing.T) {
+// Two rows are load-bearing for different reasons.
+//
+// The version-suffix row: a target carrying the suffix would be a string the
+// re-resolution never matches, so the upgrade would be admitted and then
+// re-resolve nothing — accepted and inert, which is the outcome hardest to notice.
+//
+// The recorded-but-detached row: that coordinate matches no attachment at all, so
+// deriving the accepted targets from the attachments alone would reject it. It is
+// the exact string the refusal over a stale entry prints, so rejecting it would
+// make that refusal print a command the binary then refuses — and the entry could
+// never be dropped.
+func TestVerdictUpgradeTargetsCoverAttachmentsAndTheRecord(t *testing.T) {
 	cfg := workspaceconfig.Config{
 		Plugins: workspaceconfig.PluginsConfig{
 			Linter: []workspaceconfig.PluginRef{
@@ -816,14 +858,44 @@ func TestVerdictAttachmentUpgradeTargetsAreTheAuthoredReferences(t *testing.T) {
 		},
 	}
 
-	got := verdictAttachmentUpgradeTargets(cfg)
-	sort.Strings(got)
-	want := []string{"governance/policy", "linter/bare-linter", "linter/publishing-linter"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("verdict upgrade targets = %v; want %v\n"+
-			"the version suffix is dropped because a named target is matched against the authored reference, "+
-			"and a transform-role attachment is not recorded so it is not a target here", got, want)
-	}
+	t.Run("with_no_record_the_attachments_stand_alone", func(t *testing.T) {
+		got := verdictUpgradeTargets(cfg, nil)
+		sort.Strings(got)
+		want := []string{"governance/policy", "linter/bare-linter", "linter/publishing-linter"}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("verdict upgrade targets = %v; want %v\n"+
+				"the version suffix is dropped because a named target is matched against the authored reference, "+
+				"and a transform-role attachment is not recorded so it is not a target here", got, want)
+		}
+	})
+
+	t.Run("a_recorded_but_detached_coordinate_is_accepted", func(t *testing.T) {
+		record := &pluginstrust.Trust{Version: pluginstrust.CurrentVersion}
+		// Still attached: contributes nothing new, because the attachment already did.
+		record.Upsert(pluginstrust.TrustedPlugin{
+			Plugin: "linter/bare-linter", ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("1", 64),
+		})
+		// Detached: named by no attachment, so only the record can vouch for it.
+		record.Upsert(pluginstrust.TrustedPlugin{
+			Plugin: "linter/detached-probe", ResolvedVersion: "2.0.0", Digest: "sha256:" + strings.Repeat("2", 64),
+		})
+		// An empty address vouches for nothing, the same skip every other consumer takes.
+		record.Plugins = append(record.Plugins, pluginstrust.TrustedPlugin{Plugin: ""})
+
+		got := verdictUpgradeTargets(cfg, record)
+		if !slices.Contains(got, "linter/detached-probe") {
+			t.Errorf("a coordinate the record holds and nothing attaches must be an accepted target; got %v\n"+
+				"without it the command the stale-entry refusal prints is refused as naming nothing", got)
+		}
+		if slices.Contains(got, "") {
+			t.Errorf("an empty recorded address must not become a target; got %v", got)
+		}
+		// The discriminator: the attachment-only set does NOT carry it, so the row
+		// above is earned by the record rather than by the configuration.
+		if slices.Contains(verdictUpgradeTargets(cfg, nil), "linter/detached-probe") {
+			t.Fatal("the attachment-only set already carries the detached coordinate, so this test cannot discriminate")
+		}
+	})
 }
 
 // TestVerdictTrustRecordHasOneComparisonSite is the structural companion to the
@@ -859,5 +931,348 @@ func TestVerdictTrustRecordHasOneComparisonSite(t *testing.T) {
 	sort.Strings(readers)
 	if strings.Join(readers, ",") != "holdVerdictPluginsToTheirRecord,recordVerdictPluginTrust" {
 		t.Errorf("callers of recordableVerdictResolutions = %v; want exactly [holdVerdictPluginsToTheirRecord recordVerdictPluginTrust]", readers)
+	}
+}
+
+// seedTrustRecord writes a record beside releasePath holding one entry per
+// coordinate, and fails the test if the file it wrote does not hold them — so a
+// later assertion about an entry surviving or going cannot pass over a record that
+// was never written.
+func seedTrustRecord(t *testing.T, releasePath string, coordinates ...string) {
+	t.Helper()
+	seed := &pluginstrust.Trust{Version: pluginstrust.CurrentVersion}
+	for i, coordinate := range coordinates {
+		seed.Upsert(pluginstrust.TrustedPlugin{
+			Plugin:          coordinate,
+			ResolvedVersion: "1.0.0",
+			Digest:          "sha256:" + strings.Repeat(string(rune('a'+i)), 64),
+		})
+	}
+	if err := pluginstrust.Write(pluginstrust.PathFor(releasePath), seed); err != nil {
+		t.Fatalf("seed record: %v", err)
+	}
+	written := trustRecordAt(t, releasePath)
+	for _, coordinate := range coordinates {
+		if _, held := written.Find(coordinate); !held {
+			t.Fatalf("seeded record does not hold %s; every assertion below would be unattributable (it holds %v)",
+				coordinate, recordedCoordinates(written))
+		}
+	}
+}
+
+// TestVerdictTrustPrunesOnlyOnAnExplicitUpgrade is the discriminating table for
+// the two invocations that may drop a recorded entry, and for the ones that may
+// not. Every row runs over the identical detached configuration, so the only thing
+// separating them is what the run asked for.
+//
+// The two holding rows are the ones that protect the guard, and they must fail if
+// the trigger is ever widened. An ordinary pull that dropped the entry would turn
+// a removed gate into a silently accepted removal, which is the whole thing the
+// refusal exists to catch; a verify-only run that dropped it would be a
+// verification mutating what it verifies.
+func TestVerdictTrustPrunesOnlyOnAnExplicitUpgrade(t *testing.T) {
+	const stale = "linter/stale-probe"
+
+	cases := []struct {
+		name     string
+		mode     catalog.PinReuseMode
+		wantHeld bool
+	}{
+		{name: "ordinary_pull_holds_the_stale_entry", mode: catalog.PinReuseMode{}, wantHeld: true},
+		{name: "verify_only_holds_the_stale_entry", mode: catalog.PinReuseMode{VerifyOnly: true}, wantHeld: true},
+		{name: "full_refresh_prunes_it", mode: catalog.PinReuseMode{Upgrade: true}},
+		{
+			name: "targeted_upgrade_naming_it_prunes_it",
+			mode: catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{stale}},
+		},
+		{
+			name:     "targeted_upgrade_naming_another_holds_it",
+			mode:     catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{"linter/somebody-else"}},
+			wantHeld: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			releasePath := filepath.Join(root, "release.yaml")
+			seedTrustRecord(t, releasePath, stale)
+
+			// Nothing attached and nothing resolved: the entry is accounted for by
+			// nothing, which is the condition every row shares.
+			if _, err := recordVerdictPluginTrust(releasePath, nil, nil, tc.mode, io.Discard); err != nil {
+				t.Fatalf("recordVerdictPluginTrust: %v", err)
+			}
+
+			_, held := trustRecordAt(t, releasePath).Find(stale)
+			if held != tc.wantHeld {
+				t.Errorf("entry held = %t; want %t", held, tc.wantHeld)
+			}
+		})
+	}
+}
+
+// TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet is the
+// discrimination that decides whether pruning is safe at all, and it is written
+// over the two classes the recordable reduction drops while the configuration still
+// names them:
+//
+//   - A plugin the binary carries. It is declined at the write deliberately, so it
+//     contributes no recordable resolution — but it is attached, and its entry (put
+//     there by a binary that carried nothing, or by a hand edit) must survive.
+//   - An attachment whose plugin could not be identified. It contributes no
+//     resolution either, and the answer to "what does the configuration account
+//     for" is then INCOMPLETE, so nothing at all is pruned.
+//
+// Both rows run under a full refresh, the widest trigger there is. A prune keyed on
+// the recordable set instead of the attachment set passes every other test in this
+// file and deletes a live gate's reviewed identity here.
+func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testing.T) {
+	t.Run("a_coordinate_the_binary_carries_is_still_attached", func(t *testing.T) {
+		const carried = "linter/carried-probe"
+		restore := embedded.SeedForTest(carried, headerOnlyWasm)
+		t.Cleanup(restore)
+
+		root := t.TempDir()
+		releasePath := filepath.Join(root, "release.yaml")
+		seedTrustRecord(t, releasePath, carried)
+
+		// Attached and resolved, but declined from the record because the binary
+		// carries it — so it appears in the resolutions and not in the recordable set.
+		if _, err := recordVerdictPluginTrust(releasePath,
+			attachingVerdictPlugins(carried),
+			[]verdictPluginResolution{{
+				BareURI: carried, Coordinate: carried, Version: "1.0.0",
+				Digest: "sha256:" + strings.Repeat("9", 64),
+			}}, catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
+			t.Fatalf("recordVerdictPluginTrust: %v", err)
+		}
+
+		if _, held := trustRecordAt(t, releasePath).Find(carried); !held {
+			t.Error("an entry whose plugin is still attached must survive a full refresh, even though the record declines to write it")
+		}
+	})
+
+	t.Run("a_binary_carried_attachment_does_not_make_the_answer_incomplete", func(t *testing.T) {
+		const carried = "linter/carried-probe"
+		restore := embedded.SeedForTest(carried, headerOnlyWasm)
+		t.Cleanup(restore)
+
+		root := t.TempDir()
+		releasePath := filepath.Join(root, "release.yaml")
+		seedTrustRecord(t, releasePath, carried, "linter/stale-probe")
+
+		// The carried plugin is attached and identified; only the record declines to
+		// write it. So the answer is COMPLETE, and the unrelated stale entry goes.
+		//
+		// This is the other direction of the same confusion, and it fails silently the
+		// safe-looking way: reading the coordinates off the recordable set would leave
+		// this attachment unidentified, the answer incomplete, and the prune inert — so
+		// every workspace attaching a plugin the binary carries would keep its dead end
+		// while every test asserting an entry SURVIVES still passed.
+		if _, err := recordVerdictPluginTrust(releasePath,
+			attachingVerdictPlugins(carried),
+			[]verdictPluginResolution{{
+				BareURI: carried, Coordinate: carried, Version: "1.0.0",
+				Digest: "sha256:" + strings.Repeat("9", 64),
+			}}, catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
+			t.Fatalf("recordVerdictPluginTrust: %v", err)
+		}
+
+		held := trustRecordAt(t, releasePath)
+		if _, isHeld := held.Find("linter/stale-probe"); isHeld {
+			t.Error("a plugin the binary carries is still identified, so the answer is complete and an unrelated stale entry must be pruned")
+		}
+		if _, isHeld := held.Find(carried); !isHeld {
+			t.Error("the carried plugin is attached, so its own entry must survive")
+		}
+	})
+
+	t.Run("an_unidentifiable_attachment_suppresses_the_prune", func(t *testing.T) {
+		root := t.TempDir()
+		releasePath := filepath.Join(root, "release.yaml")
+		seedTrustRecord(t, releasePath, "linter/stale-probe")
+
+		// One attachment configured and no resolution for it: the plugin could not be
+		// identified, so it MIGHT be the one accounting for the entry.
+		if _, err := recordVerdictPluginTrust(releasePath,
+			attachingVerdictPlugins("linter/unreadable-probe"), nil,
+			catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
+			t.Fatalf("recordVerdictPluginTrust: %v", err)
+		}
+		if _, held := trustRecordAt(t, releasePath).Find("linter/stale-probe"); !held {
+			t.Error("an attachment whose plugin cannot be identified must suppress the prune; dropping an entry on the strength of a failed read names the wrong cause")
+		}
+
+		// The discriminator: with that attachment removed the answer is complete
+		// again and the identical entry goes — so the row above is earned by the
+		// unreadable attachment rather than by a prune that never runs.
+		if _, err := recordVerdictPluginTrust(releasePath, nil, nil,
+			catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
+			t.Fatalf("recordVerdictPluginTrust: %v", err)
+		}
+		if _, held := trustRecordAt(t, releasePath).Find("linter/stale-probe"); held {
+			t.Fatal("the prune never fires at all, so the suppression above proves nothing")
+		}
+	})
+}
+
+// TestVerdictTrustPruneEmptiesTheRecordAndLeavesNoNewOne covers the two ends of the
+// removed early return in one test, because they are the same question asked of a
+// record that exists and of one that does not.
+//
+// The workspace that detached its LAST verdict attachment resolves nothing, so the
+// write path is reached with an empty resolution set — the case an early return on
+// that set could never serve, and the case that was permanently halted. It must
+// reach the record and empty it. The workspace that never had a record must still
+// end with no file: reaching the record is not the same as creating one.
+func TestVerdictTrustPruneEmptiesTheRecordAndLeavesNoNewOne(t *testing.T) {
+	t.Run("the_last_entry_goes_and_the_file_stays_readable", func(t *testing.T) {
+		root := t.TempDir()
+		releasePath := filepath.Join(root, "release.yaml")
+		seedTrustRecord(t, releasePath, "linter/only-probe")
+
+		if _, err := recordVerdictPluginTrust(releasePath, nil, nil,
+			catalog.PinReuseMode{Upgrade: true}, io.Discard); err != nil {
+			t.Fatalf("recordVerdictPluginTrust: %v", err)
+		}
+
+		emptied := trustRecordAt(t, releasePath)
+		if len(emptied.Plugins) != 0 {
+			t.Fatalf("the record still holds %v", recordedCoordinates(emptied))
+		}
+		if pins := emptied.PinMaps(); len(pins.Pins) != 0 {
+			t.Errorf("an emptied record pins nothing; got %+v", pins.Pins)
+		}
+	})
+
+	t.Run("no_record_and_nothing_to_record_leaves_no_file", func(t *testing.T) {
+		root := t.TempDir()
+		releasePath := filepath.Join(root, "release.yaml")
+
+		var diag bytes.Buffer
+		if _, err := recordVerdictPluginTrust(releasePath, nil, nil,
+			catalog.PinReuseMode{Upgrade: true}, &diag); err != nil {
+			t.Fatalf("recordVerdictPluginTrust: %v", err)
+		}
+		if _, err := os.Stat(pluginstrust.PathFor(releasePath)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("a workspace with nothing to record and no record must end with no file; stat err = %v", err)
+		}
+		if diag.Len() != 0 {
+			t.Errorf("nothing happened, so nothing should be said; diagnostic = %q", diag.String())
+		}
+	})
+}
+
+// TestVerdictAttachmentCoordinatesReportsCompleteness pins the derivation the prune
+// reads, on the three shapes that behave differently: every attachment identified,
+// one not identified, and no attachments at all.
+//
+// The last row is the one that matters most and reads counter-intuitively: a
+// configuration attaching NOTHING is a COMPLETE answer accounting for nothing,
+// which is what makes the whole-gate removal prunable. Reported as incomplete it
+// would leave exactly the workspace this mechanism exists for unable to clear its
+// record.
+func TestVerdictAttachmentCoordinatesReportsCompleteness(t *testing.T) {
+	resolved := []verdictPluginResolution{
+		{BareURI: "linter/one", Coordinate: "linter/one", Version: "1.0.0", Digest: "sha256:" + strings.Repeat("1", 64)},
+		{BareURI: "governance/two", Coordinate: "governance/two", Version: "1.0.0", Digest: "sha256:" + strings.Repeat("2", 64)},
+	}
+
+	cases := []struct {
+		name         string
+		attachments  []workspaceconfig.VerdictAttachment
+		want         string
+		wantComplete bool
+	}{
+		{
+			name:         "every_attachment_identified",
+			attachments:  attachingVerdictPlugins("linter/one:3.2.1", "governance/two"),
+			want:         "linter/one,governance/two",
+			wantComplete: true,
+		},
+		{
+			name:         "one_attachment_unidentified_makes_the_answer_incomplete",
+			attachments:  attachingVerdictPlugins("linter/one:3.2.1", "linter/unreadable"),
+			want:         "linter/one",
+			wantComplete: false,
+		},
+		{
+			name:         "no_attachments_is_a_complete_answer_accounting_for_nothing",
+			attachments:  nil,
+			want:         "",
+			wantComplete: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			accounted, complete := verdictAttachmentCoordinates(tc.attachments, resolved)
+			if got := strings.Join(accounted, ","); got != tc.want {
+				t.Errorf("accounted = %q; want %q", got, tc.want)
+			}
+			if complete != tc.wantComplete {
+				t.Errorf("complete = %t; want %t", complete, tc.wantComplete)
+			}
+		})
+	}
+}
+
+// TestPullRefusesADamagedRecordEvenWithNothingAttached locks the reading a pull
+// now takes of a record that exists and does not satisfy its schema: it halts,
+// whether or not the workspace attaches anything.
+//
+// It is the same fail-closed reading every other consumer of the file takes, and
+// the asymmetry it removes is the one that mattered: a build and a release-scoped
+// lint already halted on a damaged record unconditionally, so a pull that passed
+// over it left the two commands disagreeing about whether the committed file was
+// usable.
+//
+// The halt is not attributable to ONE read, and that is worth stating rather than
+// guessing at: a pull now reads the record at two points — once to decide which
+// upgrade targets it accepts, and once at the write — and EITHER one is sufficient
+// on its own. So a change that made one of them lenient would leave this test
+// green, and only making both lenient loses the halt.
+//
+// The A/B is the second half: the identical workspace with the file removed pulls
+// clean, so the halt is attributable to the record's bytes rather than to the
+// fixture.
+func TestPullRefusesADamagedRecordEvenWithNothingAttached(t *testing.T) {
+	root := t.TempDir()
+	releasePath := authoringFixture(t, root)
+	recordPath := pluginstrust.PathFor(releasePath)
+	// Schema-invalid: an entry missing the required resolved_version and digest.
+	const damaged = "version: 1\nplugins:\n  - plugin: linter/x\n"
+	if err := os.WriteFile(recordPath, []byte(damaged), 0o644); err != nil {
+		t.Fatalf("write damaged record: %v", err)
+	}
+
+	pull := func() error {
+		var stdout, stderr bytes.Buffer
+		return pullRun(pullConfig{
+			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
+			ReleasePath: releasePath,
+			CatalogDirs: []string{filepath.Join(root, "catalog")},
+			DiagOut:     &stderr,
+			Out:         &stdout,
+		})
+	}
+
+	if err := pull(); err == nil {
+		t.Fatal("a record that does not satisfy its schema must halt the pull rather than be passed over")
+	}
+	onDisk, rerr := os.ReadFile(recordPath)
+	if rerr != nil {
+		t.Fatalf("read the record back: %v", rerr)
+	}
+	if string(onDisk) != damaged {
+		t.Errorf("a refused pull must leave the record exactly as it was; got %q", string(onDisk))
+	}
+
+	if err := os.Remove(recordPath); err != nil {
+		t.Fatalf("remove the damaged record: %v", err)
+	}
+	if err := pull(); err != nil {
+		t.Fatalf("with no record the identical workspace must pull clean, or the halt above proves nothing; got %v", err)
 	}
 }

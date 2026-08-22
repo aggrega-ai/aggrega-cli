@@ -95,15 +95,79 @@ func LoadOrStart(path string) (*Trust, bool, error) {
 	return nil, false, err
 }
 
+// Unaccounted returns the coordinate of every record entry that accounted does
+// not cover, in record order — and nothing at all when the answer is incomplete.
+//
+// accounted is the set of plugin identity coordinates the workspace
+// configuration's verdict attachments name. complete reports whether every
+// configured attachment could be identified; a caller that could not identify
+// one passes false.
+//
+// It is the single home of "which recorded entries does nothing account for",
+// and both consumers of that question read it: the refusal below, which halts a
+// run over a stale entry, and the resolution that prunes stale entries on an
+// explicit upgrade. Answered separately they could disagree in the one direction
+// there is no recovery from — a halt over an entry the prune declined to remove
+// is a workspace no command can unstick — so the two are one derivation with two
+// readings of its result.
+//
+// # Why an incomplete answer yields nothing
+//
+// An attachment whose plugin cannot be identified might be the very one that
+// accounts for a record entry, so treating the entry as unaccounted for would
+// name a gate as dropped, or drop its record, on the strength of a read that
+// failed. Nothing is lost by staying quiet: an attachment the configuration names
+// and the host cannot resolve halts at resolution, loudly and with the
+// resolution's own diagnostic.
+//
+// The case that matters most is the opposite one and it is covered: a
+// configuration attaching NO verdict plugin at all leaves nothing
+// unidentifiable, so the answer is complete and every entry is unaccounted for.
+// That is the whole-gate removal this exists for.
+//
+// Record order is the order the canonical writer keeps, which is by coordinate,
+// so a configuration that drops several gates names them in one stable order. A
+// record whose coordinate is empty addresses nothing and is skipped, for the same
+// reason Upsert refuses to write one.
+//
+// A nil receiver holds no records and reports none, so a caller that has not
+// loaded a file need not branch before asking — the same contract Find and
+// PinMaps offer.
+func (t *Trust) Unaccounted(accounted []string, complete bool) []string {
+	if t == nil || !complete {
+		return nil
+	}
+	covered := make(map[string]struct{}, len(accounted))
+	for _, coordinate := range accounted {
+		covered[coordinate] = struct{}{}
+	}
+	var unaccounted []string
+	for _, p := range t.Plugins {
+		if p.Plugin == "" {
+			continue
+		}
+		if _, isCovered := covered[p.Plugin]; isCovered {
+			continue
+		}
+		unaccounted = append(unaccounted, p.Plugin)
+	}
+	return unaccounted
+}
+
 // HoldConfigurationToRecord refuses a configuration that no longer attaches a
 // plugin the record holds as trusted, and says nothing at all in every other
 // case.
 //
-// path is the record's own path, named in the diagnostic so a reader can open
-// the file the halt is about. attachments is the workspace's verdict attachment
-// set — read through workspaceconfig.Config.VerdictAttachments, the one spelling
-// of that set, so this comparison and the resolution that acquires those plugins
-// cannot disagree about which attachments are verdict attachments.
+// releasePath is the Release the record sits beside. The record's own path is
+// derived from it through PathFor rather than passed in, so there is one
+// derivation of where the record lives and no way for a caller to name a file
+// that is not it — and the Release path itself is needed anyway, because the
+// remediation prints a command that must name a Release to be runnable.
+//
+// attachments is the workspace's verdict attachment set — read through
+// workspaceconfig.Config.VerdictAttachments, the one spelling of that set, so
+// this comparison and the resolution that acquires those plugins cannot disagree
+// about which attachments are verdict attachments.
 //
 // coordinateFor answers "which plugin does this attachment name", returning the
 // plugin's identity coordinate and whether it could be determined. The caller
@@ -115,48 +179,43 @@ func LoadOrStart(path string) (*Trust, bool, error) {
 // reference against the recorded address would therefore report a gate as dropped
 // whenever it was merely authored in the longer form.
 //
-// # Why an attachment whose plugin cannot be identified suppresses the refusal
+// Which entries count as stale is not decided here — see Unaccounted, which owns
+// that question for this refusal and for the prune alike, including why an
+// attachment that cannot be identified suppresses both.
 //
-// If any configured attachment yields no coordinate, this returns nil. The reason
-// is that the refusal is a statement about a record entry that NOTHING accounts
-// for, and an attachment whose plugin cannot be identified might be the very one
-// that accounts for it — so refusing would name a gate as dropped on the strength
-// of a read that failed. Nothing is lost by staying quiet: an attachment the
-// configuration names and the host cannot resolve halts at resolution, loudly and
-// with the resolution's own diagnostic, so the build does not proceed either way.
+// # The two remedies the diagnostic offers, and why they are distinct
 //
-// The case that matters most is the opposite one and it is covered: a
-// configuration attaching NO verdict plugin at all yields no undeterminable
-// attachment, so a record holding entries refuses. That is the whole-gate removal
-// the condition exists for.
+// A recorded gate that nothing attaches has exactly two honest readings, and the
+// reader is the only one who knows which applies: the removal was a mistake, and
+// the answer is to attach the plugin again; or the removal was intended, and the
+// answer is to say so with an explicit upgrade naming the plugin, which is what
+// drops its entry. The diagnostic must not collapse them into one instruction,
+// and it must not tell the reader to delete or hand-edit the record — the file
+// says in its own opening lines that it is committed and not hand-edited, so an
+// instruction to delete it would have this diagnostic and that file contradicting
+// each other.
+//
+// An ordinary pull deliberately leaves the record alone, so it is not a remedy
+// and the diagnostic does not offer it as one: adopting a removal silently is
+// precisely what this refusal exists to prevent.
 //
 // A nil receiver holds no records and refuses nothing, so a caller that loaded no
 // file need not branch before asking — the same contract Find and PinMaps offer.
-func (t *Trust) HoldConfigurationToRecord(path string, attachments []workspaceconfig.VerdictAttachment, coordinateFor func(uri string) (string, bool)) error {
+func (t *Trust) HoldConfigurationToRecord(releasePath string, attachments []workspaceconfig.VerdictAttachment, coordinateFor func(uri string) (string, bool)) error {
 	if t == nil || len(t.Plugins) == 0 {
 		return nil
 	}
-	attached := make(map[string]struct{}, len(attachments))
+	accounted := make([]string, 0, len(attachments))
+	complete := true
 	for _, attachment := range attachments {
 		coordinate, determined := coordinateFor(attachment.Ref.URI)
 		if !determined {
-			return nil
-		}
-		attached[coordinate] = struct{}{}
-	}
-
-	// Record order, which the canonical writer keeps sorted by coordinate, so a
-	// configuration that drops several gates names them in one stable order.
-	var dropped []string
-	for _, p := range t.Plugins {
-		if p.Plugin == "" {
+			complete = false
 			continue
 		}
-		if _, isAttached := attached[p.Plugin]; isAttached {
-			continue
-		}
-		dropped = append(dropped, p.Plugin)
+		accounted = append(accounted, coordinate)
 	}
+	dropped := t.Unaccounted(accounted, complete)
 	if len(dropped) == 0 {
 		return nil
 	}
@@ -167,10 +226,16 @@ func (t *Trust) HoldConfigurationToRecord(path string, attachments []workspaceco
 	if len(dropped) == 1 {
 		them = "it"
 	}
+	// Every dropped coordinate goes on one upgrade command rather than one command
+	// per plugin: a targeted upgrade accepts several targets and holds every pin it
+	// did not name, so naming them together is both shorter to run and narrower in
+	// effect than the full refresh a reader would otherwise reach for.
 	return fmt.Errorf(
 		"%w: %s records %s as trusted, but no verdict attachment in the workspace configuration names %s; "+
 			"a gate that was reviewed and is now absent leaves output indistinguishable from output that gate approved. "+
 			"Attach the plugin again under `plugins.governance` at an `ir-verdict` or `render-verdict` role, or under `plugins.linter`; "+
-			"or, if it was meant to go, remove %s and run `aggrega pull` to record the attachments configured now",
-		ErrVerdictAttachmentNotConfigured(), path, strings.Join(dropped, ", "), them, path)
+			"or, if it was meant to go, run `aggrega pull --upgrade --release %s %s` to drop %s from the record — "+
+			"an ordinary `aggrega pull` leaves the record as it is, so only an explicit upgrade removes an entry",
+		ErrVerdictAttachmentNotConfigured(), PathFor(releasePath), strings.Join(dropped, ", "),
+		them, releasePath, strings.Join(dropped, " "), them)
 }

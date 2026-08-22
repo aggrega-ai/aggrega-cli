@@ -76,24 +76,38 @@ func splitAttachmentRef(uri string) (bare, version string) {
 	return bare, version
 }
 
-// verdictAttachmentUpgradeTargets returns the authored reference of every
-// attachment that returns an accept-or-reject verdict, version suffix removed —
-// the strings a targeted upgrade may name for a plugin the lockfile holds no pin
-// for.
+// verdictUpgradeTargets returns every string a targeted upgrade may name for a
+// plugin the lockfile holds no pin for: the authored reference of each configured
+// attachment that returns an accept-or-reject verdict, version suffix removed,
+// and the identity coordinate of each entry the record beside the lockfile holds.
 //
 // Such a plugin shapes no rendered output, so it is recorded beside the lockfile
-// rather than pinned in it and a named target has no pin to drop. Reading the
-// targets from the ATTACHMENTS rather than from the record is what makes naming
-// one work end to end: the record is addressed by the plugin's identity
-// coordinate, while a named target is matched against the authored reference, and
-// the two coincide only for a bare-name attachment. Deriving the accepted targets
-// from the record would accept a string that then matched no attachment, so the
-// upgrade would be admitted and re-resolve nothing.
+// rather than pinned in it, and a named target has no pin to drop. What naming it
+// does instead is reach the run, and there are two different things it can do
+// there — which is why the accepted set comes from two places rather than one:
+//
+//   - A CONFIGURED attachment's authored reference. Naming it re-resolves that
+//     attachment and adopts the identity it resolves to. The authored reference is
+//     the right form here because that is what the re-resolution matches against;
+//     the reference and the identity coordinate coincide only for a bare-name
+//     attachment.
+//   - A RECORDED entry's identity coordinate. Naming it drops that entry when
+//     nothing attaches the plugin any more. A detached plugin has no authored
+//     reference left to name, so the coordinate is the only string the reader can
+//     see — and it is exactly what the refusal over a stale entry prints.
+//
+// Both are needed and neither substitutes for the other. Without the attachments,
+// adopting a newly attached plugin's identity would be unnameable; without the
+// record, the command the stale-entry refusal prints would be rejected as naming
+// nothing, and the entry could never be dropped.
 //
 // A target naming a configured attachment the record does not yet cover is
-// therefore accepted, and does nothing beyond the ordinary fill. That is right: it
-// is not a mistyped name, the attachment is there.
-func verdictAttachmentUpgradeTargets(cfg workspaceconfig.Config) []string {
+// accepted, and does nothing beyond the ordinary fill. That is right: it is not a
+// mistyped name, the attachment is there.
+//
+// trust may be nil, which is the workspace that has recorded nothing yet: the
+// accepted set is then the attachments alone.
+func verdictUpgradeTargets(cfg workspaceconfig.Config, trust *pluginstrust.Trust) []string {
 	attachments := cfg.VerdictAttachments()
 	targets := make([]string, 0, len(attachments))
 	for _, att := range attachments {
@@ -103,7 +117,63 @@ func verdictAttachmentUpgradeTargets(cfg workspaceconfig.Config) []string {
 		}
 		targets = append(targets, bare)
 	}
+	if trust == nil {
+		return targets
+	}
+	for _, p := range trust.Plugins {
+		if p.Plugin == "" {
+			continue
+		}
+		targets = append(targets, p.Plugin)
+	}
 	return targets
+}
+
+// verdictAttachmentCoordinates answers, for the configuration this pull read,
+// which plugin identity coordinates its verdict attachments account for — and
+// whether every attachment could be identified.
+//
+// The answer is assembled from the resolutions the caching walk already
+// performed, keyed by the authored reference each attachment was resolved under.
+// It is deliberately not a second read of the Plugin entities: the walk's
+// coordinate comes from the same read that produced the digest recorded beside
+// it, and a second derivation could report a coordinate that disagreed with the
+// recorded one while both looked right.
+//
+// # Why this is the attachment set and never the recordable set
+//
+// The reduction the record itself covers drops two classes of attachment that are
+// still very much attached: one whose plugin the binary carries, which is declined
+// deliberately, and one whose entity or cached artifact could not be read. An
+// entry pruned against that reduction would be the record of a plugin the
+// configuration still names — so what accounts for an entry is the ATTACHMENT,
+// and the resolutions are consulted only to learn which plugin each attachment
+// names.
+//
+// An attachment with no resolution makes the answer INCOMPLETE rather than
+// silently narrowing it, which is what keeps a failed read from reading as a
+// detached gate. What an incomplete answer then means is the record's own
+// question, answered once in pluginstrust.Trust.Unaccounted.
+func verdictAttachmentCoordinates(attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution) (accounted []string, complete bool) {
+	byRef := make(map[string]string, len(resolutions))
+	for _, r := range resolutions {
+		if r.BareURI == "" || r.Coordinate == "" {
+			continue
+		}
+		byRef[r.BareURI] = r.Coordinate
+	}
+	accounted = make([]string, 0, len(attachments))
+	complete = true
+	for _, att := range attachments {
+		bare, _ := splitAttachmentRef(att.Ref.URI)
+		coordinate, identified := byRef[bare]
+		if !identified {
+			complete = false
+			continue
+		}
+		accounted = append(accounted, coordinate)
+	}
+	return accounted, complete
 }
 
 // recordableVerdictResolutions reduces the identities a pull resolved to the ones
@@ -183,13 +253,14 @@ func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPl
 
 // recordVerdictPluginTrust writes the plugin identities resolved for a Release's
 // verdict-returning attachments into `plugins-trust.yaml` beside that Release's
-// lockfile, and returns how many identities it recorded.
+// lockfile, and returns how many identities the record covers.
 //
-// Nothing to record means no file. A workspace that attaches no governance
-// verdict plugin and no linter plugin resolves no identities, and this writes no
-// file and says nothing — an empty record would assert that there is something to
-// compare against when there is not. The same holds for a workspace whose only
-// attachments resolve from the binary, for the reason below.
+// Nothing to record and no record yet means no file. A workspace that attaches no
+// governance verdict plugin and no linter plugin resolves no identities, so with
+// no record already beside the lockfile this writes no file and says nothing — an
+// empty record would assert that there is something to compare against when there
+// is not. The same holds for a workspace whose only attachments resolve from the
+// binary, for the reason below.
 //
 // A record already present for a plugin is left exactly as it is, unless this pull
 // re-resolved that plugin — a full refresh, or a targeted upgrade naming it. Those
@@ -197,6 +268,35 @@ func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPl
 // the record is the answer to what they asked; every other pull holds the recorded
 // identity, because silently adopting whatever was resolved this time would make
 // the record follow the resolution instead of governing it.
+//
+// # What happens to an entry the configuration no longer accounts for
+//
+// A recorded plugin that nothing attaches any more halts every build and every
+// release-scoped lint, deliberately: dropping a gate changes no rendered byte, so
+// output produced without a reviewed gate is indistinguishable from output that
+// gate approved. That halt needs a way out, and this is it — but only on the two
+// invocations that already carry the user's request for fresh resolution:
+//
+//   - A full refresh drops every entry the configuration no longer accounts for.
+//     It discards the pin set and re-resolves everything, so holding a stale entry
+//     back would be the one thing it carried forward.
+//   - A targeted upgrade drops ONLY the entries it named, and only those nothing
+//     accounts for. Holding every pin it did not name is what a targeted upgrade
+//     means; removing more than was named would exceed the request.
+//
+// Every other invocation leaves the record exactly as it is, and each exclusion
+// has its own reason. An ordinary pull must not drop an entry, because a silently
+// removed gate is precisely what the halt exists to catch and adopting the removal
+// here would reduce the halt to a message on one run. A verify-only pull writes
+// nothing at all, so it cannot: a verification that mutated what it verifies is
+// not one. And no build, validate, render or lint path reaches this at all — they
+// hold themselves to the record and never write it, because a gate that clears
+// itself on the next build is not a gate.
+//
+// A pull with nothing left to record still reaches the record for this reason: the
+// workspace that removed its LAST verdict attachment is exactly the one that needs
+// the entry dropped, and returning early on an empty resolution set would leave
+// that workspace permanently halted with no command able to unstick it.
 //
 // A pull only reaches this after holdVerdictPluginsToTheirRecord has compared every
 // resolved identity against the record, so a held entry reached here either agrees
@@ -230,26 +330,48 @@ func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPl
 // A light binary carries no plugin bytes, so nothing is declined there and a
 // configured attachment is recorded like any other. That falls out of asking the
 // binary what it carries rather than deciding it from a build flag.
-func recordVerdictPluginTrust(releasePath string, resolutions []verdictPluginResolution, mode catalog.PinReuseMode, diagOut io.Writer) (int, error) {
+func recordVerdictPluginTrust(releasePath string, attachments []workspaceconfig.VerdictAttachment, resolutions []verdictPluginResolution, mode catalog.PinReuseMode, diagOut io.Writer) (int, error) {
 	recordable := recordableVerdictResolutions(resolutions)
-	if len(recordable) == 0 {
-		return 0, nil
-	}
-
 	path := pluginstrust.PathFor(releasePath)
 	trust, created, err := pluginstrust.LoadOrStart(path)
 	if err != nil {
 		return 0, err
 	}
+
+	// Whether anything is written at all is decided by whether the record's content
+	// actually moves, not by whether there was anything to consider. That is what
+	// keeps two cases apart which a single length check cannot: a workspace with no
+	// record and nothing to record must end with no file, while a workspace whose
+	// record still holds an entry nothing accounts for must be reached so the entry
+	// can go.
+	changed := false
 	for _, r := range recordable {
-		if _, held := trust.Find(r.Coordinate); held && !reresolvedByThisPull(mode, r.BareURI) {
-			continue
-		}
-		trust.Upsert(pluginstrust.TrustedPlugin{
+		fresh := pluginstrust.TrustedPlugin{
 			Plugin:          r.Coordinate,
 			ResolvedVersion: r.Version,
 			Digest:          r.Digest,
-		})
+		}
+		held, isHeld := trust.Find(r.Coordinate)
+		if isHeld && !reresolvedByThisPull(mode, r.BareURI) {
+			continue
+		}
+		if isHeld && held == fresh {
+			continue
+		}
+		trust.Upsert(fresh)
+		changed = true
+	}
+	accounted, complete := verdictAttachmentCoordinates(attachments, resolutions)
+	for _, coordinate := range trust.Unaccounted(accounted, complete) {
+		if !prunedByThisPull(mode, coordinate) {
+			continue
+		}
+		if trust.Remove(coordinate) {
+			changed = true
+		}
+	}
+	if !changed {
+		return len(recordable), nil
 	}
 	if err := pluginstrust.Write(path, trust); err != nil {
 		return 0, err
@@ -272,12 +394,12 @@ func recordVerdictPluginTrust(releasePath string, resolutions []verdictPluginRes
 // it named. Every other pull re-resolves nothing.
 //
 // A named target is matched against the authored reference, which is the form
-// `--upgrade` documents matching against, and which is why the accepted-target set
-// is derived from the attachments rather than from the record — see
-// verdictAttachmentUpgradeTargets. Both kinds of attachment reach this arm: one
-// attached only at a verdict role, whose identity is recorded beside the lockfile
-// and pinned nowhere, and one attached at a verdict role at one site and an
-// output-shaping role at another, pinned there and recorded here.
+// `--upgrade` documents matching against — see verdictUpgradeTargets, which
+// derives the accepted targets and carries why an attachment contributes its
+// authored reference. Both kinds of attachment reach this arm: one attached only
+// at a verdict role, whose identity is recorded beside the lockfile and pinned
+// nowhere, and one attached at a verdict role at one site and an output-shaping
+// role at another, pinned there and recorded here.
 func reresolvedByThisPull(mode catalog.PinReuseMode, bareURI string) bool {
 	if mode.FullRefresh() {
 		return true
@@ -287,6 +409,42 @@ func reresolvedByThisPull(mode catalog.PinReuseMode, bareURI string) bool {
 	}
 	for _, target := range mode.UpgradeTargets {
 		if target == bareURI {
+			return true
+		}
+	}
+	return false
+}
+
+// prunedByThisPull reports whether this pull may drop the recorded entry
+// addressed by coordinate, given that nothing in the configuration accounts for
+// it any more.
+//
+// It reads the same invocation reresolvedByThisPull reads, through the same two
+// questions the prior-pin reuse decision asks, so the invocations that may change
+// the record are one set rather than two that could drift apart: a bare
+// `--upgrade` is a full refresh and drops every unaccounted-for entry, an
+// `--upgrade` naming targets drops only the entries it named, and every other
+// invocation drops nothing.
+//
+// # Why a named target is matched against the COORDINATE here
+//
+// Re-resolution matches a target against the attachment's authored reference,
+// because the thing being re-resolved is an attachment. Pruning matches against
+// the record's identity coordinate, because the thing being dropped is a record
+// entry and its plugin is no longer attached anywhere — there is no authored
+// reference left to match. The coordinate is also the only string the reader has
+// seen: it is what the refusal over a stale entry prints, and what that refusal's
+// remediation tells them to name. Two subjects, two keys, and neither is the other
+// spelled differently.
+func prunedByThisPull(mode catalog.PinReuseMode, coordinate string) bool {
+	if mode.FullRefresh() {
+		return true
+	}
+	if !mode.Targeted() {
+		return false
+	}
+	for _, target := range mode.UpgradeTargets {
+		if target == coordinate {
 			return true
 		}
 	}

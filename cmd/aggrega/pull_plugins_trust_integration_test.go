@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -76,18 +77,271 @@ func verdictTrustWorkspace(t *testing.T, host string) (root, releasePath string,
 	t.Helper()
 	root = t.TempDir()
 	releasePath = authoringFixture(t, root)
-	catalogDir := filepath.Join(root, "catalog")
 	published = publishVerdictPlugin(t, host, "linter", "trust-probe", "1.0.0")
-
-	writeWorkspaceConfig(t, root, ""+
-		"workspace:\n"+
-		"  catalog_dirs:\n"+
-		"    - "+catalogDir+"\n"+
-		"default_registry: \""+host+"\"\n"+
-		"plugins:\n"+
-		"  linter:\n"+
-		"    - uri: "+published.URI+"\n")
+	writeVerdictAttachments(t, root, host, published.URI)
 	return root, releasePath, published
+}
+
+// writeVerdictAttachments rewrites the workspace configuration so it attaches
+// exactly the linter references given, and nothing else about the workspace
+// changes.
+//
+// Rewriting the whole file rather than patching it is what lets a test DETACH a
+// plugin: passing no reference leaves a configuration that names no verdict
+// attachment at all, which is the whole-gate removal the record exists to catch.
+func writeVerdictAttachments(t *testing.T, root, host string, uris ...string) {
+	t.Helper()
+	body := "" +
+		"workspace:\n" +
+		"  catalog_dirs:\n" +
+		"    - " + filepath.Join(root, "catalog") + "\n" +
+		"default_registry: \"" + host + "\"\n"
+	if len(uris) > 0 {
+		body += "plugins:\n  linter:\n"
+		for _, uri := range uris {
+			body += "    - uri: " + uri + "\n"
+		}
+	}
+	writeWorkspaceConfig(t, root, body)
+}
+
+// readRecord returns the record's bytes beside releasePath, or "" when there is no
+// file. Tests log it before and after an act, so the proof of what a command did
+// to the committed file is the file itself rather than a derived assertion.
+func readRecord(t *testing.T, releasePath string) string {
+	t.Helper()
+	data, err := os.ReadFile(pluginstrust.PathFor(releasePath))
+	if errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
+	if err != nil {
+		t.Fatalf("read record beside %s: %v", releasePath, err)
+	}
+	return string(data)
+}
+
+// buildAt runs the real build over the workspace and returns its error, which is
+// how these tests observe the dropped-gate refusal: at the command a user runs,
+// not at the predicate underneath it.
+func buildAt(t *testing.T, root, releasePath string) error {
+	t.Helper()
+	var diagBuf, outBuf bytes.Buffer
+	return dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
+		buildDiagOptions{}, buildRunOptions{outDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf)
+}
+
+// pullAt runs the real pull over the workspace with the flags given.
+func pullAt(t *testing.T, root, releasePath string, cfg pullConfig) error {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	cfg.ws = resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
+	cfg.ReleasePath = releasePath
+	cfg.DiagOut = &stderr
+	cfg.Out = &stdout
+	err := pullRun(cfg)
+	if err != nil {
+		return fmt.Errorf("%w (stderr=%q)", err, stderr.String())
+	}
+	return nil
+}
+
+// TestIntegration_VerdictTrustFullRefreshPrunesTheLastDetachedGate is the worked
+// round trip for the case that has its own code path: the workspace detaches its
+// ONLY verdict attachment, so the pull that has to clear the record resolves
+// nothing at all. That path is not exercised by the some-remain case below — one
+// crosses a resolution set that is empty and the other does not — so neither is
+// evidence for the other and both are written out.
+//
+// The sequence is the criterion's own: record, detach, show the build refusing,
+// show a plain pull refusing to help, run the explicit upgrade, show the entry
+// gone and the build silent. The record's bytes are logged at each step, because
+// what a command did to a committed file is a claim about the file.
+func TestIntegration_VerdictTrustFullRefreshPrunesTheLastDetachedGate(t *testing.T) {
+	host := startRegistry(t, nil)
+	root, releasePath, published := verdictTrustWorkspace(t, host)
+	t.Chdir(root)
+
+	if err := pullAt(t, root, releasePath, pullConfig{}); err != nil {
+		t.Fatalf("seeding pullRun: %v", err)
+	}
+	recorded := readRecord(t, releasePath)
+	t.Logf("record after the seeding pull:\n%s", recorded)
+	if _, held := trustRecordAt(t, releasePath).Find(published.Coordinate); !held {
+		t.Fatalf("precondition: the seeding pull must record %s", published.Coordinate)
+	}
+	if err := buildAt(t, root, releasePath); err != nil {
+		t.Fatalf("precondition: the build must succeed while the gate is attached; got %v", err)
+	}
+
+	// Detach the only verdict attachment. Nothing about the rendered output changes,
+	// which is exactly why the record has to speak up.
+	writeVerdictAttachments(t, root, host)
+
+	err := buildAt(t, root, releasePath)
+	if !errors.Is(err, pluginstrust.ErrVerdictAttachmentNotConfigured()) {
+		t.Fatalf("a build over a record holding a gate nothing attaches must refuse with the dropped-gate condition; got %v", err)
+	}
+	if !strings.Contains(err.Error(), published.Coordinate) {
+		t.Errorf("the refusal must name the dropped plugin; got %v", err)
+	}
+	// The remedy it prints has to be the one that works, so the test reads it.
+	wantCommand := "aggrega pull --upgrade --release " + releasePath + " " + published.Coordinate
+	if !strings.Contains(err.Error(), wantCommand) {
+		t.Errorf("the refusal must print the explicit upgrade verbatim;\nwant it to contain %q\ngot %v", wantCommand, err)
+	}
+
+	// A plain pull must NOT clear it. This is the criterion that protects the guard:
+	// if the trigger is ever widened, the record changes here and the next build goes
+	// quiet on a gate nobody re-attached.
+	if err := pullAt(t, root, releasePath, pullConfig{}); err != nil {
+		t.Fatalf("a plain pull over a detached gate must still complete; got %v", err)
+	}
+	if got := readRecord(t, releasePath); got != recorded {
+		t.Fatalf("a plain pull must leave the record byte-identical;\nbefore:\n%s\nafter:\n%s", recorded, got)
+	}
+	if err := buildAt(t, root, releasePath); !errors.Is(err, pluginstrust.ErrVerdictAttachmentNotConfigured()) {
+		t.Fatalf("after a plain pull the build must still refuse; got %v", err)
+	}
+
+	// The explicit upgrade, which is the sanctioned way out.
+	if err := pullAt(t, root, releasePath, pullConfig{Upgrade: true}); err != nil {
+		t.Fatalf("the explicit full refresh must complete; got %v", err)
+	}
+	after := readRecord(t, releasePath)
+	t.Logf("record after `aggrega pull --upgrade`:\n%s", after)
+	if after == "" {
+		t.Fatal("the record must be emptied rather than deleted: an emptied record is read, and a deleted one is a first-run state again")
+	}
+	// It reads back through the loader every consumer uses, so an emptied record that
+	// no longer satisfies its schema fails here.
+	emptied := trustRecordAt(t, releasePath)
+	if len(emptied.Plugins) != 0 {
+		t.Fatalf("the emptied record still holds %v", recordedCoordinates(emptied))
+	}
+	if err := buildAt(t, root, releasePath); err != nil {
+		t.Fatalf("with the entry gone the build must go silent; got %v", err)
+	}
+}
+
+// TestIntegration_VerdictTrustFullRefreshPrunesOnlyTheDetachedOne is the
+// some-remain half of the round trip: one of two attachments is detached, so the
+// pull that clears the record still resolves something and never crosses the
+// empty-resolution path the test above covers.
+//
+// The remaining entry is the discriminating assertion. A prune that dropped every
+// entry it could not match would pass the "the detached one is gone" check and
+// silently delete a gate that is still attached.
+func TestIntegration_VerdictTrustFullRefreshPrunesOnlyTheDetachedOne(t *testing.T) {
+	host := startRegistry(t, nil)
+	root := t.TempDir()
+	releasePath := authoringFixture(t, root)
+	t.Chdir(root)
+
+	kept := publishVerdictPlugin(t, host, "linter", "kept-probe", "1.0.0")
+	detached := publishVerdictPlugin(t, host, "linter", "detached-probe", "1.0.0")
+	writeVerdictAttachments(t, root, host, kept.URI, detached.URI)
+
+	if err := pullAt(t, root, releasePath, pullConfig{}); err != nil {
+		t.Fatalf("seeding pullRun: %v", err)
+	}
+	t.Logf("record after the seeding pull:\n%s", readRecord(t, releasePath))
+	seeded := trustRecordAt(t, releasePath)
+	for _, want := range []string{kept.Coordinate, detached.Coordinate} {
+		if _, held := seeded.Find(want); !held {
+			t.Fatalf("precondition: the seeding pull must record %s; it holds %v", want, recordedCoordinates(seeded))
+		}
+	}
+
+	writeVerdictAttachments(t, root, host, kept.URI)
+
+	err := buildAt(t, root, releasePath)
+	if !errors.Is(err, pluginstrust.ErrVerdictAttachmentNotConfigured()) {
+		t.Fatalf("a build over a record holding one dropped gate must refuse; got %v", err)
+	}
+	if !strings.Contains(err.Error(), detached.Coordinate) {
+		t.Errorf("the refusal must name the dropped plugin; got %v", err)
+	}
+	if strings.Contains(err.Error(), kept.Coordinate) {
+		t.Errorf("the refusal must not name the plugin that is still attached; got %v", err)
+	}
+
+	if err := pullAt(t, root, releasePath, pullConfig{Upgrade: true}); err != nil {
+		t.Fatalf("the explicit full refresh must complete; got %v", err)
+	}
+	t.Logf("record after `aggrega pull --upgrade`:\n%s", readRecord(t, releasePath))
+	pruned := trustRecordAt(t, releasePath)
+	if _, held := pruned.Find(detached.Coordinate); held {
+		t.Errorf("the detached gate's entry must be gone; record holds %v", recordedCoordinates(pruned))
+	}
+	if _, held := pruned.Find(kept.Coordinate); !held {
+		t.Errorf("the attached gate's entry must remain; record holds %v", recordedCoordinates(pruned))
+	}
+	if err := buildAt(t, root, releasePath); err != nil {
+		t.Fatalf("with the stale entry gone the build must go silent; got %v", err)
+	}
+}
+
+// TestIntegration_VerdictTrustTargetedUpgradePrunesOnlyItsTarget holds the narrower
+// of the two sanctioned invocations to what it named. With both recorded plugins
+// detached, an upgrade naming one drops that one and leaves the other's entry
+// standing, so the build keeps refusing on the entry nobody asked about.
+//
+// Holding every pin it did not name is what a targeted upgrade means, so dropping
+// more than was named would exceed the request — and the residual refusal is what
+// proves the restraint rather than a comparison that never ran.
+func TestIntegration_VerdictTrustTargetedUpgradePrunesOnlyItsTarget(t *testing.T) {
+	host := startRegistry(t, nil)
+	root := t.TempDir()
+	releasePath := authoringFixture(t, root)
+	t.Chdir(root)
+
+	named := publishVerdictPlugin(t, host, "linter", "named-probe", "1.0.0")
+	unnamed := publishVerdictPlugin(t, host, "linter", "unnamed-probe", "1.0.0")
+	writeVerdictAttachments(t, root, host, named.URI, unnamed.URI)
+
+	if err := pullAt(t, root, releasePath, pullConfig{}); err != nil {
+		t.Fatalf("seeding pullRun: %v", err)
+	}
+	t.Logf("record after the seeding pull:\n%s", readRecord(t, releasePath))
+
+	// Both gates go, so the only thing separating the two entries below is the
+	// target the upgrade named.
+	writeVerdictAttachments(t, root, host)
+	err := buildAt(t, root, releasePath)
+	if !errors.Is(err, pluginstrust.ErrVerdictAttachmentNotConfigured()) {
+		t.Fatalf("a build over a record holding two dropped gates must refuse; got %v", err)
+	}
+	for _, want := range []string{named.Coordinate, unnamed.Coordinate} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name every dropped gate; missing %s in %v", want, err)
+		}
+	}
+
+	// The target is the recorded COORDINATE, which is the only string left for the
+	// reader to name — the plugin is attached nowhere. Accepting it is what makes the
+	// command the refusal prints runnable.
+	if err := pullAt(t, root, releasePath, pullConfig{Upgrade: true, UpgradeTargets: []string{named.Coordinate}}); err != nil {
+		t.Fatalf("a targeted upgrade naming a recorded-but-detached plugin must be accepted and complete; got %v", err)
+	}
+	t.Logf("record after `aggrega pull --upgrade %s`:\n%s", named.Coordinate, readRecord(t, releasePath))
+
+	pruned := trustRecordAt(t, releasePath)
+	if _, held := pruned.Find(named.Coordinate); held {
+		t.Errorf("the named target's entry must be gone; record holds %v", recordedCoordinates(pruned))
+	}
+	if _, held := pruned.Find(unnamed.Coordinate); !held {
+		t.Fatalf("an entry the upgrade did not name must be held; record holds %v", recordedCoordinates(pruned))
+	}
+	err = buildAt(t, root, releasePath)
+	if !errors.Is(err, pluginstrust.ErrVerdictAttachmentNotConfigured()) {
+		t.Fatalf("the build must still refuse on the entry nobody named; got %v", err)
+	}
+	if strings.Contains(err.Error(), named.Coordinate) {
+		t.Errorf("the residual refusal must not name the pruned plugin; got %v", err)
+	}
+	if !strings.Contains(err.Error(), unnamed.Coordinate) {
+		t.Errorf("the residual refusal must name the entry that is still held; got %v", err)
+	}
 }
 
 // TestIntegration_VerdictTrustPullRecordsAnAcquiredPlugin is the end-to-end

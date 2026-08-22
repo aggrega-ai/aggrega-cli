@@ -418,3 +418,152 @@ func TestWriteRefusesANilRecord(t *testing.T) {
 		t.Error("Write accepted a nil record")
 	}
 }
+
+// TestRemoveDropsExactlyTheAddressedRecord covers the only removal in both
+// directions, plus the two edges its siblings also guard.
+//
+// The neighbour row is the discriminating one: a record removed by coordinate must
+// leave the same bare name in another socket alone, because the socket segment is
+// part of the address. A removal matching on the bare name would pass a
+// single-record test and quietly delete a second plugin here.
+func TestRemoveDropsExactlyTheAddressedRecord(t *testing.T) {
+	t.Parallel()
+
+	tr := &Trust{Version: CurrentVersion, Plugins: []TrustedPlugin{
+		{Plugin: "governance/baseline", ResolvedVersion: "1.0.0", Digest: testDigest},
+		{Plugin: "linter/baseline", ResolvedVersion: "2.0.0", Digest: testDigest},
+	}}
+
+	if !tr.Remove("governance/baseline") {
+		t.Fatal("Remove reported nothing removed for a record that is present")
+	}
+	if _, held := tr.Find("governance/baseline"); held {
+		t.Error("the removed record is still held")
+	}
+	if _, held := tr.Find("linter/baseline"); !held {
+		t.Error("Remove reached the same bare name in another socket; the socket segment is part of the address")
+	}
+
+	if tr.Remove("governance/baseline") {
+		t.Error("removing an absent record must report false")
+	}
+	if tr.Remove("") {
+		t.Error("an empty coordinate addresses nothing and must remove nothing")
+	}
+	var absent *Trust
+	if absent.Remove("governance/baseline") {
+		t.Error("a nil Trust removes nothing")
+	}
+}
+
+// TestRemoveEmptiesTheRecordWithoutDamagingIt is the load-bearing half of "an
+// emptied record behaves as an absent one": removing the last entry leaves a
+// record that still satisfies its schema and still holds, pins and refuses
+// nothing.
+//
+// It is written against the emitted BYTES rather than against the in-memory value,
+// because the failure it guards is the file: a record emptied into a shape the
+// schema rejects would turn the one workspace that needs to clear its record into
+// one whose record can no longer be read at all — a worse dead end than the one
+// clearing it exists to escape.
+func TestRemoveEmptiesTheRecordWithoutDamagingIt(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, FileName)
+	tr := &Trust{Version: CurrentVersion, Plugins: []TrustedPlugin{
+		{Plugin: "governance/baseline", ResolvedVersion: "1.0.0", Digest: testDigest},
+	}}
+	if !tr.Remove("governance/baseline") {
+		t.Fatal("Remove reported nothing removed for the only record")
+	}
+	if err := Write(path, tr); err != nil {
+		t.Fatalf("write the emptied record: %v", err)
+	}
+
+	// It reads back through the same loader every consumer uses, so a shape the
+	// schema rejects fails here rather than at the next build.
+	reloaded, started, err := LoadOrStart(path)
+	if err != nil {
+		t.Fatalf("an emptied record must still satisfy its schema; got %v", err)
+	}
+	if started {
+		t.Error("the file is on disk, so it was read rather than started")
+	}
+	if len(reloaded.Plugins) != 0 {
+		t.Fatalf("the emptied record holds %d record(s); want none", len(reloaded.Plugins))
+	}
+
+	// The three empty-collection contracts that make emptied equivalent to absent.
+	if _, held := reloaded.Find("governance/baseline"); held {
+		t.Error("an emptied record must hold nothing")
+	}
+	if pins := reloaded.PinMaps(); len(pins.Pins) != 0 || len(pins.PinVersions) != 0 {
+		t.Errorf("an emptied record must pin nothing; got %+v", pins)
+	}
+	if err := reloaded.HoldConfigurationToRecord(filepath.Join(dir, "release.yaml"), nil, func(string) (string, bool) {
+		return "", false
+	}); err != nil {
+		t.Errorf("an emptied record must refuse nothing, exactly as an absent one does; got %v", err)
+	}
+}
+
+// TestUnaccountedIsTheOneAnswerBothConsumersRead pins the derivation the refusal
+// and the prune share, on the four inputs that behave differently.
+//
+// The incomplete row is the one that matters: an attachment whose plugin could not
+// be identified might be the very one accounting for an entry, so an incomplete
+// answer must name nothing. Reported as unaccounted for, it would refuse a build
+// over a gate that is attached — or, on an upgrade, delete that gate's reviewed
+// identity — on the strength of a read that failed.
+func TestUnaccountedIsTheOneAnswerBothConsumersRead(t *testing.T) {
+	t.Parallel()
+
+	record := canonicalise(recordOf("governance/opa-gate", "linter/house-style"))
+
+	cases := []struct {
+		name      string
+		accounted []string
+		complete  bool
+		want      string
+	}{
+		{
+			name:      "everything_accounted_for_names_nothing",
+			accounted: []string{"governance/opa-gate", "linter/house-style"},
+			complete:  true,
+			want:      "",
+		},
+		{
+			name:      "one_unaccounted_for_names_that_one",
+			accounted: []string{"governance/opa-gate"},
+			complete:  true,
+			want:      "linter/house-style",
+		},
+		{
+			name:      "nothing_accounted_for_names_all_in_record_order",
+			accounted: nil,
+			complete:  true,
+			want:      "governance/opa-gate,linter/house-style",
+		},
+		{
+			name:      "an_incomplete_answer_names_nothing_however_little_it_covers",
+			accounted: nil,
+			complete:  false,
+			want:      "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := strings.Join(record.Unaccounted(tc.accounted, tc.complete), ",")
+			if got != tc.want {
+				t.Errorf("Unaccounted(%v, %t) = %q; want %q", tc.accounted, tc.complete, got, tc.want)
+			}
+		})
+	}
+
+	var absent *Trust
+	if got := absent.Unaccounted(nil, true); got != nil {
+		t.Errorf("a nil Trust accounts for nothing and names nothing; got %v", got)
+	}
+}

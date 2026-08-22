@@ -118,3 +118,36 @@ func (t *Trust) Upsert(p TrustedPlugin) {
 	}
 	t.Plugins = append(t.Plugins, p)
 }
+
+// Remove drops the record addressed by coordinate and reports whether one was
+// held. It is the only removal this type offers.
+//
+// It is separate from Upsert rather than an Upsert of an absent value, because
+// the two are different acts on the file: Upsert says what a plugin's trusted
+// identity now is, and Remove says the file no longer speaks about that plugin
+// at all. Folding removal into the write side would make "record nothing for
+// this coordinate" and "record this coordinate as having no identity"
+// indistinguishable at the call site, and the second of those is not a state the
+// record can hold — every field of a record is required.
+//
+// Removal is by coordinate alone, with no version or digest to match, because
+// the coordinate IS the address: Upsert admits at most one record per
+// coordinate, so the first match is the only one and stopping there is complete
+// rather than a shortcut.
+//
+// A nil receiver holds nothing and removes nothing, and an empty coordinate
+// addresses nothing, so both report false without touching the records — the
+// same contract Find and Upsert offer at their own edges.
+func (t *Trust) Remove(coordinate string) bool {
+	if t == nil || coordinate == "" {
+		return false
+	}
+	for i := range t.Plugins {
+		if t.Plugins[i].Plugin != coordinate {
+			continue
+		}
+		t.Plugins = append(t.Plugins[:i], t.Plugins[i+1:]...)
+		return true
+	}
+	return false
+}

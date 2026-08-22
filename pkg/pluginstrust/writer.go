@@ -52,8 +52,14 @@ const header = `# Aggrega plugin trust record — written by "aggrega pull", rea
 # what makes that comparison reviewable: a record kept outside version control
 # is one nobody can inspect and nothing can compare against.
 #
-# To change what is recorded here, change the plugins.governance and
-# plugins.linter attachments in .aggrega-config.yaml and run "aggrega pull".
+# To add an identity, attach the plugin under plugins.governance or
+# plugins.linter in .aggrega-config.yaml and run "aggrega pull".
+#
+# To change or remove one, say so explicitly: "aggrega pull --upgrade" naming a
+# plugin adopts the identity it resolves to now, or drops its entry when nothing
+# attaches it any more. A plain "aggrega pull" never rewrites and never removes
+# an entry — a build that found this record disagreeing with what it resolved
+# would otherwise be fixed by the next pull instead of being reviewed.
 
 `
 
