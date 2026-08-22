@@ -97,6 +97,7 @@ func serveRenderArtifacts(t *testing.T, ws, releaseRel string, catDirs []string,
 	res, berr := compilerops.BuildToBuffer(context.Background(), compilerops.BuildInputs{
 		View:                             view,
 		Resolved:                         resolved,
+		ReleasePath:                      releasePath,
 		WorkspaceConfig:                  wsCfg,
 		WorkspaceRoot:                    wsRoot,
 		Lockfile:                         lfArg,

@@ -73,11 +73,11 @@ func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.C
 		WorkspaceRoot: inputs.WorkspaceRoot,
 		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
 	}
-	// No digests are recorded as trusted on this path yet: reading the record is
-	// its own concern, and the socket resolves against the manifest-derived digest
-	// alone until something supplies one.
-	var trusted pluginpath.PinMaps
-	return resolver.ResolveVerdictPluginFromCache(sources, trusted, catalogLookup.PluginFromCache, entityURI)
+	// The digests recorded as trusted travel in on the pipeline inputs, supplied by
+	// the surface that composed the governance attachments. An empty set is the
+	// ordinary first-run state and resolves against the manifest-derived digest
+	// alone; a recorded digest is compared against it and a disagreement halts.
+	return resolver.ResolveVerdictPluginFromCache(sources, inputs.VerdictPluginTrust, catalogLookup.PluginFromCache, entityURI)
 }
 
 // invokeSocketPlugin loads a plugin through the shared describe() gate, invokes

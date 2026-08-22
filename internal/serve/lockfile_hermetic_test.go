@@ -228,6 +228,7 @@ func TestServeByteIdenticalSingleProviderRender(t *testing.T) {
 		res, err := compilerops.BuildToBuffer(context.Background(), compilerops.BuildInputs{
 			View:                             view,
 			Resolved:                         resolved,
+			ReleasePath:                      releasePath,
 			WorkspaceConfig:                  srv.wsConfig,
 			WorkspaceRoot:                    srv.workspaceRoot,
 			Lockfile:                         withLockfile,
@@ -300,6 +301,7 @@ func TestServeMutatorConfigInvariance(t *testing.T) {
 		_, err := compilerops.BuildToBuffer(context.Background(), compilerops.BuildInputs{
 			View:                             view,
 			Resolved:                         resolved,
+			ReleasePath:                      releasePath,
 			WorkspaceConfig:                  wsCfg,
 			WorkspaceRoot:                    srv.workspaceRoot,
 			Lockfile:                         withLockfile,

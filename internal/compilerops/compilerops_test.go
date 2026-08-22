@@ -89,6 +89,7 @@ func TestSharedOperationsAgainstFixture(t *testing.T) {
 	res, err := BuildToBuffer(ctx, BuildInputs{
 		View:                             view,
 		Resolved:                         resolved,
+		ReleasePath:                      releasePath,
 		WorkspaceConfig:                  wsCfg,
 		WorkspaceRoot:                    workspaceRoot,
 		CompilerVersion:                  "test",

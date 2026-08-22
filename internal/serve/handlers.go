@@ -595,6 +595,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 		compilerops.BuildInputs{
 			View:                             view,
 			Resolved:                         resolved,
+			ReleasePath:                      releasePath,
 			WorkspaceConfig:                  s.wsConfig,
 			WorkspaceRoot:                    s.workspaceRoot,
 			Lockfile:                         lf,

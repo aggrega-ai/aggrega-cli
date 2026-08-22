@@ -52,7 +52,13 @@ func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []str
 	for _, f := range files {
 		paths = append(paths, f.Path)
 	}
-	return lintConventionsFiles(rw, catalogFlagDirs, paths, out, diagOut, collect)
+	// No Release names this pass, and the record of the plugin identities trusted
+	// for the workspace's verdict attachments sits beside a Release — so there is
+	// no record to locate here and the linter attachments resolve pin-free, exactly
+	// as they did before that record existed. The release-scoped pass below is the
+	// lint path that does hold them to it, and it is the same path that already
+	// reads the lockfile beside the Release, so both files are read from one place.
+	return lintConventionsFiles(rw, catalogFlagDirs, paths, pluginpath.PinMaps{}, out, diagOut, collect)
 }
 
 // RunRelease computes a Release's resolved closure through the SAME build
@@ -83,6 +89,21 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 		lazyView.SetPins(catalog.PinsFromLockfile(lf))
 		lockForClosure = lf
 	}
+
+	// Hold this Release's configuration to the record of the plugin identities
+	// trusted for its verdict attachments, and carry the recorded digests into the
+	// linter socket's resolution. It runs before any entity is linted, so a gate
+	// that was reviewed and has since been dropped from the configuration refuses
+	// the pass rather than being discovered after the findings are printed.
+	//
+	// This is the lint path that names a Release, and therefore the one that can
+	// locate the record — the same reason it is the lint path that reads the
+	// lockfile above. The single-entity pass and the whole-catalog pass name none,
+	// and say so where they resolve their attachments.
+	trusted, terr := compilerops.VerdictPluginTrust(lazyView, wsCfg, releasePath)
+	if terr != nil {
+		return terr
+	}
 	rc, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
 		View:            lazyView,
 		ReleasePath:     releasePath,
@@ -104,7 +125,7 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 		index[f.Kind+"|"+f.Name] = f.Path
 	}
 	paths := closureEntityFiles(lazyView, rc.Closure, index)
-	return lintConventionsFiles(rw, catalogFlagDirs, paths, out, diagOut, collect)
+	return lintConventionsFiles(rw, catalogFlagDirs, paths, trusted, out, diagOut, collect)
 }
 
 // lintConventionsFiles runs the structural publishing-linter rules (the default
@@ -119,13 +140,17 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 // failure is a real error and does halt. Findings are written to diagOut
 // (os.Stderr in production); the final summary is written to out (os.Stdout).
 // collect optionally gathers the same findings as data; nil collects nothing.
-func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, paths []string, out, diagOut io.Writer, collect *FindingCollector) error {
+//
+// trusted carries the digests recorded as trusted for the plugins that return an
+// accept-or-reject verdict, threaded from the caller rather than read here,
+// because only one of the two callers can locate the record: it sits beside a
+// Release, and the whole-catalog pass names none. Both arms of the linter socket's
+// resolution receive it, so a recorded digest governs the bytes whichever tier
+// serves them. An empty set is the ordinary case and resolves pin-free.
+func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, paths []string, trusted pluginpath.PinMaps, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
-	// No digests are recorded as trusted on this path yet; the socket resolves
-	// pin-free until something supplies them.
-	var trusted pluginpath.PinMaps
 	attachments, err := ResolveLinterPlugins("", wsCfg, trusted, lazyView.PluginByURI,
 		linterCacheResolve(rw.Root(), wsCfg, trusted, lazyView.PluginFromCacheByURI))
 	if err != nil {

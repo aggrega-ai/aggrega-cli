@@ -29,8 +29,16 @@ import (
 // inspection — the graph still builds with the entity skipped, and the
 // condition surfaces as a diagnostic; left false, the divergence halts loudly.
 type BuildInputs struct {
-	View                             *catalog.LazyLookup
-	Resolved                         *ResolvedClosure
+	View     *catalog.LazyLookup
+	Resolved *ResolvedClosure
+	// ReleasePath is the path of the Release being built. It locates the record of
+	// the plugin identities trusted for this Release's verdict attachments, which
+	// sits beside that Release. It is required, and BuildToBuffer refuses a build
+	// without it rather than defaulting: the record's absence and its
+	// unlocatability are different facts, and a default would report the second as
+	// the first — a workspace that has recorded gates would build with none of them
+	// held to their recorded identity, and nothing would say so.
+	ReleasePath                      string
 	WorkspaceConfig                  workspaceconfig.Config
 	WorkspaceRoot                    string
 	Lockfile                         *lockfile.Lockfile
@@ -50,44 +58,48 @@ type BuildInputs struct {
 func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (*pipeline.Result, error) {
 	view := in.View
 	r := in.Resolved
-	wsCfg := in.WorkspaceConfig
 	catLookup := view.AsCatalogLookup()
 
-	// Reconstruct the byte-determining plugin selections from the LOCKFILE, never
-	// the workspace config, so rendered output is invariant to a plugins.providers
-	// or plugins.governance transform change made after the pull (adopted only on
-	// the next pull). Provider resolution reads the pinned bindings — a federated
-	// catalog with more than one plugin serving a capability is disambiguated by
-	// the binding, so an ambiguous target resolves rather than halting. The
-	// label-transform override is unconditional under a lockfile — an empty pinned
-	// set runs no transform regardless of live config — while the verdict
-	// attachments shape no output and are read live and composed back. wsCfg is a
-	// per-call value copy and catLookup is a value struct, so both rewrites touch
-	// only this call's pipeline inputs, never the caller's config or the shared view.
+	// Reconstruct provider resolution from the LOCKFILE, never the workspace
+	// config, so rendered output is invariant to a plugins.providers change made
+	// after the pull (adopted only on the next pull). Provider resolution reads the
+	// pinned bindings — a federated catalog with more than one plugin serving a
+	// capability is disambiguated by the binding, so an ambiguous target resolves
+	// rather than halting. catLookup is a value struct, so the rewrite touches only
+	// this call's pipeline inputs and never the shared view.
 	if in.Lockfile != nil {
 		bindings := lockfile.ProviderBindings(in.Lockfile)
 		catLookup.ProviderPlugin = func(ref string) (types.Plugin, bool, error) {
 			return view.ProviderPluginForTarget(ref, bindings)
 		}
-		wsCfg.Plugins.Governance = append(lockfile.MutatorAttachments(in.Lockfile), wsCfg.Plugins.VerdictGovernanceRefs()...)
+	}
+
+	inputs := pipeline.Inputs{
+		Release:                          r.Release,
+		Manifest:                         r.Manifest,
+		AggregateRawBytes:                r.AggBytes,
+		AggregatePath:                    r.AggregatePath,
+		WorkspaceConfig:                  in.WorkspaceConfig,
+		Lockfile:                         in.Lockfile,
+		WorkspaceRoot:                    in.WorkspaceRoot,
+		MappingLibraries:                 view.MappingLibraries(),
+		WorkloadLibraries:                view.WorkloadLibraries(),
+		ArtifactsLibraries:               view.ArtifactsLibraries(),
+		CompilerVersion:                  in.CompilerVersion,
+		TolerateCatalogViewInconsistency: in.TolerateCatalogViewInconsistency,
+	}
+	// The governance attachment list and the digests recorded as trusted for the
+	// verdict attachments arrive through the one composition every build surface
+	// calls — this one serves both the daemon and the editor's build tool, and the
+	// command-line build calls the same helper. Composing them here rather than at
+	// each surface is what keeps a surface from acquiring one without the other.
+	if err := ApplyGovernanceComposition(&inputs, view, in.ReleasePath); err != nil {
+		return nil, err
 	}
 
 	return pipeline.RunPipeline(
 		ctx,
-		pipeline.Inputs{
-			Release:                          r.Release,
-			Manifest:                         r.Manifest,
-			AggregateRawBytes:                r.AggBytes,
-			AggregatePath:                    r.AggregatePath,
-			WorkspaceConfig:                  wsCfg,
-			Lockfile:                         in.Lockfile,
-			WorkspaceRoot:                    in.WorkspaceRoot,
-			MappingLibraries:                 view.MappingLibraries(),
-			WorkloadLibraries:                view.WorkloadLibraries(),
-			ArtifactsLibraries:               view.ArtifactsLibraries(),
-			CompilerVersion:                  in.CompilerVersion,
-			TolerateCatalogViewInconsistency: in.TolerateCatalogViewInconsistency,
-		},
+		inputs,
 		catLookup,
 		view.RecipeLookupWithManifest(r.Manifest),
 		view.SubAggregateLoader(),

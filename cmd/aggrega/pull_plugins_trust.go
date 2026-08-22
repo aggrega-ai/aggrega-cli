@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -158,7 +157,7 @@ func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPl
 		return nil
 	}
 	path := pluginstrust.PathFor(releasePath)
-	trust, _, err := loadOrStartTrustRecord(path)
+	trust, _, err := pluginstrust.LoadOrStart(path)
 	if err != nil {
 		return err
 	}
@@ -238,7 +237,7 @@ func recordVerdictPluginTrust(releasePath string, resolutions []verdictPluginRes
 	}
 
 	path := pluginstrust.PathFor(releasePath)
-	trust, created, err := loadOrStartTrustRecord(path)
+	trust, created, err := pluginstrust.LoadOrStart(path)
 	if err != nil {
 		return 0, err
 	}
@@ -260,33 +259,6 @@ func recordVerdictPluginTrust(releasePath string, resolutions []verdictPluginRes
 			"commit it alongside the lockfile, because one shared record is what lets every build hold those attachments to the same plugin identities\n", path)
 	}
 	return len(recordable), nil
-}
-
-// loadOrStartTrustRecord reads the record at path, or starts an empty one when the
-// file is not there yet. It reports whether the record is new, which is what the
-// creation notice keys on.
-//
-// Absence is a first-run state rather than a fault: the file is created by the
-// resolution that first has something to record. Any other read failure — an
-// unreadable file, or one that does not satisfy its schema — is returned, because
-// replacing a record nobody could read would discard exactly the identities a
-// later resolution is meant to be held to.
-//
-// Both readers of the record go through here — the comparison that holds a
-// resolution to it, and the write that fills it — so a pull that writes reads the
-// file twice. That is deliberate: the two reads serve different roles at different
-// points in the run, and what must not be answered twice is what an ABSENT record
-// and a DAMAGED one mean. Answering that once here is why a damaged record cannot
-// be a halt on one side and a silent skip on the other.
-func loadOrStartTrustRecord(path string) (*pluginstrust.Trust, bool, error) {
-	trust, err := pluginstrust.Load(path)
-	if err == nil {
-		return trust, false, nil
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return &pluginstrust.Trust{Version: pluginstrust.CurrentVersion}, true, nil
-	}
-	return nil, false, err
 }
 
 // reresolvedByThisPull reports whether this pull re-resolves the attachment

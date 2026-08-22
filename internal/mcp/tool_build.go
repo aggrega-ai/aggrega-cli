@@ -113,6 +113,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	result, err := compilerops.BuildToBuffer(ctx, compilerops.BuildInputs{
 		View:                             view,
 		Resolved:                         resolved,
+		ReleasePath:                      releasePath,
 		WorkspaceConfig:                  tw.cfg,
 		WorkspaceRoot:                    tw.root,
 		Lockfile:                         lf,

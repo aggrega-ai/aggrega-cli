@@ -498,39 +498,40 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	buildLookup.ProviderPlugin = func(ref string) (types.Plugin, bool, error) {
 		return lazyView.ProviderPluginForTarget(ref, lockfileBindings)
 	}
-	// Reconstruct the label-transform governance attachments from the LOCKFILE,
-	// never the workspace config, so build output is invariant to a
-	// plugins.governance transform change made after the pull (adopted only on the
-	// next pull). A label-transform plugin rewrites node labels and shapes output
-	// bytes, so its attachment set / order / export function is pinned; the pinned
-	// .wasm bytes are drift-verified separately on the entity / plugin axes. The
-	// verdict attachments shape no output and are cache-not-pin, so they are read
-	// live and composed back onto the reconstructed transform set. The transform
-	// override is unconditional — an empty pinned set runs no transform regardless
-	// of live config. wsCfg is a per-build value copy, so this rewrites only the
-	// in-memory pipeline input, never the config on disk.
-	wsCfg.Plugins.Governance = append(lockfile.MutatorAttachments(lf), wsCfg.Plugins.VerdictGovernanceRefs()...)
 	// The pipeline context carries the external-input service to the
 	// renderer's plugin-load sites, where each loader picks it up as its
 	// fetch seam.
 	buildCtx := wasm.ContextWithExternalInputs(context.Background(), extInputs)
 	buildCtx = wasm.ContextWithDisablePluginCache(buildCtx, run.disablePluginCache)
 	buildCtx = wasm.ContextWithVerifyDeterminism(buildCtx, run.verifyDeterminism)
+	pipelineInputs := pipeline.Inputs{
+		Release:            rel,
+		Manifest:           manifest,
+		AggregateRawBytes:  aggBytes,
+		AggregatePath:      relAggPath,
+		WorkspaceConfig:    wsCfg,
+		Lockfile:           lf,
+		WorkspaceRoot:      wsRoot,
+		MappingLibraries:   lazyView.MappingLibraries(),
+		WorkloadLibraries:  lazyView.WorkloadLibraries(),
+		ArtifactsLibraries: lazyView.ArtifactsLibraries(),
+		CompilerVersion:    provenanceCompilerVersion(),
+	}
+	// Compose the governance attachment list the pipeline dispatches and the
+	// digests recorded as trusted for the verdict attachments, through the one
+	// composition every build surface calls — the command line here, and the
+	// daemon and the editor's build tool through BuildToBuffer. Both halves arrive
+	// together because a surface that composed the attachments and omitted the
+	// recorded digests would run every configured gate while holding none of them
+	// to the identity that was reviewed, and would do it silently: an unsupplied
+	// digest map is an empty one, and an empty one means nothing was recorded.
+	// ApplyGovernanceComposition documents what each half reconstructs and why.
+	if err := compilerops.ApplyGovernanceComposition(&pipelineInputs, lazyView, releasePath); err != nil {
+		return err
+	}
 	result, err := pipeline.RunPipeline(
 		buildCtx,
-		pipeline.Inputs{
-			Release:            rel,
-			Manifest:           manifest,
-			AggregateRawBytes:  aggBytes,
-			AggregatePath:      relAggPath,
-			WorkspaceConfig:    wsCfg,
-			Lockfile:           lf,
-			WorkspaceRoot:      wsRoot,
-			MappingLibraries:   lazyView.MappingLibraries(),
-			WorkloadLibraries:  lazyView.WorkloadLibraries(),
-			ArtifactsLibraries: lazyView.ArtifactsLibraries(),
-			CompilerVersion:    provenanceCompilerVersion(),
-		},
+		pipelineInputs,
 		buildLookup,
 		lazyView.RecipeLookupWithManifest(manifest),
 		lazyView.SubAggregateLoader(),

@@ -198,9 +198,14 @@ func RunEntity(cfg Config) error {
 	// the feeders below stay nil there.
 	var pluginByURI func(uri string) (types.Plugin, bool)
 	var cacheResolvers []func(uri string) (pluginpath.ResolvedPlugin, error)
-	// No digests are recorded as trusted on this path yet: reading the record is
-	// its own concern, and the socket resolves pin-free until something supplies
-	// one. Threading the empty set here rather than branching keeps one call shape.
+	// The single-entity pass resolves its linter attachments pin-free, and the
+	// reason is structural rather than pending work. The record of the plugin
+	// identities trusted for a workspace's verdict attachments sits beside a
+	// Release, and this pass names no Release: it lints one proposed entity at
+	// publish time, which is the same reason it reads no lockfile. The
+	// release-scoped conventions pass is the lint path that names one, and it holds
+	// its attachments to the record. Threading the empty set rather than branching
+	// keeps one call shape.
 	var trusted pluginpath.PinMaps
 	if cfg.PluginPath == "" {
 		pluginByURI = lazyView.PluginByURI
