@@ -35,47 +35,52 @@ func loadFixturePlugin(t *testing.T, fixtureName string) (*wasm.Plugin, func()) 
 }
 
 // mutatorFixtureInput is the canonical mutator input shared across the
-// per-language mutator round-trip tests. Shape mirrors the
-// wasm-mutator JSON Schema's MutatorInput definition; one node keeps
-// the per-language assertion simple.
+// per-language mutator round-trip tests. One node keeps the per-language
+// assertion simple.
+//
+// It is built on the generated payload type and encoded by the generated codec,
+// in the encoding the label-transform socket carries, so every language's guest
+// is driven with the bytes the host actually sends. A hand-written map would be a
+// second statement of the wire shape, and the one that goes stale.
 func mutatorFixtureInput(t *testing.T) []byte {
 	t.Helper()
-	input := map[string]any{
-		"compilation_context": map[string]any{
-			"release_name": "payments",
-			"environment":  "prod",
+	input := abi.MutatorInput{
+		CompilationContext: abi.CompilationContext{
+			ReleaseName: "payments",
+			Environment: "prod",
 		},
-		"graph": map[string]any{
-			"nodes": map[string]any{
-				"payments-api": map[string]any{
-					"component":        "core/web-service",
-					"resolved_version": "1.4.2",
-					"labels":           map[string]string{"team": "payments"},
+		Graph: abi.MutatorGraph{
+			Nodes: map[string]abi.MutatorNode{
+				"payments-api": {
+					Component:       "core/web-service",
+					ResolvedVersion: "1.4.2",
+					Labels:          map[string]string{"team": "payments"},
 				},
 			},
 		},
 	}
-	inputBytes, err := json.Marshal(input)
+	inputBytes, err := input.EncodeCBOR()
 	if err != nil {
-		t.Fatalf("json.Marshal input: %v", err)
+		t.Fatalf("encode MutatorInput: %v", err)
 	}
 	return inputBytes
 }
 
-// assertMutatorOutput parses the mutator plugin's output bytes,
-// asserts there is exactly one patch (one input node), and that the
-// patch carries the fixture's label key plus the per-language value.
-// Substring matching rather than full JSON Patch parsing keeps the
-// assertion focused on the fixture's behavioural contract — emit one
-// patch per node with the known label key + language tag — not the
-// exact JSON Patch envelope.
+// assertMutatorOutput reads the mutator plugin's output bytes, asserts there is
+// exactly one patch (one input node), and that the patch carries the fixture's
+// label key plus the per-language value. Substring matching rather than full
+// patch-document parsing keeps the assertion focused on the fixture's
+// behavioural contract — emit one patch per node with the known label key +
+// language tag — not the exact patch envelope.
+//
+// It reads through the strict decode entry point, which is the one the socket
+// itself uses: a guest that returned some other envelope is refused here rather
+// than read as a plugin that produced no patches.
 func assertMutatorOutput(t *testing.T, outputBytes []byte, langSuffix string) {
 	t.Helper()
-	var out struct {
-		Patches []json.RawMessage `json:"patches"`
-	}
-	if err := json.Unmarshal(outputBytes, &out); err != nil {
-		t.Fatalf("unmarshal MutatorOutput: %v (output: %s)", err, outputBytes)
+	var out abi.MutatorOutput
+	if err := out.DecodeCBORStrict(outputBytes); err != nil {
+		t.Fatalf("decode MutatorOutput: %v (output: %x)", err, outputBytes)
 	}
 	if len(out.Patches) != 1 {
 		t.Fatalf("expected exactly one patch for the one-node input; got %d", len(out.Patches))
@@ -280,7 +285,7 @@ func TestCrossLanguageFixtureParity_Mutator(t *testing.T) {
 		Value string `json:"value"`
 	}
 	type output struct {
-		Patches [][]patchOp `json:"patches"`
+		Patches [][]patchOp
 	}
 
 	// Per-iteration IIFE scopes the deferred cleanup so each plugin
@@ -296,9 +301,19 @@ func TestCrossLanguageFixtureParity_Mutator(t *testing.T) {
 			if err != nil {
 				t.Fatalf("plugin.Call mutate (%s): %v", lang, err)
 			}
+			var envelope abi.MutatorOutput
+			if err := envelope.DecodeCBORStrict(outputBytes); err != nil {
+				t.Fatalf("decode %s output: %v (output: %x)", lang, err, outputBytes)
+			}
+			// The patch documents ride the socket opaquely, so the envelope
+			// carries them verbatim and reading into one is this test's own step.
 			var o output
-			if err := json.Unmarshal(outputBytes, &o); err != nil {
-				t.Fatalf("unmarshal %s output: %v (output: %s)", lang, err, outputBytes)
+			for i, patch := range envelope.Patches {
+				var ops []patchOp
+				if err := json.Unmarshal(patch, &ops); err != nil {
+					t.Fatalf("read %s patch[%d]: %v (patch: %s)", lang, i, err, patch)
+				}
+				o.Patches = append(o.Patches, ops)
 			}
 			decodedByLang[lang] = o
 		}()

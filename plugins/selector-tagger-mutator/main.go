@@ -48,10 +48,16 @@ func describe() int32 {
 	return 0
 }
 
+// mutate reads the label-transform payload, asks mutatorcore which labels the
+// nodes should carry, and reports them as patch documents. The payload and the
+// result both travel as canonical CBOR: this socket carries the binary encoding
+// in both directions. The patch documents themselves stay JSON, because the
+// socket carries them opaquely and neither side reads into them.
+//
 //go:wasmexport mutate
 func mutate() int32 {
 	var in aggrega.MutatorInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
 		pdk.SetError(err)
 		return 1
 	}
@@ -60,7 +66,7 @@ func mutate() int32 {
 		pdk.SetError(err)
 		return 1
 	}
-	out, err := aggrega.MutatorOutput{Patches: patches}.MarshalJSON()
+	out, err := aggrega.MutatorOutput{Patches: patches}.EncodeCBOR()
 	if err != nil {
 		pdk.SetError(err)
 		return 1

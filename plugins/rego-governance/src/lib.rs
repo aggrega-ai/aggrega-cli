@@ -208,20 +208,28 @@ fn verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
 /// Reports which labels the build's nodes should carry, as the label changes the
 /// build applies. A failure to evaluate propagates, and is surfaced as a build
 /// fault rather than as a change.
+///
+/// This role's payload and result travel as canonical CBOR, so the export takes
+/// and returns bytes rather than text. The other two exports still carry the
+/// textual encoding; each reads its own payload, so they move independently.
 #[plugin_fn]
-pub fn mutate(input: String) -> FnResult<String> {
+pub fn mutate(input: Vec<u8>) -> FnResult<Vec<u8>> {
     let output = label_changes(&input)?;
-    Ok(serde_json::to_string(&output)?)
+    Ok(output.encode_cbor()?)
 }
 
 /// Evaluates the attached policies against the node payload and reads their label
 /// decisions.
 ///
 /// The whole payload is the policy's input document, so a policy reads the nodes
-/// and the deployment context under the names the wire gives them.
-fn label_changes(raw: &str) -> anyhow::Result<MutatorOutput> {
-    let payload: serde_json::Value = serde_json::from_str(raw)?;
-    let input: MutatorInput = payload::read(&payload, &[])?;
+/// and the deployment context under the names the wire gives them. The engine
+/// reads a JSON document, so the decoded payload is written back out as one: the
+/// names a policy addresses are the names the payload declares, whichever encoding
+/// carried it.
+fn label_changes(raw: &[u8]) -> anyhow::Result<MutatorOutput> {
+    let input = MutatorInput::decode_cbor(raw)
+        .map_err(|err| anyhow::anyhow!("reading the label-transform payload: {err}"))?;
+    let payload = serde_json::to_value(&input)?;
     let decisions = engine::decisions(
         &sources(&input.sources),
         input.settings.as_deref(),
@@ -453,10 +461,11 @@ deny contains msg if {
     /// Builds a node payload for the label-shaping role: the named nodes, each
     /// carrying the given component type label, plus one attached policy file.
     ///
-    /// Built from the generated type's own defaults rather than hand-written
-    /// JSON, so a field added to the wire shape does not leave this fixture
-    /// describing a payload the plugin would reject.
-    fn label_payload(nodes: &[(&str, &str)], policy: &str) -> String {
+    /// Built from the generated type and encoded by the generated codec rather
+    /// than hand-written, so a field added to the wire shape does not leave this
+    /// fixture describing a payload the plugin would reject, and the bytes are
+    /// the ones the host actually sends.
+    fn label_payload(nodes: &[(&str, &str)], policy: &str) -> Vec<u8> {
         let mut input = MutatorInput {
             compilation_context: aggrega_abi::CompilationContext {
                 release_name: "rel".to_string(),
@@ -478,7 +487,7 @@ deny contains msg if {
             path: "policy.rego".to_string(),
             content: policy.to_string(),
         }];
-        serde_json::to_string(&input).expect("the payload serializes")
+        input.encode_cbor().expect("the payload encodes")
     }
 
     /// Builds an injection-target payload for the annotation-injecting role.
@@ -720,8 +729,8 @@ labels contains {"node": id, "key": "tier", "value": data.tier} if {
             path: "bundle.tar.gz.base64".to_string(),
             content: archive,
         }];
-        let output = label_changes(&serde_json::to_string(&input).expect("serializes"))
-            .expect("the archive evaluates");
+        let output =
+            label_changes(&input.encode_cbor().expect("encodes")).expect("the archive evaluates");
         let change: serde_json::Value = serde_json::from_str(output.patches[0].get())
             .expect("the emitted change is valid JSON");
         assert_eq!(change[0]["value"], serde_json::json!("gold"));

@@ -116,11 +116,28 @@ var errWasmGuestError = cerrors.Register("wasm/wasm-guest-error", cerrors.Meta{
 	Message:   "wasm: guest plugin reported an error",
 })
 
-// GuestOutput is a socket-output envelope the host decodes strictly. The single
-// method is the generated codec's strict decode entry point: it refuses a
-// top-level field the envelope's shape does not declare instead of skipping it.
+// GuestOutput is a socket-output envelope the host decodes strictly from the
+// textual encoding. The single method is the generated codec's strict decode
+// entry point: it refuses a top-level field the envelope's shape does not
+// declare instead of skipping it.
+//
+// GuestOutputCBOR is the same contract read from the binary encoding, for the
+// sockets whose wire carries that. The two are separate only while both
+// encodings are in use on the socket wire; see DecodeGuestOutputCBOR for when
+// they become one.
 type GuestOutput interface {
 	UnmarshalJSONStrict(data []byte) error
+}
+
+// GuestOutputCBOR is a socket-output envelope the host decodes strictly from the
+// binary encoding. The single method is the generated codec's strict decode
+// entry point for that encoding: it refuses a top-level field the envelope's
+// shape does not declare instead of skipping it.
+//
+// It is GuestOutput's counterpart, and exists beside it for the same reason
+// DecodeGuestOutputCBOR exists beside DecodeGuestOutput.
+type GuestOutputCBOR interface {
+	DecodeCBORStrict(data []byte) error
 }
 
 // ErrWasmOutputShape indicates that a guest plugin returned an output that is
@@ -169,8 +186,38 @@ var errWasmOutputShape = cerrors.Register("wasm/wasm-output-shape", cerrors.Meta
 // identify the entry function the attachment should have named instead. The
 // condition's sentence is said once, by the sentinel: this wrap contributes the
 // export and the codec's own detail and repeats neither.
+//
+// This is the entry point for a socket whose wire carries the textual encoding.
+// DecodeGuestOutputCBOR is the same check for a socket whose wire carries the
+// binary one; that declaration records when the two become a single function.
 func DecodeGuestOutput(export string, out []byte, dst GuestOutput) error {
 	if err := dst.UnmarshalJSONStrict(out); err != nil {
+		return fmt.Errorf("call %q: %w: %s", export, ErrWasmOutputShape(), err)
+	}
+	return nil
+}
+
+// DecodeGuestOutputCBOR decodes a guest's socket output into dst and returns an
+// error wrapping ErrWasmOutputShape, naming the export, when the bytes are not
+// the shape the socket reads. It is DecodeGuestOutput read through the binary
+// encoding: the same condition, the same wrapping, the same refusal, and the
+// same reason for refusing rather than skipping — a lenient decode of an output
+// that is a different shape entirely yields an empty envelope, which is itself a
+// legitimate result, so the two would be indistinguishable and the build would
+// proceed as if the plugin had approved it.
+//
+// The two functions are deliberately separate rather than one function that
+// branches on the encoding, and the reason is which mistake is visible. A
+// duplicated wrapping is a cost a test can see and pin. A single function
+// carrying every socket would have to be told, at each of its call sites, which
+// encoding that socket speaks — and a site told wrong moves a socket's wire with
+// nothing failing.
+//
+// They become one function when the last socket reading a textual output has
+// moved: at that point DecodeGuestOutput has no caller left, and this one keeps
+// the name.
+func DecodeGuestOutputCBOR(export string, out []byte, dst GuestOutputCBOR) error {
+	if err := dst.DecodeCBORStrict(out); err != nil {
 		return fmt.Errorf("call %q: %w: %s", export, ErrWasmOutputShape(), err)
 	}
 	return nil

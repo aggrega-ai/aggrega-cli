@@ -481,16 +481,23 @@ func TestFormatCompilerError_WorkloadValidation_SentenceSaidOnce(t *testing.T) {
 // survive arbitrary wrapping.
 //
 // The payload is the misdirection the refusal exists to catch: a verdict role
-// whose entry function was overridden to name a label-transform export, so a
-// patch envelope comes back where a verdict envelope is read. Decoded leniently
-// it would have yielded an empty verdict list, which is a legitimate allow.
+// whose entry function was overridden to name an annotation-transform export, so
+// an injection envelope comes back where a verdict envelope is read. Decoded
+// leniently it would have yielded an empty verdict list, which is a legitimate
+// allow.
+//
+// The misdirected export is one that shares the verdict roles' encoding, so the
+// refusal names the field. A misdirection across two encodings halts too, but
+// cannot name a field: a field name presupposes bytes the reader can read. That
+// case is exercised where the sockets actually run rather than here, because this
+// test's subject is the formatter.
 func TestFormatCompilerError_SocketOutputShape_ReachesTheReader(t *testing.T) {
 	t.Parallel()
 
 	const (
-		export  = "mutate"
+		export  = "transform_annotations"
 		plugin  = "example/policy-guard:1.0.0"
-		payload = `{"patches":[{"op":"add","path":"/nodes/a/labels/x","value":"y"}]}`
+		payload = `{"injections":[{"boundary_path":"main","component_name":"a","annotation_key":"k","annotation_value":"v"}]}`
 	)
 
 	for _, tc := range []struct {
@@ -528,7 +535,7 @@ func TestFormatCompilerError_SocketOutputShape_ReachesTheReader(t *testing.T) {
 			// here, so this cannot pass against wording that has drifted from
 			// the identity the condition is registered with.
 			sentence := wasm.ErrWasmOutputShape().Error()
-			want := tc.wantPrefix + `call "` + export + `": ` + sentence + `: abi: unexpected field "patches"`
+			want := tc.wantPrefix + `call "` + export + `": ` + sentence + `: abi: unexpected field "injections"`
 			if !strings.Contains(got, want) {
 				t.Errorf("the rendered diagnostic does not carry the line a reader reads\n want %q\n--- got ---\n%s", want, got)
 			}

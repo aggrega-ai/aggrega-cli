@@ -135,8 +135,11 @@ func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.P
 
 // runMutatorSocket runs the Step-2 mutator socket: for each configured mutator
 // plugin, in order, it assembles the labels-only MutatorInput from the topology
-// result, dispatches the plugin's mutate export (or a per-attachment override),
-// and applies the returned JSON Patches to the node-label surface. It runs
+// result, encodes it as canonical CBOR, dispatches the plugin's mutate export (or
+// a per-attachment override), and applies the returned JSON Patches to the
+// node-label surface. This socket carries canonical CBOR in both directions; the
+// patch documents it returns stay opaque and are still JSON, because the socket
+// carries them verbatim rather than reading into them. It runs
 // between topology construction and IR build so the auto-tagged labels flow into
 // the IR. An unconfigured socket is a no-op (returns nil before any resolution),
 // which keeps a build with no mutator attachment byte-identical to a build
@@ -165,9 +168,9 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 		if err != nil {
 			return fmt.Errorf("label-transform: assemble input for plugin %q: %w", ref.URI, err)
 		}
-		payload, err := json.Marshal(mi)
+		payload, err := mi.EncodeCBOR()
 		if err != nil {
-			return fmt.Errorf("label-transform: marshal input for plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("label-transform: encode input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
@@ -176,7 +179,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
 		var mo topology.MutatorOutput
-		if err := wasm.DecodeGuestOutput(export, out, &mo); err != nil {
+		if err := wasm.DecodeGuestOutputCBOR(export, out, &mo); err != nil {
 			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(export, mo.Error); err != nil {

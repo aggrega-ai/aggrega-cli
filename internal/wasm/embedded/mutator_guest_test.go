@@ -68,6 +68,9 @@ func runMutatorGuest(t *testing.T, uri string, payload []byte) []byte {
 	return out
 }
 
+// mustAssembleInput builds the label-transform payload in the encoding the socket
+// carries, so a guest is driven with the bytes the host actually sends rather
+// than a second spelling of them.
 func mustAssembleInput(t *testing.T, topo *topology.TopologyResult, sources []topology.MutatorSource, settings map[string]any) []byte {
 	t.Helper()
 	mi, err := topology.AssembleMutatorInput(topo, resolver.CatalogLookup{},
@@ -75,9 +78,9 @@ func mustAssembleInput(t *testing.T, topo *topology.TopologyResult, sources []to
 	if err != nil {
 		t.Fatalf("AssembleMutatorInput: %v", err)
 	}
-	payload, err := mi.MarshalJSON()
+	payload, err := mi.EncodeCBOR()
 	if err != nil {
-		t.Fatalf("marshal MutatorInput: %v", err)
+		t.Fatalf("encode MutatorInput: %v", err)
 	}
 	return payload
 }
@@ -126,7 +129,7 @@ func TestLabelInjectorGuestAppliesWithinConfinement(t *testing.T) {
 	out := runMutatorGuest(t, labelInjectorURI, payload)
 
 	var mo topology.MutatorOutput
-	if err := mo.UnmarshalJSON(out); err != nil {
+	if err := mo.DecodeCBORStrict(out); err != nil {
 		t.Fatalf("decode MutatorOutput: %v", err)
 	}
 	if len(mo.Patches) != 1 {
@@ -159,7 +162,7 @@ func TestSelectorTaggerGuestAppliesWithinConfinement(t *testing.T) {
 	out := runMutatorGuest(t, selectorTaggerURI, payload)
 
 	var mo topology.MutatorOutput
-	if err := mo.UnmarshalJSON(out); err != nil {
+	if err := mo.DecodeCBORStrict(out); err != nil {
 		t.Fatalf("decode MutatorOutput: %v", err)
 	}
 	if err := topology.ApplyMutatorPatches(topo, mo); err != nil {

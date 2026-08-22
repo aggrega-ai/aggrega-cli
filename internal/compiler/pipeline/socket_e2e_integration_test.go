@@ -848,14 +848,25 @@ func verdictExportOverrideInputs(t *testing.T, export string) (pipeline.Inputs, 
 // an output the role's shape does not describe as if it were a result.
 //
 // The verdict export reports its verdict and the build proceeds. The two
-// non-verdict exports each return a well-formed output of a DIFFERENT shape:
-// mutate returns label patches, transform_annotations returns annotation
-// injections. Neither carries a verdict, and neither is an empty verdict list —
-// an empty list is a legitimate allow, which is exactly why a "no verdict fired"
-// outcome cannot be distinguished from a misdirected export by counting results.
-// So each must halt, and the halt must name the export the attachment dispatched
-// AND the field that does not belong, because those two together are what tells
-// the reader which line of configuration to change.
+// non-verdict exports each read a payload the verdict role does not send and
+// return an output of a DIFFERENT shape. Neither carries a verdict, and neither
+// is an empty verdict list — an empty list is a legitimate allow, which is
+// exactly why a "no verdict fired" outcome cannot be distinguished from a
+// misdirected export by counting results. So each must halt, and the halt must
+// name the export the attachment dispatched, because that is what tells the
+// reader which line of configuration to change.
+//
+// What the halt says beyond the export depends on whether the misdirected export
+// speaks the same encoding as the role that dispatched it. The verdict roles
+// carry the textual encoding; the label-transform role carries the binary one.
+// So dispatching transform_annotations here misdirects within one encoding and
+// the refusal names the field that does not belong, while dispatching mutate
+// crosses encodings and that guest refuses the payload it was handed before it
+// produces any output at all. Both halt loudly and both name the export; only
+// the first can name a field, because a field name presupposes bytes the reader
+// can read. Each row states which it expects rather than the test assuming one
+// answer, and when every socket carries one encoding both rows name a field
+// again.
 func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 	ctx := context.Background()
 
@@ -877,14 +888,18 @@ func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 		}
 	})
 
-	// Each case names the field the guest's real output carries and the verdict
-	// shape does not, so the assertion tracks what the guest actually emits.
+	// Each case names what the halt must carry beyond the export, so the
+	// assertion tracks what the misdirection actually produces rather than
+	// assuming every misdirection produces the same thing.
 	for _, tc := range []struct {
-		export       string
-		foreignField string
+		export string
+		// wantInHalt is the detail the halt must carry after the export: the
+		// field that does not belong where the encodings match, and the guest's
+		// own refusal to read the payload where they do not.
+		wantInHalt string
 	}{
-		{export: "mutate", foreignField: "patches"},
-		{export: "transform_annotations", foreignField: "injections"},
+		{export: "mutate", wantInHalt: "decode MutatorInput"},
+		{export: "transform_annotations", wantInHalt: "injections"},
 	} {
 		t.Run(tc.export, func(t *testing.T) {
 			var err error
@@ -893,8 +908,8 @@ func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 				_, err = pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 			})
 			if err == nil {
-				t.Fatalf("export %q returns a %q-bearing output, which is not the verdict shape: expected a halt, got a clean build.\nstderr was:\n%s",
-					tc.export, tc.foreignField, stderr)
+				t.Fatalf("export %q does not serve the verdict role: expected a halt, got a clean build.\nstderr was:\n%s",
+					tc.export, stderr)
 			}
 			msg := err.Error()
 			// The halt text is what the reader acts on, so it is recorded rather
@@ -903,14 +918,91 @@ func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 			if !strings.Contains(msg, tc.export) {
 				t.Errorf("the halt does not name the export the attachment dispatched (%q):\n%v", tc.export, msg)
 			}
-			if !strings.Contains(msg, tc.foreignField) {
-				t.Errorf("the halt does not name the field that does not belong (%q):\n%v", tc.foreignField, msg)
+			if !strings.Contains(msg, tc.wantInHalt) {
+				t.Errorf("the halt does not carry what identifies the misdirection (%q):\n%v", tc.wantInHalt, msg)
 			}
 			if strings.Contains(stderr, governanceMultiroleVerdictMsg) {
 				t.Errorf("a non-verdict export must reach no verdict at all, yet a verdict recorded:\n%s", stderr)
 			}
 		})
 	}
+}
+
+// TestLabelTransformRoleRefusesForeignExportOutputE2E is the needle for the
+// socket output-shape refusal on the label-transform role, whose wire carries the
+// binary encoding.
+//
+// It is the mirror of the verdict-role case above and exists separately because
+// the two roles read their outputs through different readers: one refusal is
+// proven per reader, since a reader that lost its strictness would leave the
+// other's proof green.
+//
+// The misdirection is the four-role governance guest attached at the
+// label-transform role with its entry function overridden to the verdict export.
+// That export declares itself, so the attachment passes the load-time export
+// check; what comes back is a verdict envelope, which is not a patch list. Read
+// leniently it would yield no patches at all — indistinguishable from a plugin
+// that legitimately asked for no change, on a governance surface. So it must
+// halt, and the halt must name the export the attachment dispatched so the reader
+// knows which line of configuration to change.
+func TestLabelTransformRoleRefusesForeignExportOutputE2E(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("the role's own export shapes the build", func(t *testing.T) {
+		inputs, buildLookup, recipeLookup, subAgg := labelTransformExportOverrideInputs(t, "mutate")
+		res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		if err != nil {
+			t.Fatalf("the role's own label-transform export: unexpected halt: %v", err)
+		}
+		if res.IRGraph == nil || res.IRGraph.Spec.Nodes.Len() == 0 {
+			t.Fatalf("build produced no IR nodes; the assertion below would be vacuous")
+		}
+		stamped := 0
+		for _, node := range res.IRGraph.Spec.Nodes.All() {
+			if _, ok := node.Labels.Get(proofMutatorLabelKey); ok {
+				stamped++
+			}
+		}
+		if stamped == 0 {
+			t.Fatalf("the label-transform export reached no node, so a refusal below would not be attributable to the shape check")
+		}
+	})
+
+	t.Run("validate", func(t *testing.T) {
+		inputs, buildLookup, recipeLookup, subAgg := labelTransformExportOverrideInputs(t, "validate")
+		_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		if err == nil {
+			t.Fatal("the verdict export returns a verdict envelope, which is not the label-transform shape: expected a halt, got a clean build")
+		}
+		msg := err.Error()
+		// The halt text is what the reader acts on, so it is recorded rather than
+		// only asserted against.
+		t.Logf("halt: %s", msg)
+		if !strings.Contains(msg, "validate") {
+			t.Errorf("the halt does not name the export the attachment dispatched:\n%v", msg)
+		}
+		if !errors.Is(err, wasm.ErrWasmOutputShape()) {
+			t.Errorf("the halt must classify as the socket output-shape refusal:\n%v", msg)
+		}
+	})
+}
+
+// labelTransformExportOverrideInputs attaches the four-role governance proof at
+// the label-transform role ALONE, with the attachment's entry function overridden
+// to the named export. Only the export varies across the cases: the same guest,
+// the same role, the same payload and the same settings, so whatever differs in
+// the outcome is attributable to the export's output shape and to nothing else.
+func labelTransformExportOverrideInputs(t *testing.T, export string) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
+	t.Helper()
+	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
+		URI:      governanceMultiroleURI,
+		Role:     plugintype.RoleLabelTransform,
+		Function: export,
+		With:     &workspaceconfig.PluginRefWith{Settings: map[string]any{"severity": analyzer.SeverityInfo}},
+	}}
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{governanceMultiroleURI: "governance-multirole-go.wasm"})
+	return inputs, buildLookup, recipeLookup, subAgg
 }
 
 // assertArtifactsByteIdentical fails unless a and b carry the same path set and
