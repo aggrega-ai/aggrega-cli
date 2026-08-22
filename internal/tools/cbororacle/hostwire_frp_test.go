@@ -30,10 +30,10 @@ import (
 // by its own counterpart proves only that the two agree, including where they
 // agree on a mistake.
 
-// frpGolden reads a shared vector document. The corpus lives above this module,
-// reached by relative path for the same reason its own harness reaches it that
-// way.
-func frpGolden(t *testing.T, name string) []byte {
+// sharedVector reads one document from the shared vector corpus. The corpus
+// lives above this module, reached by relative path for the same reason its own
+// harness reaches it that way.
+func sharedVector(t *testing.T, name string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "aggrega-abi", "testdata", name))
 	if err != nil {
@@ -56,7 +56,7 @@ func TestHostWireFRP_MatchesFrozenVectors(t *testing.T) {
 
 	t.Run("FRPStepInput", func(t *testing.T) {
 		t.Parallel()
-		want := frpGolden(t, "FRPStepInput.golden.json")
+		want := sharedVector(t, "FRPStepInput.golden.json")
 		var in frp.FRPStepInput
 		if err := json.Unmarshal(want, &in); err != nil {
 			t.Fatalf("compiler-side decode of the frozen document: %v", err)
@@ -77,7 +77,7 @@ func TestHostWireFRP_MatchesFrozenVectors(t *testing.T) {
 
 	t.Run("FRPStepOutput", func(t *testing.T) {
 		t.Parallel()
-		want := frpGolden(t, "FRPStepOutput.golden.json")
+		want := sharedVector(t, "FRPStepOutput.golden.json")
 		var out frp.FRPStepOutput
 		if err := json.Unmarshal(want, &out); err != nil {
 			t.Fatalf("compiler-side decode of the frozen document: %v", err)
@@ -103,7 +103,7 @@ func TestHostWireFRP_MatchesFrozenVectors(t *testing.T) {
 func TestHostWireFRP_ComparisonIsDiscriminating(t *testing.T) {
 	t.Parallel()
 
-	frozen := frpGolden(t, "FRPStepOutput.golden.json")
+	frozen := sharedVector(t, "FRPStepOutput.golden.json")
 	var out frp.FRPStepOutput
 	if err := json.Unmarshal(frozen, &out); err != nil {
 		t.Fatalf("compiler-side decode: %v", err)
