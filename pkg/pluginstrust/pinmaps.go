@@ -34,6 +34,23 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 // same reason Upsert refuses to write one: every empty address would collide
 // with every other.
 //
+// # That skip is the guard on the artifact-direct escape hatch
+//
+// A resolver handed an explicit artifact path short-circuits its tier cascade and
+// checks the bytes it read against the pin held under the EMPTY reference, because
+// the escape hatch names a path rather than a plugin identity. So a pin written
+// under an empty key would govern an escape hatch whose entire purpose is to
+// bypass the entity model — and it would do so silently, since a resolver
+// consulting that key has nothing to refuse and no way to tell an intended pin
+// from an accidental one.
+//
+// The skip above is therefore the guard, and this conversion is where the guard
+// lives — not in the resolver. Nothing reaches it today: Upsert refuses to write a
+// record with an empty coordinate, and the skip here refuses to convert one, both
+// held by their own tests. A second source of these records that omitted the skip
+// would pin the hatch, so a maintainer removing it as a redundant check is the
+// case this paragraph exists to stop.
+//
 // A nil receiver holds no records and yields empty maps, so a caller that has
 // loaded no file need not branch before asking — the same contract Find offers.
 func (t *Trust) PinMaps() pluginpath.PinMaps {

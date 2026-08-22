@@ -39,10 +39,11 @@ import (
 func verdictGateVerify(t *testing.T, store *memory.Store, wsCfg workspaceconfig.Config, uri, manifestDigest string) error {
 	t.Helper()
 	lazy := catalog.NewLazyLookup(t.TempDir(), "", nil, nil)
-	return verifyCachedVerdictSocketPlugin(
+	_, err := verifyCachedVerdictSocketPlugin(
 		context.Background(), wsCfg, lazy, uri, manifestDigest,
 		t.TempDir(), "cache", pluginTargetFor(store, "1.0.0"), io.Discard,
 	)
+	return err
 }
 
 // keyedVerdictConfig builds a require-signatures workspace config that binds the

@@ -457,11 +457,19 @@ func linterAttachmentRefs(wsCfg workspaceconfig.Config) []workspaceconfig.Plugin
 //     The record-to-pin conversion refuses an empty address, so no record reaches
 //     it.
 //   - The unconfigured socket's built-in default is out of reach because an
-//     unconfigured socket declares no attachment, so nothing records an identity
-//     for it. Note what this is NOT: the built-in resolves by its own identity,
-//     which is as addressable as any other, so a record standing at that identity
-//     would govern the built-in's bytes. It is out of reach because nothing writes
-//     such a record, not because it could not be named.
+//     unconfigured socket declares no attachment, so nothing resolves an identity
+//     for it to be recorded under. Note what this is NOT: the built-in resolves by
+//     its own identity, which is as addressable as any other, so a record standing
+//     at that identity would govern the built-in's bytes. A hand-written record
+//     could therefore still name it; what is guaranteed is narrower and is stated
+//     below.
+//
+// The resolution that records these digests declines, deliberately, to record any
+// coordinate the binary carries: a pull records what it ACQUIRED, and there is
+// nothing to acquire for bytes that ship inside the binary. So no record this
+// product writes ever stands at the built-in's identity, nor at the identity of
+// any other plugin the binary carries — which makes the two cases above that turn
+// on the embed tier reachable only by a record somebody wrote by hand.
 //
 // A registry-fetched plugin is separately signature- and host-function-verified
 // when it is pulled. A recorded digest adds an identity check to resolution; it

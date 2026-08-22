@@ -413,8 +413,14 @@ func pullRun(cfg pullConfig) error {
 	// The file on disk is left untouched by the decision. It is replaced only by the
 	// single write at the end of a successful pull, so a refresh that cannot complete
 	// leaves the previous pins in place rather than destroying pins it never replaced.
-	pinReuse, err := catalog.PinReuseFromLockfile(lockfilePath, cfg.ReleasePath,
-		catalog.PinReuseMode{Upgrade: cfg.Upgrade, UpgradeTargets: cfg.UpgradeTargets, VerifyOnly: cfg.Verify},
+	//
+	// The invocation the decision reads is named once here and handed to both of
+	// its consumers — the reuse decision itself, and the verdict-plugin trust
+	// record written at the end, which has to know whether this run re-resolves a
+	// given attachment. A second composite literal would be a second answer to
+	// "what kind of pull is this", and the two could then disagree.
+	pinMode := catalog.PinReuseMode{Upgrade: cfg.Upgrade, UpgradeTargets: cfg.UpgradeTargets, VerifyOnly: cfg.Verify}
+	pinReuse, err := catalog.PinReuseFromLockfile(lockfilePath, cfg.ReleasePath, pinMode,
 		func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) })
 	if err != nil {
 		return err
@@ -537,7 +543,13 @@ func pullRun(cfg pullConfig) error {
 	// not part of the reproducibility closure (cache-not-pin): the pull fetches and
 	// caches its entity + .wasm, and the build resolves it from the cache by URI.
 	verdictHTTPClient, _ := workspaceEgressClient(wsCfg)
-	if err := cacheVerdictSocketPlugins(context.Background(), wsCfg, lookup, lazyView, workspaceRoot, cacheDir, remoteTargetForWith(verdictHTTPClient), cfg.DiagOut); err != nil {
+	// The identities the caching walk resolved are collected here and recorded
+	// further down, after the verify-only branch has had its chance to return.
+	// Collecting and recording are deliberately separate steps: the caching walk
+	// runs on every pull, including a verify-only one, and a verify-only pull
+	// writes nothing at all.
+	verdictResolutions, err := cacheVerdictSocketPlugins(context.Background(), wsCfg, lookup, lazyView, workspaceRoot, cacheDir, remoteTargetForWith(verdictHTTPClient), cfg.DiagOut)
+	if err != nil {
 		return err
 	}
 	// Re-derive each plugin's host functions from the freshly-cached, digest-
@@ -752,12 +764,19 @@ func pullRun(cfg pullConfig) error {
 			if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, lf); err != nil {
 				return fmt.Errorf("write lockfile: %w", err)
 			}
+			// Record the identity resolved for each verdict-returning attachment,
+			// beside the lockfile just written. This runs only here, past the
+			// verify-only return above, so a verify-only pull records nothing.
+			trustedCount, err := recordVerdictPluginTrust(cfg.ReleasePath, verdictResolutions, pinMode, cfg.DiagOut)
+			if err != nil {
+				return err
+			}
 
 			// Clear the in-place surface before the stdout summary so the
 			// progress lines never linger beside the final output.
 			progress.finish()
-			fmt.Fprintf(out, "Pull complete: %s (entities=%d, source_artifacts=%d)\n",
-				lockfilePath, len(cl.Entities), len(cl.SourceArtifacts))
+			fmt.Fprintf(out, "Pull complete: %s (entities=%d, source_artifacts=%d%s)\n",
+				lockfilePath, len(cl.Entities), len(cl.SourceArtifacts), trustedPluginsSummary(trustedCount))
 			return nil
 		}); err != nil {
 		return err
@@ -1040,16 +1059,29 @@ func resolveVerdictInputs(atts []workspaceconfig.VerdictAttachment) ([]lockfile.
 // none and skips signature, exactly as the pinned path skips a non-registry item.
 //
 // A capability-only / empty-URI attachment carries nothing to fetch and nothing to
-// identify, so the verdict attachment set omits it; a plugin that does not resolve
-// from the registry (a local / embedded / absent gate the build resolves in place)
-// is skipped rather than treated as a closure gap — a verdict gate is not on the
-// pinned axis a missing closure entity would halt.
-func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, lookup closure.Lookup, lazyView *catalog.LazyLookup, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) error {
+// identify, so the verdict attachment set omits it; an attachment whose ENTITY does
+// not resolve is skipped rather than treated as a closure gap — a verdict gate is
+// not on the pinned axis a missing closure entity would halt.
+//
+// The skip covers the entity axis only, and the artifact axis deliberately does
+// not share it: an attachment whose entity resolves while its `.wasm` does not
+// HALTS. That is the configured-but-unloadable gate, and a gate an operator
+// attached which no build can load is exactly the case that must fail loudly
+// rather than pass with the gate quietly absent.
+//
+// It returns the identity each attachment's plugin resolved to, in attachment
+// order, for the caller to record beside the lockfile. Returning them rather than
+// recording them here is what keeps a verify-only pull from writing: the caching
+// walk runs on every pull, and only the writing pull reaches the recording step.
+// An attachment whose plugin is not in the content cache yields no identity — the
+// same clean-miss skip the verification below takes.
+func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, lookup closure.Lookup, lazyView *catalog.LazyLookup, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) ([]verdictPluginResolution, error) {
+	var resolutions []verdictPluginResolution
 	for _, att := range cfg.VerdictAttachments() {
 		ref := att.Ref
 		entRes, err := lookup.ResolveCatalogEntity(ref.URI, "plugin")
 		if err != nil {
-			return fmt.Errorf("cache %s socket plugin %q: %w", att.Socket, ref.URI, err)
+			return nil, fmt.Errorf("cache %s socket plugin %q: %w", att.Socket, ref.URI, err)
 		}
 		if entRes.NotFound {
 			continue
@@ -1060,17 +1092,27 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 		}
 		artRes, err := lookup.ResolvePlugin(bare, version)
 		if err != nil {
-			return fmt.Errorf("cache %s socket plugin artifact %q: %w", att.Socket, ref.URI, err)
+			return nil, fmt.Errorf("cache %s socket plugin artifact %q: %w", att.Socket, ref.URI, err)
 		}
 		if artRes.NotFound {
-			return fmt.Errorf("cache %s socket plugin artifact %q: entity resolved but its .wasm did not: %w",
+			return nil, fmt.Errorf("cache %s socket plugin artifact %q: entity resolved but its .wasm did not: %w",
 				att.Socket, ref.URI, closure.ErrUnresolvableURI())
 		}
-		if err := verifyCachedVerdictSocketPlugin(ctx, cfg, lazyView, ref.URI, artRes.ManifestDigest, workspaceRoot, cacheDir, targetFor, diagOut); err != nil {
-			return fmt.Errorf("verify %s socket plugin %q: %w", att.Socket, ref.URI, err)
+		resolved, err := verifyCachedVerdictSocketPlugin(ctx, cfg, lazyView, ref.URI, artRes.ManifestDigest, workspaceRoot, cacheDir, targetFor, diagOut)
+		if err != nil {
+			return nil, fmt.Errorf("verify %s socket plugin %q: %w", att.Socket, ref.URI, err)
 		}
+		if resolved.Coordinate == "" {
+			continue
+		}
+		// The authored reference minus any version suffix is carried alongside the
+		// resolved identity because a targeted upgrade names that form, not the
+		// identity coordinate: the two coincide for a bare-name attachment and
+		// diverge for a location-shaped one.
+		resolved.BareURI = bare
+		resolutions = append(resolutions, resolved)
 	}
-	return nil
+	return resolutions, nil
 }
 
 // verifyCachedVerdictSocketPlugin routes a freshly cached verdict-socket gate
@@ -1081,7 +1123,17 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 // same cache-not-pin read the build resolves the gate through), then hands both
 // to verifyFetchedPlugin. The verified fact is discarded: a verdict gate is
 // cache-not-pin and never enters the lockfile.
-func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Config, lazyView *catalog.LazyLookup, uri, manifestDigest, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) error {
+//
+// It also returns the identity that one cache read reports — the plugin's identity
+// coordinate, the version its entity declares, and the content digest of its .wasm
+// layer. That triple comes from THIS read and no other, because the same read is
+// what a later resolution of the same plugin performs: a second derivation of the
+// digest from the manifest descriptor, or of the version from the entity
+// resolution, would let the recorded identity and the resolved one disagree while
+// both looked right. A clean cache miss returns the zero value, whose empty
+// coordinate is the caller's signal that there was nothing to identify.
+func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Config, lazyView *catalog.LazyLookup, uri, manifestDigest, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) (verdictPluginResolution, error) {
+	var identity verdictPluginResolution
 	fp := fetchedPlugin{
 		URI:            uri,
 		ManifestDigest: manifestDigest,
@@ -1103,13 +1155,18 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 	// verification/parse fault or a non-not-found read error halts.
 	entity, wasmDigest, ok, err := lazyView.PluginFromCacheByURI(uri)
 	if err != nil {
-		return err
+		return verdictPluginResolution{}, err
 	}
 	if ok {
 		artifactRef := entity.ArtifactReference()
+		identity = verdictPluginResolution{
+			Coordinate: artifactRef,
+			Version:    entity.Metadata.Version,
+			Digest:     wasmDigest,
+		}
 		wasmBytes, rerr := oci.ReadCached(workspaceRoot, cacheDir, artifactRef, wasmDigest)
 		if rerr != nil && !errors.Is(rerr, oci.ErrFetchNotFound()) {
-			return fmt.Errorf("read cached .wasm %s: %w", artifactRef, rerr)
+			return verdictPluginResolution{}, fmt.Errorf("read cached .wasm %s: %w", artifactRef, rerr)
 		}
 		if rerr == nil {
 			ent := entity
@@ -1119,8 +1176,10 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 			fp.WasmBytes = wasmBytes
 		}
 	}
-	_, err = verifyFetchedPlugin(ctx, fp, cfg, targetFor, diagOut)
-	return err
+	if _, err = verifyFetchedPlugin(ctx, fp, cfg, targetFor, diagOut); err != nil {
+		return verdictPluginResolution{}, err
+	}
+	return identity, nil
 }
 
 func copyConsumers(in []closure.LibraryConsumer) []lockfile.LibraryConsumer {
