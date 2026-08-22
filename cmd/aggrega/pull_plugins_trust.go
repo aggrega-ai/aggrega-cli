@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // verdictPluginResolution is what one attachment that returns an accept-or-reject
@@ -41,6 +43,145 @@ type verdictPluginResolution struct {
 	Digest     string
 }
 
+// errVerdictPluginIdentityChanged reports that a pull resolved an attachment
+// returning an accept-or-reject verdict to a plugin identity the record beside
+// the lockfile does not hold for it, without the run having asked for that
+// identity to be re-resolved.
+//
+// One condition covers both axes — a moved version and moved bytes — because the
+// record is addressed by the plugin's identity coordinate, which carries neither:
+// the version and the digest are fields of one record, so comparing a resolution
+// against it is a single comparison with a single outcome. Splitting it would give
+// a caller two things to match for one disagreement, and would leave a
+// version-only move (a re-publish whose bytes did not change) and a digest-only
+// move (a re-push at the same version) looking like different kinds of event when
+// they are the same one: the identity is no longer what was reviewed.
+//
+// It is deliberately not the condition a later resolution raises when the record
+// disagrees with the artifact in the content cache. That one refuses to RUN a
+// plugin whose bytes are not the reviewed ones, and its remediation is to restore
+// or re-record; this one refuses to ADOPT a new identity silently, and its
+// remediation is to name the plugin in an upgrade. Two remediations, two
+// conditions.
+var errVerdictPluginIdentityChanged = errors.New("the plugin identity recorded as trusted no longer matches what this resolution reports")
+
+// splitAttachmentRef splits an attachment's authored reference into its bare
+// identity and the version suffix it named, which is empty when it named none.
+//
+// One home for the split because the two halves are read by sites that must agree
+// on where the boundary falls: the bare form is what a targeted upgrade matches a
+// named target against, and the version is what the resolution falls back from
+// when the reference pinned one.
+func splitAttachmentRef(uri string) (bare, version string) {
+	bare, version, _ = strings.Cut(uri, ":")
+	return bare, version
+}
+
+// verdictAttachmentUpgradeTargets returns the authored reference of every
+// attachment that returns an accept-or-reject verdict, version suffix removed —
+// the strings a targeted upgrade may name for a plugin the lockfile holds no pin
+// for.
+//
+// Such a plugin shapes no rendered output, so it is recorded beside the lockfile
+// rather than pinned in it and a named target has no pin to drop. Reading the
+// targets from the ATTACHMENTS rather than from the record is what makes naming
+// one work end to end: the record is addressed by the plugin's identity
+// coordinate, while a named target is matched against the authored reference, and
+// the two coincide only for a bare-name attachment. Deriving the accepted targets
+// from the record would accept a string that then matched no attachment, so the
+// upgrade would be admitted and re-resolve nothing.
+//
+// A target naming a configured attachment the record does not yet cover is
+// therefore accepted, and does nothing beyond the ordinary fill. That is right: it
+// is not a mistyped name, the attachment is there.
+func verdictAttachmentUpgradeTargets(cfg workspaceconfig.Config) []string {
+	attachments := cfg.VerdictAttachments()
+	targets := make([]string, 0, len(attachments))
+	for _, att := range attachments {
+		bare, _ := splitAttachmentRef(att.Ref.URI)
+		if bare == "" {
+			continue
+		}
+		targets = append(targets, bare)
+	}
+	return targets
+}
+
+// recordableVerdictResolutions reduces the identities a pull resolved to the ones
+// the record covers: an attachment that resolved to something identifiable, whose
+// plugin the binary does not carry.
+//
+// Both consumers of the record — the comparison that holds a resolution to it and
+// the write that fills it — read this one reduction, so neither can consider an
+// identity the other ignores. That matters most for the binary's own copy: a
+// coordinate the binary carries is never recorded (see recordVerdictPluginTrust
+// for why), so holding a resolution of one against a record would compare against
+// an entry that describes a different artifact and can never be replaced.
+func recordableVerdictResolutions(resolutions []verdictPluginResolution) []verdictPluginResolution {
+	recordable := make([]verdictPluginResolution, 0, len(resolutions))
+	for _, r := range resolutions {
+		if r.Coordinate == "" || r.Digest == "" {
+			continue
+		}
+		if _, carriedByBinary := embedded.Lookup(r.Coordinate); carriedByBinary {
+			continue
+		}
+		recordable = append(recordable, r)
+	}
+	return recordable
+}
+
+// holdVerdictPluginsToTheirRecord compares the identity each verdict-returning
+// attachment resolved to against the identity recorded as trusted for it, and
+// halts on a disagreement this run did not ask for.
+//
+// It runs on every pull — including one that only verifies, which writes nothing
+// and is exactly the surface a user reaches to be told whether the committed files
+// still describe what resolves today. A verify that passed over the record while
+// checking its sibling would report agreement it never looked for.
+//
+// The escape is the run itself: a full refresh re-resolves everything, and a
+// targeted upgrade naming the attachment re-resolves that one, so both are read
+// as the user having asked for the new identity and the write path adopts it. Any
+// other pull holds the recorded identity and refuses, which is the whole point of
+// recording it — a record that adopted whatever was resolved next would follow the
+// resolution instead of governing it.
+//
+// An identity the record does not hold is not a disagreement. It is the first
+// sighting of that plugin, and the write path fills it.
+//
+// releasePath locates the record and names the Release in the remediation, so a
+// reader can run the command as printed.
+func holdVerdictPluginsToTheirRecord(releasePath string, resolutions []verdictPluginResolution, mode catalog.PinReuseMode) error {
+	recordable := recordableVerdictResolutions(resolutions)
+	if len(recordable) == 0 {
+		return nil
+	}
+	path := pluginstrust.PathFor(releasePath)
+	trust, _, err := loadOrStartTrustRecord(path)
+	if err != nil {
+		return err
+	}
+	for _, r := range recordable {
+		held, isHeld := trust.Find(r.Coordinate)
+		if !isHeld {
+			continue
+		}
+		if held.ResolvedVersion == r.Version && held.Digest == r.Digest {
+			continue
+		}
+		if reresolvedByThisPull(mode, r.BareURI) {
+			continue
+		}
+		return fmt.Errorf(
+			"plugin %q: %s records version %s with digest %s as trusted for it, but this resolution reports version %s with digest %s; "+
+				"review what changed and adopt it with `aggrega pull --upgrade --release %s %s`, or restore the recorded identity: %w",
+			r.Coordinate, path, held.ResolvedVersion, held.Digest, r.Version, r.Digest,
+			releasePath, r.BareURI, errVerdictPluginIdentityChanged)
+	}
+	return nil
+}
+
 // recordVerdictPluginTrust writes the plugin identities resolved for a Release's
 // verdict-returning attachments into `plugins-trust.yaml` beside that Release's
 // lockfile, and returns how many identities it recorded.
@@ -57,6 +198,13 @@ type verdictPluginResolution struct {
 // the record is the answer to what they asked; every other pull holds the recorded
 // identity, because silently adopting whatever was resolved this time would make
 // the record follow the resolution instead of governing it.
+//
+// A pull only reaches this after holdVerdictPluginsToTheirRecord has compared every
+// resolved identity against the record, so a held entry reached here either agrees
+// with what was resolved or belongs to a run that asked for it to be re-resolved.
+// The hold-a-present-entry arm below is therefore the quiet half of one rule whose
+// loud half is that comparison: nothing is adopted without being asked for, and
+// nothing is dropped on the floor either.
 //
 // # Why an artifact the binary carries is not recorded
 //
@@ -84,16 +232,7 @@ type verdictPluginResolution struct {
 // configured attachment is recorded like any other. That falls out of asking the
 // binary what it carries rather than deciding it from a build flag.
 func recordVerdictPluginTrust(releasePath string, resolutions []verdictPluginResolution, mode catalog.PinReuseMode, diagOut io.Writer) (int, error) {
-	recordable := make([]verdictPluginResolution, 0, len(resolutions))
-	for _, r := range resolutions {
-		if r.Coordinate == "" || r.Digest == "" {
-			continue
-		}
-		if _, carriedByBinary := embedded.Lookup(r.Coordinate); carriedByBinary {
-			continue
-		}
-		recordable = append(recordable, r)
-	}
+	recordable := recordableVerdictResolutions(resolutions)
 	if len(recordable) == 0 {
 		return 0, nil
 	}
@@ -132,6 +271,13 @@ func recordVerdictPluginTrust(releasePath string, resolutions []verdictPluginRes
 // unreadable file, or one that does not satisfy its schema — is returned, because
 // replacing a record nobody could read would discard exactly the identities a
 // later resolution is meant to be held to.
+//
+// Both readers of the record go through here — the comparison that holds a
+// resolution to it, and the write that fills it — so a pull that writes reads the
+// file twice. That is deliberate: the two reads serve different roles at different
+// points in the run, and what must not be answered twice is what an ABSENT record
+// and a DAMAGED one mean. Answering that once here is why a damaged record cannot
+// be a halt on one side and a silent skip on the other.
 func loadOrStartTrustRecord(path string) (*pluginstrust.Trust, bool, error) {
 	trust, err := pluginstrust.Load(path)
 	if err == nil {
@@ -154,12 +300,12 @@ func loadOrStartTrustRecord(path string) (*pluginstrust.Trust, bool, error) {
 // it named. Every other pull re-resolves nothing.
 //
 // A named target is matched against the authored reference, which is the form
-// `--upgrade` documents matching against. Note that a target naming a plugin
-// attached ONLY at a verdict role halts before this is ever consulted: such a
-// plugin is deliberately absent from the lockfile, and a target absent from the
-// lockfile has no pin to drop. The case this arm serves is the plugin attached at
-// a verdict role at one site and an output-shaping role at another — pinned there,
-// recorded here, and re-resolved by naming it.
+// `--upgrade` documents matching against, and which is why the accepted-target set
+// is derived from the attachments rather than from the record — see
+// verdictAttachmentUpgradeTargets. Both kinds of attachment reach this arm: one
+// attached only at a verdict role, whose identity is recorded beside the lockfile
+// and pinned nowhere, and one attached at a verdict role at one site and an
+// output-shaping role at another, pinned there and recorded here.
 func reresolvedByThisPull(mode catalog.PinReuseMode, bareURI string) bool {
 	if mode.FullRefresh() {
 		return true

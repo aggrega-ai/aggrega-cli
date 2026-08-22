@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -571,5 +572,292 @@ func TestVerdictTrustRecordHasOneWriter(t *testing.T) {
 	if !callers["pullRun"]["acquireLockfile"] {
 		t.Errorf("acquireLockfile does not call pullRun; the auto-pull route to the record runs the pull path verbatim (callers seen: %v)",
 			callers["pullRun"])
+	}
+}
+
+// TestVerdictTrustRefusesAChangedIdentityUnlessTheRunAsksForIt is the refusal's
+// discriminating table. Each row moves the recorded identity on a named axis and
+// fixes what the run asked for, so a refusal keyed on the wrong question passes one
+// row and fails another.
+//
+// Three things make it discriminating rather than merely green:
+//
+//   - The first row is the positive control: an identity that agrees is not a halt,
+//     so no later row can pass because the comparison halts on everything.
+//   - The seeded record is asserted to hold the coordinate BEFORE the comparison
+//     runs, so a row expecting a halt cannot pass on a record that was never
+//     written — which is the shape a halt-on-nothing would take.
+//   - Every halting row matches the condition rather than "an error was returned",
+//     and asserts the values the message must name. A warning and a halt both
+//     produce prose; only the returned condition tells them apart.
+func TestVerdictTrustRefusesAChangedIdentityUnlessTheRunAsksForIt(t *testing.T) {
+	const coordinate = "linter/hold-probe"
+	const recordedVersion = "1.0.0"
+	recordedDigest := "sha256:" + strings.Repeat("1", 64)
+	movedDigest := "sha256:" + strings.Repeat("2", 64)
+
+	cases := []struct {
+		name          string
+		seedRecord    bool
+		resolved      verdictPluginResolution
+		mode          catalog.PinReuseMode
+		wantHalt      bool
+		wantInMessage []string
+	}{
+		{
+			name:       "an_agreeing_identity_is_not_a_halt",
+			seedRecord: true,
+			resolved:   verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: recordedVersion, Digest: recordedDigest},
+			mode:       catalog.PinReuseMode{},
+		},
+		{
+			name:          "a_moved_version_halts",
+			seedRecord:    true,
+			resolved:      verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: "2.0.0", Digest: recordedDigest},
+			mode:          catalog.PinReuseMode{},
+			wantHalt:      true,
+			wantInMessage: []string{coordinate, pluginstrust.FileName, recordedVersion, "2.0.0"},
+		},
+		{
+			name:          "a_moved_digest_halts",
+			seedRecord:    true,
+			resolved:      verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: recordedVersion, Digest: movedDigest},
+			mode:          catalog.PinReuseMode{},
+			wantHalt:      true,
+			wantInMessage: []string{coordinate, pluginstrust.FileName, recordedDigest, movedDigest},
+		},
+		{
+			// One message, both axes: a changed version and changed bytes are one
+			// disagreement about one identity, so the diagnostic names all four values
+			// rather than reporting whichever axis was compared first.
+			name:          "both_axes_moved_are_one_halt_naming_all_four_values",
+			seedRecord:    true,
+			resolved:      verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: "2.0.0", Digest: movedDigest},
+			mode:          catalog.PinReuseMode{},
+			wantHalt:      true,
+			wantInMessage: []string{coordinate, recordedVersion, "2.0.0", recordedDigest, movedDigest},
+		},
+		{
+			name:       "an_identity_the_record_does_not_hold_is_a_first_sighting",
+			seedRecord: false,
+			resolved:   verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: "2.0.0", Digest: movedDigest},
+			mode:       catalog.PinReuseMode{},
+		},
+		{
+			name:       "a_full_refresh_asked_for_the_new_identity",
+			seedRecord: true,
+			resolved:   verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: "2.0.0", Digest: movedDigest},
+			mode:       catalog.PinReuseMode{Upgrade: true},
+		},
+		{
+			name:       "an_upgrade_naming_it_asked_for_the_new_identity",
+			seedRecord: true,
+			resolved:   verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: "2.0.0", Digest: movedDigest},
+			mode:       catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{coordinate}},
+		},
+		{
+			name:          "an_upgrade_naming_something_else_still_halts",
+			seedRecord:    true,
+			resolved:      verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: "2.0.0", Digest: movedDigest},
+			mode:          catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{"core/database"}},
+			wantHalt:      true,
+			wantInMessage: []string{coordinate},
+		},
+		{
+			// A verify-only run writes nothing, so it can adopt nothing: it reports
+			// whether the committed files still describe what resolves today, and the
+			// record is one of those files.
+			name:          "a_verify_only_run_covers_the_record_and_halts",
+			seedRecord:    true,
+			resolved:      verdictPluginResolution{BareURI: coordinate, Coordinate: coordinate, Version: "2.0.0", Digest: movedDigest},
+			mode:          catalog.PinReuseMode{VerifyOnly: true},
+			wantHalt:      true,
+			wantInMessage: []string{coordinate, recordedVersion, "2.0.0"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			releasePath := filepath.Join(root, "release.yaml")
+			if tc.seedRecord {
+				seed := &pluginstrust.Trust{Version: pluginstrust.CurrentVersion}
+				seed.Upsert(pluginstrust.TrustedPlugin{Plugin: coordinate, ResolvedVersion: recordedVersion, Digest: recordedDigest})
+				if err := pluginstrust.Write(pluginstrust.PathFor(releasePath), seed); err != nil {
+					t.Fatalf("seed record: %v", err)
+				}
+				// Anti-needle: a halt asserted against a record that was never written
+				// would be a halt on nothing.
+				if _, held := trustRecordAt(t, releasePath).Find(coordinate); !held {
+					t.Fatalf("seeded record does not hold %s; every halt below would be unattributable", coordinate)
+				}
+			}
+
+			err := holdVerdictPluginsToTheirRecord(releasePath, []verdictPluginResolution{tc.resolved}, tc.mode)
+			if !tc.wantHalt {
+				if err != nil {
+					t.Fatalf("want no halt; got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("want a halt; got nil — a resolution disagreeing with the record must stop the run")
+			}
+			if !errors.Is(err, errVerdictPluginIdentityChanged) {
+				t.Errorf("the halt must carry the changed-identity condition; got %v", err)
+			}
+			for _, want := range tc.wantInMessage {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the halt must name %q; got %v", want, err)
+				}
+			}
+			wantCommand := "aggrega pull --upgrade --release " + releasePath + " " + coordinate
+			if !strings.Contains(err.Error(), wantCommand) {
+				t.Errorf("the halt must print the command that adopts the new identity, verbatim and runnable;\nwant it to contain %q\ngot %v", wantCommand, err)
+			}
+		})
+	}
+}
+
+// TestVerdictTrustHoldDeclinesWhatTheBinaryCarries is the other half of the
+// acquired-artifact rule: the comparison consults the same reduction the write
+// does, so a coordinate the binary carries is not held against the record.
+//
+// It matters because the two sides would otherwise disagree in the one direction
+// that cannot be recovered from: the write declines to record such a coordinate, so
+// a comparison that did NOT decline would halt against an entry describing a
+// different artifact — and no upgrade could ever replace it.
+func TestVerdictTrustHoldDeclinesWhatTheBinaryCarries(t *testing.T) {
+	const carried = "linter/carried-probe"
+	restore := embedded.SeedForTest(carried, headerOnlyWasm)
+	t.Cleanup(restore)
+
+	root := t.TempDir()
+	releasePath := filepath.Join(root, "release.yaml")
+	seed := &pluginstrust.Trust{Version: pluginstrust.CurrentVersion}
+	seed.Upsert(pluginstrust.TrustedPlugin{
+		Plugin: carried, ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("a", 64),
+	})
+	if err := pluginstrust.Write(pluginstrust.PathFor(releasePath), seed); err != nil {
+		t.Fatalf("seed record: %v", err)
+	}
+
+	// The resolution disagrees with the record on both axes, so anything that did
+	// not decline would halt here.
+	err := holdVerdictPluginsToTheirRecord(releasePath, []verdictPluginResolution{{
+		BareURI: carried, Coordinate: carried, Version: "9.9.9", Digest: "sha256:" + strings.Repeat("b", 64),
+	}}, catalog.PinReuseMode{})
+	if err != nil {
+		t.Fatalf("a coordinate the binary carries must not be held against the record; got %v", err)
+	}
+
+	// The discriminator: the same disagreement on a coordinate the binary does NOT
+	// carry halts, so the pass above is attributable to the decline rather than to a
+	// comparison that never runs.
+	const acquired = "linter/acquired-probe"
+	seed.Upsert(pluginstrust.TrustedPlugin{
+		Plugin: acquired, ResolvedVersion: "1.0.0", Digest: "sha256:" + strings.Repeat("c", 64),
+	})
+	if err := pluginstrust.Write(pluginstrust.PathFor(releasePath), seed); err != nil {
+		t.Fatalf("re-seed record: %v", err)
+	}
+	err = holdVerdictPluginsToTheirRecord(releasePath, []verdictPluginResolution{{
+		BareURI: acquired, Coordinate: acquired, Version: "9.9.9", Digest: "sha256:" + strings.Repeat("d", 64),
+	}}, catalog.PinReuseMode{})
+	if !errors.Is(err, errVerdictPluginIdentityChanged) {
+		t.Fatalf("an acquired coordinate's changed identity must halt, or the decline above proves nothing; got %v", err)
+	}
+}
+
+// TestVerdictTrustHoldRefusesAnUnreadableRecord holds the comparison to the same
+// fail-closed reading the write follows: a record that does not satisfy its schema
+// is a halt, not an absent record to pass over. Reading it as absent would turn a
+// damaged record into a silent skip of the whole comparison.
+func TestVerdictTrustHoldRefusesAnUnreadableRecord(t *testing.T) {
+	root := t.TempDir()
+	releasePath := filepath.Join(root, "release.yaml")
+	const garbage = "version: 1\nplugins:\n  - plugin: linter/x\n"
+	if err := os.WriteFile(pluginstrust.PathFor(releasePath), []byte(garbage), 0o644); err != nil {
+		t.Fatalf("write invalid record: %v", err)
+	}
+
+	err := holdVerdictPluginsToTheirRecord(releasePath, []verdictPluginResolution{{
+		BareURI: "linter/probe", Coordinate: "linter/probe", Version: "1.0.0",
+		Digest: "sha256:" + strings.Repeat("5", 64),
+	}}, catalog.PinReuseMode{})
+	if err == nil {
+		t.Fatal("a record that fails its schema must halt rather than be read as absent")
+	}
+	if errors.Is(err, errVerdictPluginIdentityChanged) {
+		t.Errorf("an unreadable record is not a changed identity; the two conditions must stay distinct: %v", err)
+	}
+}
+
+// TestVerdictAttachmentUpgradeTargetsAreTheAuthoredReferences pins what a targeted
+// upgrade may name for a plugin the lockfile does not pin: the attachment's
+// authored reference with any version suffix removed.
+//
+// The version-suffix row is the load-bearing one. A target carrying the suffix
+// would be a string the re-resolution never matches, so the upgrade would be
+// admitted and then re-resolve nothing — accepted and inert, which is the outcome
+// hardest to notice.
+func TestVerdictAttachmentUpgradeTargetsAreTheAuthoredReferences(t *testing.T) {
+	cfg := workspaceconfig.Config{
+		Plugins: workspaceconfig.PluginsConfig{
+			Linter: []workspaceconfig.PluginRef{
+				{URI: "linter/publishing-linter:1.2.0"},
+				{URI: "linter/bare-linter"},
+				{URI: ""},
+			},
+			Governance: []workspaceconfig.PluginRef{
+				{URI: "governance/policy:3.0.0", Role: plugintype.RoleIRVerdict},
+				{URI: "governance/labeller:1.0.0", Role: plugintype.RoleLabelTransform},
+			},
+		},
+	}
+
+	got := verdictAttachmentUpgradeTargets(cfg)
+	sort.Strings(got)
+	want := []string{"governance/policy", "linter/bare-linter", "linter/publishing-linter"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("verdict upgrade targets = %v; want %v\n"+
+			"the version suffix is dropped because a named target is matched against the authored reference, "+
+			"and a transform-role attachment is not recorded so it is not a target here", got, want)
+	}
+}
+
+// TestVerdictTrustRecordHasOneComparisonSite is the structural companion to the
+// one-writer guard: the record is compared from exactly one place, and that place
+// is the pull.
+//
+// A second comparison site is the failure this locks out, and it would not show up
+// as a wrong answer — it would show up as two answers. One site could hold a
+// resolution to the record while another adopted it, and which one a given
+// invocation reached would depend on the path taken. The guard also fails if the
+// comparison is dropped from the pull path altogether, which is the other way the
+// refusal could silently stop existing.
+func TestVerdictTrustRecordHasOneComparisonSite(t *testing.T) {
+	callers := enclosingCallers(t)
+
+	got := make([]string, 0, len(callers["holdVerdictPluginsToTheirRecord"]))
+	for name := range callers["holdVerdictPluginsToTheirRecord"] {
+		got = append(got, name)
+	}
+	sort.Strings(got)
+	if strings.Join(got, ",") != "pullRun" {
+		t.Errorf("callers of holdVerdictPluginsToTheirRecord = %v; want exactly [pullRun]\n"+
+			"the resolved identities are held to the record by the pull and by nothing else; a second site "+
+			"could adopt what the first refused, and which one ran would depend on the path taken", got)
+	}
+
+	// The reduction both sides read: neither the comparison nor the write may
+	// filter the resolutions for itself, or the two could consider different sets.
+	readers := make([]string, 0, len(callers["recordableVerdictResolutions"]))
+	for name := range callers["recordableVerdictResolutions"] {
+		readers = append(readers, name)
+	}
+	sort.Strings(readers)
+	if strings.Join(readers, ",") != "holdVerdictPluginsToTheirRecord,recordVerdictPluginTrust" {
+		t.Errorf("callers of recordableVerdictResolutions = %v; want exactly [holdVerdictPluginsToTheirRecord recordVerdictPluginTrust]", readers)
 	}
 }

@@ -237,3 +237,169 @@ func TestIntegration_VerdictTrustAutoPullBuildWritesTheRecord(t *testing.T) {
 		t.Fatalf("a build that runs no pull step must write no record; stat err = %v", err)
 	}
 }
+
+// rerecordVerdictIdentity rewrites the record beside releasePath so the entry for
+// coordinate carries version and digest, and returns nothing but a fatal on
+// failure. It edits the committed file the way a reviewer would see it edited, so
+// the halt under test is provoked by the record's own bytes rather than by a
+// fabricated in-memory value.
+func rerecordVerdictIdentity(t *testing.T, releasePath, coordinate, version, digest string) {
+	t.Helper()
+	path := pluginstrust.PathFor(releasePath)
+	trust, err := pluginstrust.Load(path)
+	if err != nil {
+		t.Fatalf("load record %s: %v", path, err)
+	}
+	if _, held := trust.Find(coordinate); !held {
+		t.Fatalf("record %s does not hold %s, so editing it would prove nothing; it holds %v",
+			path, coordinate, recordedCoordinates(trust))
+	}
+	trust.Upsert(pluginstrust.TrustedPlugin{Plugin: coordinate, ResolvedVersion: version, Digest: digest})
+	if err := pluginstrust.Write(path, trust); err != nil {
+		t.Fatalf("write edited record %s: %v", path, err)
+	}
+}
+
+// TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity is the end-to-end
+// needle at the real command entrypoint, run in the order the criterion states:
+// edit a recorded identity, show the halt, restore it, show green.
+//
+// It is written to discriminate a halt from a warning and from a pass that never
+// compared anything:
+//
+//   - Each halt is matched against the changed-identity condition, not against
+//     "an error came back". A warning would let the pull complete.
+//   - Each halt is followed by a restore-and-pull that must go green, so no halt
+//     can be attributed to a broken fixture.
+//   - Both axes are needled separately — the version with the digest held, and the
+//     digest with the version held — because a comparison that read only one axis
+//     would pass one of the two while looking correct.
+//   - The record on disk is re-read after a halt: a refused run must leave the
+//     committed bytes exactly as they were, since replacing them is the very thing
+//     it refused to do.
+func TestIntegration_VerdictTrustRefusesAChangedRecordedIdentity(t *testing.T) {
+	host := startRegistry(t, nil)
+	root, releasePath, published := verdictTrustWorkspace(t, host)
+	recordPath := pluginstrust.PathFor(releasePath)
+	bogusDigest := "sha256:" + strings.Repeat("e", 64)
+
+	pull := func(t *testing.T, cfg pullConfig) error {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		cfg.ws = resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
+		cfg.ReleasePath = releasePath
+		cfg.DiagOut = &stderr
+		cfg.Out = &stdout
+		return pullRun(cfg)
+	}
+
+	// The seeding pull records the identity every phase below is measured against.
+	if err := pull(t, pullConfig{}); err != nil {
+		t.Fatalf("seeding pullRun: %v", err)
+	}
+	seeded, held := trustRecordAt(t, releasePath).Find(published.Coordinate)
+	if !held {
+		t.Fatalf("precondition: the seeding pull must record %s", published.Coordinate)
+	}
+	if seeded.ResolvedVersion != "1.0.0" || seeded.Digest != published.WasmDigest {
+		t.Fatalf("precondition: recorded identity = %s/%s; want 1.0.0/%s",
+			seeded.ResolvedVersion, seeded.Digest, published.WasmDigest)
+	}
+	restore := func(t *testing.T) {
+		t.Helper()
+		rerecordVerdictIdentity(t, releasePath, published.Coordinate, seeded.ResolvedVersion, seeded.Digest)
+	}
+
+	t.Run("a_moved_recorded_version_halts_the_pull", func(t *testing.T) {
+		rerecordVerdictIdentity(t, releasePath, published.Coordinate, "0.9.0", published.WasmDigest)
+		before, rerr := os.ReadFile(recordPath)
+		if rerr != nil {
+			t.Fatalf("read the edited record: %v", rerr)
+		}
+
+		err := pull(t, pullConfig{})
+		if !errors.Is(err, errVerdictPluginIdentityChanged) {
+			t.Fatalf("a recorded version the resolution does not report must halt with the changed-identity condition; got %v", err)
+		}
+		for _, want := range []string{published.Coordinate, pluginstrust.FileName, "0.9.0", "1.0.0"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the halt must name %q; got %v", want, err)
+			}
+		}
+		after, rerr := os.ReadFile(recordPath)
+		if rerr != nil {
+			t.Fatalf("read the record after the halt: %v", rerr)
+		}
+		if string(after) != string(before) {
+			t.Errorf("a refused pull must leave the record exactly as it was;\nbefore:\n%s\nafter:\n%s", before, after)
+		}
+	})
+
+	t.Run("restoring_the_recorded_version_goes_green", func(t *testing.T) {
+		restore(t)
+		if err := pull(t, pullConfig{}); err != nil {
+			t.Fatalf("the restored record must pull cleanly, or the halt above is unattributable; got %v", err)
+		}
+	})
+
+	t.Run("a_moved_recorded_digest_halts_the_pull", func(t *testing.T) {
+		rerecordVerdictIdentity(t, releasePath, published.Coordinate, "1.0.0", bogusDigest)
+
+		err := pull(t, pullConfig{})
+		if !errors.Is(err, errVerdictPluginIdentityChanged) {
+			t.Fatalf("a recorded digest the resolution does not report must halt with the changed-identity condition; got %v", err)
+		}
+		for _, want := range []string{published.Coordinate, bogusDigest, published.WasmDigest} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the halt must name %q; got %v", want, err)
+			}
+		}
+	})
+
+	t.Run("verify_covers_the_record_and_halts_on_the_same_disagreement", func(t *testing.T) {
+		// The record still carries the bogus digest from the phase above, and a
+		// verify-only run writes nothing — so this proves the comparison sits above
+		// the verify-only return rather than inside the write path.
+		err := pull(t, pullConfig{Verify: true})
+		if !errors.Is(err, errVerdictPluginIdentityChanged) {
+			t.Fatalf("--verify must cover the record beside the lockfile it verifies; got %v", err)
+		}
+	})
+
+	t.Run("naming_the_plugin_in_an_upgrade_adopts_the_resolved_identity", func(t *testing.T) {
+		// The escape the halt above prints. It has to clear two gates that both used
+		// to refuse it: the targeted-upgrade target check, which sees no pin for a
+		// plugin recorded beside the lockfile rather than in it, and the comparison
+		// itself.
+		if err := pull(t, pullConfig{Upgrade: true, UpgradeTargets: []string{published.Coordinate}}); err != nil {
+			t.Fatalf("naming the plugin in a targeted upgrade must adopt the resolved identity; got %v", err)
+		}
+		adopted, held := trustRecordAt(t, releasePath).Find(published.Coordinate)
+		if !held {
+			t.Fatalf("the upgrade dropped the record for %s", published.Coordinate)
+		}
+		if adopted.Digest != published.WasmDigest || adopted.ResolvedVersion != "1.0.0" {
+			t.Errorf("adopted identity = %s/%s; want the resolved 1.0.0/%s — an upgrade that halts nothing and adopts nothing is inert",
+				adopted.ResolvedVersion, adopted.Digest, published.WasmDigest)
+		}
+		if err := pull(t, pullConfig{}); err != nil {
+			t.Fatalf("an ordinary pull after the adoption must go green; got %v", err)
+		}
+	})
+
+	t.Run("an_upgrade_naming_nothing_the_run_resolves_still_halts", func(t *testing.T) {
+		// The existing refusal is preserved: widening the accepted targets to the
+		// configured verdict attachments must not turn a mistyped name into a silent
+		// no-op.
+		err := pull(t, pullConfig{Upgrade: true, UpgradeTargets: []string{"linter/absent-probe"}})
+		if err == nil {
+			t.Fatal("a target naming neither a pin nor a configured attachment must halt")
+		}
+		if !strings.Contains(err.Error(), "is not pinned in the lockfile") {
+			t.Errorf("the halt must name the unmatched target's absence; got %v", err)
+		}
+		if errors.Is(err, errVerdictPluginIdentityChanged) {
+			t.Errorf("an unmatched target is not a changed identity; the two conditions must stay distinct: %v", err)
+		}
+	})
+}

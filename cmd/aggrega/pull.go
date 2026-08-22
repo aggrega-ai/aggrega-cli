@@ -65,7 +65,9 @@ Use --upgrade with no positional arguments to discard the existing lockfile and 
 every entity from current registry state, floating each dependency to the highest available
 version. Pass one or more entity URIs after --upgrade to upgrade only those: each named pin
 is dropped and re-resolved fresh while every other pin — and the recorded external inputs —
-is held unchanged. A URI given without --upgrade is a usage error.`,
+is held unchanged. A named target may also be a plugin the workspace attaches in a role that
+returns an accept-or-reject verdict; such a plugin carries no lockfile pin, and naming it
+adopts the identity it resolves to. A URI given without --upgrade is a usage error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.verify && opts.upgrade {
 				return fmt.Errorf("--verify and --upgrade are mutually exclusive")
@@ -119,8 +121,11 @@ type pullConfig struct {
 	// with Upgrade set is a full refresh (float every dependency); non-empty is a
 	// targeted upgrade — only the named pins are dropped and re-resolved, every
 	// other pin and the recorded external inputs are held. Each URI is matched by
-	// exact string against a lockfile pin key (the authored bare form, e.g.
-	// core/database, not a versioned form); a URI that matches no pin halts.
+	// exact string, in the authored bare form (e.g. core/database, not a versioned
+	// form), against a lockfile pin key OR against a configured attachment whose
+	// plugin carries no pin because its identity is recorded beside the lockfile
+	// instead; a URI matching neither halts. The second case reduces no pin — there
+	// is none to drop — and re-resolves the attachment it names.
 	UpgradeTargets    []string
 	Verify            bool
 	IncludePrerelease bool
@@ -419,8 +424,16 @@ func pullRun(cfg pullConfig) error {
 	// record written at the end, which has to know whether this run re-resolves a
 	// given attachment. A second composite literal would be a second answer to
 	// "what kind of pull is this", and the two could then disagree.
+	//
+	// Not every identity a pull re-resolves is pinned. A plugin attached in a role
+	// that only returns an accept-or-reject verdict shapes no rendered output, so its
+	// identity is recorded beside the lockfile rather than pinned in it — and a
+	// named target checked against the pin set alone would be refused before the run
+	// could reach the record it governs. The attachments the workspace configures are
+	// therefore handed in as targets the decision accepts without a pin behind them.
 	pinMode := catalog.PinReuseMode{Upgrade: cfg.Upgrade, UpgradeTargets: cfg.UpgradeTargets, VerifyOnly: cfg.Verify}
 	pinReuse, err := catalog.PinReuseFromLockfile(lockfilePath, cfg.ReleasePath, pinMode,
+		verdictAttachmentUpgradeTargets(wsCfg),
 		func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) })
 	if err != nil {
 		return err
@@ -550,6 +563,15 @@ func pullRun(cfg pullConfig) error {
 	// writes nothing at all.
 	verdictResolutions, err := cacheVerdictSocketPlugins(context.Background(), wsCfg, lookup, lazyView, workspaceRoot, cacheDir, remoteTargetForWith(verdictHTTPClient), cfg.DiagOut)
 	if err != nil {
+		return err
+	}
+	// Hold each resolved identity to the one recorded as trusted for it. This sits
+	// ABOVE the verify-only return below on purpose: comparing needs no write, so
+	// the mode that exists to report whether the committed files still describe
+	// what resolves today covers the record as well as the lockfile. It also sits
+	// as early as the identities exist, so a disagreement stops the run before it
+	// does further work on a resolution it is not going to accept.
+	if err := holdVerdictPluginsToTheirRecord(cfg.ReleasePath, verdictResolutions, pinMode); err != nil {
 		return err
 	}
 	// Re-derive each plugin's host functions from the freshly-cached, digest-
@@ -1086,7 +1108,7 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 		if entRes.NotFound {
 			continue
 		}
-		bare, version, _ := strings.Cut(ref.URI, ":")
+		bare, version := splitAttachmentRef(ref.URI)
 		if version == "" {
 			version = entRes.ResolvedVersion
 		}

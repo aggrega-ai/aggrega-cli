@@ -50,13 +50,25 @@ func priorPinFixture(t *testing.T) string {
 //
 // DELIBERATE NEAR-DUPLICATE — do not "unify" it with PinReuseFromLockfile. A
 // cross-check that delegates to the implementation it checks proves only that a
-// function equals itself, so the branch structure, the pin reduction and both
-// halt messages are spelled out here on purpose. It does share
+// function equals itself, so the branch structure, the pin reduction, the
+// accept-an-unpinned-target arm and both halt messages are spelled out here on
+// purpose — including the membership test over the vouched-for targets, which is
+// written longhand rather than through the standard-library helper the
+// implementation reaches for, so a wrong containment answer cannot be shared by
+// both sides. It does share
 // PinsFromLockfile, and that sharing is equally deliberate: the projection from
 // a lockfile to a pin set is settled mechanics with its own guard, while what is
 // under test here is the policy over it — which branch is taken, which pins
 // survive, and which halt fires.
-func inlineReuseDecision(lockfilePath, releasePath string, mode catalog.PinReuseMode) (*lockfile.Lockfile, *catalog.ReuseVerification, error) {
+func inlineReuseDecision(lockfilePath, releasePath string, mode catalog.PinReuseMode, unpinnedTargets []string) (*lockfile.Lockfile, *catalog.ReuseVerification, error) {
+	vouchedFor := func(target string) bool {
+		for _, t := range unpinnedTargets {
+			if t == target {
+				return true
+			}
+		}
+		return false
+	}
 	targeted := mode.Upgrade && len(mode.UpgradeTargets) > 0
 	fullRefresh := mode.Upgrade && !targeted
 
@@ -75,10 +87,13 @@ func inlineReuseDecision(lockfilePath, releasePath string, mode catalog.PinReuse
 			}
 			pins := catalog.PinsFromLockfile(prior)
 			for _, target := range mode.UpgradeTargets {
-				if _, ok := pins[target]; !ok {
-					return nil, nil, fmt.Errorf("entity %q is not pinned in the lockfile; nothing to upgrade", target)
+				_, pinned := pins[target]
+				if !pinned && !vouchedFor(target) {
+					return nil, nil, fmt.Errorf("%q is not pinned in the lockfile, and it is not a plugin whose identity is recorded beside the lockfile; nothing to upgrade", target)
 				}
-				delete(pins, target)
+				if pinned {
+					delete(pins, target)
+				}
 			}
 			reuse = &catalog.ReuseVerification{PriorPins: pins}
 		} else if prior != nil {
@@ -138,6 +153,7 @@ func TestPinReuseFromLockfile_ParityWithIndependentDerivation(t *testing.T) {
 	cases := []struct {
 		name            string
 		mode            catalog.PinReuseMode
+		unpinnedTargets []string
 		priorExists     bool
 		wantTargeted    bool
 		wantFullRefresh bool
@@ -194,7 +210,35 @@ func TestPinReuseFromLockfile_ParityWithIndependentDerivation(t *testing.T) {
 			priorExists:  true,
 			wantTargeted: true,
 			wantErr: func(string) string {
-				return `entity "core/absent" is not pinned in the lockfile; nothing to upgrade`
+				return `"core/absent" is not pinned in the lockfile, and it is not a plugin whose identity is recorded beside the lockfile; nothing to upgrade`
+			},
+		},
+		{
+			name:            "targeted upgrade of an unpinned target the caller vouches for is accepted and drops no pin",
+			mode:            catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{"governance/policy-probe"}},
+			unpinnedTargets: []string{"governance/policy-probe"},
+			priorExists:     true,
+			wantTargeted:    true,
+			wantPrior:       true,
+			wantPins:        []string{"core/DbSizing", "core/cache", "core/database", "core/database-recipe", "core/helm-renderer"},
+		},
+		{
+			name:            "targeted upgrade mixing a pinned target and a vouched-for one drops only the pinned one",
+			mode:            catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{"core/database-recipe", "governance/policy-probe"}},
+			unpinnedTargets: []string{"governance/policy-probe"},
+			priorExists:     true,
+			wantTargeted:    true,
+			wantPrior:       true,
+			wantPins:        []string{"core/DbSizing", "core/cache", "core/database", "core/helm-renderer"},
+		},
+		{
+			name:            "a vouched-for set that does not name the target still halts",
+			mode:            catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{"governance/absent-probe"}},
+			unpinnedTargets: []string{"governance/policy-probe"},
+			priorExists:     true,
+			wantTargeted:    true,
+			wantErr: func(string) string {
+				return `"governance/absent-probe" is not pinned in the lockfile, and it is not a plugin whose identity is recorded beside the lockfile; nothing to upgrade`
 			},
 		},
 		{
@@ -219,8 +263,8 @@ func TestPinReuseFromLockfile_ParityWithIndependentDerivation(t *testing.T) {
 				t.Errorf("FullRefresh() = %v; want %v", got, tc.wantFullRefresh)
 			}
 
-			got, gotErr := catalog.PinReuseFromLockfile(lockfilePath, releasePath, tc.mode, nil)
-			wantPrior, wantReuse, wantErr := inlineReuseDecision(lockfilePath, releasePath, tc.mode)
+			got, gotErr := catalog.PinReuseFromLockfile(lockfilePath, releasePath, tc.mode, tc.unpinnedTargets, nil)
+			wantPrior, wantReuse, wantErr := inlineReuseDecision(lockfilePath, releasePath, tc.mode, tc.unpinnedTargets)
 
 			// Halt parity: the lifted decision and the longhand derivation must
 			// refuse in the same cases with the same user-facing message.
@@ -301,7 +345,7 @@ func TestPinReuseFromLockfile_ParityWithIndependentDerivation(t *testing.T) {
 func TestPinReuseFromLockfile_ThreadsTheNoticeSink(t *testing.T) {
 	var notices []string
 	got, err := catalog.PinReuseFromLockfile(priorPinFixture(t), "release.yaml",
-		catalog.PinReuseMode{}, func(notice string) { notices = append(notices, notice) })
+		catalog.PinReuseMode{}, nil, func(notice string) { notices = append(notices, notice) })
 	if err != nil {
 		t.Fatalf("PinReuseFromLockfile: %v", err)
 	}
@@ -324,7 +368,7 @@ func TestPinReuseFromLockfile_UnreadablePriorIsAbsent(t *testing.T) {
 		t.Fatalf("seed unparsable lockfile: %v", err)
 	}
 
-	got, err := catalog.PinReuseFromLockfile(path, "release.yaml", catalog.PinReuseMode{}, nil)
+	got, err := catalog.PinReuseFromLockfile(path, "release.yaml", catalog.PinReuseMode{}, nil, nil)
 	if err != nil {
 		t.Fatalf("default pull over an unparsable prior lockfile: %v", err)
 	}
@@ -333,7 +377,7 @@ func TestPinReuseFromLockfile_UnreadablePriorIsAbsent(t *testing.T) {
 	}
 
 	_, err = catalog.PinReuseFromLockfile(path, "release.yaml",
-		catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{"core/database"}}, nil)
+		catalog.PinReuseMode{Upgrade: true, UpgradeTargets: []string{"core/database"}}, nil, nil)
 	if err == nil {
 		t.Fatal("targeted upgrade over an unparsable prior lockfile: want a halt; got nil")
 	}

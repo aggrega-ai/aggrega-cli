@@ -5,6 +5,7 @@ package catalog
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -62,8 +63,8 @@ type PinReuse struct {
 //     lockfile: with none there is no pin set to reduce, and it halts. Reducing
 //     that set is the whole mechanism — a URI dropped from the honored pins
 //     floats to its highest satisfying version while every URI still present is
-//     honored. A named target that is not pinned halts rather than silently
-//     upgrading nothing.
+//     honored. A named target that is neither pinned nor vouched for by the
+//     caller halts rather than silently upgrading nothing.
 //   - Otherwise, when a prior lockfile was read, every pin it records is honored.
 //     A bare upgrade reads no prior lockfile and so honors nothing: floating
 //     every pin and carrying forward neither the recorded deprecations nor the
@@ -73,10 +74,19 @@ type PinReuse struct {
 // warn receives the reuse notices the closure lookup emits when a cache slot has
 // drifted from its pin; a nil warn discards them.
 //
+// unpinnedTargets names identities a targeted upgrade may legitimately name even
+// though no pin exists for them, so naming one is accepted and reduces nothing.
+// Not everything a resolution re-resolves is pinned: an artifact whose identity is
+// recorded beside the lockfile rather than in it has no pin to drop, and a target
+// checked against the pin set alone would be refused before the run could reach
+// what it does govern. They arrive as plain strings, and this package stays
+// unaware of where they come from — the same division the pin maps draw, so the
+// composition has one shape rather than a second mechanism for each source.
+//
 // The lockfile is only ever read here, never written or removed: deciding what
 // to honor leaves the recorded pins exactly as they were, so a run that cannot
 // complete destroys nothing it never replaced.
-func PinReuseFromLockfile(lockfilePath, releasePath string, mode PinReuseMode, warn func(notice string)) (PinReuse, error) {
+func PinReuseFromLockfile(lockfilePath, releasePath string, mode PinReuseMode, unpinnedTargets []string, warn func(notice string)) (PinReuse, error) {
 	var reuse PinReuse
 	if !mode.FullRefresh() {
 		// A prior lockfile that cannot be read is treated as absent: a default pull
@@ -95,10 +105,17 @@ func PinReuseFromLockfile(lockfilePath, releasePath string, mode PinReuseMode, w
 		}
 		pins := PinsFromLockfile(reuse.Prior)
 		for _, target := range mode.UpgradeTargets {
-			if _, ok := pins[target]; !ok {
-				return PinReuse{}, fmt.Errorf("entity %q is not pinned in the lockfile; nothing to upgrade", target)
+			if _, ok := pins[target]; ok {
+				delete(pins, target)
+				continue
 			}
-			delete(pins, target)
+			// An unpinned target reduces nothing — there is no pin to drop — so it is
+			// accepted and left alone. What it does is reach the run: whatever governs
+			// that identity outside the lockfile sees the target named, which is the
+			// only way an unpinned identity can be re-resolved on purpose.
+			if !slices.Contains(unpinnedTargets, target) {
+				return PinReuse{}, fmt.Errorf("%q is not pinned in the lockfile, and it is not a plugin whose identity is recorded beside the lockfile; nothing to upgrade", target)
+			}
 		}
 		reuse.Verification = &ReuseVerification{PriorPins: pins, Warn: warn}
 		return reuse, nil
