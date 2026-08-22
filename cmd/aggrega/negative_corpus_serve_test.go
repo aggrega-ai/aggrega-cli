@@ -461,8 +461,8 @@ spec:
           infra:
             replicas: 1
 `
-	// Two Release files → step-2 ambiguous → no anchor → validating the
-	// bad one is a non-anchoring-file validate.
+	// Two Release files → the single-Release heuristic is ambiguous → no
+	// anchor → validating the bad one is a non-anchoring-file validate.
 	scan := serveValidateScan(t, map[string]string{
 		"release-a.yaml": otherRelease,
 		"release-b.yaml": badRelease,

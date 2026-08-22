@@ -270,8 +270,8 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		// Release: squiggle it on its own file via the same publish
 		// channel lockfile-drift uses, so the Operator authoring a broken
 		// Release sees the error there rather than only in stderr. Covers
-		// all three cascade load steps (authoring_release / single-Release
-		// heuristic / marker target).
+		// all three cascade load steps (authoring_release, marker target,
+		// single-Release heuristic).
 		failed := s.publishCascadeFailureDiagnostics(ctx)
 		// Three sub-cases:
 		//   (a) cascade exhausted but Release files exist, OR a found-but-

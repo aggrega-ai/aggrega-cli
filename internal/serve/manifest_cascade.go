@@ -19,7 +19,7 @@ import (
 )
 
 // markerFilePath is the per-operator marker the multi-Manifest
-// cascade reads at Step 3. The file lives under the workspace's
+// cascade reads at Step 2. The file lives under the workspace's
 // `.aggrega/` scratch directory and is conventionally gitignored —
 // operators choose their own active Release without committing the
 // choice to the workspace-wide config.
@@ -50,29 +50,32 @@ type cascadeAttempt struct {
 	AuthoringReleasePath string
 
 	// ReleaseCandidatesFound is the number of Release YAML files
-	// discovered by the Step 2 workspace walk.
+	// discovered by the Step 3 workspace walk.
 	ReleaseCandidatesFound int
 
-	// SingleReleaseLoadError is non-nil when Step 2's single candidate
-	// was found but failed to load. Symmetric with the Step 1/3 load-
-	// error fields; before this capture Step 2's failure was dropped to
+	// SingleReleaseLoadError is non-nil when Step 3's single candidate
+	// was found but failed to load. Symmetric with the Step 1/2 load-
+	// error fields; before this capture Step 3's failure was dropped to
 	// stderr only, leaving the common one-Release workspace's
 	// found-but-invalid case with no structured record.
 	SingleReleaseLoadError error
 
-	// SingleReleaseCandidatePath is the path of Step 2's single
+	// SingleReleaseCandidatePath is the path of Step 3's single
 	// candidate, kept so its load failure can be squiggled on the file.
 	SingleReleaseCandidatePath string
 
 	// MarkerFilePresent records whether the .aggrega/active-release
-	// marker existed (Step 3 was attempted).
+	// marker existed. It comes from a probe that runs regardless of
+	// which step resolves, so the log records what the workspace
+	// declared rather than only what the winning step happened to read.
 	MarkerFilePresent bool
 
 	// MarkerFileTarget is the path the marker pointed at (when
-	// present), for use in diagnostic messages.
+	// present), for use in diagnostic messages. Recorded alongside
+	// MarkerFilePresent, on the same probe.
 	MarkerFileTarget string
 
-	// MarkerFileLoadError is non-nil when Step 3 was attempted but
+	// MarkerFileLoadError is non-nil when Step 2 was attempted but
 	// the marker's target file failed to load.
 	MarkerFileLoadError error
 
@@ -99,11 +102,11 @@ func (a cascadeAttempt) failedReleaseCandidates() []failedReleaseCandidate {
 	if a.AuthoringReleaseLoadError != nil && a.AuthoringReleasePath != "" {
 		out = append(out, failedReleaseCandidate{Path: a.AuthoringReleasePath, Err: a.AuthoringReleaseLoadError})
 	}
-	if a.SingleReleaseLoadError != nil && a.SingleReleaseCandidatePath != "" {
-		out = append(out, failedReleaseCandidate{Path: a.SingleReleaseCandidatePath, Err: a.SingleReleaseLoadError})
-	}
 	if a.MarkerFileLoadError != nil && a.MarkerResolvedPath != "" {
 		out = append(out, failedReleaseCandidate{Path: a.MarkerResolvedPath, Err: a.MarkerFileLoadError})
+	}
+	if a.SingleReleaseLoadError != nil && a.SingleReleaseCandidatePath != "" {
+		out = append(out, failedReleaseCandidate{Path: a.SingleReleaseCandidatePath, Err: a.SingleReleaseLoadError})
 	}
 	return out
 }
@@ -113,19 +116,36 @@ func (a cascadeAttempt) failedReleaseCandidates() []failedReleaseCandidate {
 // cascade exhausts into Step 4) and the cascadeAttempt log
 // describing which steps were tried.
 //
-// Cascade-internal load errors (Step 1 / Step 3 file misses) surface
-// as stderr warnings AND record into the cascadeAttempt log; the
-// cascade itself does not return an error. A misconfigured
+// Cascade-internal load errors — a configured authoring_release, a
+// marker target, or a lone walked candidate that fails to load —
+// surface as stderr warnings AND record into the cascadeAttempt log;
+// the cascade itself does not return an error. A misconfigured
 // authoring_release: or stale marker file is non-fatal — the daemon
 // proceeds with the next step rather than refusing to start.
 //
-// Step ordering: Step 1 (config) → Step 2 (single Release in
-// workspace) → Step 3 (marker file) → Step 4 (fallback nil). A
-// workspace with exactly one Release file and a marker pointing at
-// a different file wins Step 2 — the marker is consulted only when
-// Step 2's "exactly one" condition does not hold.
+// Step ordering: Step 1 (build.authoring_release config) → Step 2
+// (.aggrega/active-release marker) → Step 3 (exactly one Release in
+// the workspace) → Step 4 (fallback nil). The operator's explicit
+// marker therefore outranks the single-Release inference: a workspace
+// holding exactly one Release file and a marker naming a different
+// file resolves the marker's Release. The walk runs only when no
+// marker selected a loadable Release, so a marker whose target cannot
+// be loaded falls through to Step 3 rather than to the fallback.
+//
+// The marker's presence and target are recorded before Step 1 runs,
+// so the attempt log states what the workspace declared even when an
+// earlier step wins.
 func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stderr io.Writer) (*types.Release, string, cascadeAttempt) {
 	var attempt cascadeAttempt
+
+	// The marker is probed ahead of Step 1 so the attempt log carries
+	// the operator's declaration regardless of which step resolves. A
+	// present-but-empty marker records presence with no target; an
+	// unreadable marker reads as absent.
+	if data, err := os.ReadFile(filepath.Join(workspaceRoot, markerFilePath)); err == nil {
+		attempt.MarkerFilePresent = true
+		attempt.MarkerFileTarget = strings.TrimSpace(string(data))
+	}
 
 	// Step 1: config field
 	if wsCfg.Build.AuthoringRelease != "" {
@@ -141,37 +161,31 @@ func runManifestCascade(workspaceRoot string, wsCfg workspaceconfig.Config, stde
 		fmt.Fprintf(stderr, "  cascade: step 1 authoring_release=%q failed to load: %v\n", path, err)
 	}
 
-	// Step 2: workspace-recursive Release walk; exactly-one wins
+	// Step 2: the operator's marker file
+	if attempt.MarkerFilePresent && attempt.MarkerFileTarget != "" {
+		resolved := resolveCascadePath(workspaceRoot, attempt.MarkerFileTarget)
+		rel, err := resolver.LoadRelease(resolved)
+		if err == nil {
+			attempt.ResolvedStep = 2
+			return rel, resolved, attempt
+		}
+		attempt.MarkerFileLoadError = err
+		attempt.MarkerResolvedPath = resolved
+		fmt.Fprintf(stderr, "  cascade: step 2 marker target %q failed to load: %v\n", resolved, err)
+	}
+
+	// Step 3: workspace-recursive Release walk; exactly-one wins
 	candidates := walkForReleases(workspaceRoot)
 	attempt.ReleaseCandidatesFound = len(candidates)
 	if len(candidates) == 1 {
 		rel, err := resolver.LoadRelease(candidates[0])
 		if err == nil {
-			attempt.ResolvedStep = 2
+			attempt.ResolvedStep = 3
 			return rel, candidates[0], attempt
 		}
 		attempt.SingleReleaseLoadError = err
 		attempt.SingleReleaseCandidatePath = candidates[0]
-		fmt.Fprintf(stderr, "  cascade: step 2 single Release %q failed to load: %v\n", candidates[0], err)
-	}
-
-	// Step 3: marker file
-	markerAbsPath := filepath.Join(workspaceRoot, markerFilePath)
-	if data, err := os.ReadFile(markerAbsPath); err == nil {
-		attempt.MarkerFilePresent = true
-		target := strings.TrimSpace(string(data))
-		attempt.MarkerFileTarget = target
-		if target != "" {
-			resolved := resolveCascadePath(workspaceRoot, target)
-			rel, lerr := resolver.LoadRelease(resolved)
-			if lerr == nil {
-				attempt.ResolvedStep = 3
-				return rel, resolved, attempt
-			}
-			attempt.MarkerFileLoadError = lerr
-			attempt.MarkerResolvedPath = resolved
-			fmt.Fprintf(stderr, "  cascade: step 3 marker target %q failed to load: %v\n", resolved, lerr)
-		}
+		fmt.Fprintf(stderr, "  cascade: step 3 single Release %q failed to load: %v\n", candidates[0], err)
 	}
 
 	// Step 4: fallback — Release path stays empty alongside the nil
@@ -194,7 +208,7 @@ func resolveCascadePath(workspaceRoot, p string) string {
 // YAML file under workspaceRoot. Header-only YAML parse; malformed
 // files and non-Release kinds are silently skipped. The canonical
 // ignore-set (.git, .aggrega, node_modules, vendor, dist, .trace,
-// hidden dirs) is excluded — Step 2 walks the entire workspace
+// hidden dirs) is excluded — Step 3 walks the entire workspace
 // root, not a configured subdirectory, so filtering vendored copies
 // and build outputs is load-bearing for correctness.
 func walkForReleases(workspaceRoot string) []string {
@@ -278,9 +292,6 @@ func (s *Server) cascadeDiagnosticMessage() string {
 	}
 
 	// Step 2 description
-	parts = append(parts, fmt.Sprintf("workspace contains %d Release file(s)", a.ReleaseCandidatesFound))
-
-	// Step 3 description
 	switch {
 	case !a.MarkerFilePresent:
 		parts = append(parts, "no .aggrega/active-release marker")
@@ -289,6 +300,9 @@ func (s *Server) cascadeDiagnosticMessage() string {
 	case a.MarkerFileLoadError != nil:
 		parts = append(parts, fmt.Sprintf(".aggrega/active-release marker target %q failed to load (%v)", a.MarkerFileTarget, a.MarkerFileLoadError))
 	}
+
+	// Step 3 description
+	parts = append(parts, fmt.Sprintf("workspace contains %d Release file(s)", a.ReleaseCandidatesFound))
 
 	return strings.Join(parts, "; ")
 }
@@ -322,30 +336,30 @@ func (s *Server) cascadeAttemptFullTrace() string {
 		lines = append(lines, "  step 1 (build.authoring_release): configured and loaded")
 	}
 
-	// Step 2 — single-Release heuristic
-	switch a.ReleaseCandidatesFound {
-	case 0:
-		lines = append(lines, "  step 2 (single-Release heuristic): zero Release files found in workspace")
-	case 1:
-		if a.SingleReleaseLoadError != nil {
-			lines = append(lines, fmt.Sprintf("  step 2 (single-Release heuristic): one Release file found at %s but it failed to load — %v", a.SingleReleaseCandidatePath, a.SingleReleaseLoadError))
-		} else {
-			lines = append(lines, "  step 2 (single-Release heuristic): one Release file found — would have resolved here if step 1 did not")
-		}
-	default:
-		lines = append(lines, fmt.Sprintf("  step 2 (single-Release heuristic): ambiguous — %d Release files found, no marker selected one", a.ReleaseCandidatesFound))
-	}
-
-	// Step 3 — .aggrega/active-release marker
+	// Step 2 — .aggrega/active-release marker
 	switch {
 	case !a.MarkerFilePresent:
-		lines = append(lines, "  step 3 (.aggrega/active-release marker): not present")
+		lines = append(lines, "  step 2 (.aggrega/active-release marker): not present")
 	case a.MarkerFileTarget == "":
-		lines = append(lines, "  step 3 (.aggrega/active-release marker): present but empty")
+		lines = append(lines, "  step 2 (.aggrega/active-release marker): present but empty")
 	case a.MarkerFileLoadError != nil:
-		lines = append(lines, fmt.Sprintf("  step 3 (.aggrega/active-release marker): target %q failed to load — %v", a.MarkerFileTarget, a.MarkerFileLoadError))
+		lines = append(lines, fmt.Sprintf("  step 2 (.aggrega/active-release marker): target %q failed to load — %v", a.MarkerFileTarget, a.MarkerFileLoadError))
 	default:
-		lines = append(lines, fmt.Sprintf("  step 3 (.aggrega/active-release marker): target %q resolved", a.MarkerFileTarget))
+		lines = append(lines, fmt.Sprintf("  step 2 (.aggrega/active-release marker): target %q resolved", a.MarkerFileTarget))
+	}
+
+	// Step 3 — single-Release heuristic
+	switch a.ReleaseCandidatesFound {
+	case 0:
+		lines = append(lines, "  step 3 (single-Release heuristic): zero Release files found in workspace")
+	case 1:
+		if a.SingleReleaseLoadError != nil {
+			lines = append(lines, fmt.Sprintf("  step 3 (single-Release heuristic): one Release file found at %s but it failed to load — %v", a.SingleReleaseCandidatePath, a.SingleReleaseLoadError))
+		} else {
+			lines = append(lines, "  step 3 (single-Release heuristic): one Release file found")
+		}
+	default:
+		lines = append(lines, fmt.Sprintf("  step 3 (single-Release heuristic): ambiguous — %d Release files found, no marker selected one", a.ReleaseCandidatesFound))
 	}
 
 	// Step 4 — Aggregate-only fallback (always exhausted at this point;

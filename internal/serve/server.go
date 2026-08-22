@@ -453,8 +453,8 @@ type Server struct {
 	// resolved by the four-step disambiguation cascade on the first
 	// request that needs Release context (see ensureCascade). nil when
 	// the cascade exhausted into Step 4 fallback (no authoring_release
-	// config, not exactly one Release file, no .aggrega/active-release
-	// marker). Operations needing Release context consult cascadeAttempt
+	// config, no .aggrega/active-release marker, not exactly one Release
+	// file). Operations needing Release context consult cascadeAttempt
 	// + cascadeDiagnosticMessage to construct error-envelope text when
 	// activeRelease is nil.
 	//

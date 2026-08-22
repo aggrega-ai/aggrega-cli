@@ -182,8 +182,8 @@ func newLazyCascadeServer(t *testing.T, workspaceRoot string, in io.Reader, out 
 // disambiguation cascade (so a large workspace cannot delay the
 // handshake), while the first request that needs Release context
 // (aggrega/validate) triggers it on demand. The workspace holds exactly
-// one Release, which the cascade resolves at Step 2 — so a fired cascade
-// is observable as a non-nil activeRelease.
+// one Release and no marker, which the cascade resolves at Step 3 — so a
+// fired cascade is observable as a non-nil activeRelease.
 func TestInitializeDoesNotTriggerCascadeButValidateDoes(t *testing.T) {
 	ws := t.TempDir()
 	writeRelease(t, ws, "release.yaml", "release/only")
@@ -212,8 +212,8 @@ func TestInitializeDoesNotTriggerCascadeButValidateDoes(t *testing.T) {
 	if srv.activeReleasePath == "" {
 		t.Errorf("cascade fired but activeReleasePath is empty")
 	}
-	if srv.cascadeAttempt.ResolvedStep != 2 {
-		t.Errorf("cascade ResolvedStep = %d; want 2 (single-Release heuristic)", srv.cascadeAttempt.ResolvedStep)
+	if srv.cascadeAttempt.ResolvedStep != 3 {
+		t.Errorf("cascade ResolvedStep = %d; want 3 (single-Release heuristic)", srv.cascadeAttempt.ResolvedStep)
 	}
 }
 
