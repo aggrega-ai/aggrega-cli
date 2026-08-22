@@ -42,6 +42,50 @@
 //! `data` document, so a policy reads an operator-supplied threshold as
 //! `data.<key>`.
 //!
+//! # Which rule syntax a policy is written in
+//!
+//! Rego is written in two rule syntaxes, and both are accepted, so a policy set
+//! assembled before the current syntax existed evaluates alongside one written
+//! today. Each file chooses for itself, and mixing them within one attachment is
+//! supported.
+//!
+//! A policy written in the current syntax says so with `import rego.v1`, on its
+//! own line below the package declaration:
+//!
+//! ```rego
+//! package example
+//!
+//! import rego.v1
+//!
+//! deny contains msg if {
+//!     input.graph.spec.nodes["web"].resolved_version == "latest"
+//!     msg := "pin a version rather than tracking the latest one"
+//! }
+//! ```
+//!
+//! A policy written in the older syntax declares nothing, because it is
+//! recognised by not parsing as the current one:
+//!
+//! ```rego
+//! package example
+//!
+//! deny[msg] {
+//!     input.graph.spec.nodes["web"].resolved_version == "latest"
+//!     msg := "pin a version rather than tracking the latest one"
+//! }
+//! ```
+//!
+//! A file that parses as the current syntax while omitting the import is
+//! refused, by name, with the line to add. It is refused rather than evaluated
+//! because its rules parse under either syntax and the two can reach opposite
+//! decisions from the same text: a rule body that never holds contributes no
+//! decision under the current syntax and contributes one under the older syntax,
+//! so a gate that should pass could deny and one that should deny could pass.
+//! Nothing about the file's text is guessed at — the engine decides which syntax
+//! can read it, and the import is what the file itself declares — so the one
+//! file this costs is one with no rule bodies at all, which means the same
+//! either way and needs the same one-line addition.
+//!
 //! # Attaching a whole policy set as one archive
 //!
 //! A policy set can be attached file by file, or as a single archive carrying its
@@ -293,6 +337,8 @@ mod tests {
     const GRAPH_POLICY: &str = r#"
 package proof
 
+import rego.v1
+
 deny contains msg if {
     count(input.graph.spec.nodes) > 1
     msg := "more than one node"
@@ -301,6 +347,8 @@ deny contains msg if {
 
     const ARTIFACT_POLICY: &str = r#"
 package proof
+
+import rego.v1
 
 deny contains msg if {
     some artifact in input.artifacts
@@ -416,7 +464,8 @@ deny contains msg if {
 
     #[test]
     fn an_operator_translation_applies_at_both_facets() {
-        let policy = "package proof\n\nadvisory contains msg if { msg := \"noted\" }\n";
+        let policy =
+            "package proof\n\nimport rego.v1\n\nadvisory contains msg if { msg := \"noted\" }\n";
         let settings = serde_json::json!({
             "translation": [{ "key": "advisory", "severity": "info" }]
         });
@@ -516,6 +565,8 @@ deny contains msg if {
         const POLICY: &str = r#"
 package tagging
 
+import rego.v1
+
 labels contains {"node": id, "key": "compliance.example.com/tier", "value": "gold"} if {
     some id, node in input.graph.nodes
     node.labels["component.aggrega.ai/type"] == "server"
@@ -542,6 +593,8 @@ labels contains {"node": id, "key": "compliance.example.com/tier", "value": "gol
         const POLICY: &str = r#"
 package tagging
 
+import rego.v1
+
 labels contains {"node": id, "key": "k", "value": "v"} if {
     some id, node in input.graph.nodes
     node.labels["component.aggrega.ai/type"] == "resource"
@@ -556,6 +609,8 @@ labels contains {"node": id, "key": "k", "value": "v"} if {
     fn the_label_role_reads_the_deployment_environment() {
         const POLICY: &str = r#"
 package tagging
+
+import rego.v1
 
 labels contains {"node": id, "key": "env", "value": input.compilation_context.environment} if {
     some id, _ in input.graph.nodes
@@ -574,6 +629,8 @@ labels contains {"node": id, "key": "env", "value": input.compilation_context.en
         // for nothing, which would let a build proceed unshaped and unremarked.
         const POLICY: &str = r#"
 package tagging
+
+import rego.v1
 
 labels contains {"node": id, "key": "k", "value": "v"} if {
     some id, _ in input.graph.nodes
@@ -594,6 +651,8 @@ labels contains {"node": id, "key": "k", "value": "v"} if {
     fn the_annotation_role_reports_the_annotations_a_policy_decided() {
         const POLICY: &str = r#"
 package tagging
+
+import rego.v1
 
 annotations contains {
     "boundary_path": target.boundary_path,
@@ -629,6 +688,8 @@ annotations contains {
         const POLICY: &str = r#"
 package tagging
 
+import rego.v1
+
 annotations contains {
     "boundary_path": target.boundary_path,
     "component_name": target.component_name,
@@ -649,6 +710,8 @@ annotations contains {
         const POLICY: &str = r#"
 package tagging
 
+import rego.v1
+
 annotations contains {
     "boundary_path": target.boundary_path,
     "component_name": target.component_name,
@@ -668,6 +731,8 @@ annotations contains {
     fn an_archive_evaluates_identically_to_the_same_files_attached_separately() {
         const POLICY: &str = r#"
 package proof
+
+import rego.v1
 
 deny contains msg if {
     count(input.graph.spec.nodes) > data.limits.max_nodes
@@ -708,6 +773,8 @@ deny contains msg if {
     fn an_archive_serves_the_label_role_too() {
         const POLICY: &str = r#"
 package tagging
+
+import rego.v1
 
 labels contains {"node": id, "key": "tier", "value": data.tier} if {
     some id, _ in input.graph.nodes
@@ -767,10 +834,14 @@ labels contains {"node": id, "key": "tier", "value": data.tier} if {
         const LABEL_POLICY: &str = r#"
 package tagging
 
+import rego.v1
+
 labels contains {"node": id, "key": "a/b", "value": "1"} if { some id, _ in input.graph.nodes }
 "#;
         const ANNOTATION_POLICY: &str = r#"
 package tagging
+
+import rego.v1
 
 annotations contains {
     "boundary_path": target.boundary_path,

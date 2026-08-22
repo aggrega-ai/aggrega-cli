@@ -153,6 +153,8 @@ func TestRegoEmbedded_IRVerdictSeverityRouting(t *testing.T) {
 		root, catalogDir := regoWorkspace(t)
 		writeFixture(t, filepath.Join(root, "policy.rego"), `package proof
 
+import rego.v1
+
 deny contains msg if {
 	count(input.graph.spec.nodes) > 0
 	msg := "the graph declares a node"
@@ -183,6 +185,8 @@ deny contains msg if {
 			root, catalogDir := regoWorkspace(t)
 			writeFixture(t, filepath.Join(root, "policy.rego"), `package proof
 
+import rego.v1
+
 `+arm.collection+` contains msg if {
 	count(input.graph.spec.nodes) > 0
 	msg := "the graph declares a node"
@@ -203,6 +207,124 @@ deny contains msg if {
 	}
 }
 
+// TestRegoEmbedded_BothRuleSyntaxesEvaluate proves the dialect contract through
+// the real dispatch rather than in-guest: a policy in the older bracketed-head
+// rule syntax evaluates, a policy in the current syntax that declares
+// `import rego.v1` evaluates, the two work side by side in one attachment, and a
+// policy in the current syntax that omits the import is refused by name.
+//
+// The refusal arm is the load-bearing one, and its fixture is chosen so that it
+// cannot pass on an engine fault. Its rule body never holds and its message is a
+// literal, so under the older syntax the same text reaches a halting decision
+// while under the current syntax it reaches none — quietly, with nothing for the
+// engine to complain about. Without the refusal this build would stop on a
+// verdict the policy did not express.
+func TestRegoEmbedded_BothRuleSyntaxesEvaluate(t *testing.T) {
+	nonInteractive(t)
+
+	// A body that never holds, collecting a literal message. Reaches no
+	// decision in the current rule syntax and one decision in the older one.
+	const invertingBody = "deny contains \"the verdict inverted\" if {\n\t1 > 2\n}\n"
+
+	t.Run("the older rule syntax evaluates", func(t *testing.T) {
+		root, catalogDir := regoWorkspace(t)
+		writeFixture(t, filepath.Join(root, "policy.rego"), `package proof
+
+deny[msg] {
+	count(input.graph.spec.nodes) > 0
+	msg := "the older rule syntax reached a decision"
+}
+`)
+		err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+			[]string{catalogDir, standardCatalogDir(t)},
+			regoAttachment("ir-verdict", "policy.rego", ""), "out")
+		if err == nil {
+			t.Fatal("a policy in the older rule syntax must reach its decision")
+		}
+		if !errors.Is(err, analyzer.ErrPolicyViolation()) {
+			t.Fatalf("want ErrPolicyViolation, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "the older rule syntax reached a decision") {
+			t.Fatalf("the halt must carry the policy's own message, got: %v", err)
+		}
+	})
+
+	t.Run("the current rule syntax is read as itself when declared", func(t *testing.T) {
+		root, catalogDir := regoWorkspace(t)
+		writeFixture(t, filepath.Join(root, "policy.rego"),
+			"package proof\n\nimport rego.v1\n\n"+invertingBody)
+		if err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+			[]string{catalogDir, standardCatalogDir(t)},
+			regoAttachment("ir-verdict", "policy.rego", ""), "out-declared"); err != nil {
+			t.Fatalf("a body that never holds must reach no decision: %v", err)
+		}
+		if found, tree := distTreeContains(t, filepath.Join(root, "out-declared"), "NODE_LABELS"); !found {
+			t.Fatalf("the build produced no rendered output:\n%s", tree)
+		}
+	})
+
+	t.Run("a policy that does not say which rule syntax it uses is refused", func(t *testing.T) {
+		root, catalogDir := regoWorkspace(t)
+		writeFixture(t, filepath.Join(root, "policy.rego"), "package proof\n\n"+invertingBody)
+		err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+			[]string{catalogDir, standardCatalogDir(t)},
+			regoAttachment("ir-verdict", "policy.rego", ""), "out-undeclared")
+		if err == nil {
+			t.Fatal("a policy that parses as either rule syntax must be refused, not evaluated")
+		}
+		if strings.Contains(err.Error(), "the verdict inverted") {
+			t.Fatalf("the build halted on the inverted verdict rather than refusing the policy: %v", err)
+		}
+		if !strings.Contains(err.Error(), "policy.rego") {
+			t.Fatalf("the refusal must name the module, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "import rego.v1") {
+			t.Fatalf("the refusal must say what to add, got: %v", err)
+		}
+	})
+
+	t.Run("the two rule syntaxes evaluate side by side", func(t *testing.T) {
+		root, catalogDir := regoWorkspace(t)
+		writeFixture(t, filepath.Join(root, "older.rego"), `package older
+
+deny[msg] {
+	count(input.graph.spec.nodes) > 0
+	msg := "from the older rule syntax"
+}
+`)
+		writeFixture(t, filepath.Join(root, "current.rego"), `package current
+
+import rego.v1
+
+deny contains msg if {
+	count(input.graph.spec.nodes) > 0
+	msg := "from the current rule syntax"
+}
+`)
+		config := `workspace: {}
+offline: true
+plugins:
+  governance:
+    - uri: ` + regoGovernanceURI + `:1.0.0
+      role: ir-verdict
+      with:
+        sources:
+          - current.rego
+          - older.rego
+`
+		err := pullThen(t, root, filepath.Join(root, "release.yaml"),
+			[]string{catalogDir, standardCatalogDir(t)}, config, "out-mixed")
+		if err == nil {
+			t.Fatal("both modules must reach their decisions")
+		}
+		for _, want := range []string{"from the older rule syntax", "from the current rule syntax"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("one attachment must evaluate both rule syntaxes; missing %q in: %v", want, err)
+			}
+		}
+	})
+}
+
 // TestRegoEmbedded_RenderVerdictHalts proves the guest attached over the
 // rendered output reads the rendered files and halts the build on a decision
 // about them. The negative control is the same policy asserting on content the
@@ -218,6 +340,8 @@ func TestRegoEmbedded_RenderVerdictHalts(t *testing.T) {
 	// Negative control: the policy looks for an image the recipe never renders.
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package proof
 
+import rego.v1
+
 deny contains msg if {
 	some artifact in input.artifacts
 	contains(artifact.content, "image-that-is-never-rendered")
@@ -232,6 +356,8 @@ deny contains msg if {
 	// Positive: the same shape of policy, matching the image the recipe does
 	// render, so the halt is attributable to the artifact's real content.
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package proof
+
+import rego.v1
 
 deny contains msg if {
 	some artifact in input.artifacts
@@ -260,6 +386,8 @@ func TestRegoEmbedded_RenderVerdictReadsStructuredDocuments(t *testing.T) {
 
 	root, catalogDir := regoWorkspace(t)
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package proof
+
+import rego.v1
 
 deny contains msg if {
 	some artifact in input.artifacts
@@ -291,6 +419,8 @@ func TestRegoEmbedded_LabelTransformApplies(t *testing.T) {
 	root, catalogDir := regoWorkspace(t)
 	releasePath := filepath.Join(root, "release.yaml")
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package tagging
+
+import rego.v1
 
 labels contains {"node": id, "key": "compliance.example.com/tier", "value": "gold"} if {
 	some id, node in input.graph.nodes
@@ -335,6 +465,8 @@ func TestRegoEmbedded_LabelTransformRemovesALabel(t *testing.T) {
 
 	root, catalogDir := regoWorkspace(t)
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package tagging
+
+import rego.v1
 
 labels contains {"node": id, "key": "component.aggrega.ai/type", "op": "remove"} if {
 	some id, node in input.graph.nodes
@@ -452,6 +584,8 @@ spec:
 	// Positive: the policy decides the label the selector requires.
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package tagging
 
+import rego.v1
+
 labels contains {"node": id, "key": "role.aggrega.ai/kind", "value": "cache"} if {
 	some id, node in input.graph.nodes
 	node.labels["component.aggrega.ai/type"] == "server"
@@ -486,12 +620,16 @@ func TestRegoEmbedded_LabelTransformConfinementIsEnforced(t *testing.T) {
 			name: "a decision naming a node the build does not have",
 			policy: `package tagging
 
+import rego.v1
+
 labels contains {"node": "no-such-node", "key": "tier", "value": "gold"} if { true }
 `,
 		},
 		{
 			name: "a decision dropping a label the node does not carry",
 			policy: `package tagging
+
+import rego.v1
 
 labels contains {"node": id, "key": "never.example.com/set", "op": "remove"} if {
 	some id, _ in input.graph.nodes
@@ -527,6 +665,8 @@ func TestRegoEmbedded_LabelTransformCannotReachBeyondLabels(t *testing.T) {
 	// The decision names a key shaped like a path out of the label set. It
 	// cannot escape: the name is carried as one label name.
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package tagging
+
+import rego.v1
 
 labels contains {"node": id, "key": "../resolved_version", "value": "9.9.9"} if {
 	some id, _ in input.graph.nodes
@@ -652,6 +792,8 @@ func TestRegoEmbedded_AnnotationTransformExpandsIntoAFeature(t *testing.T) {
 	// reads from its own input rather than from a hardcoded list.
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package tagging
 
+import rego.v1
+
 annotations contains {
 	"boundary_path": target.boundary_path,
 	"component_name": target.component_name,
@@ -679,6 +821,8 @@ func TestRegoEmbedded_AnnotationTransformConfinementIsEnforced(t *testing.T) {
 
 	root, catalogDir := regoAnnotationWorkspace(t)
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package tagging
+
+import rego.v1
 
 annotations contains {
 	"boundary_path": "main",
@@ -712,6 +856,8 @@ func TestRegoEmbedded_TranslationOverrideMapsACustomKey(t *testing.T) {
 	nonInteractive(t)
 
 	const policy = `package proof
+
+import rego.v1
 
 blocked contains msg if {
 	count(input.graph.spec.nodes) > 0
@@ -774,7 +920,7 @@ func TestRegoEmbedded_MalformedTranslationSettingsHaltBeforeDispatch(t *testing.
 	root, catalogDir := regoWorkspace(t)
 	// A policy that would reach no decision at all, so a halt can only have come
 	// from the settings check rather than from the policy.
-	writeFixture(t, filepath.Join(root, "policy.rego"), "package proof\n")
+	writeFixture(t, filepath.Join(root, "policy.rego"), "package proof\n\nimport rego.v1\n")
 	err := pullThen(t, root, filepath.Join(root, "release.yaml"),
 		[]string{catalogDir, standardCatalogDir(t)},
 		regoAttachment("ir-verdict", "policy.rego", `        settings:
@@ -802,6 +948,8 @@ func TestRegoEmbedded_ArchiveEvaluatesAsTheSameFilesAttachedSeparately(t *testin
 	// load-bearing: were it dropped, the rule would be undefined and reach no
 	// decision.
 	const policy = `package tagging
+
+import rego.v1
 
 labels contains {"node": id, "key": "tier", "value": data.limits.tier} if {
 	some id, _ in input.graph.nodes
@@ -876,6 +1024,8 @@ func TestRegoEmbedded_UnimplementedBuiltinHaltsRatherThanAllowing(t *testing.T) 
 	root, catalogDir := regoWorkspace(t)
 	writeFixture(t, filepath.Join(root, "policy.rego"), `package proof
 
+import rego.v1
+
 deny contains msg if {
 	net.lookup_ip_addr("example.com")
 	msg := "resolved"
@@ -904,12 +1054,16 @@ func TestRegoEmbedded_DeterministicOutput(t *testing.T) {
 
 	writeFixture(t, filepath.Join(root, "labels.rego"), `package tagging
 
+import rego.v1
+
 labels contains {"node": id, "key": key, "value": "set"} if {
 	some id, _ in input.graph.nodes
 	some key in {"z.example.com/last", "a.example.com/first", "m.example.com/middle"}
 }
 `)
 	writeFixture(t, filepath.Join(root, "annotations.rego"), `package tagging
+
+import rego.v1
 
 annotations contains {
 	"boundary_path": target.boundary_path,

@@ -9,6 +9,8 @@
 //! ```rego
 //! package tagging
 //!
+//! import rego.v1
+//!
 //! labels contains {"node": id, "key": "compliance.example.com/tier", "value": "gold"} if {
 //!     some id, node in input.graph.nodes
 //!     node.labels["component.aggrega.ai/type"] == "server"
@@ -60,6 +62,8 @@
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
+use crate::engine::CollectedDecision;
+
 /// The decision key a policy collects its label decisions under.
 pub const DECISION_KEY: &str = "labels";
 
@@ -103,12 +107,13 @@ struct Instruction {
 /// The order is the policy's: decisions come back in package order and then in
 /// the order the collection yields, so identical input yields an identical
 /// sequence of changes.
-pub fn changes(decisions: &[serde_json::Value]) -> anyhow::Result<Vec<Box<RawValue>>> {
+pub fn changes(decisions: &[CollectedDecision]) -> anyhow::Result<Vec<Box<RawValue>>> {
     let mut changes = Vec::with_capacity(decisions.len());
-    for raw in decisions {
-        let decision: Decision = serde_json::from_value(raw.clone()).map_err(|err| {
+    for collected in decisions {
+        let decision: Decision = serde_json::from_value(collected.value.clone()).map_err(|err| {
             anyhow::anyhow!(
-                "a decision collected under {DECISION_KEY:?} is not a label decision: {err}. A decision names \"node\", \"key\" and \"value\", and may name \"op\" as {OP_ADD:?} or {OP_REMOVE:?}."
+                "package {:?} collected a decision under {DECISION_KEY:?} that is not a label decision: {err}. A decision names \"node\", \"key\" and \"value\", and may name \"op\" as {OP_ADD:?} or {OP_REMOVE:?}. Every attached package is read for {DECISION_KEY:?}, so a rule of that name collecting anything else must be renamed.",
+                collected.package
             )
         })?;
         changes.push(instruction(&decision)?);
@@ -162,11 +167,21 @@ fn escape(segment: &str) -> String {
 mod tests {
     use super::*;
 
-    fn decisions(values: serde_json::Value) -> Vec<serde_json::Value> {
+    fn decisions(values: serde_json::Value) -> Vec<CollectedDecision> {
+        collected_by("data.tagging", values)
+    }
+
+    /// The decisions one named package reached, as the evaluator hands them over.
+    fn collected_by(package: &str, values: serde_json::Value) -> Vec<CollectedDecision> {
         values
             .as_array()
             .expect("the test supplies a list of decisions")
-            .clone()
+            .iter()
+            .map(|value| CollectedDecision {
+                package: package.to_string(),
+                value: value.clone(),
+            })
+            .collect()
     }
 
     fn documents(changes: &[Box<RawValue>]) -> Vec<serde_json::Value> {
@@ -257,6 +272,28 @@ mod tests {
         let err = changes(&decisions(serde_json::json!(["just a string"])))
             .expect_err("a decision of the wrong shape is refused");
         assert!(err.to_string().contains("labels"), "{err}");
+    }
+
+    #[test]
+    fn a_decision_of_the_wrong_shape_names_the_package_that_collected_it() {
+        // A rule sharing the decision key's name in an unrelated helper package
+        // fails the whole attachment. Without the package name the message reads
+        // as a malformed label decision, which sends the reader to inspect the
+        // decisions they meant to write rather than the rule that collided.
+        let err = changes(&collected_by(
+            "data.helpers",
+            serde_json::json!(["a helper's own string"]),
+        ))
+        .expect_err("a decision of the wrong shape is refused");
+        let message = err.to_string();
+        assert!(
+            message.contains("data.helpers"),
+            "the diagnostic names the offending package: {message}"
+        );
+        assert!(
+            message.contains("renamed"),
+            "the diagnostic says what to do about a colliding rule name: {message}"
+        );
     }
 
     #[test]

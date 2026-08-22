@@ -10,6 +10,8 @@
 //! ```rego
 //! package tagging
 //!
+//! import rego.v1
+//!
 //! annotations contains {
 //!     "boundary_path": target.boundary_path,
 //!     "component_name": target.component_name,
@@ -49,6 +51,8 @@
 
 use aggrega_abi::AnnotationInjection;
 
+use crate::engine::CollectedDecision;
+
 /// The decision key a policy collects its annotation decisions under.
 pub const DECISION_KEY: &str = "annotations";
 
@@ -60,14 +64,16 @@ pub const DECISION_KEY: &str = "annotations";
 /// second spelling of them to keep in step. A decision missing one of them is
 /// refused rather than defaulted, because an annotation with an empty key or an
 /// empty coordinate is not something a policy meant to ask for.
-pub fn injections(decisions: &[serde_json::Value]) -> anyhow::Result<Vec<AnnotationInjection>> {
+pub fn injections(decisions: &[CollectedDecision]) -> anyhow::Result<Vec<AnnotationInjection>> {
     let mut injections = Vec::with_capacity(decisions.len());
-    for raw in decisions {
-        let injection: AnnotationInjection = serde_json::from_value(raw.clone()).map_err(|err| {
-            anyhow::anyhow!(
-                "a decision collected under {DECISION_KEY:?} is not an annotation decision: {err}. A decision names \"boundary_path\", \"component_name\", \"annotation_key\" and \"annotation_value\"."
-            )
-        })?;
+    for collected in decisions {
+        let injection: AnnotationInjection = serde_json::from_value(collected.value.clone())
+            .map_err(|err| {
+                anyhow::anyhow!(
+                    "package {:?} collected a decision under {DECISION_KEY:?} that is not an annotation decision: {err}. A decision names \"boundary_path\", \"component_name\", \"annotation_key\" and \"annotation_value\". Every attached package is read for {DECISION_KEY:?}, so a rule of that name collecting anything else must be renamed.",
+                    collected.package
+                )
+            })?;
         if injection.annotation_key.is_empty() {
             anyhow::bail!(
                 "the {DECISION_KEY:?} decision for boundary {:?} component {:?} names an empty \"annotation_key\"",
@@ -90,11 +96,21 @@ pub fn injections(decisions: &[serde_json::Value]) -> anyhow::Result<Vec<Annotat
 mod tests {
     use super::*;
 
-    fn decisions(values: serde_json::Value) -> Vec<serde_json::Value> {
+    fn decisions(values: serde_json::Value) -> Vec<CollectedDecision> {
+        collected_by("data.tagging", values)
+    }
+
+    /// The decisions one named package reached, as the evaluator hands them over.
+    fn collected_by(package: &str, values: serde_json::Value) -> Vec<CollectedDecision> {
         values
             .as_array()
             .expect("the test supplies a list of decisions")
-            .clone()
+            .iter()
+            .map(|value| CollectedDecision {
+                package: package.to_string(),
+                value: value.clone(),
+            })
+            .collect()
     }
 
     fn decision(boundary: &str, component: &str, key: &str, value: &str) -> serde_json::Value {
@@ -166,6 +182,28 @@ mod tests {
         let err = injections(&decisions(serde_json::json!(["just a string"])))
             .expect_err("a decision of the wrong shape is refused");
         assert!(err.to_string().contains("annotations"), "{err}");
+    }
+
+    #[test]
+    fn a_decision_of_the_wrong_shape_names_the_package_that_collected_it() {
+        // A rule sharing the decision key's name in an unrelated helper package
+        // fails the whole attachment. Without the package name the message reads
+        // as a malformed annotation decision, which sends the reader to inspect
+        // the decisions they meant to write rather than the rule that collided.
+        let err = injections(&collected_by(
+            "data.helpers",
+            serde_json::json!(["a helper's own string"]),
+        ))
+        .expect_err("a decision of the wrong shape is refused");
+        let message = err.to_string();
+        assert!(
+            message.contains("data.helpers"),
+            "the diagnostic names the offending package: {message}"
+        );
+        assert!(
+            message.contains("renamed"),
+            "the diagnostic says what to do about a colliding rule name: {message}"
+        );
     }
 
     #[test]
