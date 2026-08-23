@@ -5,7 +5,8 @@ package constraint
 
 import (
 	"fmt"
-	"strings"
+
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // Objection is what a check hands back when an input violates the rule the
@@ -158,20 +159,29 @@ func (o Objection) RenderedDetail() []string {
 // carries: the sentinel's registered wording, then the values the check
 // supplied.
 //
-// It lives here, beside the objection, because it reads nothing else. A
-// boundary converting an objection into its own diagnostic shape decides which
-// of its fields the provenance lands on, and that decision differs per boundary
-// — but the wording does not, and a second boundary composing it again would be
-// free to compose it differently. One renderer is what makes "every rule
-// reporting this way reports identically" a property rather than an intention,
-// and the package that owns the objection is the only home every boundary can
-// reach.
+// It lives here, beside the objection, because the objection is the only thing
+// it reads. A boundary converting an objection into its own diagnostic shape
+// decides which of its fields the provenance lands on, and that decision differs
+// per boundary — but the wording does not, and a second boundary composing it
+// again would be free to compose it differently. One renderer is what makes
+// "every rule reporting this way reports identically" a property rather than an
+// intention, and the package that owns the objection is the only home every
+// boundary can reach.
 //
 // The message opens with the sentinel's own registered text, so a rule's
 // wording lives with the rule's identity and a second copy cannot drift from
 // it. The values the check supplied follow it, because the registered text is
 // one static string per rule and cannot carry them — so a message that were
 // only that text would drop the very thing an author has to act on.
+//
+// That arrangement — the sentence, then the occurrence's values in parentheses —
+// is the composition every diagnostic naming a condition follows, so this
+// renders through [cerrors.ComposeMessage] rather than spelling it again. What
+// this adds is the one thing an objection needs and that composition does not
+// assume: a check's sentinel IS the rule, so its text is the rule's wording
+// whether or not the rule carries a registered identity, and a rule whose
+// identity is not yet registered still reads as a sentence rather than opening
+// with a parenthesis. See [unregisteredCondition].
 //
 // The values are rendered rather than described, because this reads every rule
 // and knows none of them: a check's detail is an ordered list of values whose
@@ -194,10 +204,38 @@ func (o Objection) RenderedDetail() []string {
 // whose identity says the whole of it reads as a sentence rather than as one
 // with an empty parenthesis after it.
 func ObjectionMessage(o Objection) string {
-	registered := o.Sentinel().Error()
-	rendered := o.RenderedDetail()
-	if len(rendered) == 0 {
-		return registered
+	condition := o.Sentinel()
+	if _, registered := cerrors.MessageOf(condition); !registered {
+		condition = unregisteredCondition{sentinel: condition}
 	}
-	return registered + " (" + strings.Join(rendered, ", ") + ")"
+	return cerrors.ComposeMessage(condition, o.RenderedDetail(), "")
 }
+
+// unregisteredCondition presents a sentinel carrying no registered identity to
+// the shared composition, so the composition has a sentence to open with.
+//
+// The composition reads a condition's sentence off the registered identity in
+// its chain and contributes none when there is no identity to read. That is
+// right for a diagnostic naming a condition — an error carrying no identity
+// names no condition, so there is no registered wording to state — and it is not
+// what an objection means. A check's sentinel is the rule itself, and a rule has
+// wording from the moment it is written, so dropping it would leave the values
+// alone inside a parenthesis with nothing saying which rule they belong to.
+//
+// So a sentinel already carrying a registered identity is handed over untouched
+// and the composition reads it directly. One that is not is wrapped here, where
+// the sentinel's own text becomes the sentence and both codes are empty because
+// there is no registered condition to name. The wrapper never leaves
+// [ObjectionMessage], so nothing reads those codes: it exists to answer one
+// question the composition asks, and the answer is the rule's own words.
+type unregisteredCondition struct{ sentinel error }
+
+// Error returns the sentinel's own text, which is the wording the rule carries
+// in the absence of a registered one.
+func (u unregisteredCondition) Error() string { return u.sentinel.Error() }
+
+// ErrorCode returns the empty string: there is no registered condition to name.
+func (u unregisteredCondition) ErrorCode() string { return "" }
+
+// ErrorShortCode returns the empty string, for the reason ErrorCode does.
+func (u unregisteredCondition) ErrorShortCode() string { return "" }
