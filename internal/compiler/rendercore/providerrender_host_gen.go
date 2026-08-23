@@ -267,14 +267,16 @@ type SubChart struct {
 	ChartYaml []byte `json:"chart_yaml,omitempty" yaml:"chart_yaml,omitempty" cbor:"chart_yaml,omitempty"`
 }
 
-// AssembleBoundaryOutput The payload a Provider guest returns from its assemble_boundary export: the serialized bytes of each assembled file, any diagnostics the guest raised while assembling, and whether the orchestrator nests each contributor's per-node files under a per-node sub-directory. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
+// AssembleBoundaryOutput The payload a Provider guest returns from its assemble_boundary export: the serialized bytes of each assembled file, any diagnostics the guest raised while assembling, whether the orchestrator nests each contributor's per-node files under a per-node sub-directory, and the directory it nests them under. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
 type AssembleBoundaryOutput struct {
 	// Files The assembled output files the guest emitted, in emission order. Each names its on-disk path and carries the serialized bytes the host writes verbatim.
 	Files []RenderedFile `json:"files" yaml:"files" cbor:"files"`
 	// Diagnostics Diagnostics the guest raised while assembling. Each element is the shared Wasm-plugin diagnostic shape.
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty" cbor:"diagnostics,omitempty"`
-	// NestPerNode Whether the orchestrator nests each contributor's per-node files under charts/<nodeID>/ rather than emitting them flat; the assembler signals this per provider (compose emits flat, so false; an umbrella-chart assembler nests, so true).
+	// NestPerNode Whether the orchestrator nests each contributor's per-node files under a per-node sub-directory rather than emitting them flat; the assembler signals this per provider (an assembler that folds the per-node fragments into one document emits flat, so false; one that composes them into an enclosing structure nests, so true). The directory those sub-directories sit under is nest_segment.
 	NestPerNode bool `json:"nest_per_node,omitempty" yaml:"nest_per_node,omitempty" cbor:"nest_per_node,omitempty"`
+	// NestSegment The directory a nesting assembler places each contributor's per-node files under: the orchestrator joins this segment, the node's identity, and each file's own path. Read only when nest_per_node is true. Absent, the orchestrator applies its own default segment, so an assembler that names none keeps the layout it already emitted. The value names one directory and never a path: a value carrying a path separator, or naming the current or the parent directory, is refused, because the orchestrator composes the node identity into it and a path fragment would place a node's files somewhere other than beneath the dispatch position.
+	NestSegment string `json:"nest_segment,omitempty" yaml:"nest_segment,omitempty" cbor:"nest_segment,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 }
@@ -3128,6 +3130,14 @@ func (t AssembleBoundaryOutput) MarshalJSON() ([]byte, error) {
 			buf.WriteString("false")
 		}
 	}
+	if t.NestSegment != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"nest_segment\":")
+		writeJSONString(&buf, t.NestSegment)
+	}
 	if t.Error != "" {
 		if !first {
 			buf.WriteByte(',')
@@ -3200,6 +3210,12 @@ func (t *AssembleBoundaryOutput) UnmarshalJSON(data []byte) error {
 			} else {
 				t.NestPerNode = v
 			}
+		case "nest_segment":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.NestSegment = s
+			}
 		case "error":
 			if s, err := readString(dec); err != nil {
 				return err
@@ -3225,7 +3241,7 @@ func (t *AssembleBoundaryOutput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *AssembleBoundaryOutput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "files", "diagnostics", "nest_per_node", "error"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "files", "diagnostics", "nest_per_node", "nest_segment", "error"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -7463,6 +7479,9 @@ func (t AssembleBoundaryOutput) appendCBOR(dst []byte) ([]byte, error) {
 	if len(t.Diagnostics) != 0 {
 		n++
 	}
+	if t.NestSegment != "" {
+		n++
+	}
 	if t.NestPerNode != false {
 		n++
 	}
@@ -7491,6 +7510,10 @@ func (t AssembleBoundaryOutput) appendCBOR(dst []byte) ([]byte, error) {
 				dst = appendCBORByteString(dst, raw)
 			}
 		}
+	}
+	if t.NestSegment != "" {
+		dst = appendCBORTextString(dst, "nest_segment")
+		dst = appendCBORTextString(dst, t.NestSegment)
 	}
 	if t.NestPerNode != false {
 		dst = appendCBORTextString(dst, "nest_per_node")
@@ -7561,6 +7584,12 @@ func (t *AssembleBoundaryOutput) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.NestPerNode = v
 			}
+		case "nest_segment":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.NestSegment = s
+			}
 		case "error":
 			if s, err := dec.readTextString(); err != nil {
 				return err
@@ -7583,7 +7612,7 @@ func (t *AssembleBoundaryOutput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *AssembleBoundaryOutput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "files", "diagnostics", "nest_per_node", "error"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "files", "diagnostics", "nest_per_node", "nest_segment", "error"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

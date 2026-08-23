@@ -42,10 +42,14 @@ func (e *collisionEngine) Contract() renderer.ProviderContract {
 // a fixed merged set and controls whether per-node files nest under the
 // contributing instance. nest=true is the shape that keeps two contributors'
 // identically-named files apart; nest=false is the shape that does not.
+// nestSegment is the per-node sub-directory this assembler names; empty leaves
+// the host to apply its own default, which is the shape every pre-existing
+// nesting assembler has.
 type collisionAssemblerEngine struct {
 	collisionEngine
-	merged map[string]renderer.AssembledFile
-	nest   bool
+	merged      map[string]renderer.AssembledFile
+	nest        bool
+	nestSegment string
 }
 
 func (e *collisionAssemblerEngine) BoundaryAssembly() string {
@@ -55,12 +59,12 @@ func (e *collisionAssemblerEngine) BoundaryAssembly() string {
 	return "merge"
 }
 
-func (e *collisionAssemblerEngine) AssembleBoundary(_ context.Context, _ renderer.BoundaryInfo) (map[string]renderer.AssembledFile, bool, error) {
+func (e *collisionAssemblerEngine) AssembleBoundary(_ context.Context, _ renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
 	out := map[string]renderer.AssembledFile{}
 	for k, v := range e.merged {
 		out[k] = v
 	}
-	return out, e.nest, nil
+	return out, renderer.BoundaryNesting{PerNode: e.nest, Segment: e.nestSegment}, nil
 }
 
 // runCollisionRender drives the full pipeline over the named component

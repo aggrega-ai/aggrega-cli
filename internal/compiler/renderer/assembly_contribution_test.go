@@ -66,7 +66,7 @@ type contributionAssemblerEngine struct {
 
 func (e *contributionAssemblerEngine) BoundaryAssembly() string { return "nest" }
 
-func (e *contributionAssemblerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, bool, error) {
+func (e *contributionAssemblerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
 	// The merged document names every boundary that fed the group, in the order
 	// the group recorded them, so the assembled bytes themselves carry evidence
 	// of a many-to-one merge.
@@ -77,7 +77,7 @@ func (e *contributionAssemblerEngine) AssembleBoundary(_ context.Context, info r
 	}
 	return map[string]renderer.AssembledFile{
 		"assembly.yaml": {Content: []byte(b.String()), Format: "yaml"},
-	}, true, nil
+	}, renderer.BoundaryNesting{PerNode: true}, nil
 }
 
 // runContributionCase drives the full render pipeline over one corpus case.

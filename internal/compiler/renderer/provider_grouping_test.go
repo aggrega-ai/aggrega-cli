@@ -58,7 +58,7 @@ func (a *versionedAssembler) Contract() renderer.ProviderContract {
 // production assembling guests' self-report.
 func (a *versionedAssembler) BoundaryAssembly() string { return "merge" }
 
-func (a *versionedAssembler) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, bool, error) {
+func (a *versionedAssembler) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
 	*a.assembledBy = a.version
 	*a.assembleCount++
 	out := map[string]renderer.AssembledFile{}
@@ -67,7 +67,7 @@ func (a *versionedAssembler) AssembleBoundary(_ context.Context, info renderer.B
 			out["charts/"+nodeID+"/"+f.Name] = renderer.AssembledFile{Content: f.Body}
 		}
 	}
-	return out, false, nil
+	return out, renderer.BoundaryNesting{}, nil
 }
 
 // TestRenderAll_MixedProviderVersionGroup_AssemblesAtHighest proves the operator

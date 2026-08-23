@@ -55,8 +55,11 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // AssembleBoundary projects the host BoundaryInfo onto the assemble_boundary wire
 // input, drives the guest export, and folds the guest's per-file output back into
 // the BoundaryAssembler's path→AssembledFile map — carrying each file's
-// producer-declared format alongside its bytes — plus the guest's nest-per-node
-// signal.
+// producer-declared format alongside its bytes — plus the guest's nesting claim:
+// whether each contributor's per-node files sit under a sub-directory of their
+// own, and the directory the guest names for those sub-directories. The adapter
+// passes that name through untouched; the orchestrator supplies the default when
+// the guest names none and bounds what a named one may be.
 // Rendered nodes are emitted in sorted-by-id order and each node's annotations are
 // inserted in sorted-key order, so the wire payload is byte-identical across runs
 // of identical input (the determinism contract). The boundary metadata is left
@@ -74,7 +77,7 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // umbrella from pure data alone. Each sub-chart's values are inserted in sorted
 // key order for the determinism contract. A provider that does not project
 // sub-charts contributes none of these carriers.
-func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, bool, error) {
+func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
 	nodeIDs := make([]string, 0, len(info.IntermediatesByNode))
 	for id := range info.IntermediatesByNode {
 		nodeIDs = append(nodeIDs, id)
@@ -119,7 +122,7 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 	if e.BoundaryAssembly() == wasm.BoundaryAssemblyNest {
 		projs, err := projectSubCharts(info.SubCharts)
 		if err != nil {
-			return nil, false, err
+			return nil, renderer.BoundaryNesting{}, err
 		}
 		subCharts := make([]renderer.SubChart, 0, len(projs))
 		for _, p := range projs {
@@ -137,20 +140,20 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 
 	out, err := e.invokeAssemble(ctx, AssembleBoundaryExport, input)
 	if err != nil {
-		return nil, false, err
+		return nil, renderer.BoundaryNesting{}, err
 	}
 	if err := surfaceAssembleDiagnostics(info.BoundaryPath, out.Diagnostics, info.WarningSink); err != nil {
-		return nil, false, err
+		return nil, renderer.BoundaryNesting{}, err
 	}
 
 	files := make(map[string]renderer.AssembledFile, len(out.Files))
 	for _, f := range out.Files {
 		if _, dup := files[f.Path]; dup {
-			return nil, false, fmt.Errorf("wasmengine: assembler guest emitted duplicate output path %q", f.Path)
+			return nil, renderer.BoundaryNesting{}, fmt.Errorf("wasmengine: assembler guest emitted duplicate output path %q", f.Path)
 		}
 		files[f.Path] = renderer.AssembledFile{Content: f.Content, Format: f.Format}
 	}
-	return files, out.NestPerNode, nil
+	return files, renderer.BoundaryNesting{PerNode: out.NestPerNode, Segment: out.NestSegment}, nil
 }
 
 // invokeAssemble acquires a guest instance through the shared loader, calls the

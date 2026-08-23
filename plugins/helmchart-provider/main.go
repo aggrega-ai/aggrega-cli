@@ -236,7 +236,9 @@ func assembleBoundary() int32 {
 // and version from those bytes. The boundary path is the dispatch path the core
 // names the chart from when no chart-name is supplied; the render context carries
 // the indentation width. helm-chart nests each contributor's per-node files under
-// a per-node sub-directory, so NestPerNode is true.
+// a per-node sub-directory, so NestPerNode is true, and it names that
+// sub-directory's parent `charts` — the directory a Helm umbrella keeps its child
+// charts in — so the host places each node's files where Helm looks for them.
 func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
 	subs := make([]helmchartcore.CoreSubChart, 0, len(in.SubCharts))
 	for i := range in.SubCharts {
@@ -259,6 +261,7 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path], Format: assembledFileFormat(path)})
 	}
 	out.NestPerNode = true
+	out.NestSegment = "charts"
 	return out, nil
 }
 

@@ -678,3 +678,26 @@ var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("compiler-renderer/orp
 	ShortCode: "E0047",
 	Message:   "assembled output retains an unresolved cross-boundary link placeholder",
 })
+
+// ErrNestSegmentNotOneDirectory is the Loud Guardrail halt raised when a
+// boundary assembler names a per-node sub-directory that is not a single
+// directory name. A nesting assembler names the directory its contributors' own
+// sub-directories sit under, and the orchestrator composes each node's identity
+// into it — so a value carrying a path separator, or naming the current or the
+// parent directory, would place a node's files somewhere other than beneath the
+// node's own position in the dispatch group. That is either an escape out of the
+// dispatch position or a silent re-layout of the group, so the build halts here
+// instead of composing the path. The diagnostic names the provider whose
+// assembler returned the value and the value itself, so an author sees which
+// assembler to change and what it returned. The remedy is to name one directory.
+// An assembler that names nothing is not affected: the orchestrator then applies
+// its own default and the layout is unchanged. Category: TRANSLATION_ERROR,
+// because the value came from a provider's assembler with nothing in any catalog
+// document to correct. Match with
+// errors.Is(err, ErrNestSegmentNotOneDirectory()).
+func ErrNestSegmentNotOneDirectory() error { return errNestSegmentNotOneDirectory }
+
+var errNestSegmentNotOneDirectory = cerrors.Register("compiler-renderer/nest-segment-not-one-directory", cerrors.Meta{
+	ShortCode: "E0250",
+	Message:   "boundary assembler named a per-node sub-directory that is not a single directory name",
+})

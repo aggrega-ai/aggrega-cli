@@ -1133,8 +1133,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// provider) BoundaryAssembler at the contributor's evaluated path.
 		// Engines that implement BoundaryAssembler but place per-node
 		// content at engine-controlled positions (today: helm-chart,
-		// signalled by the engine's artifacts capability — its sub-charts land at
-		// charts/<nodeID>/ via the umbrella's nestPerNode contract) keep
+		// signalled by the engine's artifacts capability — its sub-charts land
+		// under the per-node sub-directory its assembler names) keep
 		// Render output Intermediate=false so the orchestrator nests their
 		// files under the per-node prefix rather than routing them to
 		// AssembleBoundary's IntermediatesByNode. Engines that are not
@@ -1731,7 +1731,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		var groupFiles assembledFileSet
 
 		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
-		// nest per-node under charts/<nodeID>/ and emit assembled files at the dispatch path.
+		// nest per-node under the sub-directory the assembler names and emit assembled files at
+		// the dispatch path.
 		if pd.assembler != nil && key.Path != "" {
 			edges := make([]IREdgeInfo, 0, len(graph.Spec.Edges))
 			for _, e := range graph.Spec.Edges {
@@ -1768,7 +1769,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				ChartName:              chartName,
 				WarningSink:            func(w string) { result.Warnings = append(result.Warnings, w) },
 			}
-			boundaryFiles, nestPerNode, err := pd.assembler.AssembleBoundary(ctx, info)
+			boundaryFiles, nesting, err := pd.assembler.AssembleBoundary(ctx, info)
 			if err != nil {
 				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, fmt.Sprintf("dispatch %q assemble", key.Path))
 			}
@@ -1796,13 +1797,30 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			for p, af := range boundaryFiles {
 				groupFiles.put(p, af, assemblyProducer)
 			}
-			// Node files go under charts/<nodeID>/ (or flat if assembler says no
-			// nesting). These per-node fragments carry no producer format at this
-			// nesting position, so their records leave Format empty.
+			// Node files go under the per-node sub-directory the assembler named
+			// (or flat if it says no nesting). The segment is the assembler's own
+			// vocabulary: the orchestrator joins it with the node identity and
+			// supplies only the default for an assembler that names none, so no
+			// target's directory vocabulary is fixed here. It is resolved once per
+			// dispatch group rather than once per node, so an out-of-bound segment
+			// is refused even for a group that placed no per-node files at all.
+			// These per-node fragments carry no producer format at this nesting
+			// position, so their records leave Format empty.
+			nestPrefix := ""
+			if nesting.PerNode {
+				segment, serr := nesting.resolvedSegment(key.Provider)
+				if serr != nil {
+					// The refusal's own text becomes the frame's message so the
+					// provider and the value reach a reader of one frame as well
+					// as a reader of the whole chain.
+					return nil, cerrors.Wrap(serr, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, serr.Error())
+				}
+				nestPrefix = segment + "/"
+			}
 			for nodeID, nodeFiles := range pd.files {
 				nodeRel := ""
-				if nestPerNode {
-					nodeRel = "charts/" + nodeID + "/"
+				if nesting.PerNode {
+					nodeRel = nestPrefix + nodeID + "/"
 				}
 				producer := nodeProducerLabel(nodeID)
 				for p, c := range nodeFiles {

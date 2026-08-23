@@ -6,6 +6,7 @@ package renderer
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
@@ -17,9 +18,10 @@ import (
 // "templates/deployment.yaml"), its file contents, and the producer-declared
 // format the guest rendered it in (empty when the guest declares none).
 // Per-node files are later prefixed by the orchestrator with the boundary path
-// (and, for chart-structure engines, a `charts/<nodeID>/` sub-chart prefix). The
-// per-file format travels with its file so a downstream consumer can prefer the
-// producer's format over the path extension; it never affects the emitted bytes.
+// (and, for an engine whose assembler nests per node, the per-node sub-directory
+// prefix that assembler names — see [BoundaryNesting]). The per-file format
+// travels with its file so a downstream consumer can prefer the producer's
+// format over the path extension; it never affects the emitted bytes.
 type Provider interface {
 	Render(ctx context.Context, values map[string]any, nodeCtx NodeRenderContext) ([]RenderedFile, error)
 	// Contract reports which Recipe input kinds this engine renders. It is
@@ -182,9 +184,10 @@ type BoundaryAssembler interface {
 	// AssembleBoundary returns assembled files relative to the dispatch path.
 	// The orchestrator prefixes them with `boundaries/<evaluated_path>/`
 	// (or, post path-template-evaluation, the operator-authored path).
-	// Also signals whether per-node files should be nested under
-	// `charts/<nodeID>/`.
-	AssembleBoundary(ctx context.Context, info BoundaryInfo) (files map[string]AssembledFile, nestPerNode bool, err error)
+	// The returned [BoundaryNesting] says whether each contributor's per-node
+	// files are nested under a per-node sub-directory, and which directory
+	// those sub-directories sit under.
+	AssembleBoundary(ctx context.Context, info BoundaryInfo) (files map[string]AssembledFile, nesting BoundaryNesting, err error)
 }
 
 // AssembledFile is one output of a boundary assembly, keyed by its dispatch-path-
@@ -199,6 +202,56 @@ type BoundaryAssembler interface {
 type AssembledFile struct {
 	Content []byte
 	Format  string
+}
+
+// BoundaryNesting is how a boundary assembler wants its dispatch group's
+// per-node files placed. PerNode says whether each contributor's files sit under
+// a sub-directory of their own rather than flat at the dispatch path; Segment
+// names the directory those per-node sub-directories sit under, and is empty when
+// the assembler names none.
+//
+// The two travel as one carrier because they answer one question — where a
+// contributor's files go — and a caller reading the flag has to read the segment
+// with it. Keeping them apart would let a segment reach a caller that never
+// asked whether nesting was on, which is how the two would drift.
+//
+// Segment is the assembler's own vocabulary: an assembler that composes an
+// enclosing chart names the directory that target calls its child units, one
+// that composes a root module names the directory that target calls its own, and
+// the orchestrator places the files without reading either word. What the
+// orchestrator supplies is the default for an assembler that names nothing, and
+// the bound that keeps a named segment inside the dispatch position.
+type BoundaryNesting struct {
+	PerNode bool
+	Segment string
+}
+
+// DefaultNestSegment is the directory the orchestrator nests per-node files under
+// when a nesting assembler names no segment of its own. It carries no claim about
+// any target: it is the layout nesting assemblers already emitted before the
+// segment could be named, retained so an assembler that names nothing keeps
+// emitting exactly what it emitted before.
+const DefaultNestSegment = "charts"
+
+// resolvedSegment returns the directory to nest per-node files under: the
+// segment the assembler named, or [DefaultNestSegment] when it named none.
+//
+// It refuses a segment that is not a single directory name. The orchestrator
+// composes the node's identity into the segment, so a value carrying a path
+// separator — or naming the current or the parent directory — would place a
+// node's files somewhere other than beneath its own position in the dispatch
+// group. provider names the provider whose assembler returned the value, so the
+// refusal says which one to fix and what it returned.
+func (n BoundaryNesting) resolvedSegment(provider string) (string, error) {
+	if n.Segment == "" {
+		return DefaultNestSegment, nil
+	}
+	if strings.ContainsAny(n.Segment, `/\`) || n.Segment == "." || n.Segment == ".." {
+		return "", fmt.Errorf(
+			"%w: provider %q returned %q; the value must name one directory, carrying no path separator and naming neither the current nor the parent directory",
+			ErrNestSegmentNotOneDirectory(), provider, n.Segment)
+	}
+	return n.Segment, nil
 }
 
 // BoundaryAssemblyReporter is the optional interface an engine implements to
