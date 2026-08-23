@@ -42,6 +42,11 @@ serde_json = { version = "1", features = ["raw_value"] }
 # Error type shared with the ABI surface: the export macros wrap anyhow::Error, so
 # an evaluation failure propagates through the export boundary unchanged.
 anyhow = "1"
+# Reads a rules document an operator attached. YAML is a superset of JSON, so one
+# reader covers a document written either way, and it is the reader the other
+# governance guest and the shared core already use — one YAML dialect for the whole
+# socket rather than a second one here.
+serde_yaml = "0.9"
 # Embedded expression evaluator. Pure-Rust and evaluated entirely in-guest, so the
 # host runs no policy engine and carries no policy-language logic. The json
 # feature is what converts an evaluated value back into the JSON model the rest of

@@ -5,8 +5,14 @@
 //!
 //! Evaluation happens entirely inside the plugin: the evaluator is compiled in,
 //! so nothing outside runs a policy engine or needs to understand the expression
-//! language. Each attached file is one expression; the payload the socket
-//! delivers becomes the `input` the expressions read.
+//! language. The payload the socket delivers becomes the `input` the expressions
+//! read.
+//!
+//! Each attached file is one expression, except for a file named as a rules
+//! document, which is read as the expression it stands for before anything is
+//! evaluated — see [`crate::rules`]. So whichever form a policy is written in,
+//! what reaches the evaluator is one expression, evaluated once, admitted once,
+//! and ordered by one rule.
 //!
 //! # What an expression evaluates to
 //!
@@ -54,17 +60,20 @@
 //!
 //! # Failure is never a silent allow
 //!
-//! An expression that cannot be read, cannot be evaluated, or does not produce
+//! A policy that cannot be read, cannot be evaluated, or does not produce
 //! decisions in the documented shape makes this plugin fail rather than return a
-//! verdict. The failure is reported as a build fault naming the file. It is
+//! verdict. That covers a malformed rules document as much as an unreadable
+//! expression. The failure is reported as a build fault naming the file. It is
 //! deliberately distinct from a decision that stops the build: "this policy could
 //! not be evaluated" must never read as "this policy allows the build".
 
+use crate::rules;
 use aggrega_pdk_rust::Diagnostic;
 use cel::objects::{KeyRef, Map};
 use cel::{Context, Program, Value};
 use governancecore::sources::Source;
 use governancecore::translation::{translate_into, Translation};
+use std::borrow::Cow;
 
 /// The name a policy addresses the role's payload through.
 ///
@@ -112,7 +121,16 @@ pub fn evaluated_sources(
         } else {
             source.path
         };
-        let program = Program::compile(source.content).map_err(|err| {
+        // A rules document is read as the expression it stands for, and that
+        // expression is compiled and evaluated here like any other. Translating
+        // rather than evaluating a second form is what keeps one compilation, one
+        // evaluation, one result-shape admission and one ordering rule.
+        let expression: Cow<'_, str> = if rules::is_rules_document(path) {
+            Cow::Owned(rules::expression_source(path, source.content)?)
+        } else {
+            Cow::Borrowed(source.content)
+        };
+        let program = Program::compile(&expression).map_err(|err| {
             anyhow::anyhow!("policy source {path:?} is not a readable expression: {err}")
         })?;
         let value = program.execute(&context).map_err(|err| {
@@ -478,6 +496,212 @@ mod tests {
         )
         .expect_err("an unreadable expression fails");
         assert!(err.to_string().contains("policy.cel"), "{err}");
+    }
+
+    /// The rules document and the hand-written expression used to prove the two
+    /// forms decide identically. They are written to be equivalent by hand, and
+    /// the test below asserts they are equivalent in fact.
+    const EQUIVALENT_DOCUMENT: &str = "\
+- key: deny
+  expression: size(input.graph.spec.nodes) > 1
+  message: this build declares more than one component
+- key: warn
+  expression: size(input.graph.spec.nodes) > 2
+  message: this build declares more than two components
+- key: deny
+  expression: has(input.settings.max_nodes)
+  message: a component ceiling is configured
+";
+
+    const EQUIVALENT_EXPRESSION: &str = r#"{
+      "deny": (size(input.graph.spec.nodes) > 1
+                 ? ["this build declares more than one component"] : [])
+            + (has(input.settings.max_nodes)
+                 ? ["a component ceiling is configured"] : []),
+      "warn": size(input.graph.spec.nodes) > 2
+                ? ["this build declares more than two components"] : [],
+    }"#;
+
+    #[test]
+    fn a_rules_document_reaches_the_decisions_its_rules_name() {
+        let out = evaluate(
+            &[Source {
+                path: "policy.yaml",
+                content: "\
+- key: deny
+  expression: size(input.graph.spec.nodes) > 1
+  message: more than one component
+- key: warn
+  expression: size(input.graph.spec.nodes) > 5
+  message: more than five components
+- key: audit
+  expression: \"true\"
+  message: this build was examined
+",
+            }],
+            &graph(&["a", "b"]),
+            &Translation::conventional(),
+        )
+        .expect("a well-formed rules document evaluates");
+        let seen: Vec<(&str, &str)> = out
+            .iter()
+            .map(|d| (d.severity.as_str(), d.message.as_str()))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                (SEVERITY_HALT, "more than one component"),
+                (SEVERITY_INFO, "this build was examined"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_rules_document_and_the_expression_it_stands_for_decide_identically() {
+        // The proof that a rules document is read rather than evaluated by a
+        // second path: the decisions are compared as bytes, not by inspection.
+        let mut input = graph(&["web", "api", "worker"]);
+        input["settings"] = serde_json::json!({ "max_nodes": 4 });
+
+        let from_document = evaluate(
+            &[Source {
+                path: "policy.yaml",
+                content: EQUIVALENT_DOCUMENT,
+            }],
+            &input,
+            &Translation::conventional(),
+        )
+        .expect("the rules document evaluates");
+        let from_expression = evaluate(
+            &[Source {
+                path: "policy.cel",
+                content: EQUIVALENT_EXPRESSION,
+            }],
+            &input,
+            &Translation::conventional(),
+        )
+        .expect("the expression evaluates");
+
+        let document_bytes =
+            serde_json::to_string(&from_document).expect("the decisions serialize");
+        let expression_bytes =
+            serde_json::to_string(&from_expression).expect("the decisions serialize");
+        assert_eq!(document_bytes, expression_bytes);
+        assert!(
+            !from_document.is_empty(),
+            "the comparison is only worth something over decisions that were reached"
+        );
+    }
+
+    #[test]
+    fn the_two_forms_mix_within_one_policy_set() {
+        let out = evaluate(
+            &[
+                Source {
+                    path: "a.cel",
+                    content: r#"{"deny": ["from the expression"]}"#,
+                },
+                Source {
+                    path: "b.yaml",
+                    content: "- key: deny\n  expression: \"true\"\n  message: from the document\n",
+                },
+            ],
+            &graph(&["x"]),
+            &Translation::conventional(),
+        )
+        .expect("both forms evaluate");
+        let seen: Vec<&str> = out.iter().map(|d| d.message.as_str()).collect();
+        assert_eq!(seen, vec!["from the expression", "from the document"]);
+    }
+
+    #[test]
+    fn a_rules_document_may_be_named_with_either_suffix() {
+        for path in ["policy.yaml", "policy.yml"] {
+            let out = evaluate(
+                &[Source {
+                    path,
+                    content: "- key: deny\n  expression: \"true\"\n  message: reached\n",
+                }],
+                &graph(&["x"]),
+                &Translation::conventional(),
+            )
+            .expect("a rules document evaluates");
+            assert_eq!(out.len(), 1, "{path}: {out:?}");
+        }
+    }
+
+    #[test]
+    fn a_file_named_for_neither_form_is_read_as_an_expression() {
+        // An attachment whose files carry no recognised suffix is read as
+        // expressions, so naming a form is not something an attachment has to do
+        // to be read at all.
+        let out = evaluate(
+            &[Source {
+                path: "policy",
+                content: r#"{"deny": ["reached"]}"#,
+            }],
+            &graph(&["x"]),
+            &Translation::conventional(),
+        )
+        .expect("a file named for neither form is an expression");
+        assert_eq!(out.len(), 1, "{out:?}");
+    }
+
+    #[test]
+    fn a_document_in_a_file_named_for_an_expression_is_refused_by_name() {
+        // The name decides the form in both directions, so a rules document saved
+        // under the wrong name fails loudly rather than being sniffed and read
+        // anyway. A document's own outermost value is a map, and so is an
+        // expression's, so there is no shape to sniff.
+        let err = evaluate(
+            &[Source {
+                path: "policy.cel",
+                content: "- key: deny\n  expression: \"true\"\n  message: reached\n",
+            }],
+            &graph(&["x"]),
+            &Translation::conventional(),
+        )
+        .expect_err("a rules document under an expression's name is not read as one");
+        let text = err.to_string();
+        assert!(text.contains("policy.cel"), "{text}");
+        assert!(text.contains("not a readable expression"), "{text}");
+    }
+
+    #[test]
+    fn a_malformed_rules_document_is_refused_by_name_at_the_intake() {
+        let err = evaluate(
+            &[Source {
+                path: "limits.yaml",
+                content: "- key: deny\n  expression: \"size(input) >\"\n  message: broken\n",
+            }],
+            &graph(&["x"]),
+            &Translation::conventional(),
+        )
+        .expect_err("a rule whose expression cannot be read is not a verdict");
+        let text = err.to_string();
+        assert!(text.contains("limits.yaml"), "{text}");
+        assert!(text.contains("rule 1"), "{text}");
+        assert!(text.contains("cannot be read"), "{text}");
+    }
+
+    #[test]
+    fn a_rules_document_message_is_reported_exactly_as_authored() {
+        // The operator's own wording, carried through translation, compilation and
+        // evaluation, and reported. Each of these characters either ends the
+        // generated literal early or changes what it decodes to.
+        let authored = "a \"quoted\" word, a back\\slash, and a\nline break";
+        let out = evaluate(
+            &[Source {
+                path: "policy.yaml",
+                content: "- key: deny\n  expression: \"true\"\n  \
+                          message: \"a \\\"quoted\\\" word, a back\\\\slash, and a\\nline break\"\n",
+            }],
+            &graph(&["x"]),
+            &Translation::conventional(),
+        )
+        .expect("an awkward message is still a message");
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(out[0].message, authored);
     }
 
     #[test]

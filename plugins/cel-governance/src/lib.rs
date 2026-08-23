@@ -38,6 +38,12 @@
 //!
 //! # Authoring convention, and how to change it
 //!
+//! A policy is attached in either of two forms, and the file's name says which.
+//! A policy set is as many files as it needs, and the two forms mix freely
+//! within one.
+//!
+//! ## An expression, in a file named `.cel`
+//!
 //! An expression language has no rule names to collect decisions under, so the
 //! decisions are the value each expression produces: a map from decision key to
 //! the messages reached under it.
@@ -51,10 +57,33 @@
 //! }
 //! ```
 //!
-//! One attached file is one expression, and a policy set is as many files as it
-//! needs. A key a file omits reached no decision there, so a file need not name
-//! every key. A key carries a list of messages, a single message, or the null
-//! value for none.
+//! A key a file omits reached no decision there, so a file need not name every
+//! key. A key carries a list of messages, a single message, or the null value for
+//! none.
+//!
+//! ## A rules document, in a file named `.yaml` or `.yml`
+//!
+//! A rules document is a list of rules, each naming the decision key it reaches,
+//! the expression that decides whether it is reached, and the message reported.
+//!
+//! ```yaml
+//! - key: deny
+//!   expression: size(input.graph.spec.nodes) > 20
+//!   message: this build declares a lot of components
+//! ```
+//!
+//! Which form fits depends on the message. A rules document suits a rule whose
+//! message is fixed — written once, beside the expression that reaches it, and
+//! read as a list of guards. An expression suits a rule whose message names what
+//! it found: one expression can filter the components of a build and produce a
+//! message per component, which a rules document cannot, because each of its
+//! rules carries a single message written in advance.
+//!
+//! A rules document is read as the expression it stands for before anything is
+//! evaluated, so both forms are evaluated by the same evaluator and a rules
+//! document decides exactly what the expression it stands for decides. The
+//! translation and every way a document can be malformed are documented at
+//! [`rules`].
 //!
 //! By default the decision keys are the conventional ones — `deny` for a message
 //! that stops the build, `warn` for one that surfaces alongside a build that still
@@ -91,16 +120,21 @@
 //! order is the translation's declared order, and across files it is the order the
 //! host supplied them in.
 //!
+//! Sorting within a key applies to both authored forms, because both are evaluated
+//! by the same evaluator. So the messages of a rules document are reported sorted
+//! rather than in the order its rules were written.
+//!
 //! # Failure is never a silent allow
 //!
-//! When an expression cannot be read, cannot be evaluated, or does not produce
-//! decisions in the documented shape, the plugin fails instead of returning a
-//! verdict, and that failure is reported as a build fault naming the file and,
-//! where the language can locate it, the position. It is deliberately distinct
+//! When a policy cannot be read, cannot be evaluated, or does not produce decisions
+//! in the documented shape, the plugin fails instead of returning a verdict, and
+//! that failure is reported as a build fault naming the file and, where it belongs
+//! to one part of the file, the position within it. It is deliberately distinct
 //! from a decision that stops the build: "this policy could not be evaluated" must
 //! never read as "this policy allows the build".
 
 mod engine;
+mod rules;
 
 use aggrega_abi::RenderPolicyInput;
 use aggrega_pdk_rust::{
@@ -420,6 +454,72 @@ mod tests {
         });
         let output = verdict(&payload.to_string()).expect("evaluation succeeds");
         assert!(output.results.is_empty(), "{:?}", output.results);
+    }
+
+    #[test]
+    fn a_rules_document_reaches_the_verdict_through_the_export_path() {
+        let document = "\
+- key: deny
+  expression: size(input.graph.spec.nodes) > 1
+  message: this build declares more than one component
+";
+        let output = verdict(&payload_named("policy.yaml", &["a", "b"], document))
+            .expect("a rules document evaluates");
+        assert_eq!(output.results.len(), 1, "{:?}", output.results);
+        assert_eq!(output.results[0].severity, SEVERITY_HALT);
+        assert_eq!(
+            output.results[0].message,
+            "this build declares more than one component"
+        );
+        assert!(output.error.is_empty());
+    }
+
+    #[test]
+    fn the_reported_output_is_byte_identical_between_the_two_authored_forms() {
+        // What the host reads is the serialized output, so the equivalence of the
+        // two authored forms is asserted on exactly that.
+        let document = "\
+- key: deny
+  expression: size(input.graph.spec.nodes) > 1
+  message: this build declares more than one component
+- key: warn
+  expression: size(input.graph.spec.nodes) > 2
+  message: this build declares more than two components
+";
+        let expression = r#"{
+          "deny": size(input.graph.spec.nodes) > 1
+                    ? ["this build declares more than one component"] : [],
+          "warn": size(input.graph.spec.nodes) > 2
+                    ? ["this build declares more than two components"] : [],
+        }"#;
+        let nodes = ["web", "api", "worker"];
+        let from_document = serde_json::to_string(
+            &verdict(&payload_named("policy.yaml", &nodes, document))
+                .expect("the rules document evaluates"),
+        )
+        .expect("the output serializes");
+        let from_expression = serde_json::to_string(
+            &verdict(&payload_named("policy.cel", &nodes, expression))
+                .expect("the expression evaluates"),
+        )
+        .expect("the output serializes");
+        assert_eq!(from_document, from_expression);
+        assert!(
+            from_document.contains("more than one component"),
+            "the comparison is only worth something over decisions that were \
+             reached: {from_document}"
+        );
+    }
+
+    /// Builds a graph-facet payload carrying one policy file under the given name,
+    /// so a test can choose which authored form the name selects.
+    fn payload_named(path: &str, nodes: &[&str], policy: &str) -> String {
+        serde_json::json!({
+            "graph": graph_with_nodes(nodes),
+            "precalculated_paths": [],
+            "sources": [{ "path": path, "content": policy }],
+        })
+        .to_string()
     }
 
     #[test]
