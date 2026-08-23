@@ -35,7 +35,7 @@ func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 			Governance: []PluginRef{
 				{
 					URI:      "governance/deny-gate:1.0.0",
-					Function: "validate",
+					Function: "verdict_ir",
 					Role:     plugintype.RoleIRVerdict,
 					With: &PluginRefWith{
 						Sources:  []string{filepath.Join(dir, "policy.rego")},
@@ -67,7 +67,7 @@ func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 		t.Fatalf("governance socket not captured: %+v", got.Plugins.Governance)
 	}
 	p := got.Plugins.Governance[0]
-	if p.URI != "governance/deny-gate:1.0.0" || p.Function != "validate" {
+	if p.URI != "governance/deny-gate:1.0.0" || p.Function != "verdict_ir" {
 		t.Errorf("socket ref uri/function not preserved: %+v", p)
 	}
 	if p.With == nil || len(p.With.Sources) != 1 || p.With.Settings["strict"] != true {

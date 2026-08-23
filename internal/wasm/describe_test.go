@@ -416,7 +416,7 @@ func TestPluginDescriptorValidateSettingsSchemaShape(t *testing.T) {
 		return PluginDescriptor{
 			AbiVersion:     ABIVersionV1Alpha1,
 			PluginType:     string(PluginTypeGovernance),
-			Exports:        []PluginExport{{Name: ValidateExport}},
+			Exports:        []PluginExport{{Name: VerdictIRExport}},
 			SettingsSchema: json.RawMessage(schema),
 		}
 	}

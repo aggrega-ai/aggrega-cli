@@ -594,13 +594,15 @@ func (p PluginsConfig) ProviderTargetURIs() map[string]string {
 //     capability.
 //
 // Function overrides the socket's default entry function (governance
-// label-transform → mutate, governance verdict roles → validate, linter →
-// lint, importer → import); when omitted, the socket's documented default
-// applies. The empty-string value of Function is the "use default" sentinel;
-// consumers apply the per-socket default when Function == "". Role names the
-// governance attachment role and is read on a governance entry only; it is the
-// empty value on every other socket's entries. With carries optional
-// attachment-time inputs the plugin reads; nil when the attachment declares none.
+// annotation-transform → transform_annotations, governance label-transform →
+// mutate, governance ir-verdict → verdict_ir, governance render-verdict →
+// verdict_render, linter → lint, importer → import); when omitted, the
+// socket's documented default applies. The empty-string value of Function is
+// the "use default" sentinel; consumers apply the per-socket default when
+// Function == "". Role names the governance attachment role and is read on a
+// governance entry only; it is the empty value on every other socket's
+// entries. With carries optional attachment-time inputs the plugin reads; nil
+// when the attachment declares none.
 type PluginRef struct {
 	URI        string          `yaml:"uri,omitempty"`
 	Capability string          `yaml:"capability,omitempty"`

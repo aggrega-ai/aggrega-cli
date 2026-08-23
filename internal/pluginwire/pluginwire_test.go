@@ -45,7 +45,7 @@ func TestEncodeForExportBinaryWire(t *testing.T) {
 func TestEncodeForExportTextWirePassesThrough(t *testing.T) {
 	t.Parallel()
 
-	for _, export := range []string{"validate", "transform_annotations", "parse", "describe"} {
+	for _, export := range []string{"verdict_ir", "transform_annotations", "parse", "describe"} {
 		t.Run(export, func(t *testing.T) {
 			t.Parallel()
 			text := []byte(`{"k":1}`)
@@ -69,14 +69,14 @@ func TestEncodeForExportRefusesAnAmbiguousBinaryExport(t *testing.T) {
 	t.Parallel()
 
 	table := []entry{
-		{export: "validate", shape: "PolicyInput", binary: true, encode: failEncode(t)},
-		{export: "validate", shape: "RenderPolicyInput", binary: true, encode: failEncode(t)},
+		{export: "verdict_ir", shape: "PolicyInput", binary: true, encode: failEncode(t)},
+		{export: "verdict_ir", shape: "RenderPolicyInput", binary: true, encode: failEncode(t)},
 	}
-	_, err := encodeForExport(table, "validate", []byte(`{}`))
+	_, err := encodeForExport(table, "verdict_ir", []byte(`{}`))
 	if err == nil {
 		t.Fatal("an export naming two payload shapes on a binary wire should refuse rather than guess")
 	}
-	for _, want := range []string{"validate", "PolicyInput", "RenderPolicyInput"} {
+	for _, want := range []string{"verdict_ir", "PolicyInput", "RenderPolicyInput"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not name %q: %v", want, err)
 		}
@@ -89,11 +89,11 @@ func TestEncodeForExportEncodesAnUnambiguousBinaryExport(t *testing.T) {
 	t.Parallel()
 
 	table := []entry{
-		{export: "validate", shape: "PolicyInput", binary: true, encode: func(text []byte) ([]byte, error) {
+		{export: "verdict_ir", shape: "PolicyInput", binary: true, encode: func(text []byte) ([]byte, error) {
 			return append([]byte("encoded:"), text...), nil
 		}},
 	}
-	got, err := encodeForExport(table, "validate", []byte(`{}`))
+	got, err := encodeForExport(table, "verdict_ir", []byte(`{}`))
 	if err != nil {
 		t.Fatalf("one payload shape on a binary wire should encode; got %v", err)
 	}

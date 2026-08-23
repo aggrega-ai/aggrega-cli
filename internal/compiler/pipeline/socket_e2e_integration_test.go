@@ -401,7 +401,7 @@ func TestPolicySocketGuestReportedErrorE2E(t *testing.T) {
 // structurally non-mutating: a governance guest built only to transform (it
 // exports mutate and emits label patches) cannot mutate when attached at a
 // verdict role. The verdict dispatch path has no mutate/patch code path, and this
-// attachment names no entry function, so the role's default validate export is
+// attachment names no entry function, so the role's default verdict_ir export is
 // the one dispatched — which a mutate-only guest does not declare, so it is
 // rejected loudly at the verdict step rather than silently mutating the build. This is the
 // structural replacement for the retired plugin-type-identity guard: confinement
@@ -418,7 +418,7 @@ func TestVerdictRoleConfinesMutateOnlyGuestE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("a mutate-only guest at a verdict role: expected a loud halt (the verdict role has no mutate path), got nil")
 	}
-	// The halt is the verdict step demanding its validate export — the guest's
+	// The halt is the verdict step demanding its verdict_ir export — the guest's
 	// mutate never ran, and no patch was applied — so the failure surfaces at the
 	// IR-verdict step and names the offending attachment.
 	if !strings.Contains(err.Error(), "ir-verdict") || !strings.Contains(err.Error(), "proof://mutate-only-at-verdict") {
@@ -841,8 +841,8 @@ func verdictExportOverrideInputs(t *testing.T, export string) (pipeline.Inputs, 
 }
 
 // TestVerdictRoleRefusesForeignExportOutputE2E is the needle for the socket
-// output-shape refusal. The four-role governance guest declares three governance
-// exports, so an attachment naming any of them passes the load-time export check
+// output-shape refusal. The four-role governance guest declares one export per
+// role, so an attachment naming any of them passes the load-time export check
 // — the entry-function override is a documented capability and the host does not
 // restrict it to the role's own default export. What the host must not do is read
 // an output the role's shape does not describe as if it were a result.
@@ -873,7 +873,7 @@ func TestVerdictRoleRefusesForeignExportOutputE2E(t *testing.T) {
 	t.Run("verdict export reports its verdict", func(t *testing.T) {
 		var res *pipeline.Result
 		stderr := captureStderr(t, func() {
-			inputs, buildLookup, recipeLookup, subAgg := verdictExportOverrideInputs(t, "validate")
+			inputs, buildLookup, recipeLookup, subAgg := verdictExportOverrideInputs(t, "verdict_ir")
 			r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 			if err != nil {
 				t.Fatalf("the role's own verdict export: unexpected halt: %v", err)
@@ -968,8 +968,8 @@ func TestLabelTransformRoleRefusesForeignExportOutputE2E(t *testing.T) {
 		}
 	})
 
-	t.Run("validate", func(t *testing.T) {
-		inputs, buildLookup, recipeLookup, subAgg := labelTransformExportOverrideInputs(t, "validate")
+	t.Run("verdict_ir", func(t *testing.T) {
+		inputs, buildLookup, recipeLookup, subAgg := labelTransformExportOverrideInputs(t, "verdict_ir")
 		_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
 		if err == nil {
 			t.Fatal("the verdict export returns a verdict envelope, which is not the label-transform shape: expected a halt, got a clean build")
@@ -978,7 +978,7 @@ func TestLabelTransformRoleRefusesForeignExportOutputE2E(t *testing.T) {
 		// The halt text is what the reader acts on, so it is recorded rather than
 		// only asserted against.
 		t.Logf("halt: %s", msg)
-		if !strings.Contains(msg, "validate") {
+		if !strings.Contains(msg, "verdict_ir") {
 			t.Errorf("the halt does not name the export the attachment dispatched:\n%v", msg)
 		}
 		if !errors.Is(err, wasm.ErrWasmOutputShape()) {

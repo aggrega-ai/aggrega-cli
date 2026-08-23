@@ -52,11 +52,12 @@ const (
 	// transform and verdict roles. Attached at a transform role it auto-tags
 	// topology-graph node labels (declaring mutate); attached at a verdict role it
 	// renders an accept/reject verdict over the IR graph or the rendered artifacts
-	// (declaring validate). The role it is attached at, not its type, fixes what it
-	// may emit. The role also supplies the export a governance attachment
-	// dispatches when it names no entry function of its own, so a guest declaring
-	// only one role's export cannot serve another role by default -- but an
-	// attachment that does name an entry function dispatches that one instead.
+	// (declaring verdict_ir over the IR graph, verdict_render over the rendered
+	// artifacts). The role it is attached at, not its type, fixes what it may emit.
+	// The role also supplies the export a governance attachment dispatches when it
+	// names no entry function of its own, so a guest declaring only one role's
+	// export cannot serve another role by default -- but an attachment that does
+	// name an entry function dispatches that one instead.
 	PluginTypeGovernance = plugintype.Governance
 
 	// PluginTypeCLI is a CLI plugin: it contributes a runtime aggrega <cmd>
@@ -131,17 +132,24 @@ var lintExportPrefix = minExportName(plugintype.Linter)
 // plugin-type registry so the literal lives once.
 var pipelineStepExportName = minExportName(plugintype.PipelineStep)
 
-// TransformAnnotationsExport, MutateExport, and ValidateExport are the default
-// entry-function names for the governance roles: the annotation-transform role
-// calls transform_annotations, the label-transform role calls mutate, and a
-// verdict role calls validate. They are the single source for the default a role
-// applies when a governance attachment leaves its entry function unset; they read
-// the name from the canonical governance role→export rule so the socket default
-// and that rule read one name rather than each re-spelling the literal.
+// TransformAnnotationsExport, MutateExport, VerdictIRExport, and
+// VerdictRenderExport are the default entry-function names for the governance
+// roles: the annotation-transform role calls transform_annotations, the
+// label-transform role calls mutate, the ir-verdict role calls verdict_ir, and
+// the render-verdict role calls verdict_render. They are the single source for
+// the default a role applies when a governance attachment leaves its entry
+// function unset; they read the name from the canonical governance role→export
+// rule so the socket default and that rule read one name rather than each
+// re-spelling the literal.
+//
+// The two verdict roles have one name each rather than one between them, because
+// each carries its own payload shape and the export name is what fixes which
+// shape a caller is holding.
 var (
 	TransformAnnotationsExport = governanceRoleExportName(plugintype.RoleAnnotationTransform)
 	MutateExport               = governanceRoleExportName(plugintype.RoleLabelTransform)
-	ValidateExport             = governanceRoleExportName(plugintype.RoleIRVerdict)
+	VerdictIRExport            = governanceRoleExportName(plugintype.RoleIRVerdict)
+	VerdictRenderExport        = governanceRoleExportName(plugintype.RoleRenderVerdict)
 )
 
 // governanceRoleExportName reads a governance role's required export name from
@@ -250,8 +258,9 @@ const (
 //     feature-recipe-pipeline step declares step; a CLI plugin declares
 //     cli_run; a parser declares parse; an importer declares import. A
 //     governance plugin has no single minimum export — the required export is
-//     the attachment role's (mutate for a transform role, validate for a verdict
-//     role), enforced at dispatch — so the load gate admits it on any role.
+//     the attachment role's (mutate for a transform role, verdict_ir or
+//     verdict_render for a verdict role), enforced at dispatch — so the load gate
+//     admits it on any role.
 //   - every export's declared host functions are a subset of the
 //     host-function allowlist. This routes through the same
 //     validateHostFunctionsSubset gate the loader applies to the set

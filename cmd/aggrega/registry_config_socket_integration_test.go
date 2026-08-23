@@ -319,8 +319,8 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 	// The policy entities are published to the registry so the build can resolve
 	// them at their point of use, but their content digests are not asserted: a
 	// verdict-only policy socket is not recorded on the pinned lockfile axis.
-	publishSocketPluginEntity(t, host, denyPolicySocket, "1.0.0", denyPolicyPath, "governance", "validate")
-	publishSocketPluginEntity(t, host, allowPolicySocket, "1.0.0", allowPolicyPath, "governance", "validate")
+	publishSocketPluginEntity(t, host, denyPolicySocket, "1.0.0", denyPolicyPath, "governance", "verdict_ir")
+	publishSocketPluginEntity(t, host, allowPolicySocket, "1.0.0", allowPolicyPath, "governance", "verdict_ir")
 
 	// proofMutatorLabel is the value the mutator-proof fixture injects as a node
 	// label; the fixture recipe emits every node-label value into a compose

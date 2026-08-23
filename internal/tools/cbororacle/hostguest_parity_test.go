@@ -216,7 +216,7 @@ func TestHostGuestWireParity_Descriptor(t *testing.T) {
 		AbiVersion:  "v1alpha1",
 		PluginType:  "governance",
 		Description: "cross-side descriptor fixture",
-		Exports:     []wasm.PluginExport{{Name: "validate"}},
+		Exports:     []wasm.PluginExport{{Name: "verdict_ir"}},
 	}
 	got, err := d.EncodeCBOR()
 	if err != nil {

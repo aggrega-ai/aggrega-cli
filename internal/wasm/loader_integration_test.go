@@ -154,9 +154,9 @@ func TestPluginRoundTrip_PolicyValidatorGo(t *testing.T) {
 	plugin, cleanup := loadFixturePlugin(t, "policy-go.wasm")
 	defer cleanup()
 
-	outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
+	outputBytes, err := plugin.Call(context.Background(), "verdict_ir", []byte(`{}`))
 	if err != nil {
-		t.Fatalf("plugin.Call validate: %v", err)
+		t.Fatalf("plugin.Call verdict_ir: %v", err)
 	}
 	assertPolicyValidatorOutput(t, outputBytes)
 }
@@ -169,9 +169,9 @@ func TestPluginRoundTrip_PolicyValidatorRust(t *testing.T) {
 	plugin, cleanup := loadFixturePlugin(t, "policy-rust.wasm")
 	defer cleanup()
 
-	outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
+	outputBytes, err := plugin.Call(context.Background(), "verdict_ir", []byte(`{}`))
 	if err != nil {
-		t.Fatalf("plugin.Call validate: %v", err)
+		t.Fatalf("plugin.Call verdict_ir: %v", err)
 	}
 	assertPolicyValidatorOutput(t, outputBytes)
 }
@@ -200,9 +200,9 @@ func TestPluginRoundTrip_PolicyValidatorTypescript(t *testing.T) {
 	plugin, cleanup := loadFixturePlugin(t, "policy-typescript.wasm")
 	defer cleanup()
 
-	outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
+	outputBytes, err := plugin.Call(context.Background(), "verdict_ir", []byte(`{}`))
 	if err != nil {
-		t.Fatalf("plugin.Call validate: %v", err)
+		t.Fatalf("plugin.Call verdict_ir: %v", err)
 	}
 	assertPolicyValidatorOutput(t, outputBytes)
 }
@@ -243,9 +243,9 @@ func TestCrossLanguageFixtureParity_PolicyValidator(t *testing.T) {
 			plugin, cleanup := loadFixturePlugin(t, "policy-"+lang+".wasm")
 			defer cleanup()
 
-			outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
+			outputBytes, err := plugin.Call(context.Background(), "verdict_ir", []byte(`{}`))
 			if err != nil {
-				t.Fatalf("plugin.Call validate (%s): %v", lang, err)
+				t.Fatalf("plugin.Call verdict_ir (%s): %v", lang, err)
 			}
 			var o output
 			if err := json.Unmarshal(outputBytes, &o); err != nil {

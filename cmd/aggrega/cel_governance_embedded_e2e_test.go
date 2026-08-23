@@ -54,7 +54,8 @@ metadata:
 spec:
   abiVersion: v1alpha1
   exports:
-    - name: validate
+    - name: verdict_ir
+    - name: verdict_render
     - name: mutate
     - name: transform_annotations
 `)

@@ -1163,11 +1163,11 @@ var codecTargets = map[string]codecTarget{
 	//
 	// wireExports carries both verdict roles, because this one schema serves two
 	// pipeline stages with two different input shapes — the IR graph at static
-	// analysis, the rendered artifacts after rendering — while the role-to-export
-	// rule gives both roles the SAME default export name. That collision is a
-	// property of the socket rather than of the table, so the table records it
-	// instead of hiding it, and the registry refuses to guess a shape from an
-	// export name that names two.
+	// analysis, the rendered artifacts after rendering. Each role has its own
+	// default export name, so an export name names exactly one input shape and
+	// the registry can encode for it without being told which stage it is
+	// serving. The table lists a row per role because the shapes differ, not
+	// because the names collide.
 	"policy_host_gen.go": {
 		schema:               schemas.WasmPolicyV1alpha1,
 		schemaFile:           "wasm-policy-v1alpha1.schema.json",

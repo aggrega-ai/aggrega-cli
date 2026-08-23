@@ -19,18 +19,18 @@ import (
 // encoding that export's wire carries.
 //
 // Two facts sit here that nothing else can supply. Which shape an export
-// receives is not derivable from the export's name — one socket's schema serves
-// two pipeline stages with two different input shapes under one export name —
-// and whether that export's wire is binary is fixed by the socket rather than by
-// anything a caller can see. Both are read from the payload-codec registrations,
-// so the table and the codecs it names are generated from one source.
+// receives is not derivable from the export's name — a name is a symbol in the
+// guest's export section and carries no shape with it — and whether that export's
+// wire is binary is fixed by the socket rather than by anything a caller can see.
+// Both are read from the payload-codec registrations, so the table and the codecs
+// it names are generated from one source.
 //
 // Sorted by export name and then payload shape.
 var entries = []entry{
 	{export: "mutate", shape: "MutatorInput", binary: true, encode: encodeMutatorInput},
 	{export: "transform_annotations", shape: "AnnotationTransformInput", binary: false, encode: encodeAnnotationTransformInput},
-	{export: "validate", shape: "PolicyInput", binary: false, encode: encodePolicyInput},
-	{export: "validate", shape: "RenderPolicyInput", binary: false, encode: encodeRenderPolicyInput},
+	{export: "verdict_ir", shape: "PolicyInput", binary: false, encode: encodePolicyInput},
+	{export: "verdict_render", shape: "RenderPolicyInput", binary: false, encode: encodeRenderPolicyInput},
 }
 
 // encodeMutatorInput reads an authored text payload into that shape and

@@ -56,9 +56,9 @@ func TestSharedCompilationCacheConcurrentLoads(t *testing.T) {
 			t.Fatalf("loader.Load: %v", err)
 		}
 		defer func() { _ = plugin.Close(context.Background()) }()
-		out, err := plugin.Call(context.Background(), "validate", input)
+		out, err := plugin.Call(context.Background(), "verdict_ir", input)
 		if err != nil {
-			t.Fatalf("plugin.Call validate: %v", err)
+			t.Fatalf("plugin.Call verdict_ir: %v", err)
 		}
 		return out
 	}

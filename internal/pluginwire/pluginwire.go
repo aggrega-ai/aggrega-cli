@@ -39,11 +39,12 @@ type entry struct {
 // rather than refused. A binary-wire export gets its payload read into that
 // export's payload shape and re-emitted in the canonical binary encoding.
 //
-// One export names two payload shapes — a single schema serving two pipeline
-// stages — and if such an export's wire is binary the payload cannot be encoded,
-// because the shape is not recoverable from the name. That halts loudly and says
-// so, rather than encoding as one of the two and producing bytes the guest
-// silently misreads.
+// An export that names more than one payload shape and carries a binary wire
+// cannot have its payload encoded at all, because the shape is not recoverable
+// from the name. That halts loudly and says which shapes it could not choose
+// between, rather than encoding as one of them and producing bytes the guest
+// silently misreads. Every export in the table names one shape, so the refusal
+// guards the socket that adds a second rather than reporting on one today.
 func EncodeForExport(export string, text []byte) ([]byte, error) {
 	return encodeForExport(entries, export, text)
 }

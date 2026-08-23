@@ -194,7 +194,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 
 // runPolicySocket runs the Step-4 policy socket: it marshals the
 // analyzer's assembled PolicyInput (the full IR graph plus precalculated paths)
-// once, dispatches each configured policy plugin's validate export (or a
+// once, dispatches each configured policy plugin's verdict_ir export (or a
 // per-attachment override), and appends one AnalysisError per failed verdict to
 // analysis.Errors. Appending (rather than returning a function-level error)
 // routes a policy rejection through the same gate selector and appliesTo
@@ -217,7 +217,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierVerdict)
 
 	for _, ref := range refs {
-		export := policyExport(ref)
+		export := policyExport(ref, wasm.VerdictIRExport)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
 			return fmt.Errorf("ir-verdict: resolve plugin %q: %w", ref.URI, err)
@@ -295,7 +295,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 
 	var haltErrs []analyzer.AnalysisError
 	for _, ref := range refs {
-		export := policyExport(ref)
+		export := policyExport(ref, wasm.VerdictRenderExport)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
 			return fmt.Errorf("render-verdict: resolve plugin %q: %w", ref.URI, err)
@@ -379,12 +379,15 @@ func invokeVerdictPlugin(ctx context.Context, spec wasm.PluginSpec, export strin
 }
 
 // policyExport returns the entry function a policy attachment dispatches to: the
-// per-attachment override when set, else the socket's documented default.
-func policyExport(ref workspaceconfig.PluginRef) string {
+// per-attachment override when set, else roleDefault, the documented default for
+// the verdict role the attachment is serving. The caller supplies that default
+// because the two verdict roles have one export each, and a shared accessor
+// cannot tell which of them it is being asked about.
+func policyExport(ref workspaceconfig.PluginRef, roleDefault string) string {
 	if ref.Function != "" {
 		return ref.Function
 	}
-	return wasm.ValidateExport
+	return roleDefault
 }
 
 // attachmentSettings returns the free-form settings object the attachment

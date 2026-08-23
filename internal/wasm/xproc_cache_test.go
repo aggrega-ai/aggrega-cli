@@ -59,9 +59,9 @@ func TestCrossProcessDiskCacheWorker(t *testing.T) {
 	}
 	defer func() { _ = plugin.Close(context.Background()) }()
 
-	out, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
+	out, err := plugin.Call(context.Background(), "verdict_ir", []byte(`{}`))
 	if err != nil {
-		t.Fatalf("worker: call validate: %v", err)
+		t.Fatalf("worker: call verdict_ir: %v", err)
 	}
 	// Marker line the parent parses out of the combined test output.
 	t.Logf("%s%s", xprocOutMarker, base64.StdEncoding.EncodeToString(out))

@@ -66,7 +66,7 @@ func TestDecodeGuestOutputRefusesUndeclaredField(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var out abi.PolicyOutput
-			err := DecodeGuestOutput("validate", []byte(tc.payload), &out)
+			err := DecodeGuestOutput("verdict_ir", []byte(tc.payload), &out)
 			if tc.wantField == "" {
 				if err != nil {
 					t.Fatalf("the declared shape must decode: %v", err)
@@ -80,7 +80,7 @@ func TestDecodeGuestOutputRefusesUndeclaredField(t *testing.T) {
 				t.Fatalf("an envelope carrying %q is not this shape: expected a refusal, got nil", tc.wantField)
 			}
 			msg := err.Error()
-			if !strings.Contains(msg, `"validate"`) {
+			if !strings.Contains(msg, `"verdict_ir"`) {
 				t.Errorf("the refusal does not name the export it was dispatched to:\n%v", msg)
 			}
 			if !strings.Contains(msg, tc.wantField) {

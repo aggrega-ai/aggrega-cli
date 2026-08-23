@@ -206,7 +206,7 @@ func TestRunLocal_PayloadVariants(t *testing.T) {
 		t.Parallel()
 		guest := wasmtest.EnsureFixtureBuilt(t, "policy-allow-go.wasm")
 
-		out, err := runLocal(t, "--plugin", guest, "--export", "validate")
+		out, err := runLocal(t, "--plugin", guest, "--export", "verdict_ir")
 		if err != nil {
 			t.Fatalf("default-{} run against a guest that returns bytes on {} failed: %v", err)
 		}
@@ -296,7 +296,7 @@ func TestRunLocal_ExitStatusSuccess(t *testing.T) {
 	t.Parallel()
 	guest := wasmtest.EnsureFixtureBuilt(t, "policy-allow-go.wasm")
 
-	if _, err := runLocal(t, "--plugin", guest, "--export", "validate"); err != nil {
+	if _, err := runLocal(t, "--plugin", guest, "--export", "verdict_ir"); err != nil {
 		t.Fatalf("a clean guest run should yield command success; got %v", err)
 	}
 }

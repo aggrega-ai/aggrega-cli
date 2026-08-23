@@ -94,14 +94,14 @@ func TestWireCallSiteDisagreementCanFail(t *testing.T) {
 		},
 		{
 			name:    "registry says text, call site decodes binary",
-			binary:  map[string]bool{"validate": false},
-			sites:   []decodeSite{{where: "a.go:1", binary: true, exports: []string{"validate"}}},
+			binary:  map[string]bool{"verdict_ir": false},
+			sites:   []decodeSite{{where: "a.go:1", binary: true, exports: []string{"verdict_ir"}}},
 			wantSub: "does not mark",
 		},
 		{
 			name:    "registry marks an export binary and no call site decodes it that way",
 			binary:  map[string]bool{"mutate": true},
-			sites:   []decodeSite{{where: "a.go:1", binary: false, exports: []string{"validate"}}},
+			sites:   []decodeSite{{where: "a.go:1", binary: false, exports: []string{"verdict_ir"}}},
 			wantSub: "no socket-output decode call site",
 		},
 		{

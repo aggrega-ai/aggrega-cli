@@ -107,8 +107,14 @@ func GovernanceRoleTier(role Role) (Tier, bool) {
 // GovernanceRoleExport reports the default entry-function export name for a
 // governance role, and whether role is a known governance role. It is the single
 // home of the role→export rule: the annotation-transform role calls
-// transform_annotations; the label-transform role calls mutate; a verdict role
-// calls validate.
+// transform_annotations; the label-transform role calls mutate; the ir-verdict
+// role calls verdict_ir; the render-verdict role calls verdict_render.
+//
+// The two verdict roles carry distinct names because they carry distinct payload
+// shapes — the build graph at one, the rendered output files at the other. One
+// name shared across both would leave the shape unrecoverable from the export, so
+// a caller holding an export name and an authored payload could not tell which of
+// the two shapes it is encoding for.
 //
 // The name is a default rather than a requirement, and the distinction is
 // load-bearing. It applies when a governance attachment leaves its entry
@@ -123,8 +129,10 @@ func GovernanceRoleExport(role Role) (string, bool) {
 		return "transform_annotations", true
 	case RoleLabelTransform:
 		return "mutate", true
-	case RoleIRVerdict, RoleRenderVerdict:
-		return "validate", true
+	case RoleIRVerdict:
+		return "verdict_ir", true
+	case RoleRenderVerdict:
+		return "verdict_render", true
 	default:
 		return "", false
 	}

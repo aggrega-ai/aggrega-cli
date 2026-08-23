@@ -145,7 +145,7 @@ func TestRegorusPolicyAllowProceedsE2E(t *testing.T) {
 
 // TestRegorusPolicyUnsupportedBuiltinFaultsE2E proves a policy that calls a
 // builtin the embedded engine does not implement halts the build as a BUILD
-// FAULT (an invocation error naming the failed validate call), NOT as a deny
+// FAULT (an invocation error naming the failed verdict_ir call), NOT as a deny
 // verdict and NOT as a silent pass. This is the load-bearing distinction
 // between "the engine cannot evaluate this policy" and "the policy denies".
 func TestRegorusPolicyUnsupportedBuiltinFaultsE2E(t *testing.T) {
@@ -158,9 +158,9 @@ func TestRegorusPolicyUnsupportedBuiltinFaultsE2E(t *testing.T) {
 		t.Fatalf("unsupported-builtin halt was routed as a policy verdict (ErrPolicyViolation); it must be a build fault:\n%v", err)
 	}
 	// It must be the invocation-fault path: the guest returned an error from
-	// validate, which the socket surfaces naming the failed call.
-	if !strings.Contains(err.Error(), `call "validate"`) {
-		t.Errorf("unsupported-builtin halt is not the validate-invocation fault path:\n%v", err)
+	// verdict_ir, which the socket surfaces naming the failed call.
+	if !strings.Contains(err.Error(), `call "verdict_ir"`) {
+		t.Errorf("unsupported-builtin halt is not the verdict_ir-invocation fault path:\n%v", err)
 	}
 	if res != nil && len(res.Artifacts) > 0 {
 		t.Errorf("unsupported-builtin policy produced artifacts; the build must have halted")

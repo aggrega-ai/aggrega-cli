@@ -17,10 +17,10 @@
 //! to render a verdict it reports decisions that stop or annotate a build;
 //! attached to shape a build it reports the change to make.
 //!
-//! One `validate` export serves both verdict roles, because the role fixes which
-//! payload arrives — the build graph at one role, the rendered output files at the
-//! other. The plugin reads the payload it was given and never declares which one
-//! it expects.
+//! The two verdict roles have one export each: `verdict_ir` reads the build graph
+//! and `verdict_render` reads the rendered output files. The export the host
+//! dispatches is what says which payload arrives, so each one reads exactly the
+//! shape its own role sends.
 //!
 //! A policy addresses the whole payload through one name, `input`, so the names it
 //! reads are the names the wire gives them.
@@ -184,7 +184,7 @@ use aggrega_pdk_rust::{
 use extism_pdk::{plugin_fn, FnResult};
 use governancecore::artifacts::render_input;
 use governancecore::payload::{read as read_payload, settings_value};
-use governancecore::sources::project as project_sources;
+use governancecore::sources::{project as project_sources, Source};
 use governancecore::translation::{settings_schema, Translation};
 
 /// The field a policy reads the attachment's settings through, and the field the
@@ -198,10 +198,10 @@ const SOURCES_FIELD: &str = "sources";
 /// The static `describe()` self-report the host reads once when it loads the
 /// plugin.
 ///
-/// It declares the three exports the four governance roles dispatch to, and the
-/// schema that types the attachment's settings. It declares no capabilities: a
-/// governance plugin is not selected by capability, and what it may emit is fixed
-/// by the role it is attached at.
+/// It declares one export per governance role, and the schema that types the
+/// attachment's settings. It declares no capabilities: a governance plugin is not
+/// selected by capability, and what it may emit is fixed by the role it is
+/// attached at.
 ///
 /// It declares exactly the exports this plugin implements. The host refuses to
 /// call an export a plugin did not declare, so an attachment expecting an export
@@ -217,7 +217,11 @@ fn descriptor() -> PluginDescriptor {
                 .to_string(),
         exports: vec![
             PluginExport {
-                name: "validate".to_string(),
+                name: "verdict_ir".to_string(),
+                ..Default::default()
+            },
+            PluginExport {
+                name: "verdict_render".to_string(),
                 ..Default::default()
             },
             PluginExport {
@@ -249,47 +253,66 @@ pub fn describe() -> FnResult<String> {
     Ok(describe!(descriptor()))
 }
 
-/// Evaluates the attached expressions against the payload and reports the
+/// Evaluates the attached expressions against the build graph and reports the
 /// decisions they reached. A failure to evaluate propagates, and is surfaced as a
 /// build fault rather than as a decision.
 #[plugin_fn]
-pub fn validate(input: String) -> FnResult<String> {
-    let output = verdict(&input)?;
+pub fn verdict_ir(input: String) -> FnResult<String> {
+    let output = graph_verdict(&input)?;
     Ok(serde_json::to_string(&output)?)
 }
 
-/// Reads the payload, evaluates the expressions against it, and collects the
-/// decisions.
+/// Evaluates the attached expressions against the rendered output files and
+/// reports the decisions they reached. A failure to evaluate propagates, and is
+/// surfaced as a build fault rather than as a decision.
+#[plugin_fn]
+pub fn verdict_render(input: String) -> FnResult<String> {
+    let output = rendered_verdict(&input)?;
+    Ok(serde_json::to_string(&output)?)
+}
+
+/// Reads the build-graph payload and evaluates the expressions against it.
 ///
-/// The payload identifies itself by shape: one facet carries the rendered output
-/// files, the other carries the build graph, and each field is required in the
-/// facet that carries it. Reading the shape is what lets one export serve both
-/// roles without the plugin declaring which role it is attached at.
-fn verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
+/// The whole payload is the input document, so a policy reads the graph and the
+/// routing paths under the names the wire gives them. The settings are written in
+/// as a value even when the attachment declared none: an expression that reads an
+/// absent field fails, so leaving the field out would turn "this attachment
+/// configured nothing" into a policy failure for every policy that reads a
+/// threshold.
+fn graph_verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
     let payload: serde_json::Value = serde_json::from_str(raw)?;
-    let results = if payload.get("artifacts").is_some() {
-        let rendered: RenderPolicyInput = read_payload(&payload, &["artifacts"])?;
-        let translation = Translation::from_settings(rendered.settings.as_deref())?;
-        // The rendered facet's input document is assembled rather than passed
-        // through, because the artifacts are projected into readable documents on
-        // the way. It already carries the settings under the same name.
-        let input = render_input(&rendered);
-        engine::evaluate(&project_sources(&rendered.sources), &input, &translation)?
-    } else {
-        let graph: PolicyInput = read_payload(&payload, &["precalculated_paths"])?;
-        let translation = Translation::from_settings(graph.settings.as_deref())?;
-        // The whole payload is the input document, so a policy reads the graph and
-        // the routing paths under the names the wire gives them. The settings are
-        // written in as a value even when the attachment declared none: an
-        // expression that reads an absent field fails, so leaving the field out
-        // would turn "this attachment configured nothing" into a policy failure
-        // for every policy that reads a threshold.
-        let mut input = payload;
-        input[SETTINGS_FIELD] = settings_value(graph.settings.as_deref());
-        engine::evaluate(&project_sources(&graph.sources), &input, &translation)?
-    };
+    let graph: PolicyInput = read_payload(&payload, &["precalculated_paths"])?;
+    let translation = Translation::from_settings(graph.settings.as_deref())?;
+    let sources = project_sources(&graph.sources);
+    let mut input = payload;
+    input[SETTINGS_FIELD] = settings_value(graph.settings.as_deref());
+    verdict(&sources, &input, &translation)
+}
+
+/// Reads the rendered-output payload and evaluates the expressions against it.
+///
+/// This input document is assembled rather than passed through, because the
+/// artifacts are projected into readable documents on the way. It already carries
+/// the settings under the same name.
+fn rendered_verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
+    let payload: serde_json::Value = serde_json::from_str(raw)?;
+    let rendered: RenderPolicyInput = read_payload(&payload, &["artifacts"])?;
+    let translation = Translation::from_settings(rendered.settings.as_deref())?;
+    let sources = project_sources(&rendered.sources);
+    let input = render_input(&rendered);
+    verdict(&sources, &input, &translation)
+}
+
+/// Evaluates the expressions against one input document and collects the
+/// decisions. This is the body both verdict exports share: the payload each one
+/// reads differs, and everything after the read is the same work.
+fn verdict(
+    sources: &[Source<'_>],
+    input: &serde_json::Value,
+    translation: &Translation,
+) -> anyhow::Result<PolicyOutput> {
     Ok(PolicyOutput {
-        results,
+        results: engine::evaluate(sources, input, translation)?,
         ..Default::default()
     })
 }
@@ -421,7 +444,12 @@ mod tests {
         let declared: Vec<&str> = descriptor.exports.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(
             declared,
-            vec!["validate", "mutate", "transform_annotations"]
+            vec![
+                "verdict_ir",
+                "verdict_render",
+                "mutate",
+                "transform_annotations"
+            ]
         );
     }
 
@@ -454,8 +482,8 @@ mod tests {
 
     #[test]
     fn the_graph_facet_reads_the_graph() {
-        let output =
-            verdict(&graph_payload(&["a", "b"], GRAPH_POLICY, None)).expect("evaluation succeeds");
+        let output = graph_verdict(&graph_payload(&["a", "b"], GRAPH_POLICY, None))
+            .expect("evaluation succeeds");
         assert_eq!(output.results.len(), 1, "{:?}", output.results);
         assert_eq!(output.results[0].severity, SEVERITY_HALT);
         assert_eq!(output.results[0].message, "more than one component");
@@ -465,7 +493,7 @@ mod tests {
     #[test]
     fn the_graph_facet_allows_when_no_decision_is_reached() {
         let output =
-            verdict(&graph_payload(&["a"], GRAPH_POLICY, None)).expect("evaluation succeeds");
+            graph_verdict(&graph_payload(&["a"], GRAPH_POLICY, None)).expect("evaluation succeeds");
         assert!(output.results.is_empty(), "{:?}", output.results);
     }
 
@@ -475,7 +503,7 @@ mod tests {
             "artifacts": [{ "path": "svc.yaml", "content": "kind: Service\n" }],
             "sources": [{ "path": "policy.cel", "content": ARTIFACT_POLICY }],
         });
-        let output = verdict(&payload.to_string()).expect("evaluation succeeds");
+        let output = rendered_verdict(&payload.to_string()).expect("evaluation succeeds");
         assert_eq!(output.results.len(), 1, "{:?}", output.results);
         assert_eq!(
             output.results[0].message,
@@ -494,7 +522,7 @@ mod tests {
             }],
             "sources": [{ "path": "policy.cel", "content": ARTIFACT_POLICY }],
         });
-        let output = verdict(&payload.to_string()).expect("evaluation succeeds");
+        let output = rendered_verdict(&payload.to_string()).expect("evaluation succeeds");
         assert_eq!(
             output.results.len(),
             1,
@@ -512,7 +540,7 @@ mod tests {
                 "content": r#"{"deny": input.artifacts.filter(a, has(a.parse_error)).map(a, "unreadable output at " + a.path)}"#,
             }],
         });
-        let output = verdict(&payload.to_string()).expect("evaluation succeeds");
+        let output = rendered_verdict(&payload.to_string()).expect("evaluation succeeds");
         assert_eq!(output.results.len(), 1, "{:?}", output.results);
         assert_eq!(
             output.results[0].message,
@@ -527,7 +555,7 @@ mod tests {
             "translation": [{ "key": "advisory", "severity": "info" }]
         });
 
-        let graph = verdict(&graph_payload(&["a"], policy, Some(settings.clone())))
+        let graph = graph_verdict(&graph_payload(&["a"], policy, Some(settings.clone())))
             .expect("the graph facet evaluates");
         assert_eq!(graph.results.len(), 1, "{:?}", graph.results);
         assert_eq!(graph.results[0].severity, SEVERITY_INFO);
@@ -538,7 +566,7 @@ mod tests {
             "settings": settings,
         });
         let rendered =
-            verdict(&rendered_payload.to_string()).expect("the rendered facet evaluates");
+            rendered_verdict(&rendered_payload.to_string()).expect("the rendered facet evaluates");
         assert_eq!(rendered.results.len(), 1, "{:?}", rendered.results);
         assert_eq!(rendered.results[0].severity, SEVERITY_INFO);
     }
@@ -548,7 +576,7 @@ mod tests {
         let settings = serde_json::json!({
             "translation": [{ "key": "blocked", "severity": "reject" }]
         });
-        let err = verdict(&graph_payload(&["a"], GRAPH_POLICY, Some(settings)))
+        let err = graph_verdict(&graph_payload(&["a"], GRAPH_POLICY, Some(settings)))
             .expect_err("a severity outside the closed set is refused");
         assert!(err.to_string().contains("blocked"), "{err}");
     }
@@ -560,7 +588,8 @@ mod tests {
         // the field's own contents therefore evaluates rather than failing.
         let policy =
             r#"{"warn": has(input.settings.max_nodes) ? ["configured"] : ["not configured"]}"#;
-        let output = verdict(&graph_payload(&["a"], policy, None)).expect("evaluation succeeds");
+        let output =
+            graph_verdict(&graph_payload(&["a"], policy, None)).expect("evaluation succeeds");
         assert_eq!(output.results.len(), 1, "{:?}", output.results);
         assert_eq!(output.results[0].severity, SEVERITY_WARN);
         assert_eq!(output.results[0].message, "not configured");
@@ -568,7 +597,7 @@ mod tests {
 
     #[test]
     fn an_evaluation_failure_is_a_build_fault_rather_than_a_verdict() {
-        let err = verdict(&graph_payload(
+        let err = graph_verdict(&graph_payload(
             &["a"],
             r#"{"deny": [input.graph.nope]}"#,
             None,
@@ -586,7 +615,7 @@ mod tests {
             "precalculated_paths": serde_json::Value::Null,
             "sources": [{ "path": "policy.cel", "content": GRAPH_POLICY }],
         });
-        let output = verdict(&payload.to_string()).expect("evaluation succeeds");
+        let output = graph_verdict(&payload.to_string()).expect("evaluation succeeds");
         assert!(output.results.is_empty(), "{:?}", output.results);
     }
 
@@ -597,7 +626,7 @@ mod tests {
   expression: size(input.graph.spec.nodes) > 1
   message: this build declares more than one component
 ";
-        let output = verdict(&payload_named("policy.yaml", &["a", "b"], document))
+        let output = graph_verdict(&payload_named("policy.yaml", &["a", "b"], document))
             .expect("a rules document evaluates");
         assert_eq!(output.results.len(), 1, "{:?}", output.results);
         assert_eq!(output.results[0].severity, SEVERITY_HALT);
@@ -628,12 +657,12 @@ mod tests {
         }"#;
         let nodes = ["web", "api", "worker"];
         let from_document = serde_json::to_string(
-            &verdict(&payload_named("policy.yaml", &nodes, document))
+            &graph_verdict(&payload_named("policy.yaml", &nodes, document))
                 .expect("the rules document evaluates"),
         )
         .expect("the output serializes");
         let from_expression = serde_json::to_string(
-            &verdict(&payload_named("policy.cel", &nodes, expression))
+            &graph_verdict(&payload_named("policy.cel", &nodes, expression))
                 .expect("the expression evaluates"),
         )
         .expect("the output serializes");
@@ -878,7 +907,8 @@ mod tests {
           "deny": ["a verdict"],
           "labels": [{"node": "app", "key": "tier", "value": "gold"}],
         }"#;
-        let verdict = verdict(&graph_payload(&["app"], POLICY, None)).expect("the verdict is read");
+        let verdict =
+            graph_verdict(&graph_payload(&["app"], POLICY, None)).expect("the verdict is read");
         assert_eq!(verdict.results.len(), 1, "{:?}", verdict.results);
         assert_eq!(verdict.results[0].message, "a verdict");
 
@@ -893,9 +923,9 @@ mod tests {
         // asserted is byte equality of that, not just the message set.
         let policy = r#"{"deny": input.graph.spec.nodes.map(n, "component " + n)}"#;
         let payload = graph_payload(&["delta", "alpha", "charlie", "bravo"], policy, None);
-        let first = serde_json::to_string(&verdict(&payload).expect("evaluation succeeds"))
+        let first = serde_json::to_string(&graph_verdict(&payload).expect("evaluation succeeds"))
             .expect("the output serializes");
-        let second = serde_json::to_string(&verdict(&payload).expect("evaluation succeeds"))
+        let second = serde_json::to_string(&graph_verdict(&payload).expect("evaluation succeeds"))
             .expect("the output serializes");
         assert_eq!(first, second);
         assert!(

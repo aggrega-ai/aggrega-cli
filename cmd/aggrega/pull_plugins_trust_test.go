@@ -47,7 +47,7 @@ func verdictPluginEntityYAML(socket, name, version string) string {
 		"spec:\n" +
 		"  abiVersion: v1alpha1\n" +
 		"  exports:\n" +
-		"    - name: validate\n"
+		"    - name: verdict_ir\n"
 }
 
 // cachedVerdictPlugin describes a verdict-socket plugin seeded into a workspace:
