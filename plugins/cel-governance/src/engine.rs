@@ -18,7 +18,10 @@
 //!
 //! Expression languages have no rule names to collect decisions under, so the
 //! decisions are the value the expression produces: a map from decision key to
-//! the messages reached under it.
+//! what that key collects. At a verdict role a key collects the messages reached
+//! under it; at a role that shapes the build it collects the decisions to apply,
+//! each an object naming what it applies to. Both are read here; what a key's
+//! contents mean is the reading role's own business.
 //!
 //! ```cel
 //! {
@@ -31,8 +34,8 @@
 //!
 //! A key the map omits reached no decision, which is an absent verdict rather
 //! than a failure — so a policy set split across files need not name every key in
-//! every file. A key may carry a list of messages, a single message, or the null
-//! value for none of them.
+//! every file, and a role reads only the key it is about. A key may carry a list of
+//! what it collects, a single one of them, or the null value for none.
 //!
 //! An expression that evaluates to anything other than a map is refused, by name,
 //! with the shape to write. A bare comparison is the mistake this catches:
@@ -58,6 +61,13 @@
 //! files it is the order the host supplied them in, which is sorted by name.
 //! Nothing here iterates a map.
 //!
+//! The decisions a role that shapes the build collects are a different case, and
+//! this module deliberately does not order them: what a total order over them is
+//! depends on what a decision under that key can express, so each of those roles
+//! establishes and documents its own. What this module guarantees them is that the
+//! sequence it hands over is the sequence the expressions produced, unshuffled by
+//! anything here.
+//!
 //! # Failure is never a silent allow
 //!
 //! A policy that cannot be read, cannot be evaluated, or does not produce
@@ -69,7 +79,7 @@
 
 use crate::rules;
 use aggrega_pdk_rust::Diagnostic;
-use cel::objects::{KeyRef, Map};
+use cel::objects::{Key, KeyRef, Map};
 use cel::{Context, Program, Value};
 use governancecore::sources::Source;
 use governancecore::translation::{translate_into, Translation};
@@ -225,6 +235,201 @@ fn message(path: &str, key: &str, value: &Value) -> anyhow::Result<String> {
         other => anyhow::bail!(
             "policy source {path:?} collected a value of type {kind} rather than a message under \
              decision key {key:?}; every entry under a decision key is the text reported for it.",
+            kind = other.type_of()
+        ),
+    }
+}
+
+/// What a decision under one key must name, as it is reported back to whoever
+/// wrote it.
+///
+/// A decision that shapes a build is an object rather than a message, so a
+/// refusal has to say which fields were expected. Carrying that alongside the key
+/// rather than restating it in each message is what makes every refusal under one
+/// key read the same way.
+pub struct DecisionShape {
+    /// The decision key a policy collects these decisions under.
+    pub key: &'static str,
+    /// Every field name a decision under this key may name. A decision naming
+    /// anything else is refused rather than having the extra field ignored: a
+    /// misspelled field would otherwise read as a decision that left it out.
+    pub fields: &'static [&'static str],
+    /// The sentence saying what a decision under this key names. It is appended to
+    /// every refusal, so a reader is told the shape rather than only the fault.
+    pub summary: &'static str,
+}
+
+/// One decision a policy collected under a decision key, with the file it came
+/// from.
+///
+/// The fields are read by name, one at a time, and never iterated — the evaluator
+/// holds a decision's fields in a map whose walk order it does not fix, so
+/// reading by name is what keeps identical input producing an identical result.
+/// The one place the fields are walked is the unknown-field check, which reports
+/// what it found in sorted order for the same reason.
+#[derive(Debug, Clone)]
+pub struct CollectedDecision {
+    /// The attached file's name, as the decision is attributed to it.
+    pub path: String,
+    /// The decision's own fields.
+    fields: Map,
+}
+
+impl CollectedDecision {
+    /// Reads a field a decision must name, requiring it to be text.
+    ///
+    /// A field left out, or named as the null value, is refused rather than read
+    /// as empty: a coordinate or a key nobody wrote is not something a policy
+    /// meant to ask for, while the empty string is a value an author can write
+    /// deliberately.
+    pub fn text(&self, shape: &DecisionShape, field: &str) -> anyhow::Result<String> {
+        match self.fields.get(&KeyRef::String(field)) {
+            Some(Value::String(text)) => Ok(text.to_string()),
+            Some(Value::Null) | None => anyhow::bail!(
+                "policy source {:?} collected a decision under {:?} that names no {field:?}. {}",
+                self.path,
+                shape.key,
+                shape.summary
+            ),
+            Some(other) => Err(self.not_text(shape, field, other)),
+        }
+    }
+
+    /// Reads a field a decision may leave out, requiring it to be text when it is
+    /// named.
+    pub fn optional_text(
+        &self,
+        shape: &DecisionShape,
+        field: &str,
+    ) -> anyhow::Result<Option<String>> {
+        match self.fields.get(&KeyRef::String(field)) {
+            Some(Value::String(text)) => Ok(Some(text.to_string())),
+            Some(Value::Null) | None => Ok(None),
+            Some(other) => Err(self.not_text(shape, field, other)),
+        }
+    }
+
+    /// Requires a decision to name only the fields its shape defines.
+    ///
+    /// The fields are walked here and nowhere else, and what is reported is sorted
+    /// — so a decision carrying two unrecognised fields is refused with the same
+    /// message every time rather than in whichever order the evaluator happened to
+    /// hold them.
+    pub fn admit_fields(&self, shape: &DecisionShape) -> anyhow::Result<()> {
+        let mut unknown: Vec<String> = self
+            .fields
+            .map
+            .keys()
+            .map(field_name)
+            .filter(|name| !shape.fields.contains(&name.as_str()))
+            .map(|name| format!("{name:?}"))
+            .collect();
+        if unknown.is_empty() {
+            return Ok(());
+        }
+        unknown.sort();
+        anyhow::bail!(
+            "policy source {:?} collected a decision under {:?} naming {}, which a decision does \
+             not define. {}",
+            self.path,
+            shape.key,
+            unknown.join(", "),
+            shape.summary
+        )
+    }
+
+    /// The refusal for a field named as something other than text.
+    fn not_text(&self, shape: &DecisionShape, field: &str, value: &Value) -> anyhow::Error {
+        anyhow::anyhow!(
+            "policy source {:?} collected a decision under {:?} naming {field:?} as a value of \
+             type {kind}; every field of a decision is text. {}",
+            self.path,
+            shape.key,
+            shape.summary,
+            kind = value.type_of()
+        )
+    }
+}
+
+/// One decision field name, as an author wrote it.
+///
+/// A field name is text in every decision this plugin reads, but the language
+/// allows other scalars as map keys, so a decision naming one is reported by the
+/// name it wrote rather than by anything internal.
+fn field_name(key: &Key) -> String {
+    match key {
+        Key::String(name) => name.to_string(),
+        Key::Int(number) => number.to_string(),
+        Key::Uint(number) => number.to_string(),
+        Key::Bool(flag) => flag.to_string(),
+    }
+}
+
+/// Evaluates the attached expressions against one input document and returns
+/// every decision collected under one key, across every file. This is what the
+/// plugin reports from when it is attached to shape a build rather than to render
+/// a verdict.
+///
+/// A file that does not name the key contributes nothing, so a policy set split
+/// across files need not name it in every one.
+///
+/// The sequence returned is the order the expressions produced, and a
+/// comprehension over a map does not fix that order — so a caller that emits these
+/// establishes its own total order over them first. Each of the two callers
+/// documents the order it establishes.
+pub fn decisions(
+    sources: &[Source<'_>],
+    input: &serde_json::Value,
+    shape: &DecisionShape,
+) -> anyhow::Result<Vec<CollectedDecision>> {
+    let mut collected = Vec::new();
+    for evaluated in evaluated_sources(sources, input)? {
+        for fields in decision_objects(&evaluated, shape)? {
+            collected.push(CollectedDecision {
+                path: evaluated.path.clone(),
+                fields,
+            });
+        }
+    }
+    Ok(collected)
+}
+
+/// Reads the decisions one key collects off an evaluated expression, requiring
+/// each to be an object.
+///
+/// A key the expression did not name, or named as null, collects nothing — an
+/// absent decision rather than a failure. A key naming a single decision needs no
+/// list around it. Anything else is a malformed policy and fails rather than
+/// contributing a coerced or dropped decision.
+fn decision_objects(
+    evaluated: &EvaluatedSource,
+    shape: &DecisionShape,
+) -> anyhow::Result<Vec<Map>> {
+    let key = shape.key;
+    let Some(value) = evaluated.decisions.get(&KeyRef::String(key)) else {
+        return Ok(Vec::new());
+    };
+    match value {
+        Value::Null => Ok(Vec::new()),
+        Value::Map(single) => Ok(vec![single.clone()]),
+        Value::List(items) => items
+            .iter()
+            .map(|item| match item {
+                Value::Map(fields) => Ok(fields.clone()),
+                other => anyhow::bail!(
+                    "policy source {:?} collected a value of type {kind} under decision key \
+                     {key:?} rather than a decision. {}",
+                    evaluated.path,
+                    shape.summary,
+                    kind = other.type_of()
+                ),
+            })
+            .collect(),
+        other => anyhow::bail!(
+            "policy source {:?} collected decision key {key:?} as a value of type {kind}; a \
+             decision key carries a list of decisions, a single decision, or null for none. {}",
+            evaluated.path,
+            shape.summary,
             kind = other.type_of()
         ),
     }

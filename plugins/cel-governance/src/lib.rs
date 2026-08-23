@@ -12,6 +12,11 @@
 //!
 //! # What it decides over
 //!
+//! The plugin serves all four governance roles, and the role an operator attaches
+//! it at fixes both which payload arrives and what the plugin may report. Attached
+//! to render a verdict it reports decisions that stop or annotate a build;
+//! attached to shape a build it reports the change to make.
+//!
 //! One `validate` export serves both verdict roles, because the role fixes which
 //! payload arrives — the build graph at one role, the rendered output files at the
 //! other. The plugin reads the payload it was given and never declares which one
@@ -30,10 +35,16 @@
 //! `.parse_error` and no documents, so a policy can reject on the failure itself
 //! rather than having an unreadable file pass unexamined.
 //!
-//! In both cases the attachment's own files are visible as `input.sources` and its
+//! Attached to shape labels, the `mutate` export reports which labels the build's
+//! nodes should carry; attached to inject annotations, the `transform_annotations`
+//! export reports which annotations the deployment's components should carry. Each
+//! has its own decision key and its own input shape, both documented on the module
+//! that reads them — [`labels`] and [`annotations`].
+//!
+//! In every case the attachment's own files are visible as `input.sources` and its
 //! settings as `input.settings`, so an operator-supplied threshold is read as
-//! `input.settings.<key>`. The settings are always present as a value, empty when
-//! the attachment declares none, so an expression addressing them does not have to
+//! `input.settings.<key>`. Both are always present as a value, empty when the
+//! attachment declares none, so an expression addressing them does not have to
 //! guard for their absence.
 //!
 //! # Authoring convention, and how to change it
@@ -46,7 +57,8 @@
 //!
 //! An expression language has no rule names to collect decisions under, so the
 //! decisions are the value each expression produces: a map from decision key to
-//! the messages reached under it.
+//! what that key collects. At a verdict role a key collects the messages reached
+//! under it; at a role that shapes the build it collects the decisions to apply.
 //!
 //! ```cel
 //! {
@@ -58,13 +70,15 @@
 //! ```
 //!
 //! A key a file omits reached no decision there, so a file need not name every
-//! key. A key carries a list of messages, a single message, or the null value for
+//! key — and each role reads only the key it is about, so one policy set can serve
+//! a verdict role and a role that shapes the build from the same files. A key
+//! carries a list of what it collects, a single one of them, or the null value for
 //! none.
 //!
 //! ## A rules document, in a file named `.yaml` or `.yml`
 //!
 //! A rules document is a list of rules, each naming the decision key it reaches,
-//! the expression that decides whether it is reached, and the message reported.
+//! the expression that decides whether it is reached, and what is reported.
 //!
 //! ```yaml
 //! - key: deny
@@ -72,12 +86,25 @@
 //!   message: this build declares a lot of components
 //! ```
 //!
-//! Which form fits depends on the message. A rules document suits a rule whose
-//! message is fixed — written once, beside the expression that reaches it, and
-//! read as a list of guards. An expression suits a rule whose message names what
-//! it found: one expression can filter the components of a build and produce a
-//! message per component, which a rules document cannot, because each of its
-//! rules carries a single message written in advance.
+//! What a rule reports follows the key it reaches, exactly as it does in an
+//! expression: text is the message a verdict carries, and a mapping is the fields
+//! of the one decision a role that shapes the build reads.
+//!
+//! ```yaml
+//! - key: labels
+//!   expression: input.compilation_context.environment == "production"
+//!   message:
+//!     node: app
+//!     key: compliance.example.com/tier
+//!     value: gold
+//! ```
+//!
+//! Which form fits depends on what is reported. A rules document suits a rule
+//! whose report is fixed — written once, beside the expression that reaches it,
+//! and read as a list of guards. An expression suits a rule whose report names
+//! what it found: one expression can filter the components of a build and produce
+//! a message, or a decision, per component — which a rules document cannot,
+//! because each of its rules carries one report written in advance.
 //!
 //! A rules document is read as the expression it stands for before anything is
 //! evaluated, so both forms are evaluated by the same evaluator and a rules
@@ -124,19 +151,32 @@
 //! by the same evaluator. So the messages of a rules document are reported sorted
 //! rather than in the order its rules were written.
 //!
+//! At a role that shapes the build the same reasoning applies to the decisions
+//! themselves, and the order is stronger: the decisions are reported in ascending
+//! order of everything they name, which is a total order over what a decision can
+//! express. That is what keeps a build's rendered output identical from one build
+//! to the next, and each of the two roles documents its own order — see [`labels`]
+//! and [`annotations`].
+//!
 //! # Failure is never a silent allow
 //!
 //! When a policy cannot be read, cannot be evaluated, or does not produce decisions
-//! in the documented shape, the plugin fails instead of returning a verdict, and
+//! in the documented shape, the plugin fails instead of returning a verdict or a
+//! change, and
 //! that failure is reported as a build fault naming the file and, where it belongs
 //! to one part of the file, the position within it. It is deliberately distinct
 //! from a decision that stops the build: "this policy could not be evaluated" must
 //! never read as "this policy allows the build".
 
+mod annotations;
 mod engine;
+mod labels;
 mod rules;
 
-use aggrega_abi::RenderPolicyInput;
+use aggrega_abi::{
+    AnnotationTransformInput, AnnotationTransformOutput, MutatorInput, MutatorOutput,
+    RenderPolicyInput,
+};
 use aggrega_pdk_rust::{
     describe, PluginDescriptor, PluginDescriptorMeta, PluginExport, PolicyInput, PolicyOutput,
     API_VERSION,
@@ -151,13 +191,17 @@ use governancecore::translation::{settings_schema, Translation};
 /// payload carries them in.
 const SETTINGS_FIELD: &str = "settings";
 
+/// The field a policy reads the attachment's own files through, and the field the
+/// payload carries them in.
+const SOURCES_FIELD: &str = "sources";
+
 /// The static `describe()` self-report the host reads once when it loads the
 /// plugin.
 ///
-/// It declares the export the verdict roles dispatch to, and the schema that types
-/// the attachment's settings. It declares no capabilities: a governance plugin is
-/// not selected by capability, and what it may emit is fixed by the role it is
-/// attached at.
+/// It declares the three exports the four governance roles dispatch to, and the
+/// schema that types the attachment's settings. It declares no capabilities: a
+/// governance plugin is not selected by capability, and what it may emit is fixed
+/// by the role it is attached at.
 ///
 /// It declares exactly the exports this plugin implements. The host refuses to
 /// call an export a plugin did not declare, so an attachment expecting an export
@@ -171,10 +215,20 @@ fn descriptor() -> PluginDescriptor {
             "Evaluate operator-authored Common Expression Language against a build with an \
              embedded expression evaluator."
                 .to_string(),
-        exports: vec![PluginExport {
-            name: "validate".to_string(),
-            ..Default::default()
-        }],
+        exports: vec![
+            PluginExport {
+                name: "validate".to_string(),
+                ..Default::default()
+            },
+            PluginExport {
+                name: "mutate".to_string(),
+                ..Default::default()
+            },
+            PluginExport {
+                name: "transform_annotations".to_string(),
+                ..Default::default()
+            },
+        ],
         settings_schema: Some(
             serde_json::value::RawValue::from_string(settings_schema())
                 .expect("the declared settings schema is valid JSON"),
@@ -240,6 +294,83 @@ fn verdict(raw: &str) -> anyhow::Result<PolicyOutput> {
     })
 }
 
+/// Reports which labels the build's nodes should carry, as the label changes the
+/// build applies. A failure to evaluate propagates, and is surfaced as a build
+/// fault rather than as a change.
+///
+/// This role's payload and result travel as canonical CBOR, so the export takes
+/// and returns bytes rather than text. The other two exports still carry the
+/// textual encoding; each reads its own payload, so they move independently.
+#[plugin_fn]
+pub fn mutate(input: Vec<u8>) -> FnResult<Vec<u8>> {
+    let output = label_changes(&input)?;
+    Ok(output.encode_cbor()?)
+}
+
+/// Evaluates the attached expressions against the node payload and reads their
+/// label decisions.
+fn label_changes(raw: &[u8]) -> anyhow::Result<MutatorOutput> {
+    let input = MutatorInput::decode_cbor(raw)
+        .map_err(|err| anyhow::anyhow!("reading the label-transform payload: {err}"))?;
+    let document = transform_input(&input, &input.sources, input.settings.as_deref())?;
+    let decisions = engine::decisions(&project_sources(&input.sources), &document, &labels::SHAPE)?;
+    Ok(MutatorOutput {
+        patches: labels::changes(&decisions)?,
+        ..Default::default()
+    })
+}
+
+/// Reports which annotations the deployment's components should carry. A failure
+/// to evaluate propagates, and is surfaced as a build fault rather than as a
+/// change.
+#[plugin_fn]
+pub fn transform_annotations(input: String) -> FnResult<String> {
+    let output = annotation_injections(&input)?;
+    Ok(serde_json::to_string(&output)?)
+}
+
+/// Evaluates the attached expressions against the injection-target payload and
+/// reads their annotation decisions.
+fn annotation_injections(raw: &str) -> anyhow::Result<AnnotationTransformOutput> {
+    let payload: serde_json::Value = serde_json::from_str(raw)?;
+    let input: AnnotationTransformInput = read_payload(&payload, &["targets", "binding_keys"])?;
+    let document = transform_input(&input, &input.sources, input.settings.as_deref())?;
+    let decisions = engine::decisions(
+        &project_sources(&input.sources),
+        &document,
+        &annotations::SHAPE,
+    )?;
+    Ok(AnnotationTransformOutput {
+        injections: annotations::injections(&decisions)?,
+        ..Default::default()
+    })
+}
+
+/// Builds the input document a transform role's expressions read.
+///
+/// The payload itself is the input document, so a policy reads the role's own
+/// fields under the names the wire gives them. Two of those names are written back
+/// in as values: the payload leaves an empty file list and absent settings out
+/// altogether, and an expression that reads an absent field fails — so leaving
+/// them out would turn "this attachment declared no settings" into a policy failure
+/// for every policy that reads a threshold. Assembling the document from the
+/// payload's own declared shape is what makes that guarantee reach every field
+/// rather than the two named here.
+fn transform_input<P, S>(
+    payload: &P,
+    sources: &[S],
+    settings: Option<&serde_json::value::RawValue>,
+) -> anyhow::Result<serde_json::Value>
+where
+    P: serde::Serialize,
+    S: serde::Serialize,
+{
+    let mut document = serde_json::to_value(payload)?;
+    document[SOURCES_FIELD] = serde_json::to_value(sources)?;
+    document[SETTINGS_FIELD] = settings_value(settings);
+    Ok(document)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,7 +419,10 @@ mod tests {
     fn the_descriptor_declares_every_implemented_export() {
         let descriptor = descriptor();
         let declared: Vec<&str> = descriptor.exports.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(declared, vec!["validate"]);
+        assert_eq!(
+            declared,
+            vec!["validate", "mutate", "transform_annotations"]
+        );
     }
 
     #[test]
@@ -520,6 +654,237 @@ mod tests {
             "sources": [{ "path": path, "content": policy }],
         })
         .to_string()
+    }
+
+    /// The label-transform payload, as canonical bytes on the wire: a build of the
+    /// named nodes, each carrying one label, with one policy file.
+    ///
+    /// It is built from the payload's own type and encoded the way the host encodes
+    /// it, so the test drives the export through the same decoding a real dispatch
+    /// does rather than around it.
+    fn label_payload(nodes: &[&str], path: &str, policy: &str) -> Vec<u8> {
+        let mut input = MutatorInput {
+            compilation_context: aggrega_abi::CompilationContext {
+                release_name: "rel".to_string(),
+                environment: "testing".to_string(),
+            },
+            ..Default::default()
+        };
+        for name in nodes {
+            let mut node = aggrega_abi::MutatorNode::default();
+            node.labels.insert(
+                "component.aggrega.ai/type".to_string(),
+                "server".to_string(),
+            );
+            input.graph.nodes.insert((*name).to_string(), node);
+        }
+        input.sources.push(aggrega_abi::MutatorSource {
+            path: path.to_string(),
+            content: policy.to_string(),
+        });
+        input.encode_cbor().expect("the payload encodes")
+    }
+
+    /// The annotation-transform payload, as the host writes it: a deployment of the
+    /// named components under one boundary, with one registered annotation key and
+    /// one policy file.
+    fn annotation_payload(components: &[&str], path: &str, policy: &str) -> String {
+        let mut input = AnnotationTransformInput {
+            binding_keys: vec!["gate.example.com/tier".to_string()],
+            ..Default::default()
+        };
+        for name in components {
+            input.targets.push(aggrega_abi::AnnotationTarget {
+                boundary_path: "main".to_string(),
+                component_name: (*name).to_string(),
+                ..Default::default()
+            });
+        }
+        input.sources.push(aggrega_abi::AnnotationSource {
+            path: path.to_string(),
+            content: policy.to_string(),
+        });
+        serde_json::to_string(&input).expect("the payload serializes")
+    }
+
+    fn patch_documents(output: &MutatorOutput) -> Vec<serde_json::Value> {
+        output
+            .patches
+            .iter()
+            .map(|patch| serde_json::from_str(patch.get()).expect("a change is valid JSON"))
+            .collect()
+    }
+
+    #[test]
+    fn the_label_role_reports_the_changes_the_build_applies() {
+        let output = label_changes(&label_payload(
+            &["app"],
+            "policy.cel",
+            r#"{"labels": [{"node": "app", "key": "compliance.example.com/tier", "value": "gold"}]}"#,
+        ))
+        .expect("the decisions are read");
+        assert_eq!(
+            patch_documents(&output),
+            vec![serde_json::json!([{
+                "op": "add",
+                "path": "/nodes/app/labels/compliance.example.com~1tier",
+                "value": "gold",
+            }])]
+        );
+        assert!(output.error.is_empty());
+    }
+
+    #[test]
+    fn the_label_role_reads_the_deployment_environment() {
+        let output = label_changes(&label_payload(
+            &["app"],
+            "policy.cel",
+            r#"{"labels": input.graph.nodes.map(n, {
+                 "node": n,
+                 "key": "tier",
+                 "value": input.compilation_context.environment,
+               })}"#,
+        ))
+        .expect("the decisions are read");
+        assert_eq!(
+            patch_documents(&output)[0][0]["value"],
+            serde_json::json!("testing")
+        );
+    }
+
+    #[test]
+    fn the_annotation_role_reports_the_injections_the_build_adds() {
+        let output = annotation_injections(&annotation_payload(
+            &["app"],
+            "policy.cel",
+            r#"{"annotations": input.targets
+                 .filter(t, "gate.example.com/tier" in input.binding_keys)
+                 .map(t, {
+                   "boundary_path": t.boundary_path,
+                   "component_name": t.component_name,
+                   "annotation_key": "gate.example.com/tier",
+                   "annotation_value": "gold",
+                 })}"#,
+        ))
+        .expect("the decisions are read");
+        assert_eq!(output.injections.len(), 1, "{:?}", output.injections);
+        assert_eq!(output.injections[0].component_name, "app");
+        assert_eq!(output.injections[0].annotation_key, "gate.example.com/tier");
+        assert!(output.error.is_empty());
+    }
+
+    #[test]
+    fn a_rules_document_reaches_both_transform_roles() {
+        // The two authored forms share one intake, and what a rule reports follows
+        // the key it reaches — so a rules document decides labels and annotations
+        // as well as verdicts.
+        let labels = label_changes(&label_payload(
+            &["app"],
+            "policy.yaml",
+            "- key: labels\n  expression: size(input.graph.nodes) > 0\n  message:\n    \
+             node: app\n    key: tier\n    value: gold\n",
+        ))
+        .expect("a rules document decides labels");
+        assert_eq!(
+            patch_documents(&labels)[0][0]["path"],
+            serde_json::json!("/nodes/app/labels/tier")
+        );
+
+        let annotations = annotation_injections(&annotation_payload(
+            &["app"],
+            "policy.yaml",
+            "- key: annotations\n  expression: size(input.targets) > 0\n  message:\n    \
+             boundary_path: main\n    component_name: app\n    \
+             annotation_key: gate.example.com/tier\n    annotation_value: gold\n",
+        ))
+        .expect("a rules document decides annotations");
+        assert_eq!(
+            annotations.injections.len(),
+            1,
+            "{:?}",
+            annotations.injections
+        );
+        assert_eq!(annotations.injections[0].annotation_value, "gold");
+    }
+
+    #[test]
+    fn the_reported_changes_are_byte_identical_between_the_two_authored_forms() {
+        // What the host reads is the encoded output, so the equivalence of the two
+        // forms is asserted on exactly that.
+        let document = "- key: labels\n  expression: size(input.graph.nodes) > 1\n  message:\n    \
+                        node: app\n    key: tier\n    value: gold\n";
+        let expression = r#"{"labels": size(input.graph.nodes) > 1
+                              ? [{"node": "app", "key": "tier", "value": "gold"}] : []}"#;
+        let nodes = ["app", "db"];
+        let from_document = label_changes(&label_payload(&nodes, "policy.yaml", document))
+            .expect("the rules document decides")
+            .encode_cbor()
+            .expect("the output encodes");
+        let from_expression = label_changes(&label_payload(&nodes, "policy.cel", expression))
+            .expect("the expression decides")
+            .encode_cbor()
+            .expect("the output encodes");
+        assert_eq!(from_document, from_expression);
+        assert!(
+            !from_document.is_empty()
+                && !patch_documents(
+                    &label_changes(&label_payload(&nodes, "policy.yaml", document))
+                        .expect("the rules document decides")
+                )
+                .is_empty(),
+            "the comparison is only worth something over a decision that was reached"
+        );
+    }
+
+    #[test]
+    fn a_transform_policy_reading_settings_the_attachment_did_not_declare_still_evaluates() {
+        // Settings are optional at every role, and an expression that reads an
+        // absent field fails — so the field is present as a value even when the
+        // payload left it out.
+        let output = label_changes(&label_payload(
+            &["app"],
+            "policy.cel",
+            r#"{"labels": has(input.settings.tier)
+                 ? [{"node": "app", "key": "tier", "value": input.settings.tier}] : []}"#,
+        ))
+        .expect("a policy guarding on its own settings evaluates");
+        assert!(output.patches.is_empty(), "{:?}", output.patches);
+    }
+
+    #[test]
+    fn a_transform_payload_that_cannot_be_read_fails_loudly() {
+        let err = label_changes(&[0xff, 0xff, 0xff]).expect_err("unreadable bytes are refused");
+        assert!(err.to_string().contains("label-transform payload"), "{err}");
+    }
+
+    #[test]
+    fn a_malformed_transform_decision_is_a_build_fault_rather_than_a_change() {
+        let err = label_changes(&label_payload(
+            &["app"],
+            "policy.cel",
+            r#"{"labels": ["a message, not a decision"]}"#,
+        ))
+        .expect_err("a decision of the wrong shape is not a change");
+        let message = err.to_string();
+        assert!(message.contains("policy.cel"), "{message}");
+        assert!(message.contains("\"node\""), "{message}");
+    }
+
+    #[test]
+    fn one_policy_file_can_serve_a_verdict_role_and_a_transform_role() {
+        // Each role reads only the key it is about, so a policy set need not be
+        // split by role.
+        const POLICY: &str = r#"{
+          "deny": ["a verdict"],
+          "labels": [{"node": "app", "key": "tier", "value": "gold"}],
+        }"#;
+        let verdict = verdict(&graph_payload(&["app"], POLICY, None)).expect("the verdict is read");
+        assert_eq!(verdict.results.len(), 1, "{:?}", verdict.results);
+        assert_eq!(verdict.results[0].message, "a verdict");
+
+        let changes = label_changes(&label_payload(&["app"], "policy.cel", POLICY))
+            .expect("the label decisions are read");
+        assert_eq!(changes.patches.len(), 1, "{:?}", changes.patches);
     }
 
     #[test]

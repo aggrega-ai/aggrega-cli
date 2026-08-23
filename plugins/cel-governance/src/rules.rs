@@ -7,7 +7,7 @@
 //! which. A file named `.cel` is one expression, evaluated as it stands. A file
 //! named `.yaml` or `.yml` is a **rules document**: a list of rules, each naming
 //! the decision key it reaches, the expression that decides whether it is
-//! reached, and the message reported when it is.
+//! reached, and what is reported when it is.
 //!
 //! ```yaml
 //! - key: deny
@@ -18,16 +18,39 @@
 //!   message: a component ceiling is configured for this environment
 //! ```
 //!
+//! # What a rule reports
+//!
+//! What a rule reports follows the decision key it reaches, exactly as it does in
+//! an expression. **Text** is the message a verdict carries. A **mapping** is the
+//! fields of the one decision a role that shapes the build reads:
+//!
+//! ```yaml
+//! - key: labels
+//!   expression: input.compilation_context.environment == "production"
+//!   message:
+//!     node: app
+//!     key: compliance.example.com/tier
+//!     value: gold
+//! ```
+//!
+//! Which of the two a rule writes is decided by the rule alone — there is no
+//! setting that selects it — and a rule writing the wrong one for its key is
+//! refused by the reader of that key, by name, the same way a hand-written
+//! expression producing the wrong shape is. A mapping's fields are rendered in
+//! ascending name order, because a mapping means the same in any order and sorting
+//! it keeps the rendered text independent of what order the document reader hands
+//! the fields over in.
+//!
 //! # Which form to write
 //!
-//! A rules document suits a rule whose message is fixed: the message is written
-//! once, beside the expression that reaches it, and reads as a list of guards. An
-//! expression suits a rule whose message names what it found — one expression can
-//! filter the components of a build and produce a message per component, which a
-//! rules document cannot, because each of its rules carries a single message
-//! written in advance. So the two forms are not interchangeable: the document form
-//! is the shorter way to write a fixed message, and the expression form is what
-//! reports one message per thing found.
+//! A rules document suits a rule whose report is fixed: it is written once, beside
+//! the expression that reaches it, and reads as a list of guards. An expression
+//! suits a rule whose report names what it found — one expression can filter the
+//! components of a build and produce a message, or a decision, per component, which
+//! a rules document cannot, because each of its rules carries one report written in
+//! advance. So the two forms are not interchangeable: the document form is the
+//! shorter way to write a fixed report, and the expression form is what produces
+//! one per thing found.
 //!
 //! # A rules document is read as the expression it stands for
 //!
@@ -52,10 +75,13 @@
 //! both are properties of the product rather than accidents:
 //!
 //! - A rules document and the expression it stands for produce identical
-//!   decisions, because they are the same evaluation.
-//! - The messages under one decision key are reported sorted, which is the
-//!   ordering the evaluated form documents. So a rules document's messages are
-//!   reported in sorted order rather than in the order the rules were written.
+//!   decisions, because they are the same evaluation. That holds at every role: a
+//!   rules document reaches the label changes and the annotation injections
+//!   exactly as the expression it stands for would.
+//! - The ordering guarantees are the evaluated form's, not the document's. The
+//!   messages under one decision key are reported sorted, and the decisions a role
+//!   that shapes the build reads are reported in the total order that role
+//!   documents — so neither is reported in the order the rules were written.
 //!
 //! # A malformed rules document is refused, by name
 //!
@@ -63,10 +89,10 @@
 //! the file and, where the fault belongs to one rule, that rule's position and
 //! decision key: text that is not a list of rules, a list with no rules in it, a
 //! rule missing a field or carrying an empty one, a field the form does not
-//! define, and an expression that cannot be read. A rule whose expression cannot
-//! be read is refused here rather than at evaluation, so the failure names the
-//! rule the author wrote instead of a position inside translated text they never
-//! saw.
+//! define, a report that is neither text nor a mapping of text to text, and an
+//! expression that cannot be read. A rule whose expression cannot be read is
+//! refused here rather than at evaluation, so the failure names the rule the
+//! author wrote instead of a position inside translated text they never saw.
 
 use serde::Deserialize;
 
@@ -79,25 +105,55 @@ use serde::Deserialize;
 /// so is a document's, so the two forms are indistinguishable by shape.
 const RULES_DOCUMENT_SUFFIXES: [&str; 2] = [".yaml", ".yml"];
 
-/// The decision key a rule reaches, its condition, and the message reported.
+/// The decision key a rule reaches, its condition, and what it reports.
 ///
-/// Every field is required and none may be empty. A rule with no message reports
-/// nothing when it fires, which would make it a rule that cannot be observed; a
-/// rule with no expression has no condition to decide on; a rule with no decision
-/// key reaches nothing. Each of those is an unfinished rule rather than a rule
-/// that allows, so each is refused.
+/// Every field is required and none may be empty. A rule that reports nothing when
+/// it fires cannot be observed; a rule with no expression has no condition to
+/// decide on; a rule with no decision key reaches nothing. Each of those is an
+/// unfinished rule rather than a rule that allows, so each is refused.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Rule {
-    /// The decision key this rule reaches, which the attachment's translation
-    /// maps to a severity.
+    /// The decision key this rule reaches. At a verdict role the attachment's
+    /// translation maps it to a severity; at a role that shapes the build it is
+    /// the key that role reads its decisions under.
     key: String,
     /// The condition, written in the same expression language a `.cel` file
-    /// carries. It decides whether the rule is reached; it does not produce the
-    /// message.
+    /// carries. It decides whether the rule is reached; it does not produce what
+    /// is reported.
     expression: String,
-    /// What is reported when the expression holds, exactly as written.
-    message: String,
+    /// What is reported when the expression holds. Read as a value rather than as
+    /// text, because what a decision key collects is text at a verdict role and a
+    /// decision's own fields at a role that shapes the build — and a refusal
+    /// naming which of the two was written is more use than one naming a type.
+    message: serde_yaml::Value,
+}
+
+/// What one rule reports when its expression holds.
+///
+/// Which of the two a rule writes is decided by the rule alone and is not
+/// configured anywhere: text is the message a verdict reports, and a mapping is the
+/// fields of the one decision a role that shapes the build reads. A rule writing
+/// the wrong one for its key is refused by the reader of that key, by name, the
+/// same way a hand-written expression producing the wrong shape is.
+#[derive(Debug)]
+enum Reported {
+    /// The text a verdict reports.
+    Message(String),
+    /// One decision's fields, in ascending field-name order.
+    Decision(Vec<(String, String)>),
+}
+
+/// One rule, checked and ready to be rendered as the expression it stands for.
+#[derive(Debug)]
+struct Prepared<'a> {
+    /// The decision key the rule reaches.
+    key: &'a str,
+    /// The rule's own condition, carried through unchanged.
+    expression: &'a str,
+    /// What the rule reports, rendered as the literal the expression language
+    /// reads back as exactly that.
+    literal: String,
 }
 
 /// Reports whether an attached file's name marks it as a rules document.
@@ -132,32 +188,31 @@ pub fn expression_source(path: &str, content: &str) -> anyhow::Result<String> {
              is a list of rules, each naming a decision key, an expression and a message."
         );
     }
-    for (index, rule) in rules.iter().enumerate() {
+    let prepared = rules
+        .iter()
+        .enumerate()
         // Rules are located from one, the way an author counts them reading their
         // own file.
-        check(path, index + 1, rule)?;
-    }
-    Ok(expression(&rules))
+        .map(|(index, rule)| prepare(path, index + 1, rule))
+        .collect::<anyhow::Result<Vec<Prepared<'_>>>>()?;
+    Ok(expression(&prepared))
 }
 
-/// Requires one rule to be complete and its expression readable.
+/// Requires one rule to be complete and its expression readable, and renders what
+/// it reports.
 ///
 /// The expression is compiled and the compiled form discarded. Compiling it here
 /// costs one compilation and buys the whole point of the check: the failure names
 /// the rule and the decision key the author wrote, where the same failure raised
 /// against the translated text would locate a position in text the author never
 /// saw. It reads no decision and produces no verdict.
-fn check(path: &str, position: usize, rule: &Rule) -> anyhow::Result<()> {
-    for (field, value) in [
-        ("key", &rule.key),
-        ("expression", &rule.expression),
-        ("message", &rule.message),
-    ] {
+fn prepare<'a>(path: &str, position: usize, rule: &'a Rule) -> anyhow::Result<Prepared<'a>> {
+    for (field, value) in [("key", &rule.key), ("expression", &rule.expression)] {
         if value.trim().is_empty() {
             anyhow::bail!(
                 "rule {position} of rules document {path:?} leaves {field} empty; a rule names the \
                  decision key it reaches, the expression that decides whether it is reached, and \
-                 the message reported when it is."
+                 what is reported when it is."
             );
         }
     }
@@ -168,7 +223,84 @@ fn check(path: &str, position: usize, rule: &Rule) -> anyhow::Result<()> {
             key = rule.key
         )
     })?;
-    Ok(())
+    Ok(Prepared {
+        key: rule.key.as_str(),
+        expression: rule.expression.as_str(),
+        literal: literal(&reported(path, position, rule)?),
+    })
+}
+
+/// Reads what one rule reports, requiring it to be either text or a mapping of
+/// text to text.
+///
+/// Anything else is refused rather than rendered: a rule reporting a list, a
+/// number or nothing at all has not said what it reports, and guessing would put a
+/// value into a decision the author never wrote.
+fn reported(path: &str, position: usize, rule: &Rule) -> anyhow::Result<Reported> {
+    match &rule.message {
+        serde_yaml::Value::String(text) if !text.trim().is_empty() => {
+            Ok(Reported::Message(text.clone()))
+        }
+        serde_yaml::Value::Mapping(fields) if !fields.is_empty() => {
+            let mut named = Vec::with_capacity(fields.len());
+            for (field, value) in fields {
+                let (serde_yaml::Value::String(field), serde_yaml::Value::String(value)) =
+                    (field, value)
+                else {
+                    anyhow::bail!(
+                        "rule {position} of rules document {path:?}, under decision key {key:?}, \
+                         reports a decision whose fields are not all text; every field of a \
+                         decision names text.",
+                        key = rule.key
+                    );
+                };
+                named.push((field.clone(), value.clone()));
+            }
+            // Sorted rather than kept in the order the document wrote them: a
+            // mapping's entries mean the same in any order, and sorting them here
+            // means the rendered text does not depend on what order the document
+            // reader hands them over in.
+            named.sort();
+            Ok(Reported::Decision(named))
+        }
+        other => anyhow::bail!(
+            "rule {position} of rules document {path:?}, under decision key {key:?}, {fault}; a \
+             rule reports either the message a verdict carries, written as text, or the fields of \
+             one decision, written as a mapping.",
+            key = rule.key,
+            fault = fault(other)
+        ),
+    }
+}
+
+/// Says what is wrong with what a rule reported, for the refusal above.
+///
+/// Every phrasing names the field, because the author's next act is to open their
+/// own document and read that line.
+fn fault(value: &serde_yaml::Value) -> &'static str {
+    match value {
+        serde_yaml::Value::String(_) | serde_yaml::Value::Null => "leaves message empty",
+        serde_yaml::Value::Mapping(_) => "names message as a decision with no fields in it",
+        serde_yaml::Value::Sequence(_) => "names message as a list",
+        serde_yaml::Value::Number(_) => "names message as a number",
+        serde_yaml::Value::Bool(_) => "names message as a true or false value",
+        serde_yaml::Value::Tagged(_) => "names message as a tagged value",
+    }
+}
+
+/// Renders what a rule reports as the literal the expression language reads back
+/// as exactly that.
+fn literal(reported: &Reported) -> String {
+    match reported {
+        Reported::Message(text) => quoted(text),
+        Reported::Decision(fields) => {
+            let rendered: Vec<String> = fields
+                .iter()
+                .map(|(field, value)| format!("{}: {}", quoted(field), quoted(value)))
+                .collect();
+            format!("{{{}}}", rendered.join(", "))
+        }
+    }
 }
 
 /// Renders the rules as the expression they stand for.
@@ -176,7 +308,7 @@ fn check(path: &str, position: usize, rule: &Rule) -> anyhow::Result<()> {
 /// Rules are grouped by decision key in the order the keys first appear, and the
 /// rules under one key keep the order they were written in. Nothing here iterates
 /// a map, so identical text yields identical text.
-fn expression(rules: &[Rule]) -> String {
+fn expression(rules: &[Prepared<'_>]) -> String {
     let mut source = String::from("{\n");
     for key in keys(rules) {
         source.push_str("  ");
@@ -197,27 +329,27 @@ fn expression(rules: &[Rule]) -> String {
 }
 
 /// The decision keys the rules name, in the order they first appear.
-fn keys(rules: &[Rule]) -> Vec<&str> {
+fn keys<'a>(rules: &[Prepared<'a>]) -> Vec<&'a str> {
     let mut keys: Vec<&str> = Vec::new();
     for rule in rules {
-        if !keys.contains(&rule.key.as_str()) {
-            keys.push(rule.key.as_str());
+        if !keys.contains(&rule.key) {
+            keys.push(rule.key);
         }
     }
     keys
 }
 
-/// Renders one rule as the messages it contributes to its decision key: the
-/// message when the expression holds, nothing when it does not.
+/// Renders one rule as what it contributes to its decision key: what it reports
+/// when the expression holds, nothing when it does not.
 ///
 /// The expression is parenthesised so its own operators cannot reach outside it,
 /// and it is closed on a line of its own because the expression language has line
 /// comments: an expression ending in one would otherwise swallow whatever
 /// followed it on the same line.
-fn reached(rule: &Rule) -> String {
-    let condition = &rule.expression;
-    let message = quoted(&rule.message);
-    format!("(({condition}\n) ? [{message}] : [])")
+fn reached(rule: &Prepared<'_>) -> String {
+    let condition = rule.expression;
+    let reported = &rule.literal;
+    format!("(({condition}\n) ? [{reported}] : [])")
 }
 
 /// Renders text as a string literal the expression language reads back as exactly
@@ -265,6 +397,38 @@ mod tests {
         program
             .execute(&cel::Context::default())
             .unwrap_or_else(|err| panic!("the translated text evaluates: {err}\n{expression}"))
+    }
+
+    /// The decisions one key collects out of an evaluated expression, each as its
+    /// fields in ascending name order — so a test reads a decision the way the
+    /// transform roles read one, by name rather than by walking the map.
+    fn collected_decisions(value: &cel::Value, key: &str) -> Vec<Vec<(String, String)>> {
+        let cel::Value::Map(map) = value else {
+            panic!("the translated text evaluates to a map, not {value:?}");
+        };
+        let Some(cel::Value::List(items)) = map.get(&cel::objects::KeyRef::String(key)) else {
+            panic!("decision key {key:?} is absent from {value:?}");
+        };
+        items
+            .iter()
+            .map(|item| {
+                let cel::Value::Map(fields) = item else {
+                    panic!("a decision is a map, not {item:?}");
+                };
+                let mut named: Vec<(String, String)> = fields
+                    .map
+                    .iter()
+                    .map(|(field, value)| match (field, value) {
+                        (cel::objects::Key::String(field), cel::Value::String(value)) => {
+                            (field.to_string(), value.to_string())
+                        }
+                        other => panic!("a decision field is text to text, not {other:?}"),
+                    })
+                    .collect();
+                named.sort();
+                named
+            })
+            .collect()
     }
 
     /// The messages one decision key collects out of an evaluated expression.
@@ -513,5 +677,142 @@ mod tests {
             checked, 928,
             "the breadth check covered {checked} characters"
         );
+    }
+
+    #[test]
+    fn a_rule_may_report_a_decision_rather_than_a_message() {
+        // What a decision key collects is text at a verdict role and a decision's
+        // own fields at a role that shapes the build, so a rule reports either —
+        // and which one is decided by the rule alone.
+        let source = expression_source(
+            "policy.yaml",
+            "- key: labels\n  expression: \"true\"\n  message:\n    node: app\n    \
+             key: compliance.example.com/tier\n    value: gold\n",
+        )
+        .expect("a rule reporting a decision is read");
+        assert_eq!(
+            collected_decisions(&evaluated(&source), "labels"),
+            vec![vec![
+                ("key".to_string(), "compliance.example.com/tier".to_string()),
+                ("node".to_string(), "app".to_string()),
+                ("value".to_string(), "gold".to_string()),
+            ]]
+        );
+    }
+
+    #[test]
+    fn a_reported_decision_contributes_nothing_when_its_expression_does_not_hold() {
+        let source = expression_source(
+            "policy.yaml",
+            "- key: labels\n  expression: \"false\"\n  message:\n    node: app\n    \
+             key: tier\n    value: gold\n",
+        )
+        .expect("the rule is read");
+        assert!(
+            collected_decisions(&evaluated(&source), "labels").is_empty(),
+            "{source}"
+        );
+    }
+
+    #[test]
+    fn a_reported_decision_is_rendered_in_ascending_field_order() {
+        // A mapping means the same in any order, so the rendered text is sorted
+        // rather than written in document order: the emission then does not depend
+        // on what order the document reader hands the fields over in.
+        let source = expression_source(
+            "policy.yaml",
+            "- key: labels\n  expression: \"true\"\n  message:\n    value: gold\n    \
+             node: app\n    key: tier\n",
+        )
+        .expect("the rule is read");
+        assert!(
+            source.contains("{\"key\": \"tier\", \"node\": \"app\", \"value\": \"gold\"}"),
+            "{source}"
+        );
+    }
+
+    #[test]
+    fn a_reported_decision_field_reads_back_exactly_as_authored() {
+        // The fields go through the same literal rendering a message does, so a
+        // label value carrying a quotation mark is carried rather than truncated.
+        let source = expression_source(
+            "policy.yaml",
+            "- key: labels\n  expression: \"true\"\n  message:\n    node: app\n    \
+             key: \"a \\\"quoted\\\" key\"\n    value: \"back\\\\slash\"\n",
+        )
+        .expect("the rule is read");
+        assert_eq!(
+            collected_decisions(&evaluated(&source), "labels"),
+            vec![vec![
+                ("key".to_string(), "a \"quoted\" key".to_string()),
+                ("node".to_string(), "app".to_string()),
+                ("value".to_string(), "back\\slash".to_string()),
+            ]],
+            "{source}"
+        );
+    }
+
+    #[test]
+    fn a_rule_reporting_a_list_is_refused_and_the_rule_is_located() {
+        let err = expression_source(
+            "policy.yaml",
+            "- key: deny\n  expression: \"true\"\n  message:\n    - one\n    - two\n",
+        )
+        .expect_err("a list is neither a message nor a decision");
+        let text = err.to_string();
+        assert!(text.contains("policy.yaml"), "{text}");
+        assert!(text.contains("rule 1"), "{text}");
+        assert!(text.contains("message"), "{text}");
+        assert!(text.contains("mapping"), "{text}");
+    }
+
+    #[test]
+    fn a_rule_reporting_a_number_is_refused() {
+        let err = expression_source(
+            "policy.yaml",
+            "- key: deny\n  expression: \"true\"\n  message: 3\n",
+        )
+        .expect_err("a number is neither a message nor a decision");
+        assert!(err.to_string().contains("number"), "{err}");
+    }
+
+    #[test]
+    fn a_rule_reporting_a_decision_with_no_fields_is_refused() {
+        let err = expression_source(
+            "policy.yaml",
+            "- key: labels\n  expression: \"true\"\n  message: {}\n",
+        )
+        .expect_err("a decision with no fields reports nothing");
+        assert!(err.to_string().contains("no fields"), "{err}");
+    }
+
+    #[test]
+    fn a_reported_decision_whose_fields_are_not_text_is_refused() {
+        let err = expression_source(
+            "policy.yaml",
+            "- key: labels\n  expression: \"true\"\n  message:\n    node: app\n    \
+             key: tier\n    value: 3\n",
+        )
+        .expect_err("a field that is not text is refused");
+        let text = err.to_string();
+        assert!(text.contains("rule 1"), "{text}");
+        assert!(text.contains("\"labels\""), "{text}");
+        assert!(text.contains("text"), "{text}");
+    }
+
+    #[test]
+    fn rules_reporting_messages_and_decisions_translate_side_by_side() {
+        // One document can carry both, because what each rule reports follows the
+        // key it reaches rather than a setting on the document.
+        let source = expression_source(
+            "policy.yaml",
+            "- key: deny\n  expression: \"true\"\n  message: a verdict\n\
+             - key: labels\n  expression: \"true\"\n  message:\n    node: app\n    \
+             key: tier\n    value: gold\n",
+        )
+        .expect("both forms of rule are read");
+        let value = evaluated(&source);
+        assert_eq!(collected(&value, "deny"), vec!["a verdict".to_string()]);
+        assert_eq!(collected_decisions(&value, "labels").len(), 1, "{source}");
     }
 }
