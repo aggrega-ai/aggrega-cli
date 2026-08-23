@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginwire"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -65,12 +66,17 @@ metadata.pluginType and export contract are cross-checked against the guest's
 describe() before the guest runs. In both forms the guest bytes come from
 --plugin; the entity carries no artifact path.
 
-The payload is supplied with --with. A value beginning with @ reads the
-payload bytes from a file (--with @input.json); any other value is taken as a
-literal inline JSON payload (--with '{"k":1}'). When --with is omitted, the
-export receives the minimal empty JSON object {}. The resolved payload is
-validated as JSON before the guest runs, so malformed input is reported up
-front.
+The payload is supplied with --with, and it is always written as JSON. A value
+beginning with @ reads the payload bytes from a file (--with @input.json); any
+other value is taken as a literal inline JSON payload (--with '{"k":1}'). When
+--with is omitted, the export receives the minimal empty JSON object {}. The
+resolved payload is validated as JSON before the guest runs, so malformed input
+is reported up front.
+
+Some exports read their payload in a binary encoding rather than as JSON. Which
+encoding an export reads is fixed by the socket that export serves, so no flag
+selects it: the resolved payload is converted into whatever the named export
+reads before the guest is called. The authored payload stays JSON either way.
 
 In the artifact form, --type optionally names a plugin type the guest's
 describe() self-report must agree with, or the load is rejected before the
@@ -84,6 +90,15 @@ exit is surfaced verbatim as $? rather than as a host error.`,
 			ctx := cmd.Context()
 
 			payload, err := resolveWithPayload(with)
+			if err != nil {
+				return err
+			}
+			// The authoring surface is text; the wire is whatever the named export
+			// carries. A text-wire export gets the author's bytes unchanged; a
+			// binary-wire export gets them read into that export's payload shape and
+			// re-emitted in the encoding the guest reads. Nobody hand-writes those
+			// bytes, so the conversion belongs here rather than on the operator.
+			payload, err = pluginwire.EncodeForExport(export, payload)
 			if err != nil {
 				return err
 			}
@@ -193,17 +208,24 @@ func ensureExportDeclared(desc wasm.PluginDescriptor, export string) error {
 	return fmt.Errorf("the guest does not declare export %q; it declares: %s", export, strings.Join(names, ", "))
 }
 
-// resolveWithPayload resolves the --with value to the JSON payload bytes passed
-// to the guest export. It has three forms. A value beginning with @ is a file
-// reference: the leading @ is stripped and the remaining path is read from disk.
-// Any other non-empty value is taken literally as an inline JSON payload. An
-// omitted value (the empty string) defaults to the minimal empty JSON object
-// {}, a convenience for smoke-testing an export with no input.
+// resolveWithPayload resolves the --with value to the authored JSON payload
+// bytes. What finally reaches the guest is those bytes converted into the
+// encoding the named export reads, which is a separate step: this one is about
+// the authoring surface, which is JSON for every export.
+//
+// It has three forms. A value beginning with @ is a file reference: the leading @
+// is stripped and the remaining path is read from disk. Any other non-empty value
+// is taken literally as an inline JSON payload. An omitted value (the empty
+// string) defaults to the minimal empty JSON object {}, a convenience for
+// smoke-testing an export with no input.
 //
 // The empty default is deliberately socket-blind: it is the literal bytes {},
 // independent of any plugin type and of any request envelope shape. It
-// fabricates no intermediate representation and infers no per-socket semantics;
-// a guest that cannot decode {} surfaces its own error normally.
+// fabricates no intermediate representation and infers no per-socket semantics.
+// The socket enters one step later, where the resolved bytes are converted into
+// the encoding the export reads — so what a guest finally receives for the empty
+// default is an empty payload in its own encoding, and a guest that cannot read
+// an empty payload surfaces its own error normally.
 //
 // The resolved payload — inline, from file, or the default — is validated as
 // well-formed JSON before it is returned, so malformed input is reported up

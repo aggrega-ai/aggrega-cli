@@ -63,6 +63,8 @@ import (
 	"strings"
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // kindSource binds an output filename to the Go type name and the embedded
@@ -427,6 +429,48 @@ type codecTarget struct {
 	// codec that does not exist), and a registry gate reads it in the direction a
 	// lookup cannot, catching an entry naming a def the schema no longer declares.
 	skipDefs []string
+	// wireExports binds a guest export to the $def carrying that export's INPUT
+	// payload, for every export this target's types serve. It is one half of what
+	// the plugin-wire registry is emitted from; binaryWire below is the other.
+	//
+	// The export NAME is deliberately absent: an entry names the attachment ROLE,
+	// and the export is read from the canonical role-to-export rule in the plugin
+	// type vocabulary. That rule is also what the host's own dispatch default
+	// reads, so the registry and the dispatch cannot disagree about what an export
+	// is called — there is no second spelling of the name to drift.
+	//
+	// An entry is admitted only where something can PIN it: the socket's output
+	// decode must route through the host's two encoding-specific decode entry
+	// points, because naming one of those two at a call site is the observable
+	// choice the registry is checked against. A socket that decodes through its
+	// generated codec directly offers nothing to check, so an entry for it would
+	// be an unpinned hand-written fact — which is the failure this registry exists
+	// to avoid rather than to relocate.
+	wireExports []wireExport
+	// binaryWire records whether the exports named in wireExports carry the
+	// canonical-CBOR wire rather than the text one.
+	//
+	// It sits on the target rather than on each entry because the target is the
+	// unit that moves: one target is one schema realized into one destination
+	// package, there is no wire negotiation, and a socket's host side and its whole
+	// guest set therefore change encoding together or not at all. Two exports
+	// sharing a target share a wire by construction.
+	binaryWire bool
+	// pkgPath is the destination package's Go import path. Only a target carrying
+	// wireExports needs it — the registry emitter imports the package to name the
+	// payload type — and emission refuses a wireExports target that omits it.
+	pkgPath string
+}
+
+// wireExport binds one guest export to the $def carrying its input payload.
+type wireExport struct {
+	// role is the governance attachment role whose default entry function is the
+	// export this payload shape serves. Naming the role rather than the export is
+	// what keeps the export name single-sourced: it is read from the canonical
+	// role-to-export rule at emission.
+	role plugintype.Role
+	// inputDef is the $def name of the type carrying that export's input payload.
+	inputDef string
 }
 
 // emitsDef reports whether this target emits a codec for the named $def.
@@ -926,6 +970,14 @@ var codecTargets = map[string]codecTarget{
 		pkg:        "topology",
 		vocabulary: mutatorHostVocabulary,
 		helpers:    true, // the host mutator codec is alone in package topology
+		pkgPath:    "github.com/aggrega-ai/aggrega-cli/internal/compiler/topology",
+		// binaryWire: this socket's wire is canonical CBOR. Its call site encodes
+		// with the generated encoder and decodes through the binary encoding's
+		// entry point, and every guest it speaks to reads and writes the same.
+		binaryWire: true,
+		wireExports: []wireExport{
+			{role: plugintype.RoleLabelTransform, inputDef: "MutatorInput"},
+		},
 	},
 
 	// Annotation-transform socket — guest codecs into aggrega-abi (Go/Rust/TS) and
@@ -959,6 +1011,13 @@ var codecTargets = map[string]codecTarget{
 		pkg:        "pipeline",
 		vocabulary: annotationTransformHostVocabulary,
 		helpers:    true, // the host annotation-transform codec is alone in package pipeline
+		pkgPath:    "github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline",
+		// binaryWire is false: this socket still carries the text wire in both
+		// directions. Its call site encodes with encoding/json and decodes through
+		// the text encoding's entry point.
+		wireExports: []wireExport{
+			{role: plugintype.RoleAnnotationTransform, inputDef: "AnnotationTransformInput"},
+		},
 	},
 
 	// Linter socket — guest codecs into aggrega-abi (Go/Rust/TS) and the host
@@ -1101,6 +1160,14 @@ var codecTargets = map[string]codecTarget{
 	//
 	// helpers: it is the only CBOR codec in that package, so it owns the shared CBOR
 	// helpers — which the graph dispatch's decode side reads directly.
+	//
+	// wireExports carries both verdict roles, because this one schema serves two
+	// pipeline stages with two different input shapes — the IR graph at static
+	// analysis, the rendered artifacts after rendering — while the role-to-export
+	// rule gives both roles the SAME default export name. That collision is a
+	// property of the socket rather than of the table, so the table records it
+	// instead of hiding it, and the registry refuses to guess a shape from an
+	// export name that names two.
 	"policy_host_gen.go": {
 		schema:               schemas.WasmPolicyV1alpha1,
 		schemaFile:           "wasm-policy-v1alpha1.schema.json",
@@ -1111,6 +1178,12 @@ var codecTargets = map[string]codecTarget{
 		opaqueHostTypes:      policyOpaqueHostTypes,
 		crossPackageDefTypes: []string{"types.IRGraph"},
 		skipDefs:             []string{"PolicyOutput"},
+		pkgPath:              "github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer",
+		// binaryWire is false: both verdict roles still carry the text wire.
+		wireExports: []wireExport{
+			{role: plugintype.RoleIRVerdict, inputDef: "PolicyInput"},
+			{role: plugintype.RoleRenderVerdict, inputDef: "RenderPolicyInput"},
+		},
 	},
 
 	// Provider render socket — guest codecs into aggrega-abi (Go/Rust/TS) and the
@@ -1231,6 +1304,21 @@ var codecTargets = map[string]codecTarget{
 	"cbor_gen.ts": {
 		pkg:  "abi",
 		lang: "ts-cbor-helpers",
+	},
+	// The plugin-wire registry. Schema-free and derived: it reads no schema of its
+	// own and instead walks the targets above, collecting each one's wireExports
+	// and binaryWire, so the export-to-payload-to-encoding table is emitted from
+	// the same registrations that drive the codecs rather than hand-kept beside
+	// them.
+	//
+	// What reads it: the direct-invocation command, which takes an authored text
+	// payload and has to hand the guest whatever the named export's wire carries.
+	// It cannot derive that from the export name — the socket fixes it — so the
+	// fact has to be written down somewhere, and here it sits on the registrations
+	// a test can pin against the call sites they describe.
+	"pluginwire_gen.go": {
+		pkg:  "pluginwire",
+		lang: "go-wire-registry",
 	},
 }
 
@@ -2538,6 +2626,8 @@ func generateDefs(t codecTarget) ([]byte, error) {
 		return generateRustCBORHelpers(t)
 	case "ts-cbor-helpers":
 		return generateTSCBORHelpers(t)
+	case "go-wire-registry":
+		return generateWireRegistry(t)
 	default:
 		return nil, fmt.Errorf("typegen: unknown codec target language %q", t.lang)
 	}

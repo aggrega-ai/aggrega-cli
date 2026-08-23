@@ -159,6 +159,9 @@ var codecTargetPaths = map[string][]string{
 	// The host policy codec is committed inside aggrega-cli's analyzer package,
 	// which assembles these payloads and declares them by hand.
 	"policy_host_gen.go": {"..", "..", "compiler", "analyzer"},
+	// The plugin-wire registry, committed beside the hand-written half of the
+	// package that answers "what does this export's wire carry".
+	"pluginwire_gen.go": {"..", "..", "pluginwire"},
 }
 
 // TestTargetPathsNameRegisteredTargets checks the two path tables in the

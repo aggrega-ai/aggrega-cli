@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
@@ -297,5 +298,67 @@ func TestRunLocal_ExitStatusSuccess(t *testing.T) {
 
 	if _, err := runLocal(t, "--plugin", guest, "--export", "validate"); err != nil {
 		t.Fatalf("a clean guest run should yield command success; got %v", err)
+	}
+}
+
+// labelPayload is the authored payload for a label-transform guest: the shape
+// its export reads, written as JSON exactly as an operator writes it. It is the
+// fixture the published plugin-kit walkthroughs hand this command.
+const labelPayload = `{"compilation_context":{},"graph":{}}`
+
+// TestRunLocal_BinaryWireExport drives an export whose wire is NOT text through
+// this command, end to end against a real guest.
+//
+// It is the test whose absence let the capability disappear twice. The command's
+// payload channel was JSON-only by construction, so the moment a socket's wire
+// moved the published invocation started failing at the guest's own decoder —
+// and nothing turned red, because no test drove that export through this command.
+// Every other run-local test here uses a text-wire export and passes either way.
+//
+// What it pins: the authored payload is JSON, the command converts it into the
+// encoding the export reads, and the guest decodes it and returns its own
+// response. A guest handed the wrong encoding fails inside its decoder, so the
+// clean run is itself the proof that the conversion happened.
+func TestRunLocal_BinaryWireExport(t *testing.T) {
+	t.Parallel()
+	guest := wasmtest.EnsureFixtureBuilt(t, "mutator-go.wasm")
+
+	out, err := runLocal(t, "--plugin", guest, "--type", "governance",
+		"--export", "mutate", "--with", labelPayload)
+	if err != nil {
+		t.Fatalf("an authored JSON payload should reach a binary-wire export; got %v", err)
+	}
+	if out == "" {
+		t.Fatal("the guest wrote no response bytes")
+	}
+
+	// The guest's response is its own encoding, written through verbatim. Decoding
+	// it back would test this command against its own conversion; comparing it to
+	// what the response shape encodes to is an independent statement of the bytes.
+	var neutral topology.MutatorOutput
+	want, err := neutral.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the neutral response shape: %v", err)
+	}
+	if out != string(want) {
+		t.Fatalf("guest response = %x; want the neutral result %x", out, want)
+	}
+}
+
+// TestRunLocal_BinaryWireExportRejectsMalformedPayload proves the authoring
+// surface is still checked as JSON for a binary-wire export: the payload is
+// refused up front, by the same message every other export gets, rather than
+// reaching the guest as bytes it cannot read.
+func TestRunLocal_BinaryWireExportRejectsMalformedPayload(t *testing.T) {
+	t.Parallel()
+	guest := wasmtest.EnsureFixtureBuilt(t, "mutator-go.wasm")
+
+	_, err := runLocal(t, "--plugin", guest, "--type", "governance",
+		"--export", "mutate", "--with", `{"compilation_context":`)
+	if err == nil {
+		t.Fatal("a malformed authored payload should be refused before the guest runs")
+	}
+	if !strings.Contains(err.Error(), "not valid JSON") {
+		t.Fatalf("refusal should name the authoring surface; got %v", err)
 	}
 }

@@ -66,3 +66,4 @@ package main
 //go:generate go run . ../../../../aggrega-abi/rust/src/providerrender_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/providerrender_gen.ts
 //go:generate go run . ../../compiler/rendercore/providerrender_host_gen.go
+//go:generate go run . ../../pluginwire/pluginwire_gen.go
