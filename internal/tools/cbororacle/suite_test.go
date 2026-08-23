@@ -248,6 +248,34 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponse", false)
 	vec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponseContent", false)
 
+	// The pack-source and read-source-file request and reply payloads. Each reply
+	// vector is the SUCCESS shape, which is what its failure envelope below cannot
+	// be: the two shapes are the two directions of the same omission property, and
+	// either alone proves nothing. A reply carrying its success member and omitting
+	// both error members passes just as well against an encoder that emits an error
+	// key unconditionally as against one that omits it correctly, and the failure
+	// envelope is the fixture that separates them — so the pair is the assertion and
+	// neither half is redundant.
+	//
+	// The two request payloads declare no omittable member at all, so their map head
+	// is a constant and there is no omission direction to assert. They are here for
+	// the head-and-order property instead: a request is the payload the guest builds
+	// and the host decodes, so a key order or a head count that disagrees between the
+	// generated encoder and the reference is exactly the desynchronisation a
+	// same-generator round-trip cannot see.
+	//
+	// The packed-source reply carries three files whose paths are in the host's byte
+	// order — Chart.yaml before charts/ before templates/, which is byte order rather
+	// than case-insensitive order — and one of them carries content that is not valid
+	// UTF-8, so the file bytes are proven to cross as an opaque byte string rather
+	// than as text. Its base64 also exercises both non-alphanumeric alphabet
+	// characters and all three padding widths across the four vectors, which the
+	// hand-written base64 codecs in the other two languages reach on no other vector.
+	vec[abi.SourcePackRequest](t, "SourcePackRequest", false)
+	vec[abi.SourcePackResponse](t, "SourcePackResponse", false)
+	vec[abi.SourceFileRequest](t, "SourceFileRequest", false)
+	vec[abi.SourceFileResponse](t, "SourceFileResponse", false)
+
 	// The socket payloads whose governance and label-transform vectors the suite
 	// carried without an oracle anchor.
 	vec[abi.RenderPolicyInput](t, "RenderPolicyInput", false)
