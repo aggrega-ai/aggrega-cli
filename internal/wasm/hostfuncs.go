@@ -275,13 +275,27 @@ func (p *Plugin) hostFunctionsForDeclaredCLI(declared []string) []extism.HostFun
 }
 
 // pluginMemoryReader is the minimal interface the host function
-// bodies use to read string arguments from plugin memory. The Extism
-// SDK's *CurrentPlugin satisfies this interface structurally; tests
-// substitute a fake reader to exercise the body logic without
-// fabricating a *CurrentPlugin (the SDK exposes no public
-// constructor or test double for that type).
+// bodies use to read arguments from plugin memory. Both methods take
+// an offset alone and derive the argument's length from the Extism
+// allocation table; they differ only in the shape the argument is
+// declared to carry. ReadString reads an argument declared as UTF-8
+// text — a log message, a diagnostic field, a URL. ReadBytes reads an
+// argument declared as an opaque byte run, which is what a host
+// function whose request travels in the binary encoding needs: the
+// bytes are not text and decoding them as text would corrupt them.
+//
+// The Extism SDK's *CurrentPlugin satisfies this interface
+// structurally; tests substitute a fake reader to exercise the body
+// logic without fabricating a *CurrentPlugin (the SDK exposes no
+// public constructor or test double for that type).
+//
+// This is deliberately not pluginRawMemoryReader, whose contract
+// shape differs rather than whose result type differs: that seam
+// takes an explicit (pointer, length) pair because the streaming
+// contract names the length itself.
 type pluginMemoryReader interface {
 	ReadString(offset uint64) (string, error)
+	ReadBytes(offset uint64) ([]byte, error)
 }
 
 // hostFunctionAggregaLog returns the host-side closure binding
@@ -689,11 +703,19 @@ func (p *Plugin) handleAggregaReadSourceFile(reader pluginMemoryReader, writer p
 
 // hostFunctionAggregaParseSource returns the host-side closure binding
 // aggrega_parse_source(request_ptr i64) -> response_ptr i64. The guest passes a
-// pointer to a ParseInput JSON document naming a syntactic format, the source
-// bytes, and an optional opaque options document; the host runs the producer (a
-// parser) for that format through the injected source-parser seam and writes one
-// ParseSourceResponse JSON document — the canonical tree on success, an error
-// message on failure — back into plugin memory, returning its offset.
+// pointer to a ParseInput document naming a syntactic format, the source bytes,
+// and an optional opaque options document; the host runs the producer (a parser)
+// for that format through the injected source-parser seam and writes one
+// ParseSourceResponse document — the canonical tree on success, an error message
+// on failure — back into plugin memory, returning its offset.
+//
+// Both slots on this call carry canonical CBOR, so the request slot is an opaque
+// byte run rather than UTF-8 text. That is a shape the guest declares, not just
+// an encoding it chooses: a guest binding whose request slot is typed as text
+// cannot pass these bytes intact. The host reads the request through
+// pluginMemoryReader.ReadBytes and both directions go through the payload types'
+// generated canonical-CBOR entry points, so neither side hand-parses bytes and
+// the request is byte-identical for identical input.
 //
 // It is the single shared entry every host-mediated producer-consumption call
 // routes through, so the re-entrancy guard here protects any consumer/producer
@@ -730,14 +752,14 @@ func (p *Plugin) hostFunctionAggregaParseSource() extism.HostFunction {
 // calls back into aggrega_parse_source observes depth at the limit and is denied
 // here.
 func (p *Plugin) handleAggregaParseSource(ctx context.Context, reader pluginMemoryReader, writer pluginMemoryWriter, stack []uint64) {
-	reqJSON, err := reader.ReadString(stack[0])
+	reqBytes, err := reader.ReadBytes(stack[0])
 	if err != nil {
 		log.Printf("plugin %q: aggrega_parse_source: memory read failed: %v", p.name, err)
 		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: reading the request from plugin memory failed: %v", err), abi.CodeRequestUnreadable)
 		return
 	}
 	var req abi.ParseInput
-	if err := req.UnmarshalJSON([]byte(reqJSON)); err != nil {
+	if err := req.DecodeCBOR(reqBytes); err != nil {
 		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: decoding the request failed: %v", err), abi.CodeRequestUndecodable)
 		return
 	}
@@ -762,9 +784,9 @@ func (p *Plugin) handleAggregaParseSource(ctx context.Context, reader pluginMemo
 		stack[0] = p.writeParseSourceFailure(writer, err.Error(), code)
 		return
 	}
-	b, err := abi.ParseSourceResponse{Tree: tree}.MarshalJSON()
+	b, err := abi.ParseSourceResponse{Tree: tree}.EncodeCBOR()
 	if err != nil {
-		log.Printf("plugin %q: aggrega_parse_source: response marshal failed: %v", p.name, err)
+		log.Printf("plugin %q: aggrega_parse_source: response encode failed: %v", p.name, err)
 		stack[0] = 0
 		return
 	}
@@ -775,11 +797,17 @@ func (p *Plugin) handleAggregaParseSource(ctx context.Context, reader pluginMemo
 // writes a ParseSourceResponse error envelope carrying it, returning the
 // envelope's offset. The warning mirrors the envelope so the host caller sees the
 // same diagnostic the guest received.
+//
+// The failure envelope is encoded exactly as the success envelope is, through the
+// payload type's canonical-CBOR entry point. A guest reads one reply slot and
+// cannot know before decoding which of the two it holds, so an error envelope in
+// a different encoding would be undecodable by the very path that has to report
+// the failure.
 func (p *Plugin) writeParseSourceFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
-	b, err := abi.ParseSourceResponse{Error: message, ErrorCode: code}.MarshalJSON()
+	b, err := abi.ParseSourceResponse{Error: message, ErrorCode: code}.EncodeCBOR()
 	if err != nil {
-		log.Printf("plugin %q: aggrega_parse_source: error envelope marshal failed: %v", p.name, err)
+		log.Printf("plugin %q: aggrega_parse_source: error envelope encode failed: %v", p.name, err)
 		return 0
 	}
 	return p.writeEnvelopeBytes(writer, b)

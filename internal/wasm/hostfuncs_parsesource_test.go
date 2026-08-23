@@ -4,6 +4,7 @@
 package wasm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,15 +14,15 @@ import (
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 )
 
-// parseSourceRequest marshals a ParseInput into the request JSON the
+// parseSourceRequest encodes a ParseInput into the request bytes the
 // aggrega_parse_source host function body reads from plugin memory.
-func parseSourceRequest(t *testing.T, format string, source []byte, options json.RawMessage) string {
+func parseSourceRequest(t *testing.T, format string, source []byte, options json.RawMessage) []byte {
 	t.Helper()
-	b, err := abi.ParseInput{Format: format, Bytes: source, Options: options}.MarshalJSON()
+	b, err := abi.ParseInput{Format: format, Bytes: source, Options: options}.EncodeCBOR()
 	if err != nil {
-		t.Fatalf("marshal ParseInput: %v", err)
+		t.Fatalf("encode ParseInput: %v", err)
 	}
-	return string(b)
+	return b
 }
 
 // lastParseSourceEnvelope decodes the most recent payload the fake writer
@@ -32,8 +33,8 @@ func lastParseSourceEnvelope(t *testing.T, w *fakeMemoryWriter) abi.ParseSourceR
 		t.Fatalf("no envelope was written to plugin memory")
 	}
 	var resp abi.ParseSourceResponse
-	if err := resp.UnmarshalJSON(w.written[len(w.written)-1]); err != nil {
-		t.Fatalf("envelope is not valid ParseSourceResponse JSON: %v (payload %q)", err, w.written[len(w.written)-1])
+	if err := resp.DecodeCBOR(w.written[len(w.written)-1]); err != nil {
+		t.Fatalf("envelope is not a decodable ParseSourceResponse: %v (payload %x)", err, w.written[len(w.written)-1])
 	}
 	return resp
 }
@@ -54,7 +55,7 @@ func TestHandleParseSource_Success(t *testing.T) {
 		return json.RawMessage(`{"k":1}`), nil
 	}
 	p := &Plugin{name: "parse-source-test", sourceParser: seam}
-	reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{7: parseSourceRequest(t, "json", []byte("hi"), nil)}}
+	reader := &fakeMemoryReader{bytesByOffset: map[uint64][]byte{7: parseSourceRequest(t, "json", []byte("hi"), nil)}}
 	writer := &fakeMemoryWriter{}
 
 	stack := []uint64{7}
@@ -90,7 +91,7 @@ func TestHandleParseSource_ReentryDenied(t *testing.T) {
 		return json.RawMessage(`{"unreached":true}`), nil
 	}
 	p := &Plugin{name: "parse-source-test", sourceParser: seam}
-	reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{7: parseSourceRequest(t, "json", []byte("hi"), nil)}}
+	reader := &fakeMemoryReader{bytesByOffset: map[uint64][]byte{7: parseSourceRequest(t, "json", []byte("hi"), nil)}}
 	writer := &fakeMemoryWriter{}
 
 	ctx := contextWithProducerConsumptionDepth(context.Background(), producerConsumptionDepthLimit)
@@ -118,7 +119,7 @@ func TestHandleParseSource_ReentryDenied(t *testing.T) {
 func TestHandleParseSource_ReentryBeatsMissingSeam(t *testing.T) {
 	t.Parallel()
 	p := &Plugin{name: "parse-source-test"} // nil sourceParser
-	reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{7: parseSourceRequest(t, "json", []byte("hi"), nil)}}
+	reader := &fakeMemoryReader{bytesByOffset: map[uint64][]byte{7: parseSourceRequest(t, "json", []byte("hi"), nil)}}
 	writer := &fakeMemoryWriter{}
 
 	ctx := contextWithProducerConsumptionDepth(context.Background(), producerConsumptionDepthLimit)
@@ -135,7 +136,7 @@ func TestHandleParseSource_ReentryBeatsMissingSeam(t *testing.T) {
 func TestHandleParseSource_MissingSeam(t *testing.T) {
 	t.Parallel()
 	p := &Plugin{name: "parse-source-test"} // nil sourceParser
-	reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{7: parseSourceRequest(t, "json", []byte("hi"), nil)}}
+	reader := &fakeMemoryReader{bytesByOffset: map[uint64][]byte{7: parseSourceRequest(t, "json", []byte("hi"), nil)}}
 	writer := &fakeMemoryWriter{}
 
 	p.handleAggregaParseSource(context.Background(), reader, writer, []uint64{7})
@@ -162,7 +163,7 @@ func TestHandleParseSource_SeamErrorSurfaced(t *testing.T) {
 		return nil, sentinel
 	}
 	p := &Plugin{name: "parse-source-test", sourceParser: seam}
-	reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{7: parseSourceRequest(t, "helm", []byte("x"), nil)}}
+	reader := &fakeMemoryReader{bytesByOffset: map[uint64][]byte{7: parseSourceRequest(t, "helm", []byte("x"), nil)}}
 	writer := &fakeMemoryWriter{}
 
 	p.handleAggregaParseSource(context.Background(), reader, writer, []uint64{7})
@@ -192,7 +193,7 @@ func TestHandleParseSource_CodedSeamError(t *testing.T) {
 		return nil, &CodedHostError{Code: abi.CodeNoParserForFormat, Err: underlying}
 	}
 	p := &Plugin{name: "parse-source-test", sourceParser: seam}
-	reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{7: parseSourceRequest(t, "terraform", []byte("x"), nil)}}
+	reader := &fakeMemoryReader{bytesByOffset: map[uint64][]byte{7: parseSourceRequest(t, "terraform", []byte("x"), nil)}}
 	writer := &fakeMemoryWriter{}
 
 	p.handleAggregaParseSource(context.Background(), reader, writer, []uint64{7})
@@ -207,7 +208,10 @@ func TestHandleParseSource_CodedSeamError(t *testing.T) {
 }
 
 // TestHandleParseSource_BadRequest proves a malformed request fails in-band
-// rather than trapping, and the seam is never reached.
+// rather than trapping, and the seam is never reached. The fixture is a text
+// document, which is the shape the request slot does not carry: it is a
+// well-formed JSON object and still undecodable here, so the assertion also
+// shows the handler is not silently tolerant of the other encoding.
 func TestHandleParseSource_BadRequest(t *testing.T) {
 	t.Parallel()
 	seamCalled := false
@@ -216,7 +220,7 @@ func TestHandleParseSource_BadRequest(t *testing.T) {
 		return nil, nil
 	}
 	p := &Plugin{name: "parse-source-test", sourceParser: seam}
-	reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{7: "{ not json"}}
+	reader := &fakeMemoryReader{bytesByOffset: map[uint64][]byte{7: []byte(`{"format":"json","bytes":"aGk="}`)}}
 	writer := &fakeMemoryWriter{}
 
 	p.handleAggregaParseSource(context.Background(), reader, writer, []uint64{7})
@@ -230,6 +234,112 @@ func TestHandleParseSource_BadRequest(t *testing.T) {
 	}
 	if env.ErrorCode != abi.CodeRequestUndecodable {
 		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeRequestUndecodable)
+	}
+}
+
+// TestHandleParseSource_UnreadableRequest proves an unreadable request slot
+// fails in-band with the unreadable-request code rather than trapping.
+func TestHandleParseSource_UnreadableRequest(t *testing.T) {
+	t.Parallel()
+	p := &Plugin{name: "parse-source-test"}
+	reader := &fakeMemoryReader{errOnOffset: 7}
+	writer := &fakeMemoryWriter{}
+
+	p.handleAggregaParseSource(context.Background(), reader, writer, []uint64{7})
+
+	env := lastParseSourceEnvelope(t, writer)
+	if !strings.Contains(env.Error, "reading the request from plugin memory failed") {
+		t.Errorf("envelope error = %q; want the unreadable-request message", env.Error)
+	}
+	if env.ErrorCode != abi.CodeRequestUndecodable && env.ErrorCode != abi.CodeRequestUnreadable {
+		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeRequestUnreadable)
+	}
+}
+
+// TestHandleParseSource_RequestSlotIsBytesNotText pins the request slot's shape
+// at the read seam, which is the one property a round trip through this handler
+// cannot establish on its own: a handler and a guest that made the same mistake
+// about the slot's shape would agree with each other and pass every round-trip
+// assertion.
+//
+// The fixture is registered ONLY on the reader's bytes channel. A handler that
+// read the slot as text would find no text fixture at that offset, take the
+// unreadable-request branch, and never reach the seam — so the seam observing the
+// request is the assertion that the bytes read is the one performed.
+func TestHandleParseSource_RequestSlotIsBytesNotText(t *testing.T) {
+	t.Parallel()
+	seamReached := false
+	seam := func(ctx context.Context, format string, source []byte, options json.RawMessage) (json.RawMessage, error) {
+		seamReached = true
+		return json.RawMessage(`{}`), nil
+	}
+	p := &Plugin{name: "parse-source-test", sourceParser: seam}
+	reader := &fakeMemoryReader{
+		bytesByOffset:   map[uint64][]byte{7: parseSourceRequest(t, "json", []byte("hi"), nil)},
+		stringsByOffset: map[uint64]string{}, // deliberately empty: a text read finds nothing here
+	}
+	writer := &fakeMemoryWriter{}
+
+	p.handleAggregaParseSource(context.Background(), reader, writer, []uint64{7})
+
+	if !seamReached {
+		env := lastParseSourceEnvelope(t, writer)
+		t.Fatalf("the request slot was not read as bytes; the handler failed with %q (code %q)", env.Error, env.ErrorCode)
+	}
+}
+
+// TestParseSourceEnvelope_BothShapesEncodeInTheSameEncoding pins that the failure
+// envelope and the success envelope travel in one encoding. A guest reads one
+// reply slot and cannot know before decoding which of the two it holds, so a
+// failure envelope in the other encoding would be undecodable by exactly the path
+// that has to report the failure.
+//
+// Both shapes are asserted because each hides the other's defect: a handler that
+// encoded only the success shape correctly passes any test built from success
+// fixtures alone, and one that encoded only the failure shape correctly passes
+// any test built from failure fixtures alone.
+func TestParseSourceEnvelope_BothShapesEncodeInTheSameEncoding(t *testing.T) {
+	t.Parallel()
+
+	// Success shape: the seam produced a tree.
+	p := &Plugin{name: "parse-source-test", sourceParser: func(context.Context, string, []byte, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"a":1}`), nil
+	}}
+	writer := &fakeMemoryWriter{}
+	p.handleAggregaParseSource(context.Background(),
+		&fakeMemoryReader{bytesByOffset: map[uint64][]byte{7: parseSourceRequest(t, "json", []byte("hi"), nil)}},
+		writer, []uint64{7})
+	if len(writer.written) == 0 {
+		t.Fatalf("success path wrote no envelope")
+	}
+	gotSuccess := writer.written[len(writer.written)-1]
+	wantSuccess, err := abi.ParseSourceResponse{Tree: json.RawMessage(`{"a":1}`)}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the expected success envelope: %v", err)
+	}
+	if !bytes.Equal(gotSuccess, wantSuccess) {
+		t.Errorf("success envelope bytes = %x; want %x", gotSuccess, wantSuccess)
+	}
+
+	// Failure shape: the same handler, no seam.
+	pf := &Plugin{name: "parse-source-test"}
+	wf := &fakeMemoryWriter{}
+	pf.handleAggregaParseSource(context.Background(),
+		&fakeMemoryReader{bytesByOffset: map[uint64][]byte{7: parseSourceRequest(t, "json", []byte("hi"), nil)}},
+		wf, []uint64{7})
+	if len(wf.written) == 0 {
+		t.Fatalf("failure path wrote no envelope")
+	}
+	gotFailure := wf.written[len(wf.written)-1]
+	wantFailure, err := abi.ParseSourceResponse{
+		Error:     "aggrega_parse_source: no source parser is available in this context",
+		ErrorCode: abi.CodeNoSourceParser,
+	}.EncodeCBOR()
+	if err != nil {
+		t.Fatalf("encode the expected failure envelope: %v", err)
+	}
+	if !bytes.Equal(gotFailure, wantFailure) {
+		t.Errorf("failure envelope bytes = %x; want %x", gotFailure, wantFailure)
 	}
 }
 

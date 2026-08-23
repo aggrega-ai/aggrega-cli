@@ -250,10 +250,19 @@ type fakeMemoryReader struct {
 	// given stack offset. Missing entries cause ReadString to return
 	// an error simulating an OOB or invalid-pointer read.
 	stringsByOffset map[uint64]string
-	// errOnOffset, if non-zero, forces ReadString to fail at that
-	// specific offset even if stringsByOffset has an entry for it.
+	// bytesByOffset returns the opaque byte run the body should
+	// observe at a given stack offset, for a host function whose
+	// request slot carries the binary encoding. It is a separate map
+	// from stringsByOffset on purpose: a fixture registered as text
+	// must not satisfy a bytes read, so a body switched to the wrong
+	// read method fails the fixture lookup instead of quietly
+	// observing a re-encoded value.
+	bytesByOffset map[uint64][]byte
+	// errOnOffset, if non-zero, forces a read to fail at that
+	// specific offset even if a fixture map has an entry for it.
 	// Used to exercise the "one of three reads failed" branches of
-	// handleAggregaEmitWarning.
+	// handleAggregaEmitWarning and the unreadable-request branch of
+	// the payload host functions.
 	errOnOffset uint64
 }
 
@@ -266,6 +275,17 @@ func (f *fakeMemoryReader) ReadString(offset uint64) (string, error) {
 		return "", fmt.Errorf("no string fixture at offset %d", offset)
 	}
 	return s, nil
+}
+
+func (f *fakeMemoryReader) ReadBytes(offset uint64) ([]byte, error) {
+	if f.errOnOffset != 0 && offset == f.errOnOffset {
+		return nil, fmt.Errorf("simulated read failure at offset %d", offset)
+	}
+	b, ok := f.bytesByOffset[offset]
+	if !ok {
+		return nil, fmt.Errorf("no bytes fixture at offset %d", offset)
+	}
+	return b, nil
 }
 
 // captureLogOutput redirects log.Default()'s destination to a buffer
