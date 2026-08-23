@@ -125,10 +125,12 @@ func TestArtifactOutputNames_BundleNestsUnderTheConsumptionKey(t *testing.T) {
 // TestArtifactOutputCollisionStillHaltsOnWhatSurvivesTheDerivation proves the
 // halt is retained for what the naming rule above does not make impossible.
 //
-// A key that is not a single path segment can spell the nested name another key's
-// bundle produces, and the authoring surface does not yet bound the key to one
-// segment. That collision is the author's — two keys naming one output — rather
-// than one the derivation manufactured, so it is refused rather than resolved.
+// The authoring surface bounds a key to a single filename, so a key spelling the
+// nested name another key's bundle produces is no longer writable in an authored
+// document. This test builds that state in process instead, which is precisely the
+// residue the guard still owes: a name reaching the projection without envelope
+// validation. The collision is a name given twice rather than one the derivation
+// manufactured, so it is refused rather than resolved.
 func TestArtifactOutputCollisionStillHaltsOnWhatSurvivesTheDerivation(t *testing.T) {
 	t.Parallel()
 

@@ -109,10 +109,11 @@ func buildArtifactsProjection(
 	//
 	// What reaches it is a residue, not the common case: the output name is the
 	// authored key, and a mapping key is unique within one document, so the
-	// derivation cannot manufacture a collision. What survives is a name the
-	// author wrote twice — a key that is not a single path segment can spell the
-	// nested name another key's bundle produces — and any input that reached this
-	// walk without the duplicate-key refusal a decoded document gets.
+	// derivation cannot manufacture a collision. The authoring surface bounds a
+	// key to a single filename, so a key spelling the nested name another key's
+	// bundle produces is not writable either. What survives is any input that
+	// reached this walk without the envelope validation and the duplicate-key
+	// refusal a decoded document gets.
 	//
 	// Deliberately narrow, and deliberately not the only collision check: this
 	// map spans one Recipe's own artifacts entries, so it sees a Recipe naming

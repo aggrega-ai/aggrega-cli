@@ -230,15 +230,13 @@ var errArtifactsLibraryEntryNotFound = cerrors.Register("compiler-renderer/artif
 // What it covers is a residue, and saying so is part of the contract. An artifact
 // output is named by the key it was authored under — a bundle's files nested under
 // that key — and a mapping key is unique within one document, so a collision
-// between two entries that each name their own output cannot arise. Two classes
-// remain, and both are the author's own name rather than one a derivation
-// produced:
-//
-//   - A key that is not a single path segment can spell the nested name another
-//     key's bundle produces (`widgets/crd.yaml` authored beside a `widgets` entry
-//     whose bundle carries `crd.yaml`).
-//   - Content that reached the projection without the duplicate-key refusal a
-//     decoded document gets.
+// between two entries that each name their own output cannot arise. The authoring
+// surface bounds a key to a single filename, so a key cannot spell the nested name
+// another key's bundle produces either — that name is no longer writable. What
+// remains is content that reached the projection without the envelope validation
+// and the duplicate-key refusal a decoded document gets: state assembled in
+// process rather than read from an authored document. The guard is retained for
+// exactly that, since a name arriving by that route has passed nothing.
 //
 // It is raised per Recipe over that Recipe's own artifacts, which is why it is
 // distinct from the collision between two contributors to one assembled output.

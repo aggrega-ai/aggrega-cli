@@ -5,6 +5,7 @@ package types_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
@@ -369,5 +370,121 @@ spec:
 	}
 	if len(rpt.Findings) == 0 {
 		t.Fatalf("expected envelope rejection on non-string assertion value; got no findings")
+	}
+}
+
+// TestRecipeEnvelope_RejectsArtifactKeyOutsideFilenameAlphabet pins the
+// propertyNames constraint on spec.artifacts. The key names the entry's
+// output, so it is bounded to a single filename: a path separator would make
+// one key name a path rather than a file, and a leading dot would admit the
+// parent-directory segment, which names a location outside the output
+// directory.
+//
+// The assertion names the keyword and the offending key rather than counting
+// findings, because a document can fail envelope validation for reasons that
+// have nothing to do with its artifact keys — and a test satisfied by any
+// finding at all would keep passing after the constraint was removed.
+func TestRecipeEnvelope_RejectsArtifactKeyOutsideFilenameAlphabet(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		key  string
+	}{
+		{"path separator", "nested/policy.yaml"},
+		{"leading dot", ".hidden.yaml"},
+		{"parent directory", ".."},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			v := recipeEnvelopeValidator(t)
+
+			src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: artifact-key-alphabet
+  version: 1.0.0
+spec:
+  capability: helm
+  implements: core/server
+  source: ./chart
+  valuesMapping: |
+    {}
+  artifacts:
+    "` + tc.key + `": |
+      apiVersion: v1
+      kind: ConfigMap
+  locals: {}
+`
+			rpt, err := v.Validate(yamlInstance(t, src), nil)
+			if err != nil {
+				t.Fatalf("Validate: %v", err)
+			}
+			var named bool
+			for _, f := range rpt.Findings {
+				if f.Keyword == "propertyNames" && strings.Contains(f.Message, tc.key) {
+					named = true
+				}
+			}
+			if !named {
+				t.Fatalf("expected a propertyNames finding naming the artifact key %q; got %d findings: %v",
+					tc.key, len(rpt.Findings), rpt.Findings)
+			}
+		})
+	}
+}
+
+// TestRecipeEnvelope_AcceptsArtifactKeyInFilenameAlphabet is the acceptance
+// half of the constraint above, and it is not decoration: a rejection-only
+// test is satisfied by a pattern that matches nothing, so a pattern that
+// over-constrained the alphabet — refusing the extensions artifact keys
+// conventionally carry — would pass the rejection arm and be caught only here.
+func TestRecipeEnvelope_AcceptsArtifactKeyInFilenameAlphabet(t *testing.T) {
+	t.Parallel()
+
+	keys := []string{
+		"main.tf",
+		"template.yaml",
+		"serviceaccount.yaml",
+		"a",
+		"with-hyphen.yaml",
+		"with_underscore.yaml",
+	}
+
+	for _, key := range keys {
+		key := key
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			v := recipeEnvelopeValidator(t)
+
+			src := `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: artifact-key-alphabet
+  version: 1.0.0
+spec:
+  capability: helm
+  implements: core/server
+  source: ./chart
+  valuesMapping: |
+    {}
+  artifacts:
+    "` + key + `": |
+      apiVersion: v1
+      kind: ConfigMap
+  locals: {}
+`
+			rpt, err := v.Validate(yamlInstance(t, src), nil)
+			if err != nil {
+				t.Fatalf("Validate: %v", err)
+			}
+			if len(rpt.Findings) != 0 {
+				t.Fatalf("expected the artifact key %q to be admitted; got %d findings: %v",
+					key, len(rpt.Findings), rpt.Findings)
+			}
+		})
 	}
 }
