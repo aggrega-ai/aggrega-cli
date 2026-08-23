@@ -37,40 +37,18 @@
 //! environment, so a policy can decide differently per environment. The
 //! attachment's own files are at `input.sources` and its settings at
 //! `input.settings`, and the settings are also the policy's `data` document.
-//!
-//! # Why a policy names labels rather than writing change instructions
-//!
-//! The change is expressed to the build as a document of edit instructions
-//! addressed by path, and those paths need escaping — an Aggrega label key
-//! routinely contains a `/`, which is the path separator, so a hand-written path
-//! would address a nested location instead of one label. A policy therefore
-//! names the label it means and this module addresses it, which is also how the
-//! other shipped label-shaping plugins read their configuration. The escaping is
-//! then written once, here, rather than in every policy.
-//!
-//! # A decision may only change labels, and it cannot reach further
-//!
-//! Every instruction this module emits addresses one label on one node, so a
-//! policy has no way to express a change to anything else — the node's
-//! component, its resolved version, the set of nodes, or a value that is not a
-//! string. That confinement is what the invited transformation is bounded to: an
-//! operator attaching a plugin to shape labels has declared exactly that, and
-//! nothing more. A decision that names a node the build does not have, or asks
-//! to drop a label the node does not carry, is refused by the build with a
-//! message naming the instruction — it is not silently ignored.
 
+use governancecore::labels::{patch, LabelChange, OP_ADD, OP_REMOVE};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
 use crate::engine::CollectedDecision;
 
 /// The decision key a policy collects its label decisions under.
-pub const DECISION_KEY: &str = "labels";
-
-/// The operation a decision asks for: adding or replacing a label, which is the
-/// default, or dropping one.
-const OP_ADD: &str = "add";
-const OP_REMOVE: &str = "remove";
+///
+/// One definition, in the shared core, reached through this module: it is the key
+/// an operator writes, and an authored name has exactly one spelling.
+pub use governancecore::labels::DECISION_KEY;
 
 /// One label decision as a policy expresses it.
 ///
@@ -92,13 +70,21 @@ struct Decision {
     op: Option<String>,
 }
 
-/// One edit instruction, as the build reads it.
-#[derive(Debug, Clone, serde::Serialize)]
-struct Instruction {
-    op: String,
-    path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    value: Option<String>,
+/// Hands a decision this engine read to the shared change builder.
+///
+/// The two shapes carry the same four field names and differ only in how they are
+/// read: this engine's decisions arrive as a JSON document and are deserialized
+/// whole, so the intake belongs to the engine while the change the decision asks
+/// for does not.
+impl From<Decision> for LabelChange {
+    fn from(decision: Decision) -> Self {
+        LabelChange {
+            node: decision.node,
+            key: decision.key,
+            value: decision.value,
+            op: decision.op,
+        }
+    }
 }
 
 /// Reads a policy's label decisions and returns the label changes the build
@@ -116,51 +102,9 @@ pub fn changes(decisions: &[CollectedDecision]) -> anyhow::Result<Vec<Box<RawVal
                 collected.package
             )
         })?;
-        changes.push(instruction(&decision)?);
+        changes.push(patch(&LabelChange::from(decision))?);
     }
     Ok(changes)
-}
-
-/// Builds the edit instruction one decision asks for.
-fn instruction(decision: &Decision) -> anyhow::Result<Box<RawValue>> {
-    let op = decision.op.as_deref().unwrap_or(OP_ADD);
-    let value = match op {
-        OP_ADD => Some(decision.value.clone().ok_or_else(|| {
-            anyhow::anyhow!(
-                "the {DECISION_KEY:?} decision for node {:?} label {:?} names no \"value\"; a label value is a string",
-                decision.node,
-                decision.key
-            )
-        })?),
-        OP_REMOVE => None,
-        other => anyhow::bail!(
-            "the {DECISION_KEY:?} decision for node {:?} label {:?} names \"op\" {other:?}, which is not one of {OP_ADD:?} or {OP_REMOVE:?}",
-            decision.node,
-            decision.key
-        ),
-    };
-    let instruction = Instruction {
-        op: op.to_string(),
-        path: format!(
-            "/nodes/{}/labels/{}",
-            escape(&decision.node),
-            escape(&decision.key)
-        ),
-        value,
-    };
-    let document = serde_json::to_string(&[instruction])?;
-    Ok(RawValue::from_string(document)?)
-}
-
-/// Escapes one path segment so a name containing the path separator addresses a
-/// single location rather than a nested one.
-///
-/// A label key such as `component.aggrega.ai/type` carries a `/`, and a node's
-/// name can too, so escaping is what keeps a decision about one label from
-/// addressing something else entirely. The escape character is itself escaped
-/// first, so a separator rewritten into an escape sequence is not escaped twice.
-fn escape(segment: &str) -> String {
-    segment.replace('~', "~0").replace('/', "~1")
 }
 
 #[cfg(test)]

@@ -39,22 +39,17 @@
 //! that will take effect. The attachment's own files are at `input.sources` and
 //! its settings at `input.settings`, and the settings are also the policy's
 //! `data` document.
-//!
-//! # A decision may only add an annotation to a component that exists
-//!
-//! An annotation decision carries a coordinate, a key and a string value, and
-//! there is no other field it could carry — so a policy has no way to express
-//! any other change. A decision naming a component the deployment does not have
-//! is refused by the build, loudly, naming the coordinate and the annotation. An
-//! operator attaching a plugin to inject annotations has declared that
-//! injection and nothing further.
 
 use aggrega_abi::AnnotationInjection;
+use governancecore::annotations::check;
 
 use crate::engine::CollectedDecision;
 
 /// The decision key a policy collects its annotation decisions under.
-pub const DECISION_KEY: &str = "annotations";
+///
+/// One definition, in the shared core, reached through this module: it is the key
+/// an operator writes, and an authored name has exactly one spelling.
+pub use governancecore::annotations::DECISION_KEY;
 
 /// Reads a policy's annotation decisions and returns the annotations the build
 /// adds, in the order the decisions arrived.
@@ -74,19 +69,7 @@ pub fn injections(decisions: &[CollectedDecision]) -> anyhow::Result<Vec<Annotat
                     collected.package
                 )
             })?;
-        if injection.annotation_key.is_empty() {
-            anyhow::bail!(
-                "the {DECISION_KEY:?} decision for boundary {:?} component {:?} names an empty \"annotation_key\"",
-                injection.boundary_path,
-                injection.component_name
-            );
-        }
-        if injection.component_name.is_empty() {
-            anyhow::bail!(
-                "the {DECISION_KEY:?} decision for annotation {:?} names an empty \"component_name\"",
-                injection.annotation_key
-            );
-        }
+        check(&injection)?;
         injections.push(injection);
     }
     Ok(injections)
