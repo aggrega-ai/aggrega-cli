@@ -59,9 +59,18 @@ func TestTerraformExamplesHermeticOfflineBuild(t *testing.T) {
 				t.Fatalf("offline build %q (default terraform path must not network): %v", name, err)
 			}
 
+			// The boundary's own configuration plus the component's body, at the
+			// positions the composed layout puts them: the root configuration at
+			// the boundary, the component's files in the component's own
+			// sub-directory beneath it.
 			tree := readExampleDistTree(t, ws)
-			if _, ok := tree["infra/terraform/main.tf"]; !ok {
-				t.Errorf("offline build %q emitted no main.tf; dist keys: %v", name, sortedKeys(tree))
+			for _, want := range []string{
+				"infra/terraform/aggrega.modules.tf",
+				"infra/terraform/modules/db/main.tf",
+			} {
+				if _, ok := tree[want]; !ok {
+					t.Errorf("offline build %q emitted no %s; dist keys: %v", name, want, sortedKeys(tree))
+				}
 			}
 		})
 	}

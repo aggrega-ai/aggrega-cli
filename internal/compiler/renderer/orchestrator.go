@@ -235,7 +235,13 @@ type dispatchKey struct {
 //
 // intermediates carries Intermediate=true EmittedFiles separately from files
 // so the orchestrator never writes them at the dispatch path directly; they
-// flow only to the BoundaryAssembler at finalization. nodeAnnotations,
+// flow only to the BoundaryAssembler at finalization. placed is its exact
+// complement — the Intermediate=false EmittedFiles, in the order they were
+// emitted — retained beside files because files is keyed by path and so loses
+// both the emission order and the distinction between what per-node Render
+// produced and what was merged in afterwards. An assembler is handed the union
+// of the two as its contributor list, so a nesting assembler (whose per-node
+// output is all Intermediate=false) sees its contributors at all. nodeAnnotations,
 // nodeComponent and nodeSyncWave are the per-node metadata the assembler needs
 // to assemble its input (annotations for per-boundary network derivation,
 // component for per-node info, sync wave so an assembler can order the
@@ -261,6 +267,7 @@ type pendingDispatch struct {
 	formats                map[string]map[string]string
 	derivedKeys            derivedKeySet
 	intermediates          map[string][]EmittedFile
+	placed                 map[string][]EmittedFile
 	nodeAnnotations        map[string]map[string]string
 	nodeComponent          map[string]string
 	nodeSyncWave           map[string]int
@@ -1312,6 +1319,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				files:           map[string]map[string][]byte{},
 				formats:         map[string]map[string]string{},
 				intermediates:   map[string][]EmittedFile{},
+				placed:          map[string][]EmittedFile{},
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
 				nodeSyncWave:    map[string]int{},
@@ -1350,6 +1358,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				dispatch[key].intermediates[nodeID] = append(dispatch[key].intermediates[nodeID], f)
 				continue
 			}
+			dispatch[key].placed[nodeID] = append(dispatch[key].placed[nodeID], f)
 			nodeFileMap[f.Name] = f.Body
 			// Keep the producer-declared format bound to its file, keyed identically
 			// to nodeFileMap so the flat-output flush reads them in lockstep.
@@ -1554,6 +1563,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				files:           map[string]map[string][]byte{},
 				formats:         map[string]map[string]string{},
 				intermediates:   map[string][]EmittedFile{},
+				placed:          map[string][]EmittedFile{},
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
 				nodeSyncWave:    map[string]int{},
@@ -1569,6 +1579,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				continue
 			}
 			// Intermediate=false: emit directly under features/<instance>/.
+			// These deliberately do NOT join the group's placed map: that map is
+			// the contributor list an assembler is handed, and a boundary-scope
+			// FeatureRecipe is not one of the group's nodes — it has no component
+			// identity, no version and no wave of its own. Its Intermediate=true
+			// fragments still reach a fragment-merging assembler below, which is
+			// the case where a boundary-scope feature's content is genuinely
+			// merged rather than placed.
 			nodeFiles["features/"+key.FRInstance+"/"+f.Name] = f.Body
 		}
 		if len(intermediates) > 0 {
@@ -1761,6 +1778,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				YAMLIndent:             input.YAMLIndent,
 				SubCharts:              pd.subCharts,
 				IntermediatesByNode:    pd.intermediates,
+				PlacedByNode:           pd.placed,
 				NodeAnnotations:        pd.nodeAnnotations,
 				NodeComponent:          pd.nodeComponent,
 				NodeSyncWave:           pd.nodeSyncWave,

@@ -5,11 +5,25 @@
 
 // Command terraform-provider is the terraform Provider Wasm guest. It implements
 // the sourced-render path of the terraform provider behind the provider render
-// ABI's render_node export. terraform is a flat-output, sourced provider: it
-// vendors a Terraform module verbatim into the node's output file set and, when
-// the node carries input values, writes them alongside as an auto-loaded tfvars
-// overlay. It synthesizes nothing from a Workload — workload synthesis is not a
-// terraform concern — so the guest rejects a payload that carries a workload.
+// ABI's render_node export, and the root-configuration path behind its
+// assemble_boundary export. terraform is a sourced provider: it vendors a
+// Terraform module verbatim into the node's output file set and, when the node
+// carries input values, writes them alongside as an auto-loaded tfvars overlay.
+// It synthesizes nothing from a Workload — workload synthesis is not a terraform
+// concern — so the guest rejects a payload that carries a workload.
+//
+// A boundary's components are composed rather than emitted side by side. The
+// assemble_boundary guest writes one root configuration for the boundary,
+// declaring each component there as a `module` block whose source is that
+// component's own sub-directory, and it tells the host to place each component's
+// files in that sub-directory. This is Terraform's standard root-composes-children
+// shape, and it is what makes a relationship between two components expressible:
+// a Terraform dependency graph is per-configuration, so components emitted into
+// separate directories are separate graphs, and neither a reference nor a
+// depends_on can reach across them. The layout is unconditional — every boundary
+// the terraform provider renders gets a root configuration, whether or not
+// anything in it declares an ordering — because the alternative is two layouts
+// with different addressing rules.
 //
 // The guest decodes a RenderNodeInput, resolves the acquired module source from
 // the payload's name-only SourceListing, asks the host to pack the module's bytes
@@ -74,14 +88,16 @@ import (
 )
 
 // descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
-// the render_node and validate_node_input exports, compatibility with the
-// terraform provider, and its render-behavior contract (sourced and
-// artifacts-standalone input, no boundary assembly). The host reads it once at
-// load and validates it before invoking the exports. terraform resolves its
-// module source from the host's name-only listing and asks the host to pack the
-// selection, so both exports declare the aggrega_pack_source host function they
-// import; the host cross-checks this declaration against the functions the guest
-// actually imports. No assemble_boundary export is offered.
+// the render_node, validate_node_input and assemble_boundary exports,
+// compatibility with the terraform provider, and its render-behavior contract
+// (sourced and artifacts-standalone input, nest-per-component boundary
+// assembly). The host reads it once at load and validates it before invoking the
+// exports. terraform resolves its module source from the host's name-only listing
+// and asks the host to pack the selection, so the render and validation exports
+// declare the aggrega_pack_source host function they import; the host cross-checks
+// this declaration against the functions the guest actually imports. The
+// assemble_boundary export works from its payload alone and imports no host
+// function.
 //
 // aggrega.MarshalDescriptor folds the build-provenance version and commit into
 // the metadata when the Go linker stamps them at build time; a plain build
@@ -107,10 +123,16 @@ func descriptor() aggrega.PluginDescriptor {
 				Stability:     "experimental",
 				Description:   "structurally parses the sourced Terraform module's HCL and .tf.json files and reports parse errors before render",
 			},
+			{
+				Name:         "assemble_boundary",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "writes the root configuration for one boundary, declaring each component rendered there as a module block pointing at that component's own sub-directory",
+			},
 		},
 		Contract: &aggrega.ProviderContract{
 			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: true},
-			BoundaryAssembly: "none",
+			BoundaryAssembly: "nest",
 			ReusableInstance: true,
 		},
 		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
@@ -218,6 +240,78 @@ func renderNode() int32 {
 	}
 	pdk.Output(encoded)
 	return 0
+}
+
+//go:wasmexport assemble_boundary
+func assembleBoundary() int32 {
+	var in rendercore.AssembleBoundaryInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+
+	out, err := assembleBoundaryFromInput(in)
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+
+	encoded, err := out.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// assembleBoundaryFromInput writes the boundary's root configuration from the
+// contributors the payload names, and reports how the host should place their
+// files. The root declares one `module` block per contributing component, each
+// pointing at that component's own sub-directory; the guest names the directory
+// those sub-directories sit under and nests per component, so the host places
+// every component's output inside the configuration that declares it.
+//
+// The contributors are read from the payload's rendered-node list in the order
+// the host supplies, which is fixed deterministically, so identical input yields
+// byte-identical output. Nothing in the module's own text is read and no
+// component's files are rewritten: this export composes and places, and the
+// vendored bytes stay verbatim.
+func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
+	componentIDs := make([]string, 0, len(in.RenderedNodes))
+	for _, n := range in.RenderedNodes {
+		componentIDs = append(componentIDs, n.ID)
+	}
+
+	files, err := terraformcore.AssembleRoot(componentIDs)
+	if err != nil {
+		return rendercore.AssembleBoundaryOutput{}, errors.New(errorChainMessage(err))
+	}
+
+	out := rendercore.AssembleBoundaryOutput{Files: files}
+	for i := range out.Files {
+		if out.Files[i].Format == "" {
+			out.Files[i].Format = terraformFileFormat(out.Files[i].Path)
+		}
+	}
+	out.NestPerNode = true
+	out.NestSegment = terraformcore.ModulesDirName
+	return out, nil
+}
+
+// errorChainMessage serializes err's full wrap chain into one message. The
+// host-side rich error formatter is not available across the plugin ABI, and
+// some wrapper types keep their cause out of Error(), surfacing it only through
+// Unwrap; appending each unwrapped cause not already present keeps the root
+// diagnostic in the message the host receives.
+func errorChainMessage(err error) string {
+	msg := err.Error()
+	for e := errors.Unwrap(err); e != nil; e = errors.Unwrap(e) {
+		if s := e.Error(); !strings.Contains(msg, s) {
+			msg += ": " + s
+		}
+	}
+	return msg
 }
 
 //go:wasmexport validate_node_input

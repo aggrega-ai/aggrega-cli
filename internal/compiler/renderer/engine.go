@@ -345,6 +345,15 @@ func AssemblesBoundary(engine Provider) bool {
 // fragments and merges into the assembled docker-compose.yaml; helmchart
 // ignores (umbrella content comes from SubCharts).
 //
+// PlacedByNode is its exact complement: the per-contributor
+// Intermediate=false EmittedFiles produced by per-node Render — the files
+// the orchestrator places itself, at the per-node position a nesting
+// assembler names. Together the two maps are every file per-node Render
+// produced for the group, which is what an assembler is handed as its
+// contributor list; a fragment-merging assembler's contributors are all in
+// IntermediatesByNode and a nesting assembler's are all in PlacedByNode, so
+// neither map alone sees a whole dispatch group.
+//
 // NodeAnnotations is per-node annotation map (NodeID → annotation map).
 // Compose reads `aggrega.ai/namespace` from these to derive a docker
 // network name per contributing boundary.
@@ -370,6 +379,7 @@ type BoundaryInfo struct {
 	AggregateName       string
 	SubCharts           []SubChartInfo
 	IntermediatesByNode map[string][]EmittedFile
+	PlacedByNode        map[string][]EmittedFile
 	NodeAnnotations     map[string]map[string]string
 	NodeComponent       map[string]string
 	// NodeSyncWave is each contributing node's deployment wave, keyed by node

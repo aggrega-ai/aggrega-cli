@@ -5,7 +5,9 @@ package wasmengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -60,6 +62,14 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // own, and the directory the guest names for those sub-directories. The adapter
 // passes that name through untouched; the orchestrator supplies the default when
 // the guest names none and bounds what a named one may be.
+// A dispatch group's contributors are every node per-node render produced files
+// for, whichever way those files travel: the fragments a merging assembler is
+// handed, and the files the orchestrator places itself at a nesting assembler's
+// per-node position. Both reach the wire's rendered-node list, because a group's
+// contributor list is a property of the group and not of how one provider routes
+// its output — take only the fragments and a nesting provider is handed an empty
+// list and cannot see the nodes it is assembling for.
+//
 // Rendered nodes are emitted in sorted-by-id order and each node's annotations are
 // inserted in sorted-key order, so the wire payload is byte-identical across runs
 // of identical input (the determinism contract). The boundary metadata is left
@@ -78,17 +88,28 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // key order for the determinism contract. A provider that does not project
 // sub-charts contributes none of these carriers.
 func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
-	nodeIDs := make([]string, 0, len(info.IntermediatesByNode))
-	for id := range info.IntermediatesByNode {
-		nodeIDs = append(nodeIDs, id)
+	seen := map[string]struct{}{}
+	nodeIDs := make([]string, 0, len(info.IntermediatesByNode)+len(info.PlacedByNode))
+	for _, byNode := range []map[string][]renderer.EmittedFile{info.IntermediatesByNode, info.PlacedByNode} {
+		for id := range byNode {
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			nodeIDs = append(nodeIDs, id)
+		}
 	}
 	sort.Strings(nodeIDs)
 
 	renderedNodes := make([]renderer.RenderedNode, 0, len(nodeIDs))
 	for _, id := range nodeIDs {
 		fragments := info.IntermediatesByNode[id]
-		files := make([]renderer.RenderedFile, 0, len(fragments))
+		placed := info.PlacedByNode[id]
+		files := make([]renderer.RenderedFile, 0, len(fragments)+len(placed))
 		for _, f := range fragments {
+			files = append(files, renderer.RenderedFile{Path: f.Name, Content: f.Body})
+		}
+		for _, f := range placed {
 			files = append(files, renderer.RenderedFile{Path: f.Name, Content: f.Body})
 		}
 		renderedNodes = append(renderedNodes, renderer.RenderedNode{
@@ -225,16 +246,30 @@ func surfaceAssembleDiagnostics(boundaryPath string, diags []renderer.Diagnostic
 	return nil
 }
 
-// projectSubCharts reads each sourced sub-chart's pristine Chart.yaml from disk
-// into a filesystem-free projection, carrying instance identity, version, and
-// per-instance values through. It is the single home for the umbrella's pristine
-// Chart.yaml read — the invariant-forced host floor an umbrella-assembling
-// provider needs because the guest has no filesystem and the per-node rendered
-// files are not on the assemble wire. It is provider-independent: it reads
-// `<SubChartInfo.Source>/Chart.yaml` for any umbrella assembler, so the assembler
-// projects each sub-chart through it and the guest assembles the umbrella from
-// pure data alone. A generative sub-chart (nil/empty source) carries no ChartYAML
-// and takes the generative fallback in the assembly core.
+// subChartMetadataFileName is the file a vendored chart declares its dependency
+// name and version in, which an umbrella assembler needs and its guest cannot
+// read for itself. It is named once here because it is the only chart-shaped word
+// left on this path.
+const subChartMetadataFileName = "Chart.yaml"
+
+// projectSubCharts reads each sourced sub-chart's pristine chart metadata from
+// disk into a filesystem-free projection, carrying instance identity, version,
+// and per-instance values through. It is the single home for that read — the
+// invariant-forced host floor an umbrella-assembling provider needs because the
+// guest has no filesystem. It reads `<SubChartInfo.Source>/Chart.yaml` for any
+// nesting assembler, so the assembler projects each contributor through it and
+// the guest assembles the umbrella from pure data alone.
+//
+// A contributor whose source carries no such file contributes no bytes, exactly
+// as a generative sub-chart (nil/empty source) does, and takes the generative
+// fallback in the assembly core. That is deliberate and it is the reason this
+// read cannot be fatal here: not every nesting target composes children from a
+// chart, so requiring the file would make a chart-shaped filename a precondition
+// of nesting for every provider. The loud guardrail for a chart source that is
+// genuinely missing its metadata belongs to — and already lives in — the guest
+// that requires one: the chart provider validates its sourced listing and halts
+// at render, before any assembly runs, so a chart sub-chart never reaches here
+// without the file. A read that fails for any other reason still halts.
 func projectSubCharts(subCharts []renderer.SubChartInfo) ([]renderer.SubChartProjection, error) {
 	projs := make([]renderer.SubChartProjection, 0, len(subCharts))
 	for _, sc := range subCharts {
@@ -244,11 +279,16 @@ func projectSubCharts(subCharts []renderer.SubChartInfo) ([]renderer.SubChartPro
 			Values:     sc.Values,
 		}
 		if s, ok := sc.Source.(string); ok && s != "" {
-			data, err := os.ReadFile(filepath.Join(s, "Chart.yaml"))
-			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: s}, fmt.Sprintf("umbrella sourced: read Chart.yaml in %q", s))
+			data, err := os.ReadFile(filepath.Join(s, subChartMetadataFileName))
+			switch {
+			case err == nil:
+				proj.ChartYAML = data
+			case errors.Is(err, fs.ErrNotExist):
+				// No chart metadata at this source: the contributor is not a
+				// vendored chart, so it contributes none.
+			default:
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: s}, fmt.Sprintf("umbrella sourced: read %s in %q", subChartMetadataFileName, s))
 			}
-			proj.ChartYAML = data
 		}
 		projs = append(projs, proj)
 	}
