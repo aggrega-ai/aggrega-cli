@@ -245,6 +245,19 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.ImportInput](t, "ImportInput", false)
 	vec[abi.ImportOutput](t, "ImportOutput", false)
 	vec[abi.ParseSourceResponse](t, "ParseSourceResponse", false)
+	// The parse-source reply's SUCCESS shape, which its failure envelope above
+	// cannot stand in for: the two are the two directions of one omission
+	// property, and an encoder emitting an error key unconditionally passes any
+	// test built only from success fixtures while one dropping it unconditionally
+	// passes any test built only from failure fixtures. The tree it carries is an
+	// opaque JSON document crossing as a byte string of its verbatim bytes, and
+	// the failure envelope reaches no opaque field at all, so the tree member's
+	// bytes are pinned here. Its tree is long enough that the byte-string length
+	// needs a two-byte head, which is where the reference encoder earns its keep:
+	// all three generated codecs write that head through one shared head writer,
+	// so a width mistake would appear identically in each and their agreement
+	// would stay green.
+	vec[abi.ParseSourceResponse](t, "ParseSourceResponseTree", false)
 	vec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponse", false)
 	vec[abi.FetchExternalInputResponse](t, "FetchExternalInputResponseContent", false)
 
