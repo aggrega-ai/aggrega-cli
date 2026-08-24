@@ -41,15 +41,6 @@ var errInvalidInstanceName = cerrors.Register("resolver/invalid-instance-name", 
 	Message:   "invalid instance name: names must match ^[a-zA-Z0-9_-]+$ (letters, digits, hyphen, underscore; no dots)",
 })
 
-// ErrInvalidTargetRef wraps a target reference (e.g., uses.target) whose
-// dot-separated segments do not all match the instance-name pattern.
-func ErrInvalidTargetRef() error { return errInvalidTargetRef }
-
-var errInvalidTargetRef = cerrors.Register("resolver/invalid-target-ref", cerrors.Meta{
-	ShortCode: "E0159",
-	Message:   "invalid target reference: each dot-separated segment must match ^[a-zA-Z0-9_-]+$",
-})
-
 // ErrYAMLLoad wraps a file-read or YAML-unmarshal failure for any of the
 // three source documents (Aggregate, Release, Manifest).
 func ErrYAMLLoad() error { return errYAMLLoad }
