@@ -84,6 +84,6 @@ func detectFilenameCollisions(state *PhaseBState) error {
 		Path:       state.RecipePath,
 		Rule:       "filename-collision",
 		Suggestion: strings.Join(details, "; "),
-		Err:        validator.ErrRecipeRule7(),
+		Err:        validator.ErrRecipeFilenameCollisionAcrossInputKinds(),
 	})
 }

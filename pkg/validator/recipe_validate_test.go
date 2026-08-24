@@ -29,7 +29,7 @@ func newRecipe(provider string) *types.Recipe {
 
 // ----- The values-mapping rule: valuesMapping requires source -----
 
-func TestValidateRecipe_Rule1_ValuesMappingWithSource_Passes(t *testing.T) {
+func TestValidateRecipe_ValuesMapping_WithSource_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.Source = "./chart"
@@ -39,22 +39,22 @@ func TestValidateRecipe_Rule1_ValuesMappingWithSource_Passes(t *testing.T) {
 	}
 }
 
-func TestValidateRecipe_Rule1_ValuesMappingWithoutSource_Fails(t *testing.T) {
+func TestValidateRecipe_ValuesMapping_WithoutSource_Fails(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "demo:1.0"}`} // no source
 	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeRule1()) {
-		t.Fatalf("expected ErrRecipeRule1, got %v", err)
+	if !errors.Is(err, validator.ErrRecipeValuesMappingRequiresSource()) {
+		t.Fatalf("expected ErrRecipeValuesMappingRequiresSource, got %v", err)
 	}
 }
 
-func TestValidateRecipe_Rule1_ValuesMappingFileImportWithoutSource_Fails(t *testing.T) {
+func TestValidateRecipe_ValuesMapping_FileImportWithoutSource_Fails(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.ValuesMapping = types.ValuesMapping{Import: "./values.tmpl"} // no source
-	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeRule1()) {
-		t.Fatalf("expected ErrRecipeRule1, got %v", err)
+	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeValuesMappingRequiresSource()) {
+		t.Fatalf("expected ErrRecipeValuesMappingRequiresSource, got %v", err)
 	}
 }
 
@@ -79,7 +79,7 @@ func TestValidateRecipe_SourceWithoutValuesMapping_Passes(t *testing.T) {
 
 // ----- The input-kinds rule: at least one input kind -----
 
-func TestValidateRecipe_Rule5_HasSourceAndValuesMapping_Passes(t *testing.T) {
+func TestValidateRecipe_InputKinds_HasSourceAndValuesMapping_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.Source = "./chart"
@@ -89,7 +89,7 @@ func TestValidateRecipe_Rule5_HasSourceAndValuesMapping_Passes(t *testing.T) {
 	}
 }
 
-func TestValidateRecipe_Rule5_HasWorkload_Passes(t *testing.T) {
+func TestValidateRecipe_InputKinds_HasWorkload_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}
@@ -98,7 +98,7 @@ func TestValidateRecipe_Rule5_HasWorkload_Passes(t *testing.T) {
 	}
 }
 
-func TestValidateRecipe_Rule5_HasArtifacts_Passes(t *testing.T) {
+func TestValidateRecipe_InputKinds_HasArtifacts_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
@@ -108,13 +108,13 @@ func TestValidateRecipe_Rule5_HasArtifacts_Passes(t *testing.T) {
 	}
 }
 
-func TestValidateRecipe_Rule5_NoInputKind_Fails(t *testing.T) {
+func TestValidateRecipe_InputKinds_NoneDeclared_Fails(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
 	// Bare Recipe with no source / workload / artifacts.
 	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeRule5()) {
-		t.Fatalf("expected ErrRecipeRule5, got %v", err)
+	if !errors.Is(err, validator.ErrRecipeNoInputKind()) {
+		t.Fatalf("expected ErrRecipeNoInputKind, got %v", err)
 	}
 }
 
@@ -218,7 +218,7 @@ func TestValidateRecipe_ErrorMessage_NamesEntityRuleAndLocation(t *testing.T) {
 	// The rule's own registered sentence opens the message, read off the
 	// condition rather than restated here, so this cannot pass against a second
 	// copy of the wording composed from the failure's fields.
-	if sentence := validator.ErrRecipeRule5().Error(); !strings.HasPrefix(msg, sentence+" (") {
+	if sentence := validator.ErrRecipeNoInputKind().Error(); !strings.HasPrefix(msg, sentence+" (") {
 		t.Errorf("message must open with the registered sentence %q, got: %q", sentence, msg)
 	}
 	// The entity reference is built from the kind the failure carries, never

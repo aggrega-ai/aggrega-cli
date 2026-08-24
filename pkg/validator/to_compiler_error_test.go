@@ -26,8 +26,8 @@ func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
 		wantReference string
 		sentinel      error
 	}{
-		{envelope.KindRecipe, "Recipe my-recipe:1.0.0", validator.ErrRecipeRule1()},
-		{envelope.KindFeatureRecipe, "FeatureRecipe my-recipe:1.0.0", validator.ErrFeatureRecipeRule1()},
+		{envelope.KindRecipe, "Recipe my-recipe:1.0.0", validator.ErrRecipeValuesMappingRequiresSource()},
+		{envelope.KindFeatureRecipe, "FeatureRecipe my-recipe:1.0.0", validator.ErrFeatureRecipeValuesMappingRequiresSource()},
 	} {
 		t.Run(string(tc.kind), func(t *testing.T) {
 			err := validator.NewShapeRuleError(validator.ShapeRuleViolation{
@@ -85,7 +85,7 @@ func TestShapeRuleError_OmitsAnAbsentRuleAndVersion(t *testing.T) {
 		Kind: envelope.KindRecipe,
 		Name: "my-recipe",
 		Path: "/path/to/recipe.yaml",
-		Err:  validator.ErrRecipeRule1(),
+		Err:  validator.ErrRecipeValuesMappingRequiresSource(),
 	})
 	msg := err.Error()
 	if !strings.Contains(msg, "(Recipe my-recipe, at /path/to/recipe.yaml)") {

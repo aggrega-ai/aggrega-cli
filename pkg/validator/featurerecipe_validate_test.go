@@ -39,17 +39,17 @@ func TestValidateFeatureRecipe_InjectOnly_Passes(t *testing.T) {
 }
 
 // The values-mapping rule: valuesMapping requires source.
-func TestValidateFeatureRecipe_Rule1_ValuesMappingWithoutSource_Fails(t *testing.T) {
+func TestValidateFeatureRecipe_ValuesMapping_WithoutSource_Fails(t *testing.T) {
 	t.Parallel()
 	fr := newFeatureRecipe("helm")
 	fr.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "x:1"}`}
 	err := validator.ValidateFeatureRecipe(fr, tFile)
-	if !errors.Is(err, validator.ErrFeatureRecipeRule1()) {
-		t.Fatalf("expected ErrFeatureRecipeRule1, got %v", err)
+	if !errors.Is(err, validator.ErrFeatureRecipeValuesMappingRequiresSource()) {
+		t.Fatalf("expected ErrFeatureRecipeValuesMappingRequiresSource, got %v", err)
 	}
 }
 
-func TestValidateFeatureRecipe_Rule1_SourceWithValuesMapping_Passes(t *testing.T) {
+func TestValidateFeatureRecipe_ValuesMapping_WithSource_Passes(t *testing.T) {
 	t.Parallel()
 	fr := newFeatureRecipe("helm")
 	fr.Spec.Source = "./chart"

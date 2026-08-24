@@ -28,10 +28,12 @@ import (
 // there), not at load. Cross-input-kind filename collision is enforced at
 // emission time by feature rendering.
 
-// ErrFeatureRecipeRule1: valuesMapping requires source.
-func ErrFeatureRecipeRule1() error { return errFeatureRecipeRule1 }
+// ErrFeatureRecipeValuesMappingRequiresSource: valuesMapping requires source.
+func ErrFeatureRecipeValuesMappingRequiresSource() error {
+	return errFeatureRecipeValuesMappingRequiresSource
+}
 
-var errFeatureRecipeRule1 = cerrors.Register("validator/feature-recipe-values-mapping-requires-source", cerrors.Meta{
+var errFeatureRecipeValuesMappingRequiresSource = cerrors.Register("validator/feature-recipe-values-mapping-requires-source", cerrors.Meta{
 	ShortCode: "E0204",
 	Message:   "FeatureRecipe: valuesMapping requires source",
 })
@@ -68,16 +70,16 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 	if fr.Spec.Capability == "eval" {
 		return validateFeatureRecipeEvalProvider(fr, sourcePath)
 	}
-	if err := validateFeatureRecipeRule1(fr, sourcePath); err != nil {
+	if err := validateFeatureRecipeValuesMapping(fr, sourcePath); err != nil {
 		return err
 	}
 	return nil
 }
 
-// validateFeatureRecipeRule1 enforces the values-mapping rule: valuesMapping
-// requires source. A FeatureRecipe with valuesMapping but no source has no
-// chart/module to overlay values onto.
-func validateFeatureRecipeRule1(fr *types.FeatureRecipe, sourcePath string) error {
+// validateFeatureRecipeValuesMapping enforces the values-mapping rule:
+// valuesMapping requires source. A FeatureRecipe with valuesMapping but no
+// source has no chart/module to overlay values onto.
+func validateFeatureRecipeValuesMapping(fr *types.FeatureRecipe, sourcePath string) error {
 	if fr.Spec.ValuesMapping.IsEmpty() {
 		return nil
 	}
@@ -91,7 +93,7 @@ func validateFeatureRecipeRule1(fr *types.FeatureRecipe, sourcePath string) erro
 		Path:       sourcePath,
 		Rule:       "values-mapping",
 		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
-		Err:        ErrFeatureRecipeRule1(),
+		Err:        ErrFeatureRecipeValuesMappingRequiresSource(),
 	})
 }
 

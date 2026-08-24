@@ -147,13 +147,13 @@ func TestFormatCompilerError_CatalogCategory_RendersRecipeShapeRule(t *testing.T
 		Version: "1.0.0",
 		Path:    "/path/to/recipe.yaml",
 		Rule:    "values-mapping",
-		Err:     validator.ErrRecipeRule1(),
+		Err:     validator.ErrRecipeValuesMappingRequiresSource(),
 	})
 	got := formatCompilerError(rve)
 	for _, want := range []string{
-		headTag(t, cerrors.CatalogError, validator.ErrRecipeRule1()),
+		headTag(t, cerrors.CatalogError, validator.ErrRecipeValuesMappingRequiresSource()),
 		"/path/to/recipe.yaml",
-		validator.ErrRecipeRule1().Error(),
+		validator.ErrRecipeValuesMappingRequiresSource().Error(),
 		"rule values-mapping",
 		"Recipe my-recipe:1.0.0",
 	} {
@@ -177,11 +177,11 @@ func TestFormatCompilerError_CatalogCategory_RendersFeatureRecipeShapeRule(t *te
 		Version: "1.0.0",
 		Path:    "/path/to/featurerecipe.yaml",
 		Rule:    "values-mapping",
-		Err:     validator.ErrFeatureRecipeRule1(),
+		Err:     validator.ErrFeatureRecipeValuesMappingRequiresSource(),
 	})
 	got := formatCompilerError(fre)
 	for _, want := range []string{
-		headTag(t, cerrors.CatalogError, validator.ErrFeatureRecipeRule1()),
+		headTag(t, cerrors.CatalogError, validator.ErrFeatureRecipeValuesMappingRequiresSource()),
 		"/path/to/featurerecipe.yaml",
 		"FeatureRecipe my-featurerecipe:1.0.0",
 	} {
@@ -368,7 +368,7 @@ func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 		Kind: envelope.KindRecipe,
 		Name: "r",
 		Path: "/r.yaml",
-		Err:  validator.ErrRecipeRule1(),
+		Err:  validator.ErrRecipeValuesMappingRequiresSource(),
 	})
 	joined := stderrors.Join(ce, re, rve)
 
@@ -380,10 +380,10 @@ func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 	for _, want := range []string{
 		"[TRANSLATION_ERROR]",
 		headTag(t, cerrors.DeveloperError, resolver.ErrInvalidInstanceName()),
-		headTag(t, cerrors.CatalogError, validator.ErrRecipeRule1()),
+		headTag(t, cerrors.CatalogError, validator.ErrRecipeValuesMappingRequiresSource()),
 		"translation msg",
 		"resolver msg",
-		validator.ErrRecipeRule1().Error(),
+		validator.ErrRecipeValuesMappingRequiresSource().Error(),
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Mixed-type Join missing %q\n--- got ---\n%s", want, got)

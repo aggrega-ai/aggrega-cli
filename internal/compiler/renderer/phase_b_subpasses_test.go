@@ -365,8 +365,8 @@ func TestPhaseB5_CrossOriginCollision_Fails(t *testing.T) {
 	}
 
 	err := phaseB5(state)
-	if !errors.Is(err, validator.ErrRecipeRule7()) {
-		t.Fatalf("expected ErrRecipeRule7, got %v", err)
+	if !errors.Is(err, validator.ErrRecipeFilenameCollisionAcrossInputKinds()) {
+		t.Fatalf("expected ErrRecipeFilenameCollisionAcrossInputKinds, got %v", err)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "deployment.yaml") {
@@ -381,7 +381,7 @@ func TestPhaseB5_CrossOriginCollision_Fails(t *testing.T) {
 // the same name) is NOT caught by the filename-collision rule — two entries
 // under one key are refused when the document is decoded. B.5 only fires on
 // cross-origin collisions.
-func TestPhaseB5_WithinOriginDuplication_NoRule7(t *testing.T) {
+func TestPhaseB5_WithinOriginDuplication_NoFilenameCollision(t *testing.T) {
 	t.Parallel()
 	r := minimalRecipe("test")
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")

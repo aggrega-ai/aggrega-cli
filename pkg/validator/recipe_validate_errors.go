@@ -24,30 +24,32 @@ import (
 // Every rule here reports through NewShapeRuleError, so a Recipe failure is a
 // *ValidationError whatever stage detected it.
 
-// ErrRecipeRule1: valuesMapping requires source.
-func ErrRecipeRule1() error { return errRecipeRule1 }
+// ErrRecipeValuesMappingRequiresSource: valuesMapping requires source.
+func ErrRecipeValuesMappingRequiresSource() error { return errRecipeValuesMappingRequiresSource }
 
-var errRecipeRule1 = cerrors.Register("validator/recipe-values-mapping-requires-source", cerrors.Meta{
+var errRecipeValuesMappingRequiresSource = cerrors.Register("validator/recipe-values-mapping-requires-source", cerrors.Meta{
 	ShortCode: "E0209",
 	Message:   "Recipe: valuesMapping requires source",
 })
 
-// ErrRecipeRule5: at least one input kind must be present.
-func ErrRecipeRule5() error { return errRecipeRule5 }
+// ErrRecipeNoInputKind: at least one input kind must be present.
+func ErrRecipeNoInputKind() error { return errRecipeNoInputKind }
 
-var errRecipeRule5 = cerrors.Register("validator/recipe-no-input-kind", cerrors.Meta{
+var errRecipeNoInputKind = cerrors.Register("validator/recipe-no-input-kind", cerrors.Meta{
 	ShortCode: "E0210",
 	Message:   "Recipe: at least one input kind required",
 })
 
-// ErrRecipeRule7: emission-time filename collision across input-kind
-// origins (source output, workload synthesis, artifacts). RESERVED for
-// emission-time use; not surfaced by ValidateRecipe at load time. The
-// sentinel is declared here so the load-time validator and the
-// emission-time detector report the same failure shape.
-func ErrRecipeRule7() error { return errRecipeRule7 }
+// ErrRecipeFilenameCollisionAcrossInputKinds: emission-time filename
+// collision across input-kind origins (source output, workload synthesis,
+// artifacts). RESERVED for emission-time use; not surfaced by ValidateRecipe
+// at load time. The sentinel is declared here so the load-time validator and
+// the emission-time detector report the same failure shape.
+func ErrRecipeFilenameCollisionAcrossInputKinds() error {
+	return errRecipeFilenameCollisionAcrossInputKinds
+}
 
-var errRecipeRule7 = cerrors.Register("validator/recipe-filename-collision-across-input-kinds", cerrors.Meta{
+var errRecipeFilenameCollisionAcrossInputKinds = cerrors.Register("validator/recipe-filename-collision-across-input-kinds", cerrors.Meta{
 	ShortCode: "E0211",
 	Message:   "Recipe: filename collision across input-kind origins at emission",
 })

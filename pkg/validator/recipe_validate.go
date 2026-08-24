@@ -62,10 +62,10 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 		return validateRecipeEvalProvider(r, sourcePath)
 	}
 
-	if err := validateRecipeRule1(r, sourcePath); err != nil {
+	if err := validateRecipeValuesMapping(r, sourcePath); err != nil {
 		return err
 	}
-	if err := validateRecipeRule5(r, sourcePath); err != nil {
+	if err := validateRecipeInputKinds(r, sourcePath); err != nil {
 		return err
 	}
 	return nil
@@ -207,13 +207,13 @@ func validateRecipeOutputComponentLabels(r *types.Recipe, sourcePath string) err
 	return nil
 }
 
-// validateRecipeRule1 enforces the values-mapping rule: valuesMapping requires
+// validateRecipeValuesMapping enforces the values-mapping rule: valuesMapping requires
 // source.
 //
 // Sourced-mode authoring presents a Source pointer alongside a values overlay.
 // A Recipe with valuesMapping but no Source has no chart/module to overlay
 // values onto.
-func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
+func validateRecipeValuesMapping(r *types.Recipe, sourcePath string) error {
 	if r.Spec.ValuesMapping.IsEmpty() {
 		return nil
 	}
@@ -227,11 +227,11 @@ func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
 		Path:       sourcePath,
 		Rule:       "values-mapping",
 		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
-		Err:        ErrRecipeRule1(),
+		Err:        ErrRecipeValuesMappingRequiresSource(),
 	})
 }
 
-// validateRecipeRule5 enforces the input-kinds rule: at least one input kind
+// validateRecipeInputKinds enforces the input-kinds rule: at least one input kind
 // must be present.
 //
 // The three input kinds (any one suffices):
@@ -241,7 +241,7 @@ func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
 //  3. Artifacts — at least one entry under artifacts.
 //
 // A Recipe with none of these declared has no rendering surface.
-func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
+func validateRecipeInputKinds(r *types.Recipe, sourcePath string) error {
 	if !sourceIsEmpty(r.Spec.Source) {
 		return nil
 	}
@@ -258,7 +258,7 @@ func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 		Path:       sourcePath,
 		Rule:       "input-kinds",
 		Suggestion: "declare one of: source (with valuesMapping), workload, artifacts",
-		Err:        ErrRecipeRule5(),
+		Err:        ErrRecipeNoInputKind(),
 	})
 }
 
