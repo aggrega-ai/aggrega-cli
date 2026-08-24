@@ -21,19 +21,6 @@ var errSchemaResolve = cerrors.Register("validator-jsonschema/schema-resolve", c
 	Message:   "validator/jsonschema: schema resolution failed",
 })
 
-// ErrInstanceValidation indicates the underlying library reported
-// a validation failure against the instance that the adapter could
-// not translate to a structured Finding. Findings produced from
-// validation failures travel via *Report; this sentinel covers the
-// envelope-level failure where the library returns an error the
-// adapter cannot decompose.
-func ErrInstanceValidation() error { return errInstanceValidation }
-
-var errInstanceValidation = cerrors.Register("validator-jsonschema/instance-validation", cerrors.Meta{
-	ShortCode: "E0217",
-	Message:   "validator/jsonschema: instance validation failed",
-})
-
 // ErrExtensionEval indicates an x-aggrega-when: or x-aggrega-
 // validate: template predicate failed to evaluate (template parse
 // error, evaluation runtime error, or non-boolean result).
@@ -60,8 +47,13 @@ type AdapterError struct {
 	// Message is the human-readable description of the failure.
 	Message string
 
-	// Err is the underlying sentinel (one of ErrSchemaResolve /
-	// ErrInstanceValidation / ErrExtensionEval).
+	// Err is the underlying sentinel: ErrSchemaResolve where the
+	// schema itself could not be resolved, or ErrExtensionEval where
+	// an x-aggrega template predicate failed to evaluate. Those are
+	// the two conditions the adapter raises; a failure of the
+	// instance against its schema is not among them, because such a
+	// failure is reported as a Finding on *Report rather than as an
+	// error.
 	Err error
 }
 
