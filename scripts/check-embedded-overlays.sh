@@ -47,9 +47,21 @@ CATALOG_DIR="$HUB/aggrega-catalog/plugin"
 [ -f "$MANIFEST" ] || { echo "check-embedded-overlays: manifest not found: $MANIFEST" >&2; exit 1; }
 [ -d "$HUB" ] || { echo "check-embedded-overlays: aggrega-hub not found at $HUB" >&2; exit 1; }
 
-# The catalog version is the compiler build version without the working-tree
-# --dirty marker, matching how the catalog generator stamps its version
-# directories: uncommitted edits do not change the expected version.
+# BUILD_VER is the version check (c) EXPECTS to find as a committed version
+# directory. Nothing here stamps anything: it is HEAD's own `git describe`, with
+# a leading "v" stripped and no working-tree --dirty marker.
+#
+# Two things this deliberately does not claim. It is NOT how the catalog
+# generator derives a version directory — that is the guest's own describe()
+# self-report — so the two diverge whenever the guests were not rebuilt at HEAD.
+# And omitting the --dirty marker confers no immunity from an edited tree: a
+# guest built from a tree with uncommitted edits reports a "-dirty" version and
+# stamps a "-dirty" directory, which this expected value would not match.
+#
+# Both divergences are why (c) is only an informational note outside --release.
+# Under --release the guests are rebuilt from the clean, tagged commit, so the
+# descriptor version and HEAD's `git describe` converge on the tag: the two
+# readings agree at the one moment the check is a hard failure.
 BUILD_VER="$(git describe --tags --always 2>/dev/null || echo dev)"; BUILD_VER="${BUILD_VER#v}"
 
 declare -a missing=()

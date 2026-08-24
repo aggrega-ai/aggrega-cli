@@ -76,7 +76,9 @@ func embeddedGuestVersion(t *testing.T, uri string) string {
 }
 
 // readGeneratedEntity reads and parses a generated Plugin entity written under
-// out/<name>/<version>/plugin.yaml.
+// out/<pluginType>/<name>/<version>/plugin.yaml. Its name argument carries the
+// slashed <pluginType>/<name> coordinate rather than a bare name — which is why
+// the path is assembled through filepath.FromSlash.
 func readGeneratedEntity(t *testing.T, outDir, name, version string) types.Plugin {
 	t.Helper()
 	path := filepath.Join(outDir, filepath.FromSlash(name), version, genCatalogPluginFilename)

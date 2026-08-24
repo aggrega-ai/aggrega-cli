@@ -20,10 +20,19 @@
 #
 # Out of scope by design: the committed hub-catalog generator and the
 # overlay-consistency check derive a deliberately SEPARATE version without the
-# --dirty marker, so committed catalog entities stay clean regardless of an
-# edited tree; the container-image builder derives an image tag. Those are
-# distinct recipes for distinct outputs, keyed differently from the --dirty
+# --dirty marker, and the container-image builder derives an image tag. Those
+# are distinct recipes for distinct outputs, keyed differently from the --dirty
 # binary-provenance recipe guarded here, and this check does not fold them in.
+#
+# Note what that separation does NOT buy, because the obvious reading is wrong:
+# it confers no immunity from an edited tree. The generator's version stamps
+# only the throwaway binary it builds in a temp directory to run the generation
+# with; a committed entity's version — and hence its version directory — is the
+# guest's own describe() self-report and does not come from this recipe at all,
+# so a guest built from a tree with uncommitted edits still stamps a "-dirty"
+# version directory. The overlay check derives its value to COMPARE against a
+# committed version directory rather than to stamp anything. Neither feeds the
+# binary-provenance chain guarded above, which is why they stay out of scope.
 #
 # Exit 0 when the recipe has one home; exit 1 (naming each offending script and
 # line) otherwise. Deterministic and offline.

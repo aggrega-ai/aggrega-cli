@@ -46,8 +46,10 @@ Two selection modes:
   --plugin <f.wasm> generate a single entity for one non-embedded guest. The
                     overlay path is a single overlay file.
 
-The output is written under <output-dir>/<name>/<version>/plugin.yaml and carries
-a generated-output banner. Regenerating over unchanged inputs yields
+The output is written under <output-dir>/<pluginType>/<name>/<version>/plugin.yaml
+and carries a generated-output banner. The leading pluginType segment keeps two
+same-named plugins in different sockets apart, since a bare plugin name is unique
+only within its own socket. Regenerating over unchanged inputs yields
 byte-identical files.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
