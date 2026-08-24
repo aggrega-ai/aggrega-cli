@@ -70,9 +70,12 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // its output — take only the fragments and a nesting provider is handed an empty
 // list and cannot see the nodes it is assembling for.
 //
-// Rendered nodes are emitted in sorted-by-id order and each node's annotations are
-// inserted in sorted-key order, so the wire payload is byte-identical across runs
-// of identical input (the determinism contract). The boundary metadata is left
+// Rendered nodes are emitted in sorted-by-id order and each node's annotations and
+// values are inserted in sorted-key order, so the wire payload is byte-identical
+// across runs of identical input (the determinism contract). The values a node's
+// render resolved arrive here as a plain map, which carries no author order to
+// preserve, so sorted insertion is what fixes the order rather than a choice
+// between two available ones. The boundary metadata is left
 // unset: a dispatch group can merge contributors from multiple boundaries, so the
 // per-render boundary is carry-only and not synthesized here. Each node's
 // deployment wave travels with the node for that same reason — a merged group has
@@ -118,6 +121,7 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 			Rendered:    renderer.RenderNodeOutput{Files: files},
 			Annotations: orderedAnnotations(info.NodeAnnotations[id]),
 			SyncWave:    info.NodeSyncWave[id],
+			Values:      valuesToOrdered(info.NodeValues[id]),
 		})
 	}
 

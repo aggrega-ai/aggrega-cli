@@ -255,6 +255,12 @@ type dispatchKey struct {
 // absent entry and a declared zero are the same state by definition rather
 // than by convention.
 //
+// nodeValues is keyed the same way and populated at the same site, from the
+// values that node's own render resolved. An assembler whose output is the only
+// position its target evaluates carries each contributor's values into the
+// assembled artifact; one whose contributors already carry their own inputs
+// reads none of it.
+//
 // contributingBoundaries records every boundary path whose components fed
 // into this dispatch group — used for diagnostic messages on collision /
 // chart-name-mismatch errors and for chart-name cascade lookups against
@@ -271,6 +277,7 @@ type pendingDispatch struct {
 	nodeAnnotations        map[string]map[string]string
 	nodeComponent          map[string]string
 	nodeSyncWave           map[string]int
+	nodeValues             map[string]map[string]any
 	subCharts              []SubChartInfo
 	assembler              BoundaryAssembler
 	assemblerCandidates    []assemblerCandidate
@@ -1323,6 +1330,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
 				nodeSyncWave:    map[string]int{},
+				nodeValues:      map[string]map[string]any{},
 				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, key)
@@ -1377,6 +1385,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
 		dispatch[key].nodeComponent[nodeID] = node.Component
 		dispatch[key].nodeSyncWave[nodeID] = nodeCtx.SyncWave
+		dispatch[key].nodeValues[nodeID] = values
 		dispatch[key].engineByNode[nodeID] = engine
 		dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{
 			InstanceID: nodeID,
@@ -1567,6 +1576,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
 				nodeSyncWave:    map[string]int{},
+				nodeValues:      map[string]map[string]any{},
 				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, dKey)
@@ -1782,6 +1792,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				NodeAnnotations:        pd.nodeAnnotations,
 				NodeComponent:          pd.nodeComponent,
 				NodeSyncWave:           pd.nodeSyncWave,
+				NodeValues:             pd.nodeValues,
 				ContributingBoundaries: pd.contributingBoundaries,
 				Edges:                  edges,
 				ChartName:              chartName,

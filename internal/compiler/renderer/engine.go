@@ -361,6 +361,11 @@ func AssemblesBoundary(engine Provider) bool {
 // NodeComponent maps NodeID → resolved component-type URI. Used by
 // assemblers that need per-node component identity for output metadata.
 //
+// NodeValues is each contributing node's resolved values dictionary. An
+// assembler whose output is the only position its target evaluates carries
+// these into the assembled artifact itself; one whose contributors already
+// carry their own inputs ignores it.
+//
 // ContributingBoundaries lists every boundary path whose components fed
 // into this dispatch group. Used for diagnostic context in error messages
 // and for chart-name cascade lookups.
@@ -389,7 +394,15 @@ type BoundaryInfo struct {
 	// precisely the case where one assembled artifact holds more than one. A
 	// node whose boundary declares no wave carries 0, the field's documented
 	// default, so a missing entry and a declared zero are the same state.
-	NodeSyncWave           map[string]int
+	NodeSyncWave map[string]int
+	// NodeValues is each contributing node's resolved values dictionary, keyed
+	// by node id exactly as NodeAnnotations, NodeComponent and NodeSyncWave are,
+	// and populated at the same site from the same node render. It travels per
+	// node for the same reason the wave does: one assembled artifact can hold
+	// contributors from several boundaries, each with its own values. A node
+	// whose render produced no values carries a nil map, which is the same state
+	// as an empty one — an assembler reads "no inputs" from both.
+	NodeValues             map[string]map[string]any
 	ContributingBoundaries []string
 	Edges                  []IREdgeInfo
 	ChartName              string

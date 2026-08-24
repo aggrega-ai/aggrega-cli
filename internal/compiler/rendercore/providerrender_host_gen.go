@@ -235,7 +235,7 @@ type AssembleBoundaryInput struct {
 	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty" cbor:"aggregate_name,omitempty"`
 }
 
-// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, its deployment wave, and the render output the render_node export produced for it.
+// RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, its deployment wave, its rendered values, and the render output the render_node export produced for it.
 type RenderedNode struct {
 	// ID The node's absolute id within the topology graph.
 	ID string `json:"id" yaml:"id" cbor:"id"`
@@ -246,6 +246,8 @@ type RenderedNode struct {
 	Annotations types.OrderedMap[string] `json:"annotations,omitempty" yaml:"annotations,omitempty" cbor:"annotations,omitempty"`
 	// SyncWave The deployment wave this node inherited from its containing boundary (default 0; negative permitted), so a boundary assembler can order the contributors it merges relative to one another. A dispatch group can merge contributors from several boundaries, each carrying its own wave, so the wave travels with every node here rather than once for the whole payload. An assembler whose output shape expresses no ordering ignores it.
 	SyncWave int `json:"sync_wave,omitempty" yaml:"sync_wave,omitempty" cbor:"sync_wave,omitempty"`
+	// Values The node's rendered values dictionary, the same key set the render_node export received for this node, so a boundary assembler can place each contributor's inputs in the assembled artifact itself rather than beside that contributor's own files. Where the assembled artifact is the only position the target evaluates, that is the difference between an input the target reads and one it never reaches. Keys arrive in sorted order, not author order, and that sorting is what makes the payload byte-identical across runs of identical input; a guest needing any other ordering imposes it itself. An assembler whose output shape carries no per-contributor inputs ignores it.
+	Values types.OrderedMap[any] `json:"values,omitempty" yaml:"values,omitempty" cbor:"values,omitempty"`
 }
 
 type RenderEdge struct {
@@ -2811,6 +2813,18 @@ func (t RenderedNode) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"sync_wave\":")
 		buf.WriteString(strconv.FormatInt(int64(t.SyncWave), 10))
 	}
+	if !t.Values.IsZero() {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"values\":")
+		if enc, err := json.Marshal(t.Values); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -2865,6 +2879,16 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 			} else {
 				t.SyncWave = int(n)
 			}
+		case "values":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Values); err != nil {
+					return err
+				}
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -2884,7 +2908,7 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *RenderedNode) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "id", "type", "rendered", "annotations", "sync_wave"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "id", "type", "rendered", "annotations", "sync_wave", "values"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -7136,6 +7160,9 @@ func (t RenderedNode) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	n := 3
+	if !t.Values.IsZero() {
+		n++
+	}
 	if t.SyncWave != 0 {
 		n++
 	}
@@ -7148,6 +7175,23 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	dst = appendCBORTextString(dst, t.ID)
 	dst = appendCBORTextString(dst, "type")
 	dst = appendCBORTextString(dst, t.Type)
+	if !t.Values.IsZero() {
+		dst = appendCBORTextString(dst, "values")
+		{
+			keys := t.Values.Keys()
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv, _ := t.Values.Get(k)
+				if raw, mErr := json.Marshal(mv); mErr != nil {
+					return nil, mErr
+				} else {
+					dst = appendCBORByteString(dst, raw)
+				}
+			}
+		}
+	}
 	dst = appendCBORTextString(dst, "rendered")
 	if dst, err = t.Rendered.appendCBOR(dst); err != nil {
 		return nil, err
@@ -7234,6 +7278,32 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.SyncWave = int(v)
 			}
+		case "values":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[any]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv any
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.Values = om
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -7250,7 +7320,7 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *RenderedNode) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "id", "type", "rendered", "annotations", "sync_wave"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "id", "type", "rendered", "annotations", "sync_wave", "values"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
