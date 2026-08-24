@@ -357,13 +357,16 @@ func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 	// instead. subnet_id is the DB subnet group name the Release supplies under
 	// infra.overrides: the recipe reads it from the operator's pillar rather than
 	// naming a Terraform data source, so what lands here is a plain string with
-	// nothing left to resolve.
+	// nothing left to resolve. instance_class comes from the same pillar and falls
+	// back to the value the recipe declares, which is why it appears without the
+	// Release stating one.
 	wantBlock := `module "db" {
   source = "./modules/db"
 
   allocated_storage = 100
   db_name           = "appdb"
   engine_version    = "11.4"
+  instance_class    = "db.t3.small"
   multi_az          = true
   subnet_id         = "production-private-db-subnets"
 }
