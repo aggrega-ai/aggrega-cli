@@ -26,9 +26,9 @@ import (
 //     scalar value, add of a mapping member, remove of a mapping member, and an
 //     absent-path halt.
 //   - the JSON / flow-style corpus (jsonFlowCorpus): compact and pretty-printed
-//     JSON bodies (the shape a JSON-authored Terraform module and its auto-loaded
-//     variables overlay land in), where a scalar's terminator is a flow delimiter
-//     rather than the end of the line. A replace of a comma-adjacent scalar and a
+//     JSON bodies, at a nested depth and at the top level, where a scalar's
+//     terminator is a flow delimiter rather than the end of the line. A replace of
+//     a comma-adjacent scalar and a
 //     replace of a last (brace-adjacent) member both edit only the addressed
 //     value's span; an add into a non-empty flow mapping splices a new member
 //     after the last existing value; a replace of a scalar with a structured
@@ -109,10 +109,18 @@ func firstStructured(units []frp.Unit) (int, bool) {
 
 // jsonFlowCorpus returns cases over JSON-shaped bodies, which parse as
 // flow-style collections where a scalar's terminator is a flow delimiter
-// (`,`, `}`, `]`) rather than the end of the line. It covers the two shapes a
-// JSON-authored Terraform module and its auto-loaded variables overlay land in
-// — compact single-line and 2-space pretty — plus a native-HCL body that is
-// opaque to the codec.
+// (`,`, `}`, `]`) rather than the end of the line. It covers a JSON-authored
+// Terraform module body in both encodings it reaches the codec in — compact
+// single-line and 2-space pretty — a flat document whose addressed members sit
+// at the top level, and a native-HCL body that is opaque to the codec.
+//
+// The two document depths are both needed and neither substitutes for the other:
+// the nested body's addressed scalars sit four levels down, where a span is
+// computed from a deeply-indented child, while the flat document's sit directly
+// inside the document's own mapping, at the outermost indent. The filenames
+// here are labels: this corpus drives one codec instance directly, and that codec
+// decides a body is opaque from its content rather than from its suffix — which is
+// why the native-HCL case halts.
 //
 // Each mutation case asserts byte-fidelity exactly (WantBytes is the input with
 // only the addressed span changed), so an over-reaching span that swallowed a
@@ -126,11 +134,11 @@ func firstStructured(units []frp.Unit) (int, bool) {
 // and the native-HCL case asserts an opaque body is not a patch target.
 func jsonFlowCorpus() []codecconformance.Case {
 	const tfName = "main.tf.json"
-	const varsName = "aggrega.auto.tfvars.json"
+	const flatName = "variables.json"
 
 	compact := []byte(`{"resource":{"aws_db_instance":{"main":{"instance_class":"db.t3.micro","allocated_storage":20}}}}` + "\n")
 	pretty := jsonIndent2(compact)
-	tfvars := tfvarsOverlay()
+	flat := flatJSONDocument()
 
 	sub := func(src []byte, old, replacement string) []byte {
 		return bytes.Replace(src, []byte(old), []byte(replacement), 1)
@@ -166,11 +174,11 @@ func jsonFlowCorpus() []codecconformance.Case {
 			WantBytes: sub(pretty, "20", "25"),
 		},
 		{
-			Name:      "tfvars-replace-comma-adjacent",
-			Filename:  varsName,
-			Input:     tfvars,
+			Name:      "flat-replace-comma-adjacent",
+			Filename:  flatName,
+			Input:     flat,
 			Ops:       []frp.JSONPatchOp{{Op: "replace", Path: "/db_name", Value: "appdb2"}},
-			WantBytes: sub(tfvars, `"appdb"`, `"appdb2"`),
+			WantBytes: sub(flat, `"appdb"`, `"appdb2"`),
 		},
 		{
 			Name:      "tfjson-pretty-flow-add-into-non-empty",
@@ -204,18 +212,18 @@ func jsonFlowCorpus() []codecconformance.Case {
 			// A structured replace whose comma-adjacent sibling (the
 			// interpolation pointer db_endpoint) must survive verbatim — the
 			// patch-isolation proof for an inline structured splice.
-			Name:      "tfvars-scalar-to-object-replace-isolates-sibling",
-			Filename:  varsName,
-			Input:     tfvars,
+			Name:      "flat-scalar-to-object-replace-isolates-sibling",
+			Filename:  flatName,
+			Input:     flat,
 			Ops:       []frp.JSONPatchOp{{Op: "replace", Path: "/db_name", Value: map[string]any{"Fn::ImportValue": "db-name-export"}}},
-			WantBytes: sub(tfvars, `"appdb"`, `{"Fn::ImportValue":"db-name-export"}`),
+			WantBytes: sub(flat, `"appdb"`, `{"Fn::ImportValue":"db-name-export"}`),
 		},
 		{
-			Name:      "tfvars-flow-add-into-non-empty",
-			Filename:  varsName,
-			Input:     tfvars,
+			Name:      "flat-flow-add-into-non-empty",
+			Filename:  flatName,
+			Input:     flat,
 			Ops:       []frp.JSONPatchOp{{Op: "add", Path: "/multi_az", Value: true}},
-			WantBytes: sub(tfvars, `"allocated_storage": 20`, "\"allocated_storage\": 20,\n  \"multi_az\": true"),
+			WantBytes: sub(flat, `"allocated_storage": 20`, "\"allocated_storage\": 20,\n  \"multi_az\": true"),
 		},
 		{
 			Name:     "tfjson-flow-remove-halts",
@@ -445,10 +453,14 @@ func jsonIndent2(compact []byte) []byte {
 	return pretty.Bytes()
 }
 
-// tfvarsOverlay builds a variables overlay the way the Terraform provider does:
-// an ordered map marshalled to compact JSON in author order, then pretty-printed
-// at 2-space indent. One value is a deterministic interpolation pointer string.
-func tfvarsOverlay() []byte {
+// flatJSONDocument builds the flat end of the corpus's depth axis: an ordered
+// map marshalled to compact JSON in author order, then pretty-printed at 2-space
+// indent, so its addressed members sit directly inside the document's own
+// mapping rather than four levels down. Its last member is where an add splices,
+// which makes the document's own closing brace the terminator that case reaches.
+// One value is an interpolation pointer string, which the codec must carry
+// through a patch of its sibling untouched.
+func flatJSONDocument() []byte {
 	om := types.NewOrderedMap[any]()
 	om.Set("db_name", "appdb")
 	om.Set("db_endpoint", "${aws_db_instance.main.endpoint}")

@@ -29,24 +29,27 @@ func prettyJSON(t *testing.T, compact string) []byte {
 	return pretty.Bytes()
 }
 
-// tfvarsFixture builds an aggrega.auto.tfvars.json overlay the same way the
-// terraform provider does: an author-ordered value map marshalled to JSON, then
-// 2-space indented with a trailing newline. Author order is preserved so the
-// reassembled bytes are deterministic.
-func tfvarsFixture(t *testing.T) []byte {
+// localsFixture builds a second JSON-authored Terraform body for the node's
+// emitted set: a locals block, ordered so the reassembled bytes are
+// deterministic, carrying an interpolation pointer beside a plain scalar. A
+// vendored module reaches the pipeline with every file it ships, so two
+// structured bodies in one set is the ordinary shape rather than a contrivance.
+func localsFixture(t *testing.T) []byte {
 	t.Helper()
-	values := types.NewOrderedMap[any]()
-	values.Set("db_name", "appdb")
-	values.Set("db_endpoint", "${aws_db_instance.main.endpoint}")
-	values.Set("allocated_storage", float64(20))
+	locals := types.NewOrderedMap[any]()
+	locals.Set("db_name", "appdb")
+	locals.Set("db_endpoint", "${aws_db_instance.main.endpoint}")
+	locals.Set("allocated_storage", float64(20))
+	doc := types.NewOrderedMap[any]()
+	doc.Set("locals", *locals)
 
-	compact, err := values.MarshalJSON()
+	compact, err := doc.MarshalJSON()
 	if err != nil {
-		t.Fatalf("marshal overlay values: %v", err)
+		t.Fatalf("marshal locals body: %v", err)
 	}
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, compact, "", "  "); err != nil {
-		t.Fatalf("indent overlay: %v", err)
+		t.Fatalf("indent locals body: %v", err)
 	}
 	pretty.WriteByte('\n')
 	return pretty.Bytes()
@@ -66,26 +69,33 @@ func fileByName(t *testing.T, files []EmittedFile, name string) []byte {
 }
 
 // TestPipelineTerraformFrp_ByteFaithfulTwoPatches proves that in one executor
-// run a FeatureRecipe pipeline patches both a JSON-authored Terraform module
-// body (main.tf.json) and the module-input overlay (aggrega.auto.tfvars.json),
-// each reassembling byte-faithfully: only the addressed scalar literal changes,
-// with the surrounding bytes — braces, commas, and an unrelated interpolation
-// pointer — untouched. A native-HCL sibling that no patch addresses passes
-// through verbatim, proving patch isolation across a mixed structured/opaque
-// set. terraform borrows the stock YAML codec (both scopes here), which the
-// executor routes carve and reassemble through.
+// run a FeatureRecipe pipeline patches two JSON-authored Terraform bodies from
+// one node's emitted set (main.tf.json and locals.tf.json), each reassembling
+// byte-faithfully: only the addressed scalar literal changes, with the
+// surrounding bytes — braces, commas, and an unrelated interpolation pointer —
+// untouched. A native-HCL sibling that no patch addresses passes through
+// verbatim, proving patch isolation across a mixed structured/opaque set.
+// terraform borrows the stock YAML codec (both scopes here), which the executor
+// routes carve and reassemble through.
+//
+// What this covers and what it does not: every file named here is one a sourced
+// terraform node emits — a vendored module reaches the pipeline with each file it
+// ships, JSON-authored bodies included. It does not cover the boundary's root
+// configuration, which carries each component's input values: that file is native
+// Terraform syntax, so the codec carves it opaque and a patch against it halts —
+// the case the sibling test below pins.
 func TestPipelineTerraformFrp_ByteFaithfulTwoPatches(t *testing.T) {
 	t.Parallel()
 
 	moduleBody := prettyJSON(t, `{"resource":{"aws_db_instance":{"main":{"instance_class":"db.t3.micro","allocated_storage":20}}}}`)
-	overlay := tfvarsFixture(t)
+	localsBody := localsFixture(t)
 	// A native-HCL body has no RFC-6902-addressable object tree; the codec
 	// carves it opaque, so it must survive verbatim when no patch addresses it.
 	hclBody := []byte("resource \"aws_db_instance\" \"main\" {\n  instance_class = \"db.t3.micro\"\n}\n")
 
 	own := []EmittedFile{
 		{Name: "main.tf.json", Origin: EmitOriginWorkload, Body: moduleBody},
-		{Name: "aggrega.auto.tfvars.json", Origin: EmitOriginWorkload, Body: overlay},
+		{Name: "locals.tf.json", Origin: EmitOriginWorkload, Body: localsBody},
 		{Name: "main.tf", Origin: EmitOriginWorkload, Body: hclBody},
 	}
 
@@ -100,9 +110,9 @@ func TestPipelineTerraformFrp_ByteFaithfulTwoPatches(t *testing.T) {
 		},
 		{
 			Scope: frp.DocumentScopeOwn,
-			Key:   "aggrega.auto.tfvars.json",
+			Key:   "locals.tf.json",
 			Op:    "replace",
-			Path:  "/db_name",
+			Path:  "/locals/db_name",
 			Value: "appdb2",
 		},
 	}}
@@ -127,16 +137,16 @@ func TestPipelineTerraformFrp_ByteFaithfulTwoPatches(t *testing.T) {
 		t.Errorf("main.tf.json not byte-faithful.\n got: %q\nwant: %q", gotModule, wantModule)
 	}
 
-	// The overlay: only /db_name changes; the interpolation pointer survives
-	// verbatim because a pointer string is opaque scalar data the compiler pipes
-	// through, never resolves.
-	gotOverlay := fileByName(t, res.Own, "aggrega.auto.tfvars.json")
-	wantOverlay := bytes.Replace(overlay, []byte(`"appdb"`), []byte(`"appdb2"`), 1)
-	if !bytes.Equal(gotOverlay, wantOverlay) {
-		t.Errorf("aggrega.auto.tfvars.json not byte-faithful.\n got: %q\nwant: %q", gotOverlay, wantOverlay)
+	// The locals body: only /locals/db_name changes; the interpolation pointer
+	// survives verbatim because a pointer string is opaque scalar data the
+	// compiler pipes through, never resolves.
+	gotLocals := fileByName(t, res.Own, "locals.tf.json")
+	wantLocals := bytes.Replace(localsBody, []byte(`"appdb"`), []byte(`"appdb2"`), 1)
+	if !bytes.Equal(gotLocals, wantLocals) {
+		t.Errorf("locals.tf.json not byte-faithful.\n got: %q\nwant: %q", gotLocals, wantLocals)
 	}
-	if !bytes.Contains(gotOverlay, []byte("${aws_db_instance.main.endpoint}")) {
-		t.Errorf("interpolation pointer did not survive verbatim in the patched overlay; got: %q", gotOverlay)
+	if !bytes.Contains(gotLocals, []byte("${aws_db_instance.main.endpoint}")) {
+		t.Errorf("interpolation pointer did not survive verbatim in the patched body; got: %q", gotLocals)
 	}
 
 	// The native-HCL sibling no patch addressed survives byte-identical.

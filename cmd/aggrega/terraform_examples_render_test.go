@@ -288,11 +288,12 @@ func TestTerraformArtifactsExampleRenderDeterminism(t *testing.T) {
 }
 
 // TestTerraformSourcedExampleRenderDeterminism drives the terraform-rds-module
-// example (vendored local module + overlay) through two independent builds and
-// asserts the rendered tree is byte-identical across runs, the module files
-// vendor verbatim, the aggrega.auto.tfvars.json overlay carries the resolved
-// variables — including the DB subnet group name the Release supplies under
-// infra.overrides — and the standalone provenance comment file is emitted.
+// example (a vendored local module composed from the boundary root) through two
+// independent builds and asserts the rendered tree is byte-identical across runs,
+// the module files vendor verbatim, the root configuration's module block carries
+// the resolved variables as its arguments — including the DB subnet group name the
+// Release supplies under infra.overrides — no variables file is written beside the
+// module's own files, and the standalone provenance comment file is emitted.
 func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 	catalogRoot := siblingCatalogRootForExamples(t)
 	src := workedExampleDir(t, "terraform-rds-module")
@@ -317,26 +318,40 @@ func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 		}
 	}
 
-	// The overlay carries the resolved variables with keys in deterministic
-	// (sorted) order. subnet_id is the DB subnet group name the Release supplies
-	// under infra.overrides: the recipe reads it from the operator's pillar
-	// rather than naming a Terraform data source, so what lands here is a plain
-	// string with nothing left to resolve.
-	wantOverlay := `{
-  "allocated_storage": 100,
-  "db_name": "appdb",
-  "engine_version": "11.4",
-  "multi_az": true,
-  "subnet_id": "production-private-db-subnets"
+	// The root configuration's module block carries the resolved variables as its
+	// arguments, with keys in deterministic (sorted) order. An argument is an
+	// expression the engine evaluates, which is what a value written as a pointer
+	// needs; a variables file beside the module's own files would be read as data
+	// instead. subnet_id is the DB subnet group name the Release supplies under
+	// infra.overrides: the recipe reads it from the operator's pillar rather than
+	// naming a Terraform data source, so what lands here is a plain string with
+	// nothing left to resolve.
+	wantBlock := `module "db" {
+  source = "./modules/db"
+
+  allocated_storage = 100
+  db_name           = "appdb"
+  engine_version    = "11.4"
+  multi_az          = true
+  subnet_id         = "production-private-db-subnets"
 }
 `
-	gotOverlay := distFile(t, run1, "aggrega.auto.tfvars.json")
-	if string(gotOverlay) != wantOverlay {
-		t.Errorf("tfvars overlay mismatch:\n--- got ---\n%s\n--- want ---\n%s", gotOverlay, wantOverlay)
+	gotRoot := distFile(t, run1, "aggrega.modules.tf")
+	if !strings.Contains(string(gotRoot), wantBlock) {
+		t.Errorf("root configuration module block mismatch:\n--- got ---\n%s\n--- want ---\n%s", gotRoot, wantBlock)
 	}
 
-	// Build provenance rides in its own comment-only .tf file (the JSON overlay
-	// cannot carry a comment).
+	// And the values are not written a second time beside the module's own files.
+	// Two carriers for one value would answer differently for a pointer depending
+	// on which directory the engine is run from.
+	for k := range run1 {
+		if strings.HasSuffix(k, ".tfvars.json") || strings.HasSuffix(k, ".tfvars") {
+			t.Errorf("a variables file %q was rendered; the resolved values belong to the root configuration's module block and nowhere else", k)
+		}
+	}
+
+	// Build provenance rides in its own comment-only .tf file, because the
+	// vendored module's own files stay byte-for-byte verbatim.
 	prov := distFile(t, run1, "aggrega.provenance.tf")
 	if !bytes.HasPrefix(prov, []byte("# Aggrega build provenance\n")) {
 		t.Errorf("aggrega.provenance.tf must open with the provenance comment block; got:\n%s", prov)

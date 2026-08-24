@@ -37,16 +37,15 @@ func valuesOf(t *testing.T, pairs ...any) types.OrderedMap[any] {
 // sensitivity marker is simply never applied. A regression that gave the filename
 // a directory component would therefore pass every other test in this package.
 //
-// The assertion is that all three appended filenames are bare, because that is
-// what makes the file that marks an input a sibling of the file that sets it and
-// of the module's own declarations.
+// The assertion is that both appended filenames are bare, because that is what
+// makes the file that marks an input a sibling of the module's own declarations —
+// which is where the declaration it overrides lives.
 func TestOverrideFileNamePlacement(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		value string
 	}{
 		{"sensitivity override", terraformcore.OverrideFileName},
-		{"module-input overlay", terraformcore.TfvarsOverlayName},
 		{"build provenance", terraformcore.ProvenanceFileName},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -206,25 +205,21 @@ func TestSensitivityOverrideReadsTheMarkingAndNeverTheName(t *testing.T) {
 	}
 }
 
-// TestAppendedJSONFilesShareOneEmission is the guard that keeps the two appended
-// JSON documents on one formatting home. The module-input overlay and the
-// sensitivity override are built from different data by different callers, and
-// nothing else compares their shape: the end-to-end byte-fidelity assertions cover
-// the vendored module, not the files the guest appends. Two independently-written
-// emitters differing in indent width or a trailing newline would both "work", and
-// only one of them would be covered.
-func TestAppendedJSONFilesShareOneEmission(t *testing.T) {
+// TestAppendedJSONEmissionShape pins the shape of the one JSON document the
+// guest appends beside a vendored module: a trailing newline and a two-space
+// indent, with no tabs. Nothing else compares it — the end-to-end byte-fidelity
+// assertions cover the vendored module, not the file the guest appends — so an
+// emitter that drifted to a different indent width or dropped the trailing
+// newline would still "work" and would be covered nowhere.
+//
+// What this covers and what it does not: it covers the override document the
+// sensitivity marking produces, which is the only JSON document the guest
+// appends. It does not cover the root configuration that carries a component's
+// input values, which is native Terraform syntax written by the boundary
+// assembler and asserted against its own emitted bytes.
+func TestAppendedJSONEmissionShape(t *testing.T) {
 	values := valuesOf(t, "db_password", "s3cret", "db_name", "appdb")
 
-	// The overlay's own encode step, as the guest performs it.
-	overlayCompact, err := values.MarshalJSON()
-	if err != nil {
-		t.Fatalf("marshal values: %v", err)
-	}
-	overlay, err := terraformcore.IndentJSONDocument(overlayCompact)
-	if err != nil {
-		t.Fatalf("IndentJSONDocument: %v", err)
-	}
 	override, err := terraformcore.SensitivityOverride(values, map[string]string{"db_password": "values.db_password"})
 	if err != nil {
 		t.Fatalf("SensitivityOverride: %v", err)
@@ -234,7 +229,6 @@ func TestAppendedJSONFilesShareOneEmission(t *testing.T) {
 		name string
 		body []byte
 	}{
-		{"module-input overlay", overlay},
 		{"sensitivity override", override},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -252,7 +246,7 @@ func TestAppendedJSONFilesShareOneEmission(t *testing.T) {
 				t.Errorf("%s does not use a two-space indent; second line is %q", tc.name, lines[1])
 			}
 			if strings.Contains(string(tc.body), "\t") {
-				t.Errorf("%s carries a tab; the shared emission indents with spaces: %q", tc.name, tc.body)
+				t.Errorf("%s carries a tab; the emission indents with spaces: %q", tc.name, tc.body)
 			}
 		})
 	}

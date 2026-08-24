@@ -117,7 +117,7 @@ func terraformLocalInput(nodeID, valuesPillar string) renderer.RendererInput {
 }
 
 // terraformLocalRecipeLookup serves a terraform recipe that vendors moduleDir and,
-// when valuesMapping is non-empty, overlays the module's input variables from the
+// when valuesMapping is non-empty, resolves the module's input variables from the
 // node's .values pillar.
 func terraformLocalRecipeLookup(moduleDir, valuesMapping string) renderer.RecipeLookup {
 	return renderer.RecipeLookup{
@@ -165,13 +165,13 @@ func findBySuffix(t *testing.T, files map[string]renderer.AssembledFile, suffix 
 	return hit
 }
 
-// TestRenderAll_TerraformSourcedModuleWithOverlay drives a local terraform module
-// through the real embedded provider guest and proves the sourced+overlay render
-// shape end-to-end: the module files vendor byte-for-byte, the node's values land
-// as a deterministic aggrega.auto.tfvars.json overlay with a Terraform ${...}
-// pointer passing through untouched, and the whole render is byte-identical across
-// runs.
-func TestRenderAll_TerraformSourcedModuleWithOverlay(t *testing.T) {
+// TestRenderAll_TerraformSourcedModuleWithValues drives a local terraform module
+// through the real embedded provider guest and proves the sourced render shape end
+// to end: the module files vendor byte-for-byte, the node's values land as the
+// arguments of the boundary root's module block with a Terraform ${...} pointer
+// passing through untouched, no variables file is written beside the module's own
+// files, and the whole render is byte-identical across runs.
+func TestRenderAll_TerraformSourcedModuleWithValues(t *testing.T) {
 	module := terraformModuleFixture()
 	moduleDir := writeTerraformModule(t, module)
 
@@ -191,7 +191,7 @@ rds_endpoint: "{{ .values.upstream_endpoint }}"
 		t.Fatalf("RenderAll: %v", err)
 	}
 	if len(result.Files) == 0 {
-		t.Fatal("RenderAll produced no files; expected the vendored module plus the tfvars overlay")
+		t.Fatal("RenderAll produced no files; expected the vendored module plus the boundary root configuration")
 	}
 
 	// (a) module files vendored byte-for-byte, including the nested-directory file.
@@ -202,23 +202,39 @@ rds_endpoint: "{{ .values.upstream_endpoint }}"
 		}
 	}
 
-	// (b) the overlay carries the resolved values in the wire's deterministic
-	// order, with the ${...} interpolation pointer passing through as a string.
-	wantOverlay := `{
-  "allocated_storage": 20,
-  "db_name": "appdb",
-  "multi_az": true,
-  "rds_endpoint": "${aws_db_instance.main.endpoint}"
+	// (b) the boundary root's module block carries the resolved values as its
+	// arguments, in the wire's deterministic order, with the ${...} interpolation
+	// pointer passing through verbatim. The position is the property: an argument
+	// is an expression the engine evaluates, so a pointer written here reaches
+	// somewhere the engine can resolve it.
+	wantBlock := `module "db" {
+  source = "./modules/db"
+
+  allocated_storage = 20
+  db_name           = "appdb"
+  multi_az          = true
+  rds_endpoint      = "${aws_db_instance.main.endpoint}"
 }
 `
-	gotOverlay := findBySuffix(t, result.Files, "aggrega.auto.tfvars.json")
-	if string(gotOverlay) != wantOverlay {
-		t.Errorf("tfvars overlay mismatch:\n got:\n%s\nwant:\n%s", gotOverlay, wantOverlay)
+	gotRoot := findBySuffix(t, result.Files, "aggrega.modules.tf")
+	if !strings.Contains(string(gotRoot), wantBlock) {
+		t.Errorf("the root configuration's module block is not the expected bytes:\n got:\n%s\nwant:\n%s", gotRoot, wantBlock)
 	}
-	t.Logf("emitted aggrega.auto.tfvars.json:\n%s", gotOverlay)
+	t.Logf("emitted aggrega.modules.tf:\n%s", gotRoot)
 
-	// (b2) build provenance rides in a standalone comment-only .tf file (the
-	// JSON tfvars overlay cannot carry a comment). The block carries the same
+	// (b1) and nothing writes the values a second time beside the module's own
+	// files. Two carriers for one value would give two answers for a pointer,
+	// because a file loaded from the module's own directory is read as data
+	// rather than evaluated as an expression.
+	for k := range result.Files {
+		if strings.HasSuffix(k, ".tfvars.json") || strings.HasSuffix(k, ".tfvars") {
+			t.Errorf("a variables file %q was emitted; the node's values belong to the root configuration's module block and nowhere else", k)
+		}
+	}
+
+	// (b2) build provenance rides in a standalone comment-only .tf file, because
+	// the vendored module's own files stay byte-for-byte verbatim. The block
+	// carries the same
 	// aggrega.ai/* identity the host artifacts path stamps, in deterministic
 	// alphabetical key order, with the Kubernetes-only keys excluded. This node
 	// carries no provider-version and sync-wave 0, so those lines elide.
@@ -315,8 +331,9 @@ func TestRenderAll_TerraformMalformedModuleHalts(t *testing.T) {
 
 // TestRenderAll_TerraformSourcedModuleNoValues proves the source-only shape: a
 // terraform recipe with a source but no valuesMapping (and no values pillar)
-// vendors the module files alone and emits no tfvars overlay — the module renders
-// with its own defaults, and no input file is invented.
+// vendors the module files alone, and its module block in the boundary root
+// carries a source and no arguments — the module renders with its own declared
+// defaults, and no input is invented.
 func TestRenderAll_TerraformSourcedModuleNoValues(t *testing.T) {
 	module := terraformModuleFixture()
 	moduleDir := writeTerraformModule(t, module)
@@ -337,9 +354,14 @@ func TestRenderAll_TerraformSourcedModuleNoValues(t *testing.T) {
 		}
 	}
 	for k := range result.Files {
-		if strings.HasSuffix(k, "aggrega.auto.tfvars.json") {
-			t.Errorf("source-only render emitted a tfvars overlay %q; none expected when the node carries no values", k)
+		if strings.HasSuffix(k, ".tfvars.json") || strings.HasSuffix(k, ".tfvars") {
+			t.Errorf("source-only render emitted a variables file %q; none expected when the node carries no values", k)
 		}
+	}
+	wantBareBlock := "module \"db\" {\n  source = \"./modules/db\"\n}\n"
+	gotRoot := findBySuffix(t, result.Files, "aggrega.modules.tf")
+	if !strings.Contains(string(gotRoot), wantBareBlock) {
+		t.Errorf("a valueless component's module block must carry only its source:\n got:\n%s\nwant:\n%s", gotRoot, wantBareBlock)
 	}
 	// Build provenance is emitted regardless of whether the node carries values —
 	// it identifies the render, not the inputs.

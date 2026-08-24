@@ -156,3 +156,171 @@ func TestModulesDirNameReachesBothSides(t *testing.T) {
 		t.Errorf("ModulesDirName must name one directory; got %q", terraformcore.ModulesDirName)
 	}
 }
+
+// withValues builds one contributor carrying a wave and a value set, in the key
+// order given, so a case fixes the order it asserts against.
+func withValues(t *testing.T, id string, wave int, pairs ...any) terraformcore.RootComponent {
+	t.Helper()
+	return terraformcore.RootComponent{ID: id, SyncWave: wave, Values: omOf(t, pairs...)}
+}
+
+// TestAssembleRootEmitsValuesAsModuleArguments pins the whole block byte for
+// byte, arguments and meta argument together, because the property under test is
+// positional: an argument is an expression the engine evaluates, and it only
+// reaches that position if it is written inside the module block. A test that
+// merely looked for the value's text somewhere in the file would pass while the
+// value sat in a comment.
+//
+// The block order is `source`, then the arguments in the order the values
+// arrive, then `depends_on`. The two consuming component's argument names are
+// padded to a common width, which is the engine's own canonical formatting for a
+// run of single-line arguments.
+func TestAssembleRootEmitsValuesAsModuleArguments(t *testing.T) {
+	t.Parallel()
+
+	body := rootBody(t, []terraformcore.RootComponent{
+		withValues(t, "db", 0, "allocated_storage", float64(20), "db_name", "appdb"),
+		withValues(t, "app", 1, "db_endpoint", "${module.db.endpoint}", "replicas", float64(2)),
+	})
+
+	wantDB := "module \"db\" {\n" +
+		"  source = \"./modules/db\"\n" +
+		"\n" +
+		"  allocated_storage = 20\n" +
+		"  db_name           = \"appdb\"\n" +
+		"}\n"
+	if !strings.Contains(body, wantDB) {
+		t.Errorf("the producing component's block is not the expected bytes\nwant:\n%s\ngot:\n%s", wantDB, body)
+	}
+
+	wantApp := "module \"app\" {\n" +
+		"  source = \"./modules/app\"\n" +
+		"\n" +
+		"  db_endpoint = \"${module.db.endpoint}\"\n" +
+		"  replicas    = 2\n" +
+		"\n" +
+		"  depends_on = [module.db]\n" +
+		"}\n"
+	if !strings.Contains(body, wantApp) {
+		t.Errorf("the consuming component's block is not the expected bytes\nwant:\n%s\ngot:\n%s", wantApp, body)
+	}
+}
+
+// TestAssembleRootLeavesAnInterpolationUnresolved is the item's own property,
+// asserted where it lands: a value written as an interpolation reaches the
+// configuration as the text the Recipe supplied. Nothing here resolves it — the
+// assembler reads no other component's output, and the reference is left for the
+// engine to evaluate.
+func TestAssembleRootLeavesAnInterpolationUnresolved(t *testing.T) {
+	t.Parallel()
+
+	const pointer = "${module.db.endpoint}"
+	body := rootBody(t, []terraformcore.RootComponent{
+		withValues(t, "db", 0, "db_name", "appdb"),
+		withValues(t, "app", 0, "db_endpoint", pointer),
+	})
+	if !strings.Contains(body, "  db_endpoint = \""+pointer+"\"\n") {
+		t.Errorf("the interpolation must reach the argument verbatim; got:\n%s", body)
+	}
+	// A resolved pointer would have replaced the reference with a value. Nothing
+	// in the assembler can do that, and this pins it.
+	if strings.Contains(body, "appdb\"\n  db_endpoint") {
+		t.Errorf("the pointer appears to have been rewritten; got:\n%s", body)
+	}
+}
+
+// TestAssembleRootEmitsNoArgumentsForAValuelessComponent holds the no-values
+// shape: a component with no values gets a module block with a source and
+// nothing else, so a module that relies on its own declared defaults keeps
+// doing so and no empty argument group is invented.
+func TestAssembleRootEmitsNoArgumentsForAValuelessComponent(t *testing.T) {
+	t.Parallel()
+
+	body := rootBody(t, oneWave("one"))
+	want := "module \"one\" {\n  source = \"./modules/one\"\n}\n"
+	if !strings.Contains(body, want) {
+		t.Errorf("a valueless component's block must carry only its source\nwant:\n%s\ngot:\n%s", want, body)
+	}
+}
+
+// TestAssembleRootRefusesAnUnwritableArgumentName is the second Loud Guardrail
+// on this path. An argument's name is the name of the input variable it binds,
+// so a name outside the engine's grammar cannot be mapped into it the way a
+// module name is — a mapped name would bind a variable the module never
+// declared. The halt names the component and the key, so the author can find the
+// value they wrote.
+//
+// The check is capable of refusing and capable of passing: the sibling
+// assertion drives the same shape with a legal name and expects no halt, so a
+// green result here is not decoration.
+func TestAssembleRootRefusesAnUnwritableArgumentName(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []string{"db.name", "1st_choice", "db name", ""} {
+		t.Run("refuses/"+key, func(t *testing.T) {
+			_, err := terraformcore.AssembleRoot([]terraformcore.RootComponent{
+				withValues(t, "db", 0, key, "appdb"),
+			})
+			if err == nil {
+				t.Fatalf("a value named %q cannot be written as a module input and must halt", key)
+			}
+			for _, want := range []string{"db", key} {
+				if want == "" {
+					continue
+				}
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("halt message must name %q; got: %v", want, err)
+				}
+			}
+		})
+	}
+
+	if _, err := terraformcore.AssembleRoot([]terraformcore.RootComponent{
+		withValues(t, "db", 0, "db_name", "appdb"),
+	}); err != nil {
+		t.Errorf("a legal argument name must not halt: %v", err)
+	}
+}
+
+// TestAssembleRootRefusesBeforeEmitting proves the refusal is not partial: a
+// boundary whose second component carries an unwritable name yields no files at
+// all, rather than a configuration holding the first component and missing the
+// second.
+func TestAssembleRootRefusesBeforeEmitting(t *testing.T) {
+	t.Parallel()
+
+	files, err := terraformcore.AssembleRoot([]terraformcore.RootComponent{
+		withValues(t, "db", 0, "db_name", "appdb"),
+		withValues(t, "app", 0, "db.endpoint", "x"),
+	})
+	if err == nil {
+		t.Fatal("expected a halt")
+	}
+	if files != nil {
+		t.Errorf("a refused boundary must emit nothing; got %d files: %+v", len(files), files)
+	}
+}
+
+// TestAssembleRootArgumentsAreDeterministic holds the Deterministic Output
+// invariant across the new surface: identical input yields identical bytes, and
+// the caller's key order is the emission order rather than a map's iteration
+// order.
+func TestAssembleRootArgumentsAreDeterministic(t *testing.T) {
+	t.Parallel()
+
+	build := func(pairs ...any) string {
+		return rootBody(t, []terraformcore.RootComponent{withValues(t, "db", 0, pairs...)})
+	}
+	forward := build("alpha", "1", "beta", "2", "gamma", "3")
+	if again := build("alpha", "1", "beta", "2", "gamma", "3"); again != forward {
+		t.Error("identical input produced different bytes")
+	}
+	reverse := build("gamma", "3", "beta", "2", "alpha", "1")
+	if reverse == forward {
+		t.Fatal("the caller's key order must reach the output; two orders produced identical bytes")
+	}
+	idx := func(body, key string) int { return strings.Index(body, "  "+key) }
+	if !(idx(forward, "alpha") < idx(forward, "beta") && idx(forward, "beta") < idx(forward, "gamma")) {
+		t.Errorf("arguments are not in the supplied order:\n%s", forward)
+	}
+}

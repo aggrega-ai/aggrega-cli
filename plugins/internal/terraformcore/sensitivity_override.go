@@ -18,40 +18,29 @@ import (
 // its own configuration and the duplicate variable declarations halt the build.
 //
 // The `.tf.json` extension selects Terraform's JSON configuration syntax, which
-// is why the file can be built with the same deterministic JSON emission the
-// module-input overlay uses and needs no HCL writer.
+// is why the file can be built with a deterministic JSON emission and needs no
+// HCL writer.
 //
 // The name carries no directory component, which is the placement rule and not
 // an incidental spelling: Terraform reads a module's configuration from one
 // directory without descending, so an override placed anywhere but beside the
 // declaration it overrides is ignored without complaint. Emitting it as a bare
-// name lands it where the module's own files and the module-input overlay land.
+// name lands it where the module's own files land, which is where the `variable`
+// blocks it overrides are declared.
 const OverrideFileName = "aggrega_override.tf.json"
 
-// TfvarsOverlayName is the output filename of the module-input overlay the
-// terraform guest writes from a node's values. The .auto.tfvars.json suffix is
-// the name Terraform auto-loads without an explicit -var-file flag, so the
-// overlay applies to the vendored module with no wrapper wiring.
-//
-// It sits beside [OverrideFileName] and [ProvenanceFileName] because all three
-// are the guest's appended output filenames and all three are subject to the
-// same placement rule: an auto-loaded overlay binds the inputs of the module in
-// its own directory, exactly as an override merges into the configuration in
-// its own directory.
-const TfvarsOverlayName = "aggrega.auto.tfvars.json"
-
-// IndentJSONDocument is the ONE deterministic JSON emission every appended
-// terraform JSON file passes through: two-space indent and a trailing newline.
-// It reformats whitespace only — the caller's key and value order survive
+// IndentJSONDocument is the deterministic JSON emission an appended terraform
+// JSON file passes through: two-space indent and a trailing newline. It
+// reformats whitespace only — the caller's key and value order survive
 // untouched, which is what keeps an emitted file byte-identical across runs of
 // identical input.
 //
-// It takes already-compact bytes rather than a value to encode so that each
-// caller keeps ownership of its own ordering: the module-input overlay marshals
-// the node's values in the order the render wire fixed, and the sensitivity
-// override marshals its variable names in that same order. Both then share this
-// one formatting step, so neither can drift into a different indent or lose the
-// trailing newline.
+// It takes already-compact bytes rather than a value to encode so that the
+// caller keeps ownership of its own ordering: [SensitivityOverride] marshals its
+// variable names in the order the render wire fixed, and this step must not
+// disturb that. Splitting the two also keeps the indent and the trailing newline
+// in one place, so a second appended JSON document cannot drift away from the
+// first.
 func IndentJSONDocument(compact []byte) ([]byte, error) {
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, compact, "", "  "); err != nil {

@@ -7,10 +7,9 @@
 // the sourced-render path of the terraform provider behind the provider render
 // ABI's render_node export, and the root-configuration path behind its
 // assemble_boundary export. terraform is a sourced provider: it vendors a
-// Terraform module verbatim into the node's output file set and, when the node
-// carries input values, writes them alongside as an auto-loaded tfvars overlay.
-// It synthesizes nothing from a Workload — workload synthesis is not a terraform
-// concern — so the guest rejects a payload that carries a workload.
+// Terraform module verbatim into the node's output file set. It synthesizes
+// nothing from a Workload — workload synthesis is not a terraform concern — so
+// the guest rejects a payload that carries a workload.
 //
 // A boundary's components are composed rather than emitted side by side. The
 // assemble_boundary guest writes one root configuration for the boundary,
@@ -33,29 +32,40 @@
 // resource being serviceable. A boundary with fewer than two populated waves
 // declares no depends_on at all.
 //
+// A component's input values are written into that same root configuration, as
+// the arguments of the component's own module block. The position is the point:
+// a module block argument is an expression the engine evaluates, so a value the
+// Recipe wrote as a Terraform interpolation — ${module.other.endpoint}, say —
+// arrives somewhere the engine can resolve it. Nothing resolves it while the
+// configuration is being written: the value is piped through as the text the
+// Recipe supplied, unresolved and uninterpreted, and it is the engine that
+// resolves it at apply time. The values are emitted in the order the payload
+// carries them and each is encoded from its own type (strings, numbers,
+// booleans, lists, maps), so identical input yields byte-identical output. A
+// value whose name falls outside Terraform's grammar for an input is refused
+// with an error naming it, because an argument's name is the name of the input
+// variable it binds and mapping it would bind a variable the module never
+// declared.
+//
 // The guest decodes a RenderNodeInput, resolves the acquired module source from
 // the payload's name-only SourceListing, asks the host to pack the module's bytes
 // through the pack-source host function (the guest touches no filesystem itself),
-// and returns each file's bytes verbatim as a RenderedFile in the pack order.
-// When the node's values are non-empty it appends one more file,
-// aggrega.auto.tfvars.json, whose top-level keys are those values and whose
-// values are their JSON encodings — a module-input overlay Terraform auto-loads.
-// The overlay preserves the wire's value order and encodes each value type-native
-// (strings, numbers, booleans, lists, maps), so a Terraform interpolation string
-// such as ${aws_db_instance.x.endpoint} passes through as a JSON string verbatim,
-// unresolved and uninterpreted. A node with no values yields no overlay; a payload
-// with no projection yields an empty output. The
-// host writes all returned bytes verbatim and runs no serializer, so the vendored
-// module matches the projected source byte-for-byte.
+// and returns each file's bytes verbatim as a RenderedFile in the pack order. A
+// payload with no projection yields an empty output. The host writes all returned
+// bytes verbatim and runs no serializer, so the vendored module matches the
+// projected source byte-for-byte.
 //
-// Where the payload marks one of those inputs as carrying material an author
-// declared sensitive, the guest appends a third file, aggrega_override.tf.json,
-// declaring `sensitive = true` for each marked input. Terraform merges a file
-// whose name ends in _override into the configuration beside it, so the marked
-// input's own declaration acquires the attribute while the vendored module's
-// bytes stay untouched. Which input is marked is read from the payload and never
-// derived: the guest inspects no variable name, no key pattern, and nothing in
-// the module's own text. An unmarked node gains no such file.
+// Where the payload marks one of the node's values as carrying material an author
+// declared sensitive, the guest appends aggrega_override.tf.json beside the
+// module's own files, declaring `sensitive = true` for each marked input.
+// Terraform merges a file whose name ends in _override into the configuration
+// beside it, so the marked input's own declaration acquires the attribute while
+// the vendored module's bytes stay untouched — and the declaration it modifies is
+// the module's own `variable` block, which is why the file rides with the module
+// rather than with the root configuration that supplies the value. Which input is
+// marked is read from the payload and never derived: the guest inspects no
+// variable name, no key pattern, and nothing in the module's own text. An
+// unmarked node gains no such file.
 //
 // Terraform's `sensitive` bounds display, not storage: it redacts the value in
 // plan and apply output and refuses to export it from an unmarked root output.
@@ -63,16 +73,15 @@
 // sensitive input is stored in state in the clear, so protecting state remains a
 // matter of how the state backend is configured.
 //
-// The guest never rewrites the module: it passes the vendored bytes through and
-// emits the overlay as plain JSON. It does read the module's Terraform
-// configuration files — validate_node_input parses each one with the HCL library
-// and reports one diagnostic per syntax finding. That parse is read-only: it
-// discards the parsed body, so the bytes it reports on are the bytes the guest
-// returns. It confirms the module's HCL is well-formed and nothing more,
-// resolving no variables, evaluating no expressions, contacting no provider, and
-// running no Terraform toolchain. A file that does not parse yields an
-// halt-severity diagnostic, which halts the build; what the configuration means
-// once it does parse is the runtime's concern.
+// The guest never rewrites the module: it passes the vendored bytes through. It
+// does read the module's Terraform configuration files — validate_node_input
+// parses each one with the HCL library and reports one diagnostic per syntax
+// finding. That parse is read-only: it discards the parsed body, so the bytes it
+// reports on are the bytes the guest returns. It confirms the module's HCL is
+// well-formed and nothing more, resolving no variables, evaluating no
+// expressions, contacting no provider, and running no Terraform toolchain. A file
+// that does not parse yields an halt-severity diagnostic, which halts the build;
+// what the configuration means once it does parse is the runtime's concern.
 //
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o terraform-provider.wasm ./plugins/terraform-provider
 // (c-shared produces a WASI reactor whose _initialize the host runs before
@@ -86,7 +95,6 @@ import (
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/terraformcore"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
@@ -122,7 +130,7 @@ func descriptor() aggrega.PluginDescriptor {
 				InputPattern:  "b",
 				HostFunctions: []string{"aggrega_pack_source"},
 				Stability:     "experimental",
-				Description:   "vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay",
+				Description:   "vendors a sourced Terraform module verbatim and marks each input the payload reports as carrying declared-sensitive material",
 			},
 			{
 				Name:          "validate_node_input",
@@ -135,7 +143,7 @@ func descriptor() aggrega.PluginDescriptor {
 				Name:         "assemble_boundary",
 				InputPattern: "b",
 				Stability:    "experimental",
-				Description:  "writes the root configuration for one boundary, declaring each component rendered there as a module block pointing at that component's own sub-directory",
+				Description:  "writes the root configuration for one boundary, declaring each component rendered there as a module block that points at that component's own sub-directory and carries that component's values as its arguments",
 			},
 		},
 		Contract: &aggrega.ProviderContract{
@@ -180,36 +188,34 @@ func renderNode() int32 {
 			pdk.SetError(err)
 			return 1
 		}
-		out.Files = make([]rendercore.RenderedFile, 0, len(proj.Files)+3)
+		out.Files = make([]rendercore.RenderedFile, 0, len(proj.Files)+2)
 		for _, f := range proj.Files {
 			out.Files = append(out.Files, rendercore.RenderedFile{Path: f.Path, Content: f.Content})
 		}
 		// Stamp build provenance as a standalone comment-only .tf file. The
-		// vendored module files stay byte-for-byte verbatim and the JSON tfvars
-		// overlay cannot carry a comment, so provenance lands in its own file.
-		// The shared renderer formatter is the same one the artifacts placement
-		// core uses, so both terraform emission paths carry identical provenance.
+		// vendored module files stay byte-for-byte verbatim, so provenance cannot
+		// be prepended to any of them and lands in its own file instead. The
+		// shared renderer formatter is the same one the artifacts placement core
+		// uses, so both terraform emission paths carry identical provenance.
 		nodeCtx := nodeCtxFromInput(in)
 		out.Files = append(out.Files, rendercore.RenderedFile{
 			Path:    terraformcore.ProvenanceFileName,
 			Content: rendercore.FormatTerraformProvenanceComment(nodeCtx, rendercore.ProvenanceRecipeURIFromNodeCtx(nodeCtx)),
 		})
 		if in.Node.Values.Len() > 0 {
-			overlay, err := tfvarsOverlay(in.Node.Values)
-			if err != nil {
-				pdk.SetError(err)
-				return 1
-			}
-			out.Files = append(out.Files, rendercore.RenderedFile{Path: terraformcore.TfvarsOverlayName, Content: overlay})
+			// The values themselves are not emitted here. They travel to the
+			// boundary assembler, which writes them as the arguments of this
+			// component's module block — the position the engine evaluates.
+			//
 			// Translate the payload's sensitivity marking into Terraform's own
 			// per-variable primitive. Which module input carries declared-sensitive
 			// material is the payload's finding, read here and never derived: the
 			// guest inspects no variable name, no key pattern, and nothing in the
-			// module's own text. The override rides beside the overlay because both
-			// address the same module inputs, and Terraform merges an override only
-			// into the configuration in its own directory — so the file that sets an
-			// input and the file that marks it are siblings by construction rather
-			// than by a second placement rule.
+			// module's own text. The override rides with the module's own files
+			// because Terraform merges an override only into the configuration in
+			// its own directory, and the `variable` blocks it marks are declared
+			// there — so the file that declares an input and the file that marks it
+			// are siblings by construction rather than by a second placement rule.
 			override, err := terraformcore.SensitivityOverride(in.Node.Values, in.Node.SensitiveRenderedKeys)
 			if err != nil {
 				pdk.SetError(err)
@@ -284,13 +290,15 @@ func assembleBoundary() int32 {
 // the host supplies, which is fixed deterministically, so identical input yields
 // byte-identical output. Each contributor's declared deployment wave travels with
 // it, and the root configuration expresses the ordering those waves state as
-// `depends_on` between the module blocks. Nothing in the module's own text is read
-// and no component's files are rewritten: this export composes and places, and the
+// `depends_on` between the module blocks. Each contributor's rendered values
+// travel with it too and become that component's module block arguments, which is
+// where the engine evaluates them. Nothing in the module's own text is read and no
+// component's files are rewritten: this export composes and places, and the
 // vendored bytes stay verbatim.
 func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
 	components := make([]terraformcore.RootComponent, 0, len(in.RenderedNodes))
 	for _, n := range in.RenderedNodes {
-		components = append(components, terraformcore.RootComponent{ID: n.ID, SyncWave: n.SyncWave})
+		components = append(components, terraformcore.RootComponent{ID: n.ID, SyncWave: n.SyncWave, Values: n.Values})
 	}
 
 	files, err := terraformcore.AssembleRoot(components)
@@ -434,23 +442,6 @@ func convertHCLDiagnostics(hd hcl.Diagnostics) []renderctx.Diagnostic {
 		out = append(out, diag)
 	}
 	return out
-}
-
-// tfvarsOverlay encodes the node's values as a Terraform *.auto.tfvars.json
-// module-input overlay. The values arrive as an ordered map whose key order the
-// host fixed deterministically on the render wire; marshalling that ordered map
-// preserves the order and encodes each value type-native, so the output is
-// byte-identical across runs of identical input (no map iteration, no key
-// re-sort). A value that is a Terraform interpolation string is a deterministic
-// ahead-of-time pointer: it encodes as a JSON string verbatim, never resolved.
-// The formatting step is the shared one every appended JSON file passes through,
-// which reformats whitespace only and leaves the key and value order untouched.
-func tfvarsOverlay(values types.OrderedMap[any]) ([]byte, error) {
-	compact, err := values.MarshalJSON()
-	if err != nil {
-		return nil, err
-	}
-	return terraformcore.IndentJSONDocument(compact)
 }
 
 // nodeCtxFromInput reconstructs the render context from the wire input's node

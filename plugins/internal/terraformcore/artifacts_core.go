@@ -12,9 +12,10 @@ import (
 
 // ProvenanceFileName is the output filename of the standalone build-provenance
 // file the terraform guest emits alongside a vendored module or a .tf.json
-// artifact body. A JSON body (aggrega.auto.tfvars.json, or a .tf.json artifact)
-// cannot carry a comment, so provenance is stamped in a separate comment-only
-// .tf file the Terraform loader parses as an empty (comment-only) config.
+// artifact body. A vendored module's files stay byte-for-byte verbatim, and a
+// JSON body (a .tf.json artifact, or the sensitivity override) cannot carry a
+// comment at all, so provenance is stamped in a separate comment-only .tf file
+// the Terraform loader parses as an empty (comment-only) config.
 const ProvenanceFileName = "aggrega.provenance.tf"
 
 // PlaceArtifacts places a terraform node's pre-evaluated artifact set into the
@@ -31,8 +32,8 @@ const ProvenanceFileName = "aggrega.provenance.tf"
 //   - Any JSON body present (a *.tf.json artifact): a `#` prefix would make the
 //     body invalid JSON, so every body emits verbatim and the provenance travels
 //     in a single companion comment-only file (ProvenanceFileName), the same
-//     filename the sourced guest uses for its JSON tfvars overlay. The companion
-//     is the sole provenance carrier so the block is never duplicated across
+//     filename the sourced guest uses beside a vendored module. The companion is
+//     the sole provenance carrier so the block is never duplicated across
 //     surfaces.
 //
 // The provenance identity is drawn from the node's Recipe identity via the shared
