@@ -18,7 +18,7 @@ import (
 func TestAssembleRootDeclaresOneModulePerComponent(t *testing.T) {
 	t.Parallel()
 
-	files, err := terraformcore.AssembleRoot([]string{"store", "store2"})
+	files, err := terraformcore.AssembleRoot(oneWave("store", "store2"))
 	if err != nil {
 		t.Fatalf("AssembleRoot: %v", err)
 	}
@@ -48,11 +48,11 @@ func TestAssembleRootDeclaresOneModulePerComponent(t *testing.T) {
 func TestAssembleRootEmitsInSuppliedOrder(t *testing.T) {
 	t.Parallel()
 
-	forward, err := terraformcore.AssembleRoot([]string{"alpha", "beta", "gamma"})
+	forward, err := terraformcore.AssembleRoot(oneWave("alpha", "beta", "gamma"))
 	if err != nil {
 		t.Fatalf("AssembleRoot: %v", err)
 	}
-	reverse, err := terraformcore.AssembleRoot([]string{"gamma", "beta", "alpha"})
+	reverse, err := terraformcore.AssembleRoot(oneWave("gamma", "beta", "alpha"))
 	if err != nil {
 		t.Fatalf("AssembleRoot: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestAssembleRootEmitsInSuppliedOrder(t *testing.T) {
 		t.Fatal("contributor order must reach the output; two orders produced identical bytes")
 	}
 
-	again, err := terraformcore.AssembleRoot([]string{"alpha", "beta", "gamma"})
+	again, err := terraformcore.AssembleRoot(oneWave("alpha", "beta", "gamma"))
 	if err != nil {
 		t.Fatalf("AssembleRoot: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestAssembleRootEmitsInSuppliedOrder(t *testing.T) {
 func TestAssembleRootRefusesCollidingModuleNames(t *testing.T) {
 	t.Parallel()
 
-	_, err := terraformcore.AssembleRoot([]string{"a.b", "a_b"})
+	_, err := terraformcore.AssembleRoot(oneWave("a.b", "a_b"))
 	if err == nil {
 		t.Fatal("two components mapping onto one module name must halt")
 	}
@@ -92,7 +92,7 @@ func TestAssembleRootRefusesCollidingModuleNames(t *testing.T) {
 		}
 	}
 
-	if _, err := terraformcore.AssembleRoot([]string{"a.b", "a-b"}); err != nil {
+	if _, err := terraformcore.AssembleRoot(oneWave("a.b", "a-b")); err != nil {
 		t.Errorf("distinct module names must not halt: %v", err)
 	}
 }
@@ -144,7 +144,7 @@ func TestModuleNameFitsEngineGrammar(t *testing.T) {
 func TestModulesDirNameReachesBothSides(t *testing.T) {
 	t.Parallel()
 
-	files, err := terraformcore.AssembleRoot([]string{"one"})
+	files, err := terraformcore.AssembleRoot(oneWave("one"))
 	if err != nil {
 		t.Fatalf("AssembleRoot: %v", err)
 	}

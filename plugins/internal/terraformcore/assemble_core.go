@@ -34,9 +34,27 @@ const RootConfigFileName = "aggrega.modules.tf"
 // the block and the directory it points at cannot drift.
 const ModulesDirName = "modules"
 
+// RootComponent is one component contributing to a boundary's root
+// configuration: the component's identifier, and the deployment wave the
+// component's containing boundary declared.
+//
+// The wave travels per component rather than once for the whole boundary because
+// contributors from several boundaries can be composed into one root, each
+// carrying its own wave — which is precisely the case in which the ordering has
+// anything to express.
+type RootComponent struct {
+	// ID is the component's identifier, which names both its `module` block and
+	// the sub-directory that block's source points at.
+	ID string
+	// SyncWave is the deployment wave the component inherited from its boundary
+	// (default 0; negative permitted).
+	SyncWave int
+}
+
 // AssembleRoot returns the root configuration for one boundary: a single file
 // declaring each contributing component as a `module` block whose source is that
-// component's own sub-directory under [ModulesDirName].
+// component's own sub-directory under [ModulesDirName], carrying the ordering the
+// components' declared deployment waves express.
 //
 // The layout is what makes cross-component ordering expressible at all. A
 // Terraform dependency graph is per-configuration, so components emitted into
@@ -44,29 +62,56 @@ const ModulesDirName = "modules"
 // and no reference or `depends_on` can span them. One root composing each
 // component as a child module puts every component in one graph.
 //
-// componentIDs arrive in the order the host lists the boundary's contributors
-// and are emitted in that order, so identical input produces byte-identical
-// output. The returned files are in emission order for the same reason — a map
-// keyed by path would put the guest's output order at the mercy of Go's map
-// iteration. A component whose identifier does not fit Terraform's grammar for a
-// module name is mapped into it by [ModuleName]; when two components map onto one
-// name the result is ambiguous, so this returns an error naming both rather than
-// emitting a configuration Terraform would reject.
-func AssembleRoot(componentIDs []string) ([]rendercore.RenderedFile, error) {
+// Ordering. A component in a later wave declares a `depends_on` naming every
+// component of the immediately-preceding populated wave, so the engine completes
+// its actions on the earlier wave before it begins the later one;
+// [waveDependencies] holds the rule in full, including what the ordering does and
+// does not promise. A boundary with fewer than two populated waves declares no
+// `depends_on` at all, so a boundary where no wave was declared emits the bytes it
+// would emit if the wave expressed no ordering.
+//
+// components arrive in the order the host lists the boundary's contributors and
+// are emitted in that order, so identical input produces byte-identical output.
+// The returned files are in emission order for the same reason — a map keyed by
+// path would put the guest's output order at the mercy of Go's map iteration. A
+// component whose identifier does not fit Terraform's grammar for a module name
+// is mapped into it by [ModuleName]; when two components map onto one name the
+// result is ambiguous, so this returns an error naming both rather than emitting a
+// configuration Terraform would reject.
+func AssembleRoot(components []RootComponent) ([]rendercore.RenderedFile, error) {
+	moduleNames := make([]string, len(components))
+	claimedBy := make(map[string]string, len(components))
+	for i, c := range components {
+		name := ModuleName(c.ID)
+		if first, taken := claimedBy[name]; taken {
+			return nil, fmt.Errorf("components %q and %q both name the Terraform module %q in this boundary; a module name is unique within a configuration, so rename one of the components", first, c.ID, name)
+		}
+		claimedBy[name] = c.ID
+		moduleNames[i] = name
+	}
+	deps := waveDependencies(components, moduleNames)
+
 	var buf strings.Builder
 	buf.WriteString("# Root configuration for this boundary. Each component rendered here is one\n")
 	buf.WriteString("# module block below, and the directory that block points at holds that\n")
 	buf.WriteString("# component's own files. One configuration means one dependency graph, which is\n")
 	buf.WriteString("# what lets a reference or a depends_on reach from one component to another.\n")
 
-	claimedBy := make(map[string]string, len(componentIDs))
-	for _, id := range componentIDs {
-		name := ModuleName(id)
-		if first, taken := claimedBy[name]; taken {
-			return nil, fmt.Errorf("components %q and %q both name the Terraform module %q in this boundary; a module name is unique within a configuration, so rename one of the components", first, id, name)
+	for i, c := range components {
+		fmt.Fprintf(&buf, "\nmodule %q {\n  source = \"./%s/%s\"\n", moduleNames[i], ModulesDirName, c.ID)
+		// An empty deps means the boundary expresses no ordering at all; an empty
+		// entry means this component's wave is the lowest populated one.
+		if len(deps) > 0 && len(deps[i]) > 0 {
+			fmt.Fprintf(&buf, "\n  %s = [", dependsOnMetaArgument)
+			for j, name := range deps[i] {
+				if j > 0 {
+					buf.WriteString(", ")
+				}
+				fmt.Fprintf(&buf, "module.%s", name)
+			}
+			buf.WriteString("]\n")
 		}
-		claimedBy[name] = id
-		fmt.Fprintf(&buf, "\nmodule %q {\n  source = \"./%s/%s\"\n}\n", name, ModulesDirName, id)
+		buf.WriteString("}\n")
 	}
 
 	// Format is left unset: the provider's suffix-to-format classification has one

@@ -25,6 +25,14 @@
 // anything in it declares an ordering — because the alternative is two layouts
 // with different addressing rules.
 //
+// A declared deployment wave becomes ordering in that root configuration: each
+// wave's module blocks declare a depends_on naming every component of the
+// immediately-preceding populated wave, so the engine completes its actions on the
+// earlier wave before it begins the later one. It orders the actions the engine
+// takes and is not readiness ordering — a configuration expresses no notion of a
+// resource being serviceable. A boundary with fewer than two populated waves
+// declares no depends_on at all.
+//
 // The guest decodes a RenderNodeInput, resolves the acquired module source from
 // the payload's name-only SourceListing, asks the host to pack the module's bytes
 // through the pack-source host function (the guest touches no filesystem itself),
@@ -274,16 +282,18 @@ func assembleBoundary() int32 {
 //
 // The contributors are read from the payload's rendered-node list in the order
 // the host supplies, which is fixed deterministically, so identical input yields
-// byte-identical output. Nothing in the module's own text is read and no
-// component's files are rewritten: this export composes and places, and the
+// byte-identical output. Each contributor's declared deployment wave travels with
+// it, and the root configuration expresses the ordering those waves state as
+// `depends_on` between the module blocks. Nothing in the module's own text is read
+// and no component's files are rewritten: this export composes and places, and the
 // vendored bytes stay verbatim.
 func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
-	componentIDs := make([]string, 0, len(in.RenderedNodes))
+	components := make([]terraformcore.RootComponent, 0, len(in.RenderedNodes))
 	for _, n := range in.RenderedNodes {
-		componentIDs = append(componentIDs, n.ID)
+		components = append(components, terraformcore.RootComponent{ID: n.ID, SyncWave: n.SyncWave})
 	}
 
-	files, err := terraformcore.AssembleRoot(componentIDs)
+	files, err := terraformcore.AssembleRoot(components)
 	if err != nil {
 		return rendercore.AssembleBoundaryOutput{}, errors.New(errorChainMessage(err))
 	}
