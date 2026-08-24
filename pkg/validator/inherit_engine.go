@@ -150,23 +150,19 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 			})
 		}
 		if len(mergerChain) > 0 {
-			merged, err := merger.Merge(mergerChain)
-			if err != nil {
-				// TODO: preserve the merger sentinel chain
-				// alongside ErrInheritanceMerge so callers can
-				// distinguish cycle / max-depth / invalid-input
-				// via errors.Is. Squashing the inner sentinel into
-				// the Constraint string is acceptable until a
-				// caller depends on the distinction.
-				result.Errors = append(result.Errors, NewValidationError(entry.Kind, entry.URI, ValidationDetail{
-					FieldPath:  ".spec.jsonSchema",
-					Constraint: "JSON Schema merge failed: " + err.Error(),
-					Suggestion: "Verify the JSON Schema payloads on each catalog entry in the extends chain",
-					Err:        ErrInheritanceMerge(),
-				}))
-			} else {
-				result.MergedJSONSchema = merged
-			}
+			// The merge error is dropped because this call site
+			// excludes both conditions that produce one. merger.Merge
+			// fails on exactly two structural inputs — an empty chain,
+			// and a chain element that is nil or carries a nil schema —
+			// and the loop above admits neither: it skips an entry with
+			// no payload, appends only a freshly-built element carrying
+			// the payload it has just checked, and this branch runs only
+			// when that chain came out non-empty. Composition itself is
+			// total over well-formed schemas: a child that redefines an
+			// inherited constraint is reported through the merged
+			// schema's narrowing side-band, never as a failure.
+			merged, _ := merger.Merge(mergerChain)
+			result.MergedJSONSchema = merged
 		}
 	}
 

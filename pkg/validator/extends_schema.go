@@ -19,7 +19,8 @@ import (
 // schema-conformance gate and the provides / defaults consumers, which all read
 // compactform.Schema) and the signal-only narrowing notices. EffectiveSchema is
 // nil when the chain composed no schema (no entry declared a schema pillar);
-// Narrowings is empty unless a child narrowed an inherited constraint.
+// Narrowings is empty unless a child replaced an inherited constraint with one
+// the merge cannot confirm is at least as narrow.
 type ExtendsComposition struct {
 	EffectiveSchema compactform.Schema
 	Narrowings      []string
@@ -75,8 +76,15 @@ func CompositionFromResult(entityURI string, result InheritanceResult) *ExtendsC
 	}
 	comp := &ExtendsComposition{EffectiveSchema: eff}
 	for _, v := range result.MergedJSONSchema.NarrowingViolations {
+		// The advisory states only that the child's value replaced the
+		// inherited one; how the two relate is the merge's finding, carried
+		// verbatim in Detail. Restating the relation here would put a second
+		// classification of every keyword on this side of the boundary, and
+		// the two would drift: "narrows" is wrong for a numeric bound the
+		// child loosened, and no narrow-or-widen ordering exists at all for a
+		// redefined type, const or pattern.
 		comp.Narrowings = append(comp.Narrowings, fmt.Sprintf(
-			"%s: child narrows inherited %s at %s: %s",
+			"%s: child replaces inherited %s at %s: %s",
 			entityURI, v.Keyword, v.FieldPath, v.Detail))
 	}
 	return comp
