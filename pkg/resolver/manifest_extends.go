@@ -60,7 +60,7 @@ func ResolveManifestExtends(releaseDir string, child *types.Manifest) (*types.Ma
 
 		parentRes, err := ResolveManifest(releaseDir, parentRef)
 		if err != nil {
-			return nil, fmt.Errorf("%w: Manifest %q extends %q, which could not be resolved: %v",
+			return nil, fmt.Errorf("%w: Manifest %q extends %q, which could not be resolved: %v; verify the extends reference is a relative path or the name of a Manifest in the Release's directory",
 				validator.ErrInheritanceMerge(), current.Metadata.Name, parentRef, err)
 		}
 		parent := parentRes.Manifest

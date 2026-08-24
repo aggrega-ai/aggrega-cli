@@ -155,6 +155,7 @@ func collectComponentChain(child types.Component, lookup ComponentLookup) ([]typ
 			return nil, []*ValidationError{NewValidationError(envelope.KindComponent, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "parent component not found while rebuilding chain",
+				Suggestion: "Verify the extends reference names a Component present in the catalog",
 				Err:        ErrInheritanceMerge(),
 			})}
 		}
@@ -182,6 +183,7 @@ func collectFeatureChain(child types.Feature, lookup FeatureLookup) ([]types.Fea
 			return nil, []*ValidationError{NewValidationError(envelope.KindFeature, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "parent feature not found while rebuilding chain",
+				Suggestion: "Verify the extends reference names a Feature present in the catalog",
 				Err:        ErrInheritanceMerge(),
 			})}
 		}
@@ -358,11 +360,9 @@ func mergeAssertions(parentEntity, childEntity string, parent, child types.Order
 				continue
 			}
 			errs = append(errs, NewValidationError(envelope.KindComponent, childEntity, ValidationDetail{
-				FieldPath: ".spec.assertions." + k,
-				// No Suggestion: the condition's registered sentence already
-				// carries the advice, and the message now opens with that
-				// sentence, so repeating it here would say it twice.
+				FieldPath:  ".spec.assertions." + k,
 				Constraint: fmt.Sprintf("assertion %q is already present on the base Component %q, declaring a different rule", k, parentEntity),
+				Suggestion: "Rename the extending entity's assertion; an extending entity's assertions add to the base's and never replace one",
 				Err:        ErrAssertionNameCollision(),
 			}))
 			continue
