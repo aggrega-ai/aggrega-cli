@@ -291,8 +291,8 @@ func TestTerraformArtifactsExampleRenderDeterminism(t *testing.T) {
 // example (vendored local module + overlay) through two independent builds and
 // asserts the rendered tree is byte-identical across runs, the module files
 // vendor verbatim, the aggrega.auto.tfvars.json overlay carries the resolved
-// variables with a Terraform ${...} pointer passing through untouched, and the
-// standalone provenance comment file is emitted.
+// variables — including the DB subnet group name the Release supplies under
+// infra.overrides — and the standalone provenance comment file is emitted.
 func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 	catalogRoot := siblingCatalogRootForExamples(t)
 	src := workedExampleDir(t, "terraform-rds-module")
@@ -318,14 +318,16 @@ func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 	}
 
 	// The overlay carries the resolved variables with keys in deterministic
-	// (sorted) order and the ${...} interpolation pointer passing through as a
-	// string.
+	// (sorted) order. subnet_id is the DB subnet group name the Release supplies
+	// under infra.overrides: the recipe reads it from the operator's pillar
+	// rather than naming a Terraform data source, so what lands here is a plain
+	// string with nothing left to resolve.
 	wantOverlay := `{
   "allocated_storage": 100,
   "db_name": "appdb",
   "engine_version": "11.4",
   "multi_az": true,
-  "subnet_id": "${data.aws_db_subnet_group.default.name}"
+  "subnet_id": "production-private-db-subnets"
 }
 `
 	gotOverlay := distFile(t, run1, "aggrega.auto.tfvars.json")
