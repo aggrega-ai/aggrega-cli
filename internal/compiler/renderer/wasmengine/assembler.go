@@ -72,10 +72,12 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 //
 // Rendered nodes are emitted in sorted-by-id order and each node's annotations and
 // values are inserted in sorted-key order, so the wire payload is byte-identical
-// across runs of identical input (the determinism contract). The values a node's
-// render resolved arrive here as a plain map, which carries no author order to
-// preserve, so sorted insertion is what fixes the order rather than a choice
-// between two available ones. The boundary metadata is left
+// across runs of identical input (the determinism contract). A node's values reach
+// this adapter only when the compiler is supplying inputs its files do not already
+// carry — the sourced case; a node that rendered its own files arrives with none, and
+// the empty dictionary built for it carries no key onto the wire at all. What does
+// arrive is a plain map, which holds no author order to preserve, so sorted insertion
+// is what fixes the order rather than a choice between two available ones. The boundary metadata is left
 // unset: a dispatch group can merge contributors from multiple boundaries, so the
 // per-render boundary is carry-only and not synthesized here. Each node's
 // deployment wave travels with the node for that same reason — a merged group has

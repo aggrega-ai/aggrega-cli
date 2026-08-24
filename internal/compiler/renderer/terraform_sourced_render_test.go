@@ -139,6 +139,31 @@ func terraformLocalRecipeLookup(moduleDir, valuesMapping string) renderer.Recipe
 	}
 }
 
+// terraformArtifactsRecipeLookup serves a terraform recipe that authors its
+// configuration body itself and names no source. The body is a Go template, so
+// the node's values are resolved into the emitted text as it renders — which is
+// what makes this the render path with no inputs left to supply from outside.
+func terraformArtifactsRecipeLookup(body string) renderer.RecipeLookup {
+	artifacts := types.OrderedMap[types.ArtifactEntry]{}
+	artifacts.Set("main.tf", types.ArtifactEntry{Inline: body})
+	return renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			if componentType != "core/storage/tf-module" {
+				return nil, false
+			}
+			return &types.Recipe{
+				Metadata: types.RecipeMetadata{Name: "tf-artifacts-recipe", Version: "1.0.0"},
+				Spec: types.RecipeSpec{
+					Capability: "terraform",
+					Implements: "core/storage/tf-module",
+					Artifacts:  artifacts,
+				},
+			}, true
+		},
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
+	}
+}
+
 // findBySuffix returns the single result-file whose key ends in suffix. A flat
 // terraform node's output lands under a node/boundary prefix, so tests match by
 // the module-relative tail rather than the full emitted key.
@@ -369,4 +394,63 @@ func TestRenderAll_TerraformSourcedModuleNoValues(t *testing.T) {
 	if !strings.HasPrefix(string(gotProvenance), "# Aggrega build provenance\n") {
 		t.Errorf("source-only render should still emit an aggrega.provenance.tf provenance block; got:\n%s", gotProvenance)
 	}
+}
+
+// TestRenderAll_TerraformAuthoredBodyCarriesNoModuleArguments proves the other
+// terraform render path. A recipe that authors the configuration body itself
+// resolves the node's values into that body as it renders, so the boundary root's
+// module block for that component carries a source and nothing else.
+//
+// The empty argument list is a correctness property of the emitted tree rather
+// than a cosmetic one: the emitted configuration declares no input variables, and
+// an engine refuses a module block that passes an argument the configuration it
+// points at does not declare. The node here carries the same values the sourced
+// case above does, and they are asserted present in the emitted body, so the
+// empty argument list cannot pass merely because nothing was resolved.
+func TestRenderAll_TerraformAuthoredBodyCarriesNoModuleArguments(t *testing.T) {
+	valuesPillar := `{"db_name":"appdb","allocated_storage":20,"multi_az":true}`
+	body := `resource "aws_db_instance" "app" {
+  identifier        = "{{ .values.db_name }}"
+  allocated_storage = {{ .values.allocated_storage }}
+  multi_az          = {{ .values.multi_az }}
+}
+`
+
+	result, err := renderer.RenderAll(context.Background(),
+		terraformLocalInput("db", valuesPillar),
+		terraformArtifactsRecipeLookup(body), wasmEngineFactory(t))
+	if err != nil {
+		t.Fatalf("RenderAll: %v", err)
+	}
+
+	// (a) the values reached the authored body — the needle that makes (b) mean
+	// something. Each one is resolved into the emitted text, so nothing is left
+	// for an outer position to supply.
+	gotBody := findBySuffix(t, result.Files, "/main.tf")
+	for _, want := range []string{
+		`identifier        = "appdb"`,
+		`allocated_storage = 20`,
+		`multi_az          = true`,
+	} {
+		if !strings.Contains(string(gotBody), want) {
+			t.Errorf("the authored body must carry the resolved value %q; got:\n%s", want, gotBody)
+		}
+	}
+
+	// (b) and the emitted configuration declares no input variables, so the module
+	// block must pass none.
+	if strings.Contains(string(gotBody), "variable \"") {
+		t.Errorf("this fixture's authored body declares an input variable; the case it pins is a configuration that declares none:\n%s", gotBody)
+	}
+	wantBareBlock := "module \"db\" {\n  source = \"./modules/db\"\n}\n"
+	gotRoot := findBySuffix(t, result.Files, "aggrega.modules.tf")
+	if !strings.Contains(string(gotRoot), wantBareBlock) {
+		t.Errorf("a component whose configuration is authored rather than sourced must get a module block carrying only its source:\n got:\n%s\nwant:\n%s", gotRoot, wantBareBlock)
+	}
+	for _, key := range []string{"db_name", "allocated_storage", "multi_az"} {
+		if strings.Contains(string(gotRoot), key) {
+			t.Errorf("the root configuration names %q; an argument by that name is an input the emitted configuration never declares:\n%s", key, gotRoot)
+		}
+	}
+	t.Logf("emitted aggrega.modules.tf:\n%s", gotRoot)
 }

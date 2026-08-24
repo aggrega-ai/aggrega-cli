@@ -259,6 +259,14 @@ func distFile(t *testing.T, tree map[string][]byte, suffix string) []byte {
 // the rendered main.tf is byte-identical across runs, opens with the provenance
 // comment block, and carries the resolved HCL (operator sizing substituted,
 // RDS-managed credentials).
+//
+// It also asserts the boundary's root configuration, which is where this example
+// composes: the Recipe authors the configuration body itself and resolves the
+// developer's values into it, so the emitted body declares no input variables and
+// the root's module block must pass no arguments. An argument here would name an
+// input the emitted configuration does not declare, which an engine refuses —
+// asserting main.tf alone cannot see that, because the two files are emitted
+// separately and only the root names the other.
 func TestTerraformArtifactsExampleRenderDeterminism(t *testing.T) {
 	catalogRoot := siblingCatalogRootForExamples(t)
 	src := workedExampleDir(t, "terraform-rds")
@@ -283,6 +291,30 @@ func TestTerraformArtifactsExampleRenderDeterminism(t *testing.T) {
 	} {
 		if !bytes.Contains(mainTF, []byte(want)) {
 			t.Errorf("main.tf missing expected substring %q; got:\n%s", want, mainTF)
+		}
+	}
+
+	// The authored body declares no input variables — the premise the module
+	// block's empty argument list rests on. Asserted rather than assumed, so a
+	// Recipe rewritten to declare variables fails here and names the reason
+	// instead of silently weakening the check below.
+	if bytes.Contains(mainTF, []byte("variable \"")) {
+		t.Errorf("main.tf declares an input variable; the emitted body this example composes resolves its values inline and declares none:\n%s", mainTF)
+	}
+
+	// The Aggregate's own values, which the authored body consumed. None of them
+	// may reappear as a module-block argument.
+	wantBlock := `module "db" {
+  source = "./modules/db"
+}
+`
+	gotRoot := distFile(t, run1, "aggrega.modules.tf")
+	if !bytes.Contains(gotRoot, []byte(wantBlock)) {
+		t.Errorf("root configuration module block mismatch:\n--- got ---\n%s\n--- want ---\n%s", gotRoot, wantBlock)
+	}
+	for _, key := range []string{"database", "user", "charset", "collation"} {
+		if bytes.Contains(gotRoot, []byte(key)) {
+			t.Errorf("the root configuration names %q; an argument by that name is an input the emitted configuration never declares, and the engine rejects it:\n%s", key, gotRoot)
 		}
 	}
 }

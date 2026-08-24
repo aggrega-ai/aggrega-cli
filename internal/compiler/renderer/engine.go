@@ -361,10 +361,12 @@ func AssemblesBoundary(engine Provider) bool {
 // NodeComponent maps NodeID → resolved component-type URI. Used by
 // assemblers that need per-node component identity for output metadata.
 //
-// NodeValues is each contributing node's resolved values dictionary. An
-// assembler whose output is the only position its target evaluates carries
-// these into the assembled artifact itself; one whose contributors already
-// carry their own inputs ignores it.
+// NodeValues is the resolved values dictionary of each contributing node whose
+// files were rendered from a source, and of no other — a node that rendered its
+// own files resolved its values into them and has no entry. An assembler whose
+// output is the only position its target evaluates carries these into the
+// assembled artifact itself; one whose contributors already carry their own
+// inputs ignores it.
 //
 // ContributingBoundaries lists every boundary path whose components fed
 // into this dispatch group. Used for diagnostic context in error messages
@@ -402,6 +404,14 @@ type BoundaryInfo struct {
 	// contributors from several boundaries, each with its own values. A node
 	// whose render produced no values carries a nil map, which is the same state
 	// as an empty one — an assembler reads "no inputs" from both.
+	//
+	// It holds an entry only for a node rendered from a source. That is the one
+	// case where the compiler supplies inputs the node's own files do not already
+	// carry: the files came in verbatim, so the values could not be written into
+	// them and an outer position has to supply them. A node whose render produced
+	// its own files resolved the values into those files, so it has no entry here
+	// and an assembler supplies it nothing — offering inputs a node's files never
+	// declare is an assembled artifact its target may reject.
 	NodeValues             map[string]map[string]any
 	ContributingBoundaries []string
 	Edges                  []IREdgeInfo

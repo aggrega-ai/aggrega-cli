@@ -256,7 +256,11 @@ type dispatchKey struct {
 // than by convention.
 //
 // nodeValues is keyed the same way and populated at the same site, from the
-// values that node's own render resolved. An assembler whose output is the only
+// values that node's own render resolved — but only for a node rendered from a
+// source, because that is the only case where the compiler supplies inputs the
+// node's own files do not already carry. A node whose render produced its files
+// itself resolved the values into them, so it holds no entry here and an
+// assembler reads no inputs for it. An assembler whose output is the only
 // position its target evaluates carries each contributor's values into the
 // assembled artifact; one whose contributors already carry their own inputs
 // reads none of it.
@@ -1385,7 +1389,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
 		dispatch[key].nodeComponent[nodeID] = node.Component
 		dispatch[key].nodeSyncWave[nodeID] = nodeCtx.SyncWave
-		dispatch[key].nodeValues[nodeID] = values
+		// A node's values travel to its group's assembler only when the compiler is
+		// the one supplying that node's inputs — the sourced case, where the files
+		// were vendored in verbatim and so could not have the values written into
+		// them. On every other render path the values were resolved into the files
+		// the render itself produced, so there is nothing left for an assembler to
+		// supply: handing them over would offer inputs the node's own files never
+		// declare, which a target is free to reject. Same predicate the source-based
+		// render runs on above, because it is the same distinction.
+		if hasSource {
+			dispatch[key].nodeValues[nodeID] = values
+		}
 		dispatch[key].engineByNode[nodeID] = engine
 		dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{
 			InstanceID: nodeID,
