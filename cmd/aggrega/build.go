@@ -725,10 +725,9 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 
 // skipContextError is a resolution or validation failure carrying the catalog
 // files the tolerant load refused. It DECORATES the failure rather than
-// replacing it: Error renders the failure followed by the note, and Unwrap
-// returns the failure itself, so errors.Is and errors.As still reach the
-// condition the failure raised and a registered condition's short code still
-// survives to the reader.
+// replacing it: Unwrap returns the failure itself, so errors.Is and errors.As
+// still reach the condition the failure raised and a registered condition's
+// short code still survives to the reader.
 //
 // It is a named type rather than an fmt wrap because the diagnostic formatter
 // renders a failure from the outermost categorised envelope it can reach and
@@ -738,16 +737,35 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 // path where the note is the only text naming what the author wrote wrong. A
 // named type gives the formatter something to detect, so the note reaches the
 // reader whatever shape the failure it decorates has.
+//
+// promoted is the refused file's own error when the record singled out exactly
+// one refusal as the reason this failure happened, and nil otherwise. It is
+// what the reader meets first: an author whose document is missing a required
+// field is told that, not told that a reference to the entity that document
+// would have provided could not be bound. The failure it explains is still
+// reported, inside the note, because it is the context that says why the
+// document was needed at all.
 type skipContextError struct {
-	err  error
-	note string
+	err      error
+	promoted error
+	note     string
 }
 
-// Error renders the decorated failure followed by the skip note.
-func (e *skipContextError) Error() string { return e.err.Error() + e.note }
+// Error renders the failure the reader is meant to meet first, followed by the
+// note. That is the promoted refusal where one was singled out, and the
+// decorated failure otherwise; the other of the two is inside the note either
+// way, so nothing is dropped.
+func (e *skipContextError) Error() string {
+	if e.promoted != nil {
+		return cerrors.CauseChain(e.promoted) + e.note
+	}
+	return e.err.Error() + e.note
+}
 
 // Unwrap returns the decorated failure, so errors.Is and errors.As traverse
 // into it and the sentinel the failure raised stays matchable at the boundary.
+// Promotion changes what the reader meets first; it does not change what a
+// caller matches on.
 func (e *skipContextError) Unwrap() error { return e.err }
 
 // withSkipContext annotates an in-closure resolution / validation failure with
@@ -756,18 +774,30 @@ func (e *skipContextError) Unwrap() error { return e.err }
 // kind+name is reported with that identity; a file too malformed to peek is
 // reported by path. No-op when nothing was skipped or err is nil.
 //
+// CAUSE BEFORE CONSEQUENCE, where the cause can be named exactly. A refused
+// file never enters the catalog, so what fails is the attempt to resolve a
+// reference to what that file declared — a consequence of the refusal. Where the
+// record singles out exactly one refusal declaring the identity the failing
+// reference names, that refusal leads the report and the resolution failure
+// moves into the note beneath it. Where it cannot — no refusal declares that
+// identity, or more than one does — the report is exactly what it would be with
+// no record at all: the failure leads, and every refusal is listed beneath it
+// for the reader to weigh. Naming the wrong file as the cause would be worse
+// than naming none, because a reader acts on it.
+//
 // The note states the distinction the tolerant load draws, because the reader
 // meeting the note is the one who has to act on it: a refused file OUTSIDE this
-// Release's closure is tolerated and never fails a build, so the failure the
-// note is attached to is explained only by a refusal naming something this
-// Release reaches. That is stated rather than left implicit — the note is
-// attached to every skip the load recorded, not only to the one that mattered,
-// and a reader who does not know which class is which cannot tell a cause from
-// a bystander.
+// Release's closure is tolerated and never fails a build, so a failure that is
+// only listed alongside refusals is explained only by a refusal naming something
+// this Release reaches. That is stated rather than left implicit — a reader who
+// does not know which class is which cannot tell a cause from a bystander. Where
+// a refusal IS promoted the distinction is settled rather than stated: the
+// promoted file declares the identity the Release reached, which is what made it
+// promotable.
 //
 // The failure stays in the returned error's chain rather than being rendered
 // into text, so a registered condition's identity survives to the reader and
-// errors.Is still matches it at the command boundary.
+// errors.Is still matches it at the command boundary — promoted or not.
 //
 // Each reason is rendered as its whole cause chain, not just its outermost
 // frame: the outermost frame typically says only which step refused the file
@@ -778,8 +808,77 @@ func withSkipContext(err error, skipped []catalog.SkippedEntity) error {
 		return err
 	}
 	var b strings.Builder
+	cause, promoted := refusalExplaining(err, skipped)
+	if promoted {
+		b.WriteString("\n  note: this file was skipped at load, so the catalog holds nothing under the identity it declares.")
+		b.WriteString("\n  This Release reaches that identity, so what failed is the attempt to resolve the reference to it:")
+		fmt.Fprintf(&b, "\n    %s", indentContinuations(cerrors.CauseChain(err), "    "))
+		if rest := refusalsBesides(skipped, cause); len(rest) > 0 {
+			b.WriteString("\n  note: other catalog files were skipped at load too. A refusal outside this Release's closure is")
+			b.WriteString("\n  tolerated and never fails a build:")
+			writeRefusals(&b, rest)
+		}
+		return &skipContextError{err: err, promoted: cause.Err, note: b.String()}
+	}
 	b.WriteString("\n  note: catalog files skipped at load. A refusal outside this Release's closure is tolerated and never fails a build,")
 	b.WriteString("\n  so this failure is explained only by a refusal naming something this Release reaches:")
+	writeRefusals(&b, skipped)
+	return &skipContextError{err: err, note: b.String()}
+}
+
+// refusalExplaining reports the one refused catalog file that explains err, and
+// whether exactly one does.
+//
+// It reads the reference off the failure rather than out of its rendered text.
+// A resolution failure carries the reference it could not resolve as a field, so
+// the match is against the identity the refused document declares for itself —
+// an identity match, not a search for a name inside a message.
+//
+// A failure carrying no reference at all cannot be explained by any single
+// refusal, so it reports false: a validation failure over an entity that DID
+// load names no missing entity, and blaming a refusal for it would be a guess.
+//
+// A matched refusal carrying no reason of its own is declined too. There would
+// be nothing to lead the report with, and leading with a note whose subject is
+// absent reads worse than the report it replaced.
+func refusalExplaining(err error, skipped []catalog.SkippedEntity) (catalog.SkippedEntity, bool) {
+	var unresolved *closure.UnresolvedEntityError
+	if !stderrors.As(err, &unresolved) || unresolved == nil {
+		return catalog.SkippedEntity{}, false
+	}
+	cause, ok := catalog.SoleRefusalFor(skipped, unresolved.URI, unresolved.KindHint)
+	if !ok || cause.Err == nil {
+		return catalog.SkippedEntity{}, false
+	}
+	return cause, true
+}
+
+// refusalsBesides returns the refusals other than the promoted one, keeping the
+// record's order. The promoted file is already the head of the report, so
+// repeating it in the note would say the same thing twice.
+func refusalsBesides(skipped []catalog.SkippedEntity, promoted catalog.SkippedEntity) []catalog.SkippedEntity {
+	rest := make([]catalog.SkippedEntity, 0, len(skipped))
+	for _, s := range skipped {
+		if s.Path == promoted.Path {
+			continue
+		}
+		rest = append(rest, s)
+	}
+	return rest
+}
+
+// indentContinuations prefixes every line of s after the first with indent,
+// preserving whatever indentation those lines already carry. A failure's own
+// text can be several lines — a remediation sentence sits on its own — and
+// placing such a block under a note means its continuation lines have to move
+// with it, or they read as belonging to the level above.
+func indentContinuations(s, indent string) string {
+	return strings.ReplaceAll(s, "\n", "\n"+indent)
+}
+
+// writeRefusals renders one bullet per refused file: its declared identity where
+// the header yielded one, its path otherwise, then the condition it raised.
+func writeRefusals(b *strings.Builder, skipped []catalog.SkippedEntity) {
 	for _, s := range skipped {
 		reason := cerrors.CauseChain(s.Err)
 		if code, ok := cerrors.ShortCodeOf(s.Err); ok {
@@ -787,12 +886,11 @@ func withSkipContext(err error, skipped []catalog.SkippedEntity) error {
 		}
 		switch {
 		case s.Kind != "" && s.Name != "":
-			fmt.Fprintf(&b, "\n    - %s %q (%s): %s", s.Kind, s.Name, s.Path, reason)
+			fmt.Fprintf(b, "\n    - %s %q (%s): %s", s.Kind, s.Name, s.Path, reason)
 		default:
-			fmt.Fprintf(&b, "\n    - %s: %s", s.Path, reason)
+			fmt.Fprintf(b, "\n    - %s: %s", s.Path, reason)
 		}
 	}
-	return &skipContextError{err: err, note: b.String()}
 }
 
 // shortCodeInHead puts a condition's short code inside the bracketed head a

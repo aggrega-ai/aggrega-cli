@@ -284,16 +284,30 @@ func LoadPassOne(workspaceRoot, cacheDir string, dirs ...string) (*Catalog, erro
 
 // SkippedEntity records a catalog file the TOLERANT indexing walk
 // (LoadPassOneTolerant) could not index — a parse failure, a load-time shape
-// violation, a duplicate identity. Kind and Name are best-effort from a header
-// re-parse (empty when the YAML is malformed enough to lose even the header);
-// Err is the original indexing error. Callers replay these on an in-closure
-// resolution failure so a tolerated out-of-closure skip never hides WHY an
-// entity the Release reaches went missing.
+// violation, a duplicate identity. Err is the original indexing error.
+// Callers replay these on an in-closure resolution failure so a tolerated
+// out-of-closure skip never hides WHY an entity the Release reaches went
+// missing.
+//
+// Kind, Name, Version and Capability are the identity the refused document
+// declares for itself, recovered best-effort from a header re-parse. Together
+// they are what SoleRefusalFor matches a failing reference against, so a
+// refusal can be reported ahead of the failure it explains rather than beneath
+// it. Every one of them is empty when the YAML is malformed enough to lose even
+// the header, and a document whose identity could not be read is never matched
+// to a reference — it is reported by path alone, which is still enough to open
+// the file.
 type SkippedEntity struct {
 	Path string
 	Kind string
 	Name string
-	Err  error
+	// Version is the authored metadata.version, empty for a version-less
+	// document.
+	Version string
+	// Capability is the authored spec.capability, which is the provider
+	// segment of a recipe's identity. Empty for every kind that declares none.
+	Capability string
+	Err        error
 }
 
 // ShadowedEntity records a catalog entity that was OVERRIDDEN by a
@@ -613,14 +627,21 @@ func foldFirstWin[V any](claimed map[string]V, identity string, value V, onWin, 
 	return true
 }
 
-// newSkippedEntity builds a SkippedEntity, recovering kind + name from a
-// best-effort header re-parse (empty when the YAML is too malformed to peek).
+// newSkippedEntity builds a SkippedEntity, recovering the identity the refused
+// document declares for itself from a best-effort header re-parse (every field
+// empty when the YAML is too malformed to peek). Version and capability are
+// recovered alongside kind and name because a recipe's identity is
+// provider-scoped and version-scoped: kind and name alone cannot tell two
+// refused recipes of one name apart, and matching a reference against a
+// half-identity would name the wrong file.
 func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 	se := SkippedEntity{Path: path, Err: err}
 	var hdr fileHeader
 	if yaml.Unmarshal(data, &hdr) == nil {
 		se.Kind = hdr.Kind
 		se.Name = hdr.Metadata.Name
+		se.Version = hdr.Metadata.Version
+		se.Capability = hdr.Spec.Capability
 	}
 	return se
 }

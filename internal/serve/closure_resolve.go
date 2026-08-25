@@ -180,8 +180,14 @@ func reconstructClosureAxes(view *catalog.LazyLookup, resolved *compilerops.Reso
 // trust — so the two have different fields to render. And the media differ: an
 // indented multi-line terminal block against a single-line envelope message.
 // What IS shared is the sentence they teach: both state the same
-// closure-membership distinction in the same words, so a reader meeting the
-// note in an editor and on a terminal is told the same thing.
+// closure-membership distinction in the same words.
+//
+// That shared sentence is also where the missing identity shows: with it, the
+// CLI can name the one refusal that declares the identity a failing reference
+// asks for and report that refusal ahead of the failure it explains, leaving
+// this sentence for the case where it cannot. A refusal recorded by path alone
+// declares nothing to match a reference against, so this surface always asks
+// the reader to apply the distinction themselves.
 func (s *Server) skipContext(view *catalog.LazyLookup, msg string) string {
 	skips := view.Skips()
 	if len(skips) == 0 {

@@ -686,14 +686,22 @@ func (l *LazyLookup) tier2Verified(uri string) ([]byte, tier2Outcome) {
 }
 
 // fileHeader is the partial unmarshal struct used by the catalog-tree
-// walker to index entities by authored metadata.name without parsing
-// the full entity body.
+// walker to index entities by authored identity without parsing the full
+// entity body.
+//
+// spec.capability is part of that identity rather than part of the body: a
+// recipe's identity is provider-scoped, and the provider segment IS the
+// authored capability, so a recipe's identity cannot be recovered from
+// metadata alone.
 type fileHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
 		Name    string `yaml:"name"`
 		Version string `yaml:"version"`
 	} `yaml:"metadata"`
+	Spec struct {
+		Capability string `yaml:"capability"`
+	} `yaml:"spec"`
 }
 
 // Component resolves the URI through the Tier-1 → Tier-2 → Tier-3

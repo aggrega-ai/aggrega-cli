@@ -37,7 +37,7 @@ import (
 //     envelopes would otherwise render one and silently drop the rest.
 //
 //  2. A decoration next — a failure carrying added context that is not itself
-//     a diagnostic. It renders the failure it decorates and appends its own
+//     a diagnostic. It renders the failure it leads with and appends its own
 //     text. This runs ahead of the envelope because the envelope branch
 //     renders from the outermost envelope it can reach and discards every
 //     frame above it, so a decoration detected after it would have its text
@@ -131,9 +131,10 @@ func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 	}
 	// A skip-context decoration SECOND, ahead of the envelope, and the position
 	// is load-bearing rather than incidental. The decoration is not a diagnostic
-	// of its own: it is another diagnostic plus the catalog files the tolerant
-	// load refused. So it renders the diagnostic it decorates in whatever shape
-	// that diagnostic's own type calls for, then appends its note.
+	// of its own: it is a pair of diagnostics — a failure, and the catalog files
+	// the tolerant load refused — with the decoration deciding which of the two
+	// leads. So it renders the leading one in whatever shape that diagnostic's
+	// own type calls for, then appends its note.
 	//
 	// It has to be detected BEFORE the envelope because the envelope branch
 	// renders from the outermost envelope errors.As can reach and discards every
@@ -142,17 +143,28 @@ func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 	// often the only text naming what the author wrote wrong.
 	//
 	// Recursion terminates for a different reason from the conversion branches
-	// below: this branch re-enters on the error the decoration wraps, which no
-	// longer carries the decoration, so the chain the recursion sees is strictly
-	// shorter each time.
+	// below: this branch re-enters on a failure the decoration carries rather
+	// than on the decoration, and neither of the two carries a decoration of its
+	// own, so the chain the recursion sees is strictly shorter each time.
 	//
 	// Text a frame ABOVE the decoration contributed — the label naming which
 	// step of the command was running, say — is carried across explicitly.
-	// Recursing on the decorated failure alone would drop it, and that label is
+	// Recursing on the leading failure alone would drop it, and that label is
 	// what tells the reader which step failed.
 	var sce *skipContextError
 	if stderrors.As(err, &sce) && sce != nil {
-		rendered := formatCompilerErrorAt(sce.err, pos)
+		// The decoration renders whichever of the two failures the reader is
+		// meant to meet first. Where it singled out the refusal that explains
+		// the failure, that refusal leads and carries its own head — its own
+		// category and its own short code — because it is the condition the
+		// author can act on; the failure it explains is inside the note. Where
+		// it could not, the decorated failure leads exactly as it would with no
+		// record at all.
+		lead := sce.err
+		if sce.promoted != nil {
+			lead = sce.promoted
+		}
+		rendered := formatCompilerErrorAt(lead, pos)
 		if prefix := strings.TrimSuffix(err.Error(), sce.Error()); prefix != err.Error() {
 			rendered = prefix + rendered
 		}

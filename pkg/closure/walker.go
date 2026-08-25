@@ -521,12 +521,17 @@ func (s *walkState) resolveEntities(lookup Lookup) error {
 		} else {
 			res, err = lookup.ResolveCatalogEntity(uri, pending.kindHint)
 		}
+		// Both failures carry the reference and its kind hint alongside the
+		// rendered message, so a reporter can say WHICH entity went unresolved
+		// without parsing its own output back. The message is unchanged.
 		if err != nil {
-			return fmt.Errorf("resolve: resolve entity %q: %w", uri, err)
+			return unresolvedEntity(uri, pending.kindHint,
+				fmt.Errorf("resolve: resolve entity %q: %w", uri, err))
 		}
 		if res.NotFound {
-			return fmt.Errorf("%w: entity %q (referenced from %s)",
-				ErrUnresolvableURI(), uri, referencedFromPreview(pending.referencedFrom))
+			return unresolvedEntity(uri, pending.kindHint,
+				fmt.Errorf("%w: entity %q (referenced from %s)",
+					ErrUnresolvableURI(), uri, referencedFromPreview(pending.referencedFrom)))
 		}
 		pending.resolution = &res
 	}
