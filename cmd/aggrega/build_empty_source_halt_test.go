@@ -70,12 +70,14 @@ func primeLockfile(t *testing.T, root, releasePath, catalogRoot string) {
 
 // renderInMemory drives the render entry that renders a Release to in-memory
 // buffers with no lockfile freshness gate — the one the editor build tool and the
-// daemon both call. It is the entry an empty-string source actually reaches: the
-// command-line build reads a lockfile and refuses one that no longer matches the
-// catalog, and filling that lockfile means a pull, whose lock-time source descent
-// refuses an empty source URL for its own unrelated reason (it cannot infer a
-// source kind from one). So the command line cannot deliver the ambiguous form to
-// rendering at all, and this entry is where the halt is reachable.
+// daemon both call. That is what lets this test hand an empty-string source
+// straight to rendering: a command-line build reads a lockfile and refuses one
+// that no longer matches the catalog, and filling that lockfile means a pull,
+// whose lock-time source descent refuses an empty source URL for its own
+// unrelated reason (it cannot infer a source kind from one). Both are constraints
+// on the build command rather than on the halt itself, which the validate command
+// also reaches: over a Recipe file it renders that Recipe in isolation and refuses
+// the same ambiguity.
 func renderInMemory(t *testing.T, root, releasePath, catalogRoot string) error {
 	t.Helper()
 	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
