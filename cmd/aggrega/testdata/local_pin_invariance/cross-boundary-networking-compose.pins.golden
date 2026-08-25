@@ -22,7 +22,7 @@ entities:
         - release.spec.boundaries.bridge.features.gateway.type
     - uri: core/datastore/postgres
       resolved_version: 1.0.0
-      digest: sha256:43829649e2b3cdaa341f757024710ed8ddf66fbb9c25ac4e9a6d7355f0f1cec1
+      digest: sha256:b9b986e41e208598a00b5780d0945bbd713a2c7299c26b1885a1a6689be57bdd
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.type
         - manifest.spec.mappings.components.type.core/datastore/postgres
