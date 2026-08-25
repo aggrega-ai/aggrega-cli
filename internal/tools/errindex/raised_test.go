@@ -299,7 +299,7 @@ func TestRenderShortCodeRegion_MarksADeclaredAheadConditionBeneathTheTable(t *te
 		{Pkg: "pkg/a", Name: "ErrRaised", Code: "a/raised", ShortCode: "E9001", Message: "raised", Raised: true},
 		{Pkg: "pkg/a", Name: "ErrAhead", Code: "a/ahead", ShortCode: "E9002", Message: "ahead",
 			DeclaredAhead: "It will report the condition once the work lands."},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("renderShortCodeRegion: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestRenderShortCodeRegion_RefusesANoteThatWouldSpillOutOfItsListItem(t *tes
 	_, err := renderShortCodeRegion([]Identity{
 		{Pkg: "pkg/a", Name: "ErrAhead", Code: "a/ahead", ShortCode: "E9002", Message: "ahead",
 			DeclaredAhead: "It will report the condition\nonce the work lands."},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("a multi-line declared-ahead note was accepted; it would spill onto the page as prose")
 	}
@@ -350,7 +350,7 @@ func TestRenderShortCodeRegion_LeavesNoNoteBlockWhenNothingIsDeclaredAhead(t *te
 
 	region, err := renderShortCodeRegion([]Identity{
 		{Pkg: "pkg/a", Name: "ErrRaised", Code: "a/raised", ShortCode: "E9001", Message: "raised", Raised: true},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("renderShortCodeRegion: %v", err)
 	}

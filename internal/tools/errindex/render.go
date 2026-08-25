@@ -185,7 +185,24 @@ func renderRegion(ids []Identity) (string, error) {
 // listed, not a second condition, and it reports the short code of the condition
 // it forwards to — so including one would put two rows under a single code and
 // make the key ambiguous in the one table whose whole job is to resolve it.
-func renderShortCodeRegion(ids []Identity) (string, error) {
+//
+// # A retired code is named beneath the table too, and for a sharper reason
+//
+// The page's promise is that a short code a reader is holding resolves here. A
+// number that named a condition and no longer does would otherwise resolve to
+// nothing at all — the reader would find the table silent and could not tell a
+// retired number from one they mistyped. So the retirement record's entries are
+// named in a second list beneath the table, each carrying the sentence recorded
+// with it, which turns the numbering's guarantee into something a reader can act
+// on: the number named that, it names nothing now, and it will never name
+// anything else.
+//
+// They are notes rather than rows for the reason the declared-ahead notes are.
+// The table's three columns are each single-sourced from a live declaration, and
+// a retired code has no condition and no message to put in the second and third
+// — so a row for one would be a row that is mostly empty, in the one table whose
+// rows are comparable byte for byte against what a build reports.
+func renderShortCodeRegion(ids []Identity, retired []Retirement) (string, error) {
 	rows := make([]Identity, 0, len(ids))
 	for _, id := range ids {
 		if id.AliasOf != "" {
@@ -244,6 +261,47 @@ func renderShortCodeRegion(ids []Identity) (string, error) {
 		for _, id := range ahead {
 			fmt.Fprintf(&b, "- %s is declared ahead of the code that reports it, so no build raises it yet. %s\n",
 				codeSpan(id.ShortCode), id.DeclaredAhead)
+		}
+	}
+
+	// Ordered by short code as text, which is the table's own rule and is also
+	// the numeric order because a short code is zero-padded to a fixed width.
+	// Sorting a copy rather than the caller's slice, and sorting at all rather
+	// than emitting the record's declaration order, is what makes the region a
+	// function of WHICH numbers are retired rather than of the order somebody
+	// happened to add them.
+	ordered := make([]Retirement, len(retired))
+	copy(ordered, retired)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ShortCode < ordered[j].ShortCode })
+	for _, r := range ordered {
+		// A code that is both retired and registered would put a row resolving it
+		// to a condition directly above a note saying nothing reports it, and a
+		// reader would have no way to tell which half to believe. Registration
+		// refuses such a pair at package initialisation, so reaching here means
+		// the record and the declarations disagree in the tree — and this reads
+		// the tree without running it, which is precisely the case that guard
+		// cannot cover.
+		if handle, live := seen[r.ShortCode]; live {
+			return "", fmt.Errorf("%s is recorded as retired and is also registered by %s, so the table "+
+				"resolves it to a condition while the note beneath says nothing reports it",
+				r.ShortCode, handle)
+		}
+		if strings.ContainsAny(r.Note, "\r\n") {
+			return "", fmt.Errorf("the note recorded for the retired short code %s spans more than one "+
+				"line, which ends the list item it renders into and spills the rest onto the page as "+
+				"prose; write the note as a single sentence", r.ShortCode)
+		}
+	}
+	if len(ordered) > 0 {
+		b.WriteString("\n")
+		for _, r := range ordered {
+			// The lead states only what is true of this entry. Why a retired number
+			// stays retired is one fact about the whole set, so it is stated once in
+			// the page's curated prose rather than repeated on every line — a
+			// sentence repeated down a list reads as boilerplate and stops being
+			// read, which is the opposite of what publishing it is for.
+			fmt.Fprintf(&b, "- %s is retired: nothing reports it now, and the number is never handed "+
+				"to a different condition. %s\n", codeSpan(r.ShortCode), r.Note)
 		}
 	}
 	return strings.TrimRight(b.String(), "\n"), nil

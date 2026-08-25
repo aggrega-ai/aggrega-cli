@@ -957,7 +957,7 @@ func TestRenderShortCodeRegion_CoversAConditionTheByPackageTablesCannot(t *testi
 	}
 	ids := []Identity{reachable, unreachable}
 
-	region, err := renderShortCodeRegion(ids)
+	region, err := renderShortCodeRegion(ids, nil)
 	if err != nil {
 		t.Fatalf("renderShortCodeRegion: %v", err)
 	}
@@ -1000,7 +1000,7 @@ func TestRenderShortCodeRegion_KeysOneCodeToOneRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	region, err := renderShortCodeRegion(ids)
+	region, err := renderShortCodeRegion(ids, nil)
 	if err != nil {
 		t.Fatalf("renderShortCodeRegion: %v", err)
 	}
@@ -1047,7 +1047,7 @@ func TestRenderShortCodeRegion_OrdersByShortCode(t *testing.T) {
 		{Pkg: "pkg/a", Name: "ErrTwo", Code: "a/two", ShortCode: "E0002", Message: "two", Importable: true},
 		{Pkg: "internal/b", Name: "ErrNine", Code: "b/nine", ShortCode: "E0009", Message: "nine"},
 	}
-	region, err := renderShortCodeRegion(ids)
+	region, err := renderShortCodeRegion(ids, nil)
 	if err != nil {
 		t.Fatalf("renderShortCodeRegion: %v", err)
 	}
@@ -1069,13 +1069,13 @@ func TestRenderShortCodeRegion_IsAFunctionOfTheDeclarationsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	first, err := renderShortCodeRegion(ids)
+	first, err := renderShortCodeRegion(ids, nil)
 	if err != nil {
 		t.Fatalf("renderShortCodeRegion: %v", err)
 	}
 	shuffled := slices.Clone(ids)
 	slices.Reverse(shuffled)
-	second, err := renderShortCodeRegion(shuffled)
+	second, err := renderShortCodeRegion(shuffled, nil)
 	if err != nil {
 		t.Fatalf("renderShortCodeRegion (reversed input): %v", err)
 	}
@@ -1095,7 +1095,7 @@ func TestRenderShortCodeRegion_RefusesADuplicateShortCode(t *testing.T) {
 	_, err := renderShortCodeRegion([]Identity{
 		{Pkg: "pkg/a", Name: "ErrFirst", Code: "a/first", ShortCode: "E0001", Message: "first", Importable: true},
 		{Pkg: "pkg/b", Name: "ErrSecond", Code: "b/second", ShortCode: "E0001", Message: "second", Importable: true},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("renderShortCodeRegion accepted two conditions under one short code")
 	}
@@ -1120,7 +1120,7 @@ func TestRenderShortCodeRegion_RefusesADeclaredStringCarryingATableSeparator(t *
 		{what: "code", id: Identity{Pkg: "pkg/thing", Name: "ErrPiped", Code: "thing/a | b", ShortCode: "E0001", Message: "a message"}},
 		{what: "short code", id: Identity{Pkg: "pkg/thing", Name: "ErrPiped", Code: "thing/piped", ShortCode: "E|001", Message: "a message"}},
 	} {
-		_, err := renderShortCodeRegion([]Identity{tc.id})
+		_, err := renderShortCodeRegion([]Identity{tc.id}, nil)
 		if err == nil {
 			t.Fatalf("renderShortCodeRegion accepted a %s carrying a table separator", tc.what)
 		}
@@ -1164,7 +1164,7 @@ func TestRenderShortCodeRegion_LiveModuleCoversEveryPublishedCondition(t *testin
 		t.Fatalf("scan module: %v", err)
 	}
 	published, excluded := admit(ids)
-	region, err := renderShortCodeRegion(published)
+	region, err := renderShortCodeRegion(published, nil)
 	if err != nil {
 		t.Fatalf("renderShortCodeRegion: %v", err)
 	}
@@ -1696,5 +1696,283 @@ Prose.
 	}
 	if err := rejectCoverageDisagreement(covered, documented); err != nil {
 		t.Errorf("the generator's own two derivations were reported as disagreeing: %v", err)
+	}
+}
+
+// TestScanRetirements_ReadsTheRecordAndBothSpellingsOfAnEntry is the extraction
+// half of the retirement lookup: the record the registry consults to refuse a
+// reissued number is the same declaration the reference page is composed from, so
+// this proves the reading rather than the publishing.
+//
+// The fixture declares one entry positionally and one by field name because the
+// scan reads either, and a fixture carrying only one spelling would leave the
+// other proven by nothing — a reader switching the declaration to field names
+// would silently empty the published list.
+func TestScanRetirements_ReadsTheRecordAndBothSpellingsOfAnEntry(t *testing.T) {
+	t.Parallel()
+	got, err := scanRetirements("testdata/module")
+	if err != nil {
+		t.Fatalf("scanRetirements: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatal("the fixture declares a retirement record and the scan read nothing from it")
+	}
+	want := map[string]string{
+		"E9901": "It named a fixture condition that no longer exists.",
+		"E9902": "It named a second fixture condition, recorded by field name.",
+	}
+	for _, r := range got {
+		note, expected := want[r.ShortCode]
+		if !expected {
+			t.Errorf("the scan read %s, which the fixture does not record", r.ShortCode)
+			continue
+		}
+		if r.Note != note {
+			t.Errorf("%s: the scan read the note %q and the fixture records %q", r.ShortCode, r.Note, note)
+		}
+		delete(want, r.ShortCode)
+	}
+	// Named rather than counted: two sets of equal size can still name different
+	// entries, so a size comparison would pass a swap.
+	for code := range want {
+		t.Errorf("the fixture records %s and the scan read no entry for it", code)
+	}
+}
+
+// TestScanRetirements_ReportsNoRecordAsEmptyRatherThanAsAFailure holds the state
+// of a tree that has retired nothing. A module early in its life declares no
+// record, and refusing that would make the generator unusable on it.
+//
+// The other fixture modules are the corpus for it, so this also states plainly
+// that a fixture without a record is a legitimate input rather than an oversight.
+func TestScanRetirements_ReportsNoRecordAsEmptyRatherThanAsAFailure(t *testing.T) {
+	t.Parallel()
+	for _, root := range []string{"testdata/raised", "testdata/unregistered", "testdata/noshortcode"} {
+		got, err := scanRetirements(root)
+		if err != nil {
+			t.Errorf("%s: scanRetirements: %v", root, err)
+			continue
+		}
+		if len(got) != 0 {
+			t.Errorf("%s: the scan read %d entries from a module declaring no record", root, len(got))
+		}
+	}
+}
+
+// TestScanRetirements_RefusesAnEntryItCannotRead is the calibration the empty
+// case above needs. A record whose entries the scan cannot read would otherwise
+// produce exactly the empty result a module with no record produces — and an
+// unread entry is a number that stops being reported as spent while still being
+// spent.
+//
+// The records are written into a temporary tree rather than committed as
+// fixtures, because each is deliberately malformed and a malformed fixture in the
+// tree is one a later reader tidies.
+func TestScanRetirements_RefusesAnEntryItCannotRead(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		record string
+		names  string
+	}{
+		{
+			name:   "an element that is not a literal",
+			record: "var retiredShortCodes = []retirement{someHelper()}",
+			names:  "entry 0",
+		},
+		{
+			name:   "a value built rather than declared",
+			record: `var retiredShortCodes = []retirement{{"E9901", noteFor("E9901")}}`,
+			names:  "not a string literal",
+		},
+		{
+			name:   "an entry naming an unknown field",
+			record: `var retiredShortCodes = []retirement{{shortCode: "E9901", reason: "It named something."}}`,
+			names:  "reason",
+		},
+		{
+			name:   "an entry mixing positional and named values",
+			record: `var retiredShortCodes = []retirement{{"E9901", note: "It named something."}}`,
+			names:  "ambiguous",
+		},
+		{
+			name:   "an entry carrying only a short code",
+			record: `var retiredShortCodes = []retirement{{"E9901"}}`,
+			names:  "1 values",
+		},
+		{
+			name:   "an entry recording an empty note",
+			record: `var retiredShortCodes = []retirement{{"E9901", ""}}`,
+			names:  "E9901",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			dir := filepath.Join(root, "pkg", "errors")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			body := "package errors\n\ntype retirement struct {\n\tshortCode string\n\tnote string\n}\n\n" + tc.record + "\n"
+			if err := os.WriteFile(filepath.Join(dir, "code.go"), []byte(body), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			got, err := scanRetirements(root)
+			if err == nil {
+				t.Fatalf("the scan accepted %s and read %d entries", tc.name, len(got))
+			}
+			if !strings.Contains(err.Error(), tc.names) {
+				t.Errorf("the refusal does not name %q, so a reader cannot find the entry to fix: %v",
+					tc.names, err)
+			}
+		})
+	}
+}
+
+// TestRenderShortCodeRegion_NamesEveryRetiredCodeBeneathTheTable is what makes
+// the page's promise true for a number that no longer names a condition: a reader
+// quoting one off an old report finds it here and is told what it named, rather
+// than finding the table silent and being unable to tell a spent number from a
+// mistyped one.
+//
+// It runs over the LIVE module and the live record, so it asserts the published
+// surface rather than a constructed one, and it fails on an empty record instead
+// of passing over nothing.
+func TestRenderShortCodeRegion_NamesEveryRetiredCodeBeneathTheTable(t *testing.T) {
+	t.Parallel()
+	modulePath, err := modulePathOf("../../..")
+	if err != nil {
+		t.Fatalf("module path: %v", err)
+	}
+	ids, err := scan("../../..", modulePath)
+	if err != nil {
+		t.Fatalf("scan module: %v", err)
+	}
+	retired, err := scanRetirements("../../..")
+	if err != nil {
+		t.Fatalf("scanRetirements: %v", err)
+	}
+	if len(retired) == 0 {
+		t.Fatal("the module records no retired code, so every assertion below would pass over nothing")
+	}
+	published, _ := admit(ids)
+	region, err := renderShortCodeRegion(published, retired)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion: %v", err)
+	}
+
+	rows := map[string]bool{}
+	for _, c := range shortCodeRows(t, region) {
+		rows[c] = true
+	}
+	if len(rows) == 0 {
+		t.Fatal("the region carries no rows, so the comparison below would certify nothing")
+	}
+	for _, r := range retired {
+		// The note, not merely the code: a code appearing anywhere in the region
+		// would also be satisfied by a row, which is the one thing a retired code
+		// must not have.
+		if !strings.Contains(region, codeSpan(r.ShortCode)+" is retired") {
+			t.Errorf("the region names no retired note for %s, so a reader quoting it resolves nothing",
+				r.ShortCode)
+		}
+		if !strings.Contains(region, r.Note) {
+			t.Errorf("the region carries no note text for %s, so it says the number is spent without "+
+				"saying what spent it", r.ShortCode)
+		}
+		if rows[r.ShortCode] {
+			t.Errorf("the region carries a ROW for the retired code %s, which resolves it to a live "+
+				"condition", r.ShortCode)
+		}
+	}
+
+	// Calibration in the other direction: the note block is absent when nothing
+	// is retired, so the assertions above are reading a block the retired set put
+	// there rather than one that is always present.
+	bare, err := renderShortCodeRegion(published, nil)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion (no retirements): %v", err)
+	}
+	if strings.Contains(bare, "is retired") {
+		t.Error("the region names a retired code with no retirement record, so the assertions above " +
+			"are not reading the record")
+	}
+}
+
+// TestRenderShortCodeRegion_RefusesACodeThatIsBothRetiredAndRegistered is the
+// contradiction the registry's own guard cannot reach. Registration refuses a
+// retired number at package initialisation, so the pair is unreachable in a
+// running program — but this reads declarations without running them, which is
+// exactly where such a pair would survive to reach the page.
+func TestRenderShortCodeRegion_RefusesACodeThatIsBothRetiredAndRegistered(t *testing.T) {
+	t.Parallel()
+	_, err := renderShortCodeRegion(
+		[]Identity{{Pkg: "pkg/a", Name: "ErrLive", Code: "a/live", ShortCode: "E0001",
+			Message: "a live condition", Importable: true, Raised: true}},
+		[]Retirement{{ShortCode: "E0001", Note: "It named something else."}},
+	)
+	if err == nil {
+		t.Fatal("a code that is both registered and retired was accepted; the table would resolve it " +
+			"to a condition and the note beneath would say nothing reports it")
+	}
+	for _, want := range []string{"E0001", "pkg/a.ErrLive"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %s: %v", want, err)
+		}
+	}
+}
+
+// TestRenderShortCodeRegion_RefusesAMultiLineRetirementNote is the retirement
+// note's half of the refusal the declared-ahead note already carries: a note
+// carrying a line break ends the list item it renders into and spills the rest
+// onto the page as prose, silently, because the page still renders.
+func TestRenderShortCodeRegion_RefusesAMultiLineRetirementNote(t *testing.T) {
+	t.Parallel()
+	_, err := renderShortCodeRegion(
+		[]Identity{{Pkg: "pkg/a", Name: "ErrLive", Code: "a/live", ShortCode: "E0001",
+			Message: "a live condition", Importable: true, Raised: true}},
+		[]Retirement{{ShortCode: "E0002", Note: "It named something.\nAnd then some more."}},
+	)
+	if err == nil {
+		t.Fatal("a multi-line retirement note was accepted; it would spill onto the page as prose")
+	}
+	if !strings.Contains(err.Error(), "E0002") {
+		t.Errorf("the refusal does not name the entry to repair: %v", err)
+	}
+}
+
+// TestRenderShortCodeRegion_OrdersRetiredCodesIndependentlyOfTheRecord holds the
+// determinism the page needs. The record is authored in whatever order conditions
+// were withdrawn; the region is a function of WHICH numbers are spent, so the
+// same set declared in either order renders the same bytes.
+func TestRenderShortCodeRegion_OrdersRetiredCodesIndependentlyOfTheRecord(t *testing.T) {
+	t.Parallel()
+	live := []Identity{{Pkg: "pkg/a", Name: "ErrLive", Code: "a/live", ShortCode: "E0009",
+		Message: "a live condition", Importable: true, Raised: true}}
+	ascending := []Retirement{
+		{ShortCode: "E0001", Note: "It named the first."},
+		{ShortCode: "E0002", Note: "It named the second."},
+	}
+	descending := []Retirement{ascending[1], ascending[0]}
+
+	first, err := renderShortCodeRegion(live, ascending)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion: %v", err)
+	}
+	second, err := renderShortCodeRegion(live, descending)
+	if err != nil {
+		t.Fatalf("renderShortCodeRegion (reversed record): %v", err)
+	}
+	if first != second {
+		t.Errorf("the region depends on the order the record declares its entries:\n%s\n---\n%s", first, second)
+	}
+	if strings.Index(first, "`E0001` is retired") > strings.Index(first, "`E0002` is retired") {
+		t.Errorf("retired codes are not ordered by short code:\n%s", first)
+	}
+	// The caller's slice is not reordered under it: the generator hands the same
+	// record to nothing else today, and a renderer that sorted its input in place
+	// would make that a hazard the day it does.
+	if descending[0].ShortCode != "E0002" {
+		t.Error("the renderer reordered the caller's record in place")
 	}
 }

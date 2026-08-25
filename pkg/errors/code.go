@@ -336,8 +336,36 @@ type Meta struct {
 	// # Allocation: what is enforced here, and what is convention
 	//
 	// Registration ENFORCES, by panicking at package initialisation: the value
-	// is present, it has the shape above, and no other condition already holds
-	// it. Those are the properties a program can check about itself.
+	// is present, it has the shape above, no other condition already holds it,
+	// and it is not a number the retirement record records as retired. Those are
+	// the properties a program can check about itself.
+	//
+	// A number is never reused, and BOTH halves of that are enforced. A number a
+	// live condition holds is refused by the registry's own index; a number a
+	// retired condition held is refused against the retirement record this
+	// package declares, which records every one of them and what each named. So
+	// a retired condition's number stays retired, and a user quoting it from an
+	// old report is never sent to a different condition.
+	//
+	// # A tombstone is not a gap check, and the two are one edit apart
+	//
+	// Never-reusing GUARANTEES permanent gaps in the sequence, so no gap check
+	// exists and none should be added: a no-gaps check would refuse exactly the
+	// state the rule produces.
+	//
+	// What makes the retirement refusal a different thing is the direction of
+	// the evidence. A gap is the ABSENCE of a record and settles nothing — a
+	// number missing from the sequence may have been retired, and may equally be
+	// one nobody has reached yet, and the sequence cannot tell those apart. A
+	// tombstone is a POSITIVE record of the first case, written when the
+	// condition was withdrawn by whoever knew which case it was. So the refusal
+	// declines the numbers the record names and accepts every other gap, which
+	// is why it can be enforced at all.
+	//
+	// An implementation refusing "any number below the highest that is not
+	// currently registered" would be a gap check wearing a tombstone's name. Do
+	// not write one however tempting the symmetry looks: it would refuse the
+	// legal, permanent state the numbering is designed to produce.
 	//
 	// Everything else is CONVENTION, upheld by whoever adds a condition and by
 	// review, because none of it is checkable from inside the program:
@@ -348,15 +376,12 @@ type Meta struct {
 	//     being inserted among its neighbours. So a package's numbers say when
 	//     its conditions were declared relative to every other package's, and
 	//     nothing about how they sort or read together.
-	//   - A number is never reused. A retired condition's number stays retired,
-	//     so a user quoting it from an old report is never sent to a different
-	//     condition. This is also why no gap check exists and none should be
-	//     added: never-reusing GUARANTEES permanent gaps, so a no-gaps check
-	//     would refuse exactly the state the rule produces.
-	//   - The next free number is one greater than the highest already allocated.
-	//     Because the numbering is one flat space shared by every package, the
-	//     highest is read off the whole declared set rather than off the
-	//     neighbours of the condition being added.
+	//   - The next free number is one greater than the highest already allocated,
+	//     counting the retired ones. Because the numbering is one flat space
+	//     shared by every package, the highest is read off the whole declared set
+	//     rather than off the neighbours of the condition being added — and the
+	//     retirement record is part of that set, so a number retired above every
+	//     live one is still retired.
 	//
 	// It must not be empty, and registration refuses an empty one for the same
 	// reason it refuses an empty descriptive code: a condition with nothing to
@@ -446,6 +471,124 @@ var (
 	shortCodeIndex = map[string]*sealed{}
 )
 
+// retirement is one retired short code: a number that named a condition, names
+// none now, and will never name another.
+//
+// It is a POSITIVE record, and that is the whole of its value. A number missing
+// from the sequence says nothing on its own — it may have been retired, and it
+// may equally be one nobody has reached yet — so only a declaration here tells
+// the two apart. That is why the refusal in [Register] consults this record and
+// never the shape of the sequence; [Meta.ShortCode] carries the distinction in
+// full.
+type retirement struct {
+	// shortCode is the retired number, in the shape a live registration
+	// declares: the letter E and exactly four decimal digits.
+	shortCode string
+
+	// note says what the code named and what became of the condition, in one
+	// sentence.
+	//
+	// It is published verbatim on the error reference, beneath the codes a build
+	// can still report, so a reader who quotes a number off an old report is
+	// told what it named rather than left holding a code that resolves to
+	// nothing. Write it in the words that page is written in, as one sentence
+	// on one line, reading on from a lead sentence that has already said the
+	// code is retired.
+	note string
+}
+
+// retiredShortCodes records every short code that has named a condition and no
+// longer does.
+//
+// # Why it is authored rather than derived
+//
+// Nothing a program can observe about itself distinguishes a retired number
+// from one never handed out: both are simply absent from the registry, and a
+// deletion leaves no trace a later run can read. So the record cannot be
+// computed — it has to be written when the condition is withdrawn, which is
+// also the only moment anyone knows what the number named and why it is retired.
+//
+// # It has one home, and this is it
+//
+// The refusal in [Register] reads this record, and the generator that composes
+// the published error reference reads this same declaration to publish the
+// retired codes beside the live ones. Neither keeps a copy: a second list to
+// hold in step is exactly what would drift, and the drift would be invisible
+// because the two would agree until the day one of them was edited.
+//
+// # Adding to it
+//
+// Whoever retires a condition deletes its registration and adds a line here in
+// the same change. The two halves are one act: a deletion without a line here
+// frees the number for reuse, and reuse is the one thing the numbering promises
+// cannot happen.
+var retiredShortCodes = []retirement{
+	{"E0159", "It named a target reference whose dot-separated segments did not all match the " +
+		"instance-name pattern, and no build reported it before the condition was withdrawn."},
+	{"E0217", "It named a schema-validation failure that could not be reported against a particular " +
+		"field, and no build reported it before the condition was withdrawn."},
+	{"E0234", "It named a Recipe source that is an empty string, reported while rendering through the " +
+		"compose provider; one condition covering every provider reports that now, and its code is `E0251`."},
+	{"E0242", "It named a Recipe source that is an empty string, reported while rendering through the " +
+		"Helm provider; one condition covering every provider reports that now, and its code is `E0251`."},
+}
+
+// retiredIndex keys [retiredShortCodes] for the lookup [Register] performs.
+//
+// It is a separate variable rather than a lazily built one so that a record the
+// program cannot serve is refused at package initialisation, before any input
+// is read, the way every other registration defect is. [Register] refers to it,
+// so every registration in this package — and every package that imports it —
+// is initialised after it: a registration reaching the retirement check can
+// never find the record half-built.
+var retiredIndex = indexRetirements(retiredShortCodes)
+
+// indexRetirements keys a retirement record by short code, and panics on a
+// record that would leave a hole in the refusal it feeds.
+//
+// Each refusal is one a silently-admitted entry would turn into a promise the
+// program does not keep:
+//
+//   - A malformed short code matches nothing a registration can declare, so the
+//     number it was meant to protect would be quietly free again.
+//   - A note carrying no text would publish a bare retired code with nothing to
+//     tell a reader who quotes it, which is the outcome the note exists to
+//     prevent.
+//   - A note spanning more than one line ends the list item it publishes into
+//     and spills the rest onto the page as prose.
+//   - A number recorded twice means two answers to one lookup, and the second
+//     would be the one nobody wrote.
+//
+// The record is walked in declaration order, so a record carrying more than one
+// defect names the same one on every run.
+func indexRetirements(record []retirement) map[string]string {
+	out := make(map[string]string, len(record))
+	for _, r := range record {
+		if !wellFormedShortCode(r.shortCode) {
+			panic(fmt.Sprintf("errors: the retirement record declares the malformed short code %q; "+
+				"a short code is the letter E followed by exactly four decimal digits, and a value of "+
+				"another shape matches no registration, so the number it was meant to keep retired is free again",
+				r.shortCode))
+		}
+		if strings.TrimSpace(r.note) == "" {
+			panic(fmt.Sprintf("errors: the retirement record declares the short code %q with no note; "+
+				"the note is published beside the code a reader quotes, so an empty one publishes a "+
+				"retired number and tells that reader nothing", r.shortCode))
+		}
+		if strings.ContainsAny(r.note, "\r\n") {
+			panic(fmt.Sprintf("errors: the retirement record's note for short code %q spans more than "+
+				"one line, which ends the list item it publishes into and spills the rest onto the page "+
+				"as prose; write the note as a single sentence", r.shortCode))
+		}
+		if _, dup := out[r.shortCode]; dup {
+			panic(fmt.Sprintf("errors: the retirement record declares the short code %q twice, so a "+
+				"lookup keyed on it has two answers and takes whichever was written second", r.shortCode))
+		}
+		out[r.shortCode] = r.note
+	}
+	return out
+}
+
 // Register declares the halting condition named by code, with the metadata in
 // meta, and returns its identity. The call stands as a package-level
 // declaration, with the accessor that publishes it directly beside:
@@ -523,6 +666,14 @@ var (
 //     a duplicated short code is entirely possible between conditions whose
 //     descriptive codes differ, and that is precisely the case a single check
 //     would miss.
+//   - A short code the retirement record records as retired. The number named a
+//     condition once and never names another, so admitting it would send a
+//     reader quoting it off an old report to a different condition — the one
+//     thing the numbering promises cannot happen. The refusal says the code is
+//     RETIRED rather than in use, and repeats what it named, so a reader learns
+//     which of the two reuse rules they hit and does not go looking for a live
+//     declaration that does not exist. Meta.ShortCode records why this is a
+//     tombstone check and not the gap check that must never be written.
 //   - A Meta.DeclaredAhead that is present but says nothing — whitespace alone.
 //     That field's whole value is that it cannot be acquired by neglect: a
 //     marker naming no work would take a condition off the unraised report and
@@ -538,10 +689,13 @@ var (
 // jobs, and this function does the first for a field it does not do the second
 // for.
 //
-// What Register does NOT check is whether a short code is the RIGHT one — the
-// next free number rather than a reused or arbitrary one. That is allocation,
-// and it is convention rather than enforcement; Meta.ShortCode records which
-// half is which and why a gap check would be wrong. Nor does it check whether a
+// What Register does NOT check is whether a short code is the NEXT one — the
+// number above the highest already allocated rather than an arbitrary free one.
+// That much is allocation, and it is convention rather than enforcement. Reuse
+// is the half that IS enforced, on both of its sides: a number a live condition
+// holds and a number the retirement record records as retired are each refused
+// above. Meta.ShortCode records which half is which, and why the tombstone
+// refusal is not the gap check that would be wrong. Nor does it check whether a
 // condition carrying no Meta.DeclaredAhead is in fact raised: that is a
 // property of the whole module rather than of one declaration, so nothing
 // inside a single registration can see it.
@@ -578,6 +732,20 @@ func Register(code string, meta Meta) *sealed {
 			"which is already registered for code %q; short codes are handed out from E0001 upward "+
 			"and never reused, so take the next number above the highest already allocated",
 			meta.ShortCode, code, prev.code))
+	}
+	// The retirement check runs AFTER the live-collision check above, and the
+	// order matters only in a tree that is already wrong. A retired number holds
+	// no live registration, so at most one of the two can fire — unless the
+	// retirement record names a number a condition still holds, which is an
+	// authoring defect in the record itself. In that case the collision refusal
+	// is the more useful of the two, because it names the condition holding the
+	// number and so says which of the two declarations to correct.
+	if note, retired := retiredIndex[meta.ShortCode]; retired {
+		panic(fmt.Sprintf("errors: Register called with the retired short code %q for code %q; "+
+			"a retired number is never handed to a different condition, so a short code quoted from "+
+			"an old report is never sent somewhere else. %s Take the next number above the highest "+
+			"already allocated, counting the retired ones",
+			meta.ShortCode, code, note))
 	}
 
 	// Neither index is written until every refusal above has passed, so a

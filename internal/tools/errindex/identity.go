@@ -490,6 +490,191 @@ func scan(root, modulePath string) ([]Identity, error) {
 	return out, nil
 }
 
+// Retirement is one retired short code: a number that named a condition, names
+// none now, and will never name another.
+//
+// It is not an Identity and deliberately carries none of an Identity's fields.
+// There is no accessor to import, no message a build renders and no package to
+// group it under, because the condition it named is gone — what is left is the
+// number and the sentence saying what it named. Folding it into Identity would
+// mean an Identity whose every other column is empty, and an empty column
+// repeated across a table reads as a fact about the row rather than as the
+// absence of one.
+type Retirement struct {
+	ShortCode string // the retired number, E and four digits
+	Note      string // one sentence, published verbatim, saying what the code named
+}
+
+// retirementRecordName is the package-level name the registry binds its
+// retirement record to.
+//
+// This is the same class of coupling every other extraction here rests on — the
+// names Register, Meta, ShortCode and Message are read the same way — so it is a
+// name this generator knows rather than a shape it infers. A record that moved
+// out from under the name is reported by [scanRetirements] returning nothing,
+// which the caller states as a count rather than passing over in silence.
+const retirementRecordName = "retiredShortCodes"
+
+// scanRetirements reads the retirement record the errors package declares and
+// returns its entries in declaration order.
+//
+// # Why it reads the same declaration the program does
+//
+// The record is the one home of which numbers are retired. The registry consults
+// it to refuse a registration under a retired number; this reads that same
+// declaration so the published reference can resolve such a number for a reader
+// who quotes it off an old report. Neither keeps a copy — a second list to hold
+// in step is what would drift, and it would drift invisibly, because the two
+// would agree right up until one of them was edited.
+//
+// # Why it is its own walk rather than a third question inside [scan]
+//
+// [scan] reads two questions from one walk of the whole tree, because both are
+// asked of every production file. This one is asked of exactly one directory:
+// the record is declared in the package that declares Register, and nowhere
+// else. Threading it through the whole-tree walk would mean testing every file
+// in the module against a condition only that directory can satisfy.
+//
+// # An absent record is not an error
+//
+// A module that has retired nothing declares no record, and that is the ordinary
+// state of a tree early in its life. So an absent record yields no entries and
+// no error, and the caller reports the size of what it read: a record that
+// vanished because the declaration moved looks exactly like a module that has
+// retired nothing, and only the reported count tells them apart.
+//
+// # What it does refuse
+//
+// An entry it cannot READ — an element that is not two string literals — is
+// refused by name rather than skipped, because a skipped entry is a number that
+// is silently free again. The entries' SHAPE is not checked here: whether a
+// short code is well formed and whether a note carries usable text are refused
+// by the errors package at its own initialisation, and re-deciding either here
+// would be a second implementation of one rule.
+func scanRetirements(root string) ([]Retirement, error) {
+	dir := filepath.Join(root, errorsPackageDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		names = append(names, e.Name())
+	}
+	// Sorted, because a record declared twice is reported against whichever file
+	// the walk reached first, and a refusal that moves between runs cannot be
+	// compared with a previous one.
+	sort.Strings(names)
+
+	var out []Retirement
+	found := ""
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		fset := token.NewFileSet()
+		file, perr := parser.ParseFile(fset, path, nil, 0)
+		if perr != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, perr)
+		}
+		for _, decl := range file.Decls {
+			d, ok := decl.(*ast.GenDecl)
+			if !ok || d.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range d.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok || len(vs.Names) != 1 || vs.Names[0].Name != retirementRecordName || len(vs.Values) != 1 {
+					continue
+				}
+				if found != "" {
+					return nil, fmt.Errorf("%s and %s both declare %s, so which numbers are retired has two answers",
+						found, path, retirementRecordName)
+				}
+				found = path
+				lit, ok := vs.Values[0].(*ast.CompositeLit)
+				if !ok {
+					return nil, fmt.Errorf("%s declares %s as something other than a literal record, "+
+						"which this reads from the declaration rather than by evaluating the package",
+						path, retirementRecordName)
+				}
+				for i, el := range lit.Elts {
+					r, rerr := retirementEntry(el)
+					if rerr != nil {
+						return nil, fmt.Errorf("%s: entry %d of %s: %w", path, i, retirementRecordName, rerr)
+					}
+					out = append(out, r)
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// retirementEntry reads one element of the retirement record: a literal carrying
+// the retired short code and the note, positionally or by field name.
+//
+// Both spellings are read because either is a legitimate way to write the
+// declaration, and a reader who switched to field names would otherwise silently
+// empty the published list. Anything else is refused rather than skipped: an
+// entry this cannot read is a number that stops being reported as retired while
+// still being retired.
+func retirementEntry(el ast.Expr) (Retirement, error) {
+	lit, ok := el.(*ast.CompositeLit)
+	if !ok {
+		return Retirement{}, fmt.Errorf("is not a literal, so the short code it records cannot be read")
+	}
+	var out Retirement
+	positional := make([]string, 0, 2)
+	for _, e := range lit.Elts {
+		if kv, ok := e.(*ast.KeyValueExpr); ok {
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				return Retirement{}, fmt.Errorf("names a field this cannot read")
+			}
+			value, ok := stringLiteral(kv.Value)
+			if !ok {
+				return Retirement{}, fmt.Errorf("declares %s as something other than a string literal", key.Name)
+			}
+			switch key.Name {
+			case "shortCode":
+				out.ShortCode = value
+			case "note":
+				out.Note = value
+			default:
+				return Retirement{}, fmt.Errorf("names the unknown field %s", key.Name)
+			}
+			continue
+		}
+		value, ok := stringLiteral(e)
+		if !ok {
+			return Retirement{}, fmt.Errorf("carries a value that is not a string literal")
+		}
+		positional = append(positional, value)
+	}
+	if len(positional) > 0 {
+		if out.ShortCode != "" || out.Note != "" {
+			return Retirement{}, fmt.Errorf("mixes positional and named values, so which value is the short code is ambiguous")
+		}
+		if len(positional) != 2 {
+			return Retirement{}, fmt.Errorf("carries %d values where a short code and a note are expected", len(positional))
+		}
+		out.ShortCode, out.Note = positional[0], positional[1]
+	}
+	if out.ShortCode == "" {
+		return Retirement{}, fmt.Errorf("records no short code")
+	}
+	if out.Note == "" {
+		return Retirement{}, fmt.Errorf("records no note, so the published reference would carry the code %s "+
+			"with nothing to tell a reader who quotes it", out.ShortCode)
+	}
+	return out, nil
+}
+
 // importMap maps each in-module import's local name to its module-relative
 // directory. Out-of-module imports are dropped: a re-export can only forward to
 // an identity this scan can resolve.

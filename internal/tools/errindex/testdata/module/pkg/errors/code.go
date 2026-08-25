@@ -25,3 +25,18 @@ func (s *sealed) Error() string { return s.message }
 func Register(code string, meta Meta) *sealed {
 	return &sealed{code: code, shortCode: meta.ShortCode, message: meta.Message}
 }
+
+// The fixture's stand-in for the retirement record: the declaration the scan
+// reads to learn which numbers are spent. It carries both spellings a literal
+// element can be written in — positional and by field name — because the scan
+// reads either, and a fixture exercising only one would leave the other proven
+// by nothing.
+type retirement struct {
+	shortCode string
+	note      string
+}
+
+var retiredShortCodes = []retirement{
+	{"E9901", "It named a fixture condition that no longer exists."},
+	{shortCode: "E9902", note: "It named a second fixture condition, recorded by field name."},
+}

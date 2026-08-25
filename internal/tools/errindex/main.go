@@ -164,7 +164,22 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	shortCodeRegion, err := renderShortCodeRegion(published)
+
+	// The retirement record is read from the declaration the registry itself
+	// consults to refuse a registration under a retired number, so the reference
+	// resolves a retired code because the program refuses to reissue it, and not
+	// because a list beside the page says so.
+	//
+	// It is read for the reference pages only. The machine-readable index above
+	// carries identities a consumer can match, and a retired code names no
+	// identity — a record with every field but the code empty would be a row that
+	// looks like a condition and matches nothing.
+	retired, err := scanRetirements(*root)
+	if err != nil {
+		fail(err)
+	}
+
+	shortCodeRegion, err := renderShortCodeRegion(published, retired)
 	if err != nil {
 		fail(err)
 	}
@@ -253,6 +268,13 @@ func main() {
 	// documents, which is a subset of the declared ones. One figure covering both
 	// would leave a reader of either verdict unable to say what it covered.
 	fmt.Println("documented conditions", len(covered))
+
+	// The size of the retirement record, reported for the reason the sizes above
+	// are and for one more that is specific to it: an absent record and a module
+	// that has retired nothing produce the same empty list, so a run that stopped
+	// finding the declaration is indistinguishable from a clean one unless the
+	// figure is stated. A module early in its life legitimately reports zero here.
+	fmt.Println("retired codes", len(retired))
 
 	// Every page is named, whether it moved or not. A run that writes one page
 	// and leaves the other current is the common case, and a single line reporting
