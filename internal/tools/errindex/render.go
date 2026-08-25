@@ -52,6 +52,12 @@ func rejectTableSeparator(id Identity, cells []cell) error {
 // and a reference page's left-hand column is a promise that the name can be
 // dereferenced.
 //
+// The corpus is whatever the caller admitted — see [admit] — and this function
+// does not re-derive it. A condition nothing raises is already absent before it
+// arrives here, which is the second half of that promise: the name in the
+// left-hand column can be dereferenced, and the condition behind it is one a
+// build can actually report.
+//
 // The column carries the call rather than the bare name, because the bare name
 // is what a reader cannot use: an identity is reached through the accessor that
 // publishes it, so the name on its own is a function value and does not compile
@@ -133,7 +139,27 @@ func renderRegion(ids []Identity) (string, error) {
 // left-hand column. This table is keyed on the short code instead, and every
 // condition declares one because registration refuses a condition without one.
 // So the two corpora differ by construction rather than by policy, and this one
-// is the whole declared set.
+// is every condition the caller admitted.
+//
+// # It renders what it is given, and does not decide the corpus
+//
+// Which conditions reach either region is [admit]'s answer, applied once by the
+// caller and handed to both renderers. This function does not re-derive it, and
+// must not: an admission rule applied in two places is two rules, and they
+// disagree the day one of them gains a case. What this function adds is how a
+// declared-ahead condition PRESENTS — the note list below the table.
+//
+// # A declared-ahead condition is named beneath the table, not in a column
+//
+// Such a condition is published carrying the note its registration declares, so
+// a reader holding its code is told the condition does not fire yet and what
+// would make it. That marking sits in a list under the table rather than in a
+// fourth column, because nearly every row would leave the column empty and an
+// empty cell repeated across the whole table reads as a fact about those
+// conditions rather than as the absence of a rare one. Keeping it out of the
+// table also keeps each of the three columns single-sourced from a declaration,
+// which is what makes the message column comparable byte for byte against the
+// text a build reports.
 //
 // That difference is the reason the wider table has to exist. A short code says
 // nothing about its condition on its own, so a reader holding one can do nothing
@@ -192,6 +218,33 @@ func renderShortCodeRegion(ids []Identity) (string, error) {
 		}
 		fmt.Fprintf(&b, "| %s | %s | %s |\n",
 			codeSpan(id.ShortCode), codeSpan(id.Code), codeSpan(id.Message))
+	}
+
+	// A condition nothing raises yet is named beneath the table rather than in
+	// a column of its own. Nearly every row would leave such a column empty,
+	// and an empty cell repeated three hundred times reads as a fact about
+	// those conditions rather than as the absence of a rare one. A note list
+	// keeps the table's three columns each single-sourced from a declaration,
+	// which is what makes the message column comparable byte for byte against
+	// the text the build reports.
+	//
+	// This is the same shape the by-package region uses to name a re-export
+	// beside its origin, and for the same reason: a minority annotation belongs
+	// beside the table, not inside it.
+	ahead := declaredAheadIn(rows)
+	for _, id := range ahead {
+		if strings.ContainsAny(id.DeclaredAhead, "\r\n") {
+			return "", fmt.Errorf("%s declares a declared-ahead note spanning more than one line, "+
+				"which ends the list item it renders into and spills the rest onto the page as prose; "+
+				"write the note as a single sentence", id.Handle())
+		}
+	}
+	if len(ahead) > 0 {
+		b.WriteString("\n")
+		for _, id := range ahead {
+			fmt.Fprintf(&b, "- %s is declared ahead of the code that reports it, so no build raises it yet. %s\n",
+				codeSpan(id.ShortCode), id.DeclaredAhead)
+		}
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
 }

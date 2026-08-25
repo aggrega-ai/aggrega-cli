@@ -1139,7 +1139,21 @@ func TestRenderShortCodeRegion_RefusesADeclaredStringCarryingATableSeparator(t *
 // re-export adds one, asserted as set identity rather than as a count — a count
 // written here would be a second copy of a figure the declarations already carry,
 // and it would need editing every time a condition is added.
-func TestRenderShortCodeRegion_LiveModuleCoversEveryDeclaredCondition(t *testing.T) {
+// TestRenderShortCodeRegion_LiveModuleCoversEveryPublishedCondition holds the
+// region to the corpus the generator actually hands it.
+//
+// 🔴 It runs [admit] rather than rendering the scan's whole output, and that is
+// load-bearing rather than incidental. The admission rule lives in the generator,
+// so a test rendering the unfiltered set exercises a path the published pages do
+// not take: it would keep passing while the real page carried a different corpus,
+// which is a test asserting a contract that has been superseded — green, and
+// certifying nothing.
+//
+// The property asserted is that the region carries a row for every condition the
+// reference publishes, and for nothing else. A condition the rule excludes must
+// appear nowhere on the page: absence is the whole mechanism, and a row for an
+// excluded condition would promise a check the build cannot perform.
+func TestRenderShortCodeRegion_LiveModuleCoversEveryPublishedCondition(t *testing.T) {
 	t.Parallel()
 	modulePath, err := modulePathOf("../../..")
 	if err != nil {
@@ -1149,14 +1163,15 @@ func TestRenderShortCodeRegion_LiveModuleCoversEveryDeclaredCondition(t *testing
 	if err != nil {
 		t.Fatalf("scan module: %v", err)
 	}
-	region, err := renderShortCodeRegion(ids)
+	published, excluded := admit(ids)
+	region, err := renderShortCodeRegion(published)
 	if err != nil {
 		t.Fatalf("renderShortCodeRegion: %v", err)
 	}
 
 	declared := map[string]string{}
 	reExports := 0
-	for _, id := range ids {
+	for _, id := range published {
 		if id.AliasOf != "" {
 			reExports++
 			continue
@@ -1194,10 +1209,35 @@ func TestRenderShortCodeRegion_LiveModuleCoversEveryDeclaredCondition(t *testing
 		}
 	}
 	// A re-export reports its origin's short code, so admitting one would show up
-	// here as more rows than declared conditions even with every code accounted
+	// here as more rows than published conditions even with every code accounted
 	// for above.
 	if len(rows) != len(declared) {
-		t.Errorf("region carries %d rows for %d declared conditions", len(rows), len(declared))
+		t.Errorf("region carries %d rows for %d published conditions", len(rows), len(declared))
+	}
+
+	// The exclusions are the other half of the property, and they are asserted
+	// against the rendered page rather than against the partition that produced
+	// it: a partition that agrees with itself proves nothing about what was
+	// published. The set is legitimately empty once every declared condition is
+	// raised or noted, so emptiness is not failed — what is failed is a code the
+	// rule excluded turning up in the table anyway.
+	for _, id := range excluded {
+		if id.AliasOf != "" {
+			continue
+		}
+		if onPage[id.ShortCode] {
+			t.Errorf("%s is raised by nothing and names no work that will, yet the region carries a "+
+				"row for %s; the page promises a check the build cannot perform",
+				id.Handle(), id.ShortCode)
+		}
+	}
+
+	// Published and excluded together are the whole scanned set. A condition
+	// falling out of both would be off the page AND out of the report that names
+	// what is off the page, which is the invisibility this rule exists to end.
+	if len(published)+len(excluded) != len(ids) {
+		t.Errorf("the admission partition covers %d of %d scanned identities, so some condition is "+
+			"neither published nor reported", len(published)+len(excluded), len(ids))
 	}
 
 	// The wider corpus is a live property, not only a constructed one: the module
@@ -1206,12 +1246,16 @@ func TestRenderShortCodeRegion_LiveModuleCoversEveryDeclaredCondition(t *testing
 	// difference rather than against a number — a figure written here would be a
 	// second copy of what the declarations already determine, and it would need
 	// editing whenever a condition moves between packages.
-	byPkg, err := renderRegion(ids)
+	// Rendered from the published set, like the region above, because both pages
+	// take the same corpus. Rendering this one from the whole scan would compare
+	// two different corpora and report every excluded condition as "published
+	// nowhere", which is true and is not what this assertion is about.
+	byPkg, err := renderRegion(published)
 	if err != nil {
 		t.Fatalf("renderRegion: %v", err)
 	}
 	onlyHere := 0
-	for _, id := range ids {
+	for _, id := range published {
 		if id.AliasOf != "" || strings.Contains(byPkg, codeSpan(id.Code)) {
 			continue
 		}

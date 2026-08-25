@@ -29,6 +29,8 @@ const (
 	codeEmptyShortCode        = "resolver/empty-short-code-subject"
 	codeMalformedShortCode    = "resolver/malformed-short-code-subject"
 	codeDuplicateShortCode    = "resolver/duplicate-short-code-subject"
+	codeBlankDeclaredAhead    = "resolver/blank-declared-ahead-subject"
+	codeSetDeclaredAhead      = "resolver/set-declared-ahead-subject"
 )
 
 // The short codes this file registers, distinct for the same reason the codes
@@ -47,6 +49,8 @@ const (
 	shortEmptyMessage          = "E9214"
 	shortMalformedSubject      = "E9215"
 	shortDuplicateSubject      = "E9216"
+	shortBlankDeclaredAhead    = "E9217"
+	shortSetDeclaredAhead      = "E9218"
 )
 
 // The short code a malformed-value refusal is probed with, and the reason it is
@@ -574,4 +578,71 @@ func panicValue(fn func()) (v any) {
 	defer func() { v = recover() }()
 	fn()
 	return nil
+}
+
+// TestRegister_PanicsOnABlankDeclaredAheadNote pins the property that makes the
+// note worth having: it cannot be acquired by neglect.
+//
+// A condition nothing raises reaches the published reference only by naming the
+// work that will raise it. A note carrying no text would satisfy that door while
+// telling a reader nothing — it would take the condition off the unraised report
+// AND put it on the page with nothing beside it, which is precisely the
+// suppression the field must not become. So a present-but-blank value is refused
+// where an absent one is accepted.
+//
+// The probe uses whitespace rather than the empty string, because the empty
+// string is the ordinary absent value and refusing it would refuse nearly every
+// registration in the module.
+func TestRegister_PanicsOnABlankDeclaredAheadNote(t *testing.T) {
+	t.Parallel()
+
+	v := panicValue(func() {
+		cerrors.Register(codeBlankDeclaredAhead, cerrors.Meta{
+			ShortCode:     shortBlankDeclaredAhead,
+			Message:       "a message whose declared-ahead note says nothing",
+			DeclaredAhead: "   \t  ",
+		})
+	})
+	if v == nil {
+		t.Fatalf("registering a blank declared-ahead note did not panic")
+	}
+	if msg := fmt.Sprint(v); !strings.Contains(msg, codeBlankDeclaredAhead) {
+		t.Errorf("panic %q does not name the offending code %q", msg, codeBlankDeclaredAhead)
+	}
+
+	// The refused registration must not have landed in either index, for the
+	// reason the empty-message refusal checks the same thing: a half-written
+	// entry would make the repaired declaration fail as a duplicate.
+	if v := panicValue(func() {
+		cerrors.Register(codeBlankDeclaredAhead, cerrors.Meta{
+			ShortCode:     shortBlankDeclaredAhead,
+			Message:       "a message whose declared-ahead note says nothing",
+			DeclaredAhead: "It will report the condition once the work that raises it lands.",
+		})
+	}); v != nil {
+		t.Errorf("a refused registration left one of the two indexes occupied; re-registering panicked with %v", v)
+	}
+}
+
+// TestRegister_AcceptsAnAbsentAndAWrittenDeclaredAheadNote is the calibration for
+// the refusal above. Absent is the ordinary value and carries no note at all; a
+// written one is the deliberate exception. A refusal that also caught either of
+// these would refuse the whole module at package initialisation, so the negative
+// case is asserted rather than assumed.
+func TestRegister_AcceptsAnAbsentAndAWrittenDeclaredAheadNote(t *testing.T) {
+	t.Parallel()
+
+	if v := panicValue(func() {
+		cerrors.Register(codeSetDeclaredAhead, cerrors.Meta{
+			ShortCode:     shortSetDeclaredAhead,
+			Message:       "a message whose declared-ahead note names the work",
+			DeclaredAhead: "It will report the condition once the work that raises it lands.",
+		})
+	}); v != nil {
+		t.Errorf("a written declared-ahead note was refused: %v", v)
+	}
+
+	// The absent case is exercised by every other registration in this file and
+	// in the module, so asserting it again here would restate what package
+	// initialisation already proves.
 }

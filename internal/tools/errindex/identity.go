@@ -42,7 +42,34 @@ type Identity struct {
 	Message    string // registered message, resolved through a re-export
 	AliasOf    string // "pkg/oci.ErrFetchNotFound" for a re-export, else empty
 	Importable bool   // reachable by `import` from outside this module
+
+	// Raised reports whether production code anywhere in this module invokes
+	// the accessor, which is what makes the condition reachable by a build.
+	// Resolved through a re-export in both directions: a re-export and the
+	// identity it forwards to are one value, so raising either raises both.
+	Raised bool
+
+	// DeclaredAhead is the note the registration carries naming the work that
+	// will raise the condition, and is empty for every condition something
+	// already raises. Resolved through a re-export, like the message.
+	DeclaredAhead string
 }
+
+// admitted reports whether the condition reaches the published reference.
+//
+// This is the rule the whole generator turns on, so it is one predicate rather
+// than a condition repeated at each renderer: a condition is published when
+// something raises it, OR when its registration names the work that will. A
+// registration that is neither is absent from the reference by construction —
+// no hand writes those pages, so there is no edit that puts it there — and is
+// named on every run by [reportUnpublished] instead.
+//
+// Neither half can be acquired by neglect, which is what makes the rule mean
+// something. A raise site is code that had to be written; a declared-ahead note
+// is refused by registration unless it carries real text. So the two ways onto
+// the reference are both deliberate acts, and doing nothing keeps a condition
+// off it.
+func (id Identity) admitted() bool { return id.Raised || id.DeclaredAhead != "" }
 
 // Handle is the identity's key. It is (package, name) and never the bare name:
 // a name-keyed map merges two same-named declarations in different packages into
@@ -208,9 +235,10 @@ func requiresGuestTag(expr constraint.Expr) (bool, error) {
 // name the registration is bound to, which is the name the accessor beside it
 // returns and never a name a caller can reach.
 type registered struct {
-	code      string
-	shortCode string
-	message   string
+	code          string
+	shortCode     string
+	message       string
+	declaredAhead string
 }
 
 // accessorTarget is what an accessor's body yields. Exactly one field is set:
@@ -236,6 +264,15 @@ type accessorTarget struct {
 // parsed, because an accessor may be written either side of the registration it
 // returns.
 //
+// It reads one further fact about each identity, from the same walk: whether
+// production code anywhere in the module invokes the accessor, which is what
+// makes the condition reachable by a build. One walk answers both questions
+// because they are asked of the same files and the same parse — a second walk
+// would be a second recogniser of which files count, and two recognisers of one
+// population agree until the day a file takes a shape only one of them reads.
+// What counts as an invocation, and the two occurrences that are excluded, is
+// [collectRaiseSites].
+//
 // The cost is stated rather than hidden: a handle produced by anything other
 // than an accessor over a registration, or an accessor re-exporting one from
 // another package, is invisible to it. Two such handles exist and neither is
@@ -255,6 +292,7 @@ func scan(root, modulePath string) ([]Identity, error) {
 	registrations := map[string]registered{} // pkgDir + "." + local name
 	accessors := []accessorDecl{}            // in discovery order, sorted later
 	seen := map[string]bool{}                // accessor handles already declared
+	raised := map[string]bool{}              // handles production code invokes
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -290,11 +328,20 @@ func scan(root, modulePath string) ([]Identity, error) {
 		if gerr != nil {
 			return fmt.Errorf("%s: %w", path, gerr)
 		}
+
+		imports := importMap(file, modulePath)
+
+		// Raise sites are read from every production file, a guest's entry point
+		// included; declarations are read only from the files a host build can
+		// reach. The two questions take different file sets deliberately, and
+		// [collectRaiseSites] records why: a condition declared in a shared core
+		// and raised only from the guest beside it is raised.
+		collectRaiseSites(raised, file, pkgDir, imports)
+
 		if guest {
 			return nil
 		}
 
-		imports := importMap(file, modulePath)
 		errPkg, isErrorsPkg := errorsPackageAlias(imports, pkgDir)
 
 		for _, decl := range file.Decls {
@@ -376,6 +423,7 @@ func scan(root, modulePath string) ([]Identity, error) {
 		}
 		byHandle[acc.pkg+"."+acc.name] = &Identity{
 			Pkg: acc.pkg, Name: acc.name, Code: reg.code, ShortCode: reg.shortCode, Message: reg.message,
+			DeclaredAhead: reg.declaredAhead, Raised: raised[acc.pkg+"."+acc.name],
 		}
 	}
 	// A re-export forwards to a DECLARING accessor and never to another
@@ -390,6 +438,14 @@ func scan(root, modulePath string) ([]Identity, error) {
 			reExported[acc.pkg+"."+acc.name] = true
 		}
 	}
+	// Every re-export is resolved to its origin, and raise credit is propagated
+	// to that origin, BEFORE any re-exported identity is built. A re-export and
+	// the identity it forwards to are one value, so raising either raises both —
+	// and an origin read before every one of its re-exports had been credited
+	// would carry the wrong answer into whichever of them happened to be built
+	// first, which is a result that depends on walk order rather than on the
+	// tree.
+	origins := make(map[string]*Identity, len(accessors))
 	for _, acc := range accessors {
 		if acc.target.alias == "" {
 			continue
@@ -404,9 +460,20 @@ func scan(root, modulePath string) ([]Identity, error) {
 			}
 			return nil, fmt.Errorf("%s.%s re-exports %s, which registers no message", acc.pkg, acc.name, acc.target.alias)
 		}
+		origins[acc.pkg+"."+acc.name] = origin
+		if raised[acc.pkg+"."+acc.name] {
+			origin.Raised = true
+		}
+	}
+	for _, acc := range accessors {
+		if acc.target.alias == "" {
+			continue
+		}
+		origin := origins[acc.pkg+"."+acc.name]
 		byHandle[acc.pkg+"."+acc.name] = &Identity{
 			Pkg: acc.pkg, Name: acc.name, Code: origin.Code, ShortCode: origin.ShortCode,
 			Message: origin.Message, AliasOf: acc.target.alias,
+			DeclaredAhead: origin.DeclaredAhead, Raised: origin.Raised,
 		}
 	}
 	for _, acc := range accessors {
@@ -550,12 +617,19 @@ func yieldsErrorAlone(ft *ast.FuncType) bool {
 // itself names no type at all. The short code is read from the metadata literal
 // beside the message, which is where the condition declares it.
 //
+// The declared-ahead note is read from the same literal, and is absent from
+// nearly every registration: it is set only where a condition is declared before
+// anything raises it, and it names the work that will. It is what lets such a
+// condition reach the published reference at all — see [admitted].
+//
 // A registered message is what makes this a registration at all — a Meta literal
 // declaring no string message is a call this scan does not recognise. The short
 // code is extracted but NOT part of that test, deliberately: treating a missing
 // short code as "not a registration" would drop the whole identity out of the
 // index silently, which is the one outcome worse than reporting it. [scan]
-// refuses it by name instead, where the handle is known.
+// refuses it by name instead, where the handle is known. The declared-ahead note
+// is outside the test for the opposite reason: its ordinary value is absent, so
+// requiring it would recognise almost nothing.
 func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, registered, bool) {
 	none := registered{}
 	if len(vs.Names) != 1 || len(vs.Values) != 1 {
@@ -565,12 +639,8 @@ func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, r
 	if !ok || !namesErrorsSymbol(call.Fun, "Register", errPkg, isErrorsPkg) || len(call.Args) != 2 {
 		return "", none, false
 	}
-	lit, ok := call.Args[0].(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
-		return "", none, false
-	}
-	code, err := strconv.Unquote(lit.Value)
-	if err != nil {
+	code, ok := stringLiteral(call.Args[0])
+	if !ok {
 		return "", none, false
 	}
 	meta, ok := call.Args[1].(*ast.CompositeLit)
@@ -588,28 +658,72 @@ func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, r
 		if !ok {
 			continue
 		}
-		if key.Name != "Message" && key.Name != "ShortCode" {
+		if key.Name != "Message" && key.Name != "ShortCode" && key.Name != "DeclaredAhead" {
 			continue
 		}
-		str, ok := kv.Value.(*ast.BasicLit)
-		if !ok || str.Kind != token.STRING {
+		value, ok := stringLiteral(kv.Value)
+		if !ok {
 			continue
 		}
-		value, uerr := strconv.Unquote(str.Value)
-		if uerr != nil {
-			return "", none, false
-		}
-		if key.Name == "ShortCode" {
+		switch key.Name {
+		case "ShortCode":
 			out.shortCode = value
-			continue
+		case "DeclaredAhead":
+			out.declaredAhead = value
+		default:
+			out.message = value
+			found = true
 		}
-		out.message = value
-		found = true
 	}
 	if !found {
 		return "", none, false
 	}
 	return vs.Names[0].Name, out, true
+}
+
+// stringLiteral returns the text of a string-valued expression a registration
+// declares, for the two shapes one can be written in: a single literal, and
+// several joined with +.
+//
+// The joined form is read rather than refused because it is how a declaration
+// that has grown too long for one line is written, and a declared sentence
+// legitimately grows. Refusing it would be tolerable for a field whose absence
+// is loud — a missing message makes [scan] refuse the handle by name — but not
+// for one whose absence means something. A declared-ahead note that went
+// unread would read as a condition carrying no note, which takes it off the
+// published reference silently, and silence is precisely what the note exists
+// to prevent.
+//
+// Only a concatenation of literals folds. A value naming a constant, or built
+// by a call, is not read: reading it would mean evaluating the package, which
+// is the thing this scan exists to avoid — and a declaration whose text is not
+// in the declaration is one a reader of the source cannot see either.
+func stringLiteral(expr ast.Expr) (string, bool) {
+	switch v := expr.(type) {
+	case *ast.BasicLit:
+		if v.Kind != token.STRING {
+			return "", false
+		}
+		s, err := strconv.Unquote(v.Value)
+		if err != nil {
+			return "", false
+		}
+		return s, true
+	case *ast.BinaryExpr:
+		if v.Op != token.ADD {
+			return "", false
+		}
+		left, ok := stringLiteral(v.X)
+		if !ok {
+			return "", false
+		}
+		right, ok := stringLiteral(v.Y)
+		if !ok {
+			return "", false
+		}
+		return left + right, true
+	}
+	return "", false
 }
 
 // namesErrorsSymbol reports whether expr names sym in the package that declares

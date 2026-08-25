@@ -22,11 +22,26 @@
 // the regions its markers delimit; every other byte of either page is curated
 // prose and survives untouched.
 //
-// Every -out run reports two sizes, so a caller can state what its verdict
+// # Which conditions reach the reference
+//
+// A condition earns a place on the sentinel reference by being RAISED —
+// something in the module invokes the accessor that publishes it, so a build can
+// actually report it — or by its registration naming the work that will raise it.
+// A registration that is neither is absent from those pages by construction:
+// nothing hand-writes them, so there is no edit that puts an unraisable condition
+// on a page promising a check that never fires, and a note cannot be acquired by
+// neglect because registration refuses one carrying no text.
+//
+// Absence is never silent. Every -out run names every excluded registration, and
+// every condition published as declared-ahead, so a condition cannot become
+// invisible by dropping off the reference — which would only move the problem the
+// rule exists to fix.
+//
+// Every -out run reports three sizes, so a caller can state what its verdict
 // covered instead of leaving the reader of a reassuring line to guess whether the
-// whole set was behind it or a fragment of one: the identity set it read, and the
-// smaller set the halting-conditions page documents, which is what that page's
-// region carries.
+// whole set was behind it or a fragment of one: the identity set it read, the
+// subset of that set the reference carries under the rule above, and the set the
+// halting-conditions page documents, which is what that page's region carries.
 //
 // Every -out run also reports two counts over the halting-conditions page: how
 // many declared halting conditions no entry names, and how many entries do not
@@ -123,11 +138,33 @@ func main() {
 		return
 	}
 
-	region, err := renderRegion(ids)
+	// The admission rule is applied ONCE, here, and both reference regions are
+	// rendered from its result. A condition reaches the published reference when
+	// something raises it, or when its registration names the work that will;
+	// everything else is absent from those pages by construction, because no
+	// hand writes them.
+	//
+	// The full declared set stays in hand and is what the coverage side below
+	// reads. The halting-conditions page declares its own corpus, so an entry
+	// there may name a condition this rule excludes — that is reported by name
+	// rather than refused, because refusing would take down an entry an author
+	// who hit the behaviour still needs. [reportUnpublished] carries the whole
+	// reasoning.
+	published, _ := admit(ids)
+	if len(published) == 0 {
+		// The two regions would render as an empty catalogue, which reads as a
+		// module with no halting conditions rather than as a rule that excluded
+		// everything. An extraction that finds declarations and admits none of
+		// them is a broken rule, not a result.
+		fail(fmt.Errorf("the admission rule excluded all %d declared identities; "+
+			"raise detection or the declared-ahead note has stopped being read", len(ids)))
+	}
+
+	region, err := renderRegion(published)
 	if err != nil {
 		fail(err)
 	}
-	shortCodeRegion, err := renderShortCodeRegion(ids)
+	shortCodeRegion, err := renderShortCodeRegion(published)
 	if err != nil {
 		fail(err)
 	}
@@ -203,6 +240,14 @@ func main() {
 	// figure and the bytes it describes cannot disagree.
 	fmt.Println("identities", len(ids))
 
+	// The size of the set the two reference regions actually carry, which since
+	// the admission rule is no longer the same as the set that was read. Without
+	// it the line above describes the extraction and nothing describes the
+	// published bytes, so a reader could not tell a run that published every
+	// declared condition from one that excluded a third of them — and the whole
+	// point of the rule is that those two runs are different.
+	fmt.Println("published conditions", len(published))
+
 	// The halting-conditions region's size is reported separately and for the
 	// same reason, because it is a different set: the conditions THAT page
 	// documents, which is a subset of the declared ones. One figure covering both
@@ -226,6 +271,12 @@ func main() {
 	// maintains that page rather than reasons to refuse the build.
 	reportGaps(os.Stderr, ids, covered, *gaps)
 	reportClaims(os.Stderr, ids, entries, *claims)
+
+	// The admission tier names its members in full on every run rather than
+	// counting them behind a flag, because the defect it repairs is a condition
+	// being invisible in every place at once. A count would relocate that
+	// invisibility instead of removing it.
+	reportUnpublished(os.Stderr, ids, covered)
 }
 
 // rejectCoverageDisagreement refuses when the two derivations of the

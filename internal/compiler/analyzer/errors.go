@@ -163,9 +163,21 @@ var errOverriddenAnnotation = cerrors.Register("compiler-analyzer/overridden-ann
 // internal invariant violation rather than an authoring error. The
 // sentinel ships preserved for any future emission site that needs
 // to surface that invariant violation as a fatal halt.
+//
+// Nothing raises it, so its registration carries a DeclaredAhead note. That
+// note is what keeps the condition on the published reference: without one, a
+// condition no code reaches is left off, because a page promising a check that
+// never fires is worse than a page that does not mention it. The note is
+// rendered onto that page verbatim, which is why it is written for a reader of
+// the documentation rather than for a reader of this file — the argument for
+// the reservation is here, in the paragraph above, where nothing publishes it.
 func ErrCatalogLookup() error { return errCatalogLookup }
 
 var errCatalogLookup = cerrors.Register("compiler-analyzer/catalog-lookup", cerrors.Meta{
 	ShortCode: "E0002",
 	Message:   "catalog lookup failed",
+	DeclaredAhead: "It will report a catalog lookup that fails during static analysis — a state that " +
+		"cannot arise while every component and feature an Aggregate or Release names is checked " +
+		"before analysis begins — once that stage surfaces such an inconsistency as a halt rather " +
+		"than ending its reading silently.",
 })

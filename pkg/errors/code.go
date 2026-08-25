@@ -251,10 +251,27 @@ func ComposeMessage(condition error, values []string, advice string) string {
 //     occurrence, not of the identity: a single rule can be raised from more
 //     than one stage, so any single declared value would be false for those.
 //
+// DeclaredAhead is the third field, and it is a different kind of thing from
+// the two above: it does not describe the condition, it records a fact about
+// the condition's relationship to the code around it — that nothing raises it
+// yet, and which work will. It is here rather than in a list somewhere else so
+// that it travels with the identity: a side list is a second home for the
+// correspondence, and a second home is what drifts when a condition is renamed,
+// moved between packages, or removed.
+//
 // A field is added here only when every identity has a source for it and
 // something consumes it. A field populated for a minority is worse than an
 // absent one, because it reads as a measured absence rather than an undecided
 // question.
+//
+// DeclaredAhead satisfies that rule rather than bending it, and the reason is
+// worth stating because at a glance it looks like the minority-populated field
+// the rule refuses. Every identity has a source for it: the empty value is not
+// a gap but an assertion — that the condition needs no such note, because
+// something raises it. And something consumes it: the published reference
+// admits a condition that nothing raises only when this field names the work
+// that will, so the field is read on every generation rather than only
+// displayed.
 type Meta struct {
 	// Message is the text the identity's Error method returns: one sentence
 	// stating the condition, in the words a reader of a diagnostic sees.
@@ -345,6 +362,48 @@ type Meta struct {
 	// reason it refuses an empty descriptive code: a condition with nothing to
 	// report identifies itself to nobody.
 	ShortCode string
+
+	// DeclaredAhead names the work that will raise this condition, and is set
+	// only on a condition nothing raises yet.
+	//
+	// Empty is the ordinary value and is an assertion rather than a gap: it
+	// says the condition needs no such note because something already raises
+	// it. Nearly every condition leaves it empty.
+	//
+	// # What it is for
+	//
+	// Declaring a condition before the code that raises it is legitimate — an
+	// identity is reserved so that the number is fixed and the wording settled
+	// before the raise path exists. What is not legitimate is a published
+	// reference that promises a check the build cannot perform. This field is
+	// how the two are told apart: a condition nothing raises reaches the
+	// reference only when this field is set, and it reaches it carrying this
+	// text, so a reader who looks the condition up is told plainly that it does
+	// not fire yet and what would make it fire.
+	//
+	// It is NOT a suppression. Setting it does not remove the condition from
+	// anything that reports on the declared set — a condition marked here is
+	// named as declared-ahead every time the reference is generated, so the set
+	// of them stays countable and visible rather than becoming a quiet corner.
+	//
+	// # It is published, so it is written for a reader of the documentation
+	//
+	// This text is rendered onto the public error reference verbatim. Write it
+	// in the words that page is written in: what the condition will report and
+	// what has to exist before it can, in terms of the product's own surfaces.
+	// It names no internal planning artifact, and it is not a note to whoever
+	// maintains this package — that note belongs in the comment above the
+	// declaration, where nothing publishes it.
+	//
+	// # It cannot be acquired by neglect
+	//
+	// Registration refuses a value that is present but says nothing — one that
+	// is entirely spaces, say. A marker that names no work is exactly the
+	// suppression this field must not become: it would take a condition off the
+	// unraised report while telling a reader of the reference nothing at all.
+	// Setting the field deliberately, with real text, is therefore the only way
+	// a condition can carry it.
+	DeclaredAhead string
 }
 
 // shortCodeLen and shortCodePrefix are the shape of a short code: the letter E
@@ -464,11 +523,28 @@ var (
 //     a duplicated short code is entirely possible between conditions whose
 //     descriptive codes differ, and that is precisely the case a single check
 //     would miss.
+//   - A Meta.DeclaredAhead that is present but says nothing — whitespace alone.
+//     That field's whole value is that it cannot be acquired by neglect: a
+//     marker naming no work would take a condition off the unraised report and
+//     put it on the published reference with nothing to tell a reader, which is
+//     the suppression the field exists to prevent. Absent is the ordinary
+//     value and is always accepted; present-and-empty is the shape refused.
+//
+// Meta.DeclaredAhead is checked here and deliberately not stored on the
+// identity. Nothing at run time reads it — it is read from the declaration
+// itself, by the generator that composes the published reference — so keeping a
+// copy on the identity would be a second home for a value that already has one.
+// Refusing a malformed declaration and recording a declared value are separate
+// jobs, and this function does the first for a field it does not do the second
+// for.
 //
 // What Register does NOT check is whether a short code is the RIGHT one — the
 // next free number rather than a reused or arbitrary one. That is allocation,
 // and it is convention rather than enforcement; Meta.ShortCode records which
-// half is which and why a gap check would be wrong.
+// half is which and why a gap check would be wrong. Nor does it check whether a
+// condition carrying no Meta.DeclaredAhead is in fact raised: that is a
+// property of the whole module rather than of one declaration, so nothing
+// inside a single registration can see it.
 func Register(code string, meta Meta) *sealed {
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -489,6 +565,13 @@ func Register(code string, meta Meta) *sealed {
 		panic(fmt.Sprintf("errors: Register called with a malformed short code %q for code %q; "+
 			"a short code is the letter E followed by exactly four decimal digits",
 			meta.ShortCode, code))
+	}
+	if meta.DeclaredAhead != "" && strings.TrimSpace(meta.DeclaredAhead) == "" {
+		panic(fmt.Sprintf("errors: Register called with a blank declared-ahead note for code %q; "+
+			"a condition nothing raises reaches the published reference only by naming the work that "+
+			"will raise it, so a note carrying no text would publish the condition and tell a reader "+
+			"nothing; write the note, or leave the field unset and let the condition be reported as unraised",
+			code))
 	}
 	if prev, dup := shortCodeIndex[meta.ShortCode]; dup {
 		panic(fmt.Sprintf("errors: Register called with short code %q for code %q, "+
