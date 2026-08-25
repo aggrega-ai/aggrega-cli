@@ -23,6 +23,13 @@ import (
 // guards below need: the two directories they distinguish are siblings whose names
 // share a prefix, and a string-prefix test would read one as nested inside the
 // other. The guard on that property is asserted directly further down.
+//
+// It is spelled here independently of the containment predicate the compiler
+// itself uses, and the duplication is deliberate: do not "unify" it. This is the
+// oracle the guards below judge the resolver's answers with, and an oracle that
+// asked the product the same question it is checking would agree with the product
+// wherever the product was wrong. Both halves of the comparison have to be reached
+// for separately for either guard to mean anything.
 func pathIsInside(path, root string) bool {
 	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
 	if err != nil {

@@ -39,6 +39,7 @@ import (
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // ErrFetchNotFound is re-exported from pkg/oci so a caller can errors.Is a
@@ -222,10 +223,10 @@ func readTarEntry(bundleBytes []byte, target string) ([]byte, bool, error) {
 		if err != nil {
 			return nil, false, fmt.Errorf("tar next: %w", err)
 		}
-		clean := path.Clean(hdr.Name)
-		if strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") {
+		if !pathscope.IsLocalSlash(hdr.Name) {
 			return nil, false, fmt.Errorf("path traversal entry %q: %w", hdr.Name, oci.ErrFetchIntegrity())
 		}
+		clean := path.Clean(hdr.Name)
 		if hdr.Typeflag != tar.TypeReg || clean != want {
 			continue
 		}

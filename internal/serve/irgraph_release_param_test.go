@@ -165,3 +165,46 @@ func TestReleaseParamRefusalNamesTheContractOnTheWire(t *testing.T) {
 		t.Errorf("Data: got %+v, want nil — the refusal is about the request, so it points at no artifact", envelope.Data)
 	}
 }
+
+// TestReleaseParamAcceptsLeadingDoubleDotName pins that a Release sitting in a
+// directory whose name begins with two dots is addressable. The containment
+// answer turns on where the value lands rather than on how it is spelled, so
+// "..staging/release.yaml" resolves inside the workspace like any other name.
+func TestReleaseParamAcceptsLeadingDoubleDotName(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+
+	for _, release := range []string{"..staging/release.yaml", "..release.yaml"} {
+		resolved, envelope := resolveReleaseParam(tmp, release)
+		if envelope != nil {
+			t.Errorf("release=%q was refused: %s — a name beginning with two dots is inside the root like any other", release, envelope.Message)
+			continue
+		}
+		if want := filepath.Join(tmp, filepath.FromSlash(release)); resolved != want {
+			t.Errorf("release=%q resolved to %q; want %q", release, resolved, want)
+		}
+	}
+}
+
+// TestReleaseParamRefusesEscape pins the refusals the acceptance above must not
+// have widened into, and keeps the absolute-path case distinguishable from the
+// containment case: the two carry different messages because a sender told its
+// value is absolute has more to go on than one told it lands outside the root.
+func TestReleaseParamRefusesEscape(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+
+	for _, release := range []string{"../elsewhere/release.yaml", "..", "sub/../../release.yaml"} {
+		if _, envelope := resolveReleaseParam(tmp, release); envelope == nil {
+			t.Errorf("release=%q escapes the workspace root and must be refused", release)
+		}
+	}
+
+	_, absEnvelope := resolveReleaseParam(tmp, filepath.Join(tmp, "release.yaml"))
+	if absEnvelope == nil {
+		t.Fatal("an absolute release must be refused")
+	}
+	if !strings.Contains(absEnvelope.Message, "absolute path") {
+		t.Errorf("absolute-path refusal = %q; it must name that specific fault rather than folding into the containment message", absEnvelope.Message)
+	}
+}

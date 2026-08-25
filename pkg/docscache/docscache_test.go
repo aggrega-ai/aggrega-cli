@@ -256,3 +256,66 @@ func TestReadPageDetectsTamper(t *testing.T) {
 		t.Fatalf("want ErrFetchIntegrity, got %v", rerr)
 	}
 }
+
+// TestReadPageAcceptsLeadingDoubleDotEntry is the third of four per-site cases
+// covering a deliberate loosening.
+//
+// The bundle reader previously judged an entry name with a bare two-dot prefix
+// test, so a page under a directory whose name begins with two dots read as a
+// traversal attempt: the whole bundle became unreadable with an integrity
+// refusal, because the scan halts on the first refused entry rather than
+// skipping it. The predicate judges where the name lands, so the page serves.
+//
+// The refusal the loosening must not have taken with it is pinned separately by
+// TestReadPageRejectsEscapingEntry below.
+func TestReadPageAcceptsLeadingDoubleDotEntry(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ws := t.TempDir()
+	cacheDir := ".aggrega/cache"
+
+	const oddPage = "..shared/notes.md"
+	const oddBody = "# Shared notes\n"
+	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{
+		componentPage: componentBody,
+		oddPage:       oddBody,
+	}))
+	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, nil); err != nil {
+		t.Fatalf("ResolveAndCache: %v", err)
+	}
+
+	data, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, oddPage)
+	if err != nil {
+		t.Fatalf("ReadPage(%q): %v — a name beginning with two dots is an ordinary name, not a traversal", oddPage, err)
+	}
+	if string(data) != oddBody {
+		t.Errorf("page body = %q, want %q", data, oddBody)
+	}
+
+	// A neighbouring page in the same bundle still serves, so the case above is
+	// not passing because the whole scan was skipped.
+	if _, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage); err != nil {
+		t.Fatalf("ReadPage(%q): %v", componentPage, err)
+	}
+}
+
+// TestReadPageRejectsEscapingEntry pins the refusal the loosening above must not
+// have widened into: an entry that genuinely climbs above the bundle root is
+// still an integrity failure.
+func TestReadPageRejectsEscapingEntry(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ws := t.TempDir()
+	cacheDir := ".aggrega/cache"
+
+	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{
+		"../../etc/passwd": "root:x:0:0\n",
+	}))
+	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, nil); err != nil {
+		t.Fatalf("ResolveAndCache: %v", err)
+	}
+	_, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage)
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
+		t.Fatalf("an escaping bundle entry must halt with ErrFetchIntegrity; got %v", err)
+	}
+}

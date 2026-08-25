@@ -43,12 +43,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
@@ -199,8 +200,20 @@ func findEntry(lf *lockfile.Lockfile, kind, url, chart, version string) *lockfil
 // destDir. Extraction is deterministic: zero mtimes on every file,
 // current-process uid/gid (archive's uid/gid ignored), no setuid /
 // setgid / sticky bits propagated, no extended attributes carried
-// through. Path traversal entries (whose RelPath escapes destDir
-// via `..`) are rejected with a wrapped ErrFetchIntegrity.
+// through. Entries that would land outside destDir are rejected with a
+// wrapped ErrFetchIntegrity.
+//
+// A tar entry name is slash-separated by the archive format's own
+// definition, so containment is judged in slash arithmetic — the same
+// answer on every platform — and the name is converted to a host path
+// only to create the file. An entry name that merely begins with two
+// dots is an ordinary name and extracts.
+//
+// The joined destination is not re-checked after the join. An entry the
+// containment test accepts cannot join to a location outside destDir,
+// which is the property that test reports; re-deriving the same
+// conclusion from the joined path would be a second implementation of
+// the containment rule, free to disagree with the first.
 func extractTarGz(archiveBytes []byte, destDir string) error {
 	gz, err := gzip.NewReader(bytesReader(archiveBytes))
 	if err != nil {
@@ -216,25 +229,14 @@ func extractTarGz(archiveBytes []byte, destDir string) error {
 		if err != nil {
 			return fmt.Errorf("tar next: %w", err)
 		}
-		cleanRel := filepath.Clean(hdr.Name)
+		cleanRel := path.Clean(hdr.Name)
 		if cleanRel == "." || cleanRel == "/" {
 			continue
 		}
-		if strings.HasPrefix(cleanRel, "..") || strings.HasPrefix(cleanRel, "/") {
+		if !pathscope.IsLocalSlash(hdr.Name) {
 			return fmt.Errorf("path traversal attempt %q in archive: %w", hdr.Name, ErrFetchIntegrity())
 		}
-		dest := filepath.Join(destDir, cleanRel)
-		destAbs, err := filepath.Abs(dest)
-		if err != nil {
-			return fmt.Errorf("abs path %q: %w", dest, err)
-		}
-		destDirAbs, err := filepath.Abs(destDir)
-		if err != nil {
-			return fmt.Errorf("abs destDir %q: %w", destDir, err)
-		}
-		if !strings.HasPrefix(destAbs, destDirAbs+string(filepath.Separator)) && destAbs != destDirAbs {
-			return fmt.Errorf("entry %q escapes extract destination: %w", hdr.Name, ErrFetchIntegrity())
-		}
+		dest := filepath.Join(destDir, filepath.FromSlash(cleanRel))
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(dest, 0o755); err != nil {

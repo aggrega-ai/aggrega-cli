@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -461,6 +461,11 @@ type irGraphParams struct {
 // Escape is judged on where the value lands, not on how it is spelled:
 // the check runs against the joined-and-cleaned path, so an interior
 // `a/../b` resolves and passes while `../../elsewhere` is refused.
+//
+// The absolute-path test above stays here rather than folding into the
+// containment call below it, which would also refuse an absolute value:
+// it names the specific fault, and a sender told its value is absolute
+// has more to go on than one told it lands outside the root.
 func resolveReleaseParam(workspaceRoot, release string) (string, *jsonRPCError) {
 	if release == "" {
 		return "", invalidReleaseParam("the request named no Release")
@@ -468,9 +473,8 @@ func resolveReleaseParam(workspaceRoot, release string) (string, *jsonRPCError) 
 	if filepath.IsAbs(release) {
 		return "", invalidReleaseParam(fmt.Sprintf("%q is an absolute path", release))
 	}
-	resolved := filepath.Join(workspaceRoot, release)
-	rel, err := filepath.Rel(workspaceRoot, resolved)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	resolved, ok := pathscope.Resolve(workspaceRoot, release)
+	if !ok {
 		return "", invalidReleaseParam(fmt.Sprintf("%q resolves outside the workspace root", release))
 	}
 	return resolved, nil

@@ -5,6 +5,7 @@ package serve
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -227,5 +228,128 @@ func TestWorkspaceWalkAncestorPrecedenceDeepestWins(t *testing.T) {
 	}
 	if !strings.Contains(result.Location.URI, "visible.yaml") {
 		t.Errorf("Location.URI = %q; want path containing visible.yaml", result.Location.URI)
+	}
+}
+
+// TestRelComponentsAcceptsLeadingDoubleDotName is one of four per-site cases
+// covering a deliberate loosening: a directory whose name begins with two dots
+// followed by a letter is an ordinary directory, not an escape.
+//
+// The walker previously judged containment with a bare two-dot prefix test on
+// the root-relative path, so "..cache/app.yaml" read as an escape and the file
+// silently vanished from every workspace-wide answer the daemon gives — find
+// references, workspace validation — with no diagnostic anywhere. The predicate
+// judges where the path lands instead, so the directory is walked.
+//
+// Each of the four sites carries its own case rather than sharing one: they were
+// four separate copies of the test, and a single shared assertion would pass
+// while three of them were still wrong.
+func TestRelComponentsAcceptsLeadingDoubleDotName(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(string(filepath.Separator), "ws")
+	w := newGitignoreWalker(root)
+
+	got := w.relComponents(filepath.Join(root, "..cache", "app.yaml"))
+	want := []string{"..cache", "app.yaml"}
+	if len(got) != len(want) {
+		t.Fatalf("relComponents(%q) = %v; want %v — a name beginning with two dots is not an escape", "..cache/app.yaml", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("relComponents component %d = %q; want %q", i, got[i], want[i])
+		}
+	}
+
+	// The refusal the loosening must not have taken with it.
+	if out := w.relComponents(filepath.Join(root, "..", "elsewhere", "app.yaml")); out != nil {
+		t.Errorf("relComponents accepted a path above the root, returning %v; the loosening must not reach a genuine escape", out)
+	}
+	// The root itself is still not a component list.
+	if out := w.relComponents(root); out != nil {
+		t.Errorf("relComponents(root) = %v; want nil", out)
+	}
+}
+
+// TestAncestorsToRootAcceptsLeadingDoubleDotName is the second of the four
+// per-site cases. The ancestor chain feeds .gitignore lookup, so the same
+// two-dot prefix test made every `.gitignore` inside such a directory
+// unreadable — the file was walked but its exclusions were never applied.
+func TestAncestorsToRootAcceptsLeadingDoubleDotName(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(string(filepath.Separator), "ws")
+	w := newGitignoreWalker(root)
+
+	got := w.ancestorsToRoot(filepath.Join(root, "..cache", "app.yaml"))
+	want := []string{filepath.Join(root, "..cache"), root}
+	if len(got) != len(want) {
+		t.Fatalf("ancestorsToRoot(%q) = %v; want %v", "..cache/app.yaml", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ancestorsToRoot entry %d = %q; want %q", i, got[i], want[i])
+		}
+	}
+
+	// The refusal the loosening must not have taken with it.
+	if out := w.ancestorsToRoot(filepath.Join(root, "..", "elsewhere", "app.yaml")); len(out) != 0 {
+		t.Errorf("ancestorsToRoot accepted a path above the root, returning %v; the loosening must not reach a genuine escape", out)
+	}
+}
+
+// TestWorkspaceWalkAppliesGitignoreToLeadingDoubleDotName proves the loosening at
+// the level a user sees, and the direction is worth stating because it inverts.
+//
+// The over-broad prefix test made relComponents report "outside the root" for a
+// root-relative path beginning with two dots. matchesAny reads that as "no
+// components to match", which is not an exclusion — so such a file was reported
+// as NOT ignored and was visited unconditionally, with every `.gitignore` rule
+// naming it silently inert. Correcting the containment predicate LOOSENS the
+// predicate and, through it, restores gitignore filtering for those paths.
+//
+// A directory whose name begins with two dots also begins with a dot, so the
+// walk's separate hidden-name exclusion skips it before containment is ever
+// consulted. That rule is a hidden-file convention rather than a containment
+// test, it is documented as its own bullet on the walk, and it is untouched
+// here — which is why this case is pinned on a FILE, where the containment
+// answer is the one that decides.
+func TestWorkspaceWalkAppliesGitignoreToLeadingDoubleDotName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	writeWorkspaceTree(t, dir, map[string]string{
+		".gitignore":     "..scratch.yaml\n",
+		"..scratch.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/scratch\n  version: 1.0.0\nspec: {}\n",
+		"app.yaml":       "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/app\n  version: 1.0.0\nspec: {}\n",
+	})
+
+	srv := newTestServer(t, dir, nil, nil)
+	srv.stderr = drainStderr()
+
+	var seen []string
+	err := srv.walkWorkspaceYAML(context.Background(), func(path string) error {
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			return relErr
+		}
+		seen = append(seen, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walkWorkspaceYAML: %v", err)
+	}
+
+	var sawScratch, sawApp bool
+	for _, s := range seen {
+		switch s {
+		case "..scratch.yaml":
+			sawScratch = true
+		case "app.yaml":
+			sawApp = true
+		}
+	}
+	if !sawApp {
+		t.Fatalf("walk visited %v; it did not reach app.yaml, so this test is measuring a broken walk rather than the exclusion", seen)
+	}
+	if sawScratch {
+		t.Errorf("walk visited %v; `.gitignore` names ..scratch.yaml, and a name beginning with two dots is inside the root like any other, so its exclusion must apply", seen)
 	}
 }

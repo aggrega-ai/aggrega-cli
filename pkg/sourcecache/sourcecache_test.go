@@ -638,3 +638,67 @@ func TestExtractRejectsPathTraversal(t *testing.T) {
 		t.Errorf("malicious file leaked outside destination; stat err = %v", statErr)
 	}
 }
+
+// TestExtractAcceptsLeadingDoubleDotEntry is the fourth of four per-site cases
+// covering a deliberate loosening.
+//
+// Extraction previously judged an entry name with a bare two-dot prefix test, so
+// an archive carrying a directory whose name begins with two dots — a shape a
+// chart packer is free to produce — failed the whole extraction with an
+// integrity refusal. The predicate judges where the name lands, so the entry
+// extracts to the place its name says.
+//
+// TestExtractRejectsPathTraversal above pins the refusal this must not have
+// widened into, and the assertion below that the file landed INSIDE the
+// destination is what separates the two: a loosening that let the entry escape
+// would satisfy "no error" just as well.
+func TestExtractAcceptsLeadingDoubleDotEntry(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	const body = "replicaCount: 1\n"
+	for _, name := range []string{"..shared/values.yaml", "chart/Chart.yaml"} {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     name,
+			Mode:     0o644,
+			Size:     int64(len(body)),
+			Typeflag: tar.TypeReg,
+			ModTime:  time.Unix(0, 0).UTC(),
+			Format:   tar.FormatPAX,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = tw.Close()
+	_ = gz.Close()
+	blob := buf.Bytes()
+	digest := digestOf(blob)
+	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digest)
+	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digest)
+
+	dir, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "1.0.0", root, ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("LookupAndExtract: %v — an entry name beginning with two dots is an ordinary name, not a traversal", err)
+	}
+
+	// The entry landed INSIDE the destination, under the name it declared.
+	inside := filepath.Join(dir, "..shared", "values.yaml")
+	if _, statErr := os.Stat(inside); statErr != nil {
+		t.Errorf("stat %q: %v; the entry must extract under its declared name", inside, statErr)
+	}
+	// And the neighbouring entry extracted too, so the case above is not passing
+	// because extraction stopped early.
+	if _, statErr := os.Stat(filepath.Join(dir, "chart", "Chart.yaml")); statErr != nil {
+		t.Errorf("neighbouring entry missing: %v", statErr)
+	}
+	// Nothing was written beside the destination under a climbed-out name.
+	if _, statErr := os.Stat(filepath.Join(filepath.Dir(dir), "shared")); !os.IsNotExist(statErr) {
+		t.Errorf("something landed beside the destination; stat err = %v", statErr)
+	}
+}

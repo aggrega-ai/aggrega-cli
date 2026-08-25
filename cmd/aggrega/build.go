@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +26,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
@@ -751,33 +754,53 @@ func withSkipContext(err error, skipped []catalog.SkippedEntity) error {
 
 // writeArtifacts writes the rendered file map to disk under outRoot,
 // preserving relative path structure and creating intermediate
-// directories as needed. Each entry's relative path is cleaned and
-// validated:
+// directories as needed. Each entry's name is validated:
 //
-//   - Empty paths are rejected (defensive guard against renderer
+//   - Empty names are rejected (defensive guard against renderer
 //     producing a zero-key entry).
-//   - Path-traversal attempts ("..", or paths beginning with "../")
-//     are rejected. The check defends against a malicious or buggy
-//     renderer engine emitting a path that escapes outRoot.
+//   - Names that escape outRoot are rejected. The check defends
+//     against a malicious or buggy renderer engine emitting a name
+//     that lands outside the output root.
+//
+// An artifact name is a slash-separated logical name rather than a
+// path in the host's own spelling, so containment is judged in slash
+// arithmetic — identically on every platform — and the name is
+// converted to a host path only to write it. Judging it as a host
+// path instead would make a backslash a separator on one platform and
+// an ordinary character on another, so the same rendered output would
+// be accepted on one machine and refused on the next.
+//
+// Entries are written in sorted name order. Go randomises map
+// iteration, so writing in range order would emit the same build's
+// files in a different sequence on every run: the bytes on disk match,
+// but the order of the mkdir and write calls that produced them does
+// not, and a consumer watching the tree as it fills — or a filesystem
+// recording creation order — sees a different build each time.
 //
 // On any per-file error (mkdir, write), the function returns the
 // wrapped error and stops — partial writes to disk persist; the
 // caller is responsible for any cleanup in the partial-write case.
+// Sorting also makes that partial prefix reproducible: the same
+// failing input stops after the same set of files.
 func writeArtifacts(outRoot string, files map[string][]byte) error {
 	outRoot = filepath.Clean(outRoot)
-	for relPath, content := range files {
-		if relPath == "" {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if name == "" {
 			return fmt.Errorf("empty artifact path")
 		}
-		relPath = filepath.Clean(relPath)
-		if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("invalid artifact path %q (path escapes the output root)", relPath)
+		if !pathscope.IsLocalSlash(name) {
+			return fmt.Errorf("invalid artifact path %q (path escapes the output root)", name)
 		}
-		full := filepath.Clean(filepath.Join(outRoot, relPath))
+		full := filepath.Join(outRoot, filepath.FromSlash(path.Clean(name)))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return fmt.Errorf("mkdir %q: %w", filepath.Dir(full), err)
 		}
-		if err := os.WriteFile(full, content, 0o644); err != nil {
+		if err := os.WriteFile(full, files[name], 0o644); err != nil {
 			return fmt.Errorf("write %q: %w", full, err)
 		}
 	}

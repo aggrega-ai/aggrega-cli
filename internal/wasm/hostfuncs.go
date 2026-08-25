@@ -14,9 +14,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	extism "github.com/extism/go-sdk"
 )
 
@@ -906,16 +906,27 @@ func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, str
 // resolveUnderSourceRoot resolves a slash-separated, source-root-relative path
 // to an absolute filesystem path under the plugin's source root, refusing any
 // path that escapes above the root. The empty string and "." both name the root
-// itself. The sandbox cleans the joined path and confirms it stays at or under
-// the cleaned root, so a "../" traversal in the guest-supplied path is a loud
-// refusal rather than a read outside the acquired source.
+// itself. A path that climbs above the root is refused even where the join
+// would land back inside it, so a "../" traversal in the guest-supplied path is
+// a loud refusal rather than a read outside the acquired source, and the
+// refusal does not depend on what the root is named.
 // resolveUnderSourceRoot owns the sandbox-escape wire code: on a refused escape
 // it returns CodeSourceEscape alongside the error, so the escape condition maps
 // to its code in exactly one place. On success the code is the empty string.
+//
+// The containment question itself is pathscope's, and the wire code stops here.
+// The code belongs to a closed vocabulary a guest branches on, and most callers
+// asking the same question have no guest to answer, so the shared predicate
+// reports a bare refusal and this wrapper is where it acquires a code.
 func (p *Plugin) resolveUnderSourceRoot(rel string) (string, string, error) {
-	rootClean := filepath.Clean(p.sourceRoot)
-	joined := filepath.Clean(filepath.Join(rootClean, filepath.FromSlash(rel)))
-	if joined != rootClean && !strings.HasPrefix(joined, rootClean+string(filepath.Separator)) {
+	// The guest spells the root itself as the empty string; pathscope refuses an
+	// empty relative path, so the meaning is normalised here, where it is held.
+	sel := rel
+	if sel == "" {
+		sel = "."
+	}
+	joined, ok := pathscope.Resolve(p.sourceRoot, filepath.FromSlash(sel))
+	if !ok {
 		return "", abi.CodeSourceEscape, fmt.Errorf("selection %q escapes the source root", rel)
 	}
 	return joined, "", nil

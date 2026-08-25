@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // walkWorkspaceYAML invokes visit once per YAML file under the
@@ -127,9 +129,17 @@ func (w *gitignoreWalker) matchesAny(path string, isDir bool) bool {
 // Each per-directory matcher is scoped to a domain expressed in these
 // same root-relative components, so candidate paths and pattern
 // domains share one coordinate system.
+//
+// Containment is the shared predicate's, judged on where the relative
+// path lands. A directory whose name merely begins with two dots — a
+// `..cache` beside the workspace files — is an ordinary directory and
+// is walked; only one that climbs above the root is dropped.
 func (w *gitignoreWalker) relComponents(path string) []string {
 	rel, err := filepath.Rel(w.root, path)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == "." {
+		return nil
+	}
+	if _, ok := pathscope.Resolve(w.root, rel); !ok {
 		return nil
 	}
 	return strings.Split(filepath.ToSlash(rel), "/")
@@ -143,8 +153,13 @@ func (w *gitignoreWalker) ancestorsToRoot(path string) []string {
 	dir := filepath.Dir(path)
 	// Guard: only traverse paths under root. Paths outside the root
 	// return an empty ancestor list (no .gitignore consultation).
+	// A directory whose name begins with two dots is inside the root
+	// like any other, and its .gitignore is read like any other.
 	rel, err := filepath.Rel(w.root, dir)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil {
+		return nil
+	}
+	if _, ok := pathscope.Resolve(w.root, rel); !ok {
 		return nil
 	}
 	var out []string

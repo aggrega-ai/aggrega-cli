@@ -137,3 +137,70 @@ func TestResolveUnderSourceRoot_RootItself(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveUnderSourceRoot_RefusesClimbBackToTheRoot pins a tightening that
+// came with routing the sandbox through the shared containment predicate.
+//
+// The previous check compared the JOINED path against the root, so a selection
+// that climbed above the root and descended back into a directory of the same
+// name — "../<root-leaf>/x" — landed inside the root and was accepted. A guest
+// has no business naming its own root's parent, and accepting it meant the
+// sandbox's answer depended on what the root was called. Containment is now
+// judged on the selection itself, so any climb above the root is refused
+// whatever it descends into afterwards.
+func TestResolveUnderSourceRoot_RefusesClimbBackToTheRoot(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	p := &Plugin{sourceRoot: root}
+
+	climbBack := "../" + filepath.Base(root) + "/inside.txt"
+	if _, code, err := p.resolveUnderSourceRoot(climbBack); err == nil {
+		t.Errorf("selection %q was accepted; a climb above the root is refused however it descends back", climbBack)
+	} else if code != abi.CodeSourceEscape {
+		t.Errorf("selection %q escape code = %q; want %q", climbBack, code, abi.CodeSourceEscape)
+	}
+
+	// The interior climb that resolves back inside is still accepted, so the
+	// tightening above is about leaving the root rather than about "..".
+	got, _, err := p.resolveUnderSourceRoot("sub/../inside.txt")
+	if err != nil {
+		t.Fatalf("interior climb refused: %v", err)
+	}
+	if want := filepath.Join(filepath.Clean(root), "inside.txt"); got != want {
+		t.Errorf("interior climb resolved to %q; want %q", got, want)
+	}
+}
+
+// TestResolveUnderSourceRoot_AcceptsLeadingDoubleDotName pins that a directory
+// inside the acquired source whose name begins with two dots is readable. The
+// containment answer turns on where the selection lands, not on how its first
+// two characters look.
+func TestResolveUnderSourceRoot_AcceptsLeadingDoubleDotName(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	p := &Plugin{sourceRoot: root}
+	got, code, err := p.resolveUnderSourceRoot("..shared/values.yaml")
+	if err != nil {
+		t.Fatalf("resolve: %v (code %q)", err, code)
+	}
+	if want := filepath.Join(filepath.Clean(root), "..shared", "values.yaml"); got != want {
+		t.Errorf("resolved to %q; want %q", got, want)
+	}
+}
+
+// TestResolveUnderSourceRoot_RefusesAbsoluteSelection pins that a selection
+// naming an absolute path is refused rather than re-rooted. Joining an absolute
+// selection onto the root yields a path under the root, so the previous check
+// accepted it and the guest silently received a different file from the one it
+// named.
+func TestResolveUnderSourceRoot_RefusesAbsoluteSelection(t *testing.T) {
+	t.Parallel()
+	p := &Plugin{sourceRoot: t.TempDir()}
+	for _, rel := range []string{"/etc/passwd", "/"} {
+		if _, code, err := p.resolveUnderSourceRoot(rel); err == nil {
+			t.Errorf("absolute selection %q was accepted", rel)
+		} else if code != abi.CodeSourceEscape {
+			t.Errorf("absolute selection %q code = %q; want %q", rel, code, abi.CodeSourceEscape)
+		}
+	}
+}
