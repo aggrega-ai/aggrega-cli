@@ -1080,10 +1080,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, wrapSourceResolutionError(err, nodeID,
 				fmt.Sprintf("node %q source resolution", nodeID))
 		}
-		hasSource := nodeCtx.Source != nil
-		if s, ok := nodeCtx.Source.(string); ok && s == "" {
-			hasSource = false
-		}
+		hasSource := sourceValueDeclared(nodeCtx.Source)
 		hasArtifacts := recipe != nil && recipe.Spec.Artifacts.Len() > 0
 
 		// Central input-kind gate (the describe()-fed seat). Classify the node's

@@ -16,8 +16,12 @@ import (
 // carries the same signature as the host implementation and satisfies the
 // package's compile-time call graph; the guest render path never invokes it at
 // runtime.
+//
+// Whether a Recipe carries a source is asked of recipeSourceDeclared, the one
+// home for that question, so this build's answer and the host build's are one
+// answer rather than two that happen to agree.
 func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *NodeRenderContext) error {
-	if recipe == nil || recipe.Spec.Source == nil {
+	if !recipeSourceDeclared(recipe) {
 		return nil
 	}
 	nodeCtx.OriginalSource = recipe.Spec.Source

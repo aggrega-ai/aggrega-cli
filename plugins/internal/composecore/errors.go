@@ -5,18 +5,6 @@ package composecore
 
 import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
-// ErrEmptySource is emitted when a Recipe has `source: ""` (empty string).
-// Nil/absent source = sourceless (synthesized) mode; non-empty string = sourced.
-// Empty string is never valid. Mirrors helmcore's ErrEmptySource for
-// consistency across providers; the two are deliberately separate declarations
-// so neither provider's handling of an empty source depends on the other's.
-func ErrEmptySource() error { return errEmptySource }
-
-var errEmptySource = cerrors.Register("compiler-renderer-compose/empty-source", cerrors.Meta{
-	ShortCode: "E0234",
-	Message:   "recipe source is empty string; use nil for synthesized mode or a non-empty path for sourced mode",
-})
-
 // ErrTranslationProbeNoPort is emitted when a probe http: shape resolves to a
 // container that declares no ports — compose healthchecks need a port to
 // build the curl URL.

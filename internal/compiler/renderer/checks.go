@@ -242,10 +242,12 @@ func pillarRefMatches(ref, pillar string) bool {
 	return ref == pillar || strings.HasPrefix(ref, pillar+".")
 }
 
-// recipeSourceDeclared reports whether a Recipe carries a source, reading the
-// RESOLVED value rather than the text the author wrote.
+// sourceValueDeclared reports whether a source VALUE carries a source. It is the
+// one home for the emptiness condition itself, and every reader of that
+// condition reaches it — directly where what it holds is the value, and through
+// recipeSourceDeclared where what it holds is the entity.
 //
-// A source that evaluated to an empty string leaves the Recipe with none just as
+// A source that evaluated to an empty string leaves the entity with none just as
 // an absent source does, and an author cannot tell the two apart from the
 // outcome — so this is one condition rather than two, which is what lets a rule
 // about a template reading the source pillar name a single cause.
@@ -253,19 +255,30 @@ func pillarRefMatches(ref, pillar string) bool {
 // One helper for the same reason the pillar roots above have one home: this is a
 // single decision with more than one reader, and a copy per reader would agree
 // today and would be exactly what diverges the next time the emptiness condition
-// changes. A nil Recipe carries no source.
+// changes. Any shape other than nil and string carries a source: a structured
+// source is a container, and a container that exists names something.
+func sourceValueDeclared(src any) bool {
+	switch s := src.(type) {
+	case nil:
+		return false
+	case string:
+		return s != ""
+	default:
+		return true
+	}
+}
+
+// recipeSourceDeclared reports whether a Recipe carries a source, reading the
+// RESOLVED value rather than the text the author wrote.
+//
+// The emptiness condition itself lives in sourceValueDeclared; this adds the one
+// thing an entity has that a bare value does not, which is that the entity may
+// be absent. A nil Recipe carries no source.
 func recipeSourceDeclared(recipe *types.Recipe) bool {
 	if recipe == nil {
 		return false
 	}
-	switch src := recipe.Spec.Source.(type) {
-	case nil:
-		return false
-	case string:
-		return src != ""
-	default:
-		return true
-	}
+	return sourceValueDeclared(recipe.Spec.Source)
 }
 
 // The artifact-pillar rule, declared once per artifacts block the rule governs.

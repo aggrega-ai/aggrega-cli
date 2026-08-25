@@ -59,7 +59,32 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 
 	ctx.Locals = localsForNode
 
-	if state.Recipe.Spec.Source != nil {
+	// A source that is PRESENT and yet declares nothing is the authoring
+	// ambiguity, and it is refused here because this is the first point in the
+	// render sequence that holds the value as the author wrote it: everything
+	// downstream reads the source after its own template has been evaluated, and
+	// everything downstream that treats an empty source as no source at all would
+	// take the reading the author never asked for. The condition is derived from
+	// the same predicate every reader uses, so the refusal and the readings cannot
+	// come apart.
+	if state.Recipe.Spec.Source != nil && !sourceValueDeclared(state.Recipe.Spec.Source) {
+		return cerrors.Wrap(ErrEmptySource(), cerrors.CatalogError,
+			cerrors.SourceLocation{File: state.RecipePath},
+			cerrors.ComposeMessage(ErrEmptySource(), []string{
+				fmt.Sprintf("Recipe %q", state.Recipe.Metadata.Name),
+				fmt.Sprintf("node %q", state.NodeID),
+			}, "omit the source field for sourceless mode, or name a non-empty path or URI for sourced mode"))
+	}
+
+	// Read once, ahead of the evaluation that replaces the Recipe with a local
+	// copy carrying the resolved source. Both the evaluation below and the trace
+	// capture beneath it ask the same question of the same document, and reading
+	// it twice around a step that rewrites the value asks it of two different
+	// values — the second reading would then answer about the RESULT of the
+	// evaluation rather than about whether there was one to run.
+	sourceDeclared := recipeSourceDeclared(state.Recipe)
+
+	if sourceDeclared {
 		// The locals were published onto the context immediately above, so the source
 		// template reads the same resolved values every other reader of this node's
 		// locals reads.
@@ -78,11 +103,11 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 		ctx.Source = resolvedSource
 	}
 
-	// Trace points: B.0 source eval (slot 05) and B.0 locals (slot 06).
-	// Slot 05 fires only when Recipe.Spec.Source is non-nil (a sourceless
-	// Recipe has no source-eval to capture); slot 06 fires unconditionally —
-	// every node reaching B.0 publishes its locals, even an empty map.
-	if state.Recipe.Spec.Source != nil {
+	// Trace points: the source evaluation and the locals publication. The source
+	// point fires only where there was a source to evaluate (a sourceless Recipe
+	// has no source-eval to capture); the locals point fires unconditionally —
+	// every node reaching here publishes its locals, even an empty map.
+	if sourceDeclared {
 		state.capture(trace.PassPhaseB0, "", ctx)
 	}
 	state.capture(trace.PassPhaseB0Locals, "", ctx)
@@ -751,10 +776,7 @@ func renderFeatureRecipeFiles(
 	workloadLibs map[string]types.WorkloadLibrary,
 	artifactsLibs map[string]types.ArtifactsLibrary,
 ) ([]EmittedFile, error) {
-	hasSource := resolvedSrc != nil
-	if s, ok := resolvedSrc.(string); ok && s == "" {
-		hasSource = false
-	}
+	hasSource := sourceValueDeclared(resolvedSrc)
 	hasWorkload := !fr.Spec.Workload.IsEmpty()
 	hasArtifacts := fr.Spec.Artifacts.Len() > 0
 

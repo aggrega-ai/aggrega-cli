@@ -5,16 +5,6 @@ package helmcore
 
 import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
-// ErrEmptySource is emitted when a Recipe has `source: ""` (empty string).
-// Nil/absent source = sourceless (generative) mode; non-empty string = sourced.
-// Empty string is never valid.
-func ErrEmptySource() error { return errEmptySource }
-
-var errEmptySource = cerrors.Register("compiler-renderer-helm/empty-source", cerrors.Meta{
-	ShortCode: "E0242",
-	Message:   "recipe source is empty string; use nil for sourceless mode or a non-empty path for sourced mode",
-})
-
 // ErrRenderedFileCollision is emitted when two distinct rendered resources
 // derive the same output filename with differing content. Output filenames are
 // derived from each resource's identity (kind, namespace, name), so two

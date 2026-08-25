@@ -36,9 +36,11 @@ func lockfileSourceRecord(lf *lockfile.Lockfile, kind, url, chart, version strin
 //
 // Behaviour by case:
 //
-//   - Sourceless Recipe (recipe == nil OR recipe.Spec.Source == nil):
+//   - Sourceless Recipe (no Recipe, or one carrying no source):
 //     both Source and OriginalSource stay nil. Engines see today's
-//     sourceless contract.
+//     sourceless contract. Whether a Recipe carries a source is asked
+//     of recipeSourceDeclared, which is the one home for that question,
+//     so this arm and every other reader of it answer alike.
 //   - Local-string source (./..., /..., file://...): both Source and
 //     OriginalSource set to the verbatim string. Tier-1 / Tier-2
 //     paths are never lockfile-pinned.
@@ -64,7 +66,7 @@ func lockfileSourceRecord(lf *lockfile.Lockfile, kind, url, chart, version strin
 // wrapped error from sourcecache.LookupAndExtract on digest mismatch,
 // missing cache slot, or extract failure.
 func resolveSourceForNode(input RendererInput, recipe *types.Recipe, nodeCtx *NodeRenderContext) error {
-	if recipe == nil || recipe.Spec.Source == nil {
+	if !recipeSourceDeclared(recipe) {
 		return nil
 	}
 	nodeCtx.OriginalSource = recipe.Spec.Source

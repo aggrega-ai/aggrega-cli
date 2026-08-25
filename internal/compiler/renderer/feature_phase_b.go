@@ -221,14 +221,8 @@ func isResourceGeneratingFR(fr *types.FeatureRecipe) bool {
 	if fr == nil {
 		return false
 	}
-	if fr.Spec.Source != nil {
-		if s, ok := fr.Spec.Source.(string); ok && s != "" {
-			return true
-		}
-		if _, ok := fr.Spec.Source.(string); !ok {
-			// Structured (non-string) source — treat as present.
-			return true
-		}
+	if sourceValueDeclared(fr.Spec.Source) {
+		return true
 	}
 	if !fr.Spec.ValuesMapping.IsEmpty() {
 		return true
