@@ -95,14 +95,20 @@ func ReadChartMetaBytes(data []byte, label string) (name, version string, err er
 // source). When empty, the name is derived from the dispatch path.
 //
 // Per sub-chart: a sourced sub-chart (ChartYAML non-empty) draws its dependency
-// name AND version from the vendored chart's own Chart.yaml — Helm matches a
-// dependency to charts/<alias>/ by name and version, so a version drawn from the
-// spec/component version would leave the alias unbound and the umbrella's
-// per-instance values would never reach the sub-chart. A generative sub-chart
-// (ChartYAML empty) uses name == alias == instance_id and version from the sub's
-// Version (or the default). The alias is always the sanitised instance_id so Helm
-// scopes umbrella values under that key and multiple instances of the same source
-// chart do not collide.
+// name AND version from the vendored chart's own Chart.yaml — Helm binds a
+// dependency to a vendored sub-chart by that chart's own name and version rather
+// than by the directory it sits in, so a version drawn from the spec/component
+// version would leave the alias unbound and the umbrella's per-instance values
+// would never reach the sub-chart. A generative sub-chart (ChartYAML empty) uses
+// name == alias and version from the sub's Version (or the default).
+//
+// The alias is the encoded instance id, so Helm scopes the umbrella's
+// per-instance values under that key. Because the encoding is injective, two
+// instances reach one alias only where their instance ids are the same string —
+// so no instance's values can arrive at another instance's sub-chart, however
+// the instance ids are punctuated. The dependency's repository is the one place
+// the instance id appears as authored rather than encoded; the comment at the
+// dependency says why.
 func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChart, chartNameOverride string, indent int) (map[string][]byte, error) {
 	if boundaryName == "" {
 		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{}, "helmchart umbrella: empty boundary name", nil, nil)
@@ -113,20 +119,26 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 		return subs[i].InstanceID < subs[j].InstanceID
 	})
 
+	// The chart name is one encoded segment when a single identity names the
+	// chart, and two joined segments when the aggregate name qualifies the
+	// dispatch path. The encoding's own two-hyphen join is what keeps the
+	// qualified form injective: no encoded segment can contain that sequence, so
+	// an aggregate name ending in a hyphen and a dispatch path beginning with one
+	// cannot assemble into the same name as the other way round.
 	var name string
-	if chartNameOverride != "" {
-		name = sanitizeChartName(chartNameOverride)
-	} else {
-		name = sanitizeChartName(boundaryName)
-		if aggregateName != "" {
-			name = sanitizeChartName(aggregateName) + "-" + name
-		}
+	switch {
+	case chartNameOverride != "":
+		name = helmNameEncoding.Segment(chartNameOverride)
+	case aggregateName != "":
+		name = helmNameEncoding.Name(aggregateName, boundaryName)
+	default:
+		name = helmNameEncoding.Segment(boundaryName)
 	}
 
 	deps := make([]umbrellaChartDependency, 0, len(subs))
 	values := make(map[string]any, len(subs))
 	for _, sc := range subs {
-		alias := sanitizeChartName(sc.InstanceID)
+		alias := helmNameEncoding.Segment(sc.InstanceID)
 		depName := alias
 		version := sc.Version
 		if version == "" {
@@ -140,11 +152,20 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 			depName = metaName
 			version = metaVersion
 		}
+		// The repository names the sub-chart's own directory under the umbrella,
+		// and that directory carries the instance id verbatim — the orchestrator
+		// places a nesting provider's per-node files at charts/<instance_id>/ and
+		// knows nothing of what Helm accepts in a name, so it encodes nothing.
+		// The alias is encoded and the directory is not, so the two are the same
+		// word only for an instance id the alphabet already admits: pointing the
+		// repository at the alias would name a directory that is not there
+		// whenever they differ, which `helm dependency build` and
+		// `helm dependency update` resolve and refuse.
 		deps = append(deps, umbrellaChartDependency{
 			Name:       depName,
 			Version:    version,
 			Alias:      alias,
-			Repository: "file://charts/" + alias,
+			Repository: "file://charts/" + sc.InstanceID,
 		})
 		if sc.Values != nil {
 			values[alias] = sc.Values

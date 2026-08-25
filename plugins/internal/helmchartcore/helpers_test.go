@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/pkg/namesegmenttest"
 )
 
 // readChartMeta is the test-side stand-in for the removed host chart-meta reader:
@@ -45,30 +46,153 @@ func buildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubC
 	return AssembleUmbrellaCore(boundaryName, aggregateName, subs, chartNameOverride, indent)
 }
 
-// TestSanitizeChartName_AllReplacements pins the dot + underscore + path-separator
-// → hyphen substitution. The path-separator cases are the regression guard for the
-// umbrella chart name: a boundary path's "/" must become "-" so Helm can load the
-// chart (Helm rejects a name containing "/"). Non-vacuous — reverting the "/"
-// replacement leaves the slash in the output and the slash cases go red while the
-// dot/underscore cases stay green.
-func TestSanitizeChartName_AllReplacements(t *testing.T) {
+// TestHelmNameEncoding_RepresentativeInputs pins the derived spelling of the
+// identities a chart name and an alias are actually built from: a name the
+// alphabet already admits passes through, an authored hyphen is kept where the
+// character after it is admitted, and each character the alphabet does not admit
+// reaches its own escape. Non-vacuous — folding any two of the escaped
+// characters onto one output reddens the rows carrying both.
+func TestHelmNameEncoding_RepresentativeInputs(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		in, want string
 	}{
 		{"simple", "simple"},
-		{"data.main-db", "data-main-db"},
-		{"my_under_score", "my-under-score"},
-		{"a.b_c", "a-b-c"},
-		{"dist/backend/helm-chart", "dist-backend-helm-chart"},
-		{"fullstack-app-dist/backend/helm-chart", "fullstack-app-dist-backend-helm-chart"},
-		// Distinct boundaries keep distinct names (no leaf-only collapse).
-		{"dist/frontend/helm-chart", "dist-frontend-helm-chart"},
-		{"", ""},
+		{"data.main-db", "data-zdmain-db"},
+		{"my_under_score", "my_under_score"},
+		{"a.b_c", "a-zdb_c"},
+		{"dist/backend/helm-chart", "dist-zsbackend-zshelm-chart"},
+		{"dist/frontend/helm-chart", "dist-zsfrontend-zshelm-chart"},
+		{"", "-ze"},
 	}
 	for _, tc := range cases {
-		if got := sanitizeChartName(tc.in); got != tc.want {
-			t.Errorf("sanitizeChartName(%q) = %q; want %q", tc.in, got, tc.want)
+		if got := helmNameEncoding.Segment(tc.in); got != tc.want {
+			t.Errorf("helmNameEncoding.Segment(%q) = %q; want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestHelmNameEncodingDistinguishesInputsThatShareOneName pins, pair by pair, the
+// ways distinct authored identities could reach one derived name. Each row is two
+// identities an author can legitimately write; the assertion is that they differ.
+//
+// Each row fails on a specific regression rather than on any change: mapping
+// every unadmitted character onto one substitute reddens the punctuation rows,
+// and a fixed word standing in for an absent identity reddens the absent row.
+func TestHelmNameEncodingDistinguishesInputsThatShareOneName(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		left, right  string
+		whatItGuards string
+	}{
+		{"data.main-db", "data-main-db", "the dot and the hyphen must not share one output"},
+		{"data.main-db", "data_main-db", "the dot and the underscore must not share one output"},
+		{"data.main-db", "data/main-db", "the dot and the path separator must not share one output"},
+		{"dist/backend/helm-chart", "dist-backend-helm-chart", "a path separator must not become an authored hyphen"},
+		{"", "none", "an absent identity must not be spelled as an authorable word"},
+	}
+	for _, tc := range cases {
+		left, right := helmNameEncoding.Segment(tc.left), helmNameEncoding.Segment(tc.right)
+		if left == right {
+			t.Errorf("%q and %q both reach %q; %s", tc.left, tc.right, left, tc.whatItGuards)
+		}
+	}
+}
+
+// TestHelmNameSegmentIsInjective asserts no two distinct identities in the shared
+// segment corpus reach one derived name. A collision is reported with both inputs
+// that produced it, so a regression names the pair rather than only a count.
+func TestHelmNameSegmentIsInjective(t *testing.T) {
+	t.Parallel()
+	seen := make(map[string]string)
+	corpus := namesegmenttest.Corpus()
+	for _, s := range corpus {
+		got := helmNameEncoding.Segment(s)
+		if prior, clash := seen[got]; clash {
+			t.Fatalf("%q and %q both reach the derived name %q", prior, s, got)
+		}
+		seen[got] = s
+	}
+	if len(seen) != len(corpus) {
+		t.Fatalf("built %d names from %d identities; each must reach its own name", len(seen), len(corpus))
+	}
+}
+
+// TestHelmQualifiedChartNameIsInjective asserts the two-segment chart name — an
+// aggregate name qualifying a dispatch path — is injective over the cross product
+// of the shared corpus. It is a separate assertion from the one-segment case
+// because the join is what carries it: replacing the encoding's two-hyphen join
+// with a single hyphen leaves every segment distinct and still lets an aggregate
+// name ending in a hyphen collide with a dispatch path beginning with one.
+func TestHelmQualifiedChartNameIsInjective(t *testing.T) {
+	t.Parallel()
+	corpus := namesegmenttest.Corpus()
+	seen := make(map[string][2]string)
+	total := 0
+	for _, a := range corpus {
+		for _, b := range corpus {
+			tuple := [2]string{a, b}
+			name := helmNameEncoding.Name(a, b)
+			total++
+			if prior, clash := seen[name]; clash {
+				t.Fatalf("%v and %v both reach the chart name %q", prior, tuple, name)
+			}
+			seen[name] = tuple
+		}
+	}
+	if len(seen) != total {
+		t.Fatalf("built %d names from %d pairs; each pair must reach its own name", len(seen), total)
+	}
+}
+
+// TestHelmNameSegmentsAreRecoverable reads a qualified chart name back into the
+// two identities it was built from and asserts each comes back exactly as
+// supplied. Distinctness says no pair in the corpus collided; recovering the
+// identities says why — the name still carries them. The reader shares no code
+// with the encoder, because a reader that called into the encoder would agree
+// with it whatever the encoder did.
+func TestHelmNameSegmentsAreRecoverable(t *testing.T) {
+	t.Parallel()
+	corpus := namesegmenttest.Corpus()
+	for _, a := range corpus {
+		for _, b := range corpus {
+			name := helmNameEncoding.Name(a, b)
+			got := namesegmenttest.ReadName(t, name)
+			if len(got) != 2 || got[0] != a || got[1] != b {
+				t.Fatalf("chart name %q read back as %q, want [%q %q]", name, got, a, b)
+			}
+		}
+	}
+}
+
+// TestHelmDerivedNameUsesOnlyTheAliasAlphabet asserts every byte a derived name
+// emits is an ASCII letter, a digit, an underscore, or a hyphen — the whole of
+// what a Helm dependency alias admits, and the reason one alphabet serves both
+// the alias and the chart name. The corpus deliberately carries a space, a tab
+// and a non-ASCII letter, none of which may survive.
+func TestHelmDerivedNameUsesOnlyTheAliasAlphabet(t *testing.T) {
+	t.Parallel()
+	for _, s := range namesegmenttest.Corpus() {
+		for _, name := range []string{helmNameEncoding.Segment(s), helmNameEncoding.Name(s, s)} {
+			for i := 0; i < len(name); i++ {
+				c := name[i]
+				ok := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-'
+				if !ok {
+					t.Fatalf("identity %q derived %q, which carries byte %q at %d", s, name, c, i)
+				}
+			}
+		}
+	}
+}
+
+// TestHelmDerivedNameDeterministic asserts a derived name is byte-stable across
+// repeated calls with identical input (Deterministic Output invariant).
+func TestHelmDerivedNameDeterministic(t *testing.T) {
+	t.Parallel()
+	first := helmNameEncoding.Name("fullstack-app", "dist/backend/helm-chart")
+	for i := 0; i < 8; i++ {
+		if again := helmNameEncoding.Name("fullstack-app", "dist/backend/helm-chart"); again != first {
+			t.Fatalf("derived name not stable on run %d: %q != %q", i, again, first)
 		}
 	}
 }
@@ -235,8 +359,8 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("default-with-agg: %v", err)
 	}
-	if !strings.Contains(string(files["Chart.yaml"]), "name: agg-web") {
-		t.Errorf("aggregate-prefixed name missing; got\n%s", files["Chart.yaml"])
+	if !strings.Contains(string(files["Chart.yaml"]), "name: agg--web") {
+		t.Errorf("aggregate-qualified name missing; got\n%s", files["Chart.yaml"])
 	}
 
 	// Default name without aggregate.
@@ -253,8 +377,8 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("override: %v", err)
 	}
-	if !strings.Contains(string(files["Chart.yaml"]), "name: override-name") {
-		t.Errorf("override name should be sanitized; got\n%s", files["Chart.yaml"])
+	if !strings.Contains(string(files["Chart.yaml"]), "name: override-zdname") {
+		t.Errorf("override name should carry the dot as an escape; got\n%s", files["Chart.yaml"])
 	}
 
 	// Generative sub-chart (no Source) + sub-chart with Values.

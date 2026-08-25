@@ -3,23 +3,35 @@
 
 package helmchartcore
 
-import "strings"
+import "github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 
 const (
 	helmChartAPIVersion = "v2"
 	defaultChartVersion = "0.1.0"
 )
 
-// sanitizeChartName converts an identifier into a Helm-valid chart name. Dots
-// (e.g. from sub-aggregate-flattened instance IDs like "data.main-db"),
-// underscores, and path separators all become dashes — so "data.main-db" becomes
-// "data-main-db" and a boundary path like "dist/backend/helm-chart" becomes
-// "dist-backend-helm-chart". Path separators matter because umbrella.go derives
-// the umbrella Chart.yaml name (and the per-sub-chart aliases) from the boundary
-// path, and Helm rejects a chart name containing "/". Replacing rather than
-// collapsing preserves the full path structure, so distinct boundaries keep
-// distinct names.
-func sanitizeChartName(id string) string {
-	r := strings.NewReplacer(".", "-", "_", "-", "/", "-")
-	return r.Replace(id)
+// helmNameEncoding is the segment encoding the umbrella chart name and the
+// per-sub-chart dependency alias are built with.
+//
+// Both are derived from an identity an author wrote — an aggregate name, a
+// dispatch path, a component instance id — and both have to arrive in an
+// alphabet poorer than the one that identity was written in. Encoding the
+// characters the alphabet does not admit, rather than substituting for them, is
+// what keeps the derivation injective: two identities differing only in
+// punctuation reach two names. That matters most for the alias, because an alias
+// is the key a sub-chart's values are scoped under, so two instances sharing one
+// alias would leave one instance's values reaching the other.
+//
+// The alphabet is stated here rather than taken from the encoding, because it is
+// a property of what Helm accepts in these positions and not of the encoding.
+// The alias is the stricter of the two positions, so one alphabet keeps a
+// derived name valid in either.
+var helmNameEncoding = namesegment.NewEncoding(isHelmNameRune)
+
+// isHelmNameRune reports whether a character is carried through the encoding as
+// itself: an ASCII letter, a digit, or the underscore. Those, together with the
+// hyphen the encoding reserves for its escapes and its join, are the whole of
+// what a Helm dependency alias admits.
+func isHelmNameRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_'
 }

@@ -1,9 +1,9 @@
 apiVersion: v2
-name: fullstack-app-dist-data-helm-chart
+name: fullstack-app--dist-zsdata-zshelm-chart
 version: 0.1.0
 description: Aggrega umbrella chart for boundary "dist/data/helm-chart"
 dependencies:
   - name: postgres
     version: 0.1.0
-    alias: data-main-db
-    repository: file://charts/data-main-db
+    alias: data-zdmain-db
+    repository: file://charts/data.main-db

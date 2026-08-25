@@ -1,5 +1,5 @@
 apiVersion: v2
-name: fullstack-app-dist-frontend-helm-chart
+name: fullstack-app--dist-zsfrontend-zshelm-chart
 version: 0.1.0
 description: Aggrega umbrella chart for boundary "dist/frontend/helm-chart"
 dependencies:

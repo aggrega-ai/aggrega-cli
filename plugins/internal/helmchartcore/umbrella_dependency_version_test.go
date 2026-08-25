@@ -74,21 +74,25 @@ func renderThroughDependencyPipeline(t *testing.T, chartDir string) string {
 }
 
 // assembleUmbrellaOnDisk writes BuildUmbrella's Chart.yaml + values.yaml plus the
-// vendored sub-chart under charts/<alias>/, mirroring what the orchestrator nests.
-func assembleUmbrellaOnDisk(t *testing.T, files map[string][]byte, vendoredSrc, alias string) string {
+// vendored sub-chart under charts/<instance_id>/, mirroring what the orchestrator
+// nests. The directory carries the instance id as authored, which is what the
+// dependency's repository names — it is the alias, not the directory, that is
+// encoded, so the two are the same word only for an instance id the chart-name
+// alphabet already admits.
+func assembleUmbrellaOnDisk(t *testing.T, files map[string][]byte, vendoredSrc, instanceID string) string {
 	t.Helper()
 	dist := t.TempDir()
 	for name, body := range files {
 		writeFileMkdir(t, filepath.Join(dist, name), string(body))
 	}
-	// Copy the vendored chart into charts/<alias>/.
+	// Copy the vendored chart into charts/<instance_id>/.
 	_ = filepath.WalkDir(vendoredSrc, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
 		rel, _ := filepath.Rel(vendoredSrc, p)
 		data, _ := os.ReadFile(p)
-		writeFileMkdir(t, filepath.Join(dist, "charts", alias, rel), string(data))
+		writeFileMkdir(t, filepath.Join(dist, "charts", instanceID, rel), string(data))
 		return nil
 	})
 	return dist
@@ -191,5 +195,57 @@ func TestUmbrellaSourcedDependencyVersion_EmptyVersionHaltsLoud(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "empty version") {
 		t.Errorf("error should name the missing version; got %v", err)
+	}
+}
+
+// TestUmbrellaEncodedAliasBindsAPunctuatedInstanceID is the install-time proof for
+// an instance id the chart-name alphabet does not admit: the alias is encoded, the
+// sub-chart directory is not, and the umbrella's alias-keyed values must still
+// reach that sub-chart through the same dependency pipeline `helm template` runs.
+//
+// It also pins the two spellings apart, which is the whole of the defect it
+// guards: the dependency's repository names the directory the sub-chart is
+// actually in, and the alias is the encoded form. Pointing the repository at the
+// alias again leaves the emitted chart resolvable by `helm template` and broken
+// for `helm dependency build`, which is a failure no render-time assertion sees —
+// so the repository is asserted directly here.
+func TestUmbrellaEncodedAliasBindsAPunctuatedInstanceID(t *testing.T) {
+	t.Parallel()
+	const instanceID = "data.main-db"
+	const wantAlias = "data-zdmain-db"
+
+	src := filepath.Join(t.TempDir(), "src")
+	writeVendoredChart(t, src, "postgres", "0.1.0")
+
+	files, err := buildUmbrella("app", "demo", []renderer.SubChartInfo{{
+		InstanceID: instanceID,
+		Version:    "1.0.0",
+		Values:     map[string]any{"secret": "s3cr3t"},
+		Source:     src,
+	}}, "", 2)
+	if err != nil {
+		t.Fatalf("BuildUmbrella: %v", err)
+	}
+
+	chartYAML := string(files["Chart.yaml"])
+	if !strings.Contains(chartYAML, "alias: "+wantAlias) {
+		t.Errorf("umbrella does not carry the encoded alias %q:\n%s", wantAlias, chartYAML)
+	}
+	if !strings.Contains(chartYAML, "repository: file://charts/"+instanceID) {
+		t.Errorf("the repository must name the sub-chart's own directory %q:\n%s", instanceID, chartYAML)
+	}
+	if strings.Contains(chartYAML, "repository: file://charts/"+wantAlias) {
+		t.Errorf("the repository names the alias, so it points at a directory that is not there:\n%s", chartYAML)
+	}
+	if !strings.Contains(string(files["values.yaml"]), wantAlias+":") {
+		t.Errorf("umbrella values are not keyed by the encoded alias %q:\n%s", wantAlias, files["values.yaml"])
+	}
+
+	// The directory carries the instance id as authored, exactly as the
+	// orchestrator nests it, so the alias and the directory differ here.
+	dist := assembleUmbrellaOnDisk(t, files, src, instanceID)
+	rendered := renderThroughDependencyPipeline(t, dist)
+	if !strings.Contains(rendered, "secret: \"s3cr3t\"") {
+		t.Fatalf("the umbrella value did not reach the sub-chart, so the encoded alias did not bind.\n%s", rendered)
 	}
 }
