@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -44,7 +45,7 @@ func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []str
 		return fmt.Errorf("OPS_ERROR: whole-catalog conventions check needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or check a specific Release with --release)")
 	}
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
-	files, err := walkCatalogEntityFiles(rw.Root(), dirs, wsCfg.ResolvedArtifactCacheDir())
+	files, passedOver, err := walkCatalogEntityFiles(rw.Root(), dirs, wsCfg.ResolvedArtifactCacheDir())
 	if err != nil {
 		return err
 	}
@@ -58,7 +59,46 @@ func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []str
 	// as they did before that record existed. The release-scoped pass below is the
 	// lint path that does hold them to it, and it is the same path that already
 	// reads the lockfile beside the Release, so both files are read from one place.
-	return lintConventionsFiles(rw, catalogFlagDirs, paths, pluginpath.PinMaps{}, out, diagOut, collect)
+	if err := lintConventionsFiles(rw, catalogFlagDirs, paths, pluginpath.PinMaps{}, out, diagOut, collect); err != nil {
+		return err
+	}
+	// This is the pass whose summary claims a corpus — "every catalog entity under
+	// the catalog directories" — so it is the pass that owes the reader the part of
+	// the tree the claim does not cover. Without this line the count above is the
+	// only thing said about coverage, and a kind the walk declines is indistinguishable
+	// from a kind that was checked and found clean. The release-scoped pass makes no
+	// such claim: it reports on one Release's dependency closure, and membership of
+	// that closure, not the kind gate, is what decides which files it reaches.
+	writePassedOverKinds(out, passedOver)
+	return nil
+}
+
+// writePassedOverKinds names the entity kinds the whole-catalog walk recognised
+// and did not check, so the summary's count is read as the corpus it actually
+// covers. It writes nothing when the walk passed nothing over, which is the
+// ordinary case for a catalog tree holding catalog entities alone.
+//
+// Kinds are named in the entity-kind vocabulary's own declared order, so the line
+// is byte-identical across runs over the same tree without this file holding an
+// ordering of its own.
+func writePassedOverKinds(out io.Writer, passedOver map[string]int) {
+	if len(passedOver) == 0 {
+		return
+	}
+	parts := make([]string, 0, len(passedOver))
+	for _, k := range entitykind.Kinds() {
+		n := passedOver[string(k)]
+		if n == 0 {
+			continue
+		}
+		noun := string(k)
+		if n != 1 {
+			noun += "s"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", n, noun))
+	}
+	fmt.Fprintf(out, "not checked: %s — this pass covers catalog entity kinds; check one of these directly with `aggrega lint <path>`\n",
+		strings.Join(parts, ", "))
 }
 
 // RunRelease computes a Release's resolved closure through the SAME build
@@ -116,7 +156,11 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 		return cerr
 	}
 
-	files, err := walkCatalogEntityFiles(wsRoot, dirs, cacheDir)
+	// The kinds the walk passes over are not reported here. This pass reports on
+	// one Release's dependency closure, and the closure decides which files it
+	// reaches; naming the kinds the walk declined would suggest everything else in
+	// the walked tree was checked, when most of it was simply outside the closure.
+	files, _, err := walkCatalogEntityFiles(wsRoot, dirs, cacheDir)
 	if err != nil {
 		return err
 	}
@@ -221,20 +265,33 @@ type catalogEntityFile struct {
 //
 // It reads the declared entity-kind vocabulary rather than naming the kinds here.
 // This is the gate the whole walk turns on — a kind it declines is dropped before
-// its file enters the name index, so that file reaches no convention rule and
-// nothing reports that it was skipped. A kind missing from a list written here is
-// therefore silently unlinted, which is exactly what happened to the two library
-// kinds added most recently.
+// its file enters the name index, so that file reaches no convention rule. A kind
+// missing from a list written here would therefore be unlinted, which is exactly
+// what happened to the two library kinds added most recently; reading the declared
+// vocabulary is what keeps a kind's coverage a property of the vocabulary rather
+// than of anyone remembering to extend a list.
 func isLintableCatalogKind(kind string) bool {
 	return entitykind.IsConventionsLinted(entitykind.Kind(kind))
 }
 
 // walkCatalogEntityFiles walks dirs in order, reads every .yaml / .yml file, and
 // returns one record per file whose top-level kind names a published catalog
-// entity. Files that do not parse as an entity header, or whose kind is not a
-// published catalog kind, are skipped silently — the catalog tree legitimately
-// carries non-entity YAML. The result is sorted by path for deterministic
-// iteration and reporting.
+// entity. The result is sorted by path for deterministic iteration and reporting.
+//
+// The second return counts, per kind, the files the walk recognised as entities
+// and did not return: a top-level kind that IS in the declared entity-kind
+// vocabulary but that the publishing conventions do not cover. A caller reporting
+// on the walked tree owes those to the reader, because a declined file reaches no
+// convention rule and would otherwise be indistinguishable from a file that was
+// checked and found clean.
+//
+// Anything else the walk passes over is absent from that count by design and is
+// skipped silently: a file that does not parse as an entity header, and a file
+// whose top-level kind is not one of the entity kinds at all. A catalog tree
+// legitimately carries YAML that is not an Aggrega document — chart values,
+// workflow definitions, editor configuration — and every such file names some
+// kind or none. Counting those would report the tree's ordinary contents as a
+// coverage gap.
 //
 // cacheDir is the workspace's artifact cache location, interpreted relative to
 // wsRoot; the walk steps over it, so an entity resolved from a cache slot is
@@ -244,8 +301,9 @@ func isLintableCatalogKind(kind string) bool {
 // inside the walked tree, but it may equally sit above or beside it, which is
 // why the cache is anchored on wsRoot rather than on each walked directory.
 // Passing "" for cacheDir disables the skip.
-func walkCatalogEntityFiles(wsRoot string, dirs []string, cacheDir string) ([]catalogEntityFile, error) {
+func walkCatalogEntityFiles(wsRoot string, dirs []string, cacheDir string) ([]catalogEntityFile, map[string]int, error) {
 	var files []catalogEntityFile
+	passedOver := map[string]int{}
 	seen := map[string]struct{}{}
 	for _, dir := range dirs {
 		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -272,9 +330,9 @@ func walkCatalogEntityFiles(wsRoot string, dirs []string, cacheDir string) ([]ca
 			if uerr := yaml.Unmarshal(data, &header); uerr != nil {
 				return nil
 			}
-			if !isLintableCatalogKind(header.Kind) {
-				return nil
-			}
+			// Identity is established before the kind gate so that a file reached
+			// twice — catalog directories are allowed to overlap — is counted once
+			// whichever side of the gate it falls on.
 			abs, aerr := filepath.Abs(path)
 			if aerr != nil {
 				abs = path
@@ -283,6 +341,12 @@ func walkCatalogEntityFiles(wsRoot string, dirs []string, cacheDir string) ([]ca
 				return nil
 			}
 			seen[abs] = struct{}{}
+			if !isLintableCatalogKind(header.Kind) {
+				if entitykind.IsKind(entitykind.Kind(header.Kind)) {
+					passedOver[header.Kind]++
+				}
+				return nil
+			}
 			files = append(files, catalogEntityFile{
 				Path:    path,
 				Kind:    header.Kind,
@@ -293,11 +357,11 @@ func walkCatalogEntityFiles(wsRoot string, dirs []string, cacheDir string) ([]ca
 			return nil
 		})
 		if err != nil {
-			return nil, fmt.Errorf("walk catalog directory %s: %w", dir, err)
+			return nil, nil, fmt.Errorf("walk catalog directory %s: %w", dir, err)
 		}
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	return files, nil
+	return files, passedOver, nil
 }
 
 // closureEntityFiles maps the entities a Release's closure reaches back to their
