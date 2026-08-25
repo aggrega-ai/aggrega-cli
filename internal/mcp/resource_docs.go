@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 const (
@@ -86,17 +87,32 @@ func (s *server) readDocsResource(uri string) (any, *rpcError) {
 
 // bundlePageForURI maps a documentation resource URI to its bundle-internal
 // page path. It reports ok=false for an unrecognised scheme, an empty body, or
-// a body that would escape the bundle root, so those surface as a clean
-// resource-not-found rather than a malformed lookup. A body with no file
+// a body that climbs out of the tree its scheme names, so those surface as a
+// clean resource-not-found rather than a malformed lookup. A body with no file
 // extension gains a ".md" suffix, so both langref://entities/component and
 // langref://entities/component.md resolve to the same markdown page.
+//
+// Containment is pathscope's question, asked in slash arithmetic about the body
+// rather than about the prefixed page path. A scheme addresses one tree of the
+// bundle, and a body confined to its own tree is confined to the bundle as well,
+// while the reverse does not hold: "../authoring/getting-started" under the
+// language-reference prefix cleans to a page inside the bundle but outside the
+// tree its scheme names. So a body carrying two dots is an ordinary page name
+// and resolves — "entities/foo..bar", "..config", and an interior "a/../b" that
+// resolves to "b" — and only a cleaned form that climbs above the tree is
+// refused.
 func bundlePageForURI(uri string) (string, bool) {
 	scheme, body, ok := splitScheme(uri)
 	if !ok {
 		return "", false
 	}
 	body = strings.Trim(body, "/")
-	if body == "" || strings.Contains(body, "..") {
+	// An empty body names no page at all, which is a separate refusal from
+	// containment and keeps its own reason.
+	if body == "" {
+		return "", false
+	}
+	if !pathscope.IsLocalSlash(body) {
 		return "", false
 	}
 	var prefix string
