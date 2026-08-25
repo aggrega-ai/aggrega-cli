@@ -25,7 +25,7 @@ import (
 // registered condition, that condition's short code beside it. Which frames
 // carry the short code is decided by diagnosticPosition below, not here.
 //
-// Dispatch runs three detection branches in a fixed order, and that order is
+// Dispatch runs four detection branches in a fixed order, and that order is
 // part of the contract rather than an implementation detail:
 //
 //  1. Multi-error first. A chain built by errors.Join exposes
@@ -36,10 +36,17 @@ import (
 //     errors.As matches only the first matching element, so a join of several
 //     envelopes would otherwise render one and silently drop the rest.
 //
-//  2. The envelope next. An error that is, or wraps, a *cerrors.CompilerError
+//  2. A decoration next — a failure carrying added context that is not itself
+//     a diagnostic. It renders the failure it decorates and appends its own
+//     text. This runs ahead of the envelope because the envelope branch
+//     renders from the outermost envelope it can reach and discards every
+//     frame above it, so a decoration detected after it would have its text
+//     silently dropped for exactly those failures that carry an envelope.
+//
+//  3. The envelope next. An error that is, or wraps, a *cerrors.CompilerError
 //     renders through the chain walk and returns.
 //
-//  3. The structured domain types last. Each is detected with errors.As; the
+//  4. The structured domain types last. Each is detected with errors.As; the
 //     first match is converted through the type's ToCompilerError and
 //     re-entered here. That recursive call lands on the envelope branch and
 //     renders. Falling through every branch returns the error's own Error
@@ -122,7 +129,36 @@ func formatCompilerErrorAt(err error, pos diagnosticPosition) string {
 			}
 		}
 	}
-	// The envelope SECOND, and every structured-type branch below it. The
+	// A skip-context decoration SECOND, ahead of the envelope, and the position
+	// is load-bearing rather than incidental. The decoration is not a diagnostic
+	// of its own: it is another diagnostic plus the catalog files the tolerant
+	// load refused. So it renders the diagnostic it decorates in whatever shape
+	// that diagnostic's own type calls for, then appends its note.
+	//
+	// It has to be detected BEFORE the envelope because the envelope branch
+	// renders from the outermost envelope errors.As can reach and discards every
+	// frame above it. Detected after, the note would be discarded exactly when
+	// the decorated failure carries an envelope — the case where the note is
+	// often the only text naming what the author wrote wrong.
+	//
+	// Recursion terminates for a different reason from the conversion branches
+	// below: this branch re-enters on the error the decoration wraps, which no
+	// longer carries the decoration, so the chain the recursion sees is strictly
+	// shorter each time.
+	//
+	// Text a frame ABOVE the decoration contributed — the label naming which
+	// step of the command was running, say — is carried across explicitly.
+	// Recursing on the decorated failure alone would drop it, and that label is
+	// what tells the reader which step failed.
+	var sce *skipContextError
+	if stderrors.As(err, &sce) && sce != nil {
+		rendered := formatCompilerErrorAt(sce.err, pos)
+		if prefix := strings.TrimSuffix(err.Error(), sce.Error()); prefix != err.Error() {
+			rendered = prefix + rendered
+		}
+		return rendered + sce.note
+	}
+	// The envelope THIRD, and every structured-type branch below it. The
 	// ordering rule and why breaking it does not terminate are documented
 	// above; a branch added out of order compiles and passes its own test.
 	var ce *cerrors.CompilerError

@@ -168,6 +168,20 @@ func reconstructClosureAxes(view *catalog.LazyLookup, resolved *compilerops.Reso
 // Each reason is rendered as its whole cause chain: the outermost frame names
 // only which step refused the file, and the frame beneath it is the one naming
 // the constraint the file violated.
+//
+// It stays a separate implementation from the CLI's withSkipContext rather than
+// sharing one, and the reason is that the two do different jobs on different
+// data. The CLI decorates an ERROR, so its whole point is that the failure
+// stays in the chain and its condition remains matchable at the command
+// boundary; this one composes a message STRING for a diagnostic envelope, where
+// there is no chain to preserve. The CLI's refusals also carry the kind and
+// name a header re-parse recovered, while this backing records a refusal by the
+// path it read and deliberately does not re-read a header it already refused to
+// trust — so the two have different fields to render. And the media differ: an
+// indented multi-line terminal block against a single-line envelope message.
+// What IS shared is the sentence they teach: both state the same
+// closure-membership distinction in the same words, so a reader meeting the
+// note in an editor and on a terminal is told the same thing.
 func (s *Server) skipContext(view *catalog.LazyLookup, msg string) string {
 	skips := view.Skips()
 	if len(skips) == 0 {
@@ -180,7 +194,7 @@ func (s *Server) skipContext(view *catalog.LazyLookup, msg string) string {
 	sort.Strings(paths)
 	var b strings.Builder
 	b.WriteString(msg)
-	b.WriteString("; note: catalog files skipped at load (one may be the unresolved in-closure entity):")
+	b.WriteString("; note: catalog files skipped at load — a refusal outside this Release's closure is tolerated and never fails a build, so this failure is explained only by a refusal naming something this Release reaches:")
 	for _, p := range paths {
 		fmt.Fprintf(&b, " %s: %s;", p, cerrors.CauseChain(skips[p]))
 	}

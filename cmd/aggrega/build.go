@@ -723,11 +723,51 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		lockfilePath, releasePath)
 }
 
+// skipContextError is a resolution or validation failure carrying the catalog
+// files the tolerant load refused. It DECORATES the failure rather than
+// replacing it: Error renders the failure followed by the note, and Unwrap
+// returns the failure itself, so errors.Is and errors.As still reach the
+// condition the failure raised and a registered condition's short code still
+// survives to the reader.
+//
+// It is a named type rather than an fmt wrap because the diagnostic formatter
+// renders a failure from the outermost categorised envelope it can reach and
+// discards every frame above it. A note appended by an fmt wrap therefore
+// reaches the reader only while the failure happens to carry no envelope, and
+// disappears the moment one is introduced beneath it — silently, on the exact
+// path where the note is the only text naming what the author wrote wrong. A
+// named type gives the formatter something to detect, so the note reaches the
+// reader whatever shape the failure it decorates has.
+type skipContextError struct {
+	err  error
+	note string
+}
+
+// Error renders the decorated failure followed by the skip note.
+func (e *skipContextError) Error() string { return e.err.Error() + e.note }
+
+// Unwrap returns the decorated failure, so errors.Is and errors.As traverse
+// into it and the sentinel the failure raised stays matchable at the boundary.
+func (e *skipContextError) Unwrap() error { return e.err }
+
 // withSkipContext annotates an in-closure resolution / validation failure with
 // the catalog files the load refused, so a tolerated skip never hides WHY an
 // entity the Release reaches went missing. A skipped file whose header named the
 // kind+name is reported with that identity; a file too malformed to peek is
 // reported by path. No-op when nothing was skipped or err is nil.
+//
+// The note states the distinction the tolerant load draws, because the reader
+// meeting the note is the one who has to act on it: a refused file OUTSIDE this
+// Release's closure is tolerated and never fails a build, so the failure the
+// note is attached to is explained only by a refusal naming something this
+// Release reaches. That is stated rather than left implicit — the note is
+// attached to every skip the load recorded, not only to the one that mattered,
+// and a reader who does not know which class is which cannot tell a cause from
+// a bystander.
+//
+// The failure stays in the returned error's chain rather than being rendered
+// into text, so a registered condition's identity survives to the reader and
+// errors.Is still matches it at the command boundary.
 //
 // Each reason is rendered as its whole cause chain, not just its outermost
 // frame: the outermost frame typically says only which step refused the file
@@ -738,10 +778,13 @@ func withSkipContext(err error, skipped []catalog.SkippedEntity) error {
 		return err
 	}
 	var b strings.Builder
-	b.WriteString(err.Error())
-	b.WriteString("\n  note: catalog files skipped at load (one may be the unresolved in-closure entity):")
+	b.WriteString("\n  note: catalog files skipped at load. A refusal outside this Release's closure is tolerated and never fails a build,")
+	b.WriteString("\n  so this failure is explained only by a refusal naming something this Release reaches:")
 	for _, s := range skipped {
 		reason := cerrors.CauseChain(s.Err)
+		if code, ok := cerrors.ShortCodeOf(s.Err); ok {
+			reason = shortCodeInHead(reason, code)
+		}
 		switch {
 		case s.Kind != "" && s.Name != "":
 			fmt.Fprintf(&b, "\n    - %s %q (%s): %s", s.Kind, s.Name, s.Path, reason)
@@ -749,7 +792,29 @@ func withSkipContext(err error, skipped []catalog.SkippedEntity) error {
 			fmt.Fprintf(&b, "\n    - %s: %s", s.Path, reason)
 		}
 	}
-	return fmt.Errorf("%s", b.String())
+	return &skipContextError{err: err, note: b.String()}
+}
+
+// shortCodeInHead puts a condition's short code inside the bracketed head a
+// rendered diagnostic already opens with, beside the category — the one
+// position the error reference teaches a code appears in, so a refused file
+// reported inside a note names its condition exactly as it would when it is
+// the whole diagnostic.
+//
+// A reason that opens with no bracketed head is returned unchanged rather than
+// gaining a second, differently-shaped presentation of the same identifier. So
+// is one whose head already carries two tokens: the head is category-then-code
+// and nothing else, so a space inside it means the code is already there and
+// the function is idempotent.
+func shortCodeInHead(reason, code string) string {
+	if !strings.HasPrefix(reason, "[") {
+		return reason
+	}
+	end := strings.Index(reason, "]")
+	if end < 0 || strings.Contains(reason[:end], " ") {
+		return reason
+	}
+	return reason[:end] + " " + code + reason[end:]
 }
 
 // writeArtifacts writes the rendered file map to disk under outRoot,
