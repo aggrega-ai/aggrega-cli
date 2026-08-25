@@ -11,12 +11,12 @@ entities:
         - release.spec.aggregate
     - uri: core/datastore/mariadb
       resolved_version: 1.0.0
-      digest: sha256:7b992398371c4ab3b74adabc4a61c702ff10aaa0354b2de537dc7bea6bf8eff2
+      digest: sha256:e88897915b115180cb3dc1711ceb31e9801c0a76200e60febbbf6181f2edac2a
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.type
     - uri: core/datastore/mariadb:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:7b992398371c4ab3b74adabc4a61c702ff10aaa0354b2de537dc7bea6bf8eff2
+      digest: sha256:e88897915b115180cb3dc1711ceb31e9801c0a76200e60febbbf6181f2edac2a
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: core/devtool/adminer
@@ -61,7 +61,7 @@ entities:
         - release.spec.manifest
     - uri: mariadb-synth:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:55646dde9adfa9155a00cc29a787a348e4c84e25b34526ea295fc5a0bec900f0
+      digest: sha256:2e8693376a5a790808753e4d8a4cfe3a59d7cb7f4067211779b96bbd501856c4
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: provided-secret:1.0.0
