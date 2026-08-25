@@ -50,7 +50,7 @@ package catalog
 
 // ComponentNameShape matches three kebab-case segments separated by
 // "/". Example matches: "core/datastore/mariadb",
-// "core/gateway/ai-gateway", "core/ai-model/azure-openai".
+// "core/gateway/kong", "core/ai-model/azure-openai".
 const ComponentNameShape = `^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$`
 
 // FeatureNameShape matches two kebab-case segments separated by "/".

@@ -35,10 +35,10 @@ func TestComponentNameShape_MatchesThreeKebabSegments(t *testing.T) {
 	}{
 		// Hub catalog fixtures
 		{"core/datastore/mariadb", true},
-		{"core/gateway/ai-gateway", true},
+		{"core/gateway/kong", true},
 		{"core/ai-model/azure-openai", true},
 		{"core/messaging/base", true},
-		{"core/ai-pipeline/base", true},
+		{"core/ai-agent/anthropic", true},
 		// Wrong segment count
 		{"core/database", false},
 		{"mariadb", false},
