@@ -4,11 +4,11 @@
 package cfncore
 
 import (
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/pkg/namesegmenttest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -138,40 +138,19 @@ func TestStackNameDistinguishesInputsThatShareOneName(t *testing.T) {
 	}
 }
 
-// exportSegmentAlphabet is the corpus the injectivity properties below are
-// established over. It is chosen for the encoding's edges rather than for
-// realism: the empty segment, the characters with their own escape, the escape
-// mark itself, the absent-segment selector, a hyphen in every position that
-// decides whether it is kept or escaped, a doubled hyphen, and text that spells
-// an escape out.
-//
-// It also has to be closed under moving a hyphen across a join, or the injectivity
-// assertion cannot see the join itself: for a one-character join, ("a-a", "a") and
-// ("a", "a-a") assemble to one string, and only a corpus carrying both "a" and
-// "a-a" contains that pair. A corpus that merely looks varied does not — every
-// segment can be distinct and every assembled name still distinct, while the
-// property the join carries goes untested.
-var exportSegmentAlphabet = []string{
-	"", "a", "z", "e", "1",
-	"a-b", "a_b", "a.b", "a/b",
-	"-a", "a-", "-", "--", "a--b",
-	"a-z", "-z", "-ze", "-zh", "a-zhb",
-	"none", "A", "aA", "a b", "a\tb", "é",
-	"a-a", "b-a",
-}
-
 // TestExportNameIsInjective asserts that no two distinct segment tuples reach one
-// export name, over the full cross product of [exportSegmentAlphabet].
+// export name, over the full cross product of the shared segment corpus.
 //
 // A collision is reported with both tuples that produced it, so a regression
 // names the two inputs rather than only the count.
 func TestExportNameIsInjective(t *testing.T) {
+	corpus := namesegmenttest.Corpus()
 	seen := make(map[string][4]string)
 	total := 0
-	for _, a := range exportSegmentAlphabet {
-		for _, b := range exportSegmentAlphabet {
-			for _, c := range exportSegmentAlphabet {
-				for _, d := range exportSegmentAlphabet {
+	for _, a := range corpus {
+		for _, b := range corpus {
+			for _, c := range corpus {
+				for _, d := range corpus {
 					tuple := [4]string{a, b, c, d}
 					name := ExportName(a, b, c, d)
 					total++
@@ -194,10 +173,11 @@ func TestExportNameIsInjective(t *testing.T) {
 // is a separate name space with its own arity: an export-name-only proof would
 // leave a stack-name regression unobserved.
 func TestStackNameIsInjective(t *testing.T) {
+	corpus := namesegmenttest.Corpus()
 	seen := make(map[string][2]string)
 	total := 0
-	for _, a := range exportSegmentAlphabet {
-		for _, b := range exportSegmentAlphabet {
+	for _, a := range corpus {
+		for _, b := range corpus {
 			tuple := [2]string{a, b}
 			name := StackName(a, b)
 			total++
@@ -217,18 +197,19 @@ func TestStackNameIsInjective(t *testing.T) {
 // comes back exactly as supplied.
 //
 // Distinctness alone says no two tuples in the corpus collided; recovering the
-// segments says why — the name still carries them. The reader below is written
-// against the encoding's stated contract and deliberately shares no code with the
+// segments says why — the name still carries them. The reader is written against
+// the encoding's stated contract and deliberately shares no code with the
 // encoder: a reader that called into the encoder would agree with it whatever the
 // encoder did, which is the one thing this assertion must not do.
 func TestExportNameSegmentsAreRecoverable(t *testing.T) {
-	for _, a := range exportSegmentAlphabet {
-		for _, b := range exportSegmentAlphabet {
-			for _, c := range exportSegmentAlphabet {
-				for _, d := range exportSegmentAlphabet {
+	corpus := namesegmenttest.Corpus()
+	for _, a := range corpus {
+		for _, b := range corpus {
+			for _, c := range corpus {
+				for _, d := range corpus {
 					want := []string{"aggrega", a, b, c, d}
 					name := ExportName(a, b, c, d)
-					got := readExportName(t, name)
+					got := namesegmenttest.ReadName(t, name)
 					if len(got) != len(want) {
 						t.Fatalf("export name %q read back as %d parts, want %d", name, len(got), len(want))
 					}
@@ -243,82 +224,13 @@ func TestExportNameSegmentsAreRecoverable(t *testing.T) {
 	}
 }
 
-// readExportName splits an assembled name at its joins and decodes each segment.
-//
-// The split is on the first two hyphens of any run of two or more, which is sound
-// exactly because an encoded segment never contains two hyphens in a row and
-// never ends with one — so the first such pair is always a join.
-func readExportName(t *testing.T, name string) []string {
-	t.Helper()
-	var parts []string
-	rest := name
-	for {
-		at := strings.Index(rest, "--")
-		if at < 0 {
-			parts = append(parts, decodeExportSegment(t, rest))
-			return parts
-		}
-		parts = append(parts, decodeExportSegment(t, rest[:at]))
-		rest = rest[at+2:]
-	}
-}
-
-// decodeExportSegment reverses the segment encoding: a hyphen followed by the
-// escape mark opens an escape whose selector fixes its payload, and every other
-// byte stands for itself.
-func decodeExportSegment(t *testing.T, seg string) string {
-	t.Helper()
-	if seg == "-ze" {
-		return ""
-	}
-	var out strings.Builder
-	for i := 0; i < len(seg); {
-		if seg[i] != '-' || i+2 >= len(seg) || seg[i+1] != 'z' {
-			out.WriteByte(seg[i])
-			i++
-			continue
-		}
-		switch seg[i+2] {
-		case 'h':
-			out.WriteByte('-')
-			i += 3
-		case 'u':
-			out.WriteByte('_')
-			i += 3
-		case 'd':
-			out.WriteByte('.')
-			i += 3
-		case 's':
-			out.WriteByte('/')
-			i += 3
-		case 'x':
-			cp, err := strconv.ParseUint(seg[i+3:i+9], 16, 32)
-			if err != nil {
-				t.Fatalf("segment %q carries an unreadable code-point escape at %d: %v", seg, i, err)
-			}
-			out.WriteRune(rune(cp))
-			i += 9
-		case 'b':
-			raw, err := strconv.ParseUint(seg[i+3:i+5], 16, 8)
-			if err != nil {
-				t.Fatalf("segment %q carries an unreadable byte escape at %d: %v", seg, i, err)
-			}
-			out.WriteByte(byte(raw))
-			i += 5
-		default:
-			t.Fatalf("segment %q carries an unknown escape selector %q at %d", seg, seg[i+2], i)
-		}
-	}
-	return out.String()
-}
-
 // TestEncodedSegmentReservesTheJoin asserts the two structural properties the
 // join rests on, over the whole corpus: an encoded segment never contains two
 // hyphens in a row, and never ends with one. Without both, a run of hyphens in an
 // assembled name would not say where the join is.
 func TestEncodedSegmentReservesTheJoin(t *testing.T) {
-	for _, s := range exportSegmentAlphabet {
-		encoded := encodeExportSegment(s)
+	for _, s := range namesegmenttest.Corpus() {
+		encoded := exportNameEncoding.Segment(s)
 		if strings.Contains(encoded, "--") {
 			t.Fatalf("segment %q encoded to %q, which contains the join sequence", s, encoded)
 		}
@@ -336,8 +248,8 @@ func TestEncodedSegmentReservesTheJoin(t *testing.T) {
 // stack names this core assembles are built from. The corpus deliberately
 // includes a space, a tab, and a non-ASCII letter, none of which may survive.
 func TestEncodedSegmentUsesOnlyTheNameAlphabet(t *testing.T) {
-	for _, s := range exportSegmentAlphabet {
-		encoded := encodeExportSegment(s)
+	for _, s := range namesegmenttest.Corpus() {
+		encoded := exportNameEncoding.Segment(s)
 		for i := 0; i < len(encoded); i++ {
 			c := encoded[i]
 			ok := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-'
@@ -354,9 +266,9 @@ func TestEncodedSegmentUsesOnlyTheNameAlphabet(t *testing.T) {
 // distinct. Without this the encoding would be lossy exactly where its input is
 // least controlled.
 func TestEncodedSegmentCarriesInvalidBytesDistinctly(t *testing.T) {
-	first := encodeExportSegment("a\xffb")
-	second := encodeExportSegment("a\xfeb")
-	valid := encodeExportSegment("a�b")
+	first := exportNameEncoding.Segment("a\xffb")
+	second := exportNameEncoding.Segment("a\xfeb")
+	valid := exportNameEncoding.Segment("a�b")
 	t.Logf("0xff -> %q, 0xfe -> %q, U+FFFD -> %q", first, second, valid)
 	if first == second {
 		t.Fatalf("bytes 0xff and 0xfe both encode to %q", first)
