@@ -100,7 +100,7 @@ func RenderLoadedChart(
 		ns = "default"
 	}
 	relOpts := chartutil.ReleaseOptions{
-		Name:      sanitizeContainerName(nodeCtx.NodeID),
+		Name:      releaseName(nodeCtx),
 		Namespace: ns,
 		Revision:  1,
 		IsInstall: true,
@@ -148,6 +148,14 @@ func RenderLoadedChart(
 	// some platforms. ProvenanceComponentID is the raw NodeID for ordinary
 	// components (byte-identical key) and the sanitised LabelComponentID for
 	// FR-emitted nodes.
+	//
+	// It is also the value the release name above is derived from. The two are
+	// the same identity written twice — here as authored, there through an
+	// injective encoding — so two nodes land on one release name exactly when
+	// they land on one prefix. Deriving the release name from a second value
+	// would put a lossy name beside a lossless one, and the lossless one would
+	// keep two nodes' output apart while the lossy one silently gave them a
+	// single in-cluster identity.
 	prefix := rendercore.ProvenanceComponentID(nodeCtx)
 	keys := make([]string, 0, len(rendered))
 	for k := range rendered {

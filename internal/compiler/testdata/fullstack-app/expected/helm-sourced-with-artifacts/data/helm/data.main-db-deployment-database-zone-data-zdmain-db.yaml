@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: data-main-db
+  name: data-zdmain-db
   namespace: database-zone
   labels:
-    app: data-main-db
+    app: data-zdmain-db
     aggrega.ai/aggregate-name: fullstack-app
     aggrega.ai/compiler-version: 0.1.0
     aggrega.ai/component-id: data.main-db
@@ -19,14 +19,14 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: data-main-db
+      app: data-zdmain-db
   template:
     metadata:
       labels:
-        app: data-main-db
+        app: data-zdmain-db
     spec:
       containers:
-        - name: data-main-db
+        - name: data-zdmain-db
           image: postgres:15
           ports:
             - containerPort: 5432
