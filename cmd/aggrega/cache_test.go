@@ -1172,4 +1172,74 @@ func TestRemoveEmptyParentsStopsAtPathBoundary(t *testing.T) {
 			t.Errorf("the climb reached into a retained entry %q: %v", sibling, err)
 		}
 	})
+
+	t.Run("a directory above the boundary is not climbed into", func(t *testing.T) {
+		tmp := t.TempDir()
+		// The boundary sits deeper than the slot's own parent, so the climb's
+		// first candidate is already above it. Above is not inside, so nothing
+		// is removed — including the sibling subtree the candidate belongs to.
+		above := filepath.Join(tmp, "aggrega")
+		stopAt := filepath.Join(above, "wasm-compile")
+		outside := filepath.Join(above, "describe")
+		if err := os.MkdirAll(stopAt, 0o700); err != nil {
+			t.Fatalf("mkdir boundary: %v", err)
+		}
+		if err := os.MkdirAll(outside, 0o700); err != nil {
+			t.Fatalf("mkdir outside: %v", err)
+		}
+
+		removeEmptyParents(filepath.Join(outside, "module.bin"), stopAt)
+
+		for _, dir := range []string{outside, above, stopAt} {
+			if _, err := os.Stat(dir); err != nil {
+				t.Errorf("the climb removed %q, which is not inside the boundary %q: %v", dir, stopAt, err)
+			}
+		}
+	})
+
+	t.Run("the boundary is never removed however it is spelled", func(t *testing.T) {
+		tmp := t.TempDir()
+		// The boundary handed in carries a trailing separator, so it is not the
+		// spelling the climb's own candidates take. Containment is decided on
+		// where a candidate lands rather than on how the boundary was typed, so
+		// the interior empties still go and the boundary still stays.
+		boundary := filepath.Join(tmp, "aggrega")
+		class := filepath.Join(boundary, "wasm-compile")
+		leaf := filepath.Join(class, "sha256-abc")
+		if err := os.MkdirAll(leaf, 0o700); err != nil {
+			t.Fatalf("mkdir leaf: %v", err)
+		}
+
+		removeEmptyParents(filepath.Join(leaf, "module.bin"), boundary+string(filepath.Separator))
+
+		for _, dir := range []string{leaf, class} {
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("empty parent %q inside %q survived the climb (stat err %v)", dir, boundary, err)
+			}
+		}
+		if _, err := os.Stat(boundary); err != nil {
+			t.Errorf("the climb removed the boundary %q itself: %v", boundary, err)
+		}
+	})
+
+	t.Run("no boundary touches nothing", func(t *testing.T) {
+		tmp := t.TempDir()
+		// Every cache root is composed from a workspace or user directory plus a
+		// named segment, and an unresolvable one arrives empty. An empty
+		// boundary names no directory to climb towards, so the climb does not
+		// start: were it to, the candidates here are empty and would go.
+		class := filepath.Join(tmp, "aggrega", "wasm-compile")
+		leaf := filepath.Join(class, "sha256-abc")
+		if err := os.MkdirAll(leaf, 0o700); err != nil {
+			t.Fatalf("mkdir leaf: %v", err)
+		}
+
+		removeEmptyParents(filepath.Join(leaf, "module.bin"), "")
+
+		for _, dir := range []string{leaf, class, filepath.Join(tmp, "aggrega")} {
+			if _, err := os.Stat(dir); err != nil {
+				t.Errorf("the climb removed %q with no boundary to climb towards: %v", dir, err)
+			}
+		}
+	})
 }

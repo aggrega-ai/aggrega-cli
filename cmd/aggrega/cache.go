@@ -28,6 +28,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 )
@@ -1073,22 +1074,31 @@ func normalizeDigestHex(d string) string {
 }
 
 // removeEmptyParents removes now-empty parent directories of a removed slot, so
-// a prune does not leave empty scaffolding behind. The climb has two exits: it
-// stops AT the stop boundary, which the loop's own test decides, and it stops
-// early on a failed removal — a directory that still holds entries being the
-// ordinary case.
+// a prune does not leave empty scaffolding behind. Without a stop boundary to
+// climb towards it does nothing.
 //
-// Containment is tested on path boundaries rather than on the raw strings: a
-// path is a sequence of components, so the separator is appended before the
-// prefix test and a sibling directory whose name merely begins with the stop
-// directory's name is not mistaken for a directory inside it.
+// Containment is the shared predicate's, asked of each candidate directory as a
+// path relative to the boundary. Three answers end the climb before any removal:
+// a directory that shares no common path with the boundary; one the predicate
+// places outside it, which is where a sibling whose name merely extends the
+// boundary's lands — an `aggrega-test` beside an `aggrega` relativises to a
+// climbing path and is outside; and the boundary itself, which relativises to
+// `.` and so is never removed, however the caller spelled it. A failed removal
+// ends the climb as well, a directory that still holds entries being the
+// ordinary case.
 func removeEmptyParents(removed, stopAt string) {
 	if stopAt == "" {
 		return
 	}
-	boundary := stopAt + string(filepath.Separator)
 	dir := filepath.Dir(removed)
-	for dir != stopAt && strings.HasPrefix(dir, boundary) {
+	for {
+		rel, err := filepath.Rel(stopAt, dir)
+		if err != nil || rel == "." {
+			return
+		}
+		if _, ok := pathscope.Resolve(stopAt, rel); !ok {
+			return
+		}
 		if err := os.Remove(dir); err != nil {
 			return
 		}
