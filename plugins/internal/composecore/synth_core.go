@@ -40,6 +40,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -1051,17 +1052,63 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 	return nil
 }
 
-// volumeName returns the per-node volume name convention: "<nodeID>-<name>".
-// Used for both top-level volume declarations and service-level volume
-// references so the two ends agree.
-func volumeName(nodeID, name string) string {
-	return nodeID + "-" + name
+// volumeNameEncoding is the segment encoding a compose volume name is built
+// with.
+//
+// A compose volume is shared storage, and the top-level volumes: block unions
+// contributions by name — so two authored volumes arriving at one name become
+// one volume both containers write into, with nothing in the build to report
+// it. The derivation therefore encodes each part rather than concatenating the
+// two, and joins the encoded parts with a sequence neither can produce.
+//
+// The alphabet is stated here rather than taken from the encoding, because it
+// is a property of what compose accepts in a volume name rather than of the
+// encoding: a compose volume name carries letters, digits, dots, underscores
+// and hyphens. The hyphen is the encoding's own — it opens every escape and
+// composes the join — so an alphabet may not admit it; everything else compose
+// accepts is carried through, which is what keeps an ordinary name readable.
+var volumeNameEncoding = namesegment.NewEncoding(isVolumeNameRune)
+
+// isVolumeNameRune reports whether a character is carried through the encoding
+// as itself: an ASCII letter, a digit, a dot or an underscore. Every other
+// character is escaped.
+func isVolumeNameRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' ||
+		r >= '0' && r <= '9' || r == '.' || r == '_'
 }
 
-// sanitizeServiceName produces a compose-safe service name from a Workload
-// container name. Compose service names are restricted to [a-zA-Z0-9._-];
-// existing schema validation on Workload container names already enforces a
-// compatible subset, so this is a defensive identity for now.
+// volumeName derives the compose volume name for one authored volume of one
+// node, from the node's identity and the name the author gave the volume. Both
+// the top-level volume declaration and every service-level reference to it are
+// built here, so the two ends agree.
+//
+// The derivation is injective: two calls produce one name only where both the
+// node identity and the volume name match. Each part is encoded rather than
+// carried through, so parts differing only in punctuation or in case stay
+// distinct, and the two-hyphen join is a sequence no encoded part contains, so
+// a name cannot be re-divided into a different pair — which a single hyphen
+// could not promise, since either part may carry one. The name is byte-stable
+// across builds with identical input.
+func volumeName(nodeID, name string) string {
+	return volumeNameEncoding.Name(nodeID, name)
+}
+
+// sanitizeServiceName carries a Workload container name through as the compose
+// service name it contributes to.
+//
+// It is an identity, and the name says what it is reserved for rather than what
+// it does: compose service names admit letters, digits, dots, underscores and
+// hyphens, and this is the one place a narrowing would belong if one were added.
+//
+// What it does not do is the part worth stating, because assuming otherwise is
+// how a caller comes to trust it. A container name is declared as a string with
+// no character constraint on it, so nothing upstream narrows what arrives here
+// and nothing here narrows it either — a container name carrying a character a
+// compose service name does not admit reaches the emitted file as authored. The
+// name is also joined to the node's identity by a single hyphen at the two call
+// sites that build an init service name, and a hyphen is a character a container
+// name may carry, so two distinct pairs can reach one service name and compose
+// unions services by name.
 func sanitizeServiceName(name string) string {
 	return name
 }

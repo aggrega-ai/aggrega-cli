@@ -65,7 +65,7 @@ func TestUnmountedVolume_PersistentDiagnosed(t *testing.T) {
 	// The orphan volume is kept in the output rather than pruned: it is inert in
 	// compose, and removing it would be a translation change rather than a
 	// diagnostic.
-	if !strings.Contains(string(files[0].Body), "store-data") {
+	if !strings.Contains(string(files[0].Body), "store--data") {
 		t.Errorf("expected the unmounted persistent volume to remain in the output; got:\n%s", files[0].Body)
 	}
 }

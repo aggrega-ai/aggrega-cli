@@ -179,8 +179,8 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	if !strings.Contains(merged, "/var/lib/mysql") {
 		t.Errorf("expected persistent mount path '/var/lib/mysql' in rendered compose:\n%s", merged)
 	}
-	if !strings.Contains(merged, "db-data") {
-		t.Errorf("expected named volume 'db-data' (workload volume 'data' on node 'db') in rendered compose:\n%s", merged)
+	if !strings.Contains(merged, "db--data") {
+		t.Errorf("expected named volume 'db--data' (workload volume 'data' on node 'db') in rendered compose:\n%s", merged)
 	}
 
 	// Healthcheck: the Recipe's container health block reaches the rendered

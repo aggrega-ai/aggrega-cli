@@ -9,7 +9,7 @@ services:
       aggrega.ai/environment: test-env
     volumes:
       - type: volume
-        source: db-server-data
+        source: db-server--data
         target: /var/lib/db
 volumes:
-  db-server-data: {}
+  db-server--data: {}

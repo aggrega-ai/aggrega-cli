@@ -99,7 +99,7 @@ func TestSynthesizeWorkload_InitContainerVolumeMountTranslated(t *testing.T) {
 		t.Fatalf("no init service for the first init container; services: %v", serviceNames(frag))
 	}
 	wantMounts := []ServiceVolume{
-		{Type: "volume", Source: "platform-data", Target: "/home/node/.n8n"},
+		{Type: "volume", Source: "platform--data", Target: "/home/node/.n8n"},
 	}
 	if len(seed.Volumes) != len(wantMounts) {
 		t.Fatalf("init service mounts = %+v, want %+v", seed.Volumes, wantMounts)
@@ -139,7 +139,7 @@ func TestSynthesizeWorkload_InitContainerVolumeMountTranslated(t *testing.T) {
 		svc := frag.Services[name]
 		var found bool
 		for _, v := range svc.Volumes {
-			if v.Source == "platform-data" && v.Target == "/home/node/.n8n" {
+			if v.Source == "platform--data" && v.Target == "/home/node/.n8n" {
 				found = true
 			}
 		}

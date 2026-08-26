@@ -9,7 +9,7 @@ services:
       aggrega.ai/environment: test-env
     volumes:
       - type: volume
-        source: api-state
+        source: api--state
         target: /var/lib/app
     networks:
       - default
@@ -17,7 +17,7 @@ services:
       - source: app-settings
         target: /etc/app
 volumes:
-  api-state: {}
+  api--state: {}
 networks:
   default: {}
 configs:

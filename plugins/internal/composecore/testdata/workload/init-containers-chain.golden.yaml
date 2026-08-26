@@ -9,7 +9,7 @@ services:
       aggrega.ai/environment: test-env
     volumes:
       - type: volume
-        source: platform-data
+        source: platform--data
         target: /home/node/.n8n
     depends_on:
       platform-verify-seed:
@@ -31,7 +31,7 @@ services:
       aggrega.ai/environment: test-env
     volumes:
       - type: volume
-        source: platform-data
+        source: platform--data
         target: /home/node/.n8n
     restart: "no"
     configs:
@@ -52,11 +52,11 @@ services:
       aggrega.ai/environment: test-env
     volumes:
       - type: volume
-        source: platform-data
+        source: platform--data
         target: /home/node/.n8n
     depends_on:
       platform-import-seed:
         condition: service_completed_successfully
     restart: "no"
 volumes:
-  platform-data: {}
+  platform--data: {}
