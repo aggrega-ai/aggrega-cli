@@ -173,8 +173,9 @@ func TestFeatureMatrix_CrossCutting(t *testing.T) {
 			t.Errorf("bridge service: expected %q\nbridge block was:\n%s", wantRecipeURI, bridgeBlock)
 		}
 
-		// Discovery B — component-id must be the sanitized synthetic, not raw marker.
-		const wantComponentID = "aggrega.ai/component-id: boundary-fr-bridge-cluster"
+		// Discovery B — component-id must be the identity composed from the parts an
+		// author wrote (the instance name and the boundary path), not the raw marker.
+		const wantComponentID = "aggrega.ai/component-id: bfr--cluster--bridge"
 		if !strings.Contains(bridgeBlock, wantComponentID) {
 			t.Errorf("bridge service: expected %q\nbridge block was:\n%s", wantComponentID, bridgeBlock)
 		}

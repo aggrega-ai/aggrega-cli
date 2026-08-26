@@ -329,8 +329,7 @@ func dispatchBoundaryScopeFR(
 	// pseudo-NodeID for the engine — the engine's per-node identity is
 	// the boundary-FR tuple, not a per-component instance. The synthetic
 	// NodeID marker syntax stays for dispatch + trace + error-message
-	// uniqueness; LabelComponentID carries the K8s-safe sanitized form
-	// for label values. RecipeName/Version carry the FR's identity so the
+	// uniqueness. RecipeName/Version carry the FR's identity so the
 	// aggrega.ai/recipe-uri label resolves to the FR (not the consumer
 	// node's Recipe whose nodeCtx this struct was copied from).
 	frNodeCtx := nodeCtx
@@ -338,7 +337,17 @@ func dispatchBoundaryScopeFR(
 	frNodeCtx.BoundaryPath = key.BoundaryPath
 	frNodeCtx.RecipeName = fr.Metadata.Name
 	frNodeCtx.RecipeVersion = fr.Metadata.Version
-	frNodeCtx.LabelComponentID = labels.SanitizeForK8sLabelValue(frNodeCtx.NodeID)
+	// The component identity is COMPOSED from the two things an author wrote —
+	// the instance name this feature is attached under, and the segments of the
+	// boundary path it is attached to — and deliberately not read out of the
+	// node id above. That node id is a marker the compiler built for its own
+	// dispatch, and every character it joins those two parts with is one a label
+	// value refuses; substituting for them destroys the boundary between the
+	// parts, so two attachments an author can tell apart reach one identity. The
+	// parts are in hand right here, so composing from them is both cheaper and
+	// exact, and it is why this label's own prefix is a free choice rather than
+	// an echo of how the marker happens to be spelled.
+	frNodeCtx.LabelComponentID = labels.BoundaryFeatureComponentID(frInstance, splitBoundaryPath(key.BoundaryPath))
 	// That label value is a name the compiler derived, and it lands on every
 	// resource this feature's output carries — so it joins the injectivity check
 	// the names a guest declares go through. Two features whose identities reach

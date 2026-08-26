@@ -1,13 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package labels provides helpers for transforming arbitrary strings into
-// values that satisfy Kubernetes label-value rules. The compiler emits
-// labels on rendered resources for provenance, attribution, and tooling
-// integration; some label values originate from internal identifiers
-// (e.g., synthetic NodeIDs for FR-emitted resources) that contain
-// characters K8s rejects. This package centralises the transformation
-// rule so every emission site sanitizes consistently.
+// Package labels turns the strings the compiler holds into values that satisfy
+// Kubernetes label-value rules. The compiler stamps labels on rendered
+// resources for provenance, attribution and tooling integration, and some of
+// those values have to be built rather than copied.
+//
+// There are two mechanics here because there are two jobs, and which one a
+// caller needs is decided by whether the value identifies one authored name or
+// several parts.
+//
+// Where a value identifies something composed of several authored parts,
+// [BoundaryFeatureComponentID] COMPOSES it from those parts through an encoding
+// that writes out what the label alphabet refuses instead of folding it away —
+// so two identities differing at all reach two values, and the value reads back
+// into the parts it was built from.
+//
+// Where a value carries one already-authored name and there is nothing to
+// compose, [SanitizeForK8sLabelValue] rewrites that name into the permitted
+// charset by substitution. That mapping is many-to-one, which is stated on the
+// function itself: a caller needing two distinct inputs to reach two distinct
+// values cannot get it from there.
 package labels
 
 import "strings"
@@ -28,19 +41,22 @@ import "strings"
 //     leaves a trailing non-alphanumeric character, that suffix is
 //     stripped to preserve the start/end alphanumeric rule.
 //
-// Use cases:
+// The mapping is MANY-TO-ONE, and that is a property of the rules above rather
+// than an accident of this implementation: every character outside the
+// permitted set becomes the same hyphen, runs of hyphens collapse, and the
+// result is cut to length. So `a:b`, `a/b` and `a-b` all arrive at `a-b`.
 //
-//   - FR-emitted resource NodeIDs use a synthetic marker syntax like
-//     `<boundary-fr>:bridge@cluster` that must be sanitized before
-//     emission as the `aggrega.ai/component-id` label value. Result:
-//     `boundary-fr-bridge-cluster`.
-//   - Future emission sites that derive label values from internal
-//     identifiers (e.g., dispatch keys, fragment names, synthetic
-//     instance IDs) can call this helper rather than reimplementing
-//     the rule. The compose engine accepts unrestricted label values
-//     today; the helper still applies for provenance-uniformity across
-//     engines and for future portability when boundary-scope FRs ship
-//     to K8s targets.
+// A caller that needs two distinct inputs to reach two distinct values must not
+// use this. Compose the value from its parts instead — which is what
+// [BoundaryFeatureComponentID] does, writing each refused character out rather
+// than folding it onto a hyphen — or declare the result somewhere a duplicate
+// is refused.
+//
+// What is left here is the case the fold cannot damage: a label value carrying
+// a single authored name that is already unique within the document naming it,
+// where there are no parts to compose and nothing a separator could straddle.
+// A feature attachment's own instance name, stamped on the component it is
+// attached to, is that case.
 //
 // Returns "" when s is empty or when sanitization removes every
 // character (e.g., a string of only invalid characters).

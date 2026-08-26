@@ -57,15 +57,17 @@ func boundaryScopeHelmBridgeFR(t *testing.T) *types.FeatureRecipe {
 	}
 }
 
-// TestBoundaryScopeFR_HelmProvenanceUsesSanitizedComponentID is the end-to-end
+// TestBoundaryScopeFR_HelmProvenanceUsesTheComposedComponentID is the end-to-end
 // proof that a boundary-scope FeatureRecipe's emitted K8s manifest stamps the
-// SANITISED component identity, never the raw synthetic node-ID. A boundary FR's
+// COMPOSED component identity, never the raw synthetic node-ID. A boundary FR's
 // engine-facing node-ID carries marker syntax ("<boundary-fr>:bridge@cluster")
 // that is not a legal Kubernetes label value (the ":" and "@" alone disqualify
-// it). The dispatch sets LabelComponentID to the sanitised form
-// ("boundary-fr-bridge-cluster"), and every emitting surface stamps
+// it). The dispatch composes LabelComponentID from the two parts an author wrote
+// — the instance name and the boundary path — reaching
+// "bfr--cluster--bridge", and every emitting surface stamps
 // app.kubernetes.io/name and aggrega.ai/component-id from that, so the rendered
-// manifest is charset-valid.
+// manifest is charset-valid and two attachments an author can tell apart never
+// arrive at one identity.
 //
 // This drives the real RenderAll pipeline: the boundary-scope dispatch builds
 // the synthetic node-ID and the sanitised LabelComponentID, the helm engine
@@ -75,7 +77,7 @@ func boundaryScopeHelmBridgeFR(t *testing.T) *types.FeatureRecipe {
 // NodeID) and aggrega.ai/component-id renders "<boundary-fr>:bridge@cluster" —
 // the assertions below go red. The green is therefore non-vacuous: it depends
 // on the sanitisation, not merely on a label being present.
-func TestBoundaryScopeFR_HelmProvenanceUsesSanitizedComponentID(t *testing.T) {
+func TestBoundaryScopeFR_HelmProvenanceUsesTheComposedComponentID(t *testing.T) {
 	t.Parallel()
 
 	nodes := types.OrderedMap[types.IRNode]{}
@@ -166,10 +168,12 @@ func TestBoundaryScopeFR_HelmProvenanceUsesSanitizedComponentID(t *testing.T) {
 		t.Fatalf("expected a helm-rendered ConfigMap from the boundary-scope FR; got files %v", keysOfFiles(result.Files))
 	}
 
-	const wantID = "boundary-fr-bridge-cluster"
+	// Written out rather than computed from the derivation: a value taken from the
+	// derivation would agree with it whatever it did.
+	const wantID = "bfr--cluster--bridge"
 	for _, key := range []string{"aggrega.ai/component-id: " + wantID, "app.kubernetes.io/name: " + wantID} {
 		if !strings.Contains(cm, key) {
-			t.Errorf("rendered ConfigMap (%s) missing sanitised provenance %q\n--- body ---\n%s", cmPath, key, cm)
+			t.Errorf("rendered ConfigMap (%s) missing composed provenance %q\n--- body ---\n%s", cmPath, key, cm)
 		}
 	}
 	// The raw synthetic node-ID must never reach a rendered label value — its
@@ -180,7 +184,7 @@ func TestBoundaryScopeFR_HelmProvenanceUsesSanitizedComponentID(t *testing.T) {
 		}
 	}
 
-	// The emitted file KEY must also use the sanitised id: a synthetic NodeID's
+	// The emitted file KEY must also use the composed id: a synthetic NodeID's
 	// ":" / "@" / "<>" are illegal in filenames on some platforms (Windows
 	// reserves ":", "<", ">") and break archive tooling, and this output lands
 	// in cross-platform GitOps repos. Reverting the file-key change makes the
@@ -191,6 +195,6 @@ func TestBoundaryScopeFR_HelmProvenanceUsesSanitizedComponentID(t *testing.T) {
 		}
 	}
 	if !strings.Contains(cmPath, wantID+"-") {
-		t.Errorf("emitted file key %q should carry the sanitised prefix %q-", cmPath, wantID)
+		t.Errorf("emitted file key %q should carry the composed prefix %q-", cmPath, wantID)
 	}
 }

@@ -142,19 +142,24 @@ func TestReleaseNameIsRecoverable(t *testing.T) {
 }
 
 // TestReleaseNameForFeatureEmittedNode pins the release name of a node whose
-// component identity is carried separately from its node id. A boundary-scope
+// component identity is carried separately from its node id. A boundary-attached
 // feature's node id is a dispatch marker rather than an identity anyone
 // authored, and it carries characters no release name admits; the component
 // identity beside it is the value the node's output files are named for, so it
 // is the value the release name is built from too.
+//
+// The identity is built the way the compiler builds it — composed from the
+// instance name and the boundary path — rather than restated as a literal, so
+// this case follows the compiler's own derivation instead of a copy of it that
+// could stop matching. The release name it reaches is written out, because that
+// is the value under test.
 func TestReleaseNameForFeatureEmittedNode(t *testing.T) {
 	t.Parallel()
-	nodeID := "<boundary-fr>:bridge@cluster"
 	nodeCtx := rendercore.NodeRenderContext{
-		NodeID:           nodeID,
-		LabelComponentID: labels.SanitizeForK8sLabelValue(nodeID),
+		NodeID:           "<boundary-fr>:bridge@cluster",
+		LabelComponentID: labels.BoundaryFeatureComponentID("bridge", []string{"cluster"}),
 	}
-	if got, want := releaseName(nodeCtx), "boundary-fr-bridge-cluster"; got != want {
+	if got, want := releaseName(nodeCtx), "bfr-zh-cluster-zh-bridge"; got != want {
 		t.Errorf("release name %q, want %q", got, want)
 	}
 }

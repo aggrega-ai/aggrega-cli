@@ -74,29 +74,37 @@ func TestBuildProvenanceLabels_EveryConditional(t *testing.T) {
 	}
 }
 
-// TestProvenanceComponentID_PrefersSanitizedLabelComponentID pins the shared
+// TestProvenanceComponentID_PrefersTheCarriedComponentID pins the shared
 // component-identity contract every emitting surface (helm, helm-chart, the
-// artifacts emitter) now derives from one helper: when LabelComponentID is set
-// — the case for FR-emitted resources whose internal NodeID carries marker
-// syntax — it is the component identity, so a charset-invalid synthetic NodeID
-// never reaches a label value. When LabelComponentID is empty (the ordinary
-// component node) the already-label-valid NodeID stands.
-func TestProvenanceComponentID_PrefersSanitizedLabelComponentID(t *testing.T) {
+// artifacts emitter) derives from one helper: when LabelComponentID is set — the
+// case for a resource a FeatureRecipe emits, whose node id is a dispatch marker
+// rather than an identity anyone authored — it is the component identity, so a
+// charset-invalid marker never reaches a label value. When LabelComponentID is
+// empty (the ordinary component node) the already-label-valid NodeID stands.
+//
+// The carried value here is the composed form the boundary-scope dispatch
+// produces for the instance `bridge` at the boundary `cluster`, written out
+// rather than computed: a value taken from the derivation would agree with the
+// derivation whatever it did. What this case asserts is the preference, not the
+// spelling.
+func TestProvenanceComponentID_PrefersTheCarriedComponentID(t *testing.T) {
 	t.Parallel()
 
-	// Synthetic boundary-FR node: raw NodeID is charset-invalid (":" / "@" /
-	// "<>"); the sanitised LabelComponentID is what labels must carry.
+	const composed = "bfr--cluster--bridge"
+	// A resource a boundary-attached feature emits: the raw NodeID is
+	// charset-invalid (":" / "@" / "<>"), and the carried identity beside it is
+	// what labels must carry.
 	syn := NodeRenderContext{
 		NodeID:           "<boundary-fr>:bridge@cluster",
-		LabelComponentID: "boundary-fr-bridge-cluster",
+		LabelComponentID: composed,
 	}
-	if got := ProvenanceComponentID(syn); got != "boundary-fr-bridge-cluster" {
-		t.Errorf("ProvenanceComponentID = %q; want the sanitised LabelComponentID", got)
+	if got := ProvenanceComponentID(syn); got != composed {
+		t.Errorf("ProvenanceComponentID = %q; want the carried LabelComponentID", got)
 	}
 	labels := BuildAggregaProvenanceLabels(syn)
 	for _, k := range []string{"aggrega.ai/component-id", "app.kubernetes.io/name"} {
-		if labels[k] != "boundary-fr-bridge-cluster" {
-			t.Errorf("%s = %q; want sanitised id (raw synthetic NodeID must not reach a label value)", k, labels[k])
+		if labels[k] != composed {
+			t.Errorf("%s = %q; want the carried id (the raw dispatch marker must not reach a label value)", k, labels[k])
 		}
 	}
 

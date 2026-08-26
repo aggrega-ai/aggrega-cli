@@ -38,25 +38,37 @@ const (
 	hostDistinctInstance = "cache-b"
 
 	hostLabelFeatureType = "core/observability/cache:1.0.0"
+
+	// hostComponentIDSpace is the key space the compiler declares the component
+	// identity into, written out here rather than read from the compiler: a
+	// fixture reading the value under test agrees with it whatever it is.
+	hostComponentIDSpace = "component-id"
 )
 
-// hostLabelEngine renders per-node output and places artifacts, declaring no
-// derived names of its own. That is the point: every name these cases turn on is
-// one the compiler derived, so a halt here cannot be a guest's declaration
-// arriving under a different route.
+// hostLabelEngine renders per-node output and places artifacts, and declares a
+// derived name only where a fixture hands it one — which is nowhere in the cases
+// that turn on a name the COMPILER derived. That is the point of those cases: a
+// halt in them cannot be a guest's declaration arriving under a different route.
+// The one case that does hand it a declaration says in its own comment why it
+// needs a second declarer.
 //
 // Each emitted name carries the node identity, so no output-path collision can
 // fire and the derived-name check is the only thing these cases can trip. Each
 // emitted BODY carries the component identity the artifacts crossing was handed,
 // which is what makes the halt a statement about a name that genuinely reaches
 // the output rather than about an intermediate the build discards.
-type hostLabelEngine struct{}
+type hostLabelEngine struct {
+	// declare maps a node id to the spaces and names that node's guest declares.
+	// Empty in every case but one.
+	declare map[string]map[string][]string
+}
 
 func (hostLabelEngine) Contract() renderer.ProviderContract {
 	return renderer.ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
-func (hostLabelEngine) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
+func (e hostLabelEngine) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
+	e.declareFixtureNames(nodeCtx)
 	return []renderer.RenderedFile{{
 		Path:    componentIDOf(nodeCtx) + "-sourced.yaml",
 		Content: []byte("component-id: " + componentIDOf(nodeCtx) + "\n"),
@@ -65,7 +77,12 @@ func (hostLabelEngine) Render(_ context.Context, _ map[string]any, nodeCtx rende
 
 func (hostLabelEngine) ArtifactTemplateDelimiters() (string, string) { return "{{", "}}" }
 
-func (hostLabelEngine) EmitArtifacts(_ context.Context, proj renderer.ArtifactsProjection, nodeCtx renderer.NodeRenderContext) ([]renderer.EmittedFile, error) {
+func (e hostLabelEngine) EmitArtifacts(_ context.Context, proj renderer.ArtifactsProjection, nodeCtx renderer.NodeRenderContext) ([]renderer.EmittedFile, error) {
+	// Declared from here as well as from the source render, because a
+	// resource-generating FeatureRecipe reaches the engine through the artifacts
+	// crossing and never through the source one — so a fixture declaration wired
+	// only to the source render would silently never arrive.
+	e.declareFixtureNames(nodeCtx)
 	out := make([]renderer.EmittedFile, 0, len(proj.Entries))
 	for _, e := range proj.Entries {
 		out = append(out, renderer.EmittedFile{
@@ -85,6 +102,31 @@ func componentIDOf(nodeCtx renderer.NodeRenderContext) string {
 		return nodeCtx.LabelComponentID
 	}
 	return nodeCtx.NodeID
+}
+
+// declareFixtureNames forwards whatever the fixture asked this node's guest to
+// declare, over the node context's own sink — which is the route a real provider
+// guest's declaration takes. Nothing is declared for a node the fixture did not
+// name, so a case that hands over no declarations is exercising the compiler's
+// own derivation and nothing else.
+//
+// The space is walked from a fixed list rather than by iterating the fixture's
+// own map, so the payload handed to the host is a function of the fixture rather
+// than of Go's map iteration.
+func (e hostLabelEngine) declareFixtureNames(nodeCtx renderer.NodeRenderContext) {
+	spaces, named := e.declare[nodeCtx.NodeID]
+	if !named || nodeCtx.DerivedKeySink == nil {
+		return
+	}
+	declared := types.OrderedMap[[]string]{}
+	for _, space := range []string{hostComponentIDSpace} {
+		if keys, ok := spaces[space]; ok {
+			declared.Set(space, keys)
+		}
+	}
+	if declared.Len() > 0 {
+		nodeCtx.DerivedKeySink(declared)
+	}
 }
 
 // hostLabelArtifacts is one inline artifact entry, which is what makes a
@@ -309,24 +351,37 @@ func TestRenderAll_ComponentIDDeclarationDoesNotChangeRenderedBytes(t *testing.T
 	}
 }
 
-// The boundary-scope identities below fold for the same reason the attachment
-// ones do, one layer out: a boundary-scope feature's identity is composed from
-// the feature instance and the boundary path, and the composition is sanitised
-// whole — so two instance names differing by one inadmissible character reach
-// one label value however distinct the authored names are.
+// The boundary-scope identities below are the pair that used to fold, kept as
+// the fixture for the case that they no longer do. A boundary-attached
+// feature's identity is COMPOSED from the instance name and the boundary path
+// through an encoding that writes out what the label alphabet refuses, so two
+// instance names one inadmissible character apart reach two identities. They had
+// reached one, because the parts were run into a single marker string and every
+// character the alphabet refused became the same hyphen.
 const (
-	hostBoundaryFeatureType    = "core/net/bridge:1.0.0"
-	hostFoldingFeatureA        = "bridge x"
-	hostFoldingFeatureB        = "bridge-x"
-	hostDistinctFeature        = "bridge-y"
-	hostFoldedFeatureComponent = "boundary-fr-bridge-x-cluster"
+	hostBoundaryFeatureType = "core/net/bridge:1.0.0"
+	hostFormerlyFoldingA    = "bridge x"
+	hostFormerlyFoldingB    = "bridge-x"
+	hostDistinctFeature     = "bridge-y"
+	// The one value both of the pair above used to reach. Written out by hand:
+	// a value computed from the derivation would agree with the derivation
+	// whatever it did.
+	hostFormerlyFoldedIdentity = "boundary-fr-bridge-x-cluster"
+	// The identities the pair reaches now, likewise written out by hand.
+	hostComposedIdentityA = "bfr--cluster--bridge-zx000020x"
+	hostComposedIdentityB = "bfr--cluster--bridge-x"
+	hostComposedIdentityC = "bfr--cluster--bridge-y"
+	// The evaluated assembly path a boundary-attached feature's output lands at,
+	// which is the feature's own rather than that of the component whose render
+	// dispatched it.
+	hostFeatureGroupPath = "dist/cluster/hostlabel"
 )
 
 // runHostBoundaryFeatureRender drives the whole pipeline over one component in
 // one boundary carrying the named boundary-scope feature attachments. Each
 // attachment dispatches its own boundary-scope render, so their derived
 // identities meet in the group at the feature's own evaluated path.
-func runHostBoundaryFeatureRender(instances []string) (*renderer.RenderResult, error) {
+func runHostBoundaryFeatureRender(instances []string, declare map[string]map[string][]string) (*renderer.RenderResult, error) {
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("api", types.IRNode{Component: "core/api", BoundaryPath: "cluster"})
 
@@ -396,26 +451,104 @@ func runHostBoundaryFeatureRender(instances []string) (*renderer.RenderResult, e
 		},
 	}
 
-	factory := func(string) (renderer.Provider, error) { return hostLabelEngine{}, nil }
+	factory := func(string) (renderer.Provider, error) { return hostLabelEngine{declare: declare}, nil }
 	return renderer.RenderAll(context.Background(), input, lookup, factory)
 }
 
-// TestRenderAll_TwoBoundaryFeaturesDerivingOneComponentIDLabelHalt is the
-// positive direction for the second site the compiler derives this identity at.
-// Two boundary-scope features whose instance names differ by one inadmissible
-// character reach one identity, and the build halts naming both features.
+// TestRenderAll_TwoBoundaryFeaturesOnceFoldingNowSeparate is the direct proof of
+// what the composed identity buys at the boundary-scope site. The pair below
+// reached ONE identity while the value was scrubbed out of a single marker
+// string, so the build halted on them; each part is now written into the label
+// alphabet separately and they reach two, so the build completes and the emitted
+// bytes carry both.
 //
-// The assembly path in the message is the assertion worth reading twice. A
-// boundary-scope feature's render is reached through whichever component
-// dispatched it, and its render context is a COPY of that component's — so a
-// declaration made against the copied context lands in the component's own
-// accumulator and is checked against the component's group. The path named here
-// is the FEATURE's own evaluated path, which is what proves the declaration went
-// to the feature's group rather than the dispatching component's.
-func TestRenderAll_TwoBoundaryFeaturesDerivingOneComponentIDLabelHalt(t *testing.T) {
+// The halt is not merely unexercised here — it is unreachable at this site, and
+// that is the deliverable rather than a gap. Two boundary-attached features
+// differ in their instance name or in their boundary path, both are written out
+// without folding, and the parts are joined by a run no written part can contain,
+// so no pair an author can write reaches one identity below the length ceiling.
+// The compiler-derived name still reaching the guard, and still halting, is
+// covered by the per-component attachment case above, whose derivation folds by
+// necessity because there is a single authored name and nothing to compose.
+func TestRenderAll_TwoBoundaryFeaturesOnceFoldingNowSeparate(t *testing.T) {
 	t.Parallel()
 
-	res, err := runHostBoundaryFeatureRender([]string{hostFoldingFeatureA, hostFoldingFeatureB})
+	res, err := runHostBoundaryFeatureRender([]string{hostFormerlyFoldingA, hostFormerlyFoldingB}, nil)
+	if err != nil {
+		t.Fatalf("expected the build to complete, got: %v", err)
+	}
+	bodies := strings.Join(bodiesOf(res), "\n")
+	for _, want := range []string{
+		"component-id: " + hostComposedIdentityA,
+		"component-id: " + hostComposedIdentityB,
+	} {
+		if !strings.Contains(bodies, want) {
+			t.Errorf("emitted output missing %q — the composed identity is not reaching the bytes\n--- bodies ---\n%s", want, bodies)
+		}
+	}
+	if strings.Contains(bodies, hostFormerlyFoldedIdentity) {
+		t.Errorf("emitted output still carries the folded identity %q\n--- bodies ---\n%s", hostFormerlyFoldedIdentity, bodies)
+	}
+	// Each feature's output lands at the feature's OWN evaluated assembly path
+	// rather than under the boundary of the component whose render dispatched it.
+	if !strings.Contains(bodies, hostFeatureGroupPath+"/") {
+		t.Errorf("no output landed at the feature's own assembly path %q\n--- bodies ---\n%s", hostFeatureGroupPath, bodies)
+	}
+}
+
+// TestRenderAll_TwoBoundaryFeaturesOutsideTheFormerFoldRender keeps the second
+// half of the pair covered: a spelling that never folded renders as it always
+// did, so the case above is a real change of behaviour rather than a guard being
+// switched off.
+func TestRenderAll_TwoBoundaryFeaturesOutsideTheFormerFoldRender(t *testing.T) {
+	t.Parallel()
+
+	res, err := runHostBoundaryFeatureRender([]string{hostFormerlyFoldingB, hostDistinctFeature}, nil)
+	if err != nil {
+		t.Fatalf("expected the build to complete, got: %v", err)
+	}
+	bodies := strings.Join(bodiesOf(res), "\n")
+	for _, want := range []string{
+		"component-id: " + hostComposedIdentityB,
+		"component-id: " + hostComposedIdentityC,
+	} {
+		if !strings.Contains(bodies, want) {
+			t.Errorf("emitted output missing %q — the composed identity is not reaching the bytes\n--- bodies ---\n%s", want, bodies)
+		}
+	}
+}
+
+// TestRenderAll_ABoundaryFeatureDeclarationIsCheckedInTheFeaturesOwnGroup is the
+// assertion the case above can no longer carry, kept alive on the one route that
+// can still produce a collision at this site: a second declarer.
+//
+// A boundary-attached feature's render is reached through whichever component
+// dispatched it, and its render context is a COPY of that component's — so a
+// declaration made against the copied context would land in the component's own
+// accumulator and be checked against the component's group. Here one feature's
+// GUEST declares the identity the compiler derived for the other, in the same key
+// space. The halt therefore requires both declarations to have reached one
+// accumulator, and the assembly path it names is the FEATURE's own evaluated
+// path, which is what proves that accumulator is the feature's group rather than
+// the dispatching component's.
+//
+// It covers both routes into that accumulator at once — the compiler's direct
+// declaration and a guest's over the node context's sink — which the folding pair
+// it replaces covered only for the first.
+func TestRenderAll_ABoundaryFeatureDeclarationIsCheckedInTheFeaturesOwnGroup(t *testing.T) {
+	t.Parallel()
+
+	// The declaring feature is keyed by the node id a boundary-attached feature's
+	// render carries, which is the marker the compiler builds for its own
+	// dispatch. Naming it here is what makes this fixture a statement about the
+	// declaration's route rather than about the identity's spelling.
+	res, err := runHostBoundaryFeatureRender(
+		[]string{hostFormerlyFoldingB, hostDistinctFeature},
+		map[string]map[string][]string{
+			"<boundary-fr>:" + hostDistinctFeature + "@cluster": {
+				hostComponentIDSpace: {hostComposedIdentityB},
+			},
+		})
 	if err == nil {
 		t.Fatalf("expected a halt, got %d files", len(res.Files))
 	}
@@ -424,40 +557,19 @@ func TestRenderAll_TwoBoundaryFeaturesDerivingOneComponentIDLabelHalt(t *testing
 	}
 	msg := err.Error()
 	for _, want := range []string{
-		`assembly path "dist/cluster/hostlabel"`,
-		`in key space "component-id"`,
-		`the name "` + hostFoldedFeatureComponent + `"`,
-		`feature "` + hostFoldingFeatureA + `" and feature "` + hostFoldingFeatureB + `"`,
+		`assembly path "` + hostFeatureGroupPath + `"`,
+		`in key space "` + hostComponentIDSpace + `"`,
+		`the name "` + hostComposedIdentityB + `"`,
+		`feature "` + hostFormerlyFoldingB + `" and feature "` + hostDistinctFeature + `"`,
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("diagnostic missing %q\ngot: %s", want, msg)
 		}
 	}
 	// The dispatching component's own group path must not be the one reported: it
-	// would mean the declaration landed in the component's accumulator.
+	// would mean a declaration landed in the component's accumulator.
 	if strings.Contains(msg, `assembly path "boundaries/cluster/`) {
-		t.Errorf("the halt names the dispatching component's group, so the declaration reached the wrong accumulator\ngot: %s", msg)
-	}
-}
-
-// TestRenderAll_TheSameBoundaryFeaturesWithoutTheFoldRender is that halt's
-// negative direction: two boundary-scope features one character apart and
-// outside the fold render, and the emitted bytes carry both derived identities.
-func TestRenderAll_TheSameBoundaryFeaturesWithoutTheFoldRender(t *testing.T) {
-	t.Parallel()
-
-	res, err := runHostBoundaryFeatureRender([]string{hostFoldingFeatureB, hostDistinctFeature})
-	if err != nil {
-		t.Fatalf("expected the build to complete, got: %v", err)
-	}
-	bodies := strings.Join(bodiesOf(res), "\n")
-	for _, want := range []string{
-		"component-id: boundary-fr-bridge-x-cluster",
-		"component-id: boundary-fr-bridge-y-cluster",
-	} {
-		if !strings.Contains(bodies, want) {
-			t.Errorf("emitted output missing %q — the derived identity is not reaching the bytes\n--- bodies ---\n%s", want, bodies)
-		}
+		t.Errorf("the halt names the dispatching component's group, so a declaration reached the wrong accumulator\ngot: %s", msg)
 	}
 }
 
