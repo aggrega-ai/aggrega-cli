@@ -249,9 +249,10 @@ func TestComposeAssemble_NoNamespaceAnnotation_FallsBackToBoundaryPath(t *testin
 		t.Fatalf("AssembleBoundary: %v", err)
 	}
 	body := string(files[AssembledOutputFile])
-	// Expect the boundary path lowercased + sanitised: "stage-01".
-	if !strings.Contains(body, "stage-01:") {
-		t.Errorf("expected sanitised network name 'stage-01' in output:\n%s", body)
+	// The boundary path is written out rather than folded, so its case survives:
+	// "STAGE-01".
+	if !strings.Contains(body, "STAGE-01:") {
+		t.Errorf("expected the network name 'STAGE-01' in output:\n%s", body)
 	}
 }
 

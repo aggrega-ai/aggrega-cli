@@ -17,9 +17,12 @@
 // Merge contract.
 //
 //   - Per-boundary network. For each contributing node, a docker network is
-//     declared whose name is the `aggrega.ai/namespace` annotation on the node,
-//     or the sanitised boundary path when no namespace annotation is present.
-//     Every service joins its author-boundary's network.
+//     declared whose name is derived from the `aggrega.ai/namespace` annotation
+//     on the node, or from the boundary path when no namespace annotation is
+//     present. The derivation writes out every character a compose network name
+//     does not accept rather than substituting for it, so two identities reach
+//     one network only where they are the same identity. Every service joins its
+//     author-boundary's network.
 //   - Service collisions. If two different nodes contribute services of
 //     the same name, AssembleBoundaryCore returns TRANSLATION_ERROR naming
 //     every contributing (boundary, nodeID, serviceName) tuple.
@@ -67,6 +70,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 )
 
 // AssembledOutputFile is the assembled compose file path emitted by
@@ -87,9 +91,9 @@ type serviceContrib struct {
 // `aggrega.ai/namespace` network discriminator); nodeSyncWave gives each node's
 // deployment wave, keyed the same way, for wave-derived ordering (a node with no
 // entry carries the field's documented default of 0); edges is the IR's directed
-// `uses` edges for depends_on inference; boundaryPath is the network-name
-// fallback used when a node carries no namespace annotation; yamlIndent is the
-// indentation width for the assembled artifact.
+// `uses` edges for depends_on inference; boundaryPath is the identity the
+// network name falls back to when a node carries no namespace annotation;
+// yamlIndent is the indentation width for the assembled artifact.
 //
 // It returns the assembled files, the advisories the merge raised, and an error.
 // The advisories are out-of-band: every one of them leaves the emitted bytes
@@ -342,45 +346,62 @@ func parseNodeFragment(nodeID string, intermediates []rendercore.EmittedFile) (*
 	return out, nil
 }
 
-// sanitizeNetworkName produces a docker-compose-safe network name. Compose
-// allows [a-zA-Z0-9._-]; this function replaces any other character with `_`
-// and lowercases for stability.
-func sanitizeNetworkName(s string) string {
-	out := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
-			out = append(out, c)
-		case c >= 'A' && c <= 'Z':
-			out = append(out, c+('a'-'A'))
-		default:
-			out = append(out, '_')
-		}
-	}
-	if len(out) == 0 {
-		return "default"
-	}
-	return string(out)
+// networkNameEncoding is the segment encoding a compose network name is built
+// with.
+//
+// A compose network is shared L3 connectivity, and the top-level networks:
+// block unions its entries by name — so two identities arriving at one name
+// become one network both sets of services sit on, with nothing in the emitted
+// file to show that two were meant. The derivation therefore encodes the
+// identity rather than substituting for the characters compose does not accept,
+// which is what keeps identities that differ at all on separate networks.
+//
+// The alphabet is stated here rather than taken from the encoding, because it
+// is a property of what compose accepts in a network name rather than of the
+// encoding: a compose network name carries letters, digits, dots, underscores
+// and hyphens. The hyphen is the encoding's own — it opens every escape — so an
+// alphabet may not admit it; everything else compose accepts is carried
+// through, which is what keeps an ordinary name readable.
+var networkNameEncoding = namesegment.NewEncoding(isNetworkNameRune)
+
+// isNetworkNameRune reports whether a character is carried through the encoding
+// as itself: an ASCII letter, a digit, a dot or an underscore. Every other
+// character is escaped.
+func isNetworkNameRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' ||
+		r >= '0' && r <= '9' || r == '.' || r == '_'
 }
 
 // deriveNodeNetworkName resolves the compose network a node lands on, from its
 // `aggrega.ai/namespace` annotation value (empty when absent) and the boundary
-// path used for the fallback. Three branches: a non-empty namespace is
-// sanitized; otherwise an empty boundary path yields "default"; otherwise the
-// boundary path is sanitized. Both the per-node network-assignment loop and the
-// compose-bridge cross-network opt-in filter call THIS function — the network
-// identity is the resolved name, never the raw namespace string — so the
-// bridge's "is this edge cross-network?" decision can never drift from where
-// the nodes are actually assigned.
+// path a node with no such annotation falls back to.
+//
+// The derivation is injective over each branch: two identities produce one
+// network name only where they are the same identity. Every character compose
+// does not accept in a network name is written out rather than substituted for,
+// so identities differing only in case or only in punctuation stay on separate
+// networks — where a fold onto a single admitted character would have merged
+// them, silently, into shared connectivity nobody declared. An absent boundary
+// path takes no literal of its own: it yields the encoding's absent-segment
+// mark, which carries a selector standing for no character and so cannot be
+// produced by any identity an author wrote.
+//
+// One class this deliberately does not close: a node whose namespace is X and a
+// node with no namespace under a boundary path spelled X still reach one
+// network, because both branches encode into the same space. That is a property
+// of which identity is selected rather than of how it is written out.
+//
+// Both the per-node network-assignment loop and the compose-bridge
+// cross-network opt-in filter call THIS function — the network identity is the
+// resolved name, never the raw namespace string — so the bridge's "is this edge
+// cross-network?" decision can never drift from where the nodes are actually
+// assigned. Splitting two identities that used to fold together therefore moves
+// an edge between them from same-network to cross-network.
 func deriveNodeNetworkName(namespace, boundaryPath string) string {
 	if namespace != "" {
-		return sanitizeNetworkName(namespace)
+		return networkNameEncoding.Segment(namespace)
 	}
-	if boundaryPath == "" {
-		return "default"
-	}
-	return sanitizeNetworkName(boundaryPath)
+	return networkNameEncoding.Segment(boundaryPath)
 }
 
 // appendUnique appends s to list only when list does not already contain s.

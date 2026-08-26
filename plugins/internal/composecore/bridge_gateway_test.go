@@ -249,14 +249,15 @@ func TestInjectBridgeGateway_GatewayJoinsEveryNetworkItsBridgedEdgesSpan(t *test
 	for i, n := range nets {
 		got[i], _ = n.(string)
 	}
-	// "Front End" resolves to the same sanitised name the component placement
-	// uses; the three spanned networks appear once each, in sorted order.
-	want := []string{"backend", "front_end", "messaging"}
+	// "Front End" reaches the same network name the component placement derives,
+	// with the space written out rather than substituted for; the three spanned
+	// networks appear once each, in sorted order.
+	want := []string{"Front-zx000020End", "backend", "messaging"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("gateway networks = %v; want %v", got, want)
 	}
-	if resolved := deriveNodeNetworkName("Front End", ""); resolved != "front_end" {
-		t.Errorf("the gateway's network name %q is not what the component placement derives (%q)", "front_end", resolved)
+	if resolved := deriveNodeNetworkName("Front End", ""); resolved != "Front-zx000020End" {
+		t.Errorf("the gateway's network name %q is not what the component placement derives (%q)", "Front-zx000020End", resolved)
 	}
 }
 

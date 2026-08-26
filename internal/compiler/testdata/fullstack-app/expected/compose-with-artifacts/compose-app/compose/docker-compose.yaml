@@ -11,11 +11,11 @@ services:
       aggrega.ai/provider-version: 1.0.0
       aggrega.ai/recipe-uri: compose-raw-fragments-with-artifacts:1.0.0
     networks:
-      - dist_compose-app_compose
+      - dist-zscompose-app-zscompose
 volumes:
   app-overlays-cache:
     driver: local
   app-overlays-data:
     driver: local
 networks:
-  dist_compose-app_compose: {}
+  dist-zscompose-app-zscompose: {}

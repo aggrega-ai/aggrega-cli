@@ -13,7 +13,7 @@ services:
       aggrega.ai/provider-version: 1.0.0
       aggrega.ai/recipe-uri: compose-api-synthesized:1.0.0
     networks:
-      - dist_app_compose
+      - dist-zsapp-zscompose
     depends_on:
       - db
   db:
@@ -30,6 +30,6 @@ services:
       aggrega.ai/provider-version: 1.0.0
       aggrega.ai/recipe-uri: compose-db-synthesized:1.0.0
     networks:
-      - dist_app_compose
+      - dist-zsapp-zscompose
 networks:
-  dist_app_compose: {}
+  dist-zsapp-zscompose: {}
