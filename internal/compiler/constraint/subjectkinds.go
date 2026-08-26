@@ -878,6 +878,61 @@ func newBoundaryProviderPathSubject(
 	}
 }
 
+// AssemblyPathProviderSubject is the subject of a check invoked once per
+// assembly group: one provider's contribution at one evaluated assembly path.
+//
+// It is rooted at the assembly path rather than at a boundary because the group
+// is what several boundaries collapse into. Boundaries whose own path
+// declarations evaluate alike under one provider are merged into a single group
+// and assemble as one, so a rule about the group keyed per boundary would be
+// asked once per contributor about a thing there is only one of — and a rule
+// about what several groups did to one path could not be asked at all, because
+// no boundary holds that view.
+//
+// Neither coordinate reaches the locator. An assembly path is evaluated output
+// rather than a key any document holds, and a provider is selected by the entity
+// a component names rather than written at this site — so a subject here carries
+// the deployment document and the empty locator, which routes a reader to
+// file-level positioning rather than to a path the file does not contain. The
+// boundaries behind the group are a fact rather than a coordinate, and a group
+// several of them fed has no single authored site to name in any case; a rule
+// that has to say which sites an operator can edit reads that fact and names
+// them in its detail.
+type AssemblyPathProviderSubject interface {
+	Subject
+
+	// AssemblyPath is the evaluated final path the group assembles at, as every
+	// keyed fact takes it.
+	AssemblyPath() string
+
+	// ProviderName is the provider that rendered the group.
+	ProviderName() string
+
+	assemblyPathProvider()
+}
+
+type assemblyPathProviderSubject struct {
+	provenance
+	assemblyPath string
+	provider     string
+}
+
+func (assemblyPathProviderSubject) assemblyPathProvider() {}
+
+func (s assemblyPathProviderSubject) AssemblyPath() string { return s.assemblyPath }
+
+func (s assemblyPathProviderSubject) ProviderName() string { return s.provider }
+
+func newAssemblyPathProviderSubject(
+	sourceFile, assemblyPath, provider string,
+) AssemblyPathProviderSubject {
+	return assemblyPathProviderSubject{
+		provenance:   newProvenance(sourceFile),
+		assemblyPath: assemblyPath,
+		provider:     provider,
+	}
+}
+
 // BoundaryAttachmentSubject is the subject of a check invoked once per Feature
 // attachment declared on a boundary itself.
 //

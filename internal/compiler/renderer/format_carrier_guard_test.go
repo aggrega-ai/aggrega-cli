@@ -21,7 +21,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 	t.Parallel()
 
 	// RenderResult: {Files, Warnings, Diagnostics, Contributions, DescribedView,
-	// HydratedView, RenderedView}, with Files valued by AssembledFile. Warnings and
+	// HydratedView, DispatchedView, RenderedView}, with Files valued by AssembledFile. Warnings and
 	// Diagnostics are advisory streams, not per-file carriers; Contributions
 	// carries per-group coordinates and is held to that below; the three views are
 	// stage presentations. A reintroduced `Formats map[string]string` sidecar keyed
@@ -35,7 +35,17 @@ func TestSingleFormatCarrier(t *testing.T) {
 	// coordinate of the node that declares it and not of the assembled output path
 	// the bytes end up under.
 	//
-	// RenderedView is the closest call of the three, because one of its facts IS
+	// DispatchedView is the closest call on the KEY axis, and it passes for the
+	// same reason RenderedView does. Both its facts are keyed by the evaluated
+	// assembly path — a directory several boundaries collapse into — which is a
+	// prefix of the paths Files is keyed by rather than the same key: Files holds
+	// whole output paths, and no assembly path is one. More to the point it holds
+	// no structure of its own at all. It answers by walking Contributions, which is
+	// allowlisted above and held to its per-group coordinates below, so there is
+	// nothing here keyed like the bytes and nothing carrying a format. What it
+	// returns is provider and boundary names, which are neither.
+	//
+	// RenderedView is the closest call on the ANSWER axis, because one of its facts IS
 	// keyed by output path and answers with bytes — and it still passes, for a
 	// reason worth stating rather than leaving to be re-derived. It holds no
 	// structure keyed by path. It answers that fact by delegating to Files and
@@ -55,7 +65,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 	want := map[string]bool{
 		"Files": true, "Warnings": true, "Diagnostics": true,
 		"Contributions": true, "DescribedView": true, "HydratedView": true,
-		"RenderedView": true,
+		"DispatchedView": true, "RenderedView": true,
 	}
 	for name := range exported {
 		if !want[name] {

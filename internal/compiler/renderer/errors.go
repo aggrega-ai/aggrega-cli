@@ -397,12 +397,18 @@ var errUnknownProvider = cerrors.Register("compiler-renderer/unknown-provider", 
 // dispatch path target different providers AND the operator overrode
 // subDirectory: to defeat the per-provider segregation default. The
 // resulting per-(path, provider) dispatch produces multiple assembler
-// invocations whose on-disk outputs would collide. The error names the
-// conflicting providers, the conflicting boundaries, and the resolution
-// paths (restore the per-provider sub-path default, or change one
-// boundary's directory). Category: OPS_ERROR — the collision exists
-// because of how the boundaries were configured, so it is the operator
-// who has the change to make.
+// invocations whose on-disk outputs would collide. Category: OPS_ERROR —
+// the collision exists because of how the boundaries were configured, so
+// it is the operator who has the change to make.
+//
+// It is raised once per boundary that fed a contested dispatch path, and
+// each raise names the path, that boundary, and the provider that boundary's
+// output was rendered by — so the conflicting providers and the conflicting
+// boundaries are named across the set rather than listed in one line, and
+// each finding is positioned at the deployment document the boundary was
+// declared in. The remedy is to restore the per-provider sub-path default or
+// to change one boundary's directory, which the condition's registered
+// wording does not yet state.
 func ErrPathCollision() error { return errPathCollision }
 
 var errPathCollision = cerrors.Register("compiler-renderer/path-collision", cerrors.Meta{

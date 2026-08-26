@@ -1082,6 +1082,37 @@ func RunOnBoundaryProviderPaths[V View](
 		})
 }
 
+// RunOnAssemblyPathProviders invokes check once per assembly group — one
+// provider's contribution at one evaluated assembly path — in assembly-path
+// order and then provider order.
+//
+// The locator is empty and the source file is the deployment document. An
+// assembly path is evaluated output and a provider is selected rather than
+// written, so neither is a key any document holds and neither contributes a
+// segment; naming one would name a path the file does not contain. Both are
+// still coordinates the subject carries, which is what lets a rule name the group
+// it objects about in its detail. A rule that has to send an operator somewhere
+// editable reads the boundaries that fed the group as a fact and names those.
+func RunOnAssemblyPathProviders[V View](
+	cancelled Cancellation,
+	paths AssemblyPathEnumerator,
+	providers AssemblyGroupProviderEnumerator,
+	view V,
+	check Check[V, AssemblyPathProviderSubject],
+) ([]Objection, error) {
+	return runOverAuthoredScopes(cancelled, paths.AssemblyPaths(), view, check.Run,
+		func(path AuthoredCoordinate) []AssemblyPathProviderSubject {
+			names := providers.AssemblyGroupProviders(path.Value)
+			out := make([]AssemblyPathProviderSubject, 0, len(names))
+			for _, provider := range names {
+				out = append(out, newAssemblyPathProviderSubject(
+					path.SourceFile, path.Value, provider,
+				))
+			}
+			return out
+		})
+}
+
 // RunOnBoundaryAttachments invokes check once per Feature attachment declared on
 // a boundary itself, in boundary order and then attachment order.
 //

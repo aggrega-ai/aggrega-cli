@@ -59,6 +59,64 @@ import (
 // written, so neither reaches the locator and a rule that has to say which file
 // it objects about names them here.
 
+// AssemblyPathServesOneProvider reports each boundary whose output was sent to a
+// directory another provider also writes into.
+//
+// A boundary declares the directory its output lands in, and the default
+// declaration gives each provider a sub-path of its own, so two providers reach
+// one directory only where an operator has written declarations that evaluate
+// alike. Both then assemble there, and each writes files the other knows nothing
+// about — so one silently displaces the other on disk. That is a Loud Guardrail
+// case rather than a warning one: the displaced output is gone, and the build
+// that produced it looked as though it succeeded.
+//
+// It reads two facts, both about the group it was invoked for: the providers that
+// assembled at the same directory, and the boundaries that fed this group. The
+// first is the predicate — more than one provider is the violation, and one is
+// the ordinary state — and the second is what makes the finding actionable, since
+// the directory declaration an operator edits is written on a boundary and the
+// group's own coordinates name none.
+//
+// It raises one objection per contributing boundary rather than one per group,
+// because a boundary is what an author can go and change and a group is not. A
+// group always has at least one, since a group comes into existence when a
+// boundary's first contributor joins it, so the per-boundary shape has no silent
+// empty case.
+//
+// Its detail names the directory bare and captions the other two. The registered
+// wording names the directory and nothing else, so that is the value it is read
+// against; a boundary name and a provider name are both bare words, and nothing
+// else in the message would tell them apart. All three are in the detail because
+// the subject carries no locator — a directory is evaluated output and a provider
+// is selected, so neither is a key the deployment document holds — which leaves
+// the detail as the only place the offending group's coordinates are stated.
+var AssemblyPathServesOneProvider = constraint.Check[
+	constraint.DispatchedView,
+	constraint.AssemblyPathProviderSubject,
+]{
+	Sentinel: ErrPathCollision(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DispatchedView,
+		s constraint.AssemblyPathProviderSubject,
+	) []constraint.Objection {
+		if len(v.AssemblyGroupProviderSet(s.AssemblyPath())) < 2 {
+			return nil
+		}
+		boundaries := v.AssemblyGroupBoundarySet(s.AssemblyPath(), s.ProviderName())
+		out := make([]constraint.Objection, 0, len(boundaries))
+		for _, boundary := range boundaries {
+			out = append(out, s.RaiseWith(
+				ErrPathCollision(),
+				constraint.Uncaptioned(s.AssemblyPath()),
+				constraint.Captioned("boundary", boundary),
+				constraint.Captioned("provider", s.ProviderName()),
+			))
+		}
+		return out
+	},
+}
+
 // CrossBoundaryLinkPlaceholderResolved reports each assembled file that still
 // carries a cross-boundary link placeholder.
 //

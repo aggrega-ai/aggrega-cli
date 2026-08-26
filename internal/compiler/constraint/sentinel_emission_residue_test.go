@@ -75,12 +75,17 @@ import (
 //
 // # Why a sentinel named here does not pollute the census
 //
-// This file names ten sentinels, and a Go file naming a sentinel is what the
-// census counts as an emission site. It is not counted, because the census reads
-// [scannedRoots] under [excludeTestFiles] and this is a _test.go file. The
-// property is worth stating rather than assuming: were it to change, this
-// inventory would silently add ten emission sites to the population it exists to
-// describe.
+// Every entry below whose verdict travels on a sentinel names that sentinel, and
+// a Go file naming a sentinel is what the census counts as an emission site. None
+// of them is counted, because the census reads [scannedRoots] under
+// [excludeTestFiles] and this is a _test.go file. The property is worth stating
+// rather than assuming: were it to change, this inventory would silently add an
+// emission site per such entry to the population it exists to describe.
+//
+// The number of them is deliberately not written here. It falls by one every time
+// a site is lifted into a named check, and a written one would keep reading as
+// current after it stopped being true — which is exactly what a reader checking
+// this inventory against the code is relying on it not to do.
 
 // residueVehicle is how a site's raise reaches a caller. The distinction is not
 // cosmetic: it decides which mechanical check the staleness guard can apply, and
@@ -167,17 +172,6 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"itself a check. Its inputs are the flattened node set and the boundary paths, a topology-stage " +
 			"read, and the grouping map is fully built at that point in the same scope — so lifting it to a " +
 			"named check over the boundary, provider and node coordinates does not touch the render loop.",
-	},
-	{
-		vehicle:     "ErrPathCollision",
-		vehicleKind: vehicleSentinel,
-		host:        "RenderAll",
-		file:        "internal/compiler/renderer/orchestrator.go",
-		disposition: dispositionLiftable,
-		reason: "A cardinality test over a path-to-providers map the block builds itself from the ordered " +
-			"dispatch. Self-contained: it reads only the boundary directory settings, normalized-stage " +
-			"state, and it already stands as its own loop with no interleaved render work, so lifting it is " +
-			"a move rather than a restructure.",
 	},
 	{
 		vehicle:     "ErrChartNameMismatch",

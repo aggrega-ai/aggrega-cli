@@ -25,11 +25,11 @@ import (
 func declaredAtRenderedStage(t *testing.T) []string {
 	t.Helper()
 	rendered := reflect.TypeOf((*constraint.RenderedView)(nil)).Elem()
-	hydrated := reflect.TypeOf((*constraint.HydratedView)(nil)).Elem()
+	dispatched := reflect.TypeOf((*constraint.DispatchedView)(nil)).Elem()
 
 	inherited := map[string]bool{}
-	for i := 0; i < hydrated.NumMethod(); i++ {
-		inherited[hydrated.Method(i).Name] = true
+	for i := 0; i < dispatched.NumMethod(); i++ {
+		inherited[dispatched.Method(i).Name] = true
 	}
 	var own []string
 	for i := 0; i < rendered.NumMethod(); i++ {
@@ -317,13 +317,13 @@ func TestRenderedPresentationRefusesAPartialConstruction(t *testing.T) {
 
 	for _, tc := range []struct {
 		name        string
-		earlier     constraint.HydratedView
+		earlier     constraint.DispatchedView
 		assembled   assembledOutputFacts
 		projections *artifactProjections
 	}{
 		{"no earlier presentation", nil, assembledOutput{result: result}, live},
-		{"no assembled-output seam", stubHydratedView{}, nil, live},
-		{"no artifact retention", stubHydratedView{}, assembledOutput{result: result}, nil},
+		{"no assembled-output seam", stubDispatchedView{}, nil, live},
+		{"no artifact retention", stubDispatchedView{}, assembledOutput{result: result}, nil},
 	} {
 		if got := newRenderedView(tc.earlier, tc.assembled, tc.projections); got != nil {
 			t.Errorf("%s: a presentation was built anyway", tc.name)
@@ -334,20 +334,21 @@ func TestRenderedPresentationRefusesAPartialConstruction(t *testing.T) {
 	}
 }
 
-// stubHydratedView stands in for the earlier presentation where only this stage's
-// own accessors are under test. It answers nothing, so reading an earlier fact
-// through it is a nil dereference rather than a wrong answer — which is the point:
-// a test that reached for one would be reaching past what this package can build.
-type stubHydratedView struct {
-	constraint.HydratedView
+// stubDispatchedView stands in for the earlier presentation where only this
+// stage's own accessors are under test. It answers nothing, so reading an earlier
+// fact through it is a nil dereference rather than a wrong answer — which is the
+// point: a test that reached for one would be reaching past what this package can
+// build.
+type stubDispatchedView struct {
+	constraint.DispatchedView
 }
 
 // presentationOverTheRender builds this stage's presentation over the retention a
 // real render filled, with the earlier presentation stood in for.
 //
 // The stand-in is structural rather than a convenience. This stage's presentation
-// embeds the presentation of the state each node reached before its bytes existed,
-// which in turn descends from the finalised graph's own presentation — and that
+// embeds the presentation of how the render grouped its nodes for assembly, which
+// in turn descends from the finalised graph's own presentation — and that
 // chain is constructible only by a whole compilation, because the stage below the
 // graph exposes no constructor outside its own package. This package renders a
 // graph rather than compiling one, so the presentation a render publishes is
@@ -360,7 +361,7 @@ type stubHydratedView struct {
 // compilation is available.
 func presentationOverTheRender(t *testing.T, res *RenderResult) constraint.RenderedView {
 	t.Helper()
-	view := newRenderedView(stubHydratedView{}, assembledOutput{result: res}, res.artifacts)
+	view := newRenderedView(stubDispatchedView{}, assembledOutput{result: res}, res.artifacts)
 	if view == nil {
 		t.Fatal("the presentation refused to build over a completed render")
 	}

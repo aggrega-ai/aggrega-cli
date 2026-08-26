@@ -75,10 +75,10 @@ func (a assembledOutput) AssembledFileContent(boundary string, provider string, 
 //
 // A stage's view contains the stage it extends, so every fact complete before the
 // render's output existed is readable here. Those facts are answered by the
-// presentation of the state each node reached before its artifact bytes existed,
-// embedded and delegated to, rather than derived again: one fact has one
-// producer, and two producers of a fact are free to disagree with nothing
-// comparing them. That presentation in turn embeds the one below it, so a rule
+// presentation of how the render grouped its nodes for assembly, embedded and
+// delegated to, rather than derived again: one fact has one producer, and two
+// producers of a fact are free to disagree with nothing comparing them. That
+// presentation in turn embeds the one below it, so a rule
 // reading an earlier fact through this value reaches the same answer that
 // stage's own presentation gives.
 //
@@ -117,7 +117,7 @@ func (a assembledOutput) AssembledFileContent(boundary string, provider string, 
 // what every later reader sees; no check does, and the contract is where that is
 // declared rather than here.
 type renderedView struct {
-	constraint.HydratedView
+	constraint.DispatchedView
 	assembledOutputFacts
 
 	// projections is the render's retention of what each node's artifacts walk
@@ -127,8 +127,8 @@ type renderedView struct {
 }
 
 // newRenderedView presents what a render produced, with the facts complete
-// earlier answered by the presentation of the state each node reached before its
-// artifact bytes existed.
+// earlier answered by the presentation of how the render grouped its nodes for
+// assembly.
 //
 // It is unexported because the render is the one thing that builds it: both
 // sources it reads are the render's own working state, so a caller outside this
@@ -148,7 +148,7 @@ type renderedView struct {
 // than an absent one, because a rule reading it cannot tell an empty answer from
 // a real one.
 func newRenderedView(
-	earlier constraint.HydratedView,
+	earlier constraint.DispatchedView,
 	assembled assembledOutputFacts,
 	projections *artifactProjections,
 ) constraint.RenderedView {
@@ -156,7 +156,7 @@ func newRenderedView(
 		return nil
 	}
 	return &renderedView{
-		HydratedView:         earlier,
+		DispatchedView:       earlier,
 		assembledOutputFacts: assembled,
 		projections:          projections,
 	}

@@ -43,6 +43,15 @@ type RenderResult struct {
 	// It carries coordinates and never a second copy of the content: every
 	// entry's OutputPaths are keys of Files, the entries' path sets are pairwise
 	// disjoint, and together they cover Files exactly.
+	//
+	// The coordinates and the output paths become true at different points, and
+	// the record is completed rather than built twice. Which boundaries met which
+	// provider at which directory is settled once every node has been sorted into
+	// its group, which is before any group assembles and is where a rule about the
+	// grouping has to be able to read it; the paths a group wrote do not exist
+	// until it has assembled, so they are filled into the same records afterwards.
+	// The property above describes the value this returns, which is the completed
+	// one.
 	Contributions []AssemblyContribution
 	// Diagnostics carries the structured, coded advisories raised during render,
 	// separately from the free-form Warnings stream: the unsupported-field
@@ -86,6 +95,21 @@ type RenderResult struct {
 	// it carries no content that reaches an emitted file, and the emitted bytes
 	// are the same whether it is populated or not.
 	HydratedView constraint.HydratedView
+
+	// DispatchedView presents, as named facts, how this render sorted its nodes
+	// into the groups they were assembled in: the providers that met at each
+	// evaluated directory, and the boundaries that fed each group.
+	//
+	// It is published here because the grouping it reads is the render's own
+	// working state and is gone once the render returns, so a reader asking which
+	// providers landed in one directory has this and nothing else. It embeds the
+	// presentation of the state each node reached before its artifact bytes
+	// existed, so every fact complete earlier is readable through it.
+	//
+	// nil when the render could present no earlier stage to extend. Out-of-band:
+	// it carries no content that reaches an emitted file, and the emitted bytes
+	// are the same whether it is populated or not.
+	DispatchedView constraint.DispatchedView
 
 	// RenderedView presents, as named facts, what this render produced: the output
 	// paths each provider wrote within each boundary, the bytes standing at one of
@@ -173,6 +197,44 @@ func (r *RenderResult) EmittedPaths(boundary, provider string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// assemblyProviders returns the providers that assembled at one evaluated
+// assembly path, deduplicated, in the order the grouping recorded its groups.
+//
+// It is unexported because both of its readers are in this package — the
+// presentation of what the grouping holds, and the enumeration a rule about the
+// grouping is invoked over — and one walk is what keeps the coordinate a rule
+// runs over and the value it reads from being derived two ways. The exported
+// readers above answer a question a caller outside this package asks; this one
+// does not, so exporting it would publish a surface nothing consumes.
+//
+// The order is the attribution's own, which is assembly-path order and then
+// provider order, so the answer is a function of the build alone.
+func (r *RenderResult) assemblyProviders(assemblyPath string) []string {
+	var out []string
+	for _, c := range r.Contributions {
+		if c.AssemblyPath != assemblyPath || slices.Contains(out, c.Provider) {
+			continue
+		}
+		out = append(out, c.Provider)
+	}
+	return out
+}
+
+// assemblyBoundaries returns the boundaries whose components fed one assembly
+// group, in the order that group first heard from each.
+//
+// The path and the provider together identify exactly one group, so the first
+// record matching both is the whole answer and there is nothing to union. A pair
+// no group was recorded for answers with nothing.
+func (r *RenderResult) assemblyBoundaries(assemblyPath, provider string) []string {
+	for _, c := range r.Contributions {
+		if c.AssemblyPath == assemblyPath && c.Provider == provider {
+			return c.Boundaries
+		}
+	}
+	return nil
 }
 
 // AssembledFileContent returns the bytes standing at one output path for one
@@ -1655,31 +1717,44 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return orderedDispatch[i].Provider < orderedDispatch[j].Provider
 	})
 
-	// PATH_COLLISION check: scan dispatch keys for the same Path across
-	// distinct Provider values. This case arises only when the operator
-	// overrode subDirectory: in a way that defeats the per-provider
-	// segregation default ({{ .capability }}); under default rules each
-	// provider gets its own sub-path so paths never collide across
-	// providers naturally. Per CLAUDE.md Loud Guardrails: surface the
-	// collision rather than silently overwriting one provider's output
-	// with another's.
-	pathToProviders := map[string][]dispatchKey{}
+	// Record each group's attribution now that every contributor has been sorted
+	// into one: which boundaries met which provider at which evaluated directory.
+	// The output paths each group writes are filled into these same records once
+	// the group has assembled, because they do not exist before that.
+	//
+	// It is recorded here rather than at the flush because this is the first point
+	// it is complete and the last point at which acting on it still saves work:
+	// the rules declared over the grouping read it, they run below, and every one
+	// of them is about where a boundary's own directory declaration sent its
+	// output — a question whose answer no amount of further assembly changes.
+	result.Contributions = make([]AssemblyContribution, 0, len(orderedDispatch))
 	for _, key := range orderedDispatch {
-		pathToProviders[key.Path] = append(pathToProviders[key.Path], key)
+		result.Contributions = append(result.Contributions, AssemblyContribution{
+			AssemblyPath: key.Path,
+			Provider:     key.Provider,
+			Boundaries:   slices.Clone(dispatch[key].contributingBoundaries),
+		})
 	}
-	for path, keys := range pathToProviders {
-		if len(keys) <= 1 {
-			continue
+
+	// Present how the grouping came out, with the facts complete earlier answered
+	// by the presentation built before the node walk.
+	result.DispatchedView = newDispatchedView(
+		result.HydratedView, assemblyGroups{result: result},
+	)
+
+	// The rules declared over the grouping are invoked here, against the directory
+	// and provider axes the attribution just recorded.
+	//
+	// The enumeration is checked for absence here rather than inside: an absent one
+	// held behind the axis interface is a present value that answers nothing, and a
+	// rule invoked zero times reports exactly what a rule that ran and approved
+	// reports.
+	if dispatchedAxes := newDispatchedStageCoordinates(
+		result, releaseFileOf(input.ResolveResult),
+	); dispatchedAxes != nil {
+		if err := runDispatchedStageRules(ctx, result.DispatchedView, dispatchedAxes); err != nil {
+			return nil, err
 		}
-		providers := make([]string, 0, len(keys))
-		var contributingBoundaries []string
-		for _, k := range keys {
-			providers = append(providers, k.Provider)
-			contributingBoundaries = append(contributingBoundaries, dispatch[k].contributingBoundaries...)
-		}
-		inner := fmt.Errorf("%w: dispatch path %q produced multiple provider outputs (%v); contributing boundaries %v resolve to the same path under their current directory: / subDirectory: settings; set distinct subDirectory values per provider or change one boundary's directory",
-			ErrPathCollision(), path, providers, contributingBoundaries)
-		return nil, cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{}, inner.Error())
 	}
 
 	// Assembly-name uniqueness check: a provider whose assembler declares an
@@ -1921,14 +1996,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// result, reattaching each group's disk-write prefix. Groups iterate in
 	// orderedDispatch order for a deterministic walk.
 	//
-	// The same walk records each group's attribution, so the boundaries and the
-	// provider behind a file outlive the assembly that knew them. The file map
-	// alone is keyed by output path, which is the right key for a build's output
-	// and the wrong one for asking who produced it. Both non-path coordinates are
-	// already in hand here — the provider on the group key, the boundaries on the
-	// group's own contributor record — and nothing derives them again.
-	result.Contributions = make([]AssemblyContribution, 0, len(orderedDispatch))
-	for _, key := range orderedDispatch {
+	// The same walk completes each group's attribution, so the paths a group wrote
+	// join the boundaries and the provider already recorded for it and the whole
+	// coordinate set outlives the assembly that knew it. The file map alone is
+	// keyed by output path, which is the right key for a build's output and the
+	// wrong one for asking who produced it.
+	//
+	// The records are indexed by position rather than searched for: they were
+	// appended in this same order, over this same key set, so the i-th record is
+	// the i-th group by construction and no lookup can pair them wrongly.
+	for i, key := range orderedDispatch {
 		grp := assembledByDispatch[key]
 		outputPaths := make([]string, 0, len(grp.files))
 		for p, af := range grp.files {
@@ -1937,22 +2014,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			outputPaths = append(outputPaths, full)
 		}
 		sort.Strings(outputPaths)
-		result.Contributions = append(result.Contributions, AssemblyContribution{
-			AssemblyPath: key.Path,
-			Provider:     key.Provider,
-			Boundaries:   slices.Clone(dispatch[key].contributingBoundaries),
-			OutputPaths:  outputPaths,
-		})
+		result.Contributions[i].OutputPaths = outputPaths
 	}
 
 	// Present what this render produced, with the facts complete earlier answered
 	// by the presentation built before the node walk. Built here rather than beside
 	// that one because this is the first point holding every product it names: the
-	// attribution the loop above has just recorded, and the artifact retention the
+	// output paths the loop above has just filled in, and the artifact retention the
 	// walk has filled. Building it earlier would hand a reader a presentation whose
-	// path facts answer from an attribution not yet written.
+	// path facts answer from an attribution not yet completed.
 	result.RenderedView = newRenderedView(
-		result.HydratedView, assembledOutput{result: result}, input.artifacts,
+		result.DispatchedView, assembledOutput{result: result}, input.artifacts,
 	)
 
 	// The rules declared over what this render assembled are invoked here, against

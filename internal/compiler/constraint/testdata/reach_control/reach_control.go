@@ -48,6 +48,7 @@ var (
 	_ constraint.GraphView      = (constraint.RenderedView)(nil)
 	_ constraint.DescribedView  = (constraint.RenderedView)(nil)
 	_ constraint.HydratedView   = (constraint.RenderedView)(nil)
+	_ constraint.DispatchedView = (constraint.RenderedView)(nil)
 	_ constraint.RenderedView   = (constraint.RenderedView)(nil)
 )
 

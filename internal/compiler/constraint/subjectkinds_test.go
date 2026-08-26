@@ -396,6 +396,7 @@ var coordinateAccessors = map[string][]string{
 	"subsystem":     {"SubsystemPath"},
 	"module":        {"ModulePath"},
 	"provider":      {"ProviderName"},
+	"assembly-path": {"AssemblyPath"},
 	"path":          {"EmittedPath"},
 	"artifact":      {"ArtifactName"},
 }
@@ -998,6 +999,15 @@ var subjectKindBindings = map[SubjectKind]struct {
 		iface: reflect.TypeOf((*BoundaryProviderPathSubject)(nil)).Elem(),
 		make: func(f string) Subject {
 			return newBoundaryProviderPathSubject(f, "prod", "helm", "a.yaml", "spec", "boundaries", "prod")
+		},
+	},
+	SubjectAssemblyPathProvider: {
+		iface: reflect.TypeOf((*AssemblyPathProviderSubject)(nil)).Elem(),
+		// No segments, and that is the kind's own shape rather than an omission
+		// here: an assembly path is evaluated output and a provider is selected,
+		// so a traversal has nothing authored to contribute.
+		make: func(f string) Subject {
+			return newAssemblyPathProviderSubject(f, "dist/shared/merged", "helm")
 		},
 	},
 	SubjectNodeArtifact: {

@@ -108,8 +108,21 @@ var stages = []stageDecl{
 		HostPowers: []hostPower{powerFilesystem},
 	},
 	{
-		Name:    "rendered",
+		Name:    "dispatched",
 		Extends: "hydrated",
+		Holds: "every node's own rendered output sorted into the assembly groups " +
+			"it will be merged in: the evaluated assembly path and the provider " +
+			"each group is keyed by, and the boundaries that fed each — all of it " +
+			"complete before any group assembles",
+		// Producing this stage's facts renders every node, which calls the
+		// rendering provider's guest across the boundary. The grouping itself
+		// reaches for nothing further: it evaluates each boundary's own path
+		// declaration over values the graph already carries.
+		HostPowers: []hostPower{powerGuestCrossing},
+	},
+	{
+		Name:    "rendered",
+		Extends: "dispatched",
 		Holds:   "artifact bytes and the emitted file set",
 		// The bytes are produced by the rendering provider and by the pipeline
 		// steps, each of which is a guest the host calls across the boundary.
@@ -2787,6 +2800,52 @@ var facts = []factDecl{
 			"bytes are never produced.\n\nThe text is the entry's content " +
 			"whichever form the entry took: written inline, supplied by an " +
 			"imported file, or supplied by an entry of a library bundle.",
+	},
+
+	// -------------------------------------------------------------- dispatched
+
+	{
+		Name:        "assembly-group-provider-set",
+		Stage:       "dispatched",
+		SourceField: "renderer.AssemblyContribution.Provider",
+		Subject:     []string{"assembly-path", "provider"},
+		Params:      []paramDecl{{Name: "assemblyPath", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "AssemblyGroupProviderSet are the providers that assemble at one " +
+			"evaluated assembly path, in the order the grouping recorded " +
+			"them.\n\nIt is keyed by the path alone while the subject it " +
+			"belongs to names a path and a provider together, and the " +
+			"difference is the question it exists to answer: a rule invoked " +
+			"for one group asks what ELSE arrived at its path, which is " +
+			"unanswerable from that group's own coordinates. More than one " +
+			"entry means several providers wrote their output to one " +
+			"directory, which is a state only the whole set makes " +
+			"visible.\n\nOne entry is the ordinary answer, and the ordinary " +
+			"answer is not the empty one: a path with no provider at it is a " +
+			"path no group assembled at, so the coordinate does not exist and " +
+			"no rule is invoked for it.",
+	},
+	{
+		Name:        "assembly-group-boundary-set",
+		Stage:       "dispatched",
+		SourceField: "renderer.AssemblyContribution.Boundaries",
+		Subject:     []string{"assembly-path", "provider"},
+		Params: []paramDecl{
+			{Name: "assemblyPath", Type: "string"},
+			{Name: "provider", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "AssemblyGroupBoundarySet are the boundaries whose components fed " +
+			"one assembly group, deduplicated, in the order the group first " +
+			"heard from each.\n\nSeveral boundaries reach one group exactly " +
+			"when their own path declarations evaluate alike under one " +
+			"provider, and the group is what the collapse leaves: the path and " +
+			"the provider name the group, and nothing in them names the " +
+			"boundaries behind it. This is where they survive, so a rule " +
+			"objecting about a group can name the sites an operator can " +
+			"actually edit.\n\nA boundary appears once however many components " +
+			"it contributed, because the fact is about which boundaries met " +
+			"rather than about how much each brought.",
 	},
 
 	// ---------------------------------------------------------------- rendered

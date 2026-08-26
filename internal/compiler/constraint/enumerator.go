@@ -563,6 +563,39 @@ type BoundaryAttachmentArtifactEnumerator interface {
 	BoundaryAttachmentArtifacts(boundary string, attachment string) []AuthoredCoordinate
 }
 
+// AssemblyPathEnumerator supplies the evaluated assembly paths a build's nodes
+// were grouped at.
+//
+// Each value is the path a group assembles at, which is output rather than
+// something an author wrote — so the coordinate carries the deployment document
+// as its source file and the path contributes no locator segment. It is an
+// [AuthoredCoordinate] all the same, because that is how the file travels with
+// the value, and a subject that knows the file positions a finding at it rather
+// than nowhere.
+//
+// It is the sibling of [BoundaryEnumerator] on the produced side rather than a
+// generalisation of it: a boundary is a site an operator edits, an assembly path
+// is what several of those sites can evaluate to together, and one axis covering
+// both would present a rule with two different kinds of thing under one key.
+type AssemblyPathEnumerator interface {
+	// AssemblyPaths returns every evaluated assembly path, deduplicated, in a
+	// deterministic order the implementation declares.
+	AssemblyPaths() []AuthoredCoordinate
+}
+
+// AssemblyGroupProviderEnumerator supplies the providers that assembled at one
+// evaluated assembly path.
+//
+// It is distinct from [ProviderEnumerator], which answers within a boundary.
+// Several boundaries can evaluate to one assembly path, so the provider set at a
+// path is not the provider set of any one boundary that fed it — and it is
+// exactly the difference that makes a path reached by two providers visible.
+type AssemblyGroupProviderEnumerator interface {
+	// AssemblyGroupProviders returns the provider names that assembled at one
+	// assembly path, in a deterministic order the implementation declares.
+	AssemblyGroupProviders(assemblyPath string) []string
+}
+
 // ProviderEnumerator supplies the providers rendered within one boundary.
 type ProviderEnumerator interface {
 	// Providers returns the provider names within a boundary, in a

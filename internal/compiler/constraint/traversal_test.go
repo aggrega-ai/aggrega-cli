@@ -39,11 +39,12 @@ type traversalView struct{}
 // what it enumerated would produce a different sequence, and the expected
 // sequences below would catch it; alphabetical fixtures would not.
 type traversalFixture struct {
-	nodes      []NodeInstance
-	edges      []EdgeInstance
-	boundaries []AuthoredCoordinate
-	subsystems []AuthoredCoordinate
-	modules    []AuthoredCoordinate
+	nodes         []NodeInstance
+	edges         []EdgeInstance
+	boundaries    []AuthoredCoordinate
+	subsystems    []AuthoredCoordinate
+	modules       []AuthoredCoordinate
+	assemblyPaths []AuthoredCoordinate
 
 	sockets           map[string][]string
 	attachments       map[string][]string
@@ -56,6 +57,7 @@ type traversalFixture struct {
 	parameters        map[string][]string
 	attachLeaves      map[string][]AttachmentLeaf
 	providers         map[string][]string
+	assemblyProviders map[string][]string
 	emittedPaths      map[string][]string
 	boundaryAttach    map[string][]string
 	subsystemAttach   map[string][]string
@@ -78,6 +80,12 @@ func fixtureKey(parts ...string) string { return strings.Join(parts, "\x00") }
 func (f traversalFixture) Nodes() []NodeInstance            { return f.nodes }
 func (f traversalFixture) Edges() []EdgeInstance            { return f.edges }
 func (f traversalFixture) Boundaries() []AuthoredCoordinate { return f.boundaries }
+
+func (f traversalFixture) AssemblyPaths() []AuthoredCoordinate { return f.assemblyPaths }
+
+func (f traversalFixture) AssemblyGroupProviders(assemblyPath string) []string {
+	return f.assemblyProviders[fixtureKey(assemblyPath)]
+}
 func (f traversalFixture) Subsystems() []AuthoredCoordinate { return f.subsystems }
 func (f traversalFixture) Modules() []AuthoredCoordinate    { return f.modules }
 
@@ -297,6 +305,18 @@ func newTraversalFixture() traversalFixture {
 			fixtureKey("prod/edge"): {"helm", "terraform"},
 			fixtureKey("dev"):       {"helm"},
 		},
+		// Two assembly groups at one evaluated path and one at another. The pair is
+		// what the kind exists to make visible — several providers assembling into
+		// one directory — and the lone group is what tells a walk from an invocation
+		// handed only the contested path.
+		assemblyPaths: []AuthoredCoordinate{
+			{Value: "dist/shared", SourceFile: "release.yaml"},
+			{Value: "dist/solo", SourceFile: "release.yaml"},
+		},
+		assemblyProviders: map[string][]string{
+			fixtureKey("dist/shared"): {"helm", "terraform"},
+			fixtureKey("dist/solo"):   {"compose"},
+		},
 		emittedPaths: map[string][]string{
 			fixtureKey("prod/edge", "helm"):      {"a.yaml", "b.yaml"},
 			fixtureKey("prod/edge", "terraform"): {"main.tf.json"},
@@ -408,6 +428,22 @@ func traversalCases() []traversalCase {
 			want: []string{
 				"aggregate.yaml|.spec.components.web",
 				"billing/aggregate.yaml|.spec.subsystems.billing.components.api",
+			},
+		},
+		{
+			// The only kind whose subjects contribute no locator segment: an assembly
+			// path is evaluated output and a provider is selected, so neither is a key
+			// the deployment document holds and naming one would spell a path the file
+			// does not contain. The three findings are told apart by their detail
+			// rather than their position, which is what this expectation pins.
+			kind: SubjectAssemblyPathProvider,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnAssemblyPathProviders(cancelled, f, f, v, raisingCheck[AssemblyPathProviderSubject]())
+			},
+			want: []string{
+				"release.yaml|",
+				"release.yaml|",
+				"release.yaml|",
 			},
 		},
 		{
@@ -1052,6 +1088,22 @@ func coordinateFlowCases() []coordinateFlowCase {
 			},
 			want: []string{"web", "billing.api"},
 		},
+		// The assembly group's kind is rooted at what the build produced rather than
+		// at anything a document declares, so both its coordinates are read back
+		// together: a path alone cannot tell the two groups contesting it apart.
+		{
+			kind: SubjectAssemblyPathProvider,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, AssemblyPathProviderSubject]) ([]Objection, error) {
+					return RunOnAssemblyPathProviders(nil, f, f, traversalView{}, c)
+				}, func(s AssemblyPathProviderSubject) string {
+					return s.AssemblyPath() + "|" + s.ProviderName()
+				})
+			},
+			want: []string{"dist/shared|helm", "dist/shared|terraform", "dist/solo|compose"},
+		},
+
 		{
 			kind: SubjectNodeAttachment,
 			seam: seamTraversal,
