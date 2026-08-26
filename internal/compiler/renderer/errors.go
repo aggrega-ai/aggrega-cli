@@ -246,7 +246,7 @@ func ErrArtifactOutputCollision() error { return errArtifactOutputCollision }
 
 var errArtifactOutputCollision = cerrors.Register("compiler-renderer/artifact-output-collision", cerrors.Meta{
 	ShortCode: "E0028",
-	Message:   "artifacts output filename collision: two artifact outputs resolve to the same filename",
+	Message:   "artifacts output filename collision: two artifact outputs carry the same filename",
 })
 
 // ErrArtifactPillarNotDeclared fires when an artifacts entry's template reads a
