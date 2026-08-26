@@ -153,8 +153,7 @@ type DocumentView interface {
 	// would make that question unanswerable and would put two stages out of
 	// order with each other.
 	//
-	// Keyed by document; read from
-	// resolver.lintUnreadParameters(rawAggregate).
+	// Keyed by document; read from resolver.ResolveInputs.AggregateRawBytes.
 	RawAggregateText(document string) []byte
 
 	// DeclaredParameterKeys are the parameter names the Aggregate's contract

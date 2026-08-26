@@ -466,52 +466,38 @@ func compileContestedOverride(t *testing.T) *stepsOneToFourOutput {
 	return out
 }
 
-// TestAnnotationOverrideAdvisoryMatchesTheReadingItReplaces measures the
-// declared rule's coverage against the hand-written reading of the same rule,
-// over one compilation of one workspace.
+// TestAnnotationOverrideAdvisoryRaisesOverAContestedWorkspace drives the declared
+// rule over one real compilation of one workspace, which is what this proof adds
+// to the rule's own unit proof: that one builds the axis and the per-leaf
+// provenance by hand, so it cannot say whether the compilation presents the rule
+// anything to read.
 //
-// The hand-written reading is called directly rather than through the build,
-// because the build now reports this finding through the declared rule — so a
-// comparison against the build would compare the rule with itself and would pass
-// however wrong either side was.
-//
-// The comparison is on what each side found, not on how each side words it. The
-// two word a finding differently on purpose: the declared rule carries the
-// text registered against the rule's own identity plus the values it raised
-// about, where the hand-written reading composes a sentence at its call site.
-func TestAnnotationOverrideAdvisoryMatchesTheReadingItReplaces(t *testing.T) {
+// The first assertion is that the rule RAISED. It is written first and as a
+// Fatalf because a rule that never fires reads exactly like a rule that ran and
+// approved, and every assertion below it would pass over an empty slice.
+func TestAnnotationOverrideAdvisoryRaisesOverAContestedWorkspace(t *testing.T) {
 	out := compileContestedOverride(t)
 
-	handWritten := analyzer.LintOverriddenAnnotation(out.IRGraph)
-	fromTheBuild := out.Analysis.Warnings
-
-	// A comparison over a document that produces no finding compares nothing and
-	// would pass on a rule that never ran at all.
-	if len(handWritten) == 0 {
-		t.Fatal("the contested workspace produced no finding from the reading being replaced; the comparison below would be vacuous")
-	}
-	if len(fromTheBuild) != len(handWritten) {
-		t.Errorf("the build reported %d finding(s), the reading it replaces found %d", len(fromTheBuild), len(handWritten))
-	}
-
-	// Each side names the annotation it saw displaced and where that annotation
-	// was written. Those are values both sides read off the same provenance
-	// record, so they are what the two can be compared on.
-	for _, found := range handWritten {
-		key, source := suppressedAnnotationOf(t, found)
-		matched := slices.ContainsFunc(fromTheBuild, func(reported string) bool {
-			return strings.Contains(reported, key) && strings.Contains(reported, source)
-		})
-		if !matched {
-			t.Errorf("the build reported nothing naming the annotation %q from %q; it reported %v", key, source, fromTheBuild)
+	registered := analyzer.ErrOverriddenAnnotation().Error()
+	var raised []string
+	for _, reported := range out.Analysis.Warnings {
+		if strings.Contains(reported, registered) {
+			raised = append(raised, reported)
 		}
 	}
+	if len(raised) == 0 {
+		t.Fatalf("the contested workspace produced no finding carrying the text registered "+
+			"against the rule; it reported %v", out.Analysis.Warnings)
+	}
 
-	// The build's own finding carries the rule's registered identity, which is
-	// what makes it matchable rather than a sentence someone happened to write.
-	for _, reported := range fromTheBuild {
-		if !strings.Contains(reported, analyzer.ErrOverriddenAnnotation().Error()) {
-			t.Errorf("reported finding does not carry the text registered against the rule: %q", reported)
+	// What the author has to act on: which annotation was displaced, and where
+	// that annotation was written. A finding that were only the registered text
+	// would read identically for every displacement in every workspace.
+	for _, reported := range raised {
+		for _, want := range []string{`"db-pool"`, overrideAggregatePath} {
+			if !strings.Contains(reported, want) {
+				t.Errorf("the finding does not name %s: %q", want, reported)
+			}
 		}
 	}
 
@@ -526,6 +512,11 @@ func TestAnnotationOverrideAdvisoryMatchesTheReadingItReplaces(t *testing.T) {
 // TestAnnotationOverrideAdvisorySaysNothingOnTheUncontestedWorkspace pins the
 // other direction: the fixture as authored has no contest, and the build reports
 // nothing about one.
+//
+// It is the calibration for the test above rather than a second scenario. Every
+// assertion there is about what the rule says when it fires; without a workspace
+// the rule stays silent on, a rule firing at every leaf would satisfy all of
+// them and flood a build with advisories about values nobody displaced.
 func TestAnnotationOverrideAdvisorySaysNothingOnTheUncontestedWorkspace(t *testing.T) {
 	out := compileFixture(t, readAggregate(t))
 	for _, reported := range out.Analysis.Warnings {
@@ -533,35 +524,4 @@ func TestAnnotationOverrideAdvisorySaysNothingOnTheUncontestedWorkspace(t *testi
 			t.Errorf("the rule reported a displacement on a workspace that authors none: %q", reported)
 		}
 	}
-	if found := analyzer.LintOverriddenAnnotation(out.IRGraph); len(found) != 0 {
-		t.Errorf("the reading being replaced disagrees on the same workspace: %v", found)
-	}
-}
-
-// suppressedAnnotationOf pulls the displaced annotation's key and the site it
-// was written at out of one of the hand-written reading's sentences.
-//
-// It parses that sentence because the reading being measured hands back strings
-// and nothing else — which is itself part of why it is being replaced.
-func suppressedAnnotationOf(t *testing.T, found string) (key, source string) {
-	t.Helper()
-	const marker = "overrides annotation "
-	at := strings.Index(found, marker)
-	if at < 0 {
-		t.Fatalf("the reading being replaced no longer words its finding as expected: %q", found)
-	}
-	rest := found[at+len(marker):]
-	quoted := strings.SplitN(rest, `"`, 3)
-	if len(quoted) < 3 {
-		t.Fatalf("the reading being replaced no longer quotes the annotation key: %q", found)
-	}
-	key = quoted[1]
-	const from = " from "
-	if at := strings.Index(quoted[2], from); at >= 0 {
-		source = strings.TrimSpace(quoted[2][at+len(from):])
-	}
-	if key == "" || source == "" {
-		t.Fatalf("could not read the displaced annotation out of %q", found)
-	}
-	return key, source
 }
