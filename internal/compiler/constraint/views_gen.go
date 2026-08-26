@@ -222,6 +222,15 @@ type NormalizedView interface {
 	// the difference reads the declared socket set first, which is the fact
 	// that answers which sockets exist to be asked about.
 	//
+	// Declaring a fact puts its accessor on its stage's view interface, and
+	// every later stage carries that interface by embedding — so a view
+	// presenting any of those stages answers the accessor whether or not a
+	// check asks it. The declaration compels the implementation; nothing
+	// compels the declaration. This accessor is implemented for that reason
+	// rather than because a check reads it, which accounts for its presence
+	// without warranting it: a fact no check reads remains a candidate for
+	// removal.
+	//
 	// Keyed by (node, socket); read from types.UsesSchemaEntry.Inject.
 	SocketInjectMechanismNames(componentType string, socket string) []string
 
@@ -944,6 +953,15 @@ type NormalizedView interface {
 	// declares, and a stage holding one authored document at a time cannot
 	// answer for a pair.
 	//
+	// Declaring a fact puts its accessor on its stage's view interface, and
+	// every later stage carries that interface by embedding — so a view
+	// presenting any of those stages answers the accessor whether or not a
+	// check asks it. The declaration compels the implementation; nothing
+	// compels the declaration. This accessor is implemented for that reason
+	// rather than because a check reads it, which accounts for its presence
+	// without warranting it: a fact no check reads remains a candidate for
+	// removal.
+	//
 	// Keyed by edge; read from types.ReleaseUsesEntry.Target.
 	ReleasePerEdgeTarget(node string, socket string, alias string) string
 
@@ -1230,6 +1248,15 @@ type NormalizedView interface {
 	// them, so the authored node already holds every inherited constraint and
 	// there is no second, composed view to prefer over it.
 	//
+	// Declaring a fact puts its accessor on its stage's view interface, and
+	// every later stage carries that interface by embedding — so a view
+	// presenting any of those stages answers the accessor whether or not a
+	// check asks it. The declaration compels the implementation; nothing
+	// compels the declaration. This accessor is implemented for that reason
+	// rather than because a check reads it, which accounts for its presence
+	// without warranting it: a fact no check reads remains a candidate for
+	// removal.
+	//
 	// Keyed by node; read from types.ComponentSpec.Schema.
 	AuthoredComponentSchemaText(componentType string) []byte
 
@@ -1264,6 +1291,15 @@ type NormalizedView interface {
 	// none for the other — so one fact spanning both could not report which
 	// of them was written.
 	//
+	// Declaring a fact puts its accessor on its stage's view interface, and
+	// every later stage carries that interface by embedding — so a view
+	// presenting any of those stages answers the accessor whether or not a
+	// check asks it. The declaration compels the implementation; nothing
+	// compels the declaration. This accessor is implemented for that reason
+	// rather than because a check reads it, which accounts for its presence
+	// without warranting it: a fact no check reads remains a candidate for
+	// removal.
+	//
 	// Keyed by (node, socket); read from types.UsesSchemaEntry.ValueSchema.
 	SocketValueSchemaText(componentType string, socket string) []byte
 
@@ -1293,6 +1329,15 @@ type NormalizedView interface {
 	// catalog declares no entry for both leave an edge's operator
 	// configuration unvalidated, and what a rule asks is whether there is a
 	// contract to evaluate at all.
+	//
+	// Declaring a fact puts its accessor on its stage's view interface, and
+	// every later stage carries that interface by embedding — so a view
+	// presenting any of those stages answers the accessor whether or not a
+	// check asks it. The declaration compels the implementation; nothing
+	// compels the declaration. This accessor is implemented for that reason
+	// rather than because a check reads it, which accounts for its presence
+	// without warranting it: a fact no check reads remains a candidate for
+	// removal.
 	//
 	// Keyed by (node, socket); read from types.UsesSchemaEntry.InfraSchema.
 	SocketInfraSchemaText(componentType string, socket string) []byte
@@ -1912,6 +1957,15 @@ type GraphView interface {
 	// Author order is the fact: a rule reporting one finding per delivery
 	// emits them in this order, so the order is what makes the report the same
 	// on every run.
+	//
+	// Declaring a fact puts its accessor on its stage's view interface, and
+	// every later stage carries that interface by embedding — so a view
+	// presenting any of those stages answers the accessor whether or not a
+	// check asks it. The declaration compels the implementation; nothing
+	// compels the declaration. This accessor is implemented for that reason
+	// rather than because a check reads it, which accounts for its presence
+	// without warranting it: a fact no check reads remains a candidate for
+	// removal.
 	//
 	// Keyed by edge; read from types.IREdge.Inject.
 	PerEdgeInject(node string, socket string, alias string) types.OrderedMap[types.OrderedMap[string]]

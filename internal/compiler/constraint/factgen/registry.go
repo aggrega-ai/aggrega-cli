@@ -171,6 +171,26 @@ var records = []recordDecl{
 	},
 }
 
+// declarationCompelsImplementation is the paragraph a fact carries when its
+// accessor is implemented while no declared check reads it. It accounts for the
+// accessor's presence and stops short of endorsing it: a fact nothing reads
+// remains a candidate for removal, and carrying this paragraph is not an
+// exemption from that.
+//
+// It is one shared paragraph rather than a copy inside each Doc because it says
+// the same thing about the view interface every time, and only the facts it is
+// appended to differ. Copies that agree when they are written are how they come
+// to disagree later. Which facts carry it is therefore readable from the
+// references to this constant rather than from a list kept beside them.
+const declarationCompelsImplementation = "\n\nDeclaring a fact puts its " +
+	"accessor on its stage's view interface, and every later stage carries " +
+	"that interface by embedding — so a view presenting any of those stages " +
+	"answers the accessor whether or not a check asks it. The declaration " +
+	"compels the implementation; nothing compels the declaration. This " +
+	"accessor is implemented for that reason rather than because a check " +
+	"reads it, which accounts for its presence without warranting it: a fact " +
+	"no check reads remains a candidate for removal."
+
 // facts declares every fact the framework exposes.
 //
 // The set declared here realizes the full derived chain and the full derived
@@ -276,7 +296,8 @@ var facts = []factDecl{
 			"fact does not answer it: a socket the catalog declares no entry " +
 			"for reads the same as one declaring no mechanism. A rule that " +
 			"turns on the difference reads the declared socket set first, which " +
-			"is the fact that answers which sockets exist to be asked about.",
+			"is the fact that answers which sockets exist to be asked about." +
+			declarationCompelsImplementation,
 	},
 	{
 		Name:        "per-edge-target",
@@ -1107,7 +1128,8 @@ var facts = []factDecl{
 			"nothing.\n\nThe fact is placed where both documents are in view. It " +
 			"is keyed by an edge, one element of whose identity is a node the " +
 			"other document declares, and a stage holding one authored document " +
-			"at a time cannot answer for a pair.",
+			"at a time cannot answer for a pair." +
+			declarationCompelsImplementation,
 	},
 	{
 		Name:        "release-per-edge-infra",
@@ -1409,7 +1431,8 @@ var facts = []factDecl{
 			"authored document to read: inheritance copies the base's sections " +
 			"down as the base wrote them, so the authored node already holds " +
 			"every inherited constraint and there is no second, composed view " +
-			"to prefer over it.",
+			"to prefer over it." +
+			declarationCompelsImplementation,
 	},
 	{
 		Name:        "socket-value-schema-text",
@@ -1444,7 +1467,8 @@ var facts = []factDecl{
 			"per-edge pillar is a separate authored field with its own fact, and " +
 			"the two are separately omittable — a socket may declare a contract " +
 			"for one and none for the other — so one fact spanning both could not " +
-			"report which of them was written.",
+			"report which of them was written." +
+			declarationCompelsImplementation,
 	},
 	{
 		Name:        "socket-infra-schema-text",
@@ -1477,7 +1501,8 @@ var facts = []factDecl{
 			"is for the developer's pillar: a socket declaring no contract and a " +
 			"socket the catalog declares no entry for both leave an edge's " +
 			"operator configuration unvalidated, and what a rule asks is whether " +
-			"there is a contract to evaluate at all.",
+			"there is a contract to evaluate at all." +
+			declarationCompelsImplementation,
 	},
 	{
 		Name:        "compiled-component-schema",
@@ -2132,7 +2157,8 @@ var facts = []factDecl{
 			"its subject and says nothing, which reads the same as one that saw " +
 			"it and approved.\n\nAuthor order is the fact: a rule reporting one " +
 			"finding per delivery emits them in this order, so the order is what " +
-			"makes the report the same on every run.",
+			"makes the report the same on every run." +
+			declarationCompelsImplementation,
 	},
 
 	// --------------------------------------------------------------- described
