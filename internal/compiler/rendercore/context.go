@@ -110,13 +110,22 @@ type NodeRenderContext struct {
 	UnsupportedFieldSink func(renderctx.Diagnostic)
 	// DerivedKeySink, when non-nil, receives the names a provider engine's guest
 	// declares it derived while rendering this node, keyed by the guest's own key
-	// space. A provider engine forwards whatever the guest declared, verbatim: the
-	// host reads a space name and a key only as strings to compare for equality,
-	// and derives no key of its own. The orchestrator wires it to the per-node
-	// accumulator whose contents are checked for duplicates once every contributor
-	// to an assembled output has rendered. A node may render across more than one
-	// crossing — a source render, a workload synthesis, an artifacts placement — so
-	// the sink is called once per crossing and the accumulator merges them.
+	// space. A provider engine forwards whatever the guest declared, verbatim, and
+	// the host reads a space name and a key only as strings to compare for
+	// equality: it interprets nothing that arrives here and derives nothing from
+	// it. The orchestrator wires it to the per-node accumulator whose contents are
+	// checked for duplicates once every contributor to an assembled output has
+	// rendered. A node may render across more than one crossing — a source render,
+	// a workload synthesis, an artifacts placement — so the sink is called once per
+	// crossing and the accumulator merges them.
+	//
+	// This sink carries a GUEST's declarations and only those. It is not the only
+	// way a name reaches that accumulator: a name the compiler derives itself —
+	// LabelComponentID above, composed from an identity the author wrote — is
+	// declared into the same accumulator at the site that derives it, with no sink
+	// involved, because a compiler derivation has no engine boundary to cross. So
+	// the accumulator's contents are wider than this sink's traffic, while this
+	// sink's own contract stays exactly what it says.
 	//
 	// Like WarningSink it never affects emitted bytes: a duplicate halts the build
 	// and no declaration changes what is written, so rendered output is

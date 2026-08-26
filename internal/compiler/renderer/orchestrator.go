@@ -1377,12 +1377,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		dispatch[key].files[nodeID] = nodeFileMap
 		dispatch[key].formats[nodeID] = nodeFormatMap
-		// Record this contributor's derived-name declarations against the group its
-		// output merges into, under the same authoring-level producer name a path
-		// collision reports, so both collision reports point at something the author
-		// can find in their own input. The check itself runs once per group, after
-		// every contributor has rendered.
-		dispatch[key].derivedKeys.putAll(state.DerivedKeys, state.DerivedKeyRepeats, nodeProducerLabel(nodeID))
 		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
 		dispatch[key].nodeComponent[nodeID] = node.Component
 		dispatch[key].nodeSyncWave[nodeID] = nodeCtx.SyncWave
@@ -1439,6 +1433,22 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err != nil {
 			return nil, err
 		}
+		// Record this contributor's derived-name declarations against the group its
+		// output merges into, under the same authoring-level producer name a path
+		// collision reports, so both collision reports point at something the author
+		// can find in their own input. The check itself runs once per group, after
+		// every contributor has rendered.
+		//
+		// Read AFTER the attachment renders above, not before them, and the
+		// position is the whole correctness of it: this is a snapshot of the node's
+		// accumulator, and an attachment's render declares into that same
+		// accumulator — its guest's declarations through this node's sink, and the
+		// component identity the compiler derives for it directly. Reading the
+		// accumulator earlier snapshots it before any of that arrives, which drops
+		// every attachment's declaration silently: the group check then reports
+		// nothing, and reads as coverage. It is the same snapshot-before-attachments
+		// hazard the host-document write-back below is keyed by path to survive.
+		dispatch[key].derivedKeys.putAll(state.DerivedKeys, state.DerivedKeyRepeats, nodeProducerLabel(nodeID))
 		// Stash deferred host PATCHes under the host component's dispatch group.
 		// The host node IS this node (a component-scope FR patches the component
 		// it is attached to), so the merged documents the PATCH targets are the

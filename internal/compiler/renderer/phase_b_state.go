@@ -110,14 +110,22 @@ type PhaseBState struct {
 	// downstream consumer match them structurally.
 	Diagnostics []Diagnostic
 
-	// DerivedKeys is the per-node accumulator for the names the node's provider
-	// guest declares it derived, keyed by the guest's own key space. A node can
-	// render across more than one crossing — a source render, a workload
-	// synthesis, an artifacts placement — and each returns its own declaration, so
-	// the declarations merge here: a space already present gains the new crossing's
-	// names rather than replacing them. The orchestrator moves the merged set into
-	// the node's dispatch group, where duplicates across contributors are checked
-	// once every contributor has rendered. Empty for a node whose guest declares
+	// DerivedKeys is the per-node accumulator for every derived name this node is
+	// answerable for, keyed by the space it was derived into: the names the node's
+	// provider guest declares, under the guest's own space names, and the names the
+	// compiler derived for the node itself — a component-identity label value for
+	// an attachment — under a space the compiler names. A node can render across
+	// more than one crossing — a source render, a workload synthesis, an artifacts
+	// placement, an attachment's own render — and each returns its own declaration,
+	// so the declarations merge here: a space already present gains the new
+	// crossing's names rather than replacing them. The orchestrator moves the
+	// merged set into the node's dispatch group, where duplicates across
+	// contributors are checked once every contributor has rendered.
+	//
+	// 🔴 The move happens after the node's ATTACHMENTS have rendered, and it has to:
+	// an attachment's render declares into this accumulator, so reading it any
+	// earlier snapshots it before those declarations arrive and drops them without
+	// a trace. Empty for a node that derived nothing and whose guest declared
 	// nothing, which leaves the check inert for it.
 	DerivedKeys types.OrderedMap[[]string]
 

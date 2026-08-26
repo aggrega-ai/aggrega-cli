@@ -521,11 +521,28 @@ func phaseB6(
 		// nothing makes one's output names distinct from the other's or from the
 		// node's own. It carries this render's presentation too, so the rule declared
 		// over the carrier's facts can be asked inside the walk that records them.
-		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Instance,
+		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Instance,
 			state.hydrated.attachmentOnNode(state.hydratedFacts, nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 		if err != nil {
 			return nil, nil, nil, err
+		}
+		// The label value that render derived joins this node's own declaration
+		// set, which is where its dispatch group reads every declaration this node
+		// is responsible for. Declared as each attachment's render returns, one
+		// declaration per render, which is the unit the check's within-one-
+		// declaration half is defined over.
+		//
+		// The coverage that buys, stated because an unstated bound reads as a full
+		// one: every contributor's declarations reach the group under that
+		// contributor's own name, so two attachments on DIFFERENT nodes reaching
+		// one label value are two declarers and halt, as do an attachment and a
+		// boundary-scope feature. Two attachments on the SAME node reaching one
+		// label value are one declarer restating a name across two of its own
+		// renders, which is the shape this check does not refuse.
+		if frComponentID != "" {
+			state.DerivedKeyRepeats = append(state.DerivedKeyRepeats,
+				declareDerivedKey(&state.DerivedKeys, componentIDKeySpace, frComponentID)...)
 		}
 
 		// Component-scope FeatureRecipe pipeline. Every attachment's
@@ -755,6 +772,15 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // component callers flatten them under features/<instance>/, while the
 // boundary-scope caller routes them by the Intermediate flag.
 //
+// The second return value is the component-identity label value this render
+// derived from instanceLabel, for the caller to declare into its own
+// derived-name accumulator — the caller holds that accumulator and this function
+// does not, and the value is reported rather than re-derived at the caller so
+// the derivation itself stays at one site. It is empty for a render that derived
+// none: a caller supplying no instance label, and a render whose only crossing
+// is the sourced one, which reads the unmodified context and so never puts the
+// derived value on anything emitted.
+//
 // hydrated is the carrier this render records its mid-render state through, and
 // the carrier whose declared rule is asked about each artifact entry it projects.
 // It is supplied by the caller because the carrier is the caller's own knowledge
@@ -775,13 +801,13 @@ func renderFeatureRecipeFiles(
 	slots types.OrderedMap[types.AttachmentSlot],
 	workloadLibs map[string]types.WorkloadLibrary,
 	artifactsLibs map[string]types.ArtifactsLibrary,
-) ([]EmittedFile, error) {
+) ([]EmittedFile, string, error) {
 	hasSource := sourceValueDeclared(resolvedSrc)
 	hasWorkload := !fr.Spec.Workload.IsEmpty()
 	hasArtifacts := fr.Spec.Artifacts.Len() > 0
 
 	if err := gateInputKind(frNodeCtx.NodeID, fr.Spec.Capability, frEngine, hasSource, hasWorkload, hasArtifacts); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// Advertised-only per-node input validation for the FeatureRecipe render —
@@ -793,10 +819,10 @@ func renderFeatureRecipeFiles(
 	if validator, ok := frEngine.(NodeInputValidator); ok {
 		diags, verr := validator.ValidateNodeInput(ctx, frValues, frNodeCtx)
 		if verr != nil {
-			return nil, cerrors.Wrap(verr, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe input validation")
+			return nil, "", cerrors.Wrap(verr, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe input validation")
 		}
 		if err := routeNodeInputDiagnostics(frNodeCtx.NodeID, fr.Spec.Capability, diags, frNodeCtx.WarningSink); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
 
@@ -808,9 +834,24 @@ func renderFeatureRecipeFiles(
 	// builder) on a copy used only for B.3/B.4; the sourced engine.Render runs
 	// against the unmodified frNodeCtx so existing sourced-FR provenance is
 	// unchanged.
+	//
+	// That label value is a name the compiler derived, so it is reported to the
+	// caller for the injectivity check the names a guest declares go through: two
+	// attachments whose instances reach one label value would otherwise hand the
+	// same provenance to two different sets of resources, with nothing in the
+	// emitted output recording that two were meant. It is reported only where a
+	// crossing that READS this copy runs — the artifacts placement and the
+	// workload synthesis below. A render whose only crossing is the sourced one
+	// reads the unmodified context above, so the value derived here reaches
+	// nothing emitted, and offering it would invite a refusal over a name in no
+	// output.
 	synthNodeCtx := frNodeCtx
+	derivedComponentID := ""
 	if instanceLabel != "" {
 		synthNodeCtx.LabelComponentID = labels.SanitizeForK8sLabelValue(instanceLabel)
+		if hasWorkload || hasArtifacts {
+			derivedComponentID = synthNodeCtx.LabelComponentID
+		}
 	}
 
 	synth := &types.Recipe{
@@ -851,7 +892,7 @@ func renderFeatureRecipeFiles(
 	if hasSource {
 		files, err := frEngine.Render(ctx, frValues, frNodeCtx)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe render")
+			return nil, "", cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe render")
 		}
 		renderIsIntermediate := RenderIsIntermediate(frEngine)
 		// Accumulate by sorted path for deterministic EmittedFile order, carrying
@@ -863,7 +904,7 @@ func renderFeatureRecipeFiles(
 	}
 
 	if err := phaseB2(frCtx, state, slots); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	// Reduce this render's mid-render state to the projection that outlives it, at
 	// the position the component walk records its own: the synthetic Recipe above
@@ -889,14 +930,14 @@ func renderFeatureRecipeFiles(
 		if errors.Is(err, ErrRenderNondeterministic()) {
 			category = cerrors.TranslationError
 		}
-		return nil, cerrors.Wrap(err, category, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe artifacts")
+		return nil, "", cerrors.Wrap(err, category, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe artifacts")
 	}
 	if err := phaseB4(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if err := phaseB5(state); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return state.EmittedFiles, nil
+	return state.EmittedFiles, derivedComponentID, nil
 }

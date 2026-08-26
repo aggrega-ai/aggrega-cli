@@ -98,13 +98,14 @@ type BoundaryFRState struct {
 	Files        map[boundaryFRKey][]EmittedFile
 	ValidatedFRs map[string]error
 
-	// DerivedKeys carries the names each boundary-scope FeatureRecipe's guest
-	// declares it derived, keyed exactly as Files is so a declaration routes to
-	// the same dispatch group the declaring contributor's files route to. A
-	// boundary-scope FeatureRecipe is a contributor to an assembled output like any
-	// component, so its declarations join the same per-group injectivity check;
-	// keying it any other way would leave the check covering components and
-	// silently skipping features.
+	// DerivedKeys carries every derived name each boundary-scope FeatureRecipe is
+	// answerable for — the names its guest declares, plus the component identity
+	// the compiler derives for it from its instance name and its boundary path —
+	// keyed exactly as Files is so a declaration routes to the same dispatch group
+	// the declaring contributor's files route to. A boundary-scope FeatureRecipe is
+	// a contributor to an assembled output like any component, so its declarations
+	// join the same per-group injectivity check; keying it any other way would
+	// leave the check covering components and silently skipping features.
 	DerivedKeys map[boundaryFRKey]types.OrderedMap[[]string]
 
 	// DerivedKeyRepeats carries, per the same key, the names one of that
@@ -338,6 +339,28 @@ func dispatchBoundaryScopeFR(
 	frNodeCtx.RecipeName = fr.Metadata.Name
 	frNodeCtx.RecipeVersion = fr.Metadata.Version
 	frNodeCtx.LabelComponentID = labels.SanitizeForK8sLabelValue(frNodeCtx.NodeID)
+	// That label value is a name the compiler derived, and it lands on every
+	// resource this feature's output carries — so it joins the injectivity check
+	// the names a guest declares go through. Two features whose identities reach
+	// one label value would otherwise hand the same provenance to two different
+	// sets of resources with nothing in the emitted output recording that two
+	// were meant.
+	//
+	// Declared into this feature's own accumulator by name, not through the
+	// context's sink: the sink at this point is still the one copied from the
+	// consumer node, and rewiring it is three lines below. Naming the accumulator
+	// is what makes the ordering irrelevant rather than load-bearing — the
+	// declaration cannot land in the consumer node's set whichever line it sits
+	// on. One declaration, once: the boundary-scope render carries this value
+	// across its every crossing, and it is not derived again inside them. An
+	// empty value declares nothing, because empty means the node id is used
+	// as-is and no name was derived.
+	if frNodeCtx.LabelComponentID != "" {
+		frLabelKeys := boundaryFRState.DerivedKeys[key]
+		boundaryFRState.DerivedKeyRepeats[key] = append(boundaryFRState.DerivedKeyRepeats[key],
+			declareDerivedKey(&frLabelKeys, componentIDKeySpace, frNodeCtx.LabelComponentID)...)
+		boundaryFRState.DerivedKeys[key] = frLabelKeys
+	}
 	frNodeCtx.OriginalSource = fr.Spec.Source
 	// Route this boundary-scope FR's guest advisories into the render state's
 	// warnings, which reach result.Warnings. The context was copied from a
@@ -392,7 +415,12 @@ func dispatchBoundaryScopeFR(
 	// into and the presentation its declared rule reads are both the render's own,
 	// reached through the state of whichever component node dispatched this FR — one
 	// of each for the whole render, so which node that was does not select either.
-	emitted, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "",
+	//
+	// The reported derived label value is discarded because instanceLabel is "":
+	// this render derives none, and the boundary-disambiguated value it carries
+	// was declared at the point it was minted above. Reading it here as well would
+	// declare one name twice for one derivation.
+	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "",
 		state.hydrated.attachmentOnBoundary(state.hydratedFacts, key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 	if err != nil {

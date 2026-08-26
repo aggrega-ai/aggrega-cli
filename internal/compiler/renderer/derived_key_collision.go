@@ -12,6 +12,40 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// componentIDKeySpace is the key space the compiler's own component-identity
+// label value is declared into.
+//
+// It is named for the label the value lands on — aggrega.ai/component-id on
+// every resource the declaring contributor's output carries — because a space
+// name reaches the author inside the refusal message, and the label key is the
+// one place that author has already seen this string. A space name they cannot
+// reconduce to something they read sends them looking for a word that is in
+// none of their files.
+const componentIDKeySpace = "component-id"
+
+// declareDerivedKey records that the compiler itself derived one name into one
+// key space, folding it into an accumulator through the same merge a guest's
+// declaration takes.
+//
+// It exists so there is one accumulation mechanic rather than two. The
+// declarations a provider guest makes arrive over the node context's sink and
+// are folded in by mergeDerivedKeys; a name the compiler derives has no
+// boundary to cross and needs no carrier, but it must accumulate identically or
+// the two kinds of declaration would answer to different rules inside one space.
+//
+// The repeat report travels back to the caller rather than being dropped here,
+// for the reason putAll keeps its two arguments together: a site that recorded a
+// declaration while discarding what it repeated would compile, pass, and
+// silently stop checking half the property. One name in one space cannot repeat
+// inside its own declaration today, so the report is empty in practice — that is
+// a property of this call's argument, not of the merge, and reading the merge's
+// answer rather than assuming it is what keeps the two from diverging.
+func declareDerivedKey(into *types.OrderedMap[[]string], space, key string) []derivedKeyRepeat {
+	declared := types.OrderedMap[[]string]{}
+	declared.Set(space, []string{key})
+	return mergeDerivedKeys(into, declared)
+}
+
 // derivedKeyDeclaration is one contributor's declaration that it derived one
 // name into one of its own key spaces: the space, the name, and the
 // authoring-level name of whatever derived it.
@@ -45,19 +79,30 @@ type derivedKeyRepeat struct {
 // therefore recognised where it is still visible — at the moment one
 // declaration arrives, before it merges with the rest — and carried here.
 //
-// The direction is inverted from the collision guards that read output. A
-// provider guest derives the names its output addresses resources by, and it
-// puts them inside the file bytes the host writes verbatim — so the host cannot
-// see them, and reading them back would mean parsing the provider's format in
-// the host, which is the domain knowledge the Wasm boundary keeps out. The guest
-// declares them instead. What arrives here is therefore already the answer to
-// every provider-specific question; nothing below interprets it.
+// A declaration reaches here from either of two directions, and the difference
+// between them ends at the sink: below this line a declaration's origin is
+// unreadable and nothing reads it.
+//
+// From a provider guest, the direction is inverted from the collision guards
+// that read output. A guest derives the names its output addresses resources by,
+// and it puts them inside the file bytes the host writes verbatim — so the host
+// cannot see them, and reading them back would mean parsing the provider's
+// format in the host, which is the domain knowledge the Wasm boundary keeps out.
+// The guest declares them instead, and what arrives is already the answer to
+// every provider-specific question.
+//
+// From the compiler itself, the name is one the compiler derived and then handed
+// a guest to stamp — a label value composed from an identity the author wrote.
+// The host can see that one, because it made it; it declares it for the same
+// reason a guest does, so that one space is checked once however the names in it
+// were arrived at. Declaring at the deriving site is what keeps a compiler
+// derivation from being the one kind of name nobody reports.
 //
 // Blindness is the property that makes one guard enough for every provider. A
-// space is an opaque string the guest chose, a key is an opaque string the guest
-// derived, and this compares keys for equality within a space and does nothing
-// else — no format is recognised, no provider is named, no key's meaning is
-// learned, and no key is ever derived here. A second provider declaring an
+// space is an opaque string its declarer chose, a key is an opaque string its
+// declarer derived, and this compares keys for equality within a space and does
+// nothing else — no format is recognised, no provider is named, no key's meaning
+// is learned, and no key is ever derived here. A second provider declaring an
 // entirely different kind of name in an entirely different kind of space is
 // covered by the same code, unchanged.
 //
