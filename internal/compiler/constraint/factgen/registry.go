@@ -151,7 +151,7 @@ var records = []recordDecl{
 			"with nothing to compare it against.",
 		Fields: []recordField{
 			{Name: "FeatureType", Type: "string", Doc: "FeatureType is the Feature the attachment names, empty when the author named none."},
-			{Name: "AuthoredSocketNames", Type: "[]string", Doc: "AuthoredSocketNames are the socket names the attachment's own dependency block declares, in author order."},
+			{Name: "AuthoredSocketNames", Type: "[]string", Doc: "AuthoredSocketNames are the socket names the attachment's own dependency block wires, in author order."},
 		},
 	},
 	{
@@ -571,7 +571,7 @@ var facts = []factDecl{
 		},
 		Returns: "[]string",
 		Doc: "AttachmentAuthoredUsesSocketNames are the socket names an " +
-			"attachment's own dependency block declares, in author order.\n" +
+			"attachment's own dependency block wires, in author order.\n" +
 			"\nThese name sockets on the attached Feature, a separate " +
 			"declaration surface from the component's own sockets, which is why " +
 			"the fact is keyed per attachment as well as per node.",

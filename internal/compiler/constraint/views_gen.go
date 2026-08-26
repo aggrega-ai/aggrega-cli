@@ -60,7 +60,7 @@ type AttachmentDeclaration struct {
 	FeatureType string
 
 	// AuthoredSocketNames are the socket names the attachment's own dependency
-	// block declares, in author order.
+	// block wires, in author order.
 	AuthoredSocketNames []string
 }
 
@@ -465,7 +465,7 @@ type NormalizedView interface {
 	AuthoredAttachmentType(node string, attachment string) (string, bool)
 
 	// AttachmentAuthoredUsesSocketNames are the socket names an attachment's
-	// own dependency block declares, in author order.
+	// own dependency block wires, in author order.
 	//
 	// These name sockets on the attached Feature, a separate declaration
 	// surface from the component's own sockets, which is why the fact is keyed
