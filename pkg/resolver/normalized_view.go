@@ -919,13 +919,6 @@ func (v *normalizedView) SlotSelector(componentType string, slot string) string 
 	return entry.Selector
 }
 
-// SlotSensitive reports whether an attachment slot declares that whatever binds
-// it handles secret material.
-func (v *normalizedView) SlotSensitive(componentType string, slot string) bool {
-	entry, ok := v.slotEntry(componentType, slot)
-	return ok && entry.Sensitive
-}
-
 // SlotInjectMechanismNames returns the delivery mechanisms an attachment slot
 // permits, in author order.
 func (v *normalizedView) SlotInjectMechanismNames(componentType string, slot string) []string {

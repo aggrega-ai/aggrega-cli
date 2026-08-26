@@ -46,10 +46,6 @@ type topologyView struct {
 	// nodes is the flattened node set, by the identity every keyed fact takes.
 	nodes types.OrderedMap[*TopologyNode]
 
-	// attachments is every attachment each node carries, by that node's
-	// identity, as flattening collected them.
-	attachments map[string][]FeatureAttachment
-
 	// connections is each node's socket connection counts, folded once when this
 	// value was built so a reader does not walk the edge set per node.
 	connections map[string]types.OrderedMap[int]
@@ -77,7 +73,6 @@ func newTopologyView(
 	v := &topologyView{
 		NormalizedView: earlier,
 		nodes:          flat.Nodes,
-		attachments:    flat.FeatureAttachments,
 		connections:    map[string]types.OrderedMap[int]{},
 		modules:        flat.Modules,
 		contributed:    map[string][]string{},
@@ -124,17 +119,6 @@ func (v *topologyView) FlattenedNodeComponentType(node string) (string, bool) {
 		return "", false
 	}
 	return n.ComponentType, true
-}
-
-// FlattenedAttachmentType returns the Feature type one attachment on a node
-// names, and whether the node carries an attachment under that name.
-func (v *topologyView) FlattenedAttachmentType(node string, attachment string) (string, bool) {
-	for _, a := range v.attachments[node] {
-		if a.InstanceName == attachment {
-			return a.Feature.Type, true
-		}
-	}
-	return "", false
 }
 
 // ResolvedParameter returns the value one parameter resolved to for a node, and

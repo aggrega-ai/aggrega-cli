@@ -287,6 +287,12 @@ var attachmentSlotFieldsWithoutFacts = map[string]string{
 		"validation surface projected from a slot is built from the slot's other " +
 		"fields and consults this one nowhere, so a rule over the slot's shape has " +
 		"no input here and a fact carrying it would be read by nothing",
+	"Sensitive": "a marker rather than a constraint, and its readers sit outside " +
+		"the rules layer. It is carried onto the slot's projected validation " +
+		"surface as an extension keyword, and it is read again when deriving " +
+		"whether the attachment binding the slot handles secret material — but no " +
+		"fill is accepted or rejected because of it and no rendered output " +
+		"changes, so a rule over the slot's shape has nothing to decide from it",
 }
 
 // authoredCarriersHeldInLockstep are the declarations whose every authored field

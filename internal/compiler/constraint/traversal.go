@@ -420,6 +420,16 @@ func RunOnNodeAttachments[V View](
 // The locator is .spec.components.<name>.features.<attachment>.uses.<socket>:
 // these sockets are declared on the attached Feature, a separate authoring
 // surface from the component's own.
+//
+// No production path invokes it, and the reason is granularity rather than an
+// omission. Every fact keyed by this kind is read, and each is read from a check
+// keyed elsewhere: the rules over what an attachment wires declare the
+// attachment kind and ask for a whole socket set at once, because the fault they
+// name is a set difference against what the Feature declares; the rule over a
+// socket's label constraint declares the edge kind. So the facts are read and
+// per-socket enumeration is not, and this entry is what keeps the kind
+// reachable: a kind with no traversal is a kind a check can declare and nothing
+// will ever invoke.
 func RunOnNodeAttachmentSockets[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -541,6 +551,13 @@ func RunOnNodeMechanismDeliveryKeys[V View](
 // a node's author wrote, in node order, then pillar order, then leaf order.
 //
 // The locator is .spec.components.<name>.values.<pillar>.<leaf>.
+//
+// No production path invokes it, and the reason is granularity rather than an
+// omission. The kind exists because a fact is keyed by it — one configuration
+// pillar as the author wrote it — and the rule reading that fact declares the
+// node kind and asks for a whole named pillar at once, so it decides per node
+// and never per leaf. This entry is what keeps the kind reachable: a kind with
+// no traversal is a kind a check can declare and nothing will ever invoke.
 func RunOnNodePillarLeaves[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -574,6 +591,13 @@ func RunOnNodePillarLeaves[V View](
 // declaration — and for a node flattened out of a sub-aggregate the node's file
 // is the sub-aggregate that declares its parameters. A component instance has no
 // parameter block for a locator to name.
+//
+// No production path invokes it, and the kind's fact is nonetheless read: the
+// corpus the view-narrowing read is proven against declares a check over this
+// kind, reading a parameter a node resolved through the narrowest view that
+// suffices for it. That check is the control which keeps the narrowing read from
+// reporting every check it inspects, so the fact and the kind both have a reader
+// and this entry is what keeps the kind reachable.
 func RunOnNodeParameters[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,
@@ -736,6 +760,16 @@ func RunOnNodeAttachmentPillarLeaves[V View](
 // The locator is .spec.locals.<key> in the Recipe's own file, which is a
 // different document from the Aggregate the node was authored in — so the file
 // comes from the enumerated entry and not from the node.
+//
+// No production path invokes it, and what stands between it and one is
+// structural rather than unfinished work. The two faults a locals key can carry
+// — a reference to a name declared later in the block, and a reference to a name
+// the block does not declare at all — are decided while the block is being
+// evaluated, from each entry's authored template text and the set resolved so
+// far. No fact carries that text, and the fact this kind is keyed by is complete
+// only once the whole block has resolved, which is after the moment the ordering
+// fault is decided. So the two faults are refused where they are decided, and
+// this entry stays for a rule about a declared local that needs neither.
 func RunOnNodeLocalsKeys[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,

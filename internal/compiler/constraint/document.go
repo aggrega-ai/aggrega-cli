@@ -55,6 +55,15 @@ func newDocumentSubject(sourceFile string) DocumentSubject {
 // there is no interval to cut: a caller that wants to stop stops before
 // presenting the next document. A parameter here would be one this function
 // never reads.
+//
+// No production path invokes it, and it is nonetheless load-bearing, because it
+// is the framework's minimal entry and this package's own controls rest on that.
+// The programs under testdata that must compile and must not compile differ from
+// one another in the subject kind their check declares and in nothing else, which
+// is what makes a compile failure there attributable to the kinds refusing to
+// substitute rather than to anything around them. Reaching those controls through
+// an entry that also takes a cancellation signal and an enumerator would put that
+// one difference among several.
 func RunOnDocument[V View](sourceFile string, view V, check Check[V, DocumentSubject]) []Objection {
 	return check.Run(view, newDocumentSubject(sourceFile))
 }

@@ -75,9 +75,8 @@ var stages = []stageDecl{
 		Name:    "described",
 		Extends: "graph",
 		Holds: "every plugin a node's pipeline steps and its rendering provider " +
-			"resolve to, loaded and self-described: the declared capabilities, the " +
-			"exports, and the input and output schemas each export declares, before " +
-			"any step runs",
+			"resolve to, loaded and self-described: the declared capabilities and " +
+			"the scope each dispatched export declares, before any step runs",
 		// Every fact here is a plugin's own self-report, and producing one
 		// resolves the reference against the sources the workspace configures,
 		// fetches the guest bytes, and calls describe() across the boundary.
@@ -833,29 +832,6 @@ var facts = []factDecl{
 			"states that its material is consumed by the Recipe internally rather " +
 			"than delivered to the workload, so a fill dictating any delivery for " +
 			"it is refused.",
-	},
-	{
-		Name:        "slot-sensitive",
-		Stage:       "normalized",
-		SourceField: "types.AttachmentSlot.Sensitive",
-		Subject:     []string{"node", "slot"},
-		Params: []paramDecl{
-			{Name: "componentType", Type: "string"},
-			{Name: "slot", Type: "string"},
-		},
-		Returns: "bool",
-		Doc: "SlotSensitive reports whether an attachment slot declares that " +
-			"whatever binds it handles secret material.\n\nIt is a marker and not " +
-			"a constraint. No fill is accepted or rejected because of it and no " +
-			"rendered output changes; what it does is make one declaration " +
-			"readable — it is carried onto the slot's projected validation " +
-			"surface as an extension keyword, and it is read when deriving " +
-			"whether the attachment binding the slot handles sensitive " +
-			"material.\n\nFalse is the answer for a slot that says nothing on the " +
-			"point as well as for one that declares the marker off, and the two " +
-			"are deliberately not distinguished: what a rule over this fact asks " +
-			"is whether the slot claims secret material, and a slot silent on it " +
-			"claims none.",
 	},
 	{
 		Name:        "feature-applies-to",
@@ -1767,51 +1743,6 @@ var facts = []factDecl{
 			"a rule needing both asks both.",
 	},
 	{
-		Name:        "flattened-attachment-type",
-		Stage:       "topology",
-		SourceField: "topology.TopologyResult.FeatureAttachments",
-		Subject:     []string{"node", "attachment"},
-		Params: []paramDecl{
-			{Name: "node", Type: "string"},
-			{Name: "attachment", Type: "string"},
-		},
-		Returns: "(string, bool)",
-		Doc: "FlattenedAttachmentType is the Feature type declared for one " +
-			"attachment on one node of the flattened set, reported absent when " +
-			"no attachment of that name was collected for it.\n\nIt answers for " +
-			"an attachment a sub-aggregate contributes, which is what separates " +
-			"it from the type the application's own component instance declares. " +
-			"Such an attachment is written on a component in that " +
-			"sub-aggregate's document, which is read only when the composition " +
-			"is flattened — so the fact over the application's own instance " +
-			"list cannot see it, and a rule reading that alone reports the " +
-			"attachment as not declared.\n\nIt covers the " +
-			"attachments written on a component and no others. An attachment " +
-			"declared once for a whole scope, and inherited by the components " +
-			"inside it, is carried separately and is not collected here — so an " +
-			"absent answer means no attachment of that name was written on that " +
-			"component, and never that no attachment of that name applies to it. " +
-			"A rule about what applies to a node reads the merged set, which is " +
-			"complete a stage later, once the whole inheritance has been folded.\n" +
-			"\nIt is what was declared and not what the declaration merged to. " +
-			"Two documents may name one attachment, and reconciling them is a " +
-			"question the facts over the authored surfaces answer between them; " +
-			"the merged answer is a separate fact at a later stage. A rule " +
-			"asking what a document declared reads a declaration fact, and a " +
-			"rule asking what the attachment became reads the merged one.\n\nIt " +
-			"does not replace the fact over the application's own attachment " +
-			"declarations, and that fact does not replace it. That " +
-			"one is complete earlier, so a rule asked before the composition is " +
-			"flattened can read it and cannot read this; and it separates an " +
-			"attachment the document does not declare from one declaring the " +
-			"empty type, which is a distinction about an authored document. A " +
-			"rule asking what an author wrote reads that; a rule asking what the " +
-			"build assembled reads this.\n\nIt names the Feature TYPE and never " +
-			"the attachment's own name. The name is the coordinate this fact is " +
-			"keyed by; the type is what it reports, and a rule reaching for the " +
-			"Feature's declaration needs the type.",
-	},
-	{
 		Name:        "resolved-parameter",
 		Stage:       "topology",
 		SourceField: "topology.TopologyNode.ResolvedParameters",
@@ -2206,53 +2137,6 @@ var facts = []factDecl{
 			"because a plugin offers several exports and a step dispatches to " +
 			"exactly one of them, so the plugin alone does not determine the " +
 			"answer.",
-	},
-	{
-		Name:        "step-export-input-schema",
-		Stage:       "described",
-		SourceField: "wasm.PluginExport.Input",
-		Subject:     []string{"node", "pipeline-step"},
-		Params: []paramDecl{
-			{Name: "node", Type: "string"},
-			{Name: "step", Type: "string"},
-		},
-		Returns: "[]byte",
-		Doc: "StepExportInputSchema is the schema document the export a pipeline " +
-			"step dispatches to declares for the step-local input a pipeline " +
-			"entry supplies, as opaque bytes — empty when the export declares " +
-			"no input contract.\n\nThe bytes are opaque by type, so nothing " +
-			"about the declared shape is legible from the fact beyond the " +
-			"document itself. That is what lets a conformance rule receive a " +
-			"whole schema without receiving the self-report carrying it.\n" +
-			"\nIt is a separate fact from the declared output schema rather " +
-			"than the same fact in two directions. The two are independently " +
-			"absent and are evaluated against different values — one against " +
-			"what a pipeline entry supplies, the other against what the step " +
-			"returns — so a rule may legitimately ask about either without the " +
-			"other.",
-	},
-	{
-		Name:        "step-export-output-schema",
-		Stage:       "described",
-		SourceField: "wasm.PluginExport.Output",
-		Subject:     []string{"node", "pipeline-step"},
-		Params: []paramDecl{
-			{Name: "node", Type: "string"},
-			{Name: "step", Type: "string"},
-		},
-		Returns: "[]byte",
-		Doc: "StepExportOutputSchema is the schema document the export a pipeline " +
-			"step dispatches to declares for the outputs it returns, as opaque " +
-			"bytes — empty when the export declares no output contract.\n" +
-			"\nThe bytes are opaque by type, on the same reasoning as the " +
-			"declared input schema: a conformance rule receives the whole " +
-			"document without receiving the self-report carrying it.\n\nIt " +
-			"is deliberately the second of a pair rather than one fact over " +
-			"both directions of the contract. An export may declare either " +
-			"without the other, and the two are evaluated at different moments " +
-			"— one before the step runs, one after — so a single fact spanning " +
-			"them would be absent for a step declaring only the half a rule " +
-			"needed.",
 	},
 	{
 		Name:        "provider-boundary-assembly",

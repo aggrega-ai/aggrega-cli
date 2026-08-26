@@ -681,23 +681,6 @@ type NormalizedView interface {
 	// Keyed by (node, slot); read from types.AttachmentSlot.Inject.
 	SlotInjectMechanismNames(componentType string, slot string) []string
 
-	// SlotSensitive reports whether an attachment slot declares that whatever
-	// binds it handles secret material.
-	//
-	// It is a marker and not a constraint. No fill is accepted or rejected
-	// because of it and no rendered output changes; what it does is make one
-	// declaration readable — it is carried onto the slot's projected
-	// validation surface as an extension keyword, and it is read when deriving
-	// whether the attachment binding the slot handles sensitive material.
-	//
-	// False is the answer for a slot that says nothing on the point as well as
-	// for one that declares the marker off, and the two are deliberately not
-	// distinguished: what a rule over this fact asks is whether the slot
-	// claims secret material, and a slot silent on it claims none.
-	//
-	// Keyed by (node, slot); read from types.AttachmentSlot.Sensitive.
-	SlotSensitive(componentType string, slot string) bool
-
 	// FeatureAppliesTo is the single label constraint a Feature declares on
 	// which components it may attach to, empty when it constrains nothing.
 	//
@@ -1618,49 +1601,6 @@ type TopologyView interface {
 	// Keyed by node; read from topology.TopologyNode.ComponentType.
 	FlattenedNodeComponentType(node string) (string, bool)
 
-	// FlattenedAttachmentType is the Feature type declared for one attachment
-	// on one node of the flattened set, reported absent when no attachment of
-	// that name was collected for it.
-	//
-	// It answers for an attachment a sub-aggregate contributes, which is what
-	// separates it from the type the application's own component instance
-	// declares. Such an attachment is written on a component in that
-	// sub-aggregate's document, which is read only when the composition is
-	// flattened — so the fact over the application's own instance list
-	// cannot see it, and a rule reading that alone reports the attachment as
-	// not declared.
-	//
-	// It covers the attachments written on a component and no others. An
-	// attachment declared once for a whole scope, and inherited by the
-	// components inside it, is carried separately and is not collected here
-	// — so an absent answer means no attachment of that name was written on
-	// that component, and never that no attachment of that name applies to it.
-	// A rule about what applies to a node reads the merged set, which is
-	// complete a stage later, once the whole inheritance has been folded.
-	//
-	// It is what was declared and not what the declaration merged to. Two
-	// documents may name one attachment, and reconciling them is a question
-	// the facts over the authored surfaces answer between them; the merged
-	// answer is a separate fact at a later stage. A rule asking what a
-	// document declared reads a declaration fact, and a rule asking what the
-	// attachment became reads the merged one.
-	//
-	// It does not replace the fact over the application's own attachment
-	// declarations, and that fact does not replace it. That one is complete
-	// earlier, so a rule asked before the composition is flattened can read it
-	// and cannot read this; and it separates an attachment the document does
-	// not declare from one declaring the empty type, which is a distinction
-	// about an authored document. A rule asking what an author wrote reads
-	// that; a rule asking what the build assembled reads this.
-	//
-	// It names the Feature TYPE and never the attachment's own name. The name
-	// is the coordinate this fact is keyed by; the type is what it reports,
-	// and a rule reaching for the Feature's declaration needs the type.
-	//
-	// Keyed by (node, attachment); read from
-	// topology.TopologyResult.FeatureAttachments.
-	FlattenedAttachmentType(node string, attachment string) (string, bool)
-
 	// ResolvedParameter is the value one named parameter resolved to for a
 	// node, and whether the node resolved that name at all.
 	//
@@ -1972,8 +1912,8 @@ type GraphView interface {
 
 // DescribedView exposes the facts complete at the described stage: every
 // plugin a node's pipeline steps and its rendering provider resolve to,
-// loaded and self-described: the declared capabilities, the exports, and
-// the input and output schemas each export declares, before any step runs.
+// loaded and self-described: the declared capabilities and the scope each
+// dispatched export declares, before any step runs.
 //
 // It embeds GraphView, so every fact complete earlier is readable here and
 // the containment is a compile-time fact rather than a documented
@@ -2016,42 +1956,6 @@ type DescribedView interface {
 	//
 	// Keyed by (node, pipeline-step); read from wasm.PluginExport.Scope.
 	StepExportScope(node string, step string) string
-
-	// StepExportInputSchema is the schema document the export a pipeline step
-	// dispatches to declares for the step-local input a pipeline entry
-	// supplies, as opaque bytes — empty when the export declares no input
-	// contract.
-	//
-	// The bytes are opaque by type, so nothing about the declared shape is
-	// legible from the fact beyond the document itself. That is what lets a
-	// conformance rule receive a whole schema without receiving the
-	// self-report carrying it.
-	//
-	// It is a separate fact from the declared output schema rather than the
-	// same fact in two directions. The two are independently absent and are
-	// evaluated against different values — one against what a pipeline entry
-	// supplies, the other against what the step returns — so a rule may
-	// legitimately ask about either without the other.
-	//
-	// Keyed by (node, pipeline-step); read from wasm.PluginExport.Input.
-	StepExportInputSchema(node string, step string) []byte
-
-	// StepExportOutputSchema is the schema document the export a pipeline step
-	// dispatches to declares for the outputs it returns, as opaque bytes —
-	// empty when the export declares no output contract.
-	//
-	// The bytes are opaque by type, on the same reasoning as the declared
-	// input schema: a conformance rule receives the whole document without
-	// receiving the self-report carrying it.
-	//
-	// It is deliberately the second of a pair rather than one fact over both
-	// directions of the contract. An export may declare either without the
-	// other, and the two are evaluated at different moments — one before the
-	// step runs, one after — so a single fact spanning them would be absent
-	// for a step declaring only the half a rule needed.
-	//
-	// Keyed by (node, pipeline-step); read from wasm.PluginExport.Output.
-	StepExportOutputSchema(node string, step string) []byte
 
 	// ProviderBoundaryAssembly is how the rendering provider a node resolves
 	// to declares it combines a dispatch group's per-node output, empty when

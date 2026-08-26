@@ -17,11 +17,10 @@ import (
 
 // describedView presents, as named facts, what every plugin a node reaches has
 // reported about itself: the provider capabilities each pipeline step's plugin
-// declares its step is compatible with, the scope and the declared input and
-// output contracts of the export each step dispatches to, the provider that
-// renders each site's own documents, the assembly claim and artifact delimiter
-// pair that provider declares, and the text a Recipe authored for each provides
-// key.
+// declares its step is compatible with, the scope of the export each step
+// dispatches to, the provider that renders each site's own documents, the
+// assembly claim and artifact delimiter pair that provider declares, and the
+// text a Recipe authored for each provides key.
 //
 // It satisfies [constraint.DescribedView], and the compiler holds it to that
 // contract at the bottom of this file rather than a comment claiming it.
@@ -185,20 +184,6 @@ func (v *describedView) StepPluginCompatibleCapabilities(node string, step strin
 // declares none.
 func (v *describedView) StepExportScope(node string, step string) string {
 	return v.scopeOf(v.nodePipeline(node), step)
-}
-
-// StepExportInputSchema returns the schema document the export one step of a
-// node's own Recipe pipeline dispatches to declares for the step-local input a
-// pipeline entry supplies, empty when the export declares no input contract.
-func (v *describedView) StepExportInputSchema(node string, step string) []byte {
-	return v.exportInput(v.nodePipeline(node), step)
-}
-
-// StepExportOutputSchema returns the schema document the export one step of a
-// node's own Recipe pipeline dispatches to declares for the outputs it returns,
-// empty when the export declares no output contract.
-func (v *describedView) StepExportOutputSchema(node string, step string) []byte {
-	return v.exportOutput(v.nodePipeline(node), step)
 }
 
 // ProviderBoundaryAssembly returns how the provider rendering a node's own
@@ -601,42 +586,6 @@ func (v *describedView) scopeOf(steps []types.PipelineStep, step string) string 
 		return ""
 	}
 	return exportScope(desc, entry.Function)
-}
-
-// exportInput returns the declared input schema of the export the named step
-// dispatches to, empty when the export declares none.
-func (v *describedView) exportInput(steps []types.PipelineStep, step string) []byte {
-	export, ok := v.stepExport(steps, step)
-	if !ok {
-		return nil
-	}
-	return export.Input
-}
-
-// exportOutput returns the declared output schema of the export the named step
-// dispatches to, empty when the export declares none.
-func (v *describedView) exportOutput(steps []types.PipelineStep, step string) []byte {
-	export, ok := v.stepExport(steps, step)
-	if !ok {
-		return nil
-	}
-	return export.Output
-}
-
-// stepExport returns the export the named step dispatches to, through the
-// shared find-an-export-by-name home.
-func (v *describedView) stepExport(
-	steps []types.PipelineStep, step string,
-) (wasm.PluginExport, bool) {
-	entry, ok := pipelineStepByID(steps, step)
-	if !ok {
-		return wasm.PluginExport{}, false
-	}
-	desc, ok := v.stepDescriptor(steps, step)
-	if !ok {
-		return wasm.PluginExport{}, false
-	}
-	return findExport(desc, entry.Function)
 }
 
 // nodeEngine resolves the engine that renders a node's own documents, which

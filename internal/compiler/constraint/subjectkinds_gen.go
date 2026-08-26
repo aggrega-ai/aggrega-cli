@@ -58,7 +58,7 @@ const (
 	// SubjectEdge is the subject kind edge, keyed by 8 declared facts.
 	SubjectEdge SubjectKind = "edge"
 
-	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 18 declared facts.
+	// SubjectNodeAttachment is the subject kind (node, attachment), keyed by 17 declared facts.
 	SubjectNodeAttachment SubjectKind = "(node, attachment)"
 
 	// SubjectNodeAttachmentSocket is the subject kind (node, attachment, socket), keyed by 3 declared facts.
@@ -67,7 +67,7 @@ const (
 	// SubjectSubsystemAttachment is the subject kind (subsystem, attachment), keyed by 1 declared fact.
 	SubjectSubsystemAttachment SubjectKind = "(subsystem, attachment)"
 
-	// SubjectNodeSlot is the subject kind (node, slot), keyed by 4 declared facts.
+	// SubjectNodeSlot is the subject kind (node, slot), keyed by 3 declared facts.
 	SubjectNodeSlot SubjectKind = "(node, slot)"
 
 	// SubjectNodeMechanism is the subject kind (node, mechanism), keyed by 1 declared fact.
@@ -91,7 +91,7 @@ const (
 	// SubjectNodeAttachmentPillarLeaf is the subject kind (node, attachment, pillar, leaf), keyed by 2 declared facts.
 	SubjectNodeAttachmentPillarLeaf SubjectKind = "(node, attachment, pillar, leaf)"
 
-	// SubjectNodePipelineStep is the subject kind (node, pipeline-step), keyed by 4 declared facts.
+	// SubjectNodePipelineStep is the subject kind (node, pipeline-step), keyed by 2 declared facts.
 	SubjectNodePipelineStep SubjectKind = "(node, pipeline-step)"
 
 	// SubjectNodeAttachmentPipelineStep is the subject kind (node, attachment, pipeline-step), keyed by 2 declared facts.
