@@ -318,14 +318,25 @@ type AttachmentEnumerator interface {
 	Attachments(node string) []string
 }
 
-// AttachmentSocketEnumerator supplies the sockets one attachment's own
-// dependency block declares.
+// AttachmentSocketEnumerator supplies the sockets one attachment WIRES in its own
+// dependency block: the set the attachment populates, never the set the Feature
+// it attaches declares.
 //
-// Those sockets are declared on the attached Feature, a separate authoring
+// Which of the two the axis means is the axis's contract rather than a detail of
+// it, and this axis is the mirror image of [NodeSocketEnumerator] above — so
+// neither can be inferred from the other and both say which they are. A rule over
+// what an attachment wires reports a socket the attached Feature declares no
+// entry for, and that socket is by construction absent from the declared set, so
+// an axis enumerating the declared set would never present such a rule its own
+// subject. What the Feature declares is a fact keyed by the Feature type instead,
+// which the rule reads and compares the socket it was invoked for against.
+//
+// The socket names are drawn from the attached Feature, a separate authoring
 // surface from the component's own sockets, which is why the axis is keyed per
-// attachment as well as per node.
+// attachment as well as per node: one socket name means different things under
+// two attachments of different Features.
 type AttachmentSocketEnumerator interface {
-	// AttachmentSockets returns an attachment's own socket names, in a
+	// AttachmentSockets returns the socket names an attachment wires, in a
 	// deterministic order the implementation declares.
 	AttachmentSockets(node string, attachment string) []string
 }

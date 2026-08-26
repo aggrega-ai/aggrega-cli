@@ -344,11 +344,15 @@ func newSubsystemAttachmentSubject(
 }
 
 // NodeAttachmentSocketSubject is the subject of a check invoked once per socket
-// an attachment's own dependency block declares.
+// an attachment WIRES in its own dependency block — never once per socket the
+// attached Feature declares. The axis is the enumerator's contract and is stated
+// there; it is named here too because the two sets differ and a reader arriving
+// at the subject must not have to guess which one reached it.
 //
-// Those sockets are declared on the attached Feature, a separate authoring
+// The socket names are drawn from the attached Feature, a separate authoring
 // surface from the component's own sockets, which is why the kind is keyed per
-// attachment as well as per node.
+// attachment as well as per node: one socket name means different things under
+// two attachments of different Features.
 type NodeAttachmentSocketSubject interface {
 	Subject
 
@@ -356,12 +360,13 @@ type NodeAttachmentSocketSubject interface {
 	// takes it.
 	NodeID() string
 
-	// AttachmentName is the attachment whose own dependency block declares the
+	// AttachmentName is the attachment whose own dependency block wires the
 	// socket.
 	AttachmentName() string
 
-	// SocketName is the socket the check was invoked for. It is declared on the
-	// attached Feature, so it is not one of the component's own sockets — which
+	// SocketName is the socket the check was invoked for: one the attachment
+	// wired. Its name comes from the attached Feature's surface rather than the
+	// component's own, so it is not one of the component's sockets — which
 	// coordinate set it belongs to is said by the kind it is reached within.
 	SocketName() string
 

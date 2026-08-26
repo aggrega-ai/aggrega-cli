@@ -413,23 +413,20 @@ func RunOnNodeAttachments[V View](
 	})
 }
 
-// RunOnNodeAttachmentSockets invokes check once per socket an attachment's own
-// dependency block declares, in node order, then attachment order, then socket
-// order.
+// RunOnNodeAttachmentSockets invokes check once per socket an attachment WIRES,
+// in node order, then attachment order, then socket order.
 //
-// The locator is .spec.components.<name>.features.<attachment>.uses.<socket>:
-// these sockets are declared on the attached Feature, a separate authoring
-// surface from the component's own.
+// The axis is the wired set and never the set the attached Feature declares —
+// the enumerator's own contract, stated there and not restated here. What the
+// Feature declares is a fact keyed by its type, which a rule over one of these
+// sockets reads and compares the socket it was invoked for against.
 //
-// No production path invokes it, and the reason is granularity rather than an
-// omission. Every fact keyed by this kind is read, and each is read from a check
-// keyed elsewhere: the rules over what an attachment wires declare the
-// attachment kind and ask for a whole socket set at once, because the fault they
-// name is a set difference against what the Feature declares; the rule over a
-// socket's label constraint declares the edge kind. So the facts are read and
-// per-socket enumeration is not, and this entry is what keeps the kind
-// reachable: a kind with no traversal is a kind a check can declare and nothing
-// will ever invoke.
+// The locator is .spec.components.<name>.features.<attachment>.uses.<socket>,
+// the entry the author wrote inside the attachment's own dependency block. The
+// socket names come from the attached Feature, which is a separate authoring
+// surface from the component's own dependency block — that is what makes the axis
+// keyed per attachment as well as per node, since the same socket name means
+// different things under two attachments of different Features.
 func RunOnNodeAttachmentSockets[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,

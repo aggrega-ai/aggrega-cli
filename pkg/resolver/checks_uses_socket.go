@@ -12,12 +12,23 @@ import (
 // The socket-name rules, expressed as constraint declarations. See checks.go for
 // what a declaration here is and why these are unexported.
 //
-// One rule spans four authoring surfaces and is declared four times, once per
-// subject kind, because an attachment is written at four different scopes and a
-// finding has to name the one the author wrote. The predicate itself is shared,
-// so the four cannot disagree about what a valid socket name is; what differs
-// between them is only which surface's facts supply the attachment's type and
-// the sockets it wires.
+// One rule spans four authoring surfaces and is declared four times, because an
+// attachment is written at four different scopes and a finding has to name the
+// one the author wrote. The comparison itself is shared, so the four cannot
+// disagree about what a valid socket name is; what differs between them is which
+// surface's facts supply the attachment's type and the sockets it wires, and
+// what each is invoked once per.
+//
+// The two surfaces that name a component are invoked once per socket, so the
+// framework walks the sockets and the finding is located at the entry the author
+// wrote. The two that name a scope are invoked once per attachment and read the
+// socket set as a fact, and the difference is a property of the authoring rather
+// than an inconsistency: a scope-wide attachment is written once and reaches
+// every component beneath the scope, so it has no component coordinate to be
+// walked under. Keying it per component would ask one question once per
+// component beneath the scope — reporting one authoring fault many times — and
+// never at all for a scope holding none, which is silence a reader cannot tell
+// from approval.
 //
 // The component's own dependency block is deliberately absent from that set. An
 // author naming a socket their component type declares no entry for is authoring
@@ -25,9 +36,9 @@ import (
 // that surface is the catalog-view classification, which is its own rule with
 // its own sentinel.
 
-// attachmentSocketObjections is the comparison at the heart of the attachment
-// socket rule: an attachment may wire only a socket the Feature it attaches
-// declares.
+// attachmentSocketObjection is the comparison at the heart of the attachment
+// socket rule, asked about one socket: an attachment may wire only a socket the
+// Feature it attaches declares.
 //
 // A Feature declaring no socket at all is the most constrained answer rather
 // than an absent one, so every socket such an attachment wires is refused. That
@@ -35,8 +46,14 @@ import (
 // set — which is why one expression covers both and neither can drift from the
 // other.
 //
-// It takes the two name sets rather than the view they were read from, and that
-// is a constraint of the declaration rather than a style: a rule's point in the
+// It is the only place either shape of the rule performs the comparison. The
+// surfaces the framework walks per socket call it directly; the surfaces invoked
+// once per attachment reach it through the loop below. So a change to what the
+// rule considers valid lands in one place and reaches both shapes, and neither
+// can drift from the other by carrying its own copy of the test.
+//
+// It takes the names rather than the view they were read from, and that is a
+// constraint of the declaration rather than a style: a rule's point in the
 // compilation is computed from the facts its predicate is READ to call, so a
 // rule handing its view to a helper puts its own reads where that computation
 // cannot follow them and gets no verdict at all. Each declaration below
@@ -46,6 +63,26 @@ import (
 // socket names that Feature declares, in author order — the alternatives an
 // author picks from, carried as values so a reader of the objection has them
 // without a view to read them from.
+func attachmentSocketObjection(
+	s constraint.Subject,
+	featureType string,
+	socket string,
+	declared []string,
+) []constraint.Objection {
+	if slices.Contains(declared, socket) {
+		return nil
+	}
+	return []constraint.Objection{s.Raise(ErrUnknownUsesSocket(),
+		append([]string{featureType, socket}, declared...)...)}
+}
+
+// attachmentSocketObjections asks the comparison above of every socket an
+// attachment wires, in the order the surface's own fact returns them.
+//
+// It exists for the two surfaces that name a scope rather than a component,
+// which are invoked once per attachment and so hold the whole socket set. The
+// loop is theirs alone: a surface the framework walks per socket is handed one
+// socket and calls the comparison directly.
 func attachmentSocketObjections(
 	s constraint.Subject,
 	featureType string,
@@ -54,74 +91,78 @@ func attachmentSocketObjections(
 ) []constraint.Objection {
 	var out []constraint.Objection
 	for _, socket := range wired {
-		if slices.Contains(declared, socket) {
-			continue
-		}
-		out = append(out, s.Raise(ErrUnknownUsesSocket(),
-			append([]string{featureType, socket}, declared...)...))
+		out = append(out, attachmentSocketObjection(s, featureType, socket, declared)...)
 	}
 	return out
 }
 
-// componentAttachmentSocketDeclared reports each socket an attachment written on
-// a component wires that the Feature it attaches does not declare.
+// componentAttachmentSocketDeclared reports a socket an attachment written on a
+// component wires that the Feature it attaches does not declare.
 //
-// It is the per-component surface of the attachment socket rule. An attachment
-// the application does not declare under this name on this component ends the
-// rule here: the Release may declare one under the same name, and that surface
-// is a separate declaration with its own rule, so reading one for the other
-// would measure a Release-authored attachment's sockets against an application
-// attachment's type.
+// It is the per-component surface of the attachment socket rule, invoked once per
+// socket so the finding is located at the entry the author wrote rather than at
+// the attachment holding it.
+//
+// Two conditions end the rule before the comparison, and each one narrows it to
+// the surface it is the rule for. An attachment the application does not declare
+// under this name on this component ends it: the Release may declare one under
+// the same name, and that surface is a separate declaration with its own rule, so
+// reading one for the other would measure a Release-authored attachment's sockets
+// against an application attachment's type. A socket the application's own entry
+// does not wire ends it too, for the same reason at the finer coordinate — the
+// axis carries the sockets either document wired, so a socket only the deployment
+// wrote arrives here and belongs to the twin below.
 var componentAttachmentSocketDeclared = constraint.Check[
 	constraint.NormalizedView,
-	constraint.NodeAttachmentSubject,
+	constraint.NodeAttachmentSocketSubject,
 ]{
 	Sentinel: ErrUnknownUsesSocket(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.NormalizedView,
-		s constraint.NodeAttachmentSubject,
+		s constraint.NodeAttachmentSocketSubject,
 	) []constraint.Objection {
 		featureType, written := v.AuthoredAttachmentType(s.NodeID(), s.AttachmentName())
 		if !written {
 			return nil
 		}
 		wired := v.AttachmentAuthoredUsesSocketNames(s.NodeID(), s.AttachmentName())
-		if len(wired) == 0 || !v.CatalogFeaturePresent(featureType) {
+		if !slices.Contains(wired, s.SocketName()) || !v.CatalogFeaturePresent(featureType) {
 			return nil
 		}
-		return attachmentSocketObjections(s, featureType, wired,
+		return attachmentSocketObjection(s, featureType, s.SocketName(),
 			v.AttachmentDeclaredSocketNames(featureType))
 	},
 }
 
-// releaseComponentAttachmentSocketDeclared reports each socket an attachment the
+// releaseComponentAttachmentSocketDeclared reports a socket an attachment the
 // deployment writes against a named component wires that the Feature it attaches
 // does not declare.
 //
-// It is the deployment-side twin of the per-component surface. Adding an
-// attachment a component's own document never declared is supported there, so
-// the rule has to be asked of the deployment's own declaration rather than
-// inferred from the application's.
+// It is the deployment-side twin of the per-component surface, invoked once per
+// socket for the same reason and narrowed to its own document by the same two
+// conditions. Adding an attachment a component's own document never declared is
+// supported there, so the rule has to be asked of the deployment's own
+// declaration rather than inferred from the application's.
 var releaseComponentAttachmentSocketDeclared = constraint.Check[
 	constraint.NormalizedView,
-	constraint.NodeAttachmentSubject,
+	constraint.NodeAttachmentSocketSubject,
 ]{
 	Sentinel: ErrUnknownUsesSocket(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.NormalizedView,
-		s constraint.NodeAttachmentSubject,
+		s constraint.NodeAttachmentSocketSubject,
 	) []constraint.Objection {
 		featureType, written := v.ReleaseAttachmentType(s.NodeID(), s.AttachmentName())
 		if !written {
 			return nil
 		}
 		wired := v.ReleaseAttachmentAuthoredUsesSocketNames(s.NodeID(), s.AttachmentName())
-		if len(wired) == 0 || !v.CatalogFeaturePresent(featureType) {
+		if !slices.Contains(wired, s.SocketName()) || !v.CatalogFeaturePresent(featureType) {
 			return nil
 		}
-		return attachmentSocketObjections(s, featureType, wired,
+		return attachmentSocketObjection(s, featureType, s.SocketName(),
 			v.AttachmentDeclaredSocketNames(featureType))
 	},
 }

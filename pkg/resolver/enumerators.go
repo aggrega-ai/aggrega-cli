@@ -203,6 +203,41 @@ func (c *coordinateSet) Attachments(node string) []string {
 	return names
 }
 
+// AttachmentSockets returns the sockets one attachment of one node WIRES —
+// never the set the Feature it attaches declares — read from either authoring
+// document: the application's own entries in author order, then any socket the
+// deployment wires that the application does not, in the deployment's author
+// order.
+//
+// Which of the two sets the axis means is the axis's contract rather than a
+// detail of it, and the wired set is the one a rule over these sockets needs. A
+// socket wired against a Feature that declares no entry for it is the fault such
+// a rule reports, so an axis enumerating what the Feature declares would never
+// present that rule its own subject: the offending socket is by construction
+// absent from the declared set. The declared set is a fact on the view instead,
+// keyed by the Feature type, and the rule compares the socket it is invoked for
+// against it.
+//
+// Both documents are read for the reason the attachment axis above this one
+// reads both. The rules over what an attachment wires are split across the
+// documents, each narrowing to its own document's entries in its own body, so an
+// axis carrying only the application's sockets would leave the deployment-side
+// rule invoked for none of the sockets it exists to judge — and that absence has
+// no loud form: a rule never asked raises nothing and every build stays green.
+//
+// A socket both documents wire is one socket and is enumerated once. Enumerating
+// it per document would invoke every rule over it twice and report one authoring
+// fault as two.
+func (c *coordinateSet) AttachmentSockets(node string, attachment string) []string {
+	names := c.view.AttachmentAuthoredUsesSocketNames(node, attachment)
+	for _, name := range c.view.ReleaseAttachmentAuthoredUsesSocketNames(node, attachment) {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // Mechanisms returns the delivery mechanisms one node's injection block
 // declares, in author order, delegated to the fact that names them.
 func (c *coordinateSet) Mechanisms(node string) []string {
@@ -243,6 +278,7 @@ var (
 	_ constraint.SubsystemEnumerator           = (*coordinateSet)(nil)
 	_ constraint.BoundaryEnumerator            = (*coordinateSet)(nil)
 	_ constraint.AttachmentEnumerator          = (*coordinateSet)(nil)
+	_ constraint.AttachmentSocketEnumerator    = (*coordinateSet)(nil)
 	_ constraint.MechanismEnumerator           = (*coordinateSet)(nil)
 	_ constraint.DeliveryKeyEnumerator         = (*coordinateSet)(nil)
 	_ constraint.SubsystemAttachmentEnumerator = (*coordinateSet)(nil)

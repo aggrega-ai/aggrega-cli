@@ -346,15 +346,23 @@ func runDeclaredRules(
 		return nil, err
 	}
 
+	// Once per socket an attachment on a component wires. Ahead of the
+	// per-attachment rules below, which is the position the two held before the
+	// framework began walking their socket axis: findings reach the author in
+	// invocation order, so moving a rule to a finer axis must not also move where
+	// its findings land in the report.
+	if err := developerRule(constraint.RunOnNodeAttachmentSockets(
+		cancelled, coordinates, coordinates, coordinates, facts,
+		componentAttachmentSocketDeclared)); err != nil {
+		return nil, err
+	}
+	if err := operatorRule(constraint.RunOnNodeAttachmentSockets(
+		cancelled, coordinates, coordinates, coordinates, facts,
+		releaseComponentAttachmentSocketDeclared)); err != nil {
+		return nil, err
+	}
+
 	// Once per attachment a component carries.
-	if err := developerRule(constraint.RunOnNodeAttachments(
-		cancelled, coordinates, coordinates, facts, componentAttachmentSocketDeclared)); err != nil {
-		return nil, err
-	}
-	if err := operatorRule(constraint.RunOnNodeAttachments(
-		cancelled, coordinates, coordinates, facts, releaseComponentAttachmentSocketDeclared)); err != nil {
-		return nil, err
-	}
 	if err := developerRule(constraint.RunOnNodeAttachments(
 		cancelled, coordinates, coordinates, facts, attachmentTypeAgreesAcrossDocuments)); err != nil {
 		return nil, err

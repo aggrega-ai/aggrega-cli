@@ -829,9 +829,13 @@ func TestTheComponentAttachmentSocketRuleReportsASocketTheFeatureDoesNotDeclare(
 		name        string
 		attachments []namedFill
 		raised      []string
-		// sockets is the socket each objection carried, in the order raised. The
-		// locator names the attachment rather than the socket, so without this a
-		// rule reporting the wrong socket would still satisfy the row.
+		// sockets is the socket each objection carried as a detail value, in the
+		// order raised. The locator now names the socket too, and the two are
+		// independent channels rather than one restated: the framework assembles
+		// the locator from the coordinate it invoked the rule for, while the detail
+		// is what the rule itself raised about. Asserting both is what pins them to
+		// the same socket, so a rule reading one coordinate and reporting another
+		// cannot satisfy the row.
 		sockets []string
 	}{
 		{
@@ -844,7 +848,7 @@ func TestTheComponentAttachmentSocketRuleReportsASocketTheFeatureDoesNotDeclare(
 				{"quiet", wiredAttachment(socketAuditType)},
 				{"mystery", wiredAttachment(socketAbsentFeature, "whatever")},
 			},
-			raised:  []string{".spec.components.web.features.audit"},
+			raised:  []string{".spec.components.web.features.audit.uses.ghost"},
 			sockets: []string{"ghost"},
 		},
 		{
@@ -855,7 +859,7 @@ func TestTheComponentAttachmentSocketRuleReportsASocketTheFeatureDoesNotDeclare(
 			attachments: []namedFill{
 				{"plain", wiredAttachment(socketPlainType, "anything")},
 			},
-			raised:  []string{".spec.components.web.features.plain"},
+			raised:  []string{".spec.components.web.features.plain.uses.anything"},
 			sockets: []string{"anything"},
 		},
 		{
@@ -868,8 +872,8 @@ func TestTheComponentAttachmentSocketRuleReportsASocketTheFeatureDoesNotDeclare(
 				{"alpha", wiredAttachment(socketAuditType, "ghost")},
 			},
 			raised: []string{
-				".spec.components.web.features.zulu",
-				".spec.components.web.features.alpha",
+				".spec.components.web.features.zulu.uses.ghost",
+				".spec.components.web.features.alpha.uses.ghost",
 			},
 			sockets: []string{"ghost", "ghost"},
 		},
@@ -886,10 +890,11 @@ func TestTheComponentAttachmentSocketRuleReportsASocketTheFeatureDoesNotDeclare(
 			view := newNormalizedView(na, nil, catalog, nil)
 			coordinates := newCoordinateSet(view)
 
-			objections, err := constraint.RunOnNodeAttachments[constraint.NormalizedView](
-				nil, coordinates, coordinates, view, componentAttachmentSocketDeclared)
+			objections, err := constraint.RunOnNodeAttachmentSockets[constraint.NormalizedView](
+				nil, coordinates, coordinates, coordinates, view,
+				componentAttachmentSocketDeclared)
 			if err != nil {
-				t.Fatalf("the attachment walk returned an error: %v", err)
+				t.Fatalf("the attachment socket walk returned an error: %v", err)
 			}
 			if got := locatorsOf(objections); !equalStrings(got, tc.raised) {
 				t.Errorf("raised sequence = %v; want %v", got, tc.raised)
@@ -904,9 +909,11 @@ func TestTheComponentAttachmentSocketRuleReportsASocketTheFeatureDoesNotDeclare(
 // The rule over an attachment the deployment writes against a named component.
 //
 // 🔴 It is asked about every attachment name EITHER document declares on the
-// component, and the row for a name only the deployment declares is what pins
-// that. A rule asked only about the application's names would never be presented
-// with such an attachment, and silence from a rule never asked is
+// component, and about every socket EITHER document wires under that name. The
+// row for a name only the deployment declares pins both, since the socket it
+// reports exists only in the deployment. A rule asked only about the
+// application's names, or walked only over the application's sockets, would never
+// be presented with such a subject, and silence from a rule never asked is
 // indistinguishable from approval: no build goes red, and the enforcement is
 // simply gone.
 func TestTheDeploymentComponentAttachmentSocketRuleReadsBothDocumentsNames(t *testing.T) {
@@ -939,7 +946,7 @@ func TestTheDeploymentComponentAttachmentSocketRuleReadsBothDocumentsNames(t *te
               uses:
                 ghost: [anything]
 `,
-			raised:  []string{".spec.components.web.features.audit"},
+			raised:  []string{".spec.components.web.features.audit.uses.ghost"},
 			sockets: []string{"ghost"},
 		},
 		{
@@ -965,7 +972,7 @@ func TestTheDeploymentComponentAttachmentSocketRuleReadsBothDocumentsNames(t *te
               uses:
                 ghost: [anything]
 `,
-			raised:  []string{".spec.components.web.features.ops_audit"},
+			raised:  []string{".spec.components.web.features.ops_audit.uses.ghost"},
 			sockets: []string{"ghost"},
 		},
 		{
@@ -990,8 +997,8 @@ func TestTheDeploymentComponentAttachmentSocketRuleReadsBothDocumentsNames(t *te
                 ghost: [anything]
 `,
 			raised: []string{
-				".spec.components.web.features.zulu",
-				".spec.components.web.features.alpha",
+				".spec.components.web.features.zulu.uses.ghost",
+				".spec.components.web.features.alpha.uses.ghost",
 			},
 			sockets: []string{"ghost", "ghost"},
 		},
@@ -1009,10 +1016,11 @@ func TestTheDeploymentComponentAttachmentSocketRuleReadsBothDocumentsNames(t *te
 			view := newNormalizedView(na, release, catalog, nil)
 			coordinates := newCoordinateSet(view)
 
-			objections, err := constraint.RunOnNodeAttachments[constraint.NormalizedView](
-				nil, coordinates, coordinates, view, releaseComponentAttachmentSocketDeclared)
+			objections, err := constraint.RunOnNodeAttachmentSockets[constraint.NormalizedView](
+				nil, coordinates, coordinates, coordinates, view,
+				releaseComponentAttachmentSocketDeclared)
 			if err != nil {
-				t.Fatalf("the attachment walk returned an error: %v", err)
+				t.Fatalf("the attachment socket walk returned an error: %v", err)
 			}
 			if got := locatorsOf(objections); !equalStrings(got, tc.raised) {
 				t.Errorf("raised sequence = %v; want %v", got, tc.raised)
@@ -1457,17 +1465,18 @@ func TestTheAttachmentSocketRuleReportsInAStableOrderOverRepeatedReads(t *testin
 	catalog := socketNameRuleCatalog()
 
 	want := []string{
-		".spec.components.alpha.features.audit",
-		".spec.components.mid.features.audit",
-		".spec.components.zebra.features.audit",
+		".spec.components.alpha.features.audit.uses.anything",
+		".spec.components.mid.features.audit.uses.anything",
+		".spec.components.zebra.features.audit.uses.anything",
 	}
 	for i := 0; i < 10; i++ {
 		view := newNormalizedView(na, nil, catalog, nil)
 		coordinates := newCoordinateSet(view)
-		objections, err := constraint.RunOnNodeAttachments[constraint.NormalizedView](
-			nil, coordinates, coordinates, view, componentAttachmentSocketDeclared)
+		objections, err := constraint.RunOnNodeAttachmentSockets[constraint.NormalizedView](
+			nil, coordinates, coordinates, coordinates, view,
+			componentAttachmentSocketDeclared)
 		if err != nil {
-			t.Fatalf("read %d: the attachment walk returned an error: %v", i, err)
+			t.Fatalf("read %d: the attachment socket walk returned an error: %v", i, err)
 		}
 		if got := locatorsOf(objections); !equalStrings(got, want) {
 			t.Fatalf("read %d raised %v; want %v — identical input must yield an identical "+
