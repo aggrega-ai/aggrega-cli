@@ -5,6 +5,7 @@ package resolver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -118,6 +119,12 @@ func CompileSocketPillarSchema(catalog CatalogLookup, compType, socket, pillar s
 // the only combination that means there is a contract to read, and a contract
 // that compiles to nothing is a non-nil empty schema rather than the nil one an
 // absence returns.
+//
+// The synthetic pillar key this wraps the authored content in does not travel
+// into err. It is an artefact of the shape the shared conformance entry expects,
+// and a socket declares its content with no such key above it, so a failure
+// reported beneath one would locate the author's mistake at a path their file
+// does not contain — see [socketPillarCompileError].
 func compileSocketPillarSchema(
 	catalog CatalogLookup, compType, socket, pillar string,
 ) (compactform.Schema, bool, error) {
@@ -150,9 +157,41 @@ func compileSocketPillarSchema(
 	}
 	compiled, err := compactform.Compile(wrapper, schemaLibraryOptions(catalog)...)
 	if err != nil {
-		return nil, true, err
+		return nil, true, socketPillarCompileError(err, pillar)
 	}
 	return compiled, true, nil
+}
+
+// socketPillarCompileError restates a compile failure over the synthetic wrapper
+// as one over the content the socket actually declares, by dropping the wrapper's
+// own key from the front of the reported path.
+//
+// It is done here because this is the only site that knows the key is synthetic:
+// nothing downstream can tell a wrapper segment from a field the author wrote, so
+// a reader left to strip it would be guessing at which leading segment is real.
+// Everything else the failure carries — the line, the keyword, the message and the
+// sentinel the caller matches on — is preserved, so the correction is to the path
+// alone.
+//
+// A failure that carries no path, or one the compiler reported over some other
+// shape, is returned untouched. Rewriting a path that does not begin with the
+// wrapper's key would be inventing a location rather than correcting one.
+func socketPillarCompileError(err error, pillar string) error {
+	var ce *compactform.CompileError
+	if !errors.As(err, &ce) {
+		return err
+	}
+	trimmed, found := strings.CutPrefix(ce.Path, pillar+".")
+	if !found {
+		return err
+	}
+	return &compactform.CompileError{
+		Path:    trimmed,
+		Line:    ce.Line,
+		Keyword: ce.Keyword,
+		Message: ce.Message,
+		Err:     ce.Err,
+	}
 }
 
 // ValidatePillarConformance validates a resolved or authored pillar instance

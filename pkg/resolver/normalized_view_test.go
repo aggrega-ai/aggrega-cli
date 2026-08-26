@@ -250,16 +250,24 @@ func TestAContractThatFailsToResolveIsNotABareAbsence(t *testing.T) {
 	}
 }
 
-// TestAnUnresolvableContractDoesNotChangeTheBuildVerdict is the other half of
-// the policy above, and it is asserted rather than left implicit because the
-// obvious reading of "report it where it happens" is to halt there.
+// TestAnUnresolvableContractIsNotSmuggledIntoTheRule is the other half of the
+// policy above, and it is asserted rather than left implicit because the obvious
+// reading of "report it where it happens" is to make the rule do the reporting.
 //
-// INVARIANT: naming a failed resolution does not refuse a build that is accepted
-// today.
-// CONSEQUENCE: were this to fail, the producer would start rejecting an input
-// class nobody has measured the reachability of — which is a refusal decided by
-// an implementation detail rather than by a rule.
-func TestAnUnresolvableContractDoesNotChangeTheBuildVerdict(t *testing.T) {
+// A build carrying such a contract DOES halt — the refusal is asserted, with its
+// diagnostic, in guards_contract_compile_test.go. What is asserted here is that
+// the refusal is not the rule's: the rule reads the resolved-contract fact, that
+// fact answers a failed resolution exactly as it answers an absent contract, and
+// a rule that started raising on it would be reporting a distinction its own
+// input cannot carry.
+//
+// INVARIANT: the conformance rule ends on a contract that did not resolve, and the
+// refusal is composed where the classification lives.
+// CONSEQUENCE: were this to fail, the rule would have grown a second reading of the
+// classification — so one condition would be reported from two places, free to
+// disagree about which subjects it covers, and the rule would be raising on an
+// absence it cannot tell apart from a type that declares nothing.
+func TestAnUnresolvableContractIsNotSmuggledIntoTheRule(t *testing.T) {
 	t.Parallel()
 
 	catalog := singleTypeCatalog(schemaComponent(t, "app/svc",
@@ -270,13 +278,14 @@ func TestAnUnresolvableContractDoesNotChangeTheBuildVerdict(t *testing.T) {
 	if len(view.UnresolvableContracts()) == 0 {
 		t.Fatalf("the fixture's contract resolved; this case has nothing to measure.\n" +
 			"INVARIANT: the fixture must reach the failed-resolution outcome.\n" +
-			"CONSEQUENCE: the verdict assertion below passes for the wrong reason.")
+			"CONSEQUENCE: the assertion below passes for the wrong reason.")
 	}
 	if errs := ruleFindings(t, view); len(errs) != 0 {
-		t.Fatalf("a contract that failed to resolve halted the build with %v.\n"+
-			"INVARIANT: the failure is a distinguishable value, not a refusal.\n"+
-			"CONSEQUENCE: a build that is accepted today starts failing, on an input class whose "+
-			"reachability from an authored document nobody has established.", errs)
+		t.Fatalf("the conformance rule raised %v on a contract that did not resolve.\n"+
+			"INVARIANT: the rule ends there; the refusal is composed from the classification "+
+			"the resolution kept, not re-derived inside a rule.\n"+
+			"CONSEQUENCE: one condition acquires two reporting sites, which are then free to "+
+			"disagree about which subjects it covers.", errs)
 	}
 }
 

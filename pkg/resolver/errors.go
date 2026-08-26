@@ -183,6 +183,30 @@ var errSchemaConformance = cerrors.Register("resolver/schema-conformance", cerro
 	Message:   "authored pillar does not conform to its declared schema",
 })
 
+// ErrSchemaContractCompileFailure wraps a schema contract that was declared and
+// could not be compiled: a Component type's own spec.schema, or the per-edge
+// valueSchema / infraSchema one of its dependency sockets declares. The
+// conformance rules measure a payload against a compiled contract, so a contract
+// that does not compile leaves its subject with nothing to measure against —
+// which is why this halts rather than passing the payload through unchecked.
+//
+// It is the counterpart of [ErrSchemaConformance] one step earlier: that
+// condition reports a payload failing a contract, this one reports that there is
+// no readable contract to fail. The pair is what keeps the two absences apart. A
+// subject declaring no contract is skipped, deliberately and silently, because
+// there is nothing to check; a subject declaring one that does not compile is
+// refused, because skipping it would retire a check with nothing to show that it
+// had gone.
+func ErrSchemaContractCompileFailure() error { return errSchemaContractCompileFailure }
+
+var errSchemaContractCompileFailure = cerrors.Register(
+	"resolver/schema-contract-compile-failure", cerrors.Meta{
+		ShortCode: "E0257",
+		Message: "declared schema contract failed to compile, so nothing was validated against it: " +
+			"correct the contract where it is declared, or remove it if the configuration it " +
+			"covers needs no validation",
+	})
+
 // ErrAttachmentSlotShape wraps an attachment that binds a declared slot
 // but does not match that slot's declared shape: a key the slot does not
 // permit, or an inject delivery mechanism outside the slot's allowlist

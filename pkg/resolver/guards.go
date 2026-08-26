@@ -164,6 +164,21 @@ type CatalogLookup struct {
 // give each rule its own chance to read a compile failure as a type that simply
 // declares nothing, validate nothing, and say nothing. One resolution has one
 // place a failure can be named.
+//
+// # Where a contract that did not compile is named
+//
+// That one place is here, and it is read before the rules are asked. A contract
+// that failed to compile is why the rules over it would say nothing, so it is
+// reported ahead of them: reporting it afterwards would put the cause of a
+// silence beneath findings the silence suppressed. The resolution keeps the
+// failure — see [normalizedView.UnresolvableContracts] — and this reads it
+// rather than testing any contract again, so the classification has one producer
+// and one reader.
+//
+// A build carrying such a failure halts, and no rule over the affected subject
+// runs to completion in a way a reader could trust. That order is the whole
+// point: a rule reading the fact sees the same absence an unauthored contract
+// presents, so it cannot distinguish the two and must not be asked to.
 func RunGuards(
 	cancelled constraint.Cancellation,
 	na types.NormalizedAggregate,
@@ -178,8 +193,69 @@ func RunGuards(
 	}
 	contracts := newNormalizedView(na, release, catalog, parameters)
 
-	return runDeclaredRules(cancelled, contracts,
+	errs, err := runDeclaredRules(cancelled, contracts,
 		fmt.Sprintf("Aggregate %s", agg.Metadata.Name), releaseDocumentName(release))
+	if err != nil {
+		return nil, err
+	}
+	return append(contractCompileFailures(contracts), errs...), nil
+}
+
+// contractCompileFailures renders every declared contract this build could not
+// compile as a halting finding, in the order the resolution names them.
+//
+// Each finding is attributed to the catalog entity that DECLARED the contract
+// rather than to the document that wrote the configuration, because the
+// correction is on the declaration: an application author handed a component
+// type whose contract does not compile has nothing to change in their own file.
+// The locator is the authored field inside that entity, so the diagnostic names
+// the key the fix goes in.
+//
+// The message names the compile failure verbatim. That text already carries the
+// offending key, the source line and the keyword, and re-deriving any of it here
+// would be a second answer to what went wrong.
+func contractCompileFailures(v *normalizedView) []*ResolverError {
+	failures := v.UnresolvableContracts()
+	if len(failures) == 0 {
+		return nil
+	}
+	out := make([]*ResolverError, 0, len(failures))
+	for _, f := range failures {
+		out = append(out, &ResolverError{
+			Entity:  fmt.Sprintf("Component %s", f.ComponentType),
+			Field:   contractField(f),
+			Message: f.Err.Error(),
+			Err:     ErrSchemaContractCompileFailure(),
+		})
+	}
+	return out
+}
+
+// contractField locates a contract inside the entity declaring it: a component
+// type's own contract sits at its schema field, and a socket's per-edge contract
+// at the pillar field of that socket's entry.
+//
+// Which of the two a failure is about is read from whether it names a socket,
+// which is the same reading the resolution used to key it — so a failure cannot
+// be located as one kind of contract and reported as the other.
+//
+// The pillar is mapped to the field that declares it rather than printed as the
+// resolution names it, because the two spellings differ: a pillar is keyed by the
+// configuration it covers and the socket declares it under a field of its own. A
+// pillar outside the pair a socket can declare is named as it arrived, so a
+// diagnostic still locates something rather than claiming the wrong field.
+func contractField(f ContractResolutionFailure) string {
+	if f.Socket == "" {
+		return ".spec.schema"
+	}
+	field := f.Pillar
+	switch f.Pillar {
+	case "values":
+		field = "valueSchema"
+	case "infra":
+		field = "infraSchema"
+	}
+	return fmt.Sprintf(".spec.usesSchema.%s.%s", f.Socket, field)
 }
 
 // releaseDocumentName renders the deployment document a finding names. A build

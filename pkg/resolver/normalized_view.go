@@ -346,6 +346,11 @@ func (v *normalizedView) resolveTypeContracts(componentType string) {
 // fails to resolve is reported where the resolving happens, once — so the
 // producer holds the failures rather than handing every reader a bare absence to
 // misread, and a caller with somewhere to report them reads them from here.
+//
+// [RunGuards] is that caller: it reads this before asking any rule, and renders
+// each entry as a halting finding. So this is the one reading of the
+// classification, and a reader wanting the same distinction asks here rather than
+// compiling a contract again to recover it.
 func (v *normalizedView) UnresolvableContracts() []ContractResolutionFailure {
 	var out []ContractResolutionFailure
 	for _, componentType := range sortedKeysOf(v.componentContracts) {
@@ -372,11 +377,16 @@ func (v *normalizedView) UnresolvableContracts() []ContractResolutionFailure {
 // the component type declaring it, the socket and pillar when the contract is a
 // socket's per-edge one, and why it did not resolve.
 //
-// It is a distinguishable value rather than a halt. Whether an authored document
-// can reach this outcome is not established, and halting on an input class
-// nobody measured would refuse documents that build today; naming the failure
-// where it happened is what keeps it from becoming a diagnostic that quietly
-// stops firing.
+// It is the value a halt is composed from, not the halt itself, and keeping the
+// two apart is what lets one classification serve a diagnostic without the
+// resolution deciding the verdict. The resolution's job is to keep the failure
+// distinguishable from an absent contract; deciding what a build does about it
+// belongs to the surface that reports findings, which reads this.
+//
+// A declared contract that fails to compile leaves its subject with something to
+// measure against that nobody can read, so a build carrying one halts. Passing it
+// over would retire a check with nothing to show that it had gone, which is
+// exactly how a diagnostic comes to stop firing in silence.
 type ContractResolutionFailure struct {
 	// ComponentType is the type whose contract did not resolve.
 	ComponentType string
