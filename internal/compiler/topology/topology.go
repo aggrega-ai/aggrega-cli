@@ -6,6 +6,7 @@ package topology
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -571,15 +572,20 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// create an edge into a declared-but-unbound socket pointing at an existing
 	// component. This pass does data plumbing only: merge infra and append
 	// created edges. It NEVER retargets — a Release entry whose (node, socket,
-	// alias) matches an existing edge but names a conflicting target is left
-	// untouched here so the Step-4 guardrail can detect the retarget against the
-	// intact BoundaryComponent.Uses and halt (skipping the infra merge in that
-	// case keeps a rejected retarget from half-applying). Conformance (Step 1),
-	// dangling-target, and undeclared-socket halts are not this pass's concern.
+	// alias) matches an existing edge but names a conflicting target leaves that
+	// edge as the developer declared it, records the conflict, and skips the
+	// infra merge, which keeps a rejected retarget from half-applying. The
+	// recorded conflicts are reported together once the walk is complete, so an
+	// author sees every offending entry in one build rather than clearing them
+	// one build at a time. Conformance (Step 1), dangling-target, and
+	// undeclared-socket halts are not this pass's concern.
 	// Determinism: nodes in flat.Nodes author order; sockets and aliases in
 	// OrderedMap author order; created edges append after the Aggregate/Feature
-	// edges.
+	// edges; recorded conflicts follow that same walk, so the diagnostic is
+	// ordered by the authoring surfaces rather than by a set that would have to
+	// be sorted back into an order.
 	if cfg.ResolveResult != nil && cfg.ResolveResult.Release != nil {
+		var retargets []string
 		for nodeID, node := range flat.Nodes.All() {
 			ruses, ok := releaseComponentUses(cfg.ResolveResult.Release.Spec.Boundaries, node.BoundaryPath, nodeID)
 			if !ok {
@@ -599,9 +605,10 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 						// retarget. A conflicting target is a Loud Guardrail — the
 						// developer owns the architecture they declared.
 						if entry.Target != "" && entry.Target != edges[idx].Target {
-							return nil, fmt.Errorf(
-								"%w: release edge %s/%s/%s retargets developer-declared target %q to %q",
-								ErrReleaseEdgeRetarget(), nodeID, socket, alias, edges[idx].Target, entry.Target)
+							retargets = append(retargets, fmt.Sprintf(
+								"release edge %s/%s/%s retargets developer-declared target %q to %q",
+								nodeID, socket, alias, edges[idx].Target, entry.Target))
+							continue
 						}
 						if entry.Infra.Len() > 0 {
 							merged := types.OrderedMap[any]{}
@@ -637,6 +644,15 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					}
 				}
 			}
+		}
+		// Every conflicting entry the walk met, reported as one halt. The halt
+		// lands after the walk rather than at the first conflict so the author is
+		// told about all of them at once; the walk's own bookkeeping — a
+		// conflicting entry keeps the declared target and takes no infra — is what
+		// makes carrying on past one conflict safe, and the edge set is discarded
+		// with the error in any case.
+		if len(retargets) > 0 {
+			return nil, fmt.Errorf("%w: %s", ErrReleaseEdgeRetarget(), strings.Join(retargets, "; "))
 		}
 	}
 

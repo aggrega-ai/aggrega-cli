@@ -5,6 +5,7 @@ package topology
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -590,5 +591,184 @@ spec:
 				t.Fatalf("legitimate input must pass; got %v", err)
 			}
 		})
+	}
+}
+
+// retargetAggregate declares two consumers whose declared connections span two
+// sockets and three aliases, so a deployment document can conflict with several
+// of them at once and the reported order can be read against the order the
+// documents were authored in.
+const retargetAggregate = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: demo
+spec:
+  components:
+    api:
+      type: app/svc:1.0.0
+      uses:
+        databases:
+          main:
+            target: db
+          audit:
+            target: db
+        caches:
+          hot:
+            target: cache
+    worker:
+      type: app/svc:1.0.0
+      uses:
+        databases:
+          main:
+            target: db
+    db:
+      type: app/db:1.0.0
+    cache:
+      type: app/db:1.0.0
+    spare-db:
+      type: app/db:1.0.0
+    spare-cache:
+      type: app/db:1.0.0
+`
+
+// TestReleaseEdgeRetarget_ReportsEveryConflict proves the no-retarget guardrail
+// names every conflicting connection in one build rather than the first one it
+// meets, so an author clears them in a single pass.
+//
+// The one-conflict case is carried beside the several-conflict one because the
+// two together are what says the reporting shape changed and the rule did not:
+// the same document halts with the same rule either way.
+func TestReleaseEdgeRetarget_ReportsEveryConflict(t *testing.T) {
+	t.Parallel()
+
+	// A deployment document conflicting with one declared connection, and one
+	// conflicting with every declared connection there is. The expected clauses
+	// are written in the order the documents declare them — consumers in the
+	// Aggregate's authoring order, then each consumer's sockets and aliases in
+	// the deployment document's — which is the order the walk visits them in.
+	cases := []struct {
+		name    string
+		release string
+		want    []string
+	}{
+		{
+			name: "one conflicting connection",
+			release: `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      components:
+        api:
+          uses:
+            databases:
+              main:
+                target: spare-db
+`,
+			want: []string{
+				`release edge api/databases/main retargets developer-declared target "db" to "spare-db"`,
+			},
+		},
+		{
+			name: "every conflicting connection",
+			release: `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      components:
+        api:
+          uses:
+            databases:
+              main:
+                target: spare-db
+              audit:
+                target: spare-db
+            caches:
+              hot:
+                target: spare-cache
+        worker:
+          uses:
+            databases:
+              main:
+                target: spare-db
+`,
+			want: []string{
+				`release edge api/databases/main retargets developer-declared target "db" to "spare-db"`,
+				`release edge api/databases/audit retargets developer-declared target "db" to "spare-db"`,
+				`release edge api/caches/hot retargets developer-declared target "cache" to "spare-cache"`,
+				`release edge worker/databases/main retargets developer-declared target "db" to "spare-db"`,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := buildWith(t, retargetAggregate, tc.release, "")
+			if !errors.Is(err, ErrReleaseEdgeRetarget()) {
+				t.Fatalf("a conflicting target must halt with the no-retarget rule; got %v", err)
+			}
+			got := err.Error()
+			at := -1
+			for _, clause := range tc.want {
+				idx := strings.Index(got, clause)
+				if idx < 0 {
+					t.Fatalf("diagnostic omits a conflicting connection:\nwant clause: %s\ngot: %s", clause, got)
+				}
+				if idx <= at {
+					t.Fatalf("conflicting connections are reported out of the order the documents declare them:\nclause: %s\ngot: %s", clause, got)
+				}
+				at = idx
+			}
+		})
+	}
+}
+
+// TestReleaseEdgeRetarget_DiagnosticIsDeterministic proves the several-conflict
+// diagnostic is byte-identical across repeated builds of one document. The
+// clauses are collected while walking ordered authoring surfaces rather than
+// gathered into a set and sorted afterwards, so this is the proof that no
+// unordered container reached the walk.
+func TestReleaseEdgeRetarget_DiagnosticIsDeterministic(t *testing.T) {
+	t.Parallel()
+	const release = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      components:
+        api:
+          uses:
+            databases:
+              main:
+                target: spare-db
+              audit:
+                target: spare-db
+            caches:
+              hot:
+                target: spare-cache
+        worker:
+          uses:
+            databases:
+              main:
+                target: spare-db
+`
+	seen := map[string]int{}
+	for range 32 {
+		err := buildWith(t, retargetAggregate, release, "")
+		if err == nil {
+			t.Fatalf("a conflicting target must halt")
+		}
+		seen[err.Error()]++
+	}
+	if len(seen) != 1 {
+		t.Fatalf("the diagnostic varies across identical builds; got %d distinct messages: %v", len(seen), seen)
 	}
 }

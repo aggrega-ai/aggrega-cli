@@ -918,12 +918,18 @@ type NormalizedView interface {
 	// one connection, as authored — empty when the Release named none.
 	//
 	// It is a separate fact from the target the Aggregate authored, and the
-	// pair is what makes the population question answerable at all. Both
-	// documents can bind one socket: the component's own dependency block, and
-	// the Release's per-edge surface, which may wire a socket the architecture
-	// declared and nothing bound to a component that already exists. A rule
-	// reading either surface alone reports a socket as unpopulated that the
-	// build wires.
+	// pair is what a rule comparing the two needs. A deployment document may
+	// not redirect a connection the architecture already drew, and the
+	// conflict is precisely a difference between the two targets — neither
+	// one alone shows it, so a rule reading either surface without the other
+	// cannot tell a redirected connection from a confirmed one.
+	//
+	// Whether a socket carries a connection at all is a different question,
+	// and the per-socket connection counts each document contributes are what
+	// answer it. A rule over a socket that must carry a connection reads those
+	// and not this: this fact is keyed by one connection, so it is silent
+	// about every socket no entry named, which are the sockets such a rule
+	// exists for.
 	//
 	// The emptiness is reported rather than resolved, and here it carries the
 	// distinction the operator surface rests on: an entry naming a target
