@@ -79,6 +79,87 @@ var errManifestCrossBindingPillarCollision = cerrors.Register("resolver/manifest
 	Message:   "manifest annotation bindings collide on same Feature path+pillar",
 })
 
+// ErrAnnotationBindingTargetUnresolved wraps a Manifest annotation binding
+// whose declared route cannot be resolved against the Feature it targets: the
+// Feature is absent from the loaded catalog, its spec.schema does not compile,
+// or a path the binding declares under maps.infra or maps.values names no
+// property the Feature's schema declares at that pillar.
+//
+// All four are one condition because they are one rule — every path a binding
+// declares resolves to a declared property — and which of the four ways it was
+// broken is what the occurrence names. The condition is checked over the
+// Manifest before any annotation is expanded, so a binding that would route a
+// value into a path nothing declares is refused before it synthesizes an
+// attachment.
+//
+// Distinct from ErrAnnotationSubkeyNotConforming, which asks a different
+// question of a different authoring surface: this one reads what the Manifest
+// binding declares, that one reads the value an Aggregate or Release author
+// wrote through the binding.
+func ErrAnnotationBindingTargetUnresolved() error { return errAnnotationBindingTargetUnresolved }
+
+var errAnnotationBindingTargetUnresolved = cerrors.Register("resolver/annotation-binding-target-unresolved", cerrors.Meta{
+	ShortCode: "E0253",
+	Message:   "annotation binding does not resolve against its target Feature",
+})
+
+// ErrAnnotationSubkeyNotConforming wraps an authored annotation subkey whose
+// routed value does not conform to the target Feature's spec.schema at the
+// pillar the binding routes it through — a subkey the schema declares no
+// property for, or a value that fails the sub-schema located at that path.
+//
+// It is raised during annotation expansion, over the value an Aggregate or
+// Release author supplied, which is why it is a separate condition from
+// ErrAnnotationBindingTargetUnresolved: that one refuses what the Manifest
+// binding declares, this one refuses what was written through it.
+//
+// The undeclared-subkey case is usually pre-empted by the binding-target check
+// at catalog load, so reaching it here means the binding declares the path and
+// the schema does not carry it — the two reads disagree, and the value is
+// refused rather than routed.
+func ErrAnnotationSubkeyNotConforming() error { return errAnnotationSubkeyNotConforming }
+
+var errAnnotationSubkeyNotConforming = cerrors.Register("resolver/annotation-subkey-not-conforming", cerrors.Meta{
+	ShortCode: "E0254",
+	Message:   "annotation subkey does not conform to the target Feature's schema at the routed pillar",
+})
+
+// ErrAnnotationSidePillarMismatch wraps an annotation whose binding routes it
+// through a pillar the authoring side it was written on may not use: an
+// Aggregate-side annotation routes through values, a Release-side annotation
+// through infra, and any other pairing is refused.
+//
+// The partition is the Aggregate-as-authoring-surface split expressed on the
+// annotation shortcut: a developer's annotation contributes application values,
+// an operator's contributes infrastructure sizing, and an annotation that
+// crossed would let one surface author the other's pillar through a shortcut it
+// could not write directly.
+func ErrAnnotationSidePillarMismatch() error { return errAnnotationSidePillarMismatch }
+
+var errAnnotationSidePillarMismatch = cerrors.Register("resolver/annotation-side-pillar-mismatch", cerrors.Meta{
+	ShortCode: "E0255",
+	Message:   "annotation routes through a pillar its authoring side may not use",
+})
+
+// ErrAnnotationBindingPillarOverlap marks an ADVISORY finding, not a halt: a
+// Manifest annotation binding declares one path in both its maps.infra and
+// maps.values lists.
+//
+// Declaring the overlap is legal and the compiler does not police it — the
+// routing tie-break is deterministic and sends the path through infra — so this
+// sentinel never reaches a build's verdict; it exists so a front end can
+// recognise the advisory class and render it as a warning. What it names is the
+// consequence: the values side of that path becomes unreachable, so an
+// Aggregate-side annotation routing to it is refused at expansion time by
+// ErrAnnotationSidePillarMismatch. An author who wants both pillars routed
+// declares two bindings under two annotation keys.
+func ErrAnnotationBindingPillarOverlap() error { return errAnnotationBindingPillarOverlap }
+
+var errAnnotationBindingPillarOverlap = cerrors.Register("resolver/annotation-binding-pillar-overlap", cerrors.Meta{
+	ShortCode: "E0256",
+	Message:   "annotation binding declares one path in both pillar lists",
+})
+
 // ErrInvalidInjectKey wraps an inject delivery key that does not match
 // the expected per-mechanism format.
 func ErrInvalidInjectKey() error { return errInvalidInjectKey }

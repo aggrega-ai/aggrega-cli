@@ -592,9 +592,14 @@ func ResolveAndValidate(
 		if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
 			return fmt.Errorf("annotation binding validation: %w", err)
 		}
-		for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
-			fmt.Fprintf(os.Stderr, "  %s\n", w)
-		}
+		// The binding-overlap lint is collected, never printed here: it joins the
+		// one advisory drain below, which is what carries a finding to both front
+		// ends. A finding written straight to the stream reaches the terminal and
+		// nothing else, so the editor never sees it and no consumer can match it.
+		// APPEND for the reason stated at the drain — the resolve already carries
+		// the advisories from the checks that needed only the Aggregate.
+		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
+			resolver.LintAnnotationBindingMaps(resolveResult.Manifest)...)
 		if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
 			return fmt.Errorf("annotation expansion: %w", err)
 		}

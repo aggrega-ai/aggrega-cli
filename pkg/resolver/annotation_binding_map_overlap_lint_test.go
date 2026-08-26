@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	stderrors "errors"
 	"strings"
 	"testing"
 
@@ -44,9 +45,9 @@ spec:
             values:
               - db_name
 `)
-	warnings := LintAnnotationBindingMaps(manifest)
-	if len(warnings) != 0 {
-		t.Errorf("expected no warnings; got %d: %v", len(warnings), warnings)
+	findings := LintAnnotationBindingMaps(manifest)
+	if len(findings) != 0 {
+		t.Errorf("expected no findings; got %d: %v", len(findings), findings)
 	}
 }
 
@@ -72,19 +73,23 @@ spec:
               - db_name
               - shared_subkey
 `)
-	warnings := LintAnnotationBindingMaps(manifest)
-	if len(warnings) != 1 {
-		t.Fatalf("expected exactly 1 warning; got %d: %v", len(warnings), warnings)
+	findings := LintAnnotationBindingMaps(manifest)
+	if len(findings) != 1 {
+		t.Fatalf("expected exactly 1 finding; got %d: %v", len(findings), findings)
 	}
+	if !stderrors.Is(findings[0], ErrAnnotationBindingPillarOverlap()) {
+		t.Errorf("finding should carry the pillar-overlap advisory identity; got %v", findings[0])
+	}
+	rendered := findings[0].Error()
 	for _, want := range []string{
 		"feature.myco/db-pool",
 		"core/db-pool:1.0.0",
 		"shared_subkey",
-		"Maps.Infra",
-		"Maps.Values",
+		"maps.infra",
+		"maps.values",
 	} {
-		if !strings.Contains(warnings[0], want) {
-			t.Errorf("warning missing %q: %s", want, warnings[0])
+		if !strings.Contains(rendered, want) {
+			t.Errorf("finding missing %q: %s", want, rendered)
 		}
 	}
 }
@@ -115,14 +120,14 @@ spec:
               - beta
               - gamma
 `)
-	warnings := LintAnnotationBindingMaps(manifest)
-	if len(warnings) != 3 {
-		t.Fatalf("expected 3 warnings; got %d: %v", len(warnings), warnings)
+	findings := LintAnnotationBindingMaps(manifest)
+	if len(findings) != 3 {
+		t.Fatalf("expected 3 findings; got %d: %v", len(findings), findings)
 	}
 	wantOrder := []string{"alpha", "beta", "gamma"}
 	for i, p := range wantOrder {
-		if !strings.Contains(warnings[i], "\""+p+"\"") {
-			t.Errorf("warning %d should mention path %q; got: %s", i, p, warnings[i])
+		if !strings.Contains(findings[i].Error(), "\""+p+"\"") {
+			t.Errorf("finding %d should mention path %q; got: %s", i, p, findings[i])
 		}
 	}
 }
@@ -157,31 +162,31 @@ spec:
             values:
               - shared
 `)
-	warnings := LintAnnotationBindingMaps(manifest)
-	if len(warnings) != 2 {
-		t.Fatalf("expected 2 warnings; got %d: %v", len(warnings), warnings)
+	findings := LintAnnotationBindingMaps(manifest)
+	if len(findings) != 2 {
+		t.Fatalf("expected 2 findings; got %d: %v", len(findings), findings)
 	}
-	if !strings.Contains(warnings[0], "feature.myco/b-key") {
-		t.Errorf("warning 0 should name b-key (author-first); got: %s", warnings[0])
+	if !strings.Contains(findings[0].Error(), "feature.myco/b-key") {
+		t.Errorf("finding 0 should name b-key (author-first); got: %s", findings[0])
 	}
-	if !strings.Contains(warnings[1], "feature.myco/a-key") {
-		t.Errorf("warning 1 should name a-key (author-second); got: %s", warnings[1])
+	if !strings.Contains(findings[1].Error(), "feature.myco/a-key") {
+		t.Errorf("finding 1 should name a-key (author-second); got: %s", findings[1])
 	}
 }
 
 func TestLintAnnotationBindingMaps_NilManifest_NoPanic(t *testing.T) {
 	t.Parallel()
-	warnings := LintAnnotationBindingMaps(nil)
-	if warnings != nil {
-		t.Errorf("nil manifest: expected nil warnings; got %v", warnings)
+	findings := LintAnnotationBindingMaps(nil)
+	if findings != nil {
+		t.Errorf("nil manifest: expected nil findings; got %v", findings)
 	}
 }
 
 func TestLintAnnotationBindingMaps_LegacyTierOverlap_Surfaces(t *testing.T) {
 	t.Parallel()
 	// Legacy-provider tier (per-provider sub-section under mappings).
-	// The lint walks this tier parallel to how the existing
-	// manifest-load validators cover it during the migration window.
+	// The lint walks this tier alongside the flat one, so a binding
+	// authored under either is covered.
 	manifest := manifestFromYAML(t, `
 apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
@@ -201,17 +206,23 @@ spec:
               values:
                 - duplicated
 `)
-	warnings := LintAnnotationBindingMaps(manifest)
-	if len(warnings) != 1 {
-		t.Fatalf("expected 1 warning from legacy tier; got %d: %v", len(warnings), warnings)
+	findings := LintAnnotationBindingMaps(manifest)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding from legacy tier; got %d: %v", len(findings), findings)
+	}
+	// The locator names the tier the binding was authored under, so a
+	// legacy-tier finding is placed on that tier's own annotations block
+	// rather than on the flat one.
+	if got, want := findings[0].Field, ".spec.mappings.helm.features.annotations.feature.myco/legacy-pool"; got != want {
+		t.Errorf("legacy-tier locator = %q, want %q", got, want)
 	}
 	for _, want := range []string{
 		"feature.myco/legacy-pool",
 		"core/legacy-pool:1.0.0",
 		"duplicated",
 	} {
-		if !strings.Contains(warnings[0], want) {
-			t.Errorf("legacy-tier warning missing %q: %s", want, warnings[0])
+		if !strings.Contains(findings[0].Error(), want) {
+			t.Errorf("legacy-tier finding missing %q: %s", want, findings[0])
 		}
 	}
 }

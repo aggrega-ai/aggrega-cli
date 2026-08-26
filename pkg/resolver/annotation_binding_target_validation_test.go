@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	stderrors "errors"
 	"strings"
 	"testing"
 
@@ -208,9 +209,11 @@ infra:
 	if err == nil {
 		t.Fatal("expected error for missing infra path; got nil")
 	}
+	if !stderrors.Is(err, ErrAnnotationBindingTargetUnresolved()) {
+		t.Errorf("halt should carry the binding-target condition; got %v", err)
+	}
 	msg := err.Error()
 	for _, want := range []string{
-		"OPS_ERROR",
 		"feature.myco/rewrite-host",
 		"infra",
 		"nonexistent",
@@ -251,9 +254,11 @@ values:
 	if err == nil {
 		t.Fatal("expected error for missing values path; got nil")
 	}
+	if !stderrors.Is(err, ErrAnnotationBindingTargetUnresolved()) {
+		t.Errorf("halt should carry the binding-target condition; got %v", err)
+	}
 	msg := err.Error()
 	for _, want := range []string{
-		"OPS_ERROR",
 		"feature.myco/db-pool",
 		"values",
 		"replicas",
@@ -394,9 +399,11 @@ spec:
 	if err == nil {
 		t.Fatal("expected error for missing target Feature; got nil")
 	}
+	if !stderrors.Is(err, ErrAnnotationBindingTargetUnresolved()) {
+		t.Errorf("halt should carry the binding-target condition; got %v", err)
+	}
 	msg := err.Error()
 	for _, want := range []string{
-		"CATALOG_ERROR",
 		"feature.myco/missing",
 		"core/missing:1.0.0",
 	} {

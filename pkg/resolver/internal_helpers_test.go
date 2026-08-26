@@ -4,6 +4,7 @@
 package resolver
 
 import (
+	stderrors "errors"
 	"strings"
 	"testing"
 
@@ -363,9 +364,9 @@ func TestValidateAnnotationBindingTargets_EveryEarlyReturn(t *testing.T) {
 }
 
 // TestValidateAnnotationBindingTargets_CatalogMissErrors pins the
-// CATALOG_ERROR branch: a binding pointing at a Feature URI the
-// catalog does not carry returns an error naming the binding key and
-// the unknown Feature.
+// catalog-miss branch: a binding pointing at a Feature URI the
+// catalog does not carry raises the binding-target condition and names
+// the binding key and the unknown Feature.
 func TestValidateAnnotationBindingTargets_CatalogMissErrors(t *testing.T) {
 	t.Parallel()
 	m := &types.Manifest{}
@@ -377,9 +378,12 @@ func TestValidateAnnotationBindingTargets_CatalogMissErrors(t *testing.T) {
 	}
 	err := ValidateAnnotationBindingTargets(m, cat)
 	if err == nil {
-		t.Fatal("expected CATALOG_ERROR for missing Feature; got nil")
+		t.Fatal("expected a halt for the missing Feature; got nil")
 	}
-	if !strings.Contains(err.Error(), "CATALOG_ERROR") || !strings.Contains(err.Error(), "core/unknown") {
+	if !stderrors.Is(err, ErrAnnotationBindingTargetUnresolved()) {
+		t.Errorf("halt should carry the binding-target condition; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "core/unknown") {
 		t.Errorf("error should name the missing Feature; got: %s", err.Error())
 	}
 }
@@ -443,9 +447,9 @@ func TestCheckArrayConstraints_EveryBranch(t *testing.T) {
 //   - nil feature → nil (defensive soft-skip)
 //   - compile failure → nil (defensive soft-skip per default-to-skip discipline)
 //   - skippable branch (escape-hatch in schema) → nil
-//   - found=false (property not declared) → OPS_ERROR naming the subkey
+//   - found=false (property not declared) → a halt naming the subkey
 //   - declared property carries no `type` field → nil (relaxed default)
-//   - declared type mismatches runtime Go type → OPS_ERROR naming both
+//   - declared type mismatches runtime Go type → a halt naming both
 //   - declared type matches runtime → nil
 func TestValidateSubkeyValueAgainstFeatureSchema_EveryBranch(t *testing.T) {
 	t.Parallel()
@@ -472,8 +476,8 @@ func TestValidateSubkeyValueAgainstFeatureSchema_EveryBranch(t *testing.T) {
 	}
 	// Integer expected; string supplied → mismatch error.
 	err := validateSubkeyValueAgainstFeatureSchema(cache, feature, "infra", "port", "not-an-integer")
-	if err == nil || !strings.Contains(err.Error(), "OPS_ERROR") {
-		t.Errorf("type mismatch: expected OPS_ERROR; got %v", err)
+	if err == nil || !stderrors.Is(err, ErrAnnotationSubkeyNotConforming()) {
+		t.Errorf("type mismatch: expected the subkey-conformance condition; got %v", err)
 	}
 	// Integer expected; integer supplied → no error.
 	if err := validateSubkeyValueAgainstFeatureSchema(cache, feature, "infra", "port", 8080); err != nil {
@@ -482,7 +486,7 @@ func TestValidateSubkeyValueAgainstFeatureSchema_EveryBranch(t *testing.T) {
 	// (c) Subkey not declared on the schema.
 	err = validateSubkeyValueAgainstFeatureSchema(cache, feature, "infra", "undeclared", "anything")
 	if err == nil || !strings.Contains(err.Error(), "is not declared") {
-		t.Errorf("subkey not declared: expected OPS_ERROR; got %v", err)
+		t.Errorf("subkey not declared: expected a halt naming the subkey; got %v", err)
 	}
 }
 

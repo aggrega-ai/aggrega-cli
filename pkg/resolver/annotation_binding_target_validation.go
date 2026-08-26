@@ -64,10 +64,15 @@ func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup Ca
 	for annotationKey, binding := range manifest.Spec.Mappings.Features.Annotations.All() {
 		feature, found := catalogLookup.Feature(binding.Feature)
 		if !found {
-			return fmt.Errorf(
-				"CATALOG_ERROR: annotation binding %q targets Feature %q, but no such Feature is loaded in the catalog",
-				annotationKey, binding.Feature,
-			)
+			return &ResolverError{
+				Entity: "Manifest",
+				Field:  annotationBindingField("", annotationKey),
+				Message: fmt.Sprintf(
+					"annotation binding %q targets Feature %q, but no such Feature is loaded in the catalog",
+					annotationKey, binding.Feature,
+				),
+				Err: ErrAnnotationBindingTargetUnresolved(),
+			}
 		}
 
 		// Supply the catalog's SchemaLibraries so a Feature schema that uses a
@@ -94,12 +99,19 @@ func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup Ca
 			c, err := compactform.Compile(&feature.Spec.Schema, opts...)
 			if err != nil {
 				// A Feature schema that fails to compile is a catalog-load
-				// error caught upstream; if it reaches here, return a wrapping
-				// CATALOG_ERROR so the operator can locate the offending
-				// Feature.
+				// error caught upstream; reaching here means it was not, so the
+				// binding cannot be resolved and the failure is reported under
+				// the same condition as every other unresolvable route.
+				//
+				// This is the one raise of the four that is a pass-through of
+				// another failure rather than an authoring fault located in the
+				// binding, so it keeps the compile failure in its chain rather
+				// than folding the cause into a locator-bearing finding: the
+				// reader needs the reason the schema did not compile, and that
+				// reason carries its own condition.
 				return fmt.Errorf(
-					"CATALOG_ERROR: annotation binding %q targets Feature %q whose spec.schema does not compile: %w",
-					annotationKey, binding.Feature, err,
+					"%w: annotation binding %q targets Feature %q whose spec.schema does not compile: %w",
+					ErrAnnotationBindingTargetUnresolved(), annotationKey, binding.Feature, err,
 				)
 			}
 			compiled = c
@@ -111,10 +123,15 @@ func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup Ca
 				continue
 			}
 			if !ok {
-				return fmt.Errorf(
-					"OPS_ERROR: annotation binding %q routes through pillar %q at path %q on Feature %q, but the Feature's spec.schema does not declare a property at that path",
-					annotationKey, "infra", path, binding.Feature,
-				)
+				return &ResolverError{
+					Entity: "Manifest",
+					Field:  annotationBindingField("", annotationKey),
+					Message: fmt.Sprintf(
+						"annotation binding %q routes through pillar %q at path %q on Feature %q, but the Feature's spec.schema does not declare a property at that path",
+						annotationKey, "infra", path, binding.Feature,
+					),
+					Err: ErrAnnotationBindingTargetUnresolved(),
+				}
 			}
 		}
 		for _, path := range binding.Maps.Values {
@@ -123,10 +140,15 @@ func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup Ca
 				continue
 			}
 			if !ok {
-				return fmt.Errorf(
-					"OPS_ERROR: annotation binding %q routes through pillar %q at path %q on Feature %q, but the Feature's spec.schema does not declare a property at that path",
-					annotationKey, "values", path, binding.Feature,
-				)
+				return &ResolverError{
+					Entity: "Manifest",
+					Field:  annotationBindingField("", annotationKey),
+					Message: fmt.Sprintf(
+						"annotation binding %q routes through pillar %q at path %q on Feature %q, but the Feature's spec.schema does not declare a property at that path",
+						annotationKey, "values", path, binding.Feature,
+					),
+					Err: ErrAnnotationBindingTargetUnresolved(),
+				}
 			}
 		}
 	}
@@ -283,8 +305,8 @@ func validateSubkeyValueAgainstFeatureSchema(cache *featureSchemaCache, feature 
 	}
 	if !found {
 		return fmt.Errorf(
-			"OPS_ERROR: annotation subkey %q is not declared at Feature %q spec.schema.%s.%s",
-			subkey, feature.Metadata.Name, pillar, subkey,
+			"%w: annotation subkey %q is not declared at Feature %q spec.schema.%s.%s",
+			ErrAnnotationSubkeyNotConforming(), subkey, feature.Metadata.Name, pillar, subkey,
 		)
 	}
 	terminal := subkey
@@ -293,8 +315,8 @@ func validateSubkeyValueAgainstFeatureSchema(cache *featureSchemaCache, feature 
 	}
 	if msg, bad := subkeyConformanceFailure(compiled, subSchema, terminal, value); bad {
 		return fmt.Errorf(
-			"OPS_ERROR: annotation subkey %q value %v does not conform to Feature %q spec.schema.%s.%s: %s",
-			subkey, value, feature.Metadata.Name, pillar, subkey, msg,
+			"%w: annotation subkey %q value %v does not conform to Feature %q spec.schema.%s.%s: %s",
+			ErrAnnotationSubkeyNotConforming(), subkey, value, feature.Metadata.Name, pillar, subkey, msg,
 		)
 	}
 	return nil
@@ -387,4 +409,23 @@ func subkeyConformanceFailure(compiled compactform.Schema, subSchema map[string]
 		return fmt.Sprintf("%s (%s)", f.Message, f.Keyword), true
 	}
 	return f.Message, true
+}
+
+// annotationBindingField locates a finding on the annotation binding that
+// carried it: the field path of that binding's key within the Manifest, with
+// providerTier naming the legacy per-provider tier the binding was declared
+// under and the empty string naming the flat features tier.
+//
+// It is one function rather than a format string at each raise site because the
+// path is the coordinate an editor resolves a diagnostic against, and two
+// spellings of it would place the same finding on two different keys. A binding
+// key containing a period — which the reserved annotation-key shape permits —
+// does not resolve to the key node itself; the walk's documented fallback lands
+// on the enclosing annotations block, which is the nearest coordinate that is
+// certainly correct.
+func annotationBindingField(providerTier, annotationKey string) string {
+	if providerTier == "" {
+		return ".spec.mappings.features.annotations." + annotationKey
+	}
+	return ".spec.mappings." + providerTier + ".features.annotations." + annotationKey
 }

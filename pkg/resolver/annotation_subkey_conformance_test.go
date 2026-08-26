@@ -4,7 +4,7 @@
 package resolver
 
 import (
-	"strings"
+	stderrors "errors"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -62,8 +62,8 @@ func TestSubkeyConformance_FullValidationNotTypeOnly(t *testing.T) {
 		if !c.wantErr && err != nil {
 			t.Errorf("subkey %q=%v: expected pass; got %v", c.subkey, c.value, err)
 		}
-		if c.wantErr && err != nil && !strings.Contains(err.Error(), "OPS_ERROR") {
-			t.Errorf("subkey %q=%v: halt should keep OPS_ERROR framing; got %v", c.subkey, c.value, err)
+		if c.wantErr && err != nil && !stderrors.Is(err, ErrAnnotationSubkeyNotConforming()) {
+			t.Errorf("subkey %q=%v: halt should carry the subkey-conformance condition; got %v", c.subkey, c.value, err)
 		}
 	}
 }

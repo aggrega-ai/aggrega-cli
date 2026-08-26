@@ -737,10 +737,13 @@ func wrapAggregateAnnotationOpsError(componentPath, key, stage string, inner err
 // through paths targeting infra.
 //
 // Permitted: side=sideAggregate paired with pillar="values";
-// side=sideRelease paired with pillar="infra". Any other pairing
-// returns an OPS_ERROR naming the annotation key, the routed path, the
-// routed pillar, the authoring side, and the source location so the
-// operator can navigate from the diagnostic to the authoring site.
+// side=sideRelease paired with pillar="infra". Any other pairing raises
+// [ErrAnnotationSidePillarMismatch], naming the annotation key, the routed
+// path, the routed pillar, the authoring side, and the source location so the
+// operator can navigate from the diagnostic to the authoring site. The
+// category the diagnostic prints is derived per occurrence at the reporting
+// boundary rather than written into the text here, so one condition reported
+// against two authoring surfaces names each of them correctly.
 //
 // The function is side-of-authoring focused; bindings declaring paths
 // in both pillars route the side-compatible subset on each pass and
@@ -753,8 +756,8 @@ func validateAnnotationSideCompatibility(side, annotationKey, path, pillar, sour
 		return nil
 	}
 	return fmt.Errorf(
-		"OPS_ERROR: annotation %q at %s routes through pillar %q at path %q, but %s-side annotations may only route through pillar %q",
-		annotationKey, sourceLocation, pillar, path, side, allowedPillarFor(side),
+		"%w: annotation %q at %s routes through pillar %q at path %q, but %s-side annotations may only route through pillar %q",
+		ErrAnnotationSidePillarMismatch(), annotationKey, sourceLocation, pillar, path, side, allowedPillarFor(side),
 	)
 }
 
