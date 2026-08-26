@@ -128,8 +128,8 @@ spec:
 
 	// The mutator .wasm resolves through the co-located tier: it sits beside its
 	// plugin.yaml in the catalog directory the indexer maps into
-	// PluginColocatedDirs. The leaf is the plugin coordinate's version-stripped
-	// final segment.
+	// PluginColocatedDirs. The filename is derived from the coordinate rather than
+	// spelled here, so the file staged is the file the resolver reads.
 	colocatedDir := filepath.Join(catalogDir, "plugin", "governance", "tag-injector", "1.0.0")
 	leaf := pluginpath.PluginLeaf("governance/tag-injector")
 	if err := os.WriteFile(filepath.Join(colocatedDir, leaf), mutatorBytes, 0o644); err != nil {

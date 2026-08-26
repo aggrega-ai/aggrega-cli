@@ -206,9 +206,15 @@ func stageColocatedStepPlugin(t *testing.T, catalogPath, pluginURI, artifactFixt
 	if err != nil {
 		t.Fatalf("load the copied catalog: %v", err)
 	}
+	// Both halves of the staged path come from the artifact reference, which is
+	// the key the cascade resolves by. Deriving the directory from the reference
+	// and the filename from the URI would stage the artifact under a name the
+	// resolver never looks for whenever the two differ — as they do here, the URI
+	// carrying a version the reference does not.
 	dirs := cat.PluginColocatedDirs()
-	artifact := pluginpath.PluginLeaf(pluginURI)
-	dir, held := dirs[artifactReferenceOf(t, cat, pluginURI)]
+	reference := artifactReferenceOf(t, cat, pluginURI)
+	artifact := pluginpath.PluginLeaf(reference)
+	dir, held := dirs[reference]
 	if !held {
 		t.Fatalf("the copied catalog indexes no plugin entity for %q (indexed: %v)", pluginURI, dirs)
 	}

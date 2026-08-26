@@ -310,7 +310,8 @@ type Resolver struct {
 	// holding its co-located .wasm — the module laid down beside its Plugin
 	// entity in a catalog directory. It is the offline resolution path (Tier 0c)
 	// for a build that embeds no core guests: the .wasm is read from the catalog
-	// directory the entity was indexed from, at <dir>/<uri-leaf>.wasm. Key is the artifact reference the
+	// directory the entity was indexed from, under the filename PluginLeaf
+	// derives from the reference. Key is the artifact reference the
 	// cascade resolves by, so the front's entity → artifact translation leaves
 	// this tier's lookup unchanged. nil or empty disables the tier; a reference
 	// absent from the map, or a missing .wasm file, is a clean miss that falls
@@ -524,8 +525,9 @@ func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string)
 // Plugin entity in the catalog directory keyed by the URI's artifact reference —
 // returning (bytes, true, nil) on a hit, (nil, false, nil) on a clean miss (no
 // mapped directory, or no such file), or a wrapped error on an unreadable
-// present file. The leaf is the shared pluginLeaf mapping, so a co-located
-// .wasm keys by <uri-leaf>.wasm.
+// present file. The filename is the shared PluginLeaf mapping, which carries the
+// reference's socket and — where the reference pins one — its version, so two
+// plugins sharing a bare name are read from two files rather than one.
 func (r Resolver) readColocated(uri string) ([]byte, bool, error) {
 	dir, ok := r.colocatedDirs[uri]
 	if !ok || dir == "" {
