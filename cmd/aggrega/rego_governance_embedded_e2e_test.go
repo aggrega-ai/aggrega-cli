@@ -112,11 +112,21 @@ func regoWorkspace(t *testing.T) (root, catalogDir string) {
 // regoAttachment builds the workspace-config plugins block attaching the Rego
 // guest at one role with one policy file and optional settings.
 func regoAttachment(role, sourceFile, settings string) string {
+	return governanceAttachment(regoGovernanceURI+":1.0.0", role, sourceFile, settings)
+}
+
+// governanceAttachment builds the workspace-config plugins block attaching the
+// governance plugin at uri at one role with one policy file and optional
+// settings. It is the one spelling of that block, so a proof attaching a guest
+// under some other identity — one resolved from the content cache rather than
+// from inside the binary — cannot drift from the block every other proof here
+// uses.
+func governanceAttachment(uri, role, sourceFile, settings string) string {
 	block := `workspace: {}
 offline: true
 plugins:
   governance:
-    - uri: ` + regoGovernanceURI + `:1.0.0
+    - uri: ` + uri + `
       role: ` + role + `
       with:
         sources:
