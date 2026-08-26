@@ -2807,9 +2807,14 @@ var facts = []factDecl{
 			"is not a property of the input, so answering in that order would " +
 			"return a different sequence for identical input; path order is " +
 			"derived from something ordered and is therefore the same on every " +
-			"run.\n\nSeveral distinct " +
-			"collision rules read this one fact at different points of " +
-			"assembly. They stay distinct rules over one fact rather than " +
+			"run.\n\nNo rule reads it yet, which is a real state rather than " +
+			"an oversight: a fact is declared from where its subject is " +
+			"produced, so it stands whether or not a rule has been placed on " +
+			"it. The rules it is declared for are collision rules over " +
+			"emitted paths — each asking, at its own point of assembly, " +
+			"whether one path is claimed more than once — and where in " +
+			"assembly each of them belongs is still open. When they are " +
+			"placed, they stay distinct rules over this one fact rather than " +
 			"becoming several facts, because what differs between them is the " +
 			"predicate and not the question.",
 	},
