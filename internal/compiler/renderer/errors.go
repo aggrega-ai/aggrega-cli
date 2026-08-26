@@ -515,6 +515,21 @@ var errPipelineTargetNotEmitted = cerrors.Register("compiler-renderer/pipeline-t
 // only scope is its own output). The host root is absent for these
 // surfaces, so a /host patch or emit halts loudly rather than silently
 // resolving against an empty set.
+//
+// It also carries the finding the rules over a hostless site's pipeline steps
+// report: a step whose export declares it operates on host documents, authored
+// at a site standing against no host component, addresses a document set that
+// site never has. That is reported once the build knows what every plugin and
+// provider declares, ahead of any node's walk. The remedy is to move the step to
+// a site that has a host component, address the site's own documents, or remove
+// the step.
+//
+// The per-node halt described above remains the floor beneath that reading, and
+// the two are a division of one condition rather than the same finding twice: a
+// declared scope does not bind the scope of the operations a guest returns, so a
+// step declaring its own scope may still return a host operation, and only the
+// walk that ran it can see that. What a declaration can answer is answered from
+// the declaration; what only the walk can answer stays with the walk.
 func ErrPipelineHostScopeUnavailable() error { return errPipelineHostScopeUnavailable }
 
 var errPipelineHostScopeUnavailable = cerrors.Register("compiler-renderer/pipeline-host-scope-unavailable", cerrors.Meta{

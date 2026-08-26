@@ -27,9 +27,9 @@ type selfReportRefusalReporter interface {
 // report about themselves are invoked once per.
 //
 // It is named as one set because the invocation needs all of them together: a
-// value satisfying six of the seven cannot be asked one of the four rules at all,
-// and the failure would be a rule invoked zero times — which reports exactly what
-// a rule that ran and approved reports.
+// value satisfying six of the seven cannot be asked the rules over the seventh at
+// all, and the failure would be a rule invoked zero times — which reports exactly
+// what a rule that ran and approved reports.
 type describedStageAxes interface {
 	constraint.NodeEnumerator
 	constraint.AttachmentEnumerator
@@ -121,6 +121,20 @@ func runDescribedStageRules(
 	}
 	raised = append(raised, objections...)
 
+	// The second rule over the same axis: whether the documents a step's scope
+	// names exist at this site at all. It is asked separately from the one above
+	// because the rule above declines a host-addressed step — such a step has no
+	// provider to be matched against — and a step declining both readings would
+	// be reported by neither.
+	objections, err = constraint.RunOnNodePipelineSteps(
+		ctx.Err, coordinates, coordinates, view,
+		PipelineStepScopeHasADocumentSet,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
 	// Each step of the pipeline an attachment's FeatureRecipe carries on a node.
 	// Two rules walk this axis and both are asked, because they are separate
 	// findings with separate remedies: one asks whether the step's plugin
@@ -151,6 +165,19 @@ func runDescribedStageRules(
 	objections, err = constraint.RunOnBoundaryAttachmentPipelineSteps(
 		ctx.Err, coordinates, coordinates, coordinates, view,
 		BoundaryAttachmentPipelineStepProviderCompatible,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	// And the same second reading over that axis, for the same reason it is asked
+	// over a node's own pipeline: a boundary-scope attachment stands against no
+	// single component, so a step of its pipeline declaring it addresses host
+	// documents is declined by the rule above and reported by this one.
+	objections, err = constraint.RunOnBoundaryAttachmentPipelineSteps(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		BoundaryAttachmentPipelineStepScopeHasADocumentSet,
 	)
 	if err != nil {
 		return err

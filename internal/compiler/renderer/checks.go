@@ -619,6 +619,56 @@ var PipelineStepProviderCompatible = constraint.Check[
 	},
 }
 
+// PipelineStepScopeHasADocumentSet reports each step of a node's own Recipe
+// pipeline whose export declares it operates on host documents, which that
+// pipeline has none of.
+//
+// It is the rule the compatibility rule above defers a host-addressed step to.
+// The two are separate findings with separate remedies: that one asks whether a
+// step's plugin declares the provider rendering the documents its scope names,
+// this one asks whether the documents that scope names exist at this site at all
+// — and a site with no such documents has no provider either, so asking about
+// compatibility there would report a claim against an empty value rather than
+// the fault the author has to fix.
+//
+// # Why the answer is complete before anything runs
+//
+// A node's own Recipe pipeline stands against no host component. That is a
+// property of the site rather than of a render: the host document set such a
+// pipeline is handed is empty wherever the pipeline is reached, so a step
+// declaring it addresses host documents addresses nothing, and no walk has to
+// run for that to be settled. What the walk adds is only which operations the
+// guest chose to return, and that cannot make a host document set appear.
+//
+// # Emptiness
+//
+// A plugin the host could not resolve, load or ask reports no scope, and no
+// scope is not the host scope — so such a step is not reported here. It halts
+// with the host's own failure to obtain the self-report, which is the thing to
+// repair, and this rule stays silent rather than naming a scope the author never
+// declared. An export declaring no scope at all is the same reading: the step
+// addresses the site's own documents, which the site has.
+//
+// It raises no detail. The locator names the authored step inside the Recipe,
+// and the scope the finding is about is the one this rule is for, so there is no
+// selected value the author has to reconcile the declaration against.
+var PipelineStepScopeHasADocumentSet = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodePipelineStepSubject,
+]{
+	Sentinel: ErrPipelineHostScopeUnavailable(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodePipelineStepSubject,
+	) []constraint.Objection {
+		if v.StepExportScope(s.NodeID(), s.StepID()) != types.ScopeHost {
+			return nil
+		}
+		return []constraint.Objection{s.Raise(ErrPipelineHostScopeUnavailable())}
+	},
+}
+
 // AttachmentPipelineStepProviderCompatible reports each step of the pipeline an
 // attachment's FeatureRecipe carries on a node whose plugin does not declare
 // compatibility with the provider rendering the documents the step addresses.
@@ -787,6 +837,56 @@ var BoundaryAttachmentPipelineStepProviderCompatible = constraint.Check[
 		}
 		return []constraint.Objection{s.Raise(
 			ErrPluginProviderIncompatible(), s.AttachmentName(), provider,
+		)}
+	},
+}
+
+// BoundaryAttachmentPipelineStepScopeHasADocumentSet reports each step of the
+// pipeline a boundary-scope attachment's FeatureRecipe carries whose export
+// declares it operates on host documents, which such a pipeline has none of.
+//
+// It is the rule the compatibility rule above defers a host-addressed step to,
+// on the same division of labour the node's own pipeline has: that one asks
+// whether a step's plugin declares the provider rendering the documents its
+// scope names, this one whether the documents that scope names exist at this
+// site at all.
+//
+// # Why the answer is complete before anything runs
+//
+// A boundary-scope attachment stands against no single component. Its pipeline
+// runs on the boundary's own surface, where there is no one component's document
+// set to be the host one — so the host set such a pipeline is handed is empty
+// wherever it is reached, and a step declaring it addresses host documents
+// addresses nothing. That follows from where the attachment was declared, which
+// is settled long before any node is walked.
+//
+// # Emptiness
+//
+// A plugin the host could not resolve, load or ask reports no scope, and no
+// scope is not the host scope, so such a step is not reported here — it halts
+// with the host's own failure to obtain the self-report. An export declaring no
+// scope addresses the attachment's own documents, which this site has.
+//
+// Its detail names the attachment. The locator names the authored step inside
+// the FeatureRecipe, which is the document to edit, and the name the operator
+// attached it under appears nowhere in it.
+var BoundaryAttachmentPipelineStepScopeHasADocumentSet = constraint.Check[
+	constraint.DescribedView,
+	constraint.BoundaryAttachmentPipelineStepSubject,
+]{
+	Sentinel: ErrPipelineHostScopeUnavailable(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.BoundaryAttachmentPipelineStepSubject,
+	) []constraint.Objection {
+		if v.BoundaryAttachmentStepExportScope(
+			s.BoundaryPath(), s.AttachmentName(), s.StepID(),
+		) != types.ScopeHost {
+			return nil
+		}
+		return []constraint.Objection{s.Raise(
+			ErrPipelineHostScopeUnavailable(), s.AttachmentName(),
 		)}
 	},
 }
