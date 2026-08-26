@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"errors"
+	"path"
 	"strings"
 	"testing"
 
@@ -252,5 +253,143 @@ func TestArtifactOriginIndexNeedle(t *testing.T) {
 	}})
 	if got := populated.For("templates/policy.yaml"); got == empty.For("templates/policy.yaml") {
 		t.Fatalf("the populated and empty indexes agreed on %v, so the table above cannot discriminate", got)
+	}
+}
+
+// TestArtifactBundleFileLeavingItsKeyHalts proves the containment refusal at the
+// bundle-nesting join: a bundle file whose name climbs out of the artifacts key
+// it is consumed at halts the build, matched by the condition rather than by the
+// absence of a file.
+//
+// 🔴 The case asserted here is the SHALLOW one, and choosing it is the whole
+// point of the test. A name climbing far enough to leave the output directory is
+// refused where the files are written, so a case built from one would pass
+// against the unfixed code and prove nothing about this join. The subtest below
+// measures that difference rather than asserting it: it composes each name the
+// way the join does and reports what the composed name resolves to, so a reader
+// can see that the refused case resolves back INSIDE the output directory and is
+// therefore reachable by nothing but this check.
+func TestArtifactBundleFileLeavingItsKeyHalts(t *testing.T) {
+	t.Parallel()
+
+	const key = "widgets"
+	cases := []struct {
+		name  string
+		fname string
+		why   string
+	}{
+		{
+			name:  "one level up, which resolves back inside the output directory",
+			fname: "../evil.yaml",
+			why:   "the composed name cleans to evil.yaml and is written at the output root, refused nowhere else",
+		},
+		{
+			name:  "several levels up, which leaves the output directory",
+			fname: "../../../evil.yaml",
+			why:   "refused here as well, so one condition covers the whole class rather than half of it",
+		},
+		{
+			name:  "an absolute name, which ignores the key entirely",
+			fname: "/etc/evil.yaml",
+			why:   "composing it yields widgets//etc/evil.yaml, which is not the key's directory either",
+		},
+		{
+			name:  "the parent directory itself",
+			fname: "..",
+			why:   "names the directory the key sits in rather than a file under the key",
+		},
+		{
+			name:  "an interior climb that leaves the key on the way",
+			fname: "sub/../../evil.yaml",
+			why:   "the interior form resolves outward, which the composed name hides",
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmplCtx, state, nodeCtx := newArtifactsCtx()
+			resetArtifacts(state)
+			state.Recipe.Spec.Artifacts.Set(key, types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
+			state.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
+				"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+					[]string{tc.fname}, []string{albCRDBody}),
+			}
+
+			_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
+			if !errors.Is(err, ErrArtifactsLibraryFileEscapesKey()) {
+				t.Fatalf("bundle file %q under key %q: got %v; want ErrArtifactsLibraryFileEscapesKey — %s",
+					tc.fname, key, err, tc.why)
+			}
+
+			// A Loud Guardrail names what was refused and what to change. Both halves
+			// are asserted because either alone leaves an author guessing: the key is
+			// in the Recipe they wrote and the file name is in a library somebody else
+			// published, so a message carrying one of the two names the wrong document.
+			msg := err.Error()
+			for _, want := range []string{key, tc.fname, "rename the file"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("diagnostic does not carry %q:\n%s", want, msg)
+				}
+			}
+		})
+	}
+
+	// Calibration, measured rather than asserted: the first case above is the one
+	// that stays inside the output directory, so it is the one no other guard on
+	// this path can see. A composed name that resolved outward here would mean the
+	// test above was riding on the output-directory guard instead of on this check.
+	if got := path.Clean(key + "/" + "../evil.yaml"); got != "evil.yaml" {
+		t.Fatalf("the shallow case composes to %q; it must resolve back inside the output "+
+			"directory, or this test proves nothing this join is responsible for", got)
+	}
+	if got := path.Clean(key + "/" + "../../../evil.yaml"); !strings.HasPrefix(got, "../") {
+		t.Fatalf("the deep case composes to %q; it must resolve outward, or the two cases "+
+			"above are one case written twice", got)
+	}
+}
+
+// TestArtifactBundleFileMayNestInsideItsKey is the negative case the containment
+// refusal must not swallow: a bundle is free to carry its own subdirectory
+// layout, and nesting that layout under the consumption key is what the key is
+// for. Without this case the refusal silently becomes a single-segment rule,
+// which is a regression nothing else in this package would report.
+func TestArtifactBundleFileMayNestInsideItsKey(t *testing.T) {
+	t.Parallel()
+
+	tmplCtx, state, nodeCtx := newArtifactsCtx()
+	resetArtifacts(state)
+	state.Recipe.Spec.Artifacts.Set("widgets", types.ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"})
+	state.ArtifactsLibraries = map[string]types.ArtifactsLibrary{
+		"SharedCRDs": artifactsLibraryFixtureOrdered("SharedCRDs", "WidgetCRD",
+			// The third name is the interior-climb form that resolves back inside:
+			// legal, and the case a refusal written against the literal characters
+			// rather than against the resolved name would wrongly reject.
+			[]string{"crds/widget-crd.yaml", "rbac/cluster/widget-rbac.yaml", "extras/../widget-extra.yaml"},
+			[]string{albCRDBody, albRBACBody, albCRDBody}),
+	}
+
+	proj, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
+	if err != nil {
+		t.Fatalf("a bundle nesting its own layout under the consumption key halted: %v", err)
+	}
+	want := []string{
+		"widgets/crds/widget-crd.yaml",
+		"widgets/rbac/cluster/widget-rbac.yaml",
+		"widgets/extras/../widget-extra.yaml",
+	}
+	if len(proj.Entries) != len(want) {
+		t.Fatalf("projected %d entr(ies); want %d", len(proj.Entries), len(want))
+	}
+	for i, w := range want {
+		if got := proj.Entries[i].Name; got != w {
+			t.Errorf("entry[%d] name = %q; want %q — the name a legal bundle file produces is unchanged", i, got, w)
+		}
+		// Each accepted name stays under the key once resolved, which is the property
+		// the check is for rather than the spelling it happens to have.
+		if resolved := path.Clean(w); !strings.HasPrefix(resolved, "widgets/") {
+			t.Errorf("entry[%d] %q resolves to %q, which is not under the consumption key", i, w, resolved)
+		}
 	}
 }

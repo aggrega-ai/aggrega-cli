@@ -731,3 +731,44 @@ var errEmptySource = cerrors.Register("compiler-renderer/empty-source", cerrors.
 	ShortCode: "E0251",
 	Message:   "recipe source is an empty string, which names neither sourceless mode nor sourced mode",
 })
+
+// ErrArtifactsLibraryFileEscapesKey is the Loud Guardrail halt raised when a
+// file inside an ArtifactsLibrary bundle carries a name that leaves the
+// artifacts key the bundle was consumed at. One artifacts entry importing a
+// bundle expands into one output per bundle file, each nested under that key —
+// so the key names a directory and every file the bundle contributes belongs
+// beneath it. A file name climbing out of that directory, naming an absolute
+// location, or naming nothing at all does not belong beneath it, and the build
+// halts here rather than placing the file somewhere the consuming Recipe never
+// named.
+//
+// What it prevents is a silent re-layout rather than a write outside the output
+// directory: the output directory is guarded again where the files are written,
+// so a name climbing far enough is refused there in any case. A name climbing
+// exactly one level is the one that survives — it resolves back inside the
+// output directory, at a position the consuming Recipe did not choose. That is
+// worse than a refused write, because every collision guard on this path reads
+// the name as it was composed rather than as it resolves: two such files can
+// resolve onto one output while nothing reports a collision, and which of them
+// survives is then decided by nothing the author wrote. Refusing the name is
+// what keeps the composed name and the written position the same thing.
+//
+// A file name that stays inside the key's directory is untouched, including one
+// naming a subdirectory of its own: a bundle is free to carry a nested layout,
+// and nesting that layout under the consumption key is exactly what the key is
+// for.
+//
+// The consuming Recipe and the published bundle are usually written by different
+// authors, so the diagnostic names both halves — the artifacts key the bundle
+// was consumed at and the file name the bundle carries — together with the
+// remedy, which is to give the file a name that stays under that key.
+// Category: CATALOG_ERROR, because the offending value came from an authored
+// catalog document, unlike the provider-supplied sub-directory name one layer up
+// that ErrNestSegmentNotOneDirectory refuses as a translation fault. Match with
+// errors.Is(err, ErrArtifactsLibraryFileEscapesKey()).
+func ErrArtifactsLibraryFileEscapesKey() error { return errArtifactsLibraryFileEscapesKey }
+
+var errArtifactsLibraryFileEscapesKey = cerrors.Register("compiler-renderer/artifacts-library-file-escapes-key", cerrors.Meta{
+	ShortCode: "E0252",
+	Message:   "artifacts-library bundle file name leaves the artifacts key its output is nested under",
+})

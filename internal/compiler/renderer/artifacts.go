@@ -24,6 +24,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -80,7 +81,9 @@ type ArtifactsEmitter interface {
 //     the key alone cannot name them and the pair identifies both the consumption
 //     and the file within the bundle. The library version is lockfile-pinned, so
 //     no artifactDigests file-pin applies. A host-bearing `oci://…` reference is
-//     rejected (ErrHostInLibraryImport).
+//     rejected (ErrHostInLibraryImport), and a bundle file whose name would not
+//     stay under the consumption key is rejected
+//     (ErrArtifactsLibraryFileEscapesKey) before the name is composed.
 //
 // origin records which form the entry took so a guest that rejects one form can
 // halt on it. Two outputs resolving to the same filename halt loudly with
@@ -235,6 +238,25 @@ func buildArtifactsProjection(
 					fmt.Sprintf("Recipe %q artifacts library import %q", state.RecipeName, entry.Import))
 			}
 			for _, fname := range bundle.Files.Keys() {
+				// The nesting above is only true of the composed name while the
+				// bundle's own filename stays under the key, and the filename comes
+				// from a document the consuming Recipe did not write. So it is judged
+				// before it is composed rather than after: once the two halves are
+				// joined, a climbing segment reads as an ordinary interior one and the
+				// composed name resolves somewhere the consuming Recipe never named.
+				// The question is asked of the shared containment predicate, in slash
+				// arithmetic, because an output name is a logical name rather than a
+				// path in the host's own spelling — a backslash is an ordinary
+				// character in it on every platform.
+				if !pathscope.IsLocalSlash(fname) {
+					return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactsLibraryFileEscapesKey(),
+						cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
+						cerrors.ComposeMessage(ErrArtifactsLibraryFileEscapesKey(), []string{
+							fmt.Sprintf("Recipe %q", state.RecipeName),
+							fmt.Sprintf("artifact %q", key),
+							fmt.Sprintf("bundle file %q", fname),
+						}, "rename the file inside the ArtifactsLibrary bundle so its name stays under the artifacts key it is consumed at"))
+				}
 				body, _ := bundle.Files.Get(fname)
 				if err := emit(key+"/"+fname, "import", body); err != nil {
 					return ArtifactsProjection{}, err
