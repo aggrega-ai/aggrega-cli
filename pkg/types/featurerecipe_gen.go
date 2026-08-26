@@ -25,7 +25,7 @@ type FeatureRecipeMetadata struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	// Maintainers List of maintainers who own this entity.
 	Maintainers []Maintainer `json:"maintainers,omitempty" yaml:"maintainers,omitempty"`
-	// License Legal compliance license (e.g., Apache-2.0).
+	// License SPDX identifier for the license of the software this entity describes, such as MIT or AGPL-3.0. It records the terms of that software, not the terms of this file.
 	License string `json:"license,omitempty" yaml:"license,omitempty"`
 	// Repository The URL to the Git repository where the source files live.
 	Repository string `json:"repository,omitempty" yaml:"repository,omitempty"`
