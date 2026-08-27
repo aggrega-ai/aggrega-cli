@@ -10,10 +10,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// instanceNamePattern validates every user-authored dictionary key the
-// developer or operator writes: component names, feature names, secret
-// names, subsystem names, aggregate (sub-aggregate) names, boundary names,
-// uses-socket names and aliases, and Manifest provider section names.
+// instanceNamePattern is the spelling every user-authored dictionary key is
+// held to. This variable is what ValidateInstanceNames applies, over the
+// Aggregate's own key surfaces; the remaining surfaces an author writes keys on
+// — boundary names, uses-socket names and aliases, and Manifest provider
+// section names — are held to the same spelling by their own JSON Schema.
 //
 // The pattern allows alphanumerics, underscore, and hyphen — both
 // kebab-case and snake_case are valid. The period is reserved as the
@@ -24,8 +25,13 @@ var instanceNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // ValidateInstanceNames walks every user-authored dictionary key in the
 // Aggregate (top-level aggregates, top-level subsystems, then recursively into
-// each subsystem's components, features, secrets, and nested subsystems) and
-// checks each against instanceNamePattern. Returns every violation found.
+// each subsystem's components, features, and nested subsystems) and checks each
+// against instanceNamePattern. Returns every violation found.
+//
+// A credential is a Feature carrying the feature.aggrega.ai/kind: secret label,
+// attached on the same attachment surface as any other Feature, so a
+// credential's instance name is reached by the features arm rather than by an
+// arm of its own.
 //
 // Components authored at the top-level `.spec.components` surface are reached
 // through the synthesized default subsystem, whose components validate at the
