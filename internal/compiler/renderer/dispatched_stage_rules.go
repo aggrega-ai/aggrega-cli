@@ -44,11 +44,16 @@ type dispatchedStageAxes interface {
 // claims is not — there is nothing in the deployment document to correct, and the
 // remedy is to serve the provider through a plugin that offers both, which makes
 // it a fault of the translation. So each reading is rendered under its own
-// attribution rather than under one that would be wrong for half of them.
+// attribution rather than under one that would be wrong for some of them.
 //
-// The two readings run in declaration order, and the first to raise anything halts
-// the build. That is the same shape a single reading has when it raises objections
-// about more than one group: the build stops at the first fault it can name.
+// Two readings sharing a category are still two readings, because the envelope a
+// halt opens with names what was read. One envelope covering both would have to
+// describe neither precisely, and the envelope is the first line an author sees.
+//
+// Each reading runs in the order declared below, and the first to raise anything
+// halts the build. That is the same shape a single reading has when it raises
+// objections about more than one group: the build stops at the first fault it can
+// name.
 //
 // The cancellation signal is the caller's own, so a walk over a large grouping
 // stops within one boundary of the caller asking it to.
@@ -79,8 +84,20 @@ func runDispatchedStageRules(
 	if err != nil {
 		return err
 	}
+	if halt := objectionsAsTranslationHalt(
+		raised, "dispatch groups whose provider offers no boundary assembler",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnAssemblyPathProviders(
+		ctx.Err, coordinates, coordinates, view,
+		AssemblyGroupBoundariesAgreeOnAssemblyName,
+	)
+	if err != nil {
+		return err
+	}
 	return objectionsAsTranslationHalt(
-		raised, "dispatch groups whose provider offers no boundary assembler")
+		raised, "merged dispatch groups whose boundaries disagree on the assembly name")
 }
 
 // objectionsAsOpsHalt renders what a rule about a build's grouping raised as the
@@ -88,7 +105,7 @@ func runDispatchedStageRules(
 //
 // It is the sibling of [objectionsAsHalt] and of [objectionsAsTranslationHalt],
 // and shares the whole of their per-objection rendering; what it does not share
-// is the category, which is the one thing the three readings genuinely differ on.
+// is the category, which is the one thing the three of them genuinely differ on.
 // A rule about what an entity declares sends an author to a catalog document; a
 // rule about a marker the host stamped has no such document; a rule about where a
 // boundary's output landed sends an operator to the deployment document, which is

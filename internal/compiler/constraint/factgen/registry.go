@@ -112,8 +112,9 @@ var stages = []stageDecl{
 		Extends: "hydrated",
 		Holds: "every node's own rendered output sorted into the assembly groups " +
 			"it will be merged in: the evaluated assembly path and the provider " +
-			"each group is keyed by, and the boundaries that fed each — all of it " +
-			"complete before any group assembles",
+			"each group is keyed by, the boundaries that fed each, and what each " +
+			"group's elected engine declared about combining and naming that " +
+			"group's output — all of it complete before any group assembles",
 		// Producing this stage's facts renders every node, which calls the
 		// rendering provider's guest across the boundary. The grouping itself
 		// reaches for nothing further: it evaluates each boundary's own path
@@ -3015,6 +3016,69 @@ var facts = []factDecl{
 			"separates a group that owes one from a group that does not is the " +
 			"claim, which is the other fact, so a rule about the mismatch reads " +
 			"both.",
+	},
+	{
+		Name:        "assembly-group-assembly-name-annotation",
+		Stage:       "dispatched",
+		SourceField: "wasm.ProviderContract.AssemblyNameAnnotation",
+		Subject:     []string{"assembly-path", "provider"},
+		Params: []paramDecl{
+			{Name: "assemblyPath", Type: "string"},
+			{Name: "provider", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "AssemblyGroupAssemblyNameAnnotation is the boundary annotation " +
+			"the provider elected to assemble one dispatch group names the " +
+			"group's assembly from, and whether that provider requires every " +
+			"boundary feeding the group to resolve it to one value.\n\nThe two " +
+			"arrive together because neither says anything alone. A requirement " +
+			"that the name agree is empty without the annotation it is a " +
+			"requirement about, and the annotation without the requirement " +
+			"leaves open whether disagreement is a fault at all — a provider " +
+			"may name its assembly from the first value it finds and be " +
+			"indifferent to the rest. This is one declaration a provider makes " +
+			"about naming, so it is one fact rather than two that could only " +
+			"ever be read together.\n\nIt is the group-keyed reading of a claim " +
+			"each provider makes for itself, for the reason the group's " +
+			"assembly claim is: a group may hold nodes whose providers resolve " +
+			"at different versions, one of them is elected to assemble for the " +
+			"whole group, and the naming that governs the group is the elected " +
+			"one rather than any single node's.\n\nThe empty annotation is an " +
+			"answer and not a missing one, and two states share it: a provider " +
+			"naming its assembly from the group's own path declares no " +
+			"annotation, and a group no provider was elected for has none to " +
+			"declare. Both leave the group's name outside anything a boundary " +
+			"authored, which is one answer to the question this fact asks " +
+			"rather than two.",
+	},
+	{
+		Name:        "assembly-group-boundary-assembly-names",
+		Stage:       "dispatched",
+		SourceField: "resolver.ResolveResult.BoundaryAnnotations",
+		Subject:     []string{"assembly-path", "provider"},
+		Params: []paramDecl{
+			{Name: "assemblyPath", Type: "string"},
+			{Name: "provider", Type: "string"},
+		},
+		Returns: "types.OrderedMap[string]",
+		Doc: "AssemblyGroupBoundaryAssemblyNames is what each boundary feeding " +
+			"one dispatch group resolved the elected provider's assembly-name " +
+			"annotation to, keyed by boundary, in the order the group first " +
+			"heard from each.\n\nA boundary's value for an annotation is what " +
+			"the cascade left it with rather than what its own author typed " +
+			"there: a boundary inherits the value declared above it where it " +
+			"declares none, and displaces it where it does. So the resolved " +
+			"value is the one that governs the boundary, and it is the only one " +
+			"a rule comparing the group's names can compare.\n\nIt is empty " +
+			"when the elected provider names its assembly from no annotation, " +
+			"and empty for a group no provider was elected for: there is no " +
+			"annotation to resolve, so there is nothing to report per " +
+			"boundary.\n\nA boundary that resolved the annotation to nothing is " +
+			"present with an empty value, which is a different answer from " +
+			"being absent. Nothing declared the annotation anywhere above that " +
+			"boundary, so it brought no name to the assembly it feeds — and a " +
+			"rule about whether the group's boundaries agree has to be able to " +
+			"say which one that was.",
 	},
 
 	// ---------------------------------------------------------------- rendered

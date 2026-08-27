@@ -2652,8 +2652,9 @@ type HydratedView interface {
 // DispatchedView exposes the facts complete at the dispatched stage: every
 // node's own rendered output sorted into the assembly groups it will be
 // merged in: the evaluated assembly path and the provider each group is
-// keyed by, and the boundaries that fed each — all of it complete before
-// any group assembles.
+// keyed by, the boundaries that fed each, and what each group's elected
+// engine declared about combining and naming that group's output — all
+// of it complete before any group assembles.
 //
 // It embeds HydratedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
@@ -2740,6 +2741,60 @@ type DispatchedView interface {
 	//
 	// Keyed by (assembly-path, provider); read from types.PluginSpec.Exports.
 	AssemblyGroupAssemblerProvided(assemblyPath string, provider string) bool
+
+	// AssemblyGroupAssemblyNameAnnotation is the boundary annotation the
+	// provider elected to assemble one dispatch group names the group's
+	// assembly from, and whether that provider requires every boundary feeding
+	// the group to resolve it to one value.
+	//
+	// The two arrive together because neither says anything alone. A
+	// requirement that the name agree is empty without the annotation it is a
+	// requirement about, and the annotation without the requirement leaves
+	// open whether disagreement is a fault at all — a provider may name its
+	// assembly from the first value it finds and be indifferent to the rest.
+	// This is one declaration a provider makes about naming, so it is one fact
+	// rather than two that could only ever be read together.
+	//
+	// It is the group-keyed reading of a claim each provider makes for itself,
+	// for the reason the group's assembly claim is: a group may hold nodes
+	// whose providers resolve at different versions, one of them is elected to
+	// assemble for the whole group, and the naming that governs the group is
+	// the elected one rather than any single node's.
+	//
+	// The empty annotation is an answer and not a missing one, and two states
+	// share it: a provider naming its assembly from the group's own path
+	// declares no annotation, and a group no provider was elected for has none
+	// to declare. Both leave the group's name outside anything a boundary
+	// authored, which is one answer to the question this fact asks rather than
+	// two.
+	//
+	// Keyed by (assembly-path, provider); read from
+	// wasm.ProviderContract.AssemblyNameAnnotation.
+	AssemblyGroupAssemblyNameAnnotation(assemblyPath string, provider string) (string, bool)
+
+	// AssemblyGroupBoundaryAssemblyNames is what each boundary feeding one
+	// dispatch group resolved the elected provider's assembly-name annotation
+	// to, keyed by boundary, in the order the group first heard from each.
+	//
+	// A boundary's value for an annotation is what the cascade left it with
+	// rather than what its own author typed there: a boundary inherits the
+	// value declared above it where it declares none, and displaces it where
+	// it does. So the resolved value is the one that governs the boundary, and
+	// it is the only one a rule comparing the group's names can compare.
+	//
+	// It is empty when the elected provider names its assembly from no
+	// annotation, and empty for a group no provider was elected for: there is
+	// no annotation to resolve, so there is nothing to report per boundary.
+	//
+	// A boundary that resolved the annotation to nothing is present with an
+	// empty value, which is a different answer from being absent. Nothing
+	// declared the annotation anywhere above that boundary, so it brought no
+	// name to the assembly it feeds — and a rule about whether the group's
+	// boundaries agree has to be able to say which one that was.
+	//
+	// Keyed by (assembly-path, provider); read from
+	// resolver.ResolveResult.BoundaryAnnotations.
+	AssemblyGroupBoundaryAssemblyNames(assemblyPath string, provider string) types.OrderedMap[string]
 }
 
 // RenderedView exposes the facts complete at the rendered stage: artifact

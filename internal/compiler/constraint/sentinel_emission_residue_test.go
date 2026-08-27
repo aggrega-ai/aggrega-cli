@@ -174,17 +174,6 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"named check over the boundary, provider and node coordinates does not touch the render loop.",
 	},
 	{
-		vehicle:     "ErrChartNameMismatch",
-		vehicleKind: vehicleSentinel,
-		host:        "RenderAll",
-		file:        "internal/compiler/renderer/orchestrator.go",
-		disposition: dispositionLiftable,
-		reason: "A mismatch test over per-boundary effective annotation values within one dispatch group, a " +
-			"graph-stage read, already its own loop. One bound travels with it: the site depends on the " +
-			"assembly-name annotation being declared unique, which is a plugin capability read rather than a " +
-			"declared fact — so the comparison is what lifts, and the capability gate is not.",
-	},
-	{
 		vehicle:     "ErrAssembledOutputCollision",
 		vehicleKind: vehicleSentinel,
 		host:        "resolve",

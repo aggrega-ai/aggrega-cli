@@ -282,21 +282,27 @@ func boundaryAssemblyOf(engine Provider) string {
 // artifact of a dispatch group. A provider that folds a dispatch group's
 // contributing boundaries into one named assembly reports the annotation key it
 // reads and whether every contributing boundary must agree on that annotation's
-// resolved value. The orchestrator reads the resolved value from each
-// contributing boundary's annotations: when require-unique it halts a group whose
-// boundaries disagree, and it cascades the resolved value into the assembler. An
-// engine that reports an empty annotation gets neither the agreement check nor
-// the cascade. A provider routed to a Wasm guest reports the value from the
-// guest's live describe() self-report.
+// resolved value.
+//
+// Two things read that report, and both read the value each contributing
+// boundary's annotations resolved to. The render records the report and those
+// resolved values as facts about the group, which is where a rule about the
+// group's naming is invoked and halts a group whose boundaries disagree while
+// agreement is required. The render separately cascades the first resolved value
+// it finds into the assembler, which is what names the artifact. An engine that
+// reports an empty annotation gets neither. A provider routed to a Wasm guest
+// reports the value from the guest's live describe() self-report.
 type AssemblyNameAnnotationReporter interface {
 	AssemblyNameAnnotation() (annotation string, requireUnique bool)
 }
 
 // assemblyNameAnnotationOf returns engine's reported assembly-name annotation and
 // require-unique flag, or ("", false) when engine reports none. It is the single
-// seam the guard and cascade read, so a group's assembly-name rule resolves from
-// the engine's own claim independently of its concrete type. A nil engine reports
-// none.
+// seam every reader of that report goes through — the record the render takes of
+// each group's election, which is what the rule about the group's naming reads its
+// facts from, and the cascade that names the assembled artifact — so both resolve
+// from the engine's own claim independently of its concrete type. A nil engine
+// reports none.
 func assemblyNameAnnotationOf(engine Provider) (annotation string, requireUnique bool) {
 	if r, ok := engine.(AssemblyNameAnnotationReporter); ok {
 		return r.AssemblyNameAnnotation()

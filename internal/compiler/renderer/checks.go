@@ -175,6 +175,99 @@ var AssemblyGroupProviderHasItsDeclaredAssembler = constraint.Check[
 	},
 }
 
+// AssemblyGroupBoundariesAgreeOnAssemblyName reports each boundary feeding a
+// dispatch group whose provider names the group's assembly from a boundary
+// annotation, requires that name to be one value, and whose boundaries resolved it
+// to more than one.
+//
+// Several boundaries reach one group when their own directory declarations
+// evaluate alike, and the provider then folds their output into a single named
+// artifact. A merged artifact has exactly one name, so where the boundaries
+// disagree about it the compiler has no basis for choosing: one boundary's name
+// would be published and the others' silently discarded, and the deployment would
+// look as though every boundary's declaration had been honoured. That is a Loud
+// Guardrail case rather than a warning one — the discarded names leave no trace in
+// the output, and a name is what an operator addresses the artifact by afterwards.
+//
+// It reads two facts about the group it was invoked for, and it needs both. The
+// resolved names alone cannot tell a disagreement that matters from one the
+// provider is indifferent to: a provider may name its assembly from the first
+// value it finds, and a rule reading the names alone would refuse a deployment
+// that provider renders correctly. The declaration alone says nothing about
+// whether this group's boundaries agree.
+//
+// A group with fewer than two names is passed over, and the two ways of reaching
+// that are one state here. A group fed by a single boundary has nothing to
+// disagree with, and a group whose provider names its assembly from no annotation
+// resolved nothing per boundary — in both, the group's name is settled by
+// something other than a comparison across boundaries.
+//
+// It raises one objection per boundary feeding the group rather than one per
+// group, for the reason the collision rule at this stage does: the annotation an
+// author edits is written on a boundary, and a group is not a place anyone can go
+// and change. Every contributing boundary is named and not only the ones holding a
+// minority value — nothing in the disagreement makes one of several values the
+// intended one, so naming a subset would assert a choice the compiler has not
+// made.
+//
+// Its detail names the resolved value bare and captions the rest. The registered
+// wording names the conflicting values and nothing else, so that is what it is
+// read against; the annotation, the boundary, the provider and the path are values
+// the wording does not name, and they are in the detail because the subject
+// carries no locator — an assembly path is evaluated output and a provider is
+// selected, so neither is a key the deployment document holds.
+var AssemblyGroupBoundariesAgreeOnAssemblyName = constraint.Check[
+	constraint.DispatchedView,
+	constraint.AssemblyPathProviderSubject,
+]{
+	Sentinel: ErrChartNameMismatch(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DispatchedView,
+		s constraint.AssemblyPathProviderSubject,
+	) []constraint.Objection {
+		annotation, mustAgree := v.AssemblyGroupAssemblyNameAnnotation(
+			s.AssemblyPath(), s.ProviderName(),
+		)
+		if annotation == "" || !mustAgree {
+			return nil
+		}
+		names := v.AssemblyGroupBoundaryAssemblyNames(
+			s.AssemblyPath(), s.ProviderName(),
+		)
+		if names.Len() < 2 {
+			return nil
+		}
+		agreed := ""
+		first := true
+		disagree := false
+		for _, name := range names.All() {
+			if first {
+				agreed, first = name, false
+				continue
+			}
+			if name != agreed {
+				disagree = true
+			}
+		}
+		if !disagree {
+			return nil
+		}
+		out := make([]constraint.Objection, 0, names.Len())
+		for boundary, name := range names.All() {
+			out = append(out, s.RaiseWith(
+				ErrChartNameMismatch(),
+				constraint.Uncaptioned(name),
+				constraint.Captioned("annotation", annotation),
+				constraint.Captioned("boundary", boundary),
+				constraint.Captioned("provider", s.ProviderName()),
+				constraint.Captioned("dispatch path", s.AssemblyPath()),
+			))
+		}
+		return out
+	},
+}
+
 // CrossBoundaryLinkPlaceholderResolved reports each assembled file that still
 // carries a cross-boundary link placeholder.
 //

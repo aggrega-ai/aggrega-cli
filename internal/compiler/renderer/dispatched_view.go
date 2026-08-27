@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // assemblyGroupFacts is the seam the presentation below answers this stage's
@@ -13,9 +14,10 @@ import (
 // It is a declared seam rather than a handful of method bodies reaching into the
 // result for the reason the assembled-output seam is one: the render already
 // retains what every fact here reads — the group attribution recorded when the
-// last node was sorted into its group, and the election recorded at the same point
-// — so a presentation deriving them again would give one fact two producers, free
-// to disagree with nothing comparing them. Naming the seam is what makes the
+// last node was sorted into its group, and what each group's elected engine
+// declared, recorded at the same point — so a presentation deriving them again
+// would give one fact two producers, free to disagree with nothing comparing
+// them. Naming the seam is what makes the
 // delegation visible as delegation, and it is the shape a guard derives this
 // stage's split from.
 type assemblyGroupFacts interface {
@@ -34,6 +36,15 @@ type assemblyGroupFacts interface {
 	// AssemblyGroupAssemblerProvided reports whether the plugin serving that
 	// elected provider offers the assembly its claim names.
 	AssemblyGroupAssemblerProvided(assemblyPath string, provider string) bool
+
+	// AssemblyGroupAssemblyNameAnnotation is the boundary annotation that elected
+	// provider names the group's assembly from, and whether it requires the
+	// group's boundaries to agree on the value.
+	AssemblyGroupAssemblyNameAnnotation(assemblyPath string, provider string) (string, bool)
+
+	// AssemblyGroupBoundaryAssemblyNames is what each boundary feeding the group
+	// resolved that annotation to, keyed by boundary in group order.
+	AssemblyGroupBoundaryAssemblyNames(assemblyPath string, provider string) types.OrderedMap[string]
 }
 
 // assemblyGroups answers those facts from the render's own group attribution.
@@ -45,10 +56,11 @@ type assemblyGroupFacts interface {
 // no fact here reads them.
 //
 // No accessor re-derives anything: each delegates to the reader the result itself
-// holds. The two set-valued answers are walks of the attribution in the order the
-// attribution holds, which is assembly-path order and then provider order, so both
-// answer the same sequence for identical input; the two election answers are
-// lookups keyed by the group and have no order to keep.
+// holds. The set-valued answers are walks of the attribution in the order the
+// attribution holds, which is assembly-path order and then provider order, so they
+// answer the same sequence for identical input; the election answers are lookups
+// keyed by the group, and the one among them that is a keyed set carries the
+// attribution's own boundary order rather than an order of its own.
 type assemblyGroups struct {
 	result *RenderResult
 }
@@ -97,6 +109,32 @@ func (a assemblyGroups) AssemblyGroupAssemblerProvided(
 	assemblyPath string, provider string,
 ) bool {
 	return a.result.groupAssemblerProvided(assemblyPath, provider)
+}
+
+// AssemblyGroupAssemblyNameAnnotation returns the boundary annotation the provider
+// elected to assemble one dispatch group names the assembly from, and whether that
+// provider requires the group's boundaries to agree on the value.
+//
+// It is the result's own reader verbatim, for the reason the election's other
+// answers are: what the elected engine declared is recorded once, and reading it in
+// one place is what keeps a rule's input from being derived a second way.
+func (a assemblyGroups) AssemblyGroupAssemblyNameAnnotation(
+	assemblyPath string, provider string,
+) (string, bool) {
+	return a.result.groupAssemblyNameAnnotation(assemblyPath, provider)
+}
+
+// AssemblyGroupBoundaryAssemblyNames returns what each boundary feeding one
+// dispatch group resolved that annotation to, keyed by boundary in the order the
+// group first heard from each.
+//
+// It is the result's own reader verbatim. The order is the attribution's own, so
+// this and the group's boundary set answer the same sequence for identical input
+// without either being derived from the other.
+func (a assemblyGroups) AssemblyGroupBoundaryAssemblyNames(
+	assemblyPath string, provider string,
+) types.OrderedMap[string] {
+	return a.result.groupBoundaryAssemblyNames(assemblyPath, provider)
 }
 
 // dispatchedView presents, as named facts, how a build's rendered nodes were

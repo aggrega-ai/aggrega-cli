@@ -1750,12 +1750,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	}
 
 	// Record what each group's elected engine claimed about combining the group's
-	// output, and whether it could. The candidates a group collected are complete
-	// once the node walk has ended and the election is a function of those alone,
-	// so nothing further in the render can change what a group would elect — which
-	// is why the election is readable here, a rule about it runs here, and the
-	// engine is bound to the group below.
-	result.elections = newAssemblyElections(dispatch, orderedDispatch)
+	// output, whether it could, and what it names the result from. The candidates a
+	// group collected are complete once the node walk has ended and the election is
+	// a function of those alone, so nothing further in the render can change what a
+	// group would elect — which is why the election is readable here, the rules
+	// about it run here, and the engine is bound to the group below.
+	//
+	// The resolved boundary annotations come from the resolution the render was
+	// handed rather than from anything the render computes, so the value recorded
+	// per boundary is the one every other reader of that cascade sees.
+	result.elections = newAssemblyElections(
+		dispatch, orderedDispatch, resolvedBoundaryAnnotations(input.ResolveResult),
+	)
 
 	// Present how the grouping came out, with the facts complete earlier answered
 	// by the presentation built before the node walk.
@@ -1775,49 +1781,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	); dispatchedAxes != nil {
 		if err := runDispatchedStageRules(ctx, result.DispatchedView, dispatchedAxes); err != nil {
 			return nil, err
-		}
-	}
-
-	// Assembly-name uniqueness check: a provider whose assembler declares an
-	// assembly-name annotation with require-unique folds a dispatch group's
-	// contributing boundaries into one named assembly, so every contributing
-	// boundary's effective value for that annotation (computed via the resolver's
-	// per-boundary annotation cascade) must resolve to the same value. Mismatches
-	// indicate the operator has merged paths that conceptually belong to
-	// different assemblies. A provider that declares no such annotation gets no
-	// check.
-	for _, key := range orderedDispatch {
-		pd := dispatch[key]
-		annotationKey, requireUnique := assemblyNameAnnotationOf(groupAssemblerEngine(pd))
-		if annotationKey == "" || !requireUnique {
-			continue
-		}
-		if len(pd.contributingBoundaries) <= 1 {
-			continue
-		}
-		var firstName string
-		var firstBoundary string
-		mismatch := false
-		mismatchValues := map[string]string{}
-		for _, bp := range pd.contributingBoundaries {
-			name := ""
-			if input.ResolveResult != nil {
-				if ann, ok := input.ResolveResult.BoundaryAnnotations[bp]; ok {
-					name, _ = ann.Get(annotationKey)
-				}
-			}
-			mismatchValues[bp] = name
-			if firstBoundary == "" {
-				firstName = name
-				firstBoundary = bp
-			} else if name != firstName {
-				mismatch = true
-			}
-		}
-		if mismatch {
-			inner := fmt.Errorf("%w: boundaries %v merge to assembly path %q under provider %q but their effective %s annotations resolve to different values: %v; the merged assembly has exactly one name; cascade or declare matching values explicitly",
-				ErrChartNameMismatch(), pd.contributingBoundaries, key.Path, key.Provider, annotationKey, mismatchValues)
-			return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
 		}
 	}
 
@@ -2272,10 +2235,12 @@ func selectBoundaryAssembler(pd *pendingDispatch) {
 // groupAssemblerEngine returns the engine that assembles a dispatch group — the
 // highest resolved-provider-version candidate, ties broken by node-processing
 // order (candidates append in that order and the scan replaces the leader only on
-// a strict version win). It is the single election both selectBoundaryAssembler
-// (which sets pd.assembler) and the capability reads (the assembly-name guard and
-// cascade) consult, so a group reads its provider-level claim from the same engine
-// that assembles it. Returns nil when the group has no candidates — e.g. only
+// a strict version win). It is the single election every reader of a group's
+// provider-level claim consults: selectBoundaryAssembler, which sets pd.assembler;
+// the record the render takes of what each group elected, which is what the rules
+// about the grouping read their facts from; and the cascade that names an
+// assembled artifact. So a group reads its claim from the same engine that
+// assembles it. Returns nil when the group has no candidates — e.g. only
 // boundary-scope FeatureRecipe contributions — in which case the group finalizes
 // flat.
 func groupAssemblerEngine(pd *pendingDispatch) Provider {

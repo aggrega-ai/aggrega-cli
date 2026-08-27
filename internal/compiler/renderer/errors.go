@@ -439,12 +439,15 @@ var errInstanceIDCollision = cerrors.Register("compiler-renderer/instance-id-col
 })
 
 // ErrChartNameMismatch fires when two or more boundaries' contributing
-// components evaluate to the same dispatch path under a provider whose
-// assembler names its output from a boundary annotation and requires that
-// name to be unique, but their effective values for that annotation
-// (computed via the boundary annotation cascade) resolve to different
-// values. The merged assembly has exactly one name; cascade or declare
-// matching values explicitly. Category: TRANSLATION_ERROR.
+// components evaluate to the same dispatch path under a provider that names
+// the group's assembly from a boundary annotation and requires that name to
+// be one value, but the boundaries resolved that annotation — through the
+// boundary annotation cascade — to different values. A merged assembly has
+// exactly one name, so the compiler has no basis for choosing which of them
+// it is. The remedy — cascade one value to every contributing boundary, or
+// declare matching values on each explicitly — is stated here rather than in
+// the registered wording, which names the conflict and not its fix.
+// Category: TRANSLATION_ERROR.
 func ErrChartNameMismatch() error { return errChartNameMismatch }
 
 var errChartNameMismatch = cerrors.Register("compiler-renderer/chart-name-mismatch", cerrors.Meta{
