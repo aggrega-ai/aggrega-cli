@@ -1,0 +1,40 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-three-way
+  version: "1.0.0"
+spec:
+  components:
+    db:
+      type: core/db
+    api:
+      type: core/api
+      uses:
+        backend:
+          primary:
+            target: db
+            inject:
+              env:
+                - in: OWN_HOST
+                  from: host
+      features:
+        sb_one:
+          type: core/shared-backend
+          uses:
+            backend:
+              primary:
+                target: db
+                inject:
+                  env:
+                    - in: ONE_HOST
+                      from: host
+        sb_two:
+          type: core/shared-backend
+          uses:
+            backend:
+              primary:
+                target: db
+                inject:
+                  env:
+                    - in: TWO_PORT
+                      from: port

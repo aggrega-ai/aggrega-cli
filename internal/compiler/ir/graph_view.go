@@ -34,6 +34,17 @@ import (
 // are here for one reason between them, that both record which contribution
 // won.
 //
+// One fact here is a RETENTION rather than a production, and saying so is part
+// of placing it. A connection's delivery as the author wrote it is complete when
+// the composition finishes, one stage earlier: every surface that draws a
+// connection has contributed by then and this stage draws none. What is settled
+// HERE is the surface each connection's carrier was declared on, which the same
+// reading of the authoring tiers that folds the cascade settles — and the fact
+// is keyed by that carrier, so it is complete only once both halves are. So the
+// content travels from the earlier stage unchanged and the coordinate it is
+// keyed by is this stage's; a declaration one stage earlier could not be keyed
+// at all.
+//
 // # Values are handed over uncopied
 //
 // The contract every view shares makes a fact's value immutable to a check, and
@@ -61,6 +72,14 @@ type graphView struct {
 	// contest, so which scope supplied any one leaf is settled while the
 	// cascade folds and is gone once it finishes.
 	sites AttachmentSites
+
+	// connections holds, per carrier-keyed connection, the delivery that
+	// connection dictates as the author wrote it. It is held for the same class
+	// of reason the sites are: the conversion into the graph stores a delivery
+	// as one string per delivery key, so the authored distinction between a
+	// literal and a reference to a published key is gone by the time anything
+	// here could read it back.
+	connections *CarriedConnections
 }
 
 // NewGraphView presents the graph a build has just finalised, with the facts
@@ -71,7 +90,10 @@ type graphView struct {
 //
 // It returns nil when any product is absent. A presentation missing the graph
 // would answer this stage's facts from nothing, one missing the earlier
-// presentation would answer every earlier fact from nothing, and one missing the
+// presentation would answer every earlier fact from nothing, one missing the
+// carried connections would report every connection as dictating no delivery —
+// which is the answer a connection dictating none legitimately has, so a rule
+// could not tell the two apart — and one missing the
 // per-leaf sites would report every leaf as written where no component is named
 // — and a presentation that answers emptily is worse than an absent one, because
 // a rule reading it cannot tell an empty answer from a real one. The sites are
@@ -83,8 +105,9 @@ func NewGraphView(
 	graph *types.IRGraph,
 	earlier constraint.TopologyView,
 	sites AttachmentSites,
+	connections *CarriedConnections,
 ) constraint.GraphView {
-	if graph == nil || earlier == nil || sites == nil {
+	if graph == nil || earlier == nil || sites == nil || connections == nil {
 		return nil
 	}
 	return &graphView{
@@ -93,6 +116,7 @@ func NewGraphView(
 		attachments:  graph.Spec.FeatureValuesMapping,
 		edges:        graph.Spec.Edges,
 		sites:        sites,
+		connections:  connections,
 	}
 }
 
@@ -221,6 +245,25 @@ func (v *graphView) PerEdgeInject(
 		return types.OrderedMap[types.OrderedMap[string]]{}
 	}
 	return edge.Inject
+}
+
+// CarriedConnectionAuthoredDelivery returns the delivery every connection one
+// carrier key names dictates, as the author wrote it, one entry per connection
+// in the order the composition drew them.
+//
+// It is answered from the product that retained the authored payloads rather
+// than from the graph's own edges: the conversion into the graph stores one
+// string per delivery key, so a literal and a reference to a published key are
+// the same shape there.
+func (v *graphView) CarriedConnectionAuthoredDelivery(
+	node string,
+	carrier string,
+	attachment string,
+	socket string,
+	alias string,
+	target string,
+) []types.OrderedMap[any] {
+	return v.connections.deliveryOf(node, carrier, attachment, socket, alias, target)
 }
 
 // UsesInjectDeliverySockets returns the dependency sockets through which a

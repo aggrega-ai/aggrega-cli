@@ -376,6 +376,18 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 //   - document maps to SourceFile, which the subject contract already supplies. A
 //     document is the whole file, so the coordinate and the provenance are the
 //     same string, and the kind owes no accessor of its own for it.
+//   - carried-connection maps to six: the edge's own three, the two that name the
+//     carrier, and the node the connection resolves to. A connection's identity
+//     is the edge triple together with the surface that drew it, because two
+//     attachments on one node may each write one socket and one alias and the
+//     component itself may write the same pair — so the triple alone names up to
+//     three separately authored connections. The carrier is two accessors rather
+//     than one for the reason [ConnectionCarrier] gives: the kinds are a closed
+//     vocabulary and the attachment name is whatever the author typed, so one
+//     field carrying both would need a reserved spelling nothing enforces. The
+//     target is in the identity because two carriers writing one socket and one
+//     alias may name different components, and each delivers against the one it
+//     named.
 var coordinateAccessors = map[string][]string{
 	"document":  {"SourceFile"},
 	"parameter": {"ParameterName"},
@@ -387,22 +399,25 @@ var coordinateAccessors = map[string][]string{
 	"node":               {"NodeID"},
 	"socket":             {"SocketName"},
 	"edge":               {"NodeID", "SocketName", "AliasName"},
-	"attachment":         {"AttachmentName"},
-	"slot":               {"SlotName"},
-	"mechanism":          {"MechanismName"},
-	"delivery-key":       {"DeliveryKey"},
-	"pillar":             {"PillarName"},
-	"leaf":               {"LeafName"},
-	"locals-key":         {"LocalsKey"},
-	"provides-key":       {"ProvidesKey"},
-	"pipeline-step":      {"StepID"},
-	"boundary":           {"BoundaryPath"},
-	"subsystem":          {"SubsystemPath"},
-	"module":             {"ModulePath"},
-	"provider":           {"ProviderName"},
-	"assembly-path":      {"AssemblyPath"},
-	"path":               {"EmittedPath"},
-	"artifact":           {"ArtifactName"},
+	"carried-connection": {
+		"NodeID", "CarrierKind", "CarrierAttachment", "SocketName", "AliasName", "TargetNodeID",
+	},
+	"attachment":    {"AttachmentName"},
+	"slot":          {"SlotName"},
+	"mechanism":     {"MechanismName"},
+	"delivery-key":  {"DeliveryKey"},
+	"pillar":        {"PillarName"},
+	"leaf":          {"LeafName"},
+	"locals-key":    {"LocalsKey"},
+	"provides-key":  {"ProvidesKey"},
+	"pipeline-step": {"StepID"},
+	"boundary":      {"BoundaryPath"},
+	"subsystem":     {"SubsystemPath"},
+	"module":        {"ModulePath"},
+	"provider":      {"ProviderName"},
+	"assembly-path": {"AssemblyPath"},
+	"path":          {"EmittedPath"},
+	"artifact":      {"ArtifactName"},
 }
 
 // subjectContractAccessors names the accessors [Subject] itself supplies, so a
@@ -920,6 +935,13 @@ var subjectKindBindings = map[SubjectKind]struct {
 		make: func(f string) Subject {
 			return newEdgeSubject(f, "web", "databases", "primary",
 				"spec", "components", "web", "uses", "databases", "primary")
+		},
+	},
+	SubjectCarriedConnection: {
+		iface: reflect.TypeOf((*CarriedConnectionSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newCarriedConnectionSubject(f, "web", CarrierAttachment, "tls", "databases", "primary", "db",
+				"spec", "components", "web", "features", "tls", "uses", "databases", "primary")
 		},
 	},
 	SubjectNodeAttachment: {

@@ -52,8 +52,9 @@ const (
 // The attachment axis is named by a fact as well as by an enumerator, so it
 // delegates rather than re-reading the graph beside it. Two readings of one set
 // are free to disagree with nothing comparing them; one reading cannot. The
-// axes no fact names — the node set, the edge set, an attachment's pillars and
-// their leaves — are read from the products this value holds.
+// axes no fact names — the node set, the edge set, the carried-connection set,
+// an attachment's pillars and their leaves — are read from the products this
+// value holds.
 //
 // # Order
 //
@@ -61,9 +62,10 @@ const (
 // rule raises in the order it is invoked and that order reaches the build's
 // output. The node set, the attachment set and each pillar's leaves come from
 // ordered carriers and keep the order those carriers hold; the edge set keeps
-// the order the graph holds it in; the slot set keeps the order the component
-// type declares its slots in; the pillar axis returns a fixed declared order.
-// No axis here ranges a plain Go map.
+// the order the graph holds it in; the carried-connection set keeps the order
+// the composition drew the connections in; the slot set keeps the order the
+// component type declares its slots in; the pillar axis returns a fixed
+// declared order. No axis here ranges a plain Go map.
 type GraphStageCoordinates struct {
 	graph         *types.IRGraph
 	view          constraint.GraphView
@@ -95,6 +97,13 @@ type GraphStageCoordinates struct {
 	// edge's subject carries the provenance of the component it is authored
 	// in, so building one needs the node the edge is sourced at.
 	edges []constraint.EdgeInstance
+
+	// connections is the enumerated carried-connection set, folded once
+	// alongside the edges. It is a separate axis rather than a projection of
+	// the edge set: a carried connection is keyed by the carrier as well as by
+	// the edge triple, so two connections one attachment apart are two
+	// instances here and one there.
+	connections []constraint.CarriedConnectionInstance
 }
 
 // NewGraphStageCoordinates derives the coordinates the finalised graph carries.
@@ -125,6 +134,7 @@ func NewGraphStageCoordinates(
 	catalogLookup resolver.CatalogLookup,
 	releaseFile string,
 	sites AttachmentSites,
+	connections *CarriedConnections,
 ) *GraphStageCoordinates {
 	if graph == nil || view == nil {
 		return nil
@@ -160,11 +170,32 @@ func NewGraphStageCoordinates(
 			// whose provenance would have to be invented.
 			continue
 		}
+		kind := carrierKindOf(edge)
 		c.edges = append(c.edges, constraint.EdgeInstance{
 			Node:             node,
 			Socket:           edge.Socket,
 			Alias:            edge.Alias,
-			SynthesizedAlias: c.aliasIsDerived(edge),
+			SynthesizedAlias: aliasIsDerived(graph, edge.Source, edge.Socket, kind),
+			// The carrier positions the finding and keys nothing. It is read
+			// from the product that recorded where each carrier's own block was
+			// written, addressed by the coordinate the edge carries — so an
+			// edge an attachment drew names that attachment's block rather than
+			// a dependency block the consuming component does not have.
+			Carrier: connections.carrierOfEdge(edge.Source, kind, edge.OriginFeatureInstance),
+		})
+	}
+	for _, entry := range connections.Entries() {
+		node, held := c.nodesByID[entry.Node]
+		if !held {
+			continue
+		}
+		c.connections = append(c.connections, constraint.CarriedConnectionInstance{
+			Node:             node,
+			Carrier:          entry.Carrier,
+			Socket:           entry.Socket,
+			Alias:            entry.Alias,
+			Target:           entry.Target,
+			SynthesizedAlias: entry.SynthesizedAlias,
 		})
 	}
 	return c
@@ -187,6 +218,25 @@ func (c *GraphStageCoordinates) Nodes() []constraint.NodeInstance { return c.nod
 // holds one edge per connection however it arrived. The origin is a fact a rule
 // reads, not a reason to enumerate the same connection twice.
 func (c *GraphStageCoordinates) Edges() []constraint.EdgeInstance { return c.edges }
+
+// CarriedConnections returns every connection the composition drew, each paired
+// with the surface that drew it, in the order the composition drew them.
+//
+// It is a different axis from [GraphStageCoordinates.Edges] rather than a
+// re-ordering of it, and the difference is the key. The edge axis enumerates one
+// instance per node, socket and alias, which is the key the facts about a
+// connection's resolved shape take; this axis adds the carrier, which is what a
+// rule reading a connection's AUTHORED content needs — two attachments on one
+// node may each write one socket and one alias, and each wrote its own payload.
+//
+// A connection is enumerated once per carrier key. Where one carrier key names
+// more than one connection — one attachment instance name declared at two scopes
+// draws one from each block, and the composition records the two identically —
+// the key appears once and the fact keyed by it answers for every payload under
+// it, so no authored block goes unexamined.
+func (c *GraphStageCoordinates) CarriedConnections() []constraint.CarriedConnectionInstance {
+	return c.connections
+}
 
 // Attachments returns a node's attachment names once the whole attachment
 // cascade has folded, in the order the merged set holds them.
@@ -447,8 +497,8 @@ func (c *GraphStageCoordinates) attachment(node, attachment string) (types.IRFea
 	return merged.Get(attachment)
 }
 
-// aliasIsDerived reports whether an edge's alias was composed by the compiler
-// rather than written by the author as a key.
+// aliasIsDerived reports whether a connection's alias was composed by the
+// compiler rather than written by the author as a key.
 //
 // It matters to the locator and not to the coordinate: an alias no file spells
 // contributes no segment to the authored path a diagnostic points at, while the
@@ -462,19 +512,39 @@ func (c *GraphStageCoordinates) attachment(node, attachment string) (types.IRFea
 // edge surface names an alias per entry as a key, and an attachment's own block
 // is authored in a document this stage's node does not carry, so claiming a
 // derived alias for one would be a guess rather than a reading.
-func (c *GraphStageCoordinates) aliasIsDerived(edge types.IREdge) bool {
-	if edge.OriginFeature != "" || edge.OriginRelease {
+//
+// It takes the carrier kind rather than a connection, because the two
+// enumerations that need the answer hold the connection in two different shapes
+// — the finalised graph's edge and the composition's — and a second copy keyed
+// on the other shape would be free to answer differently.
+func aliasIsDerived(graph *types.IRGraph, nodeID, socketName, carrierKind string) bool {
+	if carrierKind != "" && carrierKind != constraint.CarrierComponent {
 		return false
 	}
-	node, held := c.graph.Spec.Nodes.Get(edge.Source)
+	node, held := graph.Spec.Nodes.Get(nodeID)
 	if !held {
 		return false
 	}
-	socket, populated := node.Uses.Get(edge.Socket)
+	socket, populated := node.Uses.Get(socketName)
 	if !populated {
 		return false
 	}
 	return len(socket.Compact) > 0
+}
+
+// carrierKindOf is the surface a finalised edge was drawn from, read off the
+// marks the composition stamped on it. It names the kind alone; the site that
+// surface's block was written at is carried on the compilation product that
+// settled it.
+func carrierKindOf(edge types.IREdge) string {
+	switch {
+	case edge.OriginRelease:
+		return constraint.CarrierDeployment
+	case edge.OriginFeatureInstance != "" || edge.OriginFeature != "":
+		return constraint.CarrierAttachment
+	default:
+		return constraint.CarrierComponent
+	}
 }
 
 // The compiler holds this type to every axis the rules over this stage are
@@ -483,6 +553,7 @@ func (c *GraphStageCoordinates) aliasIsDerived(edge types.IREdge) bool {
 var (
 	_ constraint.NodeEnumerator                 = (*GraphStageCoordinates)(nil)
 	_ constraint.EdgeEnumerator                 = (*GraphStageCoordinates)(nil)
+	_ constraint.CarriedConnectionEnumerator    = (*GraphStageCoordinates)(nil)
 	_ constraint.AttachmentEnumerator           = (*GraphStageCoordinates)(nil)
 	_ constraint.SlotEnumerator                 = (*GraphStageCoordinates)(nil)
 	_ constraint.MechanismEnumerator            = (*GraphStageCoordinates)(nil)

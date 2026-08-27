@@ -602,7 +602,7 @@ func TestTheGraphStageRulesThreadTheCallersSignalIntoTheSlotWalk(t *testing.T) {
 	// the enumeration over the same graph and the same presentation changes nothing
 	// a rule is asked; it changes only which lookup answers the slot axis.
 	out.GraphCoordinates = ir.NewGraphStageCoordinates(
-		out.IRGraph, out.GraphView, watched, releaseFileOf(out.ResolveResult), out.AttachmentSites,
+		out.IRGraph, out.GraphView, watched, releaseFileOf(out.ResolveResult), out.AttachmentSites, out.CarriedConnections,
 	)
 
 	if err := runGraphStageRules(withdrawn, out); !errors.Is(err, context.Canceled) {

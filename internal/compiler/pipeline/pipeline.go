@@ -337,6 +337,15 @@ type stepsOneToFourOutput struct {
 	// its finding at an edit somebody can make.
 	AttachmentSites ir.AttachmentSites
 
+	// CarriedConnections pairs every connection the composition drew with the
+	// surface that drew it and with the delivery that connection dictates as
+	// authored. It is carried alongside the graph for the same class of reason
+	// the sites are: the graph records which attachment instance drew an edge
+	// and never which surface declared that attachment, and it stores a
+	// delivery as one string per delivery key, so the authored distinction
+	// between a literal and a reference to a published key is gone from it.
+	CarriedConnections *ir.CarriedConnections
+
 	// GraphView presents the finalised graph to a check as the named facts
 	// complete once the whole attachment cascade and the annotation-driven
 	// expansion have run, with every fact complete earlier answered by the
@@ -441,13 +450,20 @@ func runStepsOneToFour(
 		out.FeatureOrder = featureOrder
 		out.AttachmentSites = attachmentSites
 
+		// The carriers and the authored deliveries, paired with the connection
+		// set the composition produced. Built from that set rather than from the
+		// authoring documents, so the connections a rule is invoked for are the
+		// connections the build actually drew.
+		out.CarriedConnections = ir.NewCarriedConnections(graph, topoResult, resolveResult)
+
 		// The presentation of the graph just finalised, extending the one the
 		// flattening produced. Built here because this is where every product it
 		// takes is in hand — the graph, the presentation below it, and the
 		// per-leaf sites: a stage's presentation embeds the stage below it rather
 		// than re-reading that stage's inputs, so building it anywhere else would
 		// mean producing a second answer to facts this one already answers.
-		out.GraphView = ir.NewGraphView(graph, topoResult.StageView, out.AttachmentSites)
+		out.GraphView = ir.NewGraphView(
+			graph, topoResult.StageView, out.AttachmentSites, out.CarriedConnections)
 
 		// The enumeration of the same graph, built beside the presentation
 		// because it reads that presentation for the axes a fact already names.
@@ -460,7 +476,7 @@ func runStepsOneToFour(
 		// answered.
 		out.GraphCoordinates = ir.NewGraphStageCoordinates(
 			graph, out.GraphView, catalogLookup, releaseFileOf(out.ResolveResult),
-			out.AttachmentSites,
+			out.AttachmentSites, out.CarriedConnections,
 		)
 
 		if err := ctx.Err(); err != nil {

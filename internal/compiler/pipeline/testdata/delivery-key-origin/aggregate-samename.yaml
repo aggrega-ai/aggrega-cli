@@ -1,0 +1,37 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-samename
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      components:
+        db:
+          type: core/db
+    tier:
+      features:
+        shared_backend:
+          type: core/shared-backend
+          uses:
+            backend:
+              primary:
+                target: db
+                inject:
+                  env:
+                    - in: SCOPE_HOST
+                      from: host
+      components:
+        api:
+          type: core/api
+          features:
+            shared_backend:
+              type: core/shared-backend
+              uses:
+                backend:
+                  primary:
+                    target: db
+                    inject:
+                      env:
+                        - in: OWN_HOST
+                          from: host

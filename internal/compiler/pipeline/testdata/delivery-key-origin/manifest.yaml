@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: delivery-key-origin-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/api: api-recipe:1.0.0
+        core/db: db-recipe:1.0.0
+    features:
+      type:
+        core/shared-backend: shared-backend-compose:1.0.0

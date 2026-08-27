@@ -129,6 +129,91 @@ var connectionInjectReferenceIsPublished = constraint.Check[
 	},
 }
 
+// CarriedConnectionInjectReferenceIsPublished reports each delivery entry on one
+// connection that reads from a key the component the connection points at does
+// not publish, wherever that connection was written.
+//
+// It is the same rule as the one above over a wider set, and the two are
+// separate declarations because they are asked at different stages of different
+// facts. The rule above reads the application's own dependency block, which is
+// complete as soon as the documents are normalized, and is asked there so a
+// developer's own typo halts at the earliest point it can. This one reads the
+// connection set the composition produced — every connection, whichever surface
+// drew it — which is complete only once every surface has contributed.
+//
+// The rule the two share cannot be expressed once and asked twice: a check is
+// invoked over one subject kind and reads one view, and these differ in both.
+// What IS shared is the reading of a payload into published-key references, so
+// the two read it through one function and cannot come to disagree about what a
+// reference is.
+//
+// # Why the delivery is read as authored and not as the graph stores it
+//
+// A delivery entry may carry a literal instead of a reference, and the graph
+// stores both as one string per delivery key. A rule reading that form would
+// resolve every literal against the target's published set and refuse the ones
+// that happened not to name a key — refusing legal authoring, which is the
+// defect this rule exists to close reproduced in a new place. So it reads the
+// payload the author wrote, through the decoder the entity contract documents.
+//
+// # Why every payload the coordinate names is read
+//
+// One carrier key can name more than one connection: an attachment instance name
+// declared at two scopes draws one connection from each block, and the
+// composition records the two identically. Reading the first would leave the
+// second unexamined while this rule reported nothing, so the fact answers with
+// all of them and this walks all of them.
+//
+// The component the delivery resolves against is the one THIS connection names,
+// which is a coordinate the subject carries rather than a fact read back by the
+// connection triple: two carriers writing one socket and one alias may name
+// different targets, and a reading keyed by the triple would measure one
+// carrier's delivery against the other's published set.
+//
+// A target naming no component the composition holds ends the rule, and so does
+// a component type the catalog holds no entry for — for the reasons the rule
+// above states. The detail is the mechanism, the delivery key, the key the entry
+// reads from, the component type it was resolved against, and then the keys that
+// type publishes, sorted.
+var CarriedConnectionInjectReferenceIsPublished = constraint.Check[
+	constraint.GraphView,
+	constraint.CarriedConnectionSubject,
+]{
+	Sentinel: ErrInvalidInjectKey(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.GraphView,
+		s constraint.CarriedConnectionSubject,
+	) []constraint.Objection {
+		dictated := v.CarriedConnectionAuthoredDelivery(
+			s.NodeID(), s.CarrierKind(), s.CarrierAttachment(),
+			s.SocketName(), s.AliasName(), s.TargetNodeID())
+		if len(dictated) == 0 {
+			return nil
+		}
+		targetType, present := v.FlattenedNodeComponentType(s.TargetNodeID())
+		if !present || !v.CatalogComponentPresent(targetType) {
+			return nil
+		}
+		published := v.DeclaredProvidesKeys(targetType)
+
+		var out []constraint.Objection
+		for _, payloads := range dictated {
+			for mechanism, payload := range payloads.All() {
+				for _, entry := range connectionProvidesReferences(payload) {
+					if slices.Contains(published, entry.providesKey) {
+						continue
+					}
+					out = append(out, s.Raise(ErrInvalidInjectKey(),
+						append([]string{mechanism, entry.deliveryKey, entry.providesKey, targetType},
+							published...)...))
+				}
+			}
+		}
+		return out
+	},
+}
+
 // connectionProvidesReferences is the published-key references one mechanism's
 // authored delivery payload carries, in delivery-key order.
 //

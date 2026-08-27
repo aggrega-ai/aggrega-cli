@@ -674,7 +674,7 @@ func (v *normalizedView) AuthoredPerEdgeInject(
 	if !ok || entry.Inject == nil {
 		return types.OrderedMap[any]{}
 	}
-	return injectMechanismPayloads(entry.Inject)
+	return InjectMechanismPayloads(entry.Inject)
 }
 
 // verboseEntry returns one connection's long-form entry. The short form carries
@@ -1147,7 +1147,7 @@ func authoredNodeText(node *yaml.Node) []byte {
 // a second statement of which names those are, free to disagree with the first
 // the moment either moved.
 func injectMechanismPayload(inject *types.InjectBlock, mechanism string) any {
-	payloads := injectMechanismPayloads(inject)
+	payloads := InjectMechanismPayloads(inject)
 	payload, _ := payloads.Get(mechanism)
 	return payload
 }

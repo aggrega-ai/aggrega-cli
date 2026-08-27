@@ -132,7 +132,16 @@ spec:
       subsystems:
         payments:
           features:
-            tls: {}
+            # A scope-wide attachment that wires a socket of its own. A
+            # connection it draws is authored HERE and reaches every component
+            # the scope holds, so its locator names this block and never the
+            # consuming component's dependency block — which is what the
+            # carried-connection coordinates are walked against.
+            tls:
+              uses:
+                issuer:
+                  ca:
+                    target: ca
             audit: {}
 `,
 		// A Release whose boundaries nest. The fixture enumerates the inner one as
@@ -158,7 +167,14 @@ spec:
             shared-db: {}
             audit: {}
           components:
-            web: {}
+            # The deployment's own edge surface, wiring a socket the application
+            # declared and left unbound. A connection drawn here is authored on
+            # the deployment, so its locator names this entry.
+            web:
+              uses:
+                zebra:
+                  spare:
+                    target: cache-standby
     dev:
       components:
         web: {}

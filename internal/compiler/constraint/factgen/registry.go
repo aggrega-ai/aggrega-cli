@@ -2152,6 +2152,59 @@ var facts = []factDecl{
 			declarationCompelsImplementation,
 	},
 
+	{
+		Name:        "carried-connection-authored-delivery",
+		Stage:       "graph",
+		SourceField: "ir.CarriedConnections",
+		Subject:     []string{"carried-connection"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "carrier", Type: "string"},
+			{Name: "attachment", Type: "string"},
+			{Name: "socket", Type: "string"},
+			{Name: "alias", Type: "string"},
+			{Name: "target", Type: "string"},
+		},
+		Returns: "[]types.OrderedMap[any]",
+		Doc: "CarriedConnectionAuthoredDelivery is the delivery a connection " +
+			"dictates AS IT WAS WRITTEN, keyed by mechanism name in author " +
+			"order, each entry carrying that mechanism's payload as authored.\n" +
+			"\nIt keeps the distinction the resolved per-edge delivery folds " +
+			"away. An entry may deliver a literal or may reference a key the " +
+			"target publishes, and the resolved form holds one string per " +
+			"delivery key for both — so a rule refusing a reference to a key " +
+			"nothing publishes, read over the resolved form, would refuse every " +
+			"literal too. The payload is carried rather than decomposed because " +
+			"the shape of one delivery entry is the entity contract's to state.\n" +
+			"\nIt is keyed by the carrier as well as the connection because the " +
+			"connection triple is not an identity. Two attachments on one node " +
+			"may each write one socket and one alias, and the component itself " +
+			"may write the same pair, so a fact keyed by node, socket and alias " +
+			"answers for one of up to three separately authored blocks and " +
+			"reports the others as approved. The node the connection resolves to is in " +
+			"the key for the same reason: two carriers writing one socket and one " +
+			"alias may name different components, and each delivers against the " +
+			"one it named.\n\nThe result is every payload the " +
+			"key names rather than the first, and the plural is the honest shape " +
+			"rather than a convenience. One attachment instance name declared at " +
+			"two scopes draws one connection from each, and the graph records the " +
+			"two identically — so a key can name more than one authored block, " +
+			"and answering with the first would leave the second unexamined while " +
+			"a rule over the fact reported nothing.\n\nThe order is the order " +
+			"the connections were drawn in, which is the order the graph holds " +
+			"them: a rule reporting one finding per delivery emits them in this " +
+			"order, so the report is the same on every run.\n\nIt is placed here " +
+			"rather than one stage earlier because of the KEY and not the " +
+			"content. The connection set is complete once the composition " +
+			"finishes and the finalised graph draws none, so the delivery itself " +
+			"travels unchanged from there; the surface each carrier was declared " +
+			"on is settled by the reading that folds the attachment cascade, and " +
+			"a fact keyed by a carrier is complete only once that is.\n\nWhat a delivery " +
+			"is measured against is a separate fact on a separate document — the " +
+			"keys the target's component type publishes — so a rule reads the two " +
+			"together and neither carries the other.",
+	},
+
 	// --------------------------------------------------------------- described
 
 	{

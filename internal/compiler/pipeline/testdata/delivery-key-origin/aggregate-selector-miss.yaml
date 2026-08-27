@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-selector-miss
+  version: "1.0.0"
+spec:
+  subsystems:
+    data:
+      components:
+        db:
+          type: core/db
+    tier:
+      features:
+        shared_backend:
+          type: core/shared-backend
+          uses:
+            backend:
+              other:
+                target: web
+      components:
+        api:
+          type: core/api
+        web:
+          type: core/api

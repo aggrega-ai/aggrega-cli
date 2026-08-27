@@ -128,6 +128,158 @@ type EdgeInstance struct {
 	// alias the author declares and happens to name the same as a derived one is
 	// not mistaken for it.
 	SynthesizedAlias bool
+
+	// Carrier is the surface that drew the connection, with the site that
+	// surface's own block was written at. It positions the finding and never
+	// keys anything: the facts a rule over this kind reads are keyed by the
+	// triple above, and the carrier is not among their key.
+	//
+	// The zero value is an enumeration that does not track carriers, and it
+	// leaves the locator at the consuming component's own dependency block —
+	// which is the right answer exactly when every connection the enumeration
+	// yields was drawn there. An enumeration that yields connections drawn
+	// elsewhere fills it, or it names a `uses` block those components do not
+	// have.
+	Carrier ConnectionCarrier
+}
+
+// ConnectionCarrier names the surface that drew a connection into the graph — a
+// component's own dependency block, an attachment's, or the deployment's edge
+// surface — together with where that surface's own block was written.
+//
+// The identity half is carried because the edge triple does not identify a
+// connection. Two attachments on one node may each write one socket and one
+// alias, and the component itself may write the same pair, so a key of node,
+// socket and alias names up to three separately authored connections at once. A
+// rule keyed that way reads one of them for all of them and reports the others
+// as approved.
+//
+// The kind and the attachment name are two fields rather than one, because the
+// three kinds are a closed vocabulary while the attachment name is whatever the
+// author typed. Folding the deployment into the name field would need a reserved
+// spelling no author may use, and a reserved spelling is a rule nothing enforces.
+//
+// # Why the provenance half travels with the carrier
+//
+// A connection an attachment drew is authored inside that attachment's block,
+// and that block sits at one of four sites: a component's own attachment block,
+// a scope's block in the application, a scope's block in the deployment, or a
+// component's entry inside the deployment. The consuming node's own segments
+// name none of those. Naming them anyway spells a path the file does not
+// contain, and an author sent to a `uses` block their component does not have
+// cannot act on the finding.
+//
+// The site is settled where the connection is drawn and is gone afterwards: the
+// finalised graph records which attachment instance drew an edge and never which
+// surface declared that attachment. So it travels here, from the reading that
+// settled it, rather than being recovered by matching an edge against the
+// authoring documents a second time.
+//
+// The zero value is a carrier nothing recorded. It names no site and no
+// document, which routes a finding to file-level positioning rather than to an
+// invented path, and it is what an enumeration that does not track carriers
+// leaves behind.
+type ConnectionCarrier struct {
+	// Kind is which surface drew the connection: one of [CarrierComponent],
+	// [CarrierAttachment] or [CarrierDeployment], and empty when nothing
+	// recorded it.
+	Kind string
+
+	// Attachment is the attachment instance name the connection was drawn from,
+	// empty for every kind but [CarrierAttachment].
+	//
+	// It is the instance name and not the Feature type. Two attachments of one
+	// Feature type on one node are two carriers, each with its own dependency
+	// block, so the type would name both.
+	Attachment string
+
+	// Site names where the carrier's own block was written. The zero site names
+	// no scope and no component, which is what a carrier nothing recorded has to
+	// read as.
+	Site AuthoredSite
+
+	// Document is which authoring document that block sits in, one of
+	// [AuthoringDocumentAggregate] or [AuthoringDocumentRelease]. It selects the
+	// scope nesting the site path is spelled with, and it is carried rather than
+	// derived because the kind does not settle it: an attachment's dependency
+	// block is written in the application's scope tree when the developer
+	// declared it and in the deployment's when the operator did.
+	Document string
+
+	// SourceFile is the workspace-relative file the carrier's block was written
+	// in, empty when it has no single-file origin. It is the carrier's own file
+	// and not the consuming node's, because a connection an operator drew is
+	// written on a document the node was not.
+	SourceFile string
+}
+
+// The carrier kinds. The set is closed: a connection is drawn by a component's
+// own dependency block, by an attachment's, or by the deployment's edge surface,
+// and there is no fourth surface that draws one.
+const (
+	// CarrierComponent is a connection the consuming component's own dependency
+	// block drew.
+	CarrierComponent = "component"
+
+	// CarrierAttachment is a connection an attachment's own dependency block
+	// drew, wherever that attachment was declared.
+	CarrierAttachment = "attachment"
+
+	// CarrierDeployment is a connection the deployment's edge surface drew into
+	// a declared-but-unbound socket.
+	CarrierDeployment = "deployment"
+)
+
+// The authoring documents a carrier's own block can be written in.
+const (
+	// AuthoringDocumentAggregate is the application's own document, whose scopes
+	// nest as subsystems.
+	AuthoringDocumentAggregate = "aggregate"
+
+	// AuthoringDocumentRelease is the deployment's document, whose scopes nest as
+	// boundaries.
+	AuthoringDocumentRelease = "release"
+)
+
+// CarriedConnectionInstance is one connection together with the carrier that
+// drew it: which node's which socket, under which alias, from which surface.
+//
+// It is the edge's identity with the carrier added, and the addition is what
+// makes it an identity at all — see [ConnectionCarrier] for the collision it
+// closes. The kind carries one coordinate, whose key is the whole of node,
+// carrier kind, carrier attachment, socket, alias and resolved target, so a
+// connection is enumerated as one instance and the enumerator promises one order
+// over the whole set.
+type CarriedConnectionInstance struct {
+	// Node is the consumer the connection is drawn from.
+	Node NodeInstance
+
+	// Carrier is the surface that drew the connection, with the site that
+	// surface's own block was written at.
+	Carrier ConnectionCarrier
+
+	// Socket is the dependency socket the connection wires.
+	Socket string
+
+	// Alias names the connection within its socket, carried whether or not the
+	// author wrote it as a key.
+	Alias string
+
+	// Target is the node the connection resolves to, by the identity every keyed
+	// fact takes.
+	//
+	// It is part of the identity because two carriers writing one socket and one
+	// alias may name different targets, and each delivers against the target it
+	// named. A key without it would answer one carrier's question with the
+	// other's target — measured, not hypothetical: a component's own connection
+	// and an attachment's on the same socket and alias reach the graph as two
+	// connections pointing at two components.
+	Target string
+
+	// SynthesizedAlias reports whether that alias was derived by normalization
+	// rather than written by the author as a key, exactly as it does on
+	// [EdgeInstance].
+	SynthesizedAlias bool
 }
 
 // AuthoredCoordinate is one enumerated coordinate value together with the
@@ -236,6 +388,27 @@ type EdgeEnumerator interface {
 	// Edges returns every edge, in a deterministic order the implementation
 	// declares.
 	Edges() []EdgeInstance
+}
+
+// CarriedConnectionEnumerator supplies the carried-connection set: every
+// connection the graph holds, each paired with the carrier that drew it.
+//
+// It is a separate axis from [EdgeEnumerator] rather than a replacement for it,
+// and the two answer different questions. The edge axis is keyed by node, socket
+// and alias, which is the key the facts about a connection's resolved shape are
+// keyed by; this axis is keyed by that triple plus the carrier, which is what a
+// rule reading a connection's AUTHORED content needs, because the authored
+// content of two connections sharing the triple is two different payloads.
+//
+// A carrier key naming more than one connection is possible and is the
+// implementor's to state: one attachment instance name declared at two scopes
+// draws one connection from each, and the graph records the two identically. The
+// fact keyed here answers for all of them rather than for the first, so no
+// authored payload goes unexamined.
+type CarriedConnectionEnumerator interface {
+	// CarriedConnections returns every connection with its carrier, in a
+	// deterministic order the implementation declares.
+	CarriedConnections() []CarriedConnectionInstance
 }
 
 // BoundaryEnumerator supplies the boundary set.

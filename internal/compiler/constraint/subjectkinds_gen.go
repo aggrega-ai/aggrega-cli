@@ -94,6 +94,9 @@ const (
 	// SubjectNodeAttachmentPillarLeaf is the subject kind (node, attachment, pillar, leaf), keyed by 2 declared facts.
 	SubjectNodeAttachmentPillarLeaf SubjectKind = "(node, attachment, pillar, leaf)"
 
+	// SubjectCarriedConnection is the subject kind carried-connection, keyed by 1 declared fact.
+	SubjectCarriedConnection SubjectKind = "carried-connection"
+
 	// SubjectNodePipelineStep is the subject kind (node, pipeline-step), keyed by 2 declared facts.
 	SubjectNodePipelineStep SubjectKind = "(node, pipeline-step)"
 
@@ -148,6 +151,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeParameter, Coordinates: []string{"node", "parameter"}, Traversal: TraversalPull},
 	{Kind: SubjectModule, Coordinates: []string{"module"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentPillarLeaf, Coordinates: []string{"node", "attachment", "pillar", "leaf"}, Traversal: TraversalPull},
+	{Kind: SubjectCarriedConnection, Coordinates: []string{"carried-connection"}, Traversal: TraversalPull},
 	{Kind: SubjectNodePipelineStep, Coordinates: []string{"node", "pipeline-step"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentPipelineStep, Coordinates: []string{"node", "attachment", "pipeline-step"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentPipelineStep, Coordinates: []string{"boundary", "attachment", "pipeline-step"}, Traversal: TraversalPull},

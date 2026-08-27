@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: delivery-key-origin-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: aggregate-release-attached
+  manifest: delivery-key-origin-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api:
+          features:
+            shared_backend:
+              type: core/shared-backend
+              uses:
+                backend:
+                  primary:
+                    target: db
+                    inject:
+                      env:
+                        - in: DB_HOST
+                          from: hosst
+        db: {}

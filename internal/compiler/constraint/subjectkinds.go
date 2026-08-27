@@ -293,6 +293,89 @@ func newEdgeSubject(sourceFile, node, socket, alias string, segments ...string) 
 	}
 }
 
+// CarriedConnectionSubject is the subject of a check invoked once per connection
+// together with the carrier that drew it.
+//
+// It is the sibling of [EdgeSubject] and not a replacement for it. An edge's
+// identity is the node, the socket and the alias; a carried connection's is that
+// triple plus the surface the connection was drawn from — because the triple
+// alone names up to three separately authored connections at once, and a rule
+// reading a connection's AUTHORED content needs to be invoked for each of them
+// rather than once for all three.
+//
+// So a rule over what a connection RESOLVED to declares [EdgeSubject], whose key
+// is the key those facts take, and a rule over what an author WROTE on one
+// declares this kind.
+type CarriedConnectionSubject interface {
+	Subject
+
+	// NodeID identifies the consumer the connection is drawn from, as every
+	// keyed fact takes it.
+	NodeID() string
+
+	// CarrierKind is which surface drew the connection: one of
+	// [CarrierComponent], [CarrierAttachment] or [CarrierDeployment].
+	CarrierKind() string
+
+	// CarrierAttachment is the attachment instance name the connection was drawn
+	// from, empty for every kind but [CarrierAttachment].
+	CarrierAttachment() string
+
+	// SocketName is the dependency socket the connection wires.
+	SocketName() string
+
+	// AliasName names the connection within its socket. It is carried whether or
+	// not the author wrote it as a key, for the reason [EdgeSubject] states.
+	AliasName() string
+
+	// TargetNodeID identifies the node the connection resolves to, as every
+	// keyed fact takes it. It is in the identity because two carriers writing
+	// one socket and one alias may name different targets, and each delivers
+	// against the target it named.
+	TargetNodeID() string
+
+	carriedConnection()
+}
+
+type carriedConnectionSubject struct {
+	provenance
+	node       string
+	kind       string
+	attachment string
+	socket     string
+	alias      string
+	target     string
+}
+
+func (carriedConnectionSubject) carriedConnection() {}
+
+func (s carriedConnectionSubject) NodeID() string { return s.node }
+
+func (s carriedConnectionSubject) CarrierKind() string { return s.kind }
+
+func (s carriedConnectionSubject) CarrierAttachment() string { return s.attachment }
+
+func (s carriedConnectionSubject) SocketName() string { return s.socket }
+
+func (s carriedConnectionSubject) AliasName() string { return s.alias }
+
+func (s carriedConnectionSubject) TargetNodeID() string { return s.target }
+
+func newCarriedConnectionSubject(
+	sourceFile, node, kind, attachment, socket, alias, target string,
+	segments ...string,
+) CarriedConnectionSubject {
+	return carriedConnectionSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		kind:       kind,
+		attachment: attachment,
+		socket:     socket,
+		alias:      alias,
+		target:     target,
+	}
+}
+
 // NodeAttachmentSubject is the subject of a check invoked once per attachment a
 // node carries.
 type NodeAttachmentSubject interface {

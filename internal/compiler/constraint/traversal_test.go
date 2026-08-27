@@ -41,6 +41,7 @@ type traversalView struct{}
 type traversalFixture struct {
 	nodes         []NodeInstance
 	edges         []EdgeInstance
+	connections   []CarriedConnectionInstance
 	boundaries    []AuthoredCoordinate
 	subsystems    []AuthoredCoordinate
 	modules       []AuthoredCoordinate
@@ -77,8 +78,12 @@ type traversalFixture struct {
 
 func fixtureKey(parts ...string) string { return strings.Join(parts, "\x00") }
 
-func (f traversalFixture) Nodes() []NodeInstance            { return f.nodes }
-func (f traversalFixture) Edges() []EdgeInstance            { return f.edges }
+func (f traversalFixture) Nodes() []NodeInstance { return f.nodes }
+func (f traversalFixture) Edges() []EdgeInstance { return f.edges }
+
+func (f traversalFixture) CarriedConnections() []CarriedConnectionInstance {
+	return f.connections
+}
 func (f traversalFixture) Boundaries() []AuthoredCoordinate { return f.boundaries }
 
 func (f traversalFixture) AssemblyPaths() []AuthoredCoordinate { return f.assemblyPaths }
@@ -205,6 +210,64 @@ func newTraversalFixture() traversalFixture {
 			{Node: webNode, Socket: "zebra", Alias: "primary"},
 			{Node: webNode, Socket: "zebra", Alias: "replica"},
 			{Node: apiNode, Socket: "db", Alias: "store", SynthesizedAlias: true},
+		},
+		// The connection set, which the edge axis above cannot express. Two entries
+		// share one node, one socket and one alias and differ only in the block
+		// their author wrote them in — one attachment declared inside the
+		// component's own block and one declared scope-wide — so the edge axis
+		// enumerates that key once and would present one of the two to every rule.
+		// The set covers every carrier the vocabulary admits, so the locator rule
+		// is exercised on each of its arms and on both scope nestings, and the last
+		// entry carries a derived alias so that rule is exercised here too.
+		connections: []CarriedConnectionInstance{
+			{
+				Node: webNode, Socket: "zebra", Alias: "primary", Target: "db",
+				Carrier: ConnectionCarrier{
+					Kind:       CarrierComponent,
+					Site:       AuthoredSite{Component: "web"},
+					Document:   AuthoringDocumentAggregate,
+					SourceFile: "aggregate.yaml",
+				},
+			},
+			{
+				Node: webNode, Socket: "issuer", Alias: "ca", Target: "ca",
+				Carrier: ConnectionCarrier{
+					Kind:       CarrierAttachment,
+					Attachment: "tls",
+					Site:       AuthoredSite{Component: "web"},
+					Document:   AuthoringDocumentAggregate,
+					SourceFile: "aggregate.yaml",
+				},
+			},
+			{
+				Node: webNode, Socket: "issuer", Alias: "ca", Target: "ca",
+				Carrier: ConnectionCarrier{
+					Kind:       CarrierAttachment,
+					Attachment: "tls",
+					Site:       AuthoredSite{ScopePath: "billing.payments"},
+					Document:   AuthoringDocumentAggregate,
+					SourceFile: "billing/aggregate.yaml",
+				},
+			},
+			{
+				Node: webNode, Socket: "zebra", Alias: "spare", Target: "cache-standby",
+				Carrier: ConnectionCarrier{
+					Kind:       CarrierDeployment,
+					Site:       AuthoredSite{ScopePath: "prod/edge", Component: "web"},
+					Document:   AuthoringDocumentRelease,
+					SourceFile: "release.yaml",
+				},
+			},
+			{
+				Node: apiNode, Socket: "db", Alias: "store", Target: "store",
+				SynthesizedAlias: true,
+				Carrier: ConnectionCarrier{
+					Kind:       CarrierComponent,
+					Site:       AuthoredSite{ScopePath: "billing", Component: "api"},
+					Document:   AuthoringDocumentAggregate,
+					SourceFile: "billing/aggregate.yaml",
+				},
+			},
 		},
 		// One nested scope and one top-level scope, reverse-alphabetical so a sort
 		// would be visible — the exact shape the subsystem set below takes, because
@@ -469,6 +532,26 @@ func traversalCases() []traversalCase {
 			want: []string{
 				"aggregate.yaml|.spec.components.web.uses.zebra.primary",
 				"aggregate.yaml|.spec.components.web.uses.zebra.replica",
+				"billing/aggregate.yaml|.spec.subsystems.billing.components.api.uses.db",
+			},
+		},
+		{
+			// One socket and alias on one node, drawn four times by four carriers.
+			// Each finding names the block its own author wrote — the component's
+			// own dependency block, the attachment block inside it, the attachment
+			// block of a scope, and the deployment's entry for the component — and
+			// each carries that block's own file. Naming the consuming component's
+			// dependency block for all four would spell three paths no file
+			// contains.
+			kind: SubjectCarriedConnection,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnCarriedConnections(cancelled, f, v, raisingCheck[CarriedConnectionSubject]())
+			},
+			want: []string{
+				"aggregate.yaml|.spec.components.web.uses.zebra.primary",
+				"aggregate.yaml|.spec.components.web.features.tls.uses.issuer.ca",
+				"billing/aggregate.yaml|.spec.subsystems.billing.subsystems.payments.features.tls.uses.issuer.ca",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.components.web.uses.zebra.spare",
 				"billing/aggregate.yaml|.spec.subsystems.billing.components.api.uses.db",
 			},
 		},
@@ -1351,6 +1434,32 @@ func coordinateFlowCases() []coordinateFlowCase {
 			// here in full, which is the property the provenance transcript cannot see:
 			// there its locator is the correct answer either way.
 			want: []string{"web|zebra|primary", "web|zebra|replica", "billing.api|db|store"},
+		},
+
+		{
+			// Every coordinate of the widest kind, read back through the traversal.
+			// The four entries sharing one node, socket and alias are what this
+			// assertion exists for: they are one entry on the edge axis and four
+			// here, so a traversal that dropped the carrier would read as correct
+			// on every other assertion and present one connection's content for
+			// all four.
+			kind: SubjectCarriedConnection,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, CarriedConnectionSubject]) ([]Objection, error) {
+					return RunOnCarriedConnections(nil, f, traversalView{}, c)
+				}, func(s CarriedConnectionSubject) string {
+					return s.NodeID() + "|" + s.CarrierKind() + "|" + s.CarrierAttachment() +
+						"|" + s.SocketName() + "|" + s.AliasName() + "|" + s.TargetNodeID()
+				})
+			},
+			want: []string{
+				"web|component||zebra|primary|db",
+				"web|attachment|tls|issuer|ca|ca",
+				"web|attachment|tls|issuer|ca|ca",
+				"web|deployment||zebra|spare|cache-standby",
+				"billing.api|component||db|store|store",
+			},
 		},
 
 		// The kind whose innermost coordinate contributes no locator segment, which is

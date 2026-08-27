@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-boundary-attached
+  version: "1.0.0"
+spec:
+  components:
+    db:
+      type: core/db
+    api:
+      type: core/api

@@ -197,6 +197,29 @@ func runGraphStageRules(
 	}
 	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
 
+	// No delivery entry on any connection reads from a key the component the
+	// connection points at does not publish, evaluated once per connection the
+	// composition drew together with the surface that drew it. The equivalent
+	// reading earlier in the build is answered from the application's own
+	// dependency block, which holds no entry for a connection an attachment
+	// contributed or the deployment wired — and a rule presented no subject
+	// reports exactly what a rule invoked and satisfied reports, so the same
+	// authoring mistake halted on one surface and reached rendered output on the
+	// others. The delivery it reads is the one the author wrote rather than the
+	// one the graph stores, because the graph stores a literal and a reference to
+	// a published key in the same shape. The signal is read once per connection,
+	// which is the granularity the traversal promises.
+	violations, err = constraint.RunOnCarriedConnections(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		resolver.CarriedConnectionInjectReferenceIsPublished,
+	)
+	if err != nil {
+		return err
+	}
+	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+
 	advisories, err := constraint.RunOnNodeAttachmentPillarLeaves(
 		ctx.Err,
 		coordinates,

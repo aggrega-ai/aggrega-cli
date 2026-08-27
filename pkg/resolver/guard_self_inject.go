@@ -26,20 +26,22 @@ import (
 // User-facing error emission is canonicalised at each emitting boundary; this
 // helper's slice ordering is semantic-only.
 func InjectMechanismNames(inject *types.InjectBlock) []string {
-	payloads := injectMechanismPayloads(inject)
+	payloads := InjectMechanismPayloads(inject)
 	if payloads.Len() == 0 {
 		return nil
 	}
 	return payloads.Keys()
 }
 
-// injectMechanismPayloads pairs every mechanism an injection block dictates with
+// InjectMechanismPayloads pairs every mechanism an injection block dictates with
 // the payload the author wrote under it, in the order above: the core mechanisms
 // in struct-field order when their sub-field is non-nil, then custom mechanisms
 // in author order.
 //
 // It is the one enumeration of an injection block's mechanisms, which is why the
-// name reading sits on top of it rather than beside it. A reader that walked the
+// name reading sits on top of it rather than beside it, and why it is exported:
+// a reader in another package that walked the block itself would be that second
+// statement across a package boundary, where nothing at all compares the two. A reader that walked the
 // block itself would be a second statement of which names the block carries as
 // fields, and the two would be free to disagree the moment either moved — a
 // disagreement nothing would catch, because both would still compile and both
@@ -49,7 +51,7 @@ func InjectMechanismNames(inject *types.InjectBlock) []string {
 // records: the conversions further down the build drop a payload they cannot
 // express as one string per delivery key, so counting a mechanism only when its
 // payload survives would silently miss a dictation.
-func injectMechanismPayloads(inject *types.InjectBlock) types.OrderedMap[any] {
+func InjectMechanismPayloads(inject *types.InjectBlock) types.OrderedMap[any] {
 	out := types.OrderedMap[any]{}
 	if inject == nil {
 		return out

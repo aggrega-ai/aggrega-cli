@@ -374,6 +374,13 @@ func RunOnNodeSockets[V View](
 // coordinate is carried in full either way: a locator names an authored site and
 // a coordinate keys a fact, so a segment the file does not contain is dropped
 // while the alias itself still reaches the check.
+//
+// Which BLOCK the locator is rooted at comes from the edge's carrier, through the
+// rule [connectionSite] states. An enumeration whose edges were all drawn by the
+// consuming component's own dependency block records no carrier and gets the
+// shape above; an enumeration that yields edges an attachment or the deployment
+// drew records one, and those name the block their author wrote rather than a
+// `uses` block the consuming component does not have.
 func RunOnEdges[V View](
 	cancelled Cancellation,
 	edges EdgeEnumerator,
@@ -385,13 +392,125 @@ func RunOnEdges[V View](
 		if err := cancelled.err(); err != nil {
 			return nil, err
 		}
-		aliasSegment := edge.Alias
-		if edge.SynthesizedAlias {
-			aliasSegment = ""
-		}
+		file, segments := connectionSite(
+			edge.Node, edge.Carrier, edge.Socket, edge.Alias, edge.SynthesizedAlias)
 		subject := newEdgeSubject(
-			edge.Node.SourceFile, edge.Node.ID, edge.Socket, edge.Alias,
-			componentInnerSegments(edge.Node, authoredKeyUses, edge.Socket, aliasSegment)...,
+			file, edge.Node.ID, edge.Socket, edge.Alias, segments...,
+		)
+		out = append(out, check.Run(view, subject)...)
+	}
+	return out, nil
+}
+
+// carrierNesting is the scope nesting a carrier's site path is spelled with,
+// and whether the document is one this rule can name at all.
+//
+// It is the sibling of [pillarNesting] and exists for the same reason: the axis
+// a scope path belongs to is settled by what is being named, and for a carrier
+// that is which document its block sits in. A document this rule does not know
+// yields no nesting, which routes the finding to file-level positioning rather
+// than to a path spelled with the wrong container key.
+func carrierNesting(document string) (scopeNesting, bool) {
+	switch document {
+	case AuthoringDocumentAggregate:
+		return subsystemNesting, true
+	case AuthoringDocumentRelease:
+		return boundaryNesting, true
+	default:
+		return scopeNesting{}, false
+	}
+}
+
+// connectionSite is the file and the locator segments naming where a connection
+// was authored, given the carrier that drew it.
+//
+// It is one rule shared by the two traversals that walk connections, because
+// both name the same authored site and a second copy would be free to spell it
+// differently. Which of the two a rule declares turns on what the rule reads,
+// not on where its finding points.
+//
+// Three shapes, and the first is the one every connection had before carriers
+// were tracked. A carrier nothing recorded, and a carrier that is the consuming
+// component's own dependency block, both name that block — which is the site the
+// author wrote in both cases, since a component's own connection is written
+// there and an untracked one is not known to be written anywhere else. They take
+// the node's own segments rather than the recorded carrier's site, so the two
+// share one path instead of two that agree: a recorded component carrier's site
+// is [ComponentSite] over the same three values the node instance carries, and
+// reading it here would be a second route to one answer for no gain. An
+// enumeration that records no carrier has no other route in any case.
+//
+// A
+// connection an attachment drew names that attachment's own block, at the site
+// the attachment was declared: a component's own attachment block, a scope's
+// block in either document, or a component's entry inside the deployment. A
+// connection the deployment's edge surface drew names that surface.
+//
+// The alias contributes a segment only when the author wrote it as a key, which
+// is the rule [RunOnEdges] states in full: the short authoring form lists targets
+// as array elements and gives each connection the target's own name, so no key in
+// the file spells it.
+//
+// A carrier whose site the enumeration could not record yields no segments,
+// which is the mechanical form of not inventing a locator.
+func connectionSite(
+	node NodeInstance,
+	carrier ConnectionCarrier,
+	socket, alias string,
+	synthesizedAlias bool,
+) (string, []string) {
+	aliasSegment := alias
+	if synthesizedAlias {
+		aliasSegment = ""
+	}
+	if carrier.Kind == "" || carrier.Kind == CarrierComponent {
+		return node.SourceFile,
+			componentInnerSegments(node, authoredKeyUses, socket, aliasSegment)
+	}
+	nesting, named := carrierNesting(carrier.Document)
+	if !named {
+		return carrier.SourceFile, nil
+	}
+	var tail []string
+	if carrier.Kind == CarrierAttachment {
+		tail = append(tail, authoredKeyFeatures, carrier.Attachment)
+	}
+	tail = append(tail, authoredKeyUses, socket, aliasSegment)
+	return carrier.SourceFile, authoredSiteSegments(nesting, carrier.Site, tail...)
+}
+
+// RunOnCarriedConnections invokes check once per connection together with the
+// carrier that drew it, in the order the enumerator returns them.
+//
+// The set is walked flat rather than per node or per carrier, because the derived
+// kind carries one coordinate whose key is the whole of the node, the carrier and
+// the connection: one order over the whole set, promised by one enumerator.
+//
+// The locator names the carrier's own block and not the consuming component's,
+// through the rule [connectionSite] states — which is why this traversal exists
+// alongside [RunOnEdges] rather than instead of it. A rule reading what an author
+// WROTE on a connection has to be invoked once per authored connection, and two
+// connections sharing a node, a socket and an alias are two authored blocks.
+func RunOnCarriedConnections[V View](
+	cancelled Cancellation,
+	connections CarriedConnectionEnumerator,
+	view V,
+	check Check[V, CarriedConnectionSubject],
+) ([]Objection, error) {
+	var out []Objection
+	for _, connection := range connections.CarriedConnections() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
+		file, segments := connectionSite(
+			connection.Node, connection.Carrier,
+			connection.Socket, connection.Alias, connection.SynthesizedAlias,
+		)
+		subject := newCarriedConnectionSubject(
+			file, connection.Node.ID,
+			connection.Carrier.Kind, connection.Carrier.Attachment,
+			connection.Socket, connection.Alias, connection.Target,
+			segments...,
 		)
 		out = append(out, check.Run(view, subject)...)
 	}

@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate-component-authored
+  version: "1.0.0"
+spec:
+  components:
+    db:
+      type: core/db
+    api:
+      type: core/api
+      uses:
+        backend:
+          primary:
+            target: db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: hosst
