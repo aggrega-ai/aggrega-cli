@@ -325,7 +325,24 @@ func RenderIsIntermediate(engine Provider) bool {
 // reports no assembly claim. The assembler election and the artifacts classifier
 // read it to decide whether a dispatch group has an assembler.
 func AssemblesBoundary(engine Provider) bool {
-	switch boundaryAssemblyOf(engine) {
+	return boundaryAssemblyCombines(boundaryAssemblyOf(engine))
+}
+
+// boundaryAssemblyCombines reports whether a declared boundary-assembly mode
+// names an assembly at all: folding the per-node fragments into one document, or
+// nesting each node under its own position. A flat-output mode and an absent
+// claim both name none.
+//
+// It is one helper rather than the same two-value comparison written at each
+// reader, and it is separated from [AssemblesBoundary] because the two readers
+// hold the claim in different forms: the classification above holds an engine and
+// asks it, while a rule declared over a dispatch group holds the elected
+// provider's claim as a declared value and has no engine to ask. Which modes
+// combine is one decision, and a second copy of it would agree on the day it was
+// written and be free to drift the moment a mode were added — at which point the
+// stale copy would go quiet rather than fail.
+func boundaryAssemblyCombines(mode string) bool {
+	switch mode {
 	case wasm.BoundaryAssemblyMerge, wasm.BoundaryAssemblyNest:
 		return true
 	default:

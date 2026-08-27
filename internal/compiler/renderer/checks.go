@@ -117,6 +117,64 @@ var AssemblyPathServesOneProvider = constraint.Check[
 	},
 }
 
+// AssemblyGroupProviderHasItsDeclaredAssembler reports each dispatch group whose
+// provider says it combines the group's per-node output while the plugin serving
+// that provider offers no such assembly.
+//
+// A provider states what becomes of a group's output — folded into one document,
+// or each node nested under its own position — and the plugin serving it either
+// offers that assembly or offers per-node rendering alone. Where the two disagree
+// the group can be rendered and cannot be combined, so the assembly would simply
+// not happen: the build would write unassembled per-node fragments at a path an
+// operator is expecting one artifact at, and would look as though it succeeded.
+// That is a Loud Guardrail case, not a warning one — nothing downstream can tell
+// the fragments from an intended flat output.
+//
+// It reads two facts about the group it was invoked for, and it needs both. The
+// claim alone cannot distinguish a group that owes an assembly from one that does
+// not, and the offer alone cannot distinguish a plugin that omits an assembly
+// because none was ever claimed — which is the ordinary flat-output case and the
+// majority of groups — from one that omits the assembly its provider promised.
+//
+// A group at the empty assembly path is passed over. Nothing is assembled there:
+// output written at no dispatch path is per-node output by construction, so a
+// claim about combining it has nothing to govern and a group there cannot lose an
+// artifact it was never going to produce.
+//
+// Its detail names the provider bare and captions the path. The registered wording
+// names the provider, so that is the value it is read against; the path is a
+// second value the wording does not name, and it is in the detail because the
+// subject carries no locator — an assembly path is evaluated output and a provider
+// is selected, so neither is a key the deployment document holds.
+var AssemblyGroupProviderHasItsDeclaredAssembler = constraint.Check[
+	constraint.DispatchedView,
+	constraint.AssemblyPathProviderSubject,
+]{
+	Sentinel: ErrBoundaryAssemblerMissing(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DispatchedView,
+		s constraint.AssemblyPathProviderSubject,
+	) []constraint.Objection {
+		if s.AssemblyPath() == "" {
+			return nil
+		}
+		if !boundaryAssemblyCombines(
+			v.AssemblyGroupProviderAssembly(s.AssemblyPath(), s.ProviderName()),
+		) {
+			return nil
+		}
+		if v.AssemblyGroupAssemblerProvided(s.AssemblyPath(), s.ProviderName()) {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrBoundaryAssemblerMissing(),
+			constraint.Uncaptioned(s.ProviderName()),
+			constraint.Captioned("dispatch path", s.AssemblyPath()),
+		)}
+	},
+}
+
 // CrossBoundaryLinkPlaceholderResolved reports each assembled file that still
 // carries a cross-boundary link placeholder.
 //

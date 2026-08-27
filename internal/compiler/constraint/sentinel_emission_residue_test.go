@@ -243,16 +243,6 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"THIS site is a reading and not a ruling: confirm it rather than inheriting it.",
 	},
 	{
-		vehicle:     "ErrBoundaryAssemblerMissing",
-		vehicleKind: vehicleSentinel,
-		host:        "selectBoundaryAssembler",
-		file:        "internal/compiler/renderer/orchestrator.go",
-		disposition: dispositionLeftInline,
-		reason: "The guard reads the elected engine's declared capability, which the host holds as a power " +
-			"rather than as a declared fact. It waits on whether a plugin's self-reported capabilities are " +
-			"readable as facts, not on what the registry declares today.",
-	},
-	{
 		vehicle:     "crossProviderLinkUnsupported",
 		vehicleKind: vehicleAdvisoryConstructor,
 		host:        "wireCrossBoundaryLinks",

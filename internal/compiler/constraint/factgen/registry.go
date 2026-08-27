@@ -2964,6 +2964,58 @@ var facts = []factDecl{
 			"it contributed, because the fact is about which boundaries met " +
 			"rather than about how much each brought.",
 	},
+	{
+		Name:        "assembly-group-provider-assembly",
+		Stage:       "dispatched",
+		SourceField: "wasm.ProviderContract.BoundaryAssembly",
+		Subject:     []string{"assembly-path", "provider"},
+		Params: []paramDecl{
+			{Name: "assemblyPath", Type: "string"},
+			{Name: "provider", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "AssemblyGroupProviderAssembly is how the provider elected to " +
+			"assemble one dispatch group declares it combines the group's " +
+			"per-node output, empty when it declares no assembly " +
+			"claim.\n\nIt is the group-keyed reading of a claim each provider " +
+			"makes for itself. A group may hold nodes whose providers resolve " +
+			"at different versions, and one of them is elected to assemble for " +
+			"the whole group — so the claim that governs the group is the " +
+			"elected one, and it is not a function of any single node in the " +
+			"group. This is where the elected claim survives.\n\nThe empty " +
+			"value is an answer and not a missing one, and two states share it: " +
+			"a provider stating no assembly claim writes each node's output " +
+			"directly at the assembly path, and a group no provider was " +
+			"elected for has no claim to state. Both leave the group with no " +
+			"assembly to perform, which is one answer to the question this fact " +
+			"asks rather than two.",
+	},
+	{
+		Name:        "assembly-group-assembler-provided",
+		Stage:       "dispatched",
+		SourceField: "types.PluginSpec.Exports",
+		Subject:     []string{"assembly-path", "provider"},
+		Params: []paramDecl{
+			{Name: "assemblyPath", Type: "string"},
+			{Name: "provider", Type: "string"},
+		},
+		Returns: "bool",
+		Doc: "AssemblyGroupAssemblerProvided reports whether the plugin serving " +
+			"the provider elected to assemble one dispatch group offers the " +
+			"assembly that provider's claim names.\n\nA provider's assembly " +
+			"claim and the assembly a plugin offers are two independent " +
+			"declarations. The claim says what becomes of a group's per-node " +
+			"output; the offer is an entry in the plugin's own export surface. " +
+			"A plugin serving a provider that claims assembly can offer per-node " +
+			"rendering alone, and nothing in the claim reveals it — which is why " +
+			"the two are separate facts, and why comparing them is what makes " +
+			"the mismatch visible at all.\n\nFalse is the answer for a group no " +
+			"provider was elected for, exactly as it is for a group whose plugin " +
+			"offers no assembly: neither has an assembly it can perform. What " +
+			"separates a group that owes one from a group that does not is the " +
+			"claim, which is the other fact, so a rule about the mismatch reads " +
+			"both.",
+	},
 
 	// ---------------------------------------------------------------- rendered
 

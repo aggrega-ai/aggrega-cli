@@ -612,11 +612,17 @@ var errPluginProviderIncompatible = cerrors.Register("compiler-renderer/plugin-p
 // rendering but not the matching boundary-assembly export. The dispatched engine
 // can render each node but cannot merge them, so assembly would be silently
 // skipped and the build would emit unmerged per-node fragments. Per the No Ghost
-// Infrastructure / Loud Guardrails invariant the build halts here instead, naming
-// the provider, the dispatch path, and the missing assemble_boundary export,
-// rather than producing an unassembled result the operator only discovers at
-// debug time. The remedy is to serve the provider through a plugin that
-// advertises both render_node and assemble_boundary.
+// Infrastructure / Loud Guardrails invariant the build halts here instead, rather
+// than producing an unassembled result the operator only discovers at debug time.
+//
+// It is raised by AssemblyGroupProviderHasItsDeclaredAssembler, once per offending
+// dispatch group, positioned at the deployment document the group's boundaries
+// were declared in. Each objection names the provider and the dispatch path; the
+// remedy — serve the provider through a plugin that advertises both render_node
+// and assemble_boundary — is stated here rather than in the registered wording,
+// which names the condition and not its fix. A group at no dispatch path is
+// passed over, because output written at none is per-node output and no assembly
+// was going to happen there.
 // Category: TRANSLATION_ERROR.
 func ErrBoundaryAssemblerMissing() error { return errBoundaryAssemblerMissing }
 

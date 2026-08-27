@@ -28,19 +28,27 @@ type dispatchedStageAxes interface {
 //
 // It runs once every node has been sorted into its group and before any group
 // assembles, which is the first point the facts it reads exist and the last point
-// at which acting on them still saves work: the providers that met at one path
-// and the boundaries behind each group are read from the attribution the grouping
-// records, so a reading placed earlier would ask about a grouping still being
-// built, and one placed after assembly would run over output the answer was
-// always going to discard.
+// at which acting on them still saves work: the providers that met at one path,
+// the boundaries behind each group, and what each group's elected engine claimed
+// are read from the attribution and the election the grouping records, so a reading
+// placed earlier would ask about a grouping still being built, and one placed after
+// assembly would run over output the answer was always going to discard.
 //
-// # Why the halt is an operator fault
+// # Why the attribution differs between the rules and is not one category
 //
-// Every rule here is about where a boundary's own path declaration sent its
-// output, and that declaration is the operator's: it is written on the boundary,
-// in the deployment document, and the remedy is an edit there. So the finding is
-// attributed to the operator rather than to a catalog entity, which is what sends
-// a reader to the document they can actually change.
+// The rules here do not all report the same kind of fault, and the category is
+// what sends a reader to the right place. A rule about where a boundary's own path
+// declaration sent its output is the operator's: the declaration is written on the
+// boundary, in the deployment document, and the remedy is an edit there. A rule
+// about a provider whose serving plugin does not offer the assembly that provider
+// claims is not — there is nothing in the deployment document to correct, and the
+// remedy is to serve the provider through a plugin that offers both, which makes
+// it a fault of the translation. So each reading is rendered under its own
+// attribution rather than under one that would be wrong for half of them.
+//
+// The two readings run in declaration order, and the first to raise anything halts
+// the build. That is the same shape a single reading has when it raises objections
+// about more than one group: the build stops at the first fault it can name.
 //
 // The cancellation signal is the caller's own, so a walk over a large grouping
 // stops within one boundary of the caller asking it to.
@@ -59,8 +67,20 @@ func runDispatchedStageRules(
 	if err != nil {
 		return err
 	}
-	return objectionsAsOpsHalt(
-		raised, "assembly paths reached by more than one provider")
+	if halt := objectionsAsOpsHalt(
+		raised, "assembly paths reached by more than one provider",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnAssemblyPathProviders(
+		ctx.Err, coordinates, coordinates, view,
+		AssemblyGroupProviderHasItsDeclaredAssembler,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsTranslationHalt(
+		raised, "dispatch groups whose provider offers no boundary assembler")
 }
 
 // objectionsAsOpsHalt renders what a rule about a build's grouping raised as the

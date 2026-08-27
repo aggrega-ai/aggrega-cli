@@ -10,15 +10,14 @@ import (
 // assemblyGroupFacts is the seam the presentation below answers this stage's
 // facts through.
 //
-// It is a declared seam rather than two method bodies reaching into the result
-// for the reason the assembled-output seam is one: the render already retains
-// what both facts read — the group attribution recorded when the last node was
-// sorted into its group — so a presentation deriving them again would give one
-// fact two producers, free to disagree with nothing comparing them. Naming the
-// seam is what makes the delegation visible as delegation, and it is the shape a
-// guard would derive this stage's split from — every fact here is answered from
-// something the render already holds, and none from a retention taken for this
-// stage, so the split is presently one-sided and there is nothing yet to derive.
+// It is a declared seam rather than a handful of method bodies reaching into the
+// result for the reason the assembled-output seam is one: the render already
+// retains what every fact here reads — the group attribution recorded when the
+// last node was sorted into its group, and the election recorded at the same point
+// — so a presentation deriving them again would give one fact two producers, free
+// to disagree with nothing comparing them. Naming the seam is what makes the
+// delegation visible as delegation, and it is the shape a guard derives this
+// stage's split from.
 type assemblyGroupFacts interface {
 	// AssemblyGroupProviderSet are the providers that assemble at one evaluated
 	// assembly path, in group order.
@@ -27,18 +26,29 @@ type assemblyGroupFacts interface {
 	// AssemblyGroupBoundarySet are the boundaries whose components fed one
 	// assembly group, in the order the group first heard from each.
 	AssemblyGroupBoundarySet(assemblyPath string, provider string) []string
+
+	// AssemblyGroupProviderAssembly is how the provider elected to assemble one
+	// dispatch group declares it combines the group's per-node output.
+	AssemblyGroupProviderAssembly(assemblyPath string, provider string) string
+
+	// AssemblyGroupAssemblerProvided reports whether the plugin serving that
+	// elected provider offers the assembly its claim names.
+	AssemblyGroupAssemblerProvided(assemblyPath string, provider string) bool
 }
 
 // assemblyGroups answers those facts from the render's own group attribution.
 //
-// It holds the result rather than a copy of the attribution. The coordinates it
-// reads are written once, when every node has been sorted into its group and
-// before any group assembles, and are not written to afterwards; the output paths
-// the same records later gain are a different field and no fact here reads them.
+// It holds the result rather than a copy of what it reads. Both the attribution
+// and the election are written once, when every node has been sorted into its
+// group and before any group assembles, and are not written to afterwards; the
+// output paths the same attribution records later gain are a different field and
+// no fact here reads them.
 //
-// Neither accessor re-derives anything: each is a walk of the attribution in the
-// order the attribution holds, which is assembly-path order and then provider
-// order, so both answer the same sequence for identical input.
+// No accessor re-derives anything: each delegates to the reader the result itself
+// holds. The two set-valued answers are walks of the attribution in the order the
+// attribution holds, which is assembly-path order and then provider order, so both
+// answer the same sequence for identical input; the two election answers are
+// lookups keyed by the group and have no order to keep.
 type assemblyGroups struct {
 	result *RenderResult
 }
@@ -61,6 +71,32 @@ func (a assemblyGroups) AssemblyGroupProviderSet(assemblyPath string) []string {
 // derived two ways.
 func (a assemblyGroups) AssemblyGroupBoundarySet(assemblyPath string, provider string) []string {
 	return a.result.assemblyBoundaries(assemblyPath, provider)
+}
+
+// AssemblyGroupProviderAssembly returns how the provider elected to assemble one
+// dispatch group declares it combines the group's per-node output, empty when it
+// declares no assembly claim.
+//
+// It is the result's own reader verbatim, for the reason the facts above are: the
+// election is recorded once, and reading it in one place is what keeps the claim a
+// rule reads from being derived a second way.
+func (a assemblyGroups) AssemblyGroupProviderAssembly(
+	assemblyPath string, provider string,
+) string {
+	return a.result.groupDeclaredAssembly(assemblyPath, provider)
+}
+
+// AssemblyGroupAssemblerProvided reports whether the plugin serving the provider
+// elected to assemble one dispatch group offers the assembly that provider's claim
+// names.
+//
+// It is the result's own reader verbatim. A group nothing was elected for answers
+// false, which is the same answer a group whose plugin offers no assembly gets:
+// neither has an assembly it can perform.
+func (a assemblyGroups) AssemblyGroupAssemblerProvided(
+	assemblyPath string, provider string,
+) bool {
+	return a.result.groupAssemblerProvided(assemblyPath, provider)
 }
 
 // dispatchedView presents, as named facts, how a build's rendered nodes were

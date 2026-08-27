@@ -153,6 +153,19 @@ type RenderResult struct {
 	// Out-of-band: it carries no content that reaches an emitted file, and the
 	// emitted bytes are the same whether it is populated or not.
 	artifacts *artifactProjections
+
+	// elections is the render's retained record of what each dispatch group's
+	// elected engine claimed about combining the group's output, and whether it
+	// could carry that assembly out.
+	//
+	// It is published here because the candidate engines a group collected are the
+	// render's own working state and are dropped when the render returns, while the
+	// presentation of the grouping outlives it. A reader asking what a group's
+	// elected engine claimed has this and nothing else.
+	//
+	// Out-of-band: it carries no content that reaches an emitted file, and the
+	// emitted bytes are the same whether it is populated or not.
+	elections *assemblyElections
 }
 
 // AssemblyContribution attributes one group of assembled output to the
@@ -1736,6 +1749,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		})
 	}
 
+	// Record what each group's elected engine claimed about combining the group's
+	// output, and whether it could. The candidates a group collected are complete
+	// once the node walk has ended and the election is a function of those alone,
+	// so nothing further in the render can change what a group would elect — which
+	// is why the election is readable here, a rule about it runs here, and the
+	// engine is bound to the group below.
+	result.elections = newAssemblyElections(dispatch, orderedDispatch)
+
 	// Present how the grouping came out, with the facts complete earlier answered
 	// by the presentation built before the node walk.
 	result.DispatchedView = newDispatchedView(
@@ -1800,15 +1821,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 	}
 
-	// Elect each dispatch group's boundary assembler now that every contributing
-	// node has been grouped: the engine of the highest resolved provider version
-	// in the group, ties broken by node-processing order. Halts loudly if the
-	// elected engine cannot assemble a group its provider is expected to assemble
-	// — it never falls back to a lower-version engine that happens to assemble.
+	// Bind each dispatch group to its boundary assembler now that every
+	// contributing node has been grouped: the engine of the highest resolved
+	// provider version in the group, ties broken by node-processing order. It never
+	// falls back to a lower-version engine that happens to assemble — a group whose
+	// elected engine cannot assemble is left unbound, and the rule declared over the
+	// grouping has already halted the build if that group's provider claimed one.
 	for _, key := range orderedDispatch {
-		if err := selectBoundaryAssembler(dispatch[key], key); err != nil {
-			return nil, err
-		}
+		selectBoundaryAssembler(dispatch[key])
 	}
 
 	// Derived-name injectivity across each group's contributors. Every contributor
@@ -2225,36 +2245,28 @@ func buildNodeRenderContext(
 	return nrc
 }
 
-// selectBoundaryAssembler elects a dispatch group's boundary assembler and, on a
-// mismatch, halts with the No-Ghost-Infrastructure loud guardrail. The assembler
-// is the engine of the highest resolved provider version among the group's nodes
-// (providerVersionGreater); a version-less node, one carrying no resolved plugin
-// version, ranks below any versioned node. Ties break on node-processing order:
-// candidates append in that order and the scan replaces the leader only on a
-// strict version win, so the earliest node keeps the assembler on a tie.
+// selectBoundaryAssembler binds a dispatch group to the engine that assembles it.
+// The assembler is the engine of the highest resolved provider version among the
+// group's nodes (providerVersionGreater); a version-less node, one carrying no
+// resolved plugin version, ranks below any versioned node. Ties break on
+// node-processing order: candidates append in that order and the scan replaces the
+// leader only on a strict version win, so the earliest node keeps the assembler on
+// a tie.
 //
-// The guardrail applies to the ELECTED engine, never a lower-version candidate:
-// when that engine's own self-report claims its provider assembles the group but
-// its rendering plugin does not advertise the matching boundary-assembly export,
-// the build halts rather than silently emitting unmerged per-node fragments. A
-// group whose elected engine makes no assembly claim finalizes flat, as does a
-// group with no candidates at all (e.g. only boundary-scope FeatureRecipe
-// contributions), which leaves the assembler unset.
-func selectBoundaryAssembler(pd *pendingDispatch, key dispatchKey) error {
-	selected := groupAssemblerEngine(pd)
-	if selected == nil {
-		return nil
-	}
-	if a, ok := selected.(BoundaryAssembler); ok {
+// It binds only an engine that can carry an assembly out. A group whose elected
+// engine cannot leaves the assembler unset and finalizes flat, as does a group
+// whose elected engine makes no assembly claim and a group with no candidates at
+// all (e.g. only boundary-scope FeatureRecipe contributions).
+//
+// The mismatch between what a group's elected provider claims and what the plugin
+// serving it offers is not decided here: it is a declared rule over the grouping,
+// read from the two facts the election records and raised before any group is
+// bound, so a build that would emit unassembled fragments has already halted by
+// the time this runs.
+func selectBoundaryAssembler(pd *pendingDispatch) {
+	if a, ok := groupAssemblerEngine(pd).(BoundaryAssembler); ok {
 		pd.assembler = a
-		return nil
 	}
-	if AssemblesBoundary(selected) && key.Path != "" {
-		inner := fmt.Errorf("%w: provider %q renders per node but its rendering plugin does not provide boundary assembly (assemble_boundary); dispatch path %q would emit unassembled fragments",
-			ErrBoundaryAssemblerMissing(), key.Provider, key.Path)
-		return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, inner.Error())
-	}
-	return nil
 }
 
 // groupAssemblerEngine returns the engine that assembles a dispatch group — the

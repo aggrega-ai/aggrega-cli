@@ -121,7 +121,7 @@ const (
 	// SubjectBoundaryAttachmentArtifact is the subject kind (boundary, attachment, artifact), keyed by 1 declared fact.
 	SubjectBoundaryAttachmentArtifact SubjectKind = "(boundary, attachment, artifact)"
 
-	// SubjectAssemblyPathProvider is the subject kind (assembly-path, provider), keyed by 2 declared facts.
+	// SubjectAssemblyPathProvider is the subject kind (assembly-path, provider), keyed by 4 declared facts.
 	SubjectAssemblyPathProvider SubjectKind = "(assembly-path, provider)"
 
 	// SubjectBoundaryProviderPath is the subject kind (boundary, provider, path), keyed by 2 declared facts.

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -60,6 +61,23 @@ func (w renderOnlyAssemblerWrapper) EmitArtifacts(_ context.Context, proj render
 	return files, nil
 }
 
+// guardrailGraphFacts stands in for the presentation the graph finalisation
+// produces, which the render embeds beneath the presentations built over it.
+//
+// The rule under test reads two facts and neither is a graph-stage one — both are
+// answered from what the grouping recorded about each group's elected engine — so
+// this is never read. It carries no value behind the interface deliberately: a read
+// panics here rather than answering a zero value, so a rule that later starts
+// reading a graph-stage fact fails loudly instead of being quietly handed nothing.
+//
+// It is supplied because the presentation chain is cumulative and refuses to
+// assemble with a hole in it: the render publishes no mid-render presentation
+// unless the one it extends exists. Production always supplies this, from the one
+// call path that renders; a fixture omitting it would leave the rule invoked zero
+// times for a reason that has nothing to do with what is being proved — and a rule
+// invoked zero times reports exactly what a rule that ran and approved reports.
+type guardrailGraphFacts struct{ constraint.GraphView }
+
 // TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts proves the Loud
 // Guardrail: when a provider that self-reports assembling a dispatch group is
 // served by an engine that can render per node but cannot assemble (a rendering
@@ -85,6 +103,7 @@ func TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts(t *testing.T) 
 		},
 		FeatureOrder:  ir.FeatureOrder{},
 		ResolveResult: &resolver.ResolveResult{Aggregate: &types.Aggregate{}},
+		GraphView:     guardrailGraphFacts{},
 	}
 
 	lookup := renderer.RecipeLookup{
