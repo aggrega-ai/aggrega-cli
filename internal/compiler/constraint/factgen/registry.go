@@ -351,7 +351,29 @@ var facts = []factDecl{
 			"for reads the same as one declaring no mechanism. A rule that " +
 			"turns on the difference reads the declared socket set first, which " +
 			"is the fact that answers which sockets exist to be asked about." +
-			declarationCompelsImplementation,
+			declarationCompelsImplementation +
+			"\n\nThe rule this fact exists to serve is enforced, and not as a " +
+			"declared check. A connection dictating a delivery its socket does " +
+			"not permit halts the build while the graph is built, in the same " +
+			"resolution that settles whether that connection's socket was " +
+			"declared at all. What keeps the rule out of a check is the socket " +
+			"side rather than the connection side: this fact is keyed by a " +
+			"component type and a socket, and that is the whole of its key, " +
+			"while the socket a connection an attachment drew is wired into is " +
+			"declared on the attached Feature's own dependency sockets and " +
+			"never on the consuming component's. So this fact cannot answer " +
+			"for such a connection at all, and a check reading it alone would " +
+			"approve every attachment-drawn dictation — silently, for " +
+			"exactly the connections it could not see.\n\nWhat is missing is " +
+			"one companion fact rather than a stage or a subject kind. The " +
+			"connection side is declared already — the delivery a " +
+			"connection dictates as authored, keyed by the carrier that drew " +
+			"it, over every connection the composition drew — so a " +
+			"Feature-side counterpart to this fact, over the socket " +
+			"declarations a Feature makes, is the whole of what a faithful " +
+			"check still wants. Until that exists this fact has a reader it " +
+			"lacks rather than a reader it is not owed, which is why it is not " +
+			"the removal candidate a fact nothing reads would otherwise be.",
 	},
 	{
 		Name:        "per-edge-target",
