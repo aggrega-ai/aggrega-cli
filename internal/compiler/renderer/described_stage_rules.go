@@ -286,3 +286,60 @@ func runAuthoredProvidesRule(
 	}
 	return objectionsAsHalt(raised, "provides entries that reach outside the data they are evaluated against")
 }
+
+// crossBoundaryLinkAxis is the axis the rule over a connection's two rendering
+// providers is invoked once per: the connection set the finalised graph carries.
+//
+// It is named as its own interface rather than folded into the plugin-report set
+// because the two are guarded differently. That set is skipped for a render given
+// no plugin resolution, since every fact in it comes from a plugin describing
+// itself; this rule reads a provider's capability claim through the render's own
+// engine resolution, which a render either has or does not, and it reports an
+// advisory rather than refusing a build — so a guard that silenced it would
+// silence a finding no build depends on being absent.
+type crossBoundaryLinkAxis interface {
+	constraint.EdgeEnumerator
+}
+
+// runCrossBoundaryLinkProviderRule invokes the rule declared over the two
+// providers a connection's ends render through, and returns what it raised as
+// warnings on the render's own stream.
+//
+// It is asked at this stage because that is where its facts are complete: both
+// ends' rendering providers and both ends' capability claims are settled once
+// every plugin the render reaches has described itself, and nothing later changes
+// either. Asking after the assembly instead would report the same finding about
+// output that had already been produced under it.
+//
+// # It returns warnings rather than an error, and that is the declaration
+//
+// The rule declares itself advisory: a connection spanning two providers carries
+// the scalar value the injection contract pipes, so the output is a working
+// deployment and the build has no reason to stop. The advisory conversion is what
+// keeps that declaration true at the invocation — a raised objection reaching the
+// halt conversion beside it would turn a build that renders into one that fails,
+// whatever the declaration said.
+//
+// Every offending connection is reported rather than the first, because the rule
+// is invoked once per connection: a deployment wiring three connections across a
+// provider seam tells the author about all three from one build, each positioned
+// at the site the connection was authored in.
+//
+// The cancellation signal is the caller's own, so a walk over a large connection
+// set stops within one connection of the caller asking it to.
+func runCrossBoundaryLinkProviderRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates crossBoundaryLinkAxis,
+) ([]string, error) {
+	if view == nil || coordinates == nil {
+		return nil, nil
+	}
+	raised, err := constraint.RunOnEdges(
+		ctx.Err, coordinates, view, CrossBoundaryLinkEndsShareOneProvider,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return objectionsAsAdvisories(raised), nil
+}

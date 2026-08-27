@@ -154,11 +154,17 @@ func TestCrossBoundaryLink_Deterministic(t *testing.T) {
 	}
 }
 
-// TestCrossBoundaryLink_CrossProviderUnsupported proves a cross-boundary edge
-// whose ends are rendered by different providers falls back to the scalar
-// value-pipe and surfaces a loud warning wrapping ErrCrossProviderLinkUnsupported,
-// naming both providers and the socket, while no assembled file changes.
-func TestCrossBoundaryLink_CrossProviderUnsupported(t *testing.T) {
+// TestCrossBoundaryLink_CrossProviderLeavesTheValuePipeInPlace proves the link
+// pass is inert on a cross-boundary edge whose ends are rendered by different
+// providers: no assembled file changes, so the scalar value the injection
+// contract already piped is what the output carries.
+//
+// The pass raises nothing here, and that is the point rather than an omission.
+// The finding an operator reads for such an edge is the declared advisory
+// CrossBoundaryLinkEndsShareOneProvider, raised earlier from the stage at which
+// both providers are known — so what this row measures is the half the pass still
+// owns: that it edits nothing and lets the build finish.
+func TestCrossBoundaryLink_CrossProviderLeavesTheValuePipeInPlace(t *testing.T) {
 	loader := wasm.NewCachingLoader(nil)
 	linkEng := fixtureEngine(t, loader, linkFixture)
 	// The target end is a genuinely different, non-linking provider, so only
@@ -179,20 +185,11 @@ func TestCrossBoundaryLink_CrossProviderUnsupported(t *testing.T) {
 	warnings, filesByPath, err := renderer.RunCrossBoundaryLinkPassForTest(
 		context.Background(), []types.IREdge{linkEdge()}, nodes, nil, factory, 2)
 	if err != nil {
-		t.Fatalf("cross-provider must warn, not error: %v", err)
+		t.Fatalf("a cross-provider crossing must not halt the pass: %v", err)
 	}
-	if len(warnings) != 1 {
-		t.Fatalf("want exactly one warning, got %d: %v", len(warnings), warnings)
-	}
-	w := warnings[0]
-	// The warning carries the sentinel message and names both providers + the socket.
-	if !strings.Contains(w, renderer.ErrCrossProviderLinkUnsupported().Error()) {
-		t.Errorf("warning missing sentinel message: %q", w)
-	}
-	for _, want := range []string{linkProvider, otherProvider, linkSocket} {
-		if !strings.Contains(w, want) {
-			t.Errorf("warning does not name %q: %q", want, w)
-		}
+	if len(warnings) != 0 {
+		t.Fatalf("the pass reports nothing for a cross-provider crossing; got %d: %v",
+			len(warnings), warnings)
 	}
 	// No assembled file changed: the scalar value-pipe stands.
 	if got := string(filesByPath["app"][linkFile]); got != linkFileInitYAML {

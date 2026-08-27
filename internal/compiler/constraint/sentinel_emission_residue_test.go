@@ -224,18 +224,6 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"THIS site is a reading and not a ruling: confirm it rather than inheriting it.",
 	},
 	{
-		vehicle:     "crossProviderLinkUnsupported",
-		vehicleKind: vehicleAdvisoryConstructor,
-		host:        "wireCrossBoundaryLinks",
-		file:        "internal/compiler/renderer/post_assembly_link.go",
-		disposition: dispositionLiftable,
-		reason: "The classification is already a named pure function; the residue is only the lines turning " +
-			"its verdict into a warning string. It reads the two endpoints' resolved providers, a " +
-			"graph-stage read, and its severity is advisory rather than halting, so lifting it changes no " +
-			"halt behaviour. This is the site the syntactic criteria did not find: it was found by reading " +
-			"and then confirmed mechanically.",
-	},
-	{
 		vehicle:     "ErrStatefulSetNoHeadlessService",
 		vehicleKind: vehicleSentinel,
 		host:        "statefulSetGoverningService",

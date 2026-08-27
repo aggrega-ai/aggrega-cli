@@ -47,6 +47,13 @@ func (a provAxes) Nodes() []constraint.NodeInstance {
 // is satisfied without standing in for a cascade none of them exercises.
 func (a provAxes) Attachments(_ string) []string { return nil }
 
+// Edges answers empty for the reason Attachments does: these proofs present no
+// connection, so the rule over a connection's two providers is invoked for
+// nothing here and the rows below measure the provides walk alone. The method is
+// present because the coordinate set names every axis the stage's rules are keyed
+// by, which is what stops a fixture from silently omitting one.
+func (a provAxes) Edges() []constraint.EdgeInstance { return nil }
+
 func (a provAxes) ProvidesKeys(_ string) []constraint.AuthoredCoordinate {
 	out := make([]constraint.AuthoredCoordinate, 0, len(a.keys))
 	for _, key := range a.keys {

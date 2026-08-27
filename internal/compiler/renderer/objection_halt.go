@@ -89,3 +89,49 @@ func objectionsAsCategorisedHalt(
 		envelope,
 	)
 }
+
+// objectionsAsAdvisories renders what an advisory rule raised into the warning
+// stream a render already carries, and nil when it raised nothing.
+//
+// It is the other side of this package's reporting boundary from
+// [objectionsAsCategorisedHalt], and the two exist separately because the two
+// sides carry different consequences: a raised violation stops the build and a
+// raised advisory does not, so a rule whose declaration says advisory must not
+// reach the value the render returns as its error. Routing one through the halt
+// conversion would turn a build that renders into a build that fails, which is
+// the opposite of what the declaration says.
+//
+// The wording is not decided here. It comes from [constraint.ObjectionMessage],
+// the one renderer every boundary reads, so a rule carries one wording whichever
+// side of this boundary reports it. The position is not composed here either:
+// [cerrors.SourceLocation] is where a file and an authored locator are joined,
+// including the handling for either half standing alone, so a warning's position
+// reads in the same shape as every other positioned diagnostic rather than in a
+// second one that agrees today.
+//
+// A warning is a plain string with no field to carry a locator, so the position
+// is composed into the text rather than dropped: it is the only thing naming
+// which authored site the finding is about, and an advisory a reader cannot
+// navigate to is one they cannot act on. A finding whose subject carries neither
+// a file nor a locator renders as its message alone rather than as a message with
+// an empty position hanging off it.
+//
+// Advisories come back in the order the objections were raised, which is the
+// order the rule was invoked in — so a render over identical input produces the
+// same warning stream in the same order.
+func objectionsAsAdvisories(objections []constraint.Objection) []string {
+	if len(objections) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(objections))
+	for _, o := range objections {
+		message := constraint.ObjectionMessage(o)
+		position := cerrors.SourceLocation{File: o.SourceFile(), Locator: o.Locator()}.String()
+		if position == "" {
+			out = append(out, message)
+			continue
+		}
+		out = append(out, position+": "+message)
+	}
+	return out
+}

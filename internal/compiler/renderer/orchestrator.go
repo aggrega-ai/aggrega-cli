@@ -661,6 +661,24 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err := runAuthoredProvidesRule(ctx, result.DescribedView, describedAxes); err != nil {
 			return nil, err
 		}
+
+		// The advisory over the two providers a connection's ends render through,
+		// invoked against the same presentation and the same enumeration. It is
+		// asked here because both providers and both capability claims are settled
+		// once every plugin has described itself, and nothing the render does
+		// afterwards changes either — so a connection no provider can wire natively
+		// is reported before the output produced under that fallback exists.
+		//
+		// It joins the render's warning stream rather than its error, which is the
+		// rule's own declaration: the connection carries the scalar value the
+		// injection contract pipes, so the deployment works and the build finishes.
+		linkProviderWarnings, err := runCrossBoundaryLinkProviderRule(
+			ctx, result.DescribedView, describedAxes,
+		)
+		if err != nil {
+			return nil, err
+		}
+		result.Warnings = append(result.Warnings, linkProviderWarnings...)
 	}
 
 	// Pass 1: per node, resolve locals then provides. The locals travel with the

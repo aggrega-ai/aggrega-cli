@@ -43,10 +43,11 @@ type assembledGroup struct {
 //     returned structural patches to that side's assembled files.
 //   - Ends rendered by different providers, at least one advertising linking:
 //     native wiring between two providers' artifacts is not supported, so the
-//     edge keeps its existing scalar value-pipe and the pass surfaces a loud
-//     warning (see [ErrCrossProviderLinkUnsupported]).
-//   - Neither end's provider advertises linking: inert — no file change, no
-//     warning.
+//     edge keeps its existing scalar value-pipe and this pass changes no file.
+//     The finding itself is not this pass's: it is the declared advisory
+//     [CrossBoundaryLinkEndsShareOneProvider], raised once per such connection
+//     from the stage at which both providers are known.
+//   - Neither end's provider advertises linking: inert — no file change.
 //
 // The host assembles the domain-blind per-edge payload from the edge, the
 // endpoints' dispatch identity, the build's deployment identity, and both ends'
@@ -86,11 +87,11 @@ func wireCrossBoundaryLinks(
 			continue
 		case crossBoundaryLinkCrossProvider:
 			// Cross-provider crossing with at least one linking provider: native
-			// wiring between two providers' artifacts is unsupported. Leave the
-			// scalar value-pipe in place and warn loudly. Switching this to a
-			// build halt is a one-line change: return the error rather than
-			// appending its message.
-			warnings = append(warnings, crossProviderLinkUnsupported(edge, srcKey.Provider, tgtKey.Provider).Error())
+			// wiring between two providers' artifacts is unsupported, so the
+			// scalar value-pipe stands and no file is edited. Reporting it is not
+			// this pass's job — the declared advisory raises the finding earlier,
+			// where both providers are known and no output has been produced
+			// under the fallback yet.
 			continue
 		}
 		// crossBoundaryLinkFires: same provider, both ends link.
@@ -168,7 +169,10 @@ const (
 	// crossBoundaryLinkCrossProvider is a cross-boundary edge whose ends are
 	// rendered by different providers where at least one advertises linking:
 	// native wiring between two providers' artifacts is unsupported, so the edge
-	// keeps its scalar value-pipe and the pass warns loudly.
+	// keeps its scalar value-pipe and no file is edited. The finding an operator
+	// reads for such an edge is raised by the declared advisory
+	// [CrossBoundaryLinkEndsShareOneProvider] and not by either caller here, so
+	// this class is a routing decision rather than a verdict.
 	crossBoundaryLinkCrossProvider
 )
 
@@ -297,16 +301,4 @@ func applyLinkPatch(codec frp.Codec, name string, body []byte, ops []frp.JSONPat
 		}
 	}
 	return body, warnings, nil
-}
-
-// crossProviderLinkUnsupported builds the loud, specific diagnostic for a
-// cross-boundary uses edge whose ends are rendered by different providers where
-// native link wiring is unsupported. It wraps [ErrCrossProviderLinkUnsupported]
-// and names both ends, the socket, and both providers, so the operator sees
-// exactly which edge fell back to its scalar value-pipe and why. The link pass
-// surfaces it as a warning; wrapping it as an error keeps a build-halt one line
-// away.
-func crossProviderLinkUnsupported(edge types.IREdge, srcProvider, tgtProvider string) error {
-	return fmt.Errorf("%w: uses edge %q -> %q on socket %q spans providers %q (source) and %q (target); the edge keeps its scalar value-pipe",
-		ErrCrossProviderLinkUnsupported(), edge.Source, edge.Target, edge.Socket, srcProvider, tgtProvider)
 }

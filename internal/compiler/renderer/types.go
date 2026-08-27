@@ -118,15 +118,18 @@ type RendererInput struct {
 	// would answer every earlier fact from nothing.
 	GraphView constraint.GraphView
 
-	// GraphCoordinates is the node and attachment enumeration the finalised
-	// graph carries. The render does not derive it: both axes are settled once
-	// the graph is finalised, so it travels here for the rules declared over
-	// this render's own products to be invoked over the same coordinates every
-	// earlier rule was invoked over.
+	// GraphCoordinates is the node, attachment and connection enumeration the
+	// finalised graph carries. The render does not derive it: every axis is
+	// settled once the graph is finalised, so it travels here for the rules
+	// declared over this render's own products to be invoked over the same
+	// coordinates every earlier rule was invoked over.
 	//
 	// nil leaves those rules uninvoked, which is the honest outcome: an
 	// enumeration assembled here instead would present a rule coordinates the
-	// facts were not keyed by.
+	// facts were not keyed by. A caller that assembles a render's input directly
+	// and omits this therefore gets no reading from those rules — which is worth
+	// stating rather than leaving to be discovered, because a rule invoked zero
+	// times reports exactly what a rule that ran and approved reports.
 	GraphCoordinates GraphCoordinates
 
 	// stepDescriptors retains each pipeline-step plugin's describe() self-report

@@ -445,6 +445,88 @@ var CrossBoundaryLinkPlaceholderResolved = constraint.Check[
 	},
 }
 
+// CrossBoundaryLinkEndsShareOneProvider reports each connection whose two ends
+// render through different providers where at least one of them advertises
+// cross-boundary linking.
+//
+// A provider's cross-reference wiring is written in that provider's own artifact
+// vocabulary, and a provider cannot resolve a reference another one published.
+// So a connection spanning two providers is wired by neither, and the build
+// carries the scalar value the injection contract already pipes across instead.
+// That value is a working connection rather than a broken one, which is why this
+// advises and does not halt: the author is told the native wiring did not
+// happen, and the output stands.
+//
+// # Two ends on different providers are always in different dispatch groups
+//
+// A dispatch group is keyed by an assembly path AND a provider, so two ends
+// whose providers differ cannot share one group. The rule therefore needs no
+// reading of where either end was placed: the placement cannot make two
+// differing providers into one group, and it cannot separate two matching ones
+// into a case this rule is about. What it reads is the two providers and the two
+// capability claims, which is the whole of the condition.
+//
+// # What it reads, and why the membership read is not incidental
+//
+// Four facts. The node at the far end of the connection; whether that node is in
+// the flattened set at all; each end's rendering provider; and each end's
+// cross-boundary-linking claim.
+//
+// The membership read is what keeps the rule silent about a connection whose far
+// end is not a component. Such a connection is already refused before any render
+// — a dangling target is a Loud Guardrail at the topology stage — so this is not
+// a case the rule is expected to meet; reading membership is what makes the
+// silence explicit rather than an accident of a provider that reads empty. A
+// node in the set with no bound Recipe is a different case and is NOT silenced:
+// it renders through no provider, which differs from any provider its peer
+// binds, and a linking peer with nothing to link to is exactly what the author
+// wants told.
+//
+// # Why at least one claim rather than both
+//
+// One end advertising linking is enough for the wiring to have been attempted
+// and to be impossible, and the author who attached that provider is the one
+// who expected native wiring. Requiring both claims would say nothing for the
+// ordinary mixed deployment, where one provider links and the other does not,
+// which is the case this rule exists for.
+//
+// Its detail leads with the far end, which the registered wording is about and
+// so carries no caption, and follows with the socket and each end's provider,
+// captioned — the wording names none of them, and a reader handed four bare
+// quoted names has no way to tell a socket from a provider from a node.
+var CrossBoundaryLinkEndsShareOneProvider = constraint.Check[
+	constraint.DescribedView,
+	constraint.EdgeSubject,
+]{
+	Sentinel: ErrCrossProviderLinkUnsupported(),
+	Severity: constraint.SeverityWarning,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.EdgeSubject,
+	) []constraint.Objection {
+		target := v.PerEdgeResolvedTarget(s.NodeID(), s.SocketName(), s.AliasName())
+		if _, inSet := v.FlattenedNodeComponentType(target); !inSet {
+			return nil
+		}
+		consumerProvider := v.NodeRenderingProvider(s.NodeID())
+		targetProvider := v.NodeRenderingProvider(target)
+		if consumerProvider == targetProvider {
+			return nil
+		}
+		if !v.ProviderCrossBoundaryLinking(s.NodeID()) &&
+			!v.ProviderCrossBoundaryLinking(target) {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrCrossProviderLinkUnsupported(),
+			constraint.Uncaptioned(target),
+			constraint.Captioned("socket", s.SocketName()),
+			constraint.Captioned("consumer provider", consumerProvider),
+			constraint.Captioned("target provider", targetProvider),
+		)}
+	},
+}
+
 // SelfInjectKeyNotDeliveredByAnEdge reports each delivery key a component
 // declares for itself that one of its own dependency edges also delivers under
 // the same mechanism.

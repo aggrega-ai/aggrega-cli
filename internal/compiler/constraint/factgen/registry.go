@@ -2370,6 +2370,35 @@ var facts = []factDecl{
 			"node.",
 	},
 	{
+		Name:        "provider-cross-boundary-linking",
+		Stage:       "described",
+		SourceField: "wasm.ProviderContract.CrossBoundaryLinking",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "bool",
+		Doc: "ProviderCrossBoundaryLinking reports whether the rendering " +
+			"provider a node resolves to advertises cross-boundary linking: " +
+			"producing its own cross-reference wiring for a connection whose " +
+			"two ends assemble into different dispatch groups.\n\nIt is a " +
+			"capability the provider claims about itself and says nothing about " +
+			"how the claim is met. What a reference looks like, where in an " +
+			"artifact it lands, and what has to be published for the far end to " +
+			"resolve it are the provider's own business and are not readable " +
+			"here — so a rule composing this fact with another asks whether the " +
+			"capability is present and never what shape it takes.\n\nFalse is " +
+			"a real answer and three states share it: a provider that makes no " +
+			"such claim, a node with no bound Recipe and therefore no provider " +
+			"to claim anything, and a binding the build could not resolve to a " +
+			"provider at all. All three leave the connection carrying the " +
+			"scalar value the injection contract already pipes, which is one " +
+			"answer to the question this fact asks rather than three.\n\nIt " +
+			"is keyed by the node because the claim reaches a node through the " +
+			"provider its own Recipe binds, which is the same granularity the " +
+			"provider itself is keyed by. A connection has two ends and each " +
+			"end answers for itself, so a rule about a connection reads the " +
+			"fact twice rather than asking one coordinate to speak for both.",
+	},
+	{
 		Name:        "node-rendering-provider",
 		Stage:       "described",
 		SourceField: "types.RecipeSpec.Capability",

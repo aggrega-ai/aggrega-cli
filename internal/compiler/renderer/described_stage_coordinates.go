@@ -9,18 +9,27 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// GraphCoordinates is the node and attachment enumeration the finalised graph
-// carries, as the described stage consumes it.
+// GraphCoordinates is the node, attachment and connection enumeration the
+// finalised graph carries, as the described stage consumes it.
 //
-// The described stage takes it rather than deriving it. Both axes are settled
-// once the graph is finalised — the node set is what the composition produced,
-// and a node's attachment set is what the whole attachment cascade folded to —
-// so deriving either here would be a second answer to a question the build has
-// already answered, free to disagree with the one every earlier rule was invoked
-// over.
+// The described stage takes it rather than deriving it. All three axes are
+// settled once the graph is finalised — the node set is what the composition
+// produced, a node's attachment set is what the whole attachment cascade folded
+// to, and the connection set is every edge the graph holds however it was drawn
+// — so deriving any of them here would be a second answer to a question the
+// build has already answered, free to disagree with the one every earlier rule
+// was invoked over.
+//
+// The connection axis is named here rather than accepted only where it is used,
+// which is what makes a rule over connections structurally un-skippable for a
+// caller that supplies coordinates at all: such a caller either satisfies the
+// whole set or does not compile. A caller supplying no coordinates leaves every
+// rule over them uninvoked, which is a different exposure and is stated at the
+// field this value travels on.
 type GraphCoordinates interface {
 	constraint.NodeEnumerator
 	constraint.AttachmentEnumerator
+	constraint.EdgeEnumerator
 }
 
 // describedStageCoordinates derives the coordinates the described stage adds to
@@ -325,7 +334,9 @@ func stepCoordinatesOf(steps []types.PipelineStep, sourceFile string) []constrai
 var (
 	_ describedStageAxes                                  = (*describedStageCoordinates)(nil)
 	_ authoredProvidesAxes                                = (*describedStageCoordinates)(nil)
+	_ crossBoundaryLinkAxis                               = (*describedStageCoordinates)(nil)
 	_ constraint.NodeEnumerator                           = (*describedStageCoordinates)(nil)
+	_ constraint.EdgeEnumerator                           = (*describedStageCoordinates)(nil)
 	_ constraint.ProvidesKeyEnumerator                    = (*describedStageCoordinates)(nil)
 	_ constraint.AttachmentEnumerator                     = (*describedStageCoordinates)(nil)
 	_ constraint.PipelineStepEnumerator                   = (*describedStageCoordinates)(nil)

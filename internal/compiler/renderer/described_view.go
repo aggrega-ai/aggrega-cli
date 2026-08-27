@@ -200,6 +200,23 @@ func (v *describedView) ProviderBoundaryAssembly(node string) string {
 	return boundaryAssemblyOf(engine)
 }
 
+// ProviderCrossBoundaryLinking reports whether the provider rendering a node's
+// own documents advertises cross-boundary linking.
+//
+// It reads the claim through the same seam the link pass reads it through, so
+// the presented value is the one the render acts on. A node with no bound
+// Recipe, and a binding the factory cannot resolve, both answer false — the same
+// answer a provider making no such claim gives, and for the same reason: none of
+// the three leaves the render anything to wire, so the connection carries the
+// scalar value the injection contract already pipes.
+func (v *describedView) ProviderCrossBoundaryLinking(node string) bool {
+	engine, ok := v.nodeEngine(node)
+	if !ok {
+		return false
+	}
+	return linksCrossBoundary(engine)
+}
+
 // NodeRenderingProvider returns the provider that renders a node's own
 // documents, as the engine kind its Recipe's declared capability projects to.
 //

@@ -58,6 +58,13 @@ func (c injectRenderCoordinates) Attachments(node string) []string {
 	return c.attachments[node]
 }
 
+// Edges answers empty: this fixture presents no connection, so the rule over a
+// connection's two providers is invoked for nothing and these rows measure the
+// delivery reading alone. The method is present because the coordinate set names
+// every axis the stage's rules are keyed by, which is what stops a fixture from
+// silently omitting one.
+func (c injectRenderCoordinates) Edges() []constraint.EdgeInstance { return nil }
+
 // injectCollisionInput builds a render whose "api" node delivers one key from its
 // own injection block and carries one attachment whose block asks for a delivery
 // key of its own.

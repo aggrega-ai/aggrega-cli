@@ -671,11 +671,21 @@ var errArtifactContentMismatch = cerrors.Register("compiler-renderer/artifact-co
 // is not supported: a provider's link exports produce wiring in that
 // provider's own artifact vocabulary, and one provider cannot resolve a
 // reference published in another's. Rather than emit a wrong reference, the
-// link pass leaves the existing per-node scalar value-pipe in place and
-// surfaces this as a warning that names both ends (source and target node
-// ids), both provider names, and the socket. It is a warning today, not a
-// build halt — the edge still carries its scalar value across the boundary —
-// so the build completes with the value-pipe fallback rather than failing.
+// link pass leaves the existing per-node scalar value-pipe in place and edits
+// no file.
+//
+// The finding is raised by the declared advisory
+// [CrossBoundaryLinkEndsShareOneProvider], once per such connection, positioned
+// at the site the connection was authored in. Its message names the far end, the
+// socket and each end's provider; the position names the document and the key an
+// author edits. It is an advisory and not a build halt — the edge still carries
+// its scalar value across the boundary — so the build completes with the
+// value-pipe fallback rather than failing.
+//
+// Two ends whose providers differ are always in different dispatch groups,
+// because a group is keyed by an assembly path and a provider together. So the
+// condition turns on the two providers and their capability claims, and on where
+// either end was placed not at all.
 // Match with errors.Is(err, ErrCrossProviderLinkUnsupported()).
 func ErrCrossProviderLinkUnsupported() error { return errCrossProviderLinkUnsupported }
 
