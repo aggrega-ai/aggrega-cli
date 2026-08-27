@@ -51,6 +51,7 @@ func TestReadChainDerivesItFromTheDeclaredViews(t *testing.T) {
 		"GraphView",
 		"DescribedView",
 		"HydratedView",
+		"DispatchedView",
 		"RenderedView",
 	}
 	var gotStages []string
@@ -75,6 +76,7 @@ func TestReadChainDerivesItFromTheDeclaredViews(t *testing.T) {
 		{"PerLeafAttachmentProvenance", "GraphView"},
 		{"StepExportScope", "DescribedView"},
 		{"DeclaredLocalsKeys", "HydratedView"},
+		{"AssemblyGroupProviderSet", "DispatchedView"},
 		{"EmittedFilePathSet", "RenderedView"},
 	} {
 		at, ok := chain.Index(tc.stage)
