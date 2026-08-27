@@ -255,8 +255,8 @@ func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (str
 }
 
 // RecipeLookupWithManifest returns a renderer.RecipeLookup whose Recipe
-// and FeatureRecipe closures dispatch through a three-layer cascade
-// when a Manifest is supplied:
+// and FeatureRecipe closures dispatch through a cascade when a Manifest is
+// supplied:
 //
 //  1. Flat-shape lookup (manifest.Spec.Mappings.Components.Type and
 //     .Features.Type) — when populated, resolve the mapping entry's
@@ -265,6 +265,16 @@ func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (str
 //  2. Legacy v2 per-provider lookup (manifest.Spec.Mappings.Legacy) —
 //     unchanged from pre-migration behavior; included as a transitional
 //     fallback while fixtures still author v2 shape.
+//
+// A FLAT MAPPING WINS ON EXISTENCE, NOT ON RESOLVABILITY, and that is the whole
+// precedence rule — the single home for it, which both consumption paths read.
+// A flat entry is the author's answer for that type, so a flat value naming a
+// recipe the catalog does not hold ends the cascade as a miss here rather than
+// admitting the next shape. Falling through instead would make this cascade
+// disagree with ComponentRecipeURI / FeatureRecipeURI, which the source-descent
+// walk and the resolution-completeness pass both read — and a build whose
+// rendered output named one recipe while its own reported fault named another
+// is a divergence no author could act on.
 //
 // Resolution is mapping-only: a type with no flat-shape or legacy mapping
 // is a miss here — the catalog never chooses a recipe by spec.implements.
@@ -283,13 +293,19 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 		// Layer 1: flat-shape mapping (name-wins-over-type via flatComponentURI).
 		// A version-ambiguous mapping error is swallowed to a miss here; the
 		// loud ErrAmbiguousTypeMapping is the pull/source-descent contract
-		// (ComponentRecipeURI), where a wrong pick mis-pins a source. A mapped
-		// URI that does not resolve falls through to a miss and surfaces as a
-		// CATALOG_ERROR at the resolution-completeness pass.
+		// (ComponentRecipeURI), where a wrong pick mis-pins a source.
+		//
+		// A flat entry ENDS the cascade whether or not its URI resolves — the
+		// precedence rule is stated once, on RecipeLookupWithManifest. The
+		// unresolvable case is a miss here and surfaces as a CATALOG_ERROR at
+		// the resolution-completeness pass, which names the flat value the
+		// author wrote.
 		if uri, ok, err := flatComponentURI(manifest, instanceName, componentType); err == nil && ok {
-			if r, found := c.RecipeByURI(uri); found {
-				return &r, true
+			r, found := c.RecipeByURI(uri)
+			if !found {
+				return nil, false
 			}
+			return &r, true
 		}
 		// Layer 2: legacy v2 per-provider mapping.
 		if uri, ok, err := legacyComponentURI(manifest, instanceName, componentType); err == nil && ok {
@@ -308,10 +324,15 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 
 func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifest) func(string, string) (*types.FeatureRecipe, bool) {
 	return func(instanceName, featureType string) (*types.FeatureRecipe, bool) {
+		// A flat entry ENDS the cascade whether or not its URI resolves, exactly
+		// as it does for a component: same precedence rule, stated once on
+		// RecipeLookupWithManifest.
 		if uri, ok, err := flatFeatureURI(manifest, instanceName, featureType); err == nil && ok {
-			if fr, found := c.FeatureRecipeByURI(uri); found {
-				return &fr, true
+			fr, found := c.FeatureRecipeByURI(uri)
+			if !found {
+				return nil, false
 			}
+			return &fr, true
 		}
 		if uri, ok, err := legacyFeatureURI(manifest, instanceName, featureType); err == nil && ok {
 			if fr, found := c.FeatureRecipeByURI(uri); found {
