@@ -506,6 +506,90 @@ var SelfInjectKeyNotDeliveredByAnEdge = constraint.Check[
 	},
 }
 
+// AttachmentInjectKeyNotDeliveredByAnotherSource reports each delivery key one
+// attachment attached to a component asks the component's injection pipe for
+// that another source has already delivered under.
+//
+// Three authoring surfaces deliver into one pipe: the component's own injection
+// block, the blocks on the entries of its dependency block, and the block on each
+// attachment attached to it. The pipe is one keyed space shared between them, so a
+// key two of them deliver under is ambiguous about which value arrives, and the
+// build halts rather than letting one surface silently displace another. The
+// author resolves it by removing one of the two claims. Presence in both is the
+// whole signal: the rule compares no values and does not treat two sources
+// agreeing as acceptable, because the agreement is a property of one input rather
+// than of the authoring.
+//
+// It is invoked once per attachment, which is the side the objection is
+// attributed to, and reads one fact — the attributed deliveries the node's pipe
+// carries. The attachment is the attributed side because the other surface may be
+// the component's own block or one of its connections, neither of which is a
+// subject a rule can be invoked over here, and because the attachment's block is
+// a position an author can open. Each colliding key is its own objection, so an
+// author whose attachment duplicates two keys is told about both rather than
+// about whichever came first.
+//
+// # Why the answer is walked in order rather than searched
+//
+// The fact comes back in delivery order and the first claim under a key is the one
+// that holds it, so the rule accumulates what has been delivered as it walks and
+// asks of its own attachment's claims whether the key was already held. A search
+// over the whole answer would read differently: it would find its own attachment's
+// claim colliding with a LATER claim by another attachment, and refuse a pair that
+// no build has a problem with — the later claim delivers nothing and takes no key,
+// so nothing was displaced. That is the direction a rule about a shared keyed
+// space is easiest to get wrong in, because both readings agree on every input
+// where every claim resolves.
+//
+// A claim that delivered nothing is passed over rather than counted, for the same
+// reason: it left the key free, so the next claim under it is the first to hold
+// it. The fact carries that distinction precisely because it cannot be recovered
+// from the pipe afterwards.
+//
+// # What the detail names
+//
+// The delivery key stands bare, because the registered wording already says a
+// duplicated delivery key is what the finding is about. The mechanism is
+// captioned, since a mechanism name and a delivery key are both bare words and
+// nothing else in the message tells them apart — and a key is only duplicated
+// within one mechanism, so the mechanism is what says which keyed space the
+// finding is in.
+//
+// The node and the attachment are not in the detail, because the locator carries
+// both: a finding is positioned at the attachment's own entry inside the
+// component's block, which is the position the author edits. The key is in the
+// detail as well as in the fact for the reason the sibling rule over a
+// self-declared key gives: what a key spells is the mechanism's own business, so
+// the locator naming the attachment's block cannot always name the key inside it.
+var AttachmentInjectKeyNotDeliveredByAnotherSource = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeAttachmentSubject,
+]{
+	Sentinel: ErrAttachmentInjectKeyCollision(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeAttachmentSubject,
+	) []constraint.Objection {
+		var out []constraint.Objection
+		held := map[string]bool{}
+		for _, delivery := range v.NodeInjectDeliveries(s.NodeID()) {
+			slot := delivery.Mechanism + "\x00" + delivery.DeliveryKey
+			if delivery.Attachment == s.AttachmentName() && held[slot] {
+				out = append(out, s.RaiseWith(
+					ErrAttachmentInjectKeyCollision(),
+					constraint.Uncaptioned(delivery.DeliveryKey),
+					constraint.Captioned("mechanism", delivery.Mechanism),
+				))
+			}
+			if delivery.Delivered {
+				held[slot] = true
+			}
+		}
+		return out
+	},
+}
+
 // ProvidesTemplateSelfContained reports each provides entry whose template
 // reaches outside the self-contained data a provides template is evaluated
 // against.

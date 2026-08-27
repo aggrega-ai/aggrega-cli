@@ -406,6 +406,136 @@ func attachmentArtifactPillarHalt(
 		outputName, attachment))
 }
 
+// oneNodesAttachments is the node axis and the attachment axis for a rule asked
+// about the attachments of a single node, narrowed to the node whose injection
+// pipe the walk has just filled.
+//
+// # Why the subject set is narrowed to one node rather than swept
+//
+// The traversal it is handed to walks every node its node axis yields. Handed the
+// build's own axis it would, at the k-th node of the walk, re-present the k-1
+// nodes already recorded — so a build of n nodes would ask about n(n+1)/2 subjects
+// and would raise the same finding once for every later node in the walk. An
+// author would read one authoring fault repeated a number of times that depends on
+// how many components the application happens to declare.
+//
+// # Why the attachment axis is delegated rather than narrowed with it
+//
+// The attachments of the narrowed node are exactly the subjects wanted, and the
+// build's own axis already yields them for that node. Narrowing it as well would
+// mean deciding here which attachments exist, which is a second answer to a
+// question the graph's own enumeration already answers — and the two would be free
+// to disagree about an attachment the cascade contributed. Delegating keeps the
+// attachment axis one answer, and the node narrowing is what stops the delegated
+// axis being asked about any other node.
+//
+// # Why the node arrives whole
+//
+// The whole point of reaching through the build's own enumeration is the node's
+// provenance: the locator a finding is positioned at is the attachment's entry
+// inside the component's own block, and it is assembled from the component's
+// authored name and the subsystem path it was reached through. Neither is
+// derivable from the node identity alone, and neither is this site's to decide —
+// so the instance is taken from the enumeration the compilation produced rather
+// than rebuilt from what the render happens to hold.
+type oneNodesAttachments struct {
+	// node is the instance the walk has reached, as the build's own enumeration
+	// describes it.
+	node constraint.NodeInstance
+
+	// attachments is the build's own per-node attachment axis, delegated to for
+	// the narrowed node and never consulted for any other.
+	attachments constraint.AttachmentEnumerator
+}
+
+// Nodes yields the one node the walk has reached.
+func (o oneNodesAttachments) Nodes() []constraint.NodeInstance {
+	return []constraint.NodeInstance{o.node}
+}
+
+// Attachments yields the narrowed node's own attachments and nothing for any
+// other node, so a traversal handed a wider node axis still reaches exactly these
+// subjects.
+func (o oneNodesAttachments) Attachments(node string) []string {
+	if node != o.node.ID || o.attachments == nil {
+		return nil
+	}
+	return o.attachments.Attachments(node)
+}
+
+var (
+	_ constraint.NodeEnumerator       = oneNodesAttachments{}
+	_ constraint.AttachmentEnumerator = oneNodesAttachments{}
+)
+
+// runNodeInjectDeliveryRule asks the rule declared over one node's attributed
+// injection deliveries about each attachment attached to that node, and returns
+// what it raised as the render's halt.
+//
+// It is called from inside the node walk, immediately after the attachments have
+// delivered into the node's pipe and before anything reads that pipe. That is the
+// only place the question is answerable and the last place acting on it still
+// saves work: the deliveries are recorded on the line above, and everything after
+// this point renders against a pipe whose keys a duplicate has already made
+// ambiguous.
+//
+// Placing it here rather than after the whole node walk is what keeps the build
+// stopping where it stopped before the rule was declared. A reading gathered at
+// the end of the walk would refuse the same inputs and would refuse them later,
+// after every other node had rendered — so an author would wait for work whose
+// output was always going to be discarded, and a node whose render fails for an
+// unrelated reason would report that failure instead of this one.
+//
+// # The two absent inputs are different questions
+//
+// An absent presentation, an absent enumeration, or a node the enumeration does
+// not describe all leave the rule uninvoked, and that is the honest outcome
+// rather than a silent skip: the presentation and the enumeration are installed
+// together, unconditionally, by the one assembler inside this package, and the
+// enumeration describes every node the walk visits — so all three states are
+// reachable only by assembling a render's input directly. A caller that does so is
+// asking for a render rather than for a build, and a rule invoked over coordinates
+// the facts were not keyed by, or positioned from an instance carrying no
+// provenance, would be worse than one not invoked.
+//
+// The cancellation signal is the caller's own, so a walk over a large attachment
+// set stops within one subject of the caller asking it to.
+func runNodeInjectDeliveryRule(
+	cancelled constraint.Cancellation,
+	view constraint.HydratedView,
+	coordinates constraint.AttachmentEnumerator,
+	node constraint.NodeInstance,
+) error {
+	if view == nil || coordinates == nil || node.ID == "" {
+		return nil
+	}
+	subject := oneNodesAttachments{node: node, attachments: coordinates}
+	raised, err := constraint.RunOnNodeAttachments(
+		cancelled, subject, subject, view, AttachmentInjectKeyNotDeliveredByAnotherSource,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsDeveloperHalt(
+		raised, "attachments delivering a key another inject source already delivered")
+}
+
+// objectionsAsDeveloperHalt renders what a rule about what an application's own
+// author wrote raised as the render's halt, attributing the fault to the
+// application document.
+//
+// It is the fourth sibling of [objectionsAsHalt] and shares the whole of its
+// per-objection rendering; what it does not share is the category, which is the
+// one thing the four of them genuinely differ on. A rule about what an entity
+// declares sends an author to a catalog document, a rule about output the compiler
+// produced to no document at all, a rule about where a boundary's output landed to
+// the deployment document — and this one to the application, because an injection
+// block and the attachment that duplicates its key are both written there and the
+// remedy is to remove one of them.
+func objectionsAsDeveloperHalt(objections []constraint.Objection, envelope string) error {
+	return objectionsAsCategorisedHalt(objections, cerrors.DeveloperError, envelope)
+}
+
 // artifactFindingFile is the document an artifact finding is positioned at.
 //
 // It prefers the Recipe's own path and falls back to the Recipe's name. The path

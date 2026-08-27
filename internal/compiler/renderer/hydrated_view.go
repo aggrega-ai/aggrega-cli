@@ -11,7 +11,8 @@ import (
 // of its artifact bytes existed: the local names a node's Recipe declares, the
 // value it resolved for each provides key, the reference set of its inline values
 // mapping, whether a source survived resolution, whether a workload was parsed,
-// and the template text standing at each artifact before anything evaluates it.
+// the attributed deliveries its injection pipe carries, and the template text
+// standing at each artifact before anything evaluates it.
 //
 // The last three are presented per carrier rather than per node alone, because
 // three documents author them: a node's own Recipe, the FeatureRecipe an
@@ -195,6 +196,26 @@ func (v *hydratedView) ResolvedNodeSourceDeclared(node string) bool {
 func (v *hydratedView) ParsedNodeWorkloadPresent(node string) bool {
 	p, _ := v.projections.projection(node)
 	return p.ParsedNodeWorkloadPresent
+}
+
+// NodeInjectDeliveries returns the deliveries a node's injection pipe carries
+// once every attachment attached to it has delivered, in delivery order.
+//
+// Each entry names the mechanism and the key, whatever attachment asked for the
+// delivery, and whether a value arrived. The attribution is answered from the
+// retention rather than from the pipe because the pipe cannot answer it: it
+// holds values under keys and remembers nothing about which surface put one
+// there, and a delivery whose reference resolved to nothing left it unchanged.
+//
+// A node the render did not reach answers empty, which is what a node whose pipe
+// carries nothing also gives — the same reading every fact of this stage carries
+// for a node absent from the retention.
+func (v *hydratedView) NodeInjectDeliveries(node string) []constraint.InjectDelivery {
+	p, ok := v.projections.projection(node)
+	if !ok {
+		return nil
+	}
+	return p.NodeInjectDeliveries
 }
 
 // ArtifactTemplateText returns the template text standing at one of a node's

@@ -91,8 +91,9 @@ var stages = []stageDecl{
 		Name:    "hydrated",
 		Extends: "described",
 		Holds: "per-node resolved locals and provides, and the mid-render products " +
-			"standing beside them — the resolved source, the parsed workload, and " +
-			"each artifact entry's template text before it is evaluated — all of it " +
+			"standing beside them — the resolved source, the parsed workload, " +
+			"each artifact entry's template text before it is evaluated, and the " +
+			"attributed deliveries each node's injection pipe carries — all of it " +
 			"state that exists before any artifact bytes",
 		// The powers named here are the ones this production genuinely exercises,
 		// and the filesystem read is the one a reader is most likely to think
@@ -214,6 +215,29 @@ var records = []recordDecl{
 			{Name: "Contributor", Type: "string", Doc: "Contributor is the authoring-level name of whatever derived the name: a component instance, or a feature instance attached to a boundary."},
 			{Name: "ContributorKind", Type: "string", Doc: "ContributorKind is what that contributor is in authoring terms, either a component or a feature, which is what says where its name is written."},
 			{Name: "RepeatedWithinOneDeclaration", Type: "bool", Doc: "RepeatedWithinOneDeclaration reports whether a single one of that contributor's declarations carried this name more than once inside this space, which is a failure of that contributor's own derivation rather than a meeting between two of them."},
+		},
+	},
+	{
+		Name: "InjectDelivery",
+		Doc: "InjectDelivery is one delivery a node's injection pipe carries or " +
+			"was asked to carry: the mechanism and the key it is delivered " +
+			"under, whatever attachment asked for it, and whether a value " +
+			"actually arrived.\n\nIt is one fact rather than several because no " +
+			"part of it answers anything alone. A key without its mechanism has " +
+			"not met itself — one key delivered through two mechanisms is two " +
+			"deliveries — and neither says who asked for it, which is what " +
+			"decides whose authoring a duplicate belongs to. Whether the value " +
+			"arrived travels with the delivery it belongs to for the sharper " +
+			"reason: a delivery whose reference resolved to nothing puts no " +
+			"value under the key, so it leaves the key free for a later " +
+			"delivery to take. A reader given the asked-for set alone could not " +
+			"tell that case from a delivery that landed, and would read a key " +
+			"nobody actually delivered as taken.",
+		Fields: []recordField{
+			{Name: "Mechanism", Type: "string", Doc: "Mechanism is the injection mechanism the key is delivered through."},
+			{Name: "DeliveryKey", Type: "string", Doc: "DeliveryKey is the key the value is delivered under, which is what the consumer reads it by."},
+			{Name: "Attachment", Type: "string", Doc: "Attachment is the attachment instance whose own injection block asked for the delivery, empty where the component's own block or one of its connections did."},
+			{Name: "Delivered", Type: "bool", Doc: "Delivered reports whether a value arrived under the key, which is false for a delivery whose reference resolved to nothing and for one whose key another delivery already holds."},
 		},
 	},
 	{
@@ -2752,6 +2776,43 @@ var facts = []factDecl{
 			"than the workload itself, on the same reading the resolved source " +
 			"carries: the workload is a structured document, and a rule handed " +
 			"it could walk into content the framework declares no fact for.",
+	},
+	{
+		Name:        "node-inject-deliveries",
+		Stage:       "hydrated",
+		SourceField: "types.InjectPipe",
+		Subject:     []string{"node", "attachment"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "[]InjectDelivery",
+		Doc: "NodeInjectDeliveries are the deliveries a node's injection pipe " +
+			"carries once every attachment attached to that node has delivered " +
+			"into it, one entry per mechanism and key, each naming whatever " +
+			"attachment asked for it and whether a value arrived — in delivery " +
+			"order, which is the order the deliveries were made in.\n\nThree " +
+			"authoring surfaces deliver into one pipe: the component's own " +
+			"injection block, the blocks on the entries of its dependency " +
+			"block, and the block on each attachment attached to it. The pipe " +
+			"is one keyed space shared between them, so a key two surfaces " +
+			"deliver under is a contradiction rather than a precedence " +
+			"question — and which surface asked is the only thing that says " +
+			"whose authoring has to change. The attribution is therefore part " +
+			"of the fact rather than something a reader could recover: the " +
+			"pipe itself holds values under keys and remembers nothing about " +
+			"where a key came from.\n\nThe first two surfaces are not told " +
+			"apart. A duplicate between an attachment and either of them is " +
+			"one condition with one remedy — remove the attachment's entry or " +
+			"the other one — and the entry that names no attachment is what " +
+			"says the other one is not an attachment's.\n\nDelivery order is " +
+			"the fact and not an incidental property of it. A pipe is filled " +
+			"in a fixed sequence — the component's own block, then its " +
+			"connections, then its attachments in the order they are attached, " +
+			"and within one attachment the three named mechanisms and then the " +
+			"rest in name order — and the first delivery under a key is the one " +
+			"that holds it. So a rule about a key delivered twice is a rule " +
+			"about this order, and answering in any other would name the wrong " +
+			"surface as the one that has to change.\n\nIt is empty for a node " +
+			"whose pipe carries nothing, which is the ordinary answer for a " +
+			"component that delivers nothing into its own render context.",
 	},
 	{
 		Name:        "artifact-template-text",

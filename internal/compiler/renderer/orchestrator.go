@@ -884,6 +884,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return marked
 	}
 
+	// The build's own description of each node, indexed once for the walk below.
+	// A rule invoked per node needs the node as the enumeration describes it —
+	// its authored name and the subsystem path it was reached through are what a
+	// finding's position is assembled from — and the enumeration answers with a
+	// slice, so indexing it here is what keeps the walk from scanning it per node.
+	// An absent enumeration leaves the map empty, and a rule handed a zero
+	// instance is not invoked; that is checked where the rule is asked.
+	nodeInstances := map[string]constraint.NodeInstance{}
+	if input.GraphCoordinates != nil {
+		for _, instance := range input.GraphCoordinates.Nodes() {
+			nodeInstances[instance.ID] = instance
+		}
+	}
+
 	// Per-node rendering. nodeIDs is sorted (topology author order for the
 	// deterministic walk); nodeOrder is the host node's position in that order,
 	// the outer A1 replay-ordering key for deferred host PATCHes.
@@ -926,11 +940,25 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// is resolved below, then located and handed to the same out-of-band
 		// stream the render diagnostics use.
 		var sensitiveByValue []Diagnostic
-		if err := ResolveAttachmentInject(&inject, graph, nodeID, recipeLookup,
+		injectDeliveries, err := ResolveAttachmentInject(&inject, graph, nodeID, recipeLookup,
 			func(attachment, mechanism, deliveryKey string) {
 				sensitiveByValue = append(sensitiveByValue, SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey))
-			}); err != nil {
+			})
+		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment inject", nodeID))
+		}
+
+		// Retain what every surface asked this node's pipe for, then ask the rule
+		// declared over that record whether any attachment took a key another
+		// source had already delivered under. The recording is unconditional and
+		// the reading is immediately after it: this is the point the pipe is
+		// complete and nothing has read it yet, so a duplicate is refused before
+		// any output is rendered against an ambiguous key.
+		input.hydrated.recordNodeInjectDeliveries(nodeID, injectDeliveries)
+		if err := runNodeInjectDeliveryRule(
+			ctx.Err, result.HydratedView, input.GraphCoordinates, nodeInstances[nodeID],
+		); err != nil {
+			return nil, err
 		}
 
 		// Build template context

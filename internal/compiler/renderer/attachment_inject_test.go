@@ -65,7 +65,7 @@ func TestResolveAttachmentInject_SecretDeliversResolvedProvidesToHostPipe(t *tes
 	}}
 
 	inject, _ := BuildInjectPipe(nil)
-	if err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil); err != nil {
+	if _, err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil); err != nil {
 		t.Fatalf("ResolveAttachmentInject: %v", err)
 	}
 	got, ok := inject.Env.Get("DB_PASSWORD")
@@ -105,7 +105,7 @@ func TestResolveAttachmentInject_FeatureDeliversResolvedProvidesToHostPipe(t *te
 	}}
 
 	inject, _ := BuildInjectPipe(nil)
-	if err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil); err != nil {
+	if _, err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil); err != nil {
 		t.Fatalf("ResolveAttachmentInject: %v", err)
 	}
 	if got, _ := inject.Env.Get("CACHE_URL"); got != "redis.svc.cluster.local" {
@@ -113,11 +113,18 @@ func TestResolveAttachmentInject_FeatureDeliversResolvedProvidesToHostPipe(t *te
 	}
 }
 
-// TestResolveAttachmentInject_CollisionWithExistingKeyHalts proves the fatal
+// TestResolveAttachmentInject_CollisionWithExistingKeyIsRefused proves the fatal
 // halt: an attachment delivery key already present in the pipe (here from
 // self-inject / uses-inject, seeded directly) is a duplicate across developer
-// sources and halts with ErrAttachmentInjectKeyCollision rather than silently overwriting.
-func TestResolveAttachmentInject_CollisionWithExistingKeyHalts(t *testing.T) {
+// sources and is refused rather than silently overwriting.
+//
+// Delivery records the claim and the declared rule refuses it, so this drives the
+// two halves the build drives — the delivery, then the rule over what it recorded,
+// through the framework's own traversal — rather than a call production never
+// makes. The pipe is also inspected: the standing value has to survive, because
+// the record's own contract is that the first claim under a key is the one that
+// holds it.
+func TestResolveAttachmentInject_CollisionWithExistingKeyIsRefused(t *testing.T) {
 	t.Parallel()
 	entry := types.IRFeatureEntry{
 		Type:   "core/db-creds",
@@ -136,9 +143,22 @@ func TestResolveAttachmentInject_CollisionWithExistingKeyHalts(t *testing.T) {
 
 	inject, _ := BuildInjectPipe(nil)
 	inject.Env.Set("DB_PASSWORD", "from-self-inject") // a prior developer source claimed the key
-	err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil)
-	if !errors.Is(err, ErrAttachmentInjectKeyCollision()) {
-		t.Fatalf("expected ErrAttachmentInjectKeyCollision, got %v", err)
+	deliveries, err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil)
+	if err != nil {
+		t.Fatalf("delivery itself must not fail: %v", err)
+	}
+	if got, _ := inject.Env.Get("DB_PASSWORD"); got != "from-self-inject" {
+		t.Errorf("the standing value must survive the duplicate claim; env.DB_PASSWORD = %q", got)
+	}
+
+	halt := injectDeliveryHalt(t, "api", []string{"db-creds"}, deliveries)
+	if !errors.Is(halt, ErrAttachmentInjectKeyCollision()) {
+		t.Fatalf("expected ErrAttachmentInjectKeyCollision, got %v", halt)
+	}
+	if got := injectDeliveryFindings(t, halt); len(got) != 1 ||
+		!strings.Contains(got[0], `"DB_PASSWORD"`) ||
+		!strings.Contains(got[0], `mechanism "env"`) {
+		t.Errorf("finding must name the key and the mechanism; got %q", got)
 	}
 }
 

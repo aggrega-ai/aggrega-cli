@@ -82,6 +82,19 @@ type hydratedProjection struct {
 	// with none, because workload synthesis had nothing to parse.
 	ParsedNodeWorkloadPresent bool
 
+	// NodeInjectDeliveries are the deliveries the node's injection pipe carries
+	// once every attachment attached to it has delivered, in delivery order,
+	// each naming whatever attachment asked for it and whether a value arrived.
+	//
+	// It is recorded where the attachment deliveries are made rather than beside
+	// the fields around it, because that is the only point at which both halves
+	// are in hand: the pipe carries the component's own deliveries and its
+	// connections' by then, and the attachments' claims are being made right
+	// there. Read back afterwards the pipe would answer what it holds and
+	// nothing about who put it there, and a claim that delivered nothing would
+	// have left no trace at all.
+	NodeInjectDeliveries []constraint.InjectDelivery
+
 	// ArtifactTemplateText is the template text standing at each of the node's
 	// artifacts, keyed by the output name the entry resolves to and held in the
 	// order the entries were walked.
@@ -251,8 +264,10 @@ func (h *hydratedProjections) recordNode(state *PhaseBState) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if existing, ok := h.byNode[state.NodeID]; ok {
-		// The artifact walk may have reached this node first; keep what it wrote.
+		// The artifact walk and the attachment-delivery site may each have
+		// reached this node first; keep what either wrote.
 		p.ArtifactTemplateText = existing.ArtifactTemplateText
+		p.NodeInjectDeliveries = existing.NodeInjectDeliveries
 	}
 	h.byNode[state.NodeID] = p
 }
@@ -281,6 +296,35 @@ func (h *hydratedProjections) recordArtifactTemplate(nodeID, outputName, text st
 		h.byNode[nodeID] = p
 	}
 	p.ArtifactTemplateText.Set(outputName, text)
+}
+
+// recordNodeInjectDeliveries retains the attributed deliveries one node's
+// injection pipe carries.
+//
+// It is called from the attachment-delivery site rather than beside recordNode,
+// for the reason the artifact recording above is called from the artifacts walk:
+// that site is the only one holding what the fact names. The pipe there already
+// carries what the component's own block and its connections delivered, and the
+// attachments' own claims are being made at that point — including the ones that
+// delivered nothing, which leave the pipe unchanged and so cannot be read back
+// out of it afterwards.
+//
+// It creates the node's entry when the walk has not reached recordNode yet, the
+// same way the artifact recording does, and recordNode keeps whatever this wrote.
+// A nil set records nothing, which is the state of a render whose caller
+// assembled its own input.
+func (h *hydratedProjections) recordNodeInjectDeliveries(nodeID string, deliveries []constraint.InjectDelivery) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p, ok := h.byNode[nodeID]
+	if !ok {
+		p = &hydratedProjection{}
+		h.byNode[nodeID] = p
+	}
+	p.NodeInjectDeliveries = deliveries
 }
 
 // projection returns one node's retained projection, and reports whether the

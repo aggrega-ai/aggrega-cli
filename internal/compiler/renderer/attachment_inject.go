@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -26,10 +27,20 @@ import (
 //
 // The pipe already carries the Pass 2a (self) and Pass 2b (uses) delivery keys
 // when this runs, so a delivery key already present is a duplicate across
-// developer-authored sources and halts with ErrAttachmentInjectKeyCollision. The
+// developer-authored sources. Delivery does not decide that: it records what
+// every surface asked the pipe for, attributed, and the rule declared over that
+// record refuses the duplicate. What is recorded is the deliveries the pipe
+// already held when this ran, then each attachment's own claims in the order
+// they were made — so the first claim under a key is the one that holds it, and a
+// claim whose key is already held delivers nothing rather than displacing it. The
 // FeatureRecipe injectMapping interception in Phase A is a later, last-wins
 // overlay and is intentionally not a collision. Attachments are processed in
 // IR (author) order for deterministic emission.
+//
+// The attributed record is returned rather than written from here, because the
+// caller is what holds the render's retention and what invokes the rule: this
+// function's whole subject is one node's pipe, and a node absent from the
+// returned record would be indistinguishable from one that delivered nothing.
 //
 // onSensitiveByValue, when non-nil, is called once for each delivery key that
 // actually received a value the attachment's schema declares sensitive. This is
@@ -44,14 +55,19 @@ func ResolveAttachmentInject(
 	nodeID string,
 	recipeLookup RecipeLookup,
 	onSensitiveByValue func(attachment, mechanism, deliveryKey string),
-) error {
+) ([]constraint.InjectDelivery, error) {
+	// The deliveries already standing in the pipe are read FIRST, before any
+	// attachment delivers into it. They are the component's own and its
+	// connections', which this function cannot tell apart and does not need to:
+	// what the record has to say is that they are not an attachment's.
+	deliveries := existingPipeDeliveries(*inject)
 	if recipeLookup.FeatureRecipe == nil {
-		return nil
+		return deliveries, nil
 	}
 	entries, ok := graph.Spec.FeatureValuesMapping.Get(nodeID)
 	if !ok {
 		inject.All = buildInjectAll(*inject)
-		return nil
+		return deliveries, nil
 	}
 	for instanceName, entry := range entries.All() {
 		if entry.Inject.Len() == 0 {
@@ -63,14 +79,44 @@ func ResolveAttachmentInject(
 		}
 		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry)
 		if err != nil {
-			return err
+			return deliveries, err
 		}
-		if err := deliverAttachmentInjectKeys(inject, instanceName, entry.Inject, provided, nodeID, entry.SensitiveInject, onSensitiveByValue); err != nil {
-			return err
-		}
+		deliveries = append(deliveries, deliverAttachmentInjectKeys(
+			inject, instanceName, entry.Inject, provided, entry.SensitiveInject, onSensitiveByValue)...)
 	}
 	inject.All = buildInjectAll(*inject)
-	return nil
+	return deliveries, nil
+}
+
+// existingPipeDeliveries reads the deliveries a pipe already carries, in the
+// order the pipe holds them: the three named mechanisms and then the rest in the
+// order the pipe accumulated them.
+//
+// It is read before any attachment delivers, which is what makes every entry it
+// returns one the component's own injection block or one of its connections
+// made. Neither carries an attachment, and the record does not distinguish the
+// two: a duplicate between an attachment and either of them is one condition with
+// one remedy, and what says the other surface is not an attachment's is the empty
+// attachment on its entry.
+//
+// Every entry reports as delivered, because a pipe holds a key only where a value
+// arrived under it — a reference that resolved to nothing set nothing.
+func existingPipeDeliveries(inject types.InjectPipe) []constraint.InjectDelivery {
+	var out []constraint.InjectDelivery
+	record := func(mechanism string, keys types.OrderedMap[string]) {
+		for key := range keys.All() {
+			out = append(out, constraint.InjectDelivery{
+				Mechanism: mechanism, DeliveryKey: key, Delivered: true,
+			})
+		}
+	}
+	record("env", inject.Env)
+	record("file", inject.File)
+	record("arg", inject.Arg)
+	for mechanism, keys := range inject.Additional.All() {
+		record(mechanism, keys)
+	}
+	return out
 }
 
 // attachmentFRScope is the reference set the attachment FeatureRecipe path's
@@ -236,12 +282,23 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 
 // deliverAttachmentInjectKeys resolves each delivery key's provides-key
 // reference against the attachment's resolved provides and sets the resolved
-// value into the pipe under the local delivery key. A delivery key already
-// present in the pipe (from self-inject, uses-inject, or a prior attachment)
-// halts with ErrAttachmentInjectKeyCollision. An unresolved provides-key (absent from the
-// attachment's provides) delivers nothing (missingkey=zero semantics).
-// Mechanisms are processed env, file, arg, then custom mechanisms in sorted
-// order for deterministic emission.
+// value into the pipe under the local delivery key, returning one record per
+// claim the attachment made, in the order the claims were made.
+//
+// A delivery key already present in the pipe (from self-inject, uses-inject, or a
+// prior attachment) is a duplicate across developer-authored sources. This
+// delivers nothing under such a key and records the claim as undelivered; the
+// rule declared over the attributed record is what refuses it. Leaving the
+// standing value in place rather than displacing it is what keeps the first claim
+// under a key the one that holds it, which is the order the record's own contract
+// promises a reader.
+//
+// An unresolved provides-key (absent from the attachment's provides) delivers
+// nothing either (missingkey=zero semantics) and is recorded the same way — and
+// the two cases have to be recorded alike, because a claim that put no value
+// under a key leaves that key free for a later claim whichever reason it failed
+// for. Mechanisms are processed env, file, arg, then custom mechanisms in sorted
+// order for deterministic emission, which is the order the records come back in.
 //
 // sensitiveInject is the attachment's derived per-delivery-key marking, in the
 // same mechanism-then-delivery-key shape as entryInject. It is read, never
@@ -250,7 +307,8 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 // disagree with the first. onSensitiveByValue, when non-nil, is called for each
 // marked key whose value the pipe actually received; a key whose referenced
 // provides key resolved to nothing delivers no literal and reports nothing.
-func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, entryInject types.OrderedMap[types.OrderedMap[string]], provided types.OrderedMap[string], nodeID string, sensitiveInject types.OrderedMap[types.OrderedMap[string]], onSensitiveByValue func(attachment, mechanism, deliveryKey string)) error {
+func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, entryInject types.OrderedMap[types.OrderedMap[string]], provided types.OrderedMap[string], sensitiveInject types.OrderedMap[types.OrderedMap[string]], onSensitiveByValue func(attachment, mechanism, deliveryKey string)) []constraint.InjectDelivery {
+	var claims []constraint.InjectDelivery
 	reportSensitive := func(mech, localKey string) {
 		if onSensitiveByValue == nil {
 			return
@@ -263,24 +321,23 @@ func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, 
 			onSensitiveByValue(instanceName, mech, localKey)
 		}
 	}
-	set := func(dest *types.OrderedMap[string], mech, localKey, providesKey string) error {
+	set := func(dest *types.OrderedMap[string], mech, localKey, providesKey string) {
+		claim := constraint.InjectDelivery{
+			Mechanism: mech, DeliveryKey: localKey, Attachment: instanceName,
+		}
 		if _, exists := dest.Get(localKey); exists {
-			return cerrors.Wrap(
-				fmt.Errorf("%w: key %q in mechanism %q (attachment %q)", ErrAttachmentInjectKeyCollision(), localKey, mech, instanceName),
-				cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID},
-				cerrors.ComposeMessage(ErrAttachmentInjectKeyCollision(), []string{
-					fmt.Sprintf("node %q", nodeID),
-					fmt.Sprintf("attachment %q", instanceName),
-					fmt.Sprintf("key %q in mechanism %q", localKey, mech),
-				}, ""))
+			claims = append(claims, claim)
+			return
 		}
 		val, ok := provided.Get(providesKey)
 		if !ok {
-			return nil
+			claims = append(claims, claim)
+			return
 		}
 		dest.Set(localKey, val)
+		claim.Delivered = true
+		claims = append(claims, claim)
 		reportSensitive(mech, localKey)
-		return nil
 	}
 	for _, mt := range []struct {
 		name string
@@ -291,9 +348,7 @@ func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, 
 			continue
 		}
 		for localKey, providesKey := range mechMap.All() {
-			if err := set(mt.dest, mt.name, localKey, providesKey); err != nil {
-				return err
-			}
+			set(mt.dest, mt.name, localKey, providesKey)
 		}
 	}
 	for _, mech := range customInjectMechanisms(entryInject) {
@@ -303,11 +358,9 @@ func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, 
 			dst = types.OrderedMap[string]{}
 		}
 		for localKey, providesKey := range mechMap.All() {
-			if err := set(&dst, mech, localKey, providesKey); err != nil {
-				return err
-			}
+			set(&dst, mech, localKey, providesKey)
 		}
 		inject.Additional.Set(mech, dst)
 	}
-	return nil
+	return claims
 }

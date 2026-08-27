@@ -212,17 +212,6 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"projection state. It is a build-verify check wearing a projection loop's clothes.",
 	},
 	{
-		vehicle:     "ErrAttachmentInjectKeyCollision",
-		vehicleKind: vehicleSentinel,
-		host:        "deliverAttachmentInjectKeys",
-		file:        "internal/compiler/renderer/attachment_inject.go",
-		disposition: dispositionLeftInline,
-		reason: "A real delivery-key collision test, and the second implementation of one inject-key " +
-			"collision rule — the first is a named function with its own sentinel. Lifting this one would " +
-			"move where a user-visible error identity is raised while the other implementation still emits " +
-			"its own, so the two halves move together or not at all.",
-	},
-	{
 		vehicle:     "ErrRenderedFileCollision",
 		vehicleKind: vehicleSentinel,
 		host:        "RenderLoadedChart",

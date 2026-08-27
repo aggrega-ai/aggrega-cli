@@ -106,6 +106,39 @@ type DerivedNameDeclaration struct {
 	RepeatedWithinOneDeclaration bool
 }
 
+// InjectDelivery is one delivery a node's injection pipe carries or was
+// asked to carry: the mechanism and the key it is delivered under,
+// whatever attachment asked for it, and whether a value actually arrived.
+//
+// It is one fact rather than several because no part of it answers
+// anything alone. A key without its mechanism has not met itself — one
+// key delivered through two mechanisms is two deliveries — and neither
+// says who asked for it, which is what decides whose authoring a duplicate
+// belongs to. Whether the value arrived travels with the delivery it
+// belongs to for the sharper reason: a delivery whose reference resolved
+// to nothing puts no value under the key, so it leaves the key free for a
+// later delivery to take. A reader given the asked-for set alone could not
+// tell that case from a delivery that landed, and would read a key nobody
+// actually delivered as taken.
+type InjectDelivery struct {
+	// Mechanism is the injection mechanism the key is delivered through.
+	Mechanism string
+
+	// DeliveryKey is the key the value is delivered under, which is what the
+	// consumer reads it by.
+	DeliveryKey string
+
+	// Attachment is the attachment instance whose own injection block asked
+	// for the delivery, empty where the component's own block or one of its
+	// connections did.
+	Attachment string
+
+	// Delivered reports whether a value arrived under the key, which is false
+	// for a delivery whose reference resolved to nothing and for one whose key
+	// another delivery already holds.
+	Delivered bool
+}
+
 // ArtifactTemplateDelimiters is the delimiter pair an artifact template is
 // read with: the opening delimiter and the closing one.
 //
@@ -2407,9 +2440,10 @@ type DescribedView interface {
 
 // HydratedView exposes the facts complete at the hydrated stage: per-node
 // resolved locals and provides, and the mid-render products standing
-// beside them — the resolved source, the parsed workload, and each
-// artifact entry's template text before it is evaluated — all of it
-// state that exists before any artifact bytes.
+// beside them — the resolved source, the parsed workload, each artifact
+// entry's template text before it is evaluated, and the attributed
+// deliveries each node's injection pipe carries — all of it state that
+// exists before any artifact bytes.
 //
 // It embeds DescribedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
@@ -2497,6 +2531,43 @@ type HydratedView interface {
 	//
 	// Keyed by node; read from renderer.PhaseBState.ParsedWorkload.
 	ParsedNodeWorkloadPresent(node string) bool
+
+	// NodeInjectDeliveries are the deliveries a node's injection pipe carries
+	// once every attachment attached to that node has delivered into it, one
+	// entry per mechanism and key, each naming whatever attachment asked for
+	// it and whether a value arrived — in delivery order, which is the order
+	// the deliveries were made in.
+	//
+	// Three authoring surfaces deliver into one pipe: the component's own
+	// injection block, the blocks on the entries of its dependency block, and
+	// the block on each attachment attached to it. The pipe is one keyed space
+	// shared between them, so a key two surfaces deliver under is a
+	// contradiction rather than a precedence question — and which surface
+	// asked is the only thing that says whose authoring has to change. The
+	// attribution is therefore part of the fact rather than something a reader
+	// could recover: the pipe itself holds values under keys and remembers
+	// nothing about where a key came from.
+	//
+	// The first two surfaces are not told apart. A duplicate between an
+	// attachment and either of them is one condition with one remedy —
+	// remove the attachment's entry or the other one — and the entry that
+	// names no attachment is what says the other one is not an attachment's.
+	//
+	// Delivery order is the fact and not an incidental property of it. A pipe
+	// is filled in a fixed sequence — the component's own block, then its
+	// connections, then its attachments in the order they are attached, and
+	// within one attachment the three named mechanisms and then the rest in
+	// name order — and the first delivery under a key is the one that holds
+	// it. So a rule about a key delivered twice is a rule about this order,
+	// and answering in any other would name the wrong surface as the one that
+	// has to change.
+	//
+	// It is empty for a node whose pipe carries nothing, which is the ordinary
+	// answer for a component that delivers nothing into its own render
+	// context.
+	//
+	// Keyed by (node, attachment); read from types.InjectPipe.
+	NodeInjectDeliveries(node string) []InjectDelivery
 
 	// ArtifactTemplateText is the template text standing at one of a node's
 	// artifacts, as it is before anything evaluates it.

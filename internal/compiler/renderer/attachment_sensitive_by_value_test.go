@@ -57,7 +57,7 @@ func sensitiveByValueRun(t *testing.T, marked types.OrderedMap[types.OrderedMap[
 
 	var reported []string
 	inject, _ := BuildInjectPipe(nil)
-	if err := ResolveAttachmentInject(&inject, graph, "api", lookup,
+	if _, err := ResolveAttachmentInject(&inject, graph, "api", lookup,
 		func(attachment, mechanism, deliveryKey string) {
 			if attachment != "db-creds" || mechanism != "env" {
 				t.Errorf("report identified attachment %q mechanism %q, want %q / %q", attachment, mechanism, "db-creds", "env")
