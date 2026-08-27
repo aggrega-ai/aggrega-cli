@@ -238,18 +238,15 @@ metadata:
   version: "1.0.0"
 spec:
   mappings:
-    zulu-provider:
-      components:
-        type:
-          core/server: recipes/server-z:1.0.0
-    alpha-provider:
-      components:
-        type:
-          core/server: recipes/server-a:1.0.0
-    mike-provider:
-      components:
-        type:
-          core/server: recipes/server-m:1.0.0
+    components:
+      type:
+        core/zulu: recipes/server-z:1.0.0
+        core/alpha: recipes/server-a:1.0.0
+        core/mike: recipes/server-m:1.0.0
+    features:
+      type:
+        core/zebra: recipes/feature-z:1.0.0
+        core/anteater: recipes/feature-a:1.0.0
 `)
 
 	var m Manifest
@@ -257,10 +254,21 @@ spec:
 		t.Fatalf("Unmarshal: %v", err)
 	}
 
-	want := []string{"zulu-provider", "alpha-provider", "mike-provider"}
-	got := m.Spec.Mappings.Legacy.Keys()
-	if !slices.Equal(got, want) {
-		t.Errorf("Mappings legacy keys = %v, want %v", got, want)
+	// Author order, not lexical order — the keys below are deliberately
+	// unsorted, so a map-iteration regression cannot pass by accident.
+	if m.Spec.Mappings.Components == nil {
+		t.Fatalf("Components nil; expected populated")
+	}
+	wantComponents := []string{"core/zulu", "core/alpha", "core/mike"}
+	if got := m.Spec.Mappings.Components.Type.Keys(); !slices.Equal(got, wantComponents) {
+		t.Errorf("components.type keys = %v, want %v", got, wantComponents)
+	}
+	if m.Spec.Mappings.Features == nil {
+		t.Fatalf("Features nil; expected populated")
+	}
+	wantFeatures := []string{"core/zebra", "core/anteater"}
+	if got := m.Spec.Mappings.Features.Type.Keys(); !slices.Equal(got, wantFeatures) {
+		t.Errorf("features.type keys = %v, want %v", got, wantFeatures)
 	}
 }
 

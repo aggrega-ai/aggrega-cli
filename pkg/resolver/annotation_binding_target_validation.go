@@ -66,7 +66,7 @@ func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup Ca
 		if !found {
 			return &ResolverError{
 				Entity: "Manifest",
-				Field:  annotationBindingField("", annotationKey),
+				Field:  annotationBindingField(annotationKey),
 				Message: fmt.Sprintf(
 					"annotation binding %q targets Feature %q, but no such Feature is loaded in the catalog",
 					annotationKey, binding.Feature,
@@ -125,7 +125,7 @@ func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup Ca
 			if !ok {
 				return &ResolverError{
 					Entity: "Manifest",
-					Field:  annotationBindingField("", annotationKey),
+					Field:  annotationBindingField(annotationKey),
 					Message: fmt.Sprintf(
 						"annotation binding %q routes through pillar %q at path %q on Feature %q, but the Feature's spec.schema does not declare a property at that path",
 						annotationKey, "infra", path, binding.Feature,
@@ -142,7 +142,7 @@ func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup Ca
 			if !ok {
 				return &ResolverError{
 					Entity: "Manifest",
-					Field:  annotationBindingField("", annotationKey),
+					Field:  annotationBindingField(annotationKey),
 					Message: fmt.Sprintf(
 						"annotation binding %q routes through pillar %q at path %q on Feature %q, but the Feature's spec.schema does not declare a property at that path",
 						annotationKey, "values", path, binding.Feature,
@@ -412,9 +412,7 @@ func subkeyConformanceFailure(compiled compactform.Schema, subSchema map[string]
 }
 
 // annotationBindingField locates a finding on the annotation binding that
-// carried it: the field path of that binding's key within the Manifest, with
-// providerTier naming the legacy per-provider tier the binding was declared
-// under and the empty string naming the flat features tier.
+// carried it: the field path of that binding's key within the Manifest.
 //
 // It is one function rather than a format string at each raise site because the
 // path is the coordinate an editor resolves a diagnostic against, and two
@@ -423,9 +421,6 @@ func subkeyConformanceFailure(compiled compactform.Schema, subSchema map[string]
 // does not resolve to the key node itself; the walk's documented fallback lands
 // on the enclosing annotations block, which is the nearest coordinate that is
 // certainly correct.
-func annotationBindingField(providerTier, annotationKey string) string {
-	if providerTier == "" {
-		return ".spec.mappings.features.annotations." + annotationKey
-	}
-	return ".spec.mappings." + providerTier + ".features.annotations." + annotationKey
+func annotationBindingField(annotationKey string) string {
+	return ".spec.mappings.features.annotations." + annotationKey
 }

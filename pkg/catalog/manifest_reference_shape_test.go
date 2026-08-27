@@ -45,9 +45,9 @@ func TestManifestRecipeReferenceFaults_AcceptsEveryShapeTheGrammarAllows(t *test
 }
 
 // TestManifestRecipeReferenceFaults_ReportsEveryMisShapedValue asserts the
-// enumeration: one fault per offending value, over both tiers of both flat
-// sections and the per-provider shape, so a Manifest authoring several of them
-// does not have all but one hidden.
+// enumeration: one fault per offending value, over both tiers of both mapping
+// sections, so a Manifest authoring several of them does not have all but one
+// hidden.
 func TestManifestRecipeReferenceFaults_ReportsEveryMisShapedValue(t *testing.T) {
 	t.Parallel()
 	m := &types.Manifest{}
@@ -59,8 +59,7 @@ func TestManifestRecipeReferenceFaults_ReportsEveryMisShapedValue(t *testing.T) 
 	m.Spec.Mappings.Features = tierWith(
 		map[string]string{"core/dns": "x/y/z:2.0.0"}, nil, []string{"core/dns"},
 	)
-	legacy := tierWith(map[string]string{"core/db": "p/q/r"}, nil, []string{"core/db"})
-	m.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{Components: legacy})
+	m.Spec.Mappings.Features.Name.Set("logs", "p/q/r")
 
 	faults := ManifestRecipeReferenceFaults(m)
 	if len(faults) != 4 {
@@ -77,7 +76,7 @@ func TestManifestRecipeReferenceFaults_ReportsEveryMisShapedValue(t *testing.T) 
 		"spec.mappings.components.type.core/compute/api",
 		"spec.mappings.components.name.web",
 		"spec.mappings.features.type.core/dns",
-		"spec.mappings.helm.components.type.core/db",
+		"spec.mappings.features.name.logs",
 	} {
 		found := false
 		for _, f := range faults {

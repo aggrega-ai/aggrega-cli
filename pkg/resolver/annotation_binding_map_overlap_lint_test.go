@@ -80,6 +80,11 @@ spec:
 	if !stderrors.Is(findings[0], ErrAnnotationBindingPillarOverlap()) {
 		t.Errorf("finding should carry the pillar-overlap advisory identity; got %v", findings[0])
 	}
+	// The locator is the coordinate an editor resolves the diagnostic against,
+	// so it is pinned rather than left to the message text.
+	if got, want := findings[0].Field, ".spec.mappings.features.annotations.feature.myco/db-pool"; got != want {
+		t.Errorf("locator = %q, want %q", got, want)
+	}
 	rendered := findings[0].Error()
 	for _, want := range []string{
 		"feature.myco/db-pool",
@@ -179,50 +184,5 @@ func TestLintAnnotationBindingMaps_NilManifest_NoPanic(t *testing.T) {
 	findings := LintAnnotationBindingMaps(nil)
 	if findings != nil {
 		t.Errorf("nil manifest: expected nil findings; got %v", findings)
-	}
-}
-
-func TestLintAnnotationBindingMaps_LegacyTierOverlap_Surfaces(t *testing.T) {
-	t.Parallel()
-	// Legacy-provider tier (per-provider sub-section under mappings).
-	// The lint walks this tier alongside the flat one, so a binding
-	// authored under either is covered.
-	manifest := manifestFromYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
-kind: Manifest
-metadata:
-  name: test
-  version: "1.0.0"
-spec:
-  mappings:
-    helm:
-      features:
-        annotations:
-          feature.myco/legacy-pool:
-            feature: core/legacy-pool:1.0.0
-            maps:
-              infra:
-                - duplicated
-              values:
-                - duplicated
-`)
-	findings := LintAnnotationBindingMaps(manifest)
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding from legacy tier; got %d: %v", len(findings), findings)
-	}
-	// The locator names the tier the binding was authored under, so a
-	// legacy-tier finding is placed on that tier's own annotations block
-	// rather than on the flat one.
-	if got, want := findings[0].Field, ".spec.mappings.helm.features.annotations.feature.myco/legacy-pool"; got != want {
-		t.Errorf("legacy-tier locator = %q, want %q", got, want)
-	}
-	for _, want := range []string{
-		"feature.myco/legacy-pool",
-		"core/legacy-pool:1.0.0",
-		"duplicated",
-	} {
-		if !strings.Contains(findings[0].Error(), want) {
-			t.Errorf("legacy-tier finding missing %q: %s", want, findings[0])
-		}
 	}
 }

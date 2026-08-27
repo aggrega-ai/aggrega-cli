@@ -914,9 +914,9 @@ type: object
 	}
 }
 
-// TestManifestMappings_UnmarshalYAML_EveryDispatch pins the flat-shape
-// vs legacy-provider discriminator: reserved keys (components, features)
-// populate the typed fields; other keys fall into Legacy.
+// TestManifestMappings_UnmarshalYAML_EveryDispatch pins every arm of the key
+// dispatch: `components` and `features` populate the typed fields, and any
+// other key is refused rather than accepted into some other home.
 func TestManifestMappings_UnmarshalYAML_EveryDispatch(t *testing.T) {
 	t.Parallel()
 	src := `
@@ -926,10 +926,6 @@ components:
 features:
   type:
     rewrite: nginx-helm
-my-provider:
-  components:
-    name:
-      api: legacy-helm
 `
 	var mm ManifestMappings
 	if err := yaml.Unmarshal([]byte(src), &mm); err != nil {
@@ -941,8 +937,14 @@ my-provider:
 	if mm.Features == nil {
 		t.Errorf("Features not populated")
 	}
-	if _, ok := mm.Legacy.Get("my-provider"); !ok {
-		t.Errorf("Legacy.my-provider not populated")
+
+	var refused ManifestMappings
+	err := yaml.Unmarshal([]byte("my-provider:\n  components:\n    name:\n      api: some-helm\n"), &refused)
+	if err == nil {
+		t.Fatalf("an unrecognised mappings key was accepted; want a refusal")
+	}
+	if !strings.Contains(err.Error(), `"my-provider"`) {
+		t.Errorf("refusal does not name the offending key; got %q", err.Error())
 	}
 }
 
@@ -963,8 +965,8 @@ func TestManifestMappings_UnmarshalYAML_NilNode_RejectsNonMap(t *testing.T) {
 }
 
 // TestManifestMappings_MarshalYAML_PopulatedAndEmpty pins emission:
-// populated emits a mapping with components / features / legacy in
-// author order; empty emits nil.
+// populated emits a mapping carrying whichever of components / features is
+// declared; empty emits nil.
 func TestManifestMappings_MarshalYAML_PopulatedAndEmpty(t *testing.T) {
 	t.Parallel()
 	// Empty.
@@ -980,7 +982,6 @@ func TestManifestMappings_MarshalYAML_PopulatedAndEmpty(t *testing.T) {
 	mt := MappingTier{}
 	mt.Type.Set("server", "helm-chart")
 	mm = ManifestMappings{Components: &mt}
-	mm.Legacy.Set("custom-provider", ProviderMappings{})
 	out, err = mm.MarshalYAML()
 	if err != nil {
 		t.Fatalf("populated: %v", err)

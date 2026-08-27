@@ -205,7 +205,7 @@ func (s *walkState) walkComponentInstanceFeatures(ci types.ComponentInstance, pa
 }
 
 // walkManifest descends Manifest.Spec.Mappings.{Components,
-// Features} flat-shape mappings. The Components mapping carries
+// Features}. The Components mapping carries
 // component-type → Recipe URIs; the Features mapping carries
 // feature-type → FeatureRecipe URIs.
 func (s *walkState) walkManifest(m *types.Manifest) {

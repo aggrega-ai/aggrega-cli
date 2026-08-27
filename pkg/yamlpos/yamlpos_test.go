@@ -467,12 +467,12 @@ func TestClassifyDetectsUsesTargetSubsystemNested(t *testing.T) {
 	}
 }
 
-func TestClassifyDetectsManifestRecipeReferenceFlat(t *testing.T) {
+func TestClassifyDetectsManifestRecipeReferenceMapping(t *testing.T) {
 	t.Parallel()
 	src := "spec:\n  mappings:\n    components:\n      type:\n        core/server: recipes/helm-server:1.0.0\n"
 	ctx := classifyAtCursor(t, src, 4, 24)
 	if ctx.Kind != ContextKindManifestRecipeReference {
-		t.Errorf("Kind = %d; want ContextKindManifestRecipeReference (flat shape)", ctx.Kind)
+		t.Errorf("Kind = %d; want ContextKindManifestRecipeReference", ctx.Kind)
 	}
 	if ctx.Side != ContextSideValue {
 		t.Errorf("Side = %d; want ContextSideValue", ctx.Side)
@@ -482,12 +482,17 @@ func TestClassifyDetectsManifestRecipeReferenceFlat(t *testing.T) {
 	}
 }
 
-func TestClassifyDetectsManifestRecipeReferenceLegacy(t *testing.T) {
+// TestClassifyRejectsDeeperManifestMappingPath pins the exact-length match: a
+// path one level deeper than components/features is not a mapping value, so it
+// must NOT be classified as a Recipe reference and must not be offered recipe
+// completions. Such a document is refused at load; an editor classifying it as
+// a mapping value would offer completions for a key the compiler will reject.
+func TestClassifyRejectsDeeperManifestMappingPath(t *testing.T) {
 	t.Parallel()
 	src := "spec:\n  mappings:\n    helm:\n      components:\n        type:\n          core/server: recipes/helm-server:1.0.0\n"
 	ctx := classifyAtCursor(t, src, 5, 26)
-	if ctx.Kind != ContextKindManifestRecipeReference {
-		t.Errorf("Kind = %d; want ContextKindManifestRecipeReference (legacy provider-keyed)", ctx.Kind)
+	if ctx.Kind == ContextKindManifestRecipeReference {
+		t.Errorf("Kind = ContextKindManifestRecipeReference on a path deeper than the mapping surface; want Unknown")
 	}
 }
 

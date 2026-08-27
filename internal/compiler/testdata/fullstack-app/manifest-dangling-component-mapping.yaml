@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: dangling-component-mapping-manifest
+  version: "1.0.0"
+spec:
+  # core/compute/api-server maps to a Recipe that is NOT in this catalog. A
+  # mapping entry is the author's answer for that type, so an unresolvable
+  # value is a fault to report rather than a reason to resolve some other way:
+  # the render lookup answers a miss and the pre-render
+  # resolution-completeness pass turns that miss into a loud halt naming this
+  # value.
+  mappings:
+    components:
+      type:
+        core/compute/api-server: helm-api-server-absent-from-catalog:1.0.0
+        core/compute/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
+        core/datastore/postgres: helm-postgres-synthesized-with-artifacts:1.0.0
+    features:
+      type:
+        core/k8s-dns-resolver: k8s-dns-patcher:1.0.0

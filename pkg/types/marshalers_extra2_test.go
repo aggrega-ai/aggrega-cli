@@ -386,23 +386,6 @@ func TestManifestMappings_MarshalYAML_FeaturesOnly(t *testing.T) {
 	}
 }
 
-// TestManifestMappings_MarshalYAML_LegacyOnly pins the legacy-only
-// emission path.
-func TestManifestMappings_MarshalYAML_LegacyOnly(t *testing.T) {
-	t.Parallel()
-	mm := ManifestMappings{}
-	mt := MappingTier{}
-	mt.Name.Set("api", "legacy-helm")
-	mm.Legacy.Set("my-provider", ProviderMappings{Components: &mt})
-	out, err := yaml.Marshal(mm)
-	if err != nil {
-		t.Fatalf("Marshal: %v", err)
-	}
-	if !strings.Contains(string(out), "my-provider:") {
-		t.Errorf("missing legacy entry; got %s", string(out))
-	}
-}
-
 // TestUnmarshalImportable_AllShapes pins every dispatch arm of the
 // shared content-shape helper: nil, scalar, well-formed $import, and
 // each error branch.

@@ -41,10 +41,8 @@ import (
 // tie-break behavior; the runtime side-vs-pillar halt remains the
 // load-bearing safety net.
 //
-// Walk order. The flat-features tier is walked first, then each
-// legacy-provider tier in OrderedMap author order. Within a tier,
-// annotation keys are walked in OrderedMap author order. Within a
-// binding, overlapping paths are emitted in [sort.Strings] order so
+// Walk order. Annotation keys are walked in OrderedMap author order. Within
+// a binding, overlapping paths are emitted in [sort.Strings] order so
 // multiple overlaps on one binding produce a stable, deterministic
 // finding sequence across runs of identical input.
 //
@@ -56,7 +54,7 @@ func LintAnnotationBindingMaps(manifest *types.Manifest) []*ResolverError {
 	}
 	var findings []*ResolverError
 
-	check := func(providerTier string, annotations *types.OrderedMap[types.AnnotationBinding]) {
+	check := func(annotations *types.OrderedMap[types.AnnotationBinding]) {
 		if annotations == nil {
 			return
 		}
@@ -76,7 +74,7 @@ func LintAnnotationBindingMaps(manifest *types.Manifest) []*ResolverError {
 			for _, p := range overlapping {
 				findings = append(findings, &ResolverError{
 					Entity: "Manifest",
-					Field:  annotationBindingField(providerTier, key),
+					Field:  annotationBindingField(key),
 					Message: fmt.Sprintf(
 						"annotation binding %q on Feature %q declares path %q in both maps.infra and maps.values; the routing tie-break sends this subkey through the infra pillar, which makes it unreachable from the Aggregate side — declare two bindings under two annotation keys if both pillars are meant to route it",
 						key, binding.Feature, p,
@@ -88,13 +86,7 @@ func LintAnnotationBindingMaps(manifest *types.Manifest) []*ResolverError {
 	}
 
 	if manifest.Spec.Mappings.Features != nil {
-		check("", manifest.Spec.Mappings.Features.Annotations)
-	}
-	for _, prov := range manifest.Spec.Mappings.Legacy.Keys() {
-		tier, _ := manifest.Spec.Mappings.Legacy.Get(prov)
-		if tier.Features != nil {
-			check(prov, tier.Features.Annotations)
-		}
+		check(manifest.Spec.Mappings.Features.Annotations)
 	}
 	return findings
 }

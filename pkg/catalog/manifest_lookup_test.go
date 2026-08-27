@@ -71,7 +71,7 @@ func TestRecipeLookupWithManifest_FlatShape(t *testing.T) {
 	lookup := c.RecipeLookupWithManifest(manifest)
 	r, ok := lookup.Recipe("", "core/datastore/postgres")
 	if !ok {
-		t.Fatal("expected flat-shape dispatch to hit")
+		t.Fatal("expected the mapping to resolve")
 	}
 	if r.Metadata.Name != "core/helm/postgres-bitnami" {
 		t.Errorf("wrong recipe resolved: %q", r.Metadata.Name)
@@ -90,28 +90,24 @@ func TestComponentRecipeURI_VerbatimMappingValue(t *testing.T) {
 	flat.Type.Set("mariadb-bitnami", "mariadb-bitnami:1.0.0")
 	flat.Type.Set("core/datastore/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0")
 	flat.Type.Set("core/cache/memcached", "memcached-recipe")
-	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
-	legacy.Components.Type.Set("core/cache/redis", "core/helm/redis-legacy:1.0.0")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{Components: flat},
 		},
 	}
-	manifest.Spec.Mappings.Legacy.Set("helm", legacy)
 
 	cases := []struct {
 		name, compType, wantURI string
 		wantOK                  bool
 	}{
-		{"short-form flat", "mariadb-bitnami", "mariadb-bitnami:1.0.0", true},
-		{"full-path flat", "core/datastore/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0", true},
+		{"short-form", "mariadb-bitnami", "mariadb-bitnami:1.0.0", true},
+		{"full-path", "core/datastore/postgres", "hub.aggrega.ai/recipe/helm/postgres:2.1.0", true},
 		// Unversioned mapping value returns verbatim — NOT normalized to a
 		// versioned URI. This is the source-descent join's load-bearing guard: an
 		// unversioned mapping value must stay unversioned so it joins the closure
 		// entity recorded under the same verbatim value, never silently binding to
 		// a versioned entity. A future version-normalization step would break this.
-		{"unversioned flat", "core/cache/memcached", "memcached-recipe", true},
-		{"legacy fallback", "core/cache/redis", "core/helm/redis-legacy:1.0.0", true},
+		{"unversioned", "core/cache/memcached", "memcached-recipe", true},
 		{"unmapped type", "core/queue/nats", "", false},
 	}
 	for _, tc := range cases {
@@ -141,27 +137,23 @@ func TestFeatureRecipeURI_VerbatimMappingValue(t *testing.T) {
 	flat.Type.Set("tls-cert", "tls-cert:1.0.0")
 	flat.Type.Set("core/security/tls", "hub.aggrega.ai/feature-recipe/helm/tls:2.1.0")
 	flat.Type.Set("core/observability/logs", "logs-fr")
-	legacy := types.ProviderMappings{Features: &types.MappingTier{}}
-	legacy.Features.Type.Set("core/observability/otel", "core/feature-recipe/otel-legacy:1.0.0")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{Features: flat},
 		},
 	}
-	manifest.Spec.Mappings.Legacy.Set("helm", legacy)
 
 	cases := []struct {
 		name, featType, wantURI string
 		wantOK                  bool
 	}{
-		{"short-form flat", "tls-cert", "tls-cert:1.0.0", true},
-		{"full-path flat", "core/security/tls", "hub.aggrega.ai/feature-recipe/helm/tls:2.1.0", true},
+		{"short-form", "tls-cert", "tls-cert:1.0.0", true},
+		{"full-path", "core/security/tls", "hub.aggrega.ai/feature-recipe/helm/tls:2.1.0", true},
 		// Unversioned mapping value returns verbatim — the FeatureRecipe analogue
 		// of the source-descent join guard: an unversioned value must not be
 		// normalized to a versioned URI, or it would bind to a versioned closure
 		// entity it never matched verbatim.
-		{"unversioned flat", "core/observability/logs", "logs-fr", true},
-		{"legacy fallback", "core/observability/otel", "core/feature-recipe/otel-legacy:1.0.0", true},
+		{"unversioned", "core/observability/logs", "logs-fr", true},
 		{"unmapped type", "core/queue/nats", "", false},
 	}
 	for _, tc := range cases {
@@ -180,63 +172,61 @@ func TestFeatureRecipeURI_VerbatimMappingValue(t *testing.T) {
 	}
 }
 
-// TestRecipeLookupWithManifest_LegacyFallback pins layer-2: when the
-// flat shape is absent, the legacy v2 per-provider shape resolves.
-func TestRecipeLookupWithManifest_LegacyFallback(t *testing.T) {
+// TestRecipeLookupWithManifest_MappingResolves pins the render lookup's one
+// resolution route: a component type the Manifest maps resolves to the mapped
+// Recipe, by Recipe URI rather than by spec.implements.
+func TestRecipeLookupWithManifest_MappingResolves(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
 		fakeRecipe("core/helm/postgres-bitnami", "core/datastore/postgres"),
 	)
-	legacyHelm := types.ProviderMappings{Components: &types.MappingTier{}}
-	legacyHelm.Components.Type.Set("core/datastore/postgres", "core/helm/postgres-bitnami")
+	components := &types.MappingTier{}
+	components.Type.Set("core/datastore/postgres", "core/helm/postgres-bitnami")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
-			Mappings: types.ManifestMappings{},
+			Mappings: types.ManifestMappings{Components: components},
 		},
 	}
-	manifest.Spec.Mappings.Legacy.Set("helm", legacyHelm)
 	lookup := c.RecipeLookupWithManifest(manifest)
 	r, ok := lookup.Recipe("", "core/datastore/postgres")
 	if !ok {
-		t.Fatal("expected legacy-shape dispatch to hit")
+		t.Fatal("expected the mapping to resolve")
 	}
 	if r.Metadata.Name != "core/helm/postgres-bitnami" {
 		t.Errorf("wrong recipe resolved: %q", r.Metadata.Name)
 	}
 }
 
-// TestRecipeLookupWithManifest_FlatWinsOverLegacy pins the dispatch
-// precedence: when both flat and legacy mappings carry the same component
-// type, the flat-shape mapping resolves. Uses distinct spec.implements
-// values so both Recipes survive the catalog's spec.implements-keyed Recipes
-// map; keying that map so multiple Recipes can share one spec.implements is
-// future work, but the precedence behavior is demonstrable without it.
-func TestRecipeLookupWithManifest_FlatWinsOverLegacy(t *testing.T) {
+// TestRecipeLookupWithManifest_UnresolvableMappingIsAMiss pins the precedence
+// rule stated on RecipeLookupWithManifest: a mapping entry is the author's
+// answer for that type, so a value naming a recipe the catalog does not hold
+// is a MISS here rather than an invitation to resolve some other way — even
+// though the catalog does hold a recipe whose spec.implements matches the type.
+//
+// The fault itself is reported by the pre-render resolution-completeness pass,
+// which reads the same mapping value; this test pins only that the render
+// lookup refuses to answer.
+func TestRecipeLookupWithManifest_UnresolvableMappingIsAMiss(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
-		fakeRecipe("core/helm/postgres-flat", "core/datastore/postgres-A"),
-		fakeRecipe("core/helm/postgres-legacy", "core/datastore/postgres-B"),
+		fakeRecipe("core/helm/postgres-bitnami", "core/datastore/postgres"),
 	)
-	flatComponents := &types.MappingTier{}
-	flatComponents.Type.Set("core/datastore/postgres-A", "core/helm/postgres-flat")
-	legacyHelm := types.ProviderMappings{Components: &types.MappingTier{}}
-	legacyHelm.Components.Type.Set("core/datastore/postgres-A", "core/helm/postgres-legacy")
+	components := &types.MappingTier{}
+	components.Type.Set("core/datastore/postgres", "core/helm/absent-recipe")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
-			Mappings: types.ManifestMappings{Components: flatComponents},
+			Mappings: types.ManifestMappings{Components: components},
 		},
 	}
-	manifest.Spec.Mappings.Legacy.Set("helm", legacyHelm)
 	lookup := c.RecipeLookupWithManifest(manifest)
-	r, _ := lookup.Recipe("", "core/datastore/postgres-A")
-	if r.Metadata.Name != "core/helm/postgres-flat" {
-		t.Errorf("expected flat-shape to win; got %q", r.Metadata.Name)
+	if r, ok := lookup.Recipe("", "core/datastore/postgres"); ok {
+		t.Errorf("an unresolvable mapping value must miss; got %q", r.Metadata.Name)
 	}
 }
 
 // TestVerifyManifestImplementsConsistency_PassOnMatch pins the
-// consistency-check pass path: flat-shape mappings whose resolved
-// recipes carry matching spec.implements produce no errors.
+// consistency-check pass path: mappings whose resolved recipes carry
+// matching spec.implements produce no errors.
 func TestVerifyManifestImplementsConsistency_PassOnMatch(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog(
@@ -386,8 +376,7 @@ func TestVerifyManifestImplementsConsistency_NilManifest(t *testing.T) {
 // even when the authored type's version differs from (or omits) the mapping
 // key's version — the idiomatic shape where the Aggregate authors a bare type
 // and the Manifest pins a version. Both mismatch directions resolve, and the
-// exact-version / unversioned-key fast paths are unchanged. The legacy
-// per-provider shape is tolerant on the same terms.
+// exact-version / unversioned-key fast paths are unchanged.
 func TestComponentRecipeURI_VersionTolerant(t *testing.T) {
 	t.Parallel()
 	flat := &types.MappingTier{}
@@ -395,14 +384,11 @@ func TestComponentRecipeURI_VersionTolerant(t *testing.T) {
 	flat.Type.Set("core/cache/redis", "redis-helm:1.0.0")                  // unversioned key
 	flat.Type.Set("core/datastore/postgres:2.0.0", "postgres-helm:2.0.0")  // versioned key
 	flat.Type.Set("core/queue/nats", "nats-helm:1.0.0")                    // unversioned key
-	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
-	legacy.Components.Type.Set("core/legacy/thing:1.0.0", "thing-legacy:1.0.0")
 	manifest := &types.Manifest{
 		Spec: types.ManifestSpec{
 			Mappings: types.ManifestMappings{Components: flat},
 		},
 	}
-	manifest.Spec.Mappings.Legacy.Set("helm", legacy)
 
 	cases := []struct {
 		name, compType, wantURI string
@@ -413,7 +399,6 @@ func TestComponentRecipeURI_VersionTolerant(t *testing.T) {
 		{"versioned type, versioned key (exact, unchanged)", "core/datastore/postgres:2.0.0", "postgres-helm:2.0.0", true},
 		{"unversioned type, unversioned key (exact, unchanged)", "core/queue/nats", "nats-helm:1.0.0", true},
 		{"version mismatch, base matches", "core/datastore/postgres:9.9.9", "postgres-helm:2.0.0", true},
-		{"legacy version-tolerant", "core/legacy/thing", "thing-legacy:1.0.0", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -855,23 +840,5 @@ func TestNameTier_PrecedenceWithVersionTolerantType(t *testing.T) {
 	// No name override -> version-tolerant type match still resolves.
 	if uri, ok, _ := ComponentRecipeURI(manifest, "db-replica", "core/datastore/mariadb"); !ok || uri != "recipe-typed" {
 		t.Errorf("no-name lookup must keep version-tolerant type: got %q ok=%v; want recipe-typed", uri, ok)
-	}
-}
-
-// TestNameTier_LegacyShape pins the name tier in the legacy per-provider mapping
-// shape (so the override is not silently shape-dependent).
-func TestNameTier_LegacyShape(t *testing.T) {
-	t.Parallel()
-	legacy := types.ProviderMappings{Components: &types.MappingTier{}}
-	legacy.Components.Type.Set("core/datastore/mariadb", "recipe-typed-legacy")
-	legacy.Components.Name.Set("db-primary", "recipe-named-legacy")
-	manifest := &types.Manifest{}
-	manifest.Spec.Mappings.Legacy.Set("helm", legacy)
-
-	if uri, ok, _ := ComponentRecipeURI(manifest, "db-primary", "core/datastore/mariadb"); !ok || uri != "recipe-named-legacy" {
-		t.Errorf("legacy-shape name override must resolve: got %q ok=%v; want recipe-named-legacy", uri, ok)
-	}
-	if uri, ok, _ := ComponentRecipeURI(manifest, "db-replica", "core/datastore/mariadb"); !ok || uri != "recipe-typed-legacy" {
-		t.Errorf("legacy-shape sibling -> type: got %q ok=%v; want recipe-typed-legacy", uri, ok)
 	}
 }

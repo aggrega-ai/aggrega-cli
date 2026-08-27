@@ -5,6 +5,7 @@ package types
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -206,7 +207,20 @@ spec:
 	}
 }
 
-func TestManifest_AnnotationBinding_LegacyTierStillParses(t *testing.T) {
+// TestManifestMappings_UnknownKeyIsRefused pins the codec half of the mapping
+// key set: `components` and `features` are the whole surface, and any other key
+// under `mappings:` is refused by name rather than dropped.
+//
+// The refusal matters at this layer specifically. A document read through the
+// resolver is schema-validated first, so the schema is what an author meets; a
+// caller decoding these bytes straight into the type passes no schema gate at
+// all, and yaml.v3's default for an unrecognised key is to drop it silently. A
+// dropped mapping is one the author wrote and the build will not honour, so the
+// key set is enforced where the decode happens too.
+//
+// The message is asserted to name both the offending key and what to write
+// instead, because a refusal that only says "no" leaves the author to guess.
+func TestManifestMappings_UnknownKeyIsRefused(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
 apiVersion: aggrega.ai/v1alpha1
@@ -220,36 +234,55 @@ spec:
       features:
         type:
           core/rewrite-host: rewrite-host-helm:1.0.0
-        annotations:
-          feature.myco/rewrite-host:
-            feature: core/rewrite-host:1.0.0
-            maps:
-              infra:
-                - min_version
+`)
+
+	var m Manifest
+	err := yaml.Unmarshal(src, &m)
+	if err == nil {
+		t.Fatalf("Unmarshal accepted an unknown mappings key; want a refusal")
+	}
+	got := err.Error()
+	for _, want := range []string{`"helm"`, "components", "features"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("refusal does not name %s; got %q", want, got)
+		}
+	}
+}
+
+// TestManifestMappings_KnownKeysStillDecode is the other half of the pair
+// above: closing the key set must not close the two keys that are the surface.
+func TestManifestMappings_KnownKeysStillDecode(t *testing.T) {
+	t.Parallel()
+	src := []byte(`
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/api-server: api-server-helm:1.0.0
+    features:
+      type:
+        core/rewrite-host: rewrite-host-helm:1.0.0
 `)
 
 	var m Manifest
 	if err := yaml.Unmarshal(src, &m); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	pm, ok := m.Spec.Mappings.Legacy.Get("helm")
-	if !ok {
-		t.Fatalf("legacy provider tier `helm` missing")
+	if m.Spec.Mappings.Components == nil {
+		t.Fatalf("Components nil; expected populated")
 	}
-	if pm.Features == nil || pm.Features.Annotations == nil {
-		t.Fatalf("legacy helm.features.annotations nil; expected populated")
+	if got, ok := m.Spec.Mappings.Components.Type.Get("core/api-server"); !ok || got != "api-server-helm:1.0.0" {
+		t.Errorf("components.type[core/api-server] = %q, %v; want api-server-helm:1.0.0, true", got, ok)
 	}
-	binding, ok := pm.Features.Annotations.Get("feature.myco/rewrite-host")
-	if !ok {
-		t.Fatalf("legacy binding feature.myco/rewrite-host missing")
+	if m.Spec.Mappings.Features == nil {
+		t.Fatalf("Features nil; expected populated")
 	}
-	if binding.Feature != "core/rewrite-host:1.0.0" {
-		t.Errorf("legacy binding.Feature = %q, want core/rewrite-host:1.0.0", binding.Feature)
-	}
-	if !slices.Equal(binding.Maps.Infra, []string{"min_version"}) {
-		t.Errorf("legacy binding.Maps.Infra = %v, want [min_version]", binding.Maps.Infra)
-	}
-	if len(binding.Maps.Values) != 0 {
-		t.Errorf("legacy binding.Maps.Values = %v, want empty", binding.Maps.Values)
+	if got, ok := m.Spec.Mappings.Features.Type.Get("core/rewrite-host"); !ok || got != "rewrite-host-helm:1.0.0" {
+		t.Errorf("features.type[core/rewrite-host] = %q, %v; want rewrite-host-helm:1.0.0, true", got, ok)
 	}
 }

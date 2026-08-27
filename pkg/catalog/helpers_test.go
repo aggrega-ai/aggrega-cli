@@ -117,84 +117,58 @@ func TestFeatureRecipeByURI_AllBranches(t *testing.T) {
 	}
 }
 
-// TestFlatFeatureURI_AllBranches pins nil-manifest, nil-features
+// TestFeatureMappingURI_AllBranches pins nil-manifest, nil-features
 // section, hit, miss.
-func TestFlatFeatureURI_AllBranches(t *testing.T) {
+func TestFeatureMappingURI_AllBranches(t *testing.T) {
 	t.Parallel()
-	if _, ok, _ := flatFeatureURI(nil, "", "t"); ok {
+	if _, ok, _ := featureMappingURI(nil, "", "t"); ok {
 		t.Errorf("nil manifest should miss")
 	}
-	if _, ok, _ := flatFeatureURI(&types.Manifest{}, "", "t"); ok {
+	if _, ok, _ := featureMappingURI(&types.Manifest{}, "", "t"); ok {
 		t.Errorf("no features section should miss")
 	}
 	m := &types.Manifest{}
 	mt := &types.MappingTier{}
 	mt.Type.Set("feat-type", "feat-uri")
 	m.Spec.Mappings.Features = mt
-	uri, ok, _ := flatFeatureURI(m, "", "feat-type")
+	uri, ok, _ := featureMappingURI(m, "", "feat-type")
 	if !ok || uri != "feat-uri" {
 		t.Errorf("hit: ok=%v uri=%q", ok, uri)
 	}
-	if _, ok, _ := flatFeatureURI(m, "", "absent"); ok {
+	if _, ok, _ := featureMappingURI(m, "", "absent"); ok {
 		t.Errorf("missing key should miss")
 	}
 }
 
-// TestLegacyFeatureURI_AllBranches pins nil-manifest, no-providers,
-// provider-without-features, miss across all providers, hit.
-func TestLegacyFeatureURI_AllBranches(t *testing.T) {
+// TestComponentMappingURI_AllBranches is the component analogue: it pins
+// nil-manifest, nil-components section, hit and miss. It exists as the
+// counterpart to the feature test above so neither helper's nil guards are
+// covered only by the entity kind that happens to have a test.
+func TestComponentMappingURI_AllBranches(t *testing.T) {
 	t.Parallel()
-	if _, ok, _ := legacyFeatureURI(nil, "", "t"); ok {
+	if _, ok, _ := componentMappingURI(nil, "", "t"); ok {
 		t.Errorf("nil manifest should miss")
 	}
-	// No providers.
-	if _, ok, _ := legacyFeatureURI(&types.Manifest{}, "", "t"); ok {
-		t.Errorf("no providers should miss")
+	if _, ok, _ := componentMappingURI(&types.Manifest{}, "", "t"); ok {
+		t.Errorf("no components section should miss")
 	}
-	// Provider without Features section.
 	m := &types.Manifest{}
-	m.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{})
-	if _, ok, _ := legacyFeatureURI(m, "", "t"); ok {
-		t.Errorf("provider without features should miss")
-	}
-	// Provider with Features but no matching key.
 	mt := &types.MappingTier{}
-	mt.Type.Set("other-feat", "other-uri")
-	m2 := &types.Manifest{}
-	m2.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{Features: mt})
-	if _, ok, _ := legacyFeatureURI(m2, "", "absent"); ok {
-		t.Errorf("absent key should miss")
-	}
-	// Hit.
-	mt2 := &types.MappingTier{}
-	mt2.Type.Set("feat-type", "feat-uri")
-	m3 := &types.Manifest{}
-	m3.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{Features: mt2})
-	uri, ok, _ := legacyFeatureURI(m3, "", "feat-type")
-	if !ok || uri != "feat-uri" {
+	mt.Type.Set("comp-type", "comp-uri")
+	m.Spec.Mappings.Components = mt
+	uri, ok, _ := componentMappingURI(m, "", "comp-type")
+	if !ok || uri != "comp-uri" {
 		t.Errorf("hit: ok=%v uri=%q", ok, uri)
 	}
-}
-
-// TestLegacyComponentURI_NilAndNoComponents pins the nil-manifest and
-// provider-without-components branches that the existing tests don't
-// exercise.
-func TestLegacyComponentURI_NilAndNoComponents(t *testing.T) {
-	t.Parallel()
-	if _, ok, _ := legacyComponentURI(nil, "", "t"); ok {
-		t.Errorf("nil manifest should miss")
-	}
-	// Provider without Components section.
-	m := &types.Manifest{}
-	m.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{})
-	if _, ok, _ := legacyComponentURI(m, "", "t"); ok {
-		t.Errorf("provider without components should miss")
+	if _, ok, _ := componentMappingURI(m, "", "absent"); ok {
+		t.Errorf("missing key should miss")
 	}
 }
 
-// TestFeatureTypeToFeatureRecipeWithManifest_AllLayers pins the mapping-only
-// cascade: flat mapping, legacy mapping, and miss. An unmapped feature type is
-// a miss here — resolution never walks spec.implements.
+// TestFeatureTypeToFeatureRecipeWithManifest_AllLayers pins mapping-only
+// resolution: a mapped feature type hits, an unmapped one misses. An unmapped
+// feature type is a miss here — resolution never walks spec.implements, even
+// when a recipe in the catalog implements the type.
 func TestFeatureTypeToFeatureRecipeWithManifest_AllLayers(t *testing.T) {
 	t.Parallel()
 	c := &Catalog{
@@ -210,7 +184,7 @@ func TestFeatureTypeToFeatureRecipeWithManifest_AllLayers(t *testing.T) {
 	fr2.Spec.Implements = "feature/legacy"
 	c.FeatureRecipes[recipeURIKey(fr2.Metadata.Name, fr2.Metadata.Version)] = fr2
 
-	// Layer 1: flat-shape mapping.
+	// A mapped feature type hits.
 	manifest := &types.Manifest{}
 	mt := &types.MappingTier{}
 	mt.Type.Set("feature/rewrite", "myco/rewrite-host")
@@ -218,30 +192,23 @@ func TestFeatureTypeToFeatureRecipeWithManifest_AllLayers(t *testing.T) {
 	lookup := c.featureTypeToFeatureRecipeWithManifest(manifest)
 	got, ok := lookup("", "feature/rewrite")
 	if !ok || got == nil || got.Metadata.Name != "myco/rewrite-host" {
-		t.Errorf("layer 1 flat hit: ok=%v got=%v", ok, got)
+		t.Errorf("mapped hit: ok=%v got=%v", ok, got)
 	}
 
-	// Layer 2: legacy mapping.
+	// A type the Manifest does not map is a miss, EVEN THOUGH fr2 in the
+	// catalog declares spec.implements: feature/legacy. That is the whole
+	// point of mapping-only resolution: implements never resolves.
 	manifest2 := &types.Manifest{}
-	legacyMT := &types.MappingTier{}
-	legacyMT.Type.Set("feature/legacy", "myco/legacy-helper")
-	manifest2.Spec.Mappings.Legacy.Set("helm", types.ProviderMappings{Features: legacyMT})
+	otherMT := &types.MappingTier{}
+	otherMT.Type.Set("feature/unrelated", "myco/rewrite-host")
+	manifest2.Spec.Mappings.Features = otherMT
 	lookup2 := c.featureTypeToFeatureRecipeWithManifest(manifest2)
-	got, ok = lookup2("", "feature/legacy")
-	if !ok || got == nil || got.Metadata.Name != "myco/legacy-helper" {
-		t.Errorf("layer 2 legacy hit: ok=%v got=%v", ok, got)
-	}
-
-	// An unmapped type is a miss: resolution is mapping-only and never
-	// walks spec.implements, even when a recipe implements the type.
-	_, ok = lookup2("", "feature/rewrite")
-	if ok {
+	if _, ok = lookup2("", "feature/legacy"); ok {
 		t.Errorf("unmapped type must miss under mapping-only resolution")
 	}
 
 	// Miss.
-	_, ok = lookup2("", "absent/type")
-	if ok {
+	if _, ok = lookup2("", "absent/type"); ok {
 		t.Errorf("absent type should miss")
 	}
 }

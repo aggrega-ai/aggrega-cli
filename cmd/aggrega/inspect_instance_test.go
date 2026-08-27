@@ -14,8 +14,8 @@ import (
 )
 
 // fullstackAppDir is the resolved-instance fixture root: an Aggregate (with a
-// db-module sub-aggregate import and uses-edges), a Manifest (flat-shape
-// mappings), and a Release (three boundaries, directories, annotations). All
+// db-module sub-aggregate import and uses-edges), a Manifest, and a Release
+// (three boundaries, directories, annotations). All
 // three resolved-instance renderers and the no-divergence proof drive off it.
 const (
 	fullstackAggregate = "../../internal/compiler/testdata/fullstack-app/aggregate.yaml"
@@ -247,35 +247,44 @@ spec:
 	}
 }
 
-// TestInspectManifest_LegacyFooterWarning proves H4: a Manifest carrying legacy
-// per-provider mapping tiers surfaces a footer warning naming the stale shape;
-// the legacy tiers themselves are not rendered.
-func TestInspectManifest_LegacyFooterWarning(t *testing.T) {
+// TestInspectManifest_UnknownMappingKeyIsRefused pins the mapping key surface at
+// the inspector: `components` and `features` are the whole surface, so a
+// Manifest declaring any other key under `mappings:` is refused rather than
+// rendered with the unrecognised section quietly dropped.
+//
+// It is asserted here as well as at the loader because a reader reaches for
+// inspect precisely when a document is not behaving as expected, and an
+// inspector that rendered such a Manifest as if it were well formed would be
+// the surface most likely to mislead.
+func TestInspectManifest_UnknownMappingKeyIsRefused(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	path := filepath.Join(root, "legacy.yaml")
+	path := filepath.Join(root, "unknown-mapping-key.yaml")
 	writeFixture(t, path, `apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
 metadata:
-  name: legacy-manifest
+  name: unknown-mapping-key-manifest
   version: "1.0.0"
 spec:
   mappings:
     helm:
       components:
         type:
-          core/compute/api-server: legacy-api:1.0.0
+          core/compute/api-server: some-api:1.0.0
 `)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
-		t.Fatalf("inspect legacy manifest: %v", err)
+	err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf))
+	if err == nil {
+		t.Fatalf("expected inspect to refuse an unknown mappings key; rendered:\n%s", buf.String())
 	}
-	got := buf.String()
-	if !strings.Contains(got, "legacy per-provider mappings found") || !strings.Contains(got, "migrate to flat shape") {
-		t.Errorf("expected legacy-tier footer warning; got:\n%s", got)
+	got := err.Error()
+	for _, want := range []string{`"helm"`, "components", "features"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("refusal does not name %s; got %q", want, got)
+		}
 	}
-	if strings.Contains(got, "legacy-api:1.0.0") {
-		t.Errorf("legacy tier content should NOT be rendered; got:\n%s", got)
+	if strings.Contains(buf.String(), "some-api:1.0.0") {
+		t.Errorf("a refused Manifest must render no mapping content; got:\n%s", buf.String())
 	}
 }
 

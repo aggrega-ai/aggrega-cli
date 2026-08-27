@@ -1,9 +1,12 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
 metadata:
-  name: dangling-flat-feature-with-per-provider-manifest
+  name: dangling-feature-mapping-manifest
   version: "1.0.0"
 spec:
+  # The Feature analogue of manifest-dangling-component-mapping.yaml:
+  # core/k8s-dns-resolver maps to a FeatureRecipe that is NOT in this catalog,
+  # so the feature join owes the same verdict as the component join.
   mappings:
     components:
       type:
@@ -13,7 +16,3 @@ spec:
     features:
       type:
         core/k8s-dns-resolver: k8s-dns-patcher-absent-from-catalog:1.0.0
-    helm:
-      features:
-        type:
-          core/k8s-dns-resolver: k8s-dns-patcher:1.0.0

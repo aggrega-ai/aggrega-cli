@@ -676,8 +676,8 @@ func pullRun(cfg pullConfig) error {
 
 			// Key per-instance infra by the Manifest-mapped entity URI — the same
 			// verbatim string the closure walker records as the source-descent entity
-			// (catalog.ComponentRecipeURI / FeatureRecipeURI resolve it flat-shape-first,
-			// legacy-fallback), so this map joins against closure entities regardless of
+			// (catalog.ComponentRecipeURI / FeatureRecipeURI return the mapping value
+			// verbatim), so this map joins against closure entities regardless of
 			// short-form vs full-path mapping authoring. An instance with no Manifest
 			// mapping carries no source-descent entity and is skipped.
 			perEntityInfra := map[string][]closure.ComponentSourceInfra{}

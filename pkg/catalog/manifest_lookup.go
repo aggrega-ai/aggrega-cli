@@ -238,9 +238,10 @@ func versionTolerantTypeGet(typeMap types.OrderedMap[string], lookupType string)
 // nameThenType resolves a mapping tier with name-wins-over-type precedence:
 // an exact instance-name hit short-circuits all further lookup; otherwise the
 // version-tolerant type match applies. This is the single expression of the
-// Manifest two-tier precedence per entity kind — flat-shape and legacy callers
-// both route through it, so the cascade entry points stay dumb forwarders and
-// the precedence cannot drift between resolution paths. An empty instanceName
+// Manifest two-tier precedence per entity kind — the render lookup and the
+// pull/source-descent lookup both route through it, so those entry points stay
+// dumb forwarders and the precedence cannot drift between the two resolution
+// paths. An empty instanceName
 // (no per-instance name in scope at a call site) cleanly skips the name tier.
 func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (string, bool, error) {
 	if tier == nil {
@@ -255,32 +256,26 @@ func nameThenType(tier *types.MappingTier, instanceName, lookupType string) (str
 }
 
 // RecipeLookupWithManifest returns a renderer.RecipeLookup whose Recipe
-// and FeatureRecipe closures dispatch through a cascade when a Manifest is
-// supplied:
+// and FeatureRecipe closures resolve through the Manifest's mappings when a
+// Manifest is supplied: a mapping entry under manifest.Spec.Mappings.Components
+// or .Features resolves its Recipe URI directly against the catalog by Recipe
+// URI, never by spec.implements.
 //
-//  1. Flat-shape lookup (manifest.Spec.Mappings.Components.Type and
-//     .Features.Type) — when populated, resolve the mapping entry's
-//     Recipe URI directly against the catalog by Recipe URI (not by
-//     spec.implements).
-//  2. Legacy v2 per-provider lookup (manifest.Spec.Mappings.Legacy) —
-//     unchanged from pre-migration behavior; included as a transitional
-//     fallback while fixtures still author v2 shape.
-//
-// A FLAT MAPPING WINS ON EXISTENCE, NOT ON RESOLVABILITY, and that is the whole
+// A MAPPING WINS ON EXISTENCE, NOT ON RESOLVABILITY, and that is the whole
 // precedence rule — the single home for it, which both consumption paths read.
-// A flat entry is the author's answer for that type, so a flat value naming a
-// recipe the catalog does not hold ends the cascade as a miss here rather than
-// admitting the next shape. Falling through instead would make this cascade
+// A mapping entry is the author's answer for that type, so a value naming a
+// recipe the catalog does not hold is a miss here rather than an invitation to
+// resolve by some other route. Answering any other way would make this lookup
 // disagree with ComponentRecipeURI / FeatureRecipeURI, which the source-descent
 // walk and the resolution-completeness pass both read — and a build whose
 // rendered output named one recipe while its own reported fault named another
 // is a divergence no author could act on.
 //
-// Resolution is mapping-only: a type with no flat-shape or legacy mapping
-// is a miss here — the catalog never chooses a recipe by spec.implements.
-// An unmapped instance halts loudly in the pre-render resolution-completeness
-// pass, which names the implementing recipes as pin candidates. When manifest
-// is nil, every type is a miss.
+// Resolution is mapping-only: a type the Manifest does not map is a miss here —
+// the catalog never chooses a recipe by spec.implements. An unmapped instance
+// halts loudly in the pre-render resolution-completeness pass, which names the
+// implementing recipes as pin candidates. When manifest is nil, every type is a
+// miss.
 func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.RecipeLookup {
 	return renderer.RecipeLookup{
 		Recipe:        c.componentTypeToRecipeWithManifest(manifest),
@@ -290,28 +285,22 @@ func (c *Catalog) RecipeLookupWithManifest(manifest *types.Manifest) renderer.Re
 
 func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) func(string, string) (*types.Recipe, bool) {
 	return func(instanceName, componentType string) (*types.Recipe, bool) {
-		// Layer 1: flat-shape mapping (name-wins-over-type via flatComponentURI).
-		// A version-ambiguous mapping error is swallowed to a miss here; the
+		// Name-wins-over-type resolution via componentMappingURI. A
+		// version-ambiguous mapping error is swallowed to a miss here; the
 		// loud ErrAmbiguousTypeMapping is the pull/source-descent contract
 		// (ComponentRecipeURI), where a wrong pick mis-pins a source.
 		//
-		// A flat entry ENDS the cascade whether or not its URI resolves — the
+		// A mapping entry is answered whether or not its URI resolves — the
 		// precedence rule is stated once, on RecipeLookupWithManifest. The
 		// unresolvable case is a miss here and surfaces as a CATALOG_ERROR at
-		// the resolution-completeness pass, which names the flat value the
+		// the resolution-completeness pass, which names the mapping value the
 		// author wrote.
-		if uri, ok, err := flatComponentURI(manifest, instanceName, componentType); err == nil && ok {
+		if uri, ok, err := componentMappingURI(manifest, instanceName, componentType); err == nil && ok {
 			r, found := c.RecipeByURI(uri)
 			if !found {
 				return nil, false
 			}
 			return &r, true
-		}
-		// Layer 2: legacy v2 per-provider mapping.
-		if uri, ok, err := legacyComponentURI(manifest, instanceName, componentType); err == nil && ok {
-			if r, found := c.RecipeByURI(uri); found {
-				return &r, true
-			}
 		}
 		// Resolution is mapping-only: an unmapped type is a miss here. The
 		// catalog never chooses a recipe by spec.implements — an unmapped
@@ -324,20 +313,15 @@ func (c *Catalog) componentTypeToRecipeWithManifest(manifest *types.Manifest) fu
 
 func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifest) func(string, string) (*types.FeatureRecipe, bool) {
 	return func(instanceName, featureType string) (*types.FeatureRecipe, bool) {
-		// A flat entry ENDS the cascade whether or not its URI resolves, exactly
-		// as it does for a component: same precedence rule, stated once on
+		// A mapping entry is answered whether or not its URI resolves, exactly
+		// as it is for a component: same precedence rule, stated once on
 		// RecipeLookupWithManifest.
-		if uri, ok, err := flatFeatureURI(manifest, instanceName, featureType); err == nil && ok {
+		if uri, ok, err := featureMappingURI(manifest, instanceName, featureType); err == nil && ok {
 			fr, found := c.FeatureRecipeByURI(uri)
 			if !found {
 				return nil, false
 			}
 			return &fr, true
-		}
-		if uri, ok, err := legacyFeatureURI(manifest, instanceName, featureType); err == nil && ok {
-			if fr, found := c.FeatureRecipeByURI(uri); found {
-				return &fr, true
-			}
 		}
 		// Mapping-only resolution: an unmapped feature type is a miss here;
 		// implements never resolves. Unmapped feature instances halt in the
@@ -1010,11 +994,8 @@ func (c *Catalog) VerifyRecipeResolution(manifest *types.Manifest, graph *types.
 // too would preempt that better diagnostic. This function is therefore the
 // found-but-mismatched check only.
 //
-// Returns nil when manifest is nil, when no flat-shape mappings are
-// populated, or when every resolved mapping is consistent. Legacy v2 mappings
-// are not consistency-checked at this surface — they keep pre-migration
-// semantics (Recipe lookup via spec.implements walking) where the consistency
-// is implicit in the matching rule.
+// Returns nil when manifest is nil, when no mappings are populated, or when
+// every resolved mapping is consistent.
 func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, manifestPath string, ancestry ComponentAncestryResolver) []error {
 	if manifest == nil {
 		return nil
@@ -1089,48 +1070,31 @@ func (c *Catalog) AssertManifestImplementsConsistency(manifest *types.Manifest, 
 	return errors.Join(errs...)
 }
 
-// flatComponentURI returns the Recipe URI mapped to the given component
-// instance in the Manifest's flat-shape mapping, when populated. Resolution
+// componentMappingURI returns the Recipe URI the Manifest maps the given
+// component instance to, when the components mapping is populated. Resolution
 // is name-wins-over-type: a `name:` override on instanceName takes precedence
 // over the (version-tolerant) `type:` match on componentType.
-func flatComponentURI(manifest *types.Manifest, instanceName, componentType string) (string, bool, error) {
+func componentMappingURI(manifest *types.Manifest, instanceName, componentType string) (string, bool, error) {
 	if manifest == nil || manifest.Spec.Mappings.Components == nil {
 		return "", false, nil
 	}
 	return nameThenType(manifest.Spec.Mappings.Components, instanceName, componentType)
 }
 
-// legacyComponentURI walks the legacy v2 per-provider mappings looking
-// for componentType. Returns the first match across providers in
-// author order. Pre-migration semantics: the renderer dispatched per
-// (path, provider) and the right provider's mapping won; for the
-// transitional overlay, we accept the first match as a sufficient
-// fallback (the legacy fixtures with populated mappings all carry
-// the single-provider shape).
-func legacyComponentURI(manifest *types.Manifest, instanceName, componentType string) (string, bool, error) {
-	if manifest == nil {
+// featureMappingURI is the Feature analogue of componentMappingURI:
+// name-wins-over-type resolution of a feature instance against the features
+// mapping.
+func featureMappingURI(manifest *types.Manifest, instanceName, featureType string) (string, bool, error) {
+	if manifest == nil || manifest.Spec.Mappings.Features == nil {
 		return "", false, nil
 	}
-	for _, pm := range manifest.Spec.Mappings.Legacy.All() {
-		if pm.Components == nil {
-			continue
-		}
-		uri, ok, err := nameThenType(pm.Components, instanceName, componentType)
-		if err != nil {
-			return "", false, err
-		}
-		if ok {
-			return uri, true, nil
-		}
-	}
-	return "", false, nil
+	return nameThenType(manifest.Spec.Mappings.Features, instanceName, featureType)
 }
 
 // ComponentRecipeURI returns the Recipe URI the Manifest maps componentType
-// to — the flat-shape mapping first, then the legacy per-provider shape. The
-// returned URI is the same verbatim string the dependency-closure walker
-// records as a source-descent entity, so callers keying per-component data by
-// this value join cleanly against the closure's entities (regardless of
+// to. The returned URI is the same verbatim string the dependency-closure
+// walker records as a source-descent entity, so callers keying per-component
+// data by this value join cleanly against the closure's entities (regardless of
 // whether the author wrote the mapping value in short form or full-path form).
 //
 // Returns ("", false) when no Manifest mapping names componentType. Such a
@@ -1138,58 +1102,18 @@ func legacyComponentURI(manifest *types.Manifest, instanceName, componentType st
 // by spec.implements, which is a render-selection path, not a
 // source-acquisition path — so it correctly contributes no source artifact.
 func ComponentRecipeURI(manifest *types.Manifest, instanceName, componentType string) (string, bool, error) {
-	if uri, ok, err := flatComponentURI(manifest, instanceName, componentType); err != nil {
-		return "", false, err
-	} else if ok {
-		return uri, true, nil
-	}
-	return legacyComponentURI(manifest, instanceName, componentType)
+	return componentMappingURI(manifest, instanceName, componentType)
 }
 
 // FeatureRecipeURI is the FeatureRecipe analogue of ComponentRecipeURI: it
-// returns the FeatureRecipe URI the Manifest maps featureType to — the
-// flat-shape mapping first, then the legacy per-provider shape. The returned URI
-// is the same verbatim string the dependency-closure walker records as a
+// returns the FeatureRecipe URI the Manifest maps featureType to. The returned
+// URI is the same verbatim string the dependency-closure walker records as a
 // feature_recipe source-descent entity, so callers keying per-feature-instance
 // data by this value join cleanly against the closure's entities.
 //
 // Returns ("", false) when no Manifest mapping names featureType.
 func FeatureRecipeURI(manifest *types.Manifest, instanceName, featureType string) (string, bool, error) {
-	if uri, ok, err := flatFeatureURI(manifest, instanceName, featureType); err != nil {
-		return "", false, err
-	} else if ok {
-		return uri, true, nil
-	}
-	return legacyFeatureURI(manifest, instanceName, featureType)
-}
-
-// flatFeatureURI is the Feature analogue of flatComponentURI: name-wins-over-type
-// resolution of a feature instance against the flat-shape mapping.
-func flatFeatureURI(manifest *types.Manifest, instanceName, featureType string) (string, bool, error) {
-	if manifest == nil || manifest.Spec.Mappings.Features == nil {
-		return "", false, nil
-	}
-	return nameThenType(manifest.Spec.Mappings.Features, instanceName, featureType)
-}
-
-// legacyFeatureURI is the Feature analogue of legacyComponentURI.
-func legacyFeatureURI(manifest *types.Manifest, instanceName, featureType string) (string, bool, error) {
-	if manifest == nil {
-		return "", false, nil
-	}
-	for _, pm := range manifest.Spec.Mappings.Legacy.All() {
-		if pm.Features == nil {
-			continue
-		}
-		uri, ok, err := nameThenType(pm.Features, instanceName, featureType)
-		if err != nil {
-			return "", false, err
-		}
-		if ok {
-			return uri, true, nil
-		}
-	}
-	return "", false, nil
+	return featureMappingURI(manifest, instanceName, featureType)
 }
 
 // stripVersion removes the :version segment from a URI, returning the

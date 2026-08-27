@@ -664,11 +664,13 @@ func classifyContext(path []string, side ContextSide) ContextKind {
 	return ContextKindUnknown
 }
 
-// classifyManifestMapping recognizes the eight Manifest mapping
-// value-side suffixes (flat × type/name × components/features and
-// legacy provider-keyed × type/name × components/features). All eight
-// return ContextKindManifestRecipeReference because the cursor lands
-// on a Recipe URI.
+// classifyManifestMapping recognizes the four Manifest mapping value-side
+// suffixes — components/features × type/name. All four return
+// ContextKindManifestRecipeReference because the cursor lands on a Recipe URI.
+//
+// The exact-length match is deliberate rather than a minimum: `components` and
+// `features` are the whole key surface under `mappings:`, so a deeper path is
+// not a mapping value at all and must not be offered recipe completions.
 //
 // rest is the path after the leading "spec" has been stripped. The
 // match fires only when side == ContextSideValue.
@@ -680,12 +682,8 @@ func classifyManifestMapping(rest []string, side ContextSide) ContextKind {
 		return ContextKindUnknown
 	}
 	r := rest[1:]
-	// Flat shape: r = [components|features, type|name, <key>]
+	// r = [components|features, type|name, <key>]
 	if len(r) == 3 && isCompOrFeat(r[0]) && isTypeOrName(r[1]) {
-		return ContextKindManifestRecipeReference
-	}
-	// Legacy shape: r = [<provider>, components|features, type|name, <key>]
-	if len(r) == 4 && r[0] != "components" && r[0] != "features" && isCompOrFeat(r[1]) && isTypeOrName(r[2]) {
 		return ContextKindManifestRecipeReference
 	}
 	return ContextKindUnknown

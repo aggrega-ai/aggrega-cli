@@ -327,11 +327,10 @@ func TestLintAnnotationBindingMaps_NilAnnotationsTierSkipped(t *testing.T) {
 	if warnings := LintAnnotationBindingMaps(m); warnings != nil {
 		t.Errorf("nil annotations tier: expected no warnings; got %v", warnings)
 	}
-	// Legacy tier with nil annotations also skipped.
-	legacy := &types.ProviderMappings{Features: &types.MappingTier{}} // Annotations nil
-	m.Spec.Mappings.Legacy.Set("helm", *legacy)
+	// A nil Features tier is skipped on the same terms.
+	m.Spec.Mappings.Features = nil
 	if warnings := LintAnnotationBindingMaps(m); warnings != nil {
-		t.Errorf("legacy tier nil annotations: expected no warnings; got %v", warnings)
+		t.Errorf("nil features tier: expected no warnings; got %v", warnings)
 	}
 }
 

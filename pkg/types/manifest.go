@@ -14,10 +14,9 @@ import (
 // Manifest's struct declarations (Manifest, ManifestMetadata, ManifestSpec)
 // are generated into manifest_gen.go from the published manifest-v1alpha1
 // schema; their godoc is the schema's descriptions. This hand-written
-// companion holds the discriminated-union mapping types the generated spec
-// references — ManifestMappings (with its custom flat-vs-legacy
-// UnmarshalYAML/MarshalYAML), MappingTier, ProviderMappings, AnnotationBinding,
-// and AnnotationBindingMaps.
+// companion holds the mapping types the generated spec references —
+// ManifestMappings (with its custom UnmarshalYAML/MarshalYAML), MappingTier,
+// AnnotationBinding, and AnnotationBindingMaps.
 
 // AnnotationBinding declares how an annotation key in a Manifest's
 // annotation registry routes to a Feature attachment's pillar fields.
@@ -137,52 +136,35 @@ func (m AnnotationBindingMaps) Lookup(path string) (string, bool) {
 	return "", false
 }
 
-// ManifestMappings captures the two coexisting Manifest mapping shapes:
+// ManifestMappings carries a Manifest's mapping declarations: the
+// top-level keys `components` and `features` under `mappings:`, each
+// mapping component-type / feature-type URIs directly to Recipe /
+// FeatureRecipe URIs. Those two keys are the whole surface, and
+// UnmarshalYAML refuses any other key.
 //
-//   - Flat shape: reserved top-level keys `components` and `features`
-//     under `mappings:` carry component-type / feature-type URIs mapped
-//     directly to Recipe / FeatureRecipe URIs. Provider determination
-//     flows from each resolved Recipe's spec.capability at orchestrator-
-//     time; the mapping is provider-agnostic at the Manifest layer.
+// The mapping is capability-agnostic at the Manifest layer: capability
+// determination flows from each resolved Recipe's spec.capability at
+// orchestrator-time, so a mapping never names a target.
 //
-//   - Legacy v2 shape: top-level keys under `mappings:` are provider
-//     names (e.g., `helm`, `compose`), each carrying its own
-//     `components` / `features` sub-sections.
+// An unmapped component type is a resolution miss that halts at the
+// completeness pass — mappings are explicit, and the resolver never
+// walks spec.implements to bind a build.
 //
-// Dispatch precedence at consumption time is flat > legacy; an
-// unmapped component type is a resolution miss that halts at the
-// completeness pass (mappings are explicit — the resolver never walks
-// spec.implements to bind a build). Authors can mix flat entries and
-// legacy entries in one Manifest; flat entries take precedence on
-// overlapping component types.
-//
-// Provider-name discriminator constraint: a provider entity cannot be
-// named "components" or "features" while the legacy shape is accepted,
-// because the discriminator would mis-route.
+// Schema: manifest-v1alpha1.schema.json#/properties/spec/properties/mappings
 type ManifestMappings struct {
-	// Components and Features carry the flat-shape mappings.
 	Components *MappingTier `json:"components,omitempty" yaml:"components,omitempty"`
 	Features   *MappingTier `json:"features,omitempty" yaml:"features,omitempty"`
-
-	// Legacy carries the v2 per-provider shape keyed by provider name.
-	// Empty for fixtures that author only the flat shape.
-	//
-	// Both `yaml:"-"` and `json:"-"` elide the field from default wire
-	// encoding; the custom UnmarshalYAML / MarshalYAML below is the
-	// single source of truth for ManifestMappings wire shape. Any
-	// future JSON-marshal consumer of Manifest would need a parallel
-	// MarshalJSON to unify the discriminated union under `mappings:`
-	// the same way MarshalYAML does today. There are no JSON-marshal
-	// consumers of Manifest in production code today; the tag pairing
-	// prevents asymmetric wire shapes if one ships later without the
-	// parallel MarshalJSON.
-	Legacy OrderedMap[ProviderMappings] `json:"-" yaml:"-"`
 }
 
-// UnmarshalYAML dispatches under `mappings:` per the discriminator:
-// reserved top-level keys `components` and `features` populate the
-// flat-shape fields; any other top-level key populates Legacy as a
-// provider-named entry. Mixed shapes coexist.
+// UnmarshalYAML decodes the `components` and `features` keys under
+// `mappings:` and refuses every other key by name.
+//
+// The refusal is here as well as in the schema because a caller decoding a
+// Manifest through this type directly does not pass the schema gate, and
+// yaml.v3's default behaviour for an unrecognised key is to drop it. A
+// dropped mapping key is a mapping the author wrote and the build will not
+// honour, with nothing said — so the key set is enforced where the decode
+// happens rather than only where the document is validated.
 func (m *ManifestMappings) UnmarshalYAML(node *yaml.Node) error {
 	if node == nil {
 		return nil
@@ -207,20 +189,22 @@ func (m *ManifestMappings) UnmarshalYAML(node *yaml.Node) error {
 			}
 			m.Features = &mt
 		default:
-			var pm ProviderMappings
-			if err := valNode.Decode(&pm); err != nil {
-				return fmt.Errorf("manifest mappings.%s: %w", keyNode.Value, err)
-			}
-			m.Legacy.Set(keyNode.Value, pm)
+			return fmt.Errorf(
+				"manifest mappings: unexpected key %q at line %d; mappings accepts only components and features. Declare component mappings under components: and feature mappings under features:",
+				keyNode.Value, keyNode.Line)
 		}
 	}
 	return nil
 }
 
-// MarshalYAML emits both shapes (flat fields if populated, legacy
-// providers if populated) under the same `mappings:` map. The order
-// is flat keys (`components`, `features`) first, then legacy entries
-// in their author-order from the OrderedMap.
+// MarshalYAML emits the populated keys under `mappings:`, `components`
+// before `features`.
+//
+// It pairs with UnmarshalYAML as the single home for this type's wire
+// shape. A Manifest declaring no mapping at all emits a null `mappings:`
+// rather than an empty map — the one byte difference from what the default
+// struct encoder would produce, and the reason this method is kept rather
+// than left to the struct tags.
 func (m ManifestMappings) MarshalYAML() (any, error) {
 	out := &yaml.Node{Kind: yaml.MappingNode}
 	add := func(key string, val any) error {
@@ -244,23 +228,10 @@ func (m ManifestMappings) MarshalYAML() (any, error) {
 			return nil, err
 		}
 	}
-	for prov, pm := range m.Legacy.All() {
-		if err := add(prov, pm); err != nil {
-			return nil, err
-		}
-	}
 	if len(out.Content) == 0 {
 		return nil, nil
 	}
 	return out, nil
-}
-
-// ProviderMappings holds the component and feature mapping tiers for one provider.
-// Used under the legacy v2 per-provider shape of Manifest.Spec.Mappings.
-// Schema: manifest-v1alpha1.schema.json#/properties/spec/properties/mappings/patternProperties
-type ProviderMappings struct {
-	Components *MappingTier `json:"components,omitempty" yaml:"components,omitempty"`
-	Features   *MappingTier `json:"features,omitempty" yaml:"features,omitempty"`
 }
 
 // MappingTier implements two-tier resolution: type for bulk DRY mapping, name for granular overrides.

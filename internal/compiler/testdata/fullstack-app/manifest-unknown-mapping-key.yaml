@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: unknown-mapping-key-manifest
+  version: "1.0.0"
+spec:
+  # DELIBERATELY INVALID INPUT, kept as a fixture so the refusal is exercised
+  # rather than assumed. `components` and `features` are the whole mapping
+  # surface; `helm` is not a mapping key, so loading this Manifest halts and
+  # the diagnostic names both the key written and the keys accepted.
+  mappings:
+    components:
+      type:
+        core/compute/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
+    helm:
+      components:
+        type:
+          core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0

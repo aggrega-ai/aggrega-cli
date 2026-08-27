@@ -64,16 +64,5 @@ func ManifestRecipeReferenceFaults(manifest *types.Manifest) []error {
 	m := &manifest.Spec.Mappings
 	walkTier("spec.mappings.components", m.Components, "recipe reference")
 	walkTier("spec.mappings.features", m.Features, "feature recipe reference")
-	// The per-provider shape carries the same two tiers one level deeper. It is
-	// walked here rather than skipped because a Manifest may author both shapes,
-	// and a mis-shaped value is exactly as unresolvable under either.
-	for _, provider := range m.Legacy.Keys() {
-		pm, ok := m.Legacy.Get(provider)
-		if !ok {
-			continue
-		}
-		walkTier("spec.mappings."+provider+".components", pm.Components, "recipe reference")
-		walkTier("spec.mappings."+provider+".features", pm.Features, "feature recipe reference")
-	}
 	return faults
 }

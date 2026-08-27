@@ -1,12 +1,12 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
-  name: per-provider-only-release
+  name: dangling-feature-mapping-release
   environment: production
   version: "1.0.0"
 spec:
   aggregate: ./aggregate.yaml
-  manifest: ./manifest-per-provider-only.yaml
+  manifest: ./manifest-dangling-feature-mapping.yaml
   boundaries:
     frontend-ns:
       directory: ./dist/frontend

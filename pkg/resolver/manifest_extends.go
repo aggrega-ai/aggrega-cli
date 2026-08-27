@@ -97,24 +97,13 @@ func composeManifestChain(chain []*types.Manifest) *types.Manifest {
 }
 
 // mergeMappingsInto folds src into dst by shallow per-tier key replacement
-// across the flat-shape component / feature tiers and the legacy
-// per-provider tiers. Keys present in src overwrite same-named keys already
-// in dst; keys only in dst survive. The three tiers (versioned type,
-// unversioned type, name) merge independently per the flat dictionary shape
-// the recipe cascade reads.
+// across the component and feature mappings. Keys present in src overwrite
+// same-named keys already in dst; keys only in dst survive. The three tiers
+// (versioned type, unversioned type, name) merge independently per the
+// dictionary shape the recipe lookup reads.
 func mergeMappingsInto(dst *types.ManifestMappings, src types.ManifestMappings) {
 	dst.Components = mergeMappingTier(dst.Components, src.Components)
 	dst.Features = mergeMappingTier(dst.Features, src.Features)
-
-	for prov, srcPM := range src.Legacy.All() {
-		existing, ok := dst.Legacy.Get(prov)
-		if !ok {
-			existing = types.ProviderMappings{}
-		}
-		existing.Components = mergeMappingTier(existing.Components, srcPM.Components)
-		existing.Features = mergeMappingTier(existing.Features, srcPM.Features)
-		dst.Legacy.Set(prov, existing)
-	}
 }
 
 // mergeMappingTier folds the src tier's type and name dictionaries into dst

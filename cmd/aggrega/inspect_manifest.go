@@ -28,9 +28,7 @@ import (
 //     applied, then serialized through the typed marshaler).
 //   - default / --resolved: the tabular text layout over the resolved Manifest.
 //
-// Legacy per-provider mapping tiers are surfaced but not rendered: when present,
-// a footer warning names them so an operator sees the stale shape and migrates
-// it to the flat shape. --flat is a no-op (the layout is already tabular).
+// --flat is a no-op (the layout is already tabular).
 func renderManifestFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []byte, _ []string, opts inspectOptions) error {
 	// --raw is the as-authored bypass: emit the file verbatim, no extends
 	// resolution, regardless of output format.
@@ -69,7 +67,6 @@ func renderManifestFile(_ *workspaceconfig.ResolvedWorkspace, path string, data 
 		renderManifestTierKeys(opts, "Component Mappings:", resolved.Spec.Mappings.Components)
 		renderManifestTierKeys(opts, "Feature Mappings:", resolved.Spec.Mappings.Features)
 		renderManifestAnnotationKeys(opts, resolved.Spec.Mappings.Features)
-		renderManifestLegacyFooter(opts, resolved.Spec.Mappings)
 		return nil
 	}
 
@@ -84,7 +81,6 @@ func renderManifestFile(_ *workspaceconfig.ResolvedWorkspace, path string, data 
 		}
 	}
 
-	renderManifestLegacyFooter(opts, resolved.Spec.Mappings)
 	return nil
 }
 
@@ -186,16 +182,4 @@ func renderManifestAnnotationKeys(opts inspectOptions, features *types.MappingTi
 	for key := range features.Annotations.All() {
 		fmt.Fprintf(opts.out, "  - %s\n", key)
 	}
-}
-
-// renderManifestLegacyFooter emits a footer warning when the Manifest carries
-// legacy per-provider mapping tiers. The inspector renders only the flat shape;
-// legacy tiers are surfaced so an operator sees the stale data and migrates it,
-// but their content is not rendered.
-func renderManifestLegacyFooter(opts inspectOptions, mappings types.ManifestMappings) {
-	if mappings.Legacy.Len() == 0 {
-		return
-	}
-	fmt.Fprintln(opts.out, "")
-	fmt.Fprintln(opts.out, opts.colorize.errText("warning: legacy per-provider mappings found in this Manifest but not rendered; migrate to flat shape"))
 }

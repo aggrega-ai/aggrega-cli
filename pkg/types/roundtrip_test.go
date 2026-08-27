@@ -213,30 +213,24 @@ metadata:
   version: "1.0.0"
 spec:
   mappings:
-    zulu-provider:
-      components:
-        type:
-          core/server: recipes/server-z:1.0.0
-    alpha-provider:
-      components:
-        type:
-          core/server: recipes/server-a:1.0.0
-    mike-provider:
-      components:
-        type:
-          core/server: recipes/server-m:1.0.0
+    components:
+      type:
+        core/zulu: recipes/server-z:1.0.0
+        core/alpha: recipes/server-a:1.0.0
+        core/mike: recipes/server-m:1.0.0
 `)
 	assertEntityRoundTrip[Manifest](
 		t, src,
-		func(m *Manifest) []string { return m.Spec.Mappings.Legacy.Keys() },
-		[]string{"zulu-provider", "alpha-provider", "mike-provider"},
+		func(m *Manifest) []string { return m.Spec.Mappings.Components.Type.Keys() },
+		[]string{"core/zulu", "core/alpha", "core/mike"},
 	)
 }
 
 // TestManifest_NestedOrderedMapRoundTrip exercises OrderedMap[OrderedMap[V]]
 // through the Manifest's two-tier mapping structure
-// (Mappings.<provider>.Components.Type). Author order must be preserved at
-// both the outer (provider) and inner (component-type) levels.
+// (Mappings.Components.Type and .Name). Author order must be preserved at both
+// levels — the mapping-kind level and the key level within each tier — and
+// must survive a marshal / unmarshal / marshal cycle byte-identically.
 func TestManifest_NestedOrderedMapRoundTrip(t *testing.T) {
 	t.Parallel()
 	src := []byte(`apiVersion: aggrega.ai/v1alpha1
@@ -246,17 +240,18 @@ metadata:
   version: "1.0.0"
 spec:
   mappings:
-    helm:
-      components:
-        type:
-          core/zoo: zoo-recipe:1.0.0
-          core/alpha: alpha-recipe:1.0.0
-          core/middle: middle-recipe:1.0.0
-    compose:
-      components:
-        type:
-          core/zoo: compose-zoo-recipe:1.0.0
-          core/alpha: compose-alpha-recipe:1.0.0
+    components:
+      type:
+        core/zoo: zoo-recipe:1.0.0
+        core/alpha: alpha-recipe:1.0.0
+        core/middle: middle-recipe:1.0.0
+      name:
+        zebra-instance: zebra-recipe:1.0.0
+        ant-instance: ant-recipe:1.0.0
+    features:
+      type:
+        core/zoo-feature: zoo-feature-recipe:1.0.0
+        core/alpha-feature: alpha-feature-recipe:1.0.0
 `)
 
 	var first Manifest
@@ -264,26 +259,26 @@ spec:
 		t.Fatalf("first Unmarshal: %v", err)
 	}
 
-	// Outer level — provider order in spec.mappings.Legacy.
-	wantOuter := []string{"helm", "compose"}
-	if got := first.Spec.Mappings.Legacy.Keys(); !slices.Equal(got, wantOuter) {
-		t.Errorf("outer Mappings legacy keys = %v, want %v", got, wantOuter)
+	if first.Spec.Mappings.Components == nil {
+		t.Fatal("components nil")
+	}
+	wantType := []string{"core/zoo", "core/alpha", "core/middle"}
+	if got := first.Spec.Mappings.Components.Type.Keys(); !slices.Equal(got, wantType) {
+		t.Errorf("components.type keys = %v, want %v", got, wantType)
+	}
+	wantName := []string{"zebra-instance", "ant-instance"}
+	if got := first.Spec.Mappings.Components.Name.Keys(); !slices.Equal(got, wantName) {
+		t.Errorf("components.name keys = %v, want %v", got, wantName)
+	}
+	if first.Spec.Mappings.Features == nil {
+		t.Fatal("features nil")
+	}
+	wantFeature := []string{"core/zoo-feature", "core/alpha-feature"}
+	if got := first.Spec.Mappings.Features.Type.Keys(); !slices.Equal(got, wantFeature) {
+		t.Errorf("features.type keys = %v, want %v", got, wantFeature)
 	}
 
-	// Inner level — component-type order under helm.
-	helmMappings, ok := first.Spec.Mappings.Legacy.Get("helm")
-	if !ok {
-		t.Fatal("helm mappings missing")
-	}
-	if helmMappings.Components == nil {
-		t.Fatal("helm.components nil")
-	}
-	wantInner := []string{"core/zoo", "core/alpha", "core/middle"}
-	if got := helmMappings.Components.Type.Keys(); !slices.Equal(got, wantInner) {
-		t.Errorf("inner helm components.type keys = %v, want %v", got, wantInner)
-	}
-
-	// Round-trip idempotence preserves both levels.
+	// Round-trip idempotence preserves every level.
 	out1, err := yaml.Marshal(&first)
 	if err != nil {
 		t.Fatalf("first Marshal: %v", err)
@@ -300,9 +295,14 @@ spec:
 		t.Errorf("nested round-trip not idempotent:\nfirst:\n%s\nsecond:\n%s", out1, out2)
 	}
 
-	// Inner author order survives.
-	helmMappings2, _ := second.Spec.Mappings.Legacy.Get("helm")
-	if got := helmMappings2.Components.Type.Keys(); !slices.Equal(got, wantInner) {
-		t.Errorf("after round-trip, inner helm components.type keys = %v, want %v", got, wantInner)
+	// Author order survives the round trip at both levels.
+	if got := second.Spec.Mappings.Components.Type.Keys(); !slices.Equal(got, wantType) {
+		t.Errorf("after round-trip, components.type keys = %v, want %v", got, wantType)
+	}
+	if got := second.Spec.Mappings.Components.Name.Keys(); !slices.Equal(got, wantName) {
+		t.Errorf("after round-trip, components.name keys = %v, want %v", got, wantName)
+	}
+	if got := second.Spec.Mappings.Features.Type.Keys(); !slices.Equal(got, wantFeature) {
+		t.Errorf("after round-trip, features.type keys = %v, want %v", got, wantFeature)
 	}
 }

@@ -112,7 +112,7 @@ func TestHoverManifestRendersSelfMetadataName(t *testing.T) {
 	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  mappings:\n    components:\n      type:\n        core/server: recipes/helm-server\n"
 	out := Manifest(parseEntity(t, src))
 	assertContains(t, out, "**Manifest** `prod` `v1.0.0`")
-	assertContains(t, out, "**Flat mappings**: 1 entries")
+	assertContains(t, out, "**Mappings**: 1 entries")
 	assertContains(t, out, "`core/server` -> `recipes/helm-server`")
 }
 
@@ -143,7 +143,7 @@ func TestHoverManifestTruncatesMappingListToThree(t *testing.T) {
 	t.Parallel()
 	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: big-prod\n  version: 1.0.0\nspec:\n  mappings:\n    components:\n      type:\n        core/a: recipes/a\n        core/b: recipes/b\n        core/c: recipes/c\n        core/d: recipes/d\n        core/e: recipes/e\n"
 	out := Manifest(parseEntity(t, src))
-	assertContains(t, out, "**Flat mappings**: 5 entries")
+	assertContains(t, out, "**Mappings**: 5 entries")
 	assertContains(t, out, "`core/a` -> `recipes/a`")
 	assertContains(t, out, "`core/b` -> `recipes/b`")
 	assertContains(t, out, "`core/c` -> `recipes/c`")

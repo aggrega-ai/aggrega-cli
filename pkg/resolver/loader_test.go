@@ -134,10 +134,9 @@ metadata:
   version: "1.0.0"
 spec:
   mappings:
-    helm:
-      components:
-        type:
-          "core/server": "recipes/helm-server:1.0.0"
+    components:
+      type:
+        "core/server": "recipes/helm-server:1.0.0"
 `
 	os.WriteFile(f, []byte(yaml), 0644)
 
@@ -148,8 +147,49 @@ spec:
 	if man.Metadata.Name != "test-manifest" {
 		t.Errorf("expected name test-manifest, got %s", man.Metadata.Name)
 	}
-	if _, ok := man.Spec.Mappings.Legacy.Get("helm"); !ok {
-		t.Error("expected legacy mappings for 'helm' provider")
+	if man.Spec.Mappings.Components == nil {
+		t.Fatal("expected components mappings to be populated")
+	}
+	if got, ok := man.Spec.Mappings.Components.Type.Get("core/server"); !ok || got != "recipes/helm-server:1.0.0" {
+		t.Errorf("components.type[core/server] = %q, %v; want recipes/helm-server:1.0.0, true", got, ok)
+	}
+}
+
+// TestLoadManifest_RejectsUnknownMappingKey pins the LOADER-path refusal of a
+// mapping key that is neither components nor features: the document is
+// schema-validated before it is decoded, so the refusal an author meets comes
+// from the envelope gate. The diagnostic is asserted to name both the offending
+// key and the accepted ones, because a refusal that only says "no" leaves the
+// author to guess what to write instead.
+func TestLoadManifest_RejectsUnknownMappingKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	yaml := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    helm:
+      components:
+        type:
+          "core/server": "recipes/helm-server:1.0.0"
+`
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	_, err := LoadManifest(f)
+	if err == nil {
+		t.Fatal("expected a refusal for an unknown mappings key")
+	}
+	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
+		t.Fatalf("refusal must carry the envelope sentinel, which is what the loader gates on; got %v", err)
+	}
+	got := err.Error()
+	for _, want := range []string{`"helm"`, "components", "features"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("refusal does not name %s; got %q", want, got)
+		}
 	}
 }
 
@@ -192,33 +232,6 @@ spec:
 	}
 	if errors.Is(err, ErrYAMLLoad()) {
 		t.Errorf("error should NOT wrap ErrYAMLLoad — the YAML parsed successfully; the failure is a semantic reservation check")
-	}
-}
-
-func TestLoadManifest_RejectsReservedPrefix_LegacyShape(t *testing.T) {
-	dir := t.TempDir()
-	f := filepath.Join(dir, "manifest.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
-kind: Manifest
-metadata:
-  name: test-manifest
-  version: "1.0.0"
-spec:
-  mappings:
-    helm:
-      features:
-        annotations:
-          aggrega.ai/legacy-shape-also-rejected:
-            feature: core/foo:1.0.0
-`
-	os.WriteFile(f, []byte(yaml), 0644)
-
-	_, err := LoadManifest(f)
-	if err == nil {
-		t.Fatal("expected CATALOG_ERROR on reserved-prefix binding under legacy tier; got nil")
-	}
-	if !strings.Contains(err.Error(), "CATALOG_ERROR") {
-		t.Errorf("legacy-shape rejection should also use CATALOG_ERROR prefix; got: %s", err)
 	}
 }
 

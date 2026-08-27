@@ -376,10 +376,9 @@ func LoadManifestFromBytes(data []byte, path string) (*types.Manifest, error) {
 }
 
 // rejectReservedAnnotationBindings walks every annotation-binding key
-// declared on the Manifest (flat features tier plus any legacy
-// per-provider tiers within the migration window) and rejects any key
-// using the reserved aggrega.ai/ prefix. First-violation-halt matches
-// existing Manifest-load patterns for shape-level rejections.
+// declared on the Manifest's features mapping and rejects any key using the
+// reserved aggrega.ai/ prefix. First-violation-halt matches existing
+// Manifest-load patterns for shape-level rejections.
 func rejectReservedAnnotationBindings(man *types.Manifest, path string) error {
 	reservedPrefix := types.ReservedLabelPrefixAggregaAI
 	check := func(annotations *types.OrderedMap[types.AnnotationBinding]) error {
@@ -405,14 +404,6 @@ func rejectReservedAnnotationBindings(man *types.Manifest, path string) error {
 	if man.Spec.Mappings.Features != nil {
 		if err := check(man.Spec.Mappings.Features.Annotations); err != nil {
 			return err
-		}
-	}
-	for _, prov := range man.Spec.Mappings.Legacy.Keys() {
-		tier, _ := man.Spec.Mappings.Legacy.Get(prov)
-		if tier.Features != nil {
-			if err := check(tier.Features.Annotations); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -476,14 +467,6 @@ func rejectCrossBindingPathPillarCollision(man *types.Manifest, path string) err
 	if man.Spec.Mappings.Features != nil {
 		if err := check(man.Spec.Mappings.Features.Annotations); err != nil {
 			return err
-		}
-	}
-	for _, prov := range man.Spec.Mappings.Legacy.Keys() {
-		tier, _ := man.Spec.Mappings.Legacy.Get(prov)
-		if tier.Features != nil {
-			if err := check(tier.Features.Annotations); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
