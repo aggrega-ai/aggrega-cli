@@ -331,6 +331,12 @@ var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-
 // two contributors chose one name inside their content, which the host observes
 // only because the guests declared it. A caller matching one is not asking about
 // the other.
+//
+// The remedy is to change what is derived so each name is derived once within its
+// space — renaming whichever contributor the author controls, or, where one
+// contributor is named as having derived the name more than once, changing what
+// one of its own resources is named after. It is stated here rather
+// than in the registered wording, which names the collision and not its fix.
 func ErrDerivedKeyCollision() error { return errDerivedKeyCollision }
 
 var errDerivedKeyCollision = cerrors.Register("compiler-renderer/derived-key-collision", cerrors.Meta{

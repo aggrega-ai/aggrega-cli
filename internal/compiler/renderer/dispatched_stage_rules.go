@@ -96,8 +96,20 @@ func runDispatchedStageRules(
 	if err != nil {
 		return err
 	}
+	if halt := objectionsAsTranslationHalt(
+		raised, "merged dispatch groups whose boundaries disagree on the assembly name",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnAssemblyPathProviders(
+		ctx.Err, coordinates, coordinates, view,
+		AssemblyGroupDerivesEachNameOnce,
+	)
+	if err != nil {
+		return err
+	}
 	return objectionsAsTranslationHalt(
-		raised, "merged dispatch groups whose boundaries disagree on the assembly name")
+		raised, "dispatch groups whose contributors derive one name more than once in one key space")
 }
 
 // objectionsAsOpsHalt renders what a rule about a build's grouping raised as the

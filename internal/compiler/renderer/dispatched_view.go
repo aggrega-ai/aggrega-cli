@@ -13,13 +13,13 @@ import (
 //
 // It is a declared seam rather than a handful of method bodies reaching into the
 // result for the reason the assembled-output seam is one: the render already
-// retains what every fact here reads — the group attribution recorded when the
-// last node was sorted into its group, and what each group's elected engine
-// declared, recorded at the same point — so a presentation deriving them again
-// would give one fact two producers, free to disagree with nothing comparing
-// them. Naming the seam is what makes the
-// delegation visible as delegation, and it is the shape a guard derives this
-// stage's split from.
+// retains what every fact here reads, all of it recorded at the point the last
+// node was sorted into its group — the group attribution, what each group's
+// elected engine declared, and what each group's contributors declared they
+// derived — so a presentation deriving any of it again would give one fact two
+// producers, free to disagree with nothing comparing them. Naming the seam is
+// what makes the delegation visible as delegation, and it is the shape a guard
+// derives this stage's split from.
 type assemblyGroupFacts interface {
 	// AssemblyGroupProviderSet are the providers that assemble at one evaluated
 	// assembly path, in group order.
@@ -45,15 +45,19 @@ type assemblyGroupFacts interface {
 	// AssemblyGroupBoundaryAssemblyNames is what each boundary feeding the group
 	// resolved that annotation to, keyed by boundary in group order.
 	AssemblyGroupBoundaryAssemblyNames(assemblyPath string, provider string) types.OrderedMap[string]
+
+	// AssemblyGroupDerivedNames are the names the group's contributors declared
+	// they derived inside their own output, in space, name and contributor order.
+	AssemblyGroupDerivedNames(assemblyPath string, provider string) []constraint.DerivedNameDeclaration
 }
 
 // assemblyGroups answers those facts from the render's own group attribution.
 //
-// It holds the result rather than a copy of what it reads. Both the attribution
-// and the election are written once, when every node has been sorted into its
-// group and before any group assembles, and are not written to afterwards; the
-// output paths the same attribution records later gain are a different field and
-// no fact here reads them.
+// It holds the result rather than a copy of what it reads. The attribution, the
+// election and the derived-name record are each written once, when every node has
+// been sorted into its group and before any group assembles, and none is written
+// to afterwards; the output paths the same attribution records later gain are a
+// different field and no fact here reads them.
 //
 // No accessor re-derives anything: each delegates to the reader the result itself
 // holds. The set-valued answers are walks of the attribution in the order the
@@ -135,6 +139,19 @@ func (a assemblyGroups) AssemblyGroupBoundaryAssemblyNames(
 	assemblyPath string, provider string,
 ) types.OrderedMap[string] {
 	return a.result.groupBoundaryAssemblyNames(assemblyPath, provider)
+}
+
+// AssemblyGroupDerivedNames returns the names the contributors to one dispatch
+// group declared they derived inside their own output, in key-space order and then
+// name order and then contributor order.
+//
+// It is the result's own reader verbatim, for the reason the answers above are:
+// the declarations are accumulated once as the contributors render, and reading
+// them in one place is what keeps a rule's input from being derived a second way.
+func (a assemblyGroups) AssemblyGroupDerivedNames(
+	assemblyPath string, provider string,
+) []constraint.DerivedNameDeclaration {
+	return a.result.groupDerivedNames(assemblyPath, provider)
 }
 
 // dispatchedView presents, as named facts, how a build's rendered nodes were

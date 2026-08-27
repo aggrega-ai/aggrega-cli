@@ -174,6 +174,7 @@ func runHostLabelRender(attachments map[string]string, frSpec types.FeatureRecip
 		},
 		FeatureOrder:  order,
 		ResolveResult: &resolver.ResolveResult{Aggregate: &types.Aggregate{}},
+		GraphView:     derivedKeyGraphFacts{},
 	}
 
 	lookup := renderer.RecipeLookup{
@@ -242,15 +243,19 @@ func TestRenderAll_TwoAttachmentsDerivingOneComponentIDLabelHalt(t *testing.T) {
 	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
 		t.Fatalf("expected ErrDerivedKeyCollision, got: %v", err)
 	}
-	msg := err.Error()
+	findings := derivedNameFindings(t, err)
+	if len(findings) != 2 {
+		t.Fatalf("expected one finding per contributor, got %d: %v", len(findings), findings)
+	}
+	whole := strings.Join(findings, "\n")
 	for _, want := range []string{
-		`in key space "component-id"`,
-		`the name "` + hostFoldedComponentID + `"`,
-		`component "alpha" and component "beta"`,
-		"change what is derived so each name is derived once within its space",
+		`key space "component-id"`,
+		`"` + hostFoldedComponentID + `"`,
+		`derived by component "alpha"`,
+		`derived by component "beta"`,
 	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("diagnostic missing %q\ngot: %s", want, msg)
+		if !strings.Contains(whole, want) {
+			t.Errorf("the findings do not carry %q\ngot: %v", want, findings)
 		}
 	}
 }
@@ -426,6 +431,7 @@ func runHostBoundaryFeatureRender(instances []string, declare map[string]map[str
 			Release:       &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}},
 			BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "cluster", Directory: "dist/cluster"}},
 		},
+		GraphView: derivedKeyGraphFacts{},
 	}
 
 	lookup := renderer.RecipeLookup{
@@ -555,21 +561,26 @@ func TestRenderAll_ABoundaryFeatureDeclarationIsCheckedInTheFeaturesOwnGroup(t *
 	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
 		t.Fatalf("expected ErrDerivedKeyCollision, got: %v", err)
 	}
-	msg := err.Error()
+	findings := derivedNameFindings(t, err)
+	if len(findings) != 2 {
+		t.Fatalf("expected one finding per contributing feature, got %d: %v", len(findings), findings)
+	}
+	whole := strings.Join(findings, "\n")
 	for _, want := range []string{
-		`assembly path "` + hostFeatureGroupPath + `"`,
-		`in key space "` + hostComponentIDSpace + `"`,
-		`the name "` + hostComposedIdentityB + `"`,
-		`feature "` + hostFormerlyFoldingB + `" and feature "` + hostDistinctFeature + `"`,
+		`dispatch path "` + hostFeatureGroupPath + `"`,
+		`key space "` + hostComponentIDSpace + `"`,
+		`"` + hostComposedIdentityB + `"`,
+		`derived by feature "` + hostFormerlyFoldingB + `"`,
+		`derived by feature "` + hostDistinctFeature + `"`,
 	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("diagnostic missing %q\ngot: %s", want, msg)
+		if !strings.Contains(whole, want) {
+			t.Errorf("the findings do not carry %q\ngot: %v", want, findings)
 		}
 	}
 	// The dispatching component's own group path must not be the one reported: it
 	// would mean a declaration landed in the component's accumulator.
-	if strings.Contains(msg, `assembly path "boundaries/cluster/`) {
-		t.Errorf("the halt names the dispatching component's group, so a declaration reached the wrong accumulator\ngot: %s", msg)
+	if strings.Contains(whole, `dispatch path "boundaries/cluster/`) {
+		t.Errorf("the findings name the dispatching component's group, so a declaration reached the wrong accumulator\ngot: %v", findings)
 	}
 }
 

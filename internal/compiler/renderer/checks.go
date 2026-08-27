@@ -268,6 +268,139 @@ var AssemblyGroupBoundariesAgreeOnAssemblyName = constraint.Check[
 	},
 }
 
+// derivedNameCaption is the rule's word for a contributor that derived a
+// colliding name, spelled for the kind of contributor it is and for whether that
+// contributor's own declaration carried the name more than once.
+//
+// The kind is a word rather than a value because it is what tells an author where
+// to go: a component's name is written among the components a deployment
+// declares, a boundary-scope feature's among that boundary's features. The value
+// the caption precedes stays the contributor's own name, quoted by the framework,
+// so nothing here renders a value.
+//
+// The kind arrives as a fact and is not decided here. The render classifies a
+// contributor once, at the site that names one, and this composes a caption from
+// that classification rather than testing for a kind a second time.
+func derivedNameCaption(contributorKind string, repeated bool) string {
+	if repeated {
+		return "derived more than once by " + contributorKind
+	}
+	return "derived by " + contributorKind
+}
+
+// AssemblyGroupDerivesEachNameOnce reports each contributor to a dispatch group
+// that derived a name another contributor to the same group also derived, or that
+// carried one name twice inside a single one of its own declarations.
+//
+// A contributor derives the names its output addresses resources by — the
+// identifier a target uses for one resource, the name one output is published
+// under for another to reference — and puts them inside the file bytes the host
+// writes verbatim. Where the group's output merges, one such name can hold only
+// one thing, so two contributors arriving at one name means one of them would be
+// published and the other silently dropped: a resource the author declared would
+// leave the output entirely, and anything referring to it would resolve to the
+// survivor instead. That is a Loud Guardrail case rather than a warning one —
+// nothing in the merged output records what was dropped.
+//
+// A name fails uniqueness two ways and both are the same defect. Two contributors
+// can arrive at one name, which the declarations show directly. Or one
+// contributor's single declaration can carry the name twice, which the
+// accumulated declarations cannot show: a contributor legitimately restates a
+// name across its several render crossings — a source render, a workload
+// synthesis, an artifacts placement — describing one resource in each report it
+// belongs to, and that restatement leaves the same pair of entries a duplicate
+// would. So the distinction is drawn where a single declaration is still whole
+// and each declaration carries the answer, which is why the fact this reads
+// carries it per entry rather than leaving it to be counted.
+//
+// It reads one fact, which is every declaration the group's contributors made.
+// The predicate is the whole of the comparison: how many contributors arrived at
+// one name in one space, and whether any of them repeated it inside one
+// declaration. Neither is a question the fact answers — a fact that named the
+// colliding names would be this rule rather than its input.
+//
+// It raises one objection per contributor involved in each colliding name, rather
+// than one per name, for the reason the collision rule at this stage does: a
+// contributor is what an author can go and change and a name is not. Every
+// contributor that derived the name is named and not only some of them, because
+// nothing in a collision makes one of two derivations the intended one, so naming
+// a subset would assert a choice the compiler has not made.
+//
+// The space bounds the comparison. Two contributors deriving one name into two
+// different spaces have not collided — neither output displaces the other — and a
+// rule comparing across spaces would refuse authoring that renders correctly.
+//
+// It is blind to what a name means. A space is an opaque string its declarer
+// chose, a name is an opaque string its declarer derived, and this compares them
+// for equality and does nothing else — so one rule covers every space any
+// contributor declares, and a second provider needs no second rule.
+//
+// Its detail names the derived name bare and captions the rest. The registered
+// wording is about a name derived more than once, so the name is the value it is
+// read against; the space, the contributor, the provider and the path are values
+// the wording does not name, and they are in the detail because the subject
+// carries no locator — an assembly path is evaluated output and a provider is
+// selected, so neither is a key the deployment document holds.
+var AssemblyGroupDerivesEachNameOnce = constraint.Check[
+	constraint.DispatchedView,
+	constraint.AssemblyPathProviderSubject,
+]{
+	Sentinel: ErrDerivedKeyCollision(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DispatchedView,
+		s constraint.AssemblyPathProviderSubject,
+	) []constraint.Objection {
+		declared := v.AssemblyGroupDerivedNames(s.AssemblyPath(), s.ProviderName())
+		if len(declared) == 0 {
+			return nil
+		}
+		var out []constraint.Objection
+		// The declarations arrive in space then name then contributor order, so
+		// every entry for one (space, name) pair is consecutive and the run is the
+		// whole set of contributors that arrived at that name. Walking runs rather
+		// than building a map is what keeps the objections in the order the fact
+		// states, which is the order that makes the report a function of the input.
+		for start := 0; start < len(declared); {
+			end := start + 1
+			for end < len(declared) &&
+				declared[end].KeySpace == declared[start].KeySpace &&
+				declared[end].DerivedName == declared[start].DerivedName {
+				end++
+			}
+			run := declared[start:end]
+			start = end
+
+			repeated := false
+			for _, d := range run {
+				if d.RepeatedWithinOneDeclaration {
+					repeated = true
+					break
+				}
+			}
+			// One contributor that did not repeat the name is the ordinary answer:
+			// a name derived once in its space by the one thing that derives it.
+			if len(run) < 2 && !repeated {
+				continue
+			}
+			for _, d := range run {
+				out = append(out, s.RaiseWith(
+					ErrDerivedKeyCollision(),
+					constraint.Uncaptioned(d.DerivedName),
+					constraint.Captioned("key space", d.KeySpace),
+					constraint.Captioned(
+						derivedNameCaption(d.ContributorKind, d.RepeatedWithinOneDeclaration),
+						d.Contributor,
+					),
+					constraint.Captioned("provider", s.ProviderName()),
+					constraint.Captioned("dispatch path", s.AssemblyPath()),
+				))
+			}
+		}
+		return out
+	},
+}
+
 // CrossBoundaryLinkPlaceholderResolved reports each assembled file that still
 // carries a cross-boundary link placeholder.
 //

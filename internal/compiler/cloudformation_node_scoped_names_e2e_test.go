@@ -27,6 +27,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 func cfnPunctuationInput(t *testing.T) pipelinetest.Input {
@@ -301,11 +302,27 @@ func TestCloudFormationClashingResourceNames_Halts(t *testing.T) {
 	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
 		t.Fatalf("build failed for a different reason than the name clash: %v", err)
 	}
-	msg := err.Error()
+	// The halt carries one finding per contributor per colliding name, wrapped in
+	// a report naming what they have in common. The report's own text is its
+	// message alone, so the findings are read through the set it wraps rather than
+	// searched for in the halt as a string.
+	var envelope *cerrors.CompilerError
+	if !errors.As(err, &envelope) {
+		t.Fatalf("the halt is not a categorised diagnostic: %v", err)
+	}
+	joined, isMulti := envelope.Wrap.(interface{ Unwrap() []error })
+	if !isMulti {
+		t.Fatalf("the report wraps a single error rather than the set the rule raised: %T", envelope.Wrap)
+	}
+	texts := make([]string, 0, len(joined.Unwrap()))
+	for _, member := range joined.Unwrap() {
+		texts = append(texts, member.Error())
+	}
+	whole := strings.Join(texts, "\n")
 	for _, want := range []string{"PaymentsDb", "payments-db", "payments_db"} {
-		if !strings.Contains(msg, want) {
-			t.Fatalf("the halt does not name %q, so the author cannot tell which instances to rename: %v", want, msg)
+		if !strings.Contains(whole, want) {
+			t.Fatalf("the halt does not name %q, so the author cannot tell which instances to rename: %v", want, texts)
 		}
 	}
-	t.Logf("clashing resource names halt the build: %v", err)
+	t.Logf("clashing resource names halt the build with %d finding(s): %v", len(texts), texts)
 }

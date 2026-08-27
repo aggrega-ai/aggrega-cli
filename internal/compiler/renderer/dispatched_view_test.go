@@ -65,18 +65,19 @@ func delegatedAtDispatchedStage(t *testing.T) []string {
 // return a zero value, and no build would fail. So the sets are compared in both
 // directions and the failure names the offending side.
 //
-// # Every fact here is delegated, and none is retained for this stage
+// # Every fact here is answered through the seam
 //
-// The other stages hold their own retention beside a delegation seam, and their
-// guards read both. This stage has one source: the coordinates both its facts
-// read are the group attribution the render records when the last node is sorted
-// into its group, so nothing is retained for this stage and there is no split to
-// derive. The comparison is therefore against the seam alone.
+// The other stages answer some of their facts from a presentation field of their
+// own beside a delegation seam, and their guards read both sources. This stage has
+// one: everything it answers is recorded on the render's own result when the last
+// node is sorted into its group, and every one of those records is read back
+// through the seam rather than reached for directly. The comparison is therefore
+// against the seam alone.
 //
-// That is a property of what this stage answers rather than a simplification, and
-// the failure below says so: a retention taken for this stage later is a second
-// answering source, and this guard reports a fact answered from it as unanswered
-// until the source is read here too. Widening it then is the intended repair.
+// That is a property of how this stage answers rather than a simplification, and
+// the failure below says so: a fact answered from anywhere but the seam is a
+// second answering source, and this guard reports such a fact as unanswered until
+// that source is read here too. Widening it then is the intended repair.
 //
 // # What this catches that the compiler does not
 //
@@ -113,8 +114,8 @@ func TestTheDelegationSeamCoversEveryDeclaredDispatchedFact(t *testing.T) {
 	for _, name := range declared {
 		if !answered[name] {
 			t.Errorf("nothing answers %q: it is declared at this stage and the delegation seam does not carry it. "+
-				"Either the seam is missing the method, or a retention was taken for this stage and this "+
-				"comparison reads only the seam", name)
+				"Either the seam is missing the method, or the fact is answered from somewhere other than "+
+				"the seam and this comparison reads only the seam", name)
 		}
 	}
 

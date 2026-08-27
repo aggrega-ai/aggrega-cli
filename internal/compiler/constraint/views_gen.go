@@ -64,6 +64,48 @@ type AttachmentDeclaration struct {
 	AuthoredSocketNames []string
 }
 
+// DerivedNameDeclaration is one contributor's declaration that it derived
+// one name into one of its own key spaces: the space, the name, the
+// contributor and what kind of contributor it is, and whether a single one
+// of that contributor's declarations carried the name more than once
+// within that space.
+//
+// It is one fact rather than several because no half of it answers
+// anything alone. A name without its space says nothing — one name in
+// two spaces has not met itself — and a space without its contributors
+// says nothing either, since what makes a name a collision is how many
+// contributors arrived at it. The repeat travels with the declaration it
+// belongs to for the sharper reason: a contributor legitimately restates a
+// name across its several render crossings, so the accumulated
+// declarations cannot tell that restatement from one declaration carrying
+// the name twice. The distinction is drawn while a single declaration is
+// still whole and is carried here attached to the declaration it was drawn
+// from, which is what keeps a reader from having to pair two answers up
+// and stopping halfway.
+type DerivedNameDeclaration struct {
+	// KeySpace is the space the declaring contributor named, an opaque string
+	// of its own choosing.
+	KeySpace string
+
+	// DerivedName is the name derived into that space, an opaque string the
+	// contributor derived.
+	DerivedName string
+
+	// Contributor is the authoring-level name of whatever derived the name: a
+	// component instance, or a feature instance attached to a boundary.
+	Contributor string
+
+	// ContributorKind is what that contributor is in authoring terms, either a
+	// component or a feature, which is what says where its name is written.
+	ContributorKind string
+
+	// RepeatedWithinOneDeclaration reports whether a single one of that
+	// contributor's declarations carried this name more than once inside this
+	// space, which is a failure of that contributor's own derivation rather
+	// than a meeting between two of them.
+	RepeatedWithinOneDeclaration bool
+}
+
 // ArtifactTemplateDelimiters is the delimiter pair an artifact template is
 // read with: the opening delimiter and the closing one.
 //
@@ -2711,9 +2753,10 @@ type EmittedView interface {
 // DispatchedView exposes the facts complete at the dispatched stage: every
 // node's own rendered output sorted into the assembly groups it will be
 // merged in: the evaluated assembly path and the provider each group is
-// keyed by, the boundaries that fed each, and what each group's elected
-// engine declared about combining and naming that group's output — all
-// of it complete before any group assembles.
+// keyed by, the boundaries that fed each, what each group's elected engine
+// declared about combining and naming that group's output, and the names
+// each group's contributors declared they derived inside their own output
+// — all of it complete before any group assembles.
 //
 // It embeds EmittedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
@@ -2854,6 +2897,49 @@ type DispatchedView interface {
 	// Keyed by (assembly-path, provider); read from
 	// resolver.ResolveResult.BoundaryAnnotations.
 	AssemblyGroupBoundaryAssemblyNames(assemblyPath string, provider string) types.OrderedMap[string]
+
+	// AssemblyGroupDerivedNames are the names the contributors to one dispatch
+	// group declared they derived inside their own output, one entry per
+	// contributor per name per space, in key-space order and then name order
+	// and then contributor order.
+	//
+	// A contributor derives the names its output addresses resources by, and
+	// those names sit inside the file bytes the host writes verbatim — so
+	// the host cannot read them out, and reading them out would mean
+	// interpreting the contributor's own format. The contributor declares them
+	// instead, and this is where the declarations of everything feeding one
+	// group stand together. The group is the scope because it is the set of
+	// contributors whose output merges, which is where one name can displace
+	// another.
+	//
+	// The order is stated rather than inherited. Declarations accumulate as
+	// contributors render, and the walks that reach them are not all fixed by
+	// the input, so answering in arrival order would return a different
+	// sequence for identical input; space, then name, then contributor is a
+	// total order derived from the declared strings alone and is therefore the
+	// same on every run.
+	//
+	// A contributor appears once per name per space however many of its own
+	// crossings declared that name, because a contributor legitimately
+	// restates a name across a source render, a workload synthesis and an
+	// artifacts placement — one resource described in each report it belongs
+	// to. What a single declaration carrying the name twice looks like is a
+	// different question, and each entry answers it in place rather than
+	// leaving it to be counted from repetitions that no longer distinguish the
+	// two.
+	//
+	// It is empty for a group whose contributors declared nothing, which is
+	// the ordinary answer: a contributor deriving no names it wants compared
+	// declares none, and a group of them has nothing to compare.
+	//
+	// Nothing here reads a name. A space is an opaque string its declarer
+	// chose and a name is an opaque string its declarer derived, so a rule
+	// over this covers every space any contributor declares without naming a
+	// provider or learning a format.
+	//
+	// Keyed by (assembly-path, provider); read from
+	// rendercore.RenderNodeOutput.DerivedKeys.
+	AssemblyGroupDerivedNames(assemblyPath string, provider string) []DerivedNameDeclaration
 }
 
 // RenderedView exposes the facts complete at the rendered stage: artifact

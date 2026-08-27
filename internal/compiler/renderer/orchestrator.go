@@ -194,6 +194,19 @@ type RenderResult struct {
 	// Out-of-band: it carries no content that reaches an emitted file, and the
 	// emitted bytes are the same whether it is populated or not.
 	elections *assemblyElections
+
+	// derivedNames is the render's retained record of the names each dispatch
+	// group's contributors declared they derived inside their own output.
+	//
+	// It is published here for the reason the election is: the accumulator each
+	// group fills as its contributors render is the render's own working state and
+	// is dropped when the render returns, while the presentation of the grouping
+	// outlives it. A reader asking what a group's contributors declared has this
+	// and nothing else.
+	//
+	// Out-of-band: it carries no content that reaches an emitted file, and the
+	// emitted bytes are the same whether it is populated or not.
+	derivedNames *derivedNameSets
 }
 
 // AssemblyContribution attributes one group of assembled output to the
@@ -514,13 +527,32 @@ func collisionClause(outputPath string, placements []assembledFileEntry) string 
 	return fmt.Sprintf("%q is written by %s", outputPath, joinWithAnd(names))
 }
 
+// nodeProducerKind classifies a per-node contributor in authoring terms: what
+// kind of thing it is, and the name it carries in the author's own input.
+//
+// The kind is the word an author reads, and it is what says where the name is
+// written — a component's under the components it declares, a boundary-scope
+// feature's under that boundary's features. The two are returned apart rather
+// than composed because they reach a reader two ways: one caller spells them
+// into a sentence it is building, and another hands them across a boundary that
+// quotes values for itself and would double-quote a pre-composed label.
+//
+// It is the single home of the classification. Both callers below read it rather
+// than testing the synthetic prefix again, so a further kind of contributor is
+// one edit here instead of a decision two sites make separately and agree on
+// until they do not.
+func nodeProducerKind(nodeID string) (kind, instance string) {
+	if instance, isFeature := strings.CutPrefix(nodeID, boundaryFRNodePrefix); isFeature {
+		return "feature", instance
+	}
+	return "component", nodeID
+}
+
 // nodeProducerLabel names a per-node contributor in authoring terms, so a
 // collision points at something the author can find in their own input.
 func nodeProducerLabel(nodeID string) string {
-	if instance, isFeature := strings.CutPrefix(nodeID, boundaryFRNodePrefix); isFeature {
-		return fmt.Sprintf("feature %q", instance)
-	}
-	return fmt.Sprintf("component %q", nodeID)
+	kind, instance := nodeProducerKind(nodeID)
+	return fmt.Sprintf("%s %q", kind, instance)
 }
 
 func joinWithAnd(items []string) string {
@@ -1582,7 +1614,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// every attachment's declaration silently: the group check then reports
 		// nothing, and reads as coverage. It is the same snapshot-before-attachments
 		// hazard the host-document write-back below is keyed by path to survive.
-		dispatch[key].derivedKeys.putAll(state.DerivedKeys, state.DerivedKeyRepeats, nodeProducerLabel(nodeID))
+		nodeKind, nodeInstance := nodeProducerKind(nodeID)
+		dispatch[key].derivedKeys.putAll(state.DerivedKeys, state.DerivedKeyRepeats, nodeKind, nodeInstance)
 		// Stash deferred host PATCHes under the host component's dispatch group.
 		// The host node IS this node (a component-scope FR patches the component
 		// it is attached to), so the merged documents the PATCH targets are the
@@ -1765,7 +1798,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// alongside the file routing above: a contributor whose output is entirely
 		// pre-assembly fragments still derived the names it declared, and those
 		// names still meet the other contributors' names in the merged output.
-		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], boundaryFRState.DerivedKeyRepeats[key], nodeProducerLabel(syntheticNodeID))
+		frKind, frInstance := nodeProducerKind(syntheticNodeID)
+		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], boundaryFRState.DerivedKeyRepeats[key], frKind, frInstance)
 		// Record the boundary as a contributor for the dispatch group's
 		// diagnostic context.
 		alreadyContributing := false
@@ -1822,6 +1856,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		dispatch, orderedDispatch, resolvedBoundaryAnnotations(input.ResolveResult),
 	)
 
+	// Record the names each group's contributors declared they derived inside their
+	// own output. Every contributor has rendered by now, so each group's
+	// accumulator already holds every declaration it will ever hold, and the
+	// accumulators themselves are loop-locals dropped when the render returns.
+	//
+	// It is recorded before any assembly rather than after, because a duplicate is
+	// settled entirely by the declarations in hand: no assembler output is needed
+	// to see one, and the rule declared over the grouping runs below — so the build
+	// stops before an assembler merges output whose names were already known to
+	// collide.
+	result.derivedNames = newDerivedNameSets(dispatch, orderedDispatch)
+
 	// Present how the grouping came out, with the facts complete earlier answered
 	// by the presentation built before the node walk.
 	result.DispatchedView = newDispatchedView(
@@ -1851,22 +1897,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// grouping has already halted the build if that group's provider claimed one.
 	for _, key := range orderedDispatch {
 		selectBoundaryAssembler(dispatch[key])
-	}
-
-	// Derived-name injectivity across each group's contributors. Every contributor
-	// has rendered by now, so each group holds every declaration its contributors
-	// made and the check sees the whole picture at once.
-	//
-	// It runs before any assembly rather than after, because a duplicate is settled
-	// entirely by the declarations already in hand: no assembler output is needed to
-	// detect it, and halting here means the build stops before an assembler merges
-	// output whose names were already known to collide. Groups are walked in
-	// dispatch order so a build with duplicates in more than one group reports the
-	// same one first on every run.
-	for _, key := range orderedDispatch {
-		if err := dispatch[key].derivedKeys.resolve(key.Path, key.Provider); err != nil {
-			return nil, err
-		}
 	}
 
 	// Retain each dispatch group's assembled output — provider identity, disk-

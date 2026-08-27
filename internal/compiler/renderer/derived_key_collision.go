@@ -4,11 +4,9 @@
 package renderer
 
 import (
-	"fmt"
 	"sort"
-	"strings"
 
-	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -48,11 +46,19 @@ func declareDerivedKey(into *types.OrderedMap[[]string], space, key string) []de
 
 // derivedKeyDeclaration is one contributor's declaration that it derived one
 // name into one of its own key spaces: the space, the name, and the
-// authoring-level name of whatever derived it.
+// authoring-level name of whatever derived it together with what kind of thing
+// that is.
+//
+// The kind and the name are held apart rather than as one composed label. A
+// reader spelling them into a sentence needs the kind as a word and the name as
+// a value it quotes itself, and a label carrying its own quotes would be quoted
+// again. Both come from the one classifier the render uses everywhere it names a
+// contributor.
 type derivedKeyDeclaration struct {
-	space    string
-	key      string
-	producer string
+	space        string
+	key          string
+	producer     string
+	producerKind string
 }
 
 // derivedKeyRepeat is one name a single declaration carried more than once
@@ -66,18 +72,20 @@ type derivedKeyRepeat struct {
 }
 
 // derivedKeySet accumulates every derived name the contributors to one assembled
-// output declare, then answers a single question about them: within each
-// declared space, is the set of declared names injective?
+// output declare, and presents them as the declarations they are. Whether the
+// declared names are injective within each space is asked by the rule declared
+// over the grouping, which reads this answer; nothing here decides it.
 //
-// A name fails that question two ways, and both are the same defect — the name
-// is not unique in its space — so one halt covers both. Two contributors can
+// A name fails injectivity two ways, and both are the same defect — the name is
+// not unique in its space — so one condition covers both. Two contributors can
 // arrive at one name, which the accumulated declarations show directly. Or one
 // contributor's single declaration can carry one name twice in one space, which
 // the accumulated declarations cannot show: a contributor legitimately restates
 // a name across its several render crossings, and by the time the declarations
 // accumulate here the two cases are the same pair of entries. That case is
 // therefore recognised where it is still visible — at the moment one
-// declaration arrives, before it merges with the rest — and carried here.
+// declaration arrives, before it merges with the rest — and carried here on the
+// declaration it belongs to.
 //
 // A declaration reaches here from either of two directions, and the difference
 // between them ends at the sink: below this line a declaration's origin is
@@ -98,21 +106,21 @@ type derivedKeyRepeat struct {
 // were arrived at. Declaring at the deriving site is what keeps a compiler
 // derivation from being the one kind of name nobody reports.
 //
-// Blindness is the property that makes one guard enough for every provider. A
+// Blindness is the property that makes one rule enough for every provider. A
 // space is an opaque string its declarer chose, a key is an opaque string its
-// declarer derived, and this compares keys for equality within a space and does
-// nothing else — no format is recognised, no provider is named, no key's meaning
-// is learned, and no key is ever derived here. A second provider declaring an
-// entirely different kind of name in an entirely different kind of space is
-// covered by the same code, unchanged.
+// declarer derived, and neither this nor the rule reading it does anything but
+// compare keys for equality within a space — no format is recognised, no
+// provider is named, no key's meaning is learned, and no key is ever derived
+// here. A second provider declaring an entirely different kind of name in an
+// entirely different kind of space is covered by the same code, unchanged.
 //
-// The check runs in resolve rather than in put, for the same reason the assembled
-// file set defers its own: halting at the moment of the second declaration would
-// name whichever contributor happened to be walked first, and the walks upstream
-// are over plain Go maps whose iteration order is randomised per run, so
-// identical input would fail with a different message on different runs. resolve
-// sees every declaration at once and orders the diagnostic by space, then key,
-// then producer — making the message a function of the input alone.
+// Nothing is answered at put, for the same reason the assembled file set defers
+// its own: an answer given at the moment of the second declaration would name
+// whichever contributor happened to be walked first, and the walks upstream are
+// over plain Go maps whose iteration order is randomised per run, so identical
+// input would report a different message on different runs. The whole set is
+// presented at once, in an order derived from the declared strings — making the
+// answer a function of the input alone.
 //
 // The scope is one dispatch group's assembled output: the set of contributors
 // whose output merges, which is where one contributor's name can displace
@@ -124,10 +132,13 @@ type derivedKeySet struct {
 	repeats []derivedKeyDeclaration
 }
 
-// put records that producer declared key in space. Whether that declaration
-// collides with another is not decided here — see resolve.
-func (s *derivedKeySet) put(space, key, producer string) {
-	s.entries = append(s.entries, derivedKeyDeclaration{space: space, key: key, producer: producer})
+// put records that producer, a contributor of kind producerKind, declared key in
+// space. Whether that declaration collides with another is not decided here: the
+// set answers what was declared and the rule declared over the grouping decides.
+func (s *derivedKeySet) put(space, key, producerKind, producer string) {
+	s.entries = append(s.entries, derivedKeyDeclaration{
+		space: space, key: key, producer: producer, producerKind: producerKind,
+	})
 }
 
 // putAll records everything one contributor's rendering established: every name
@@ -144,14 +155,20 @@ func (s *derivedKeySet) put(space, key, producer string) {
 // function of the input; resolve orders the diagnostic itself, so this ordering
 // affects nothing downstream, but it keeps the accumulator's own contents stable
 // for anything that later reads them.
-func (s *derivedKeySet) putAll(declared types.OrderedMap[[]string], repeated []derivedKeyRepeat, producer string) {
+func (s *derivedKeySet) putAll(
+	declared types.OrderedMap[[]string],
+	repeated []derivedKeyRepeat,
+	producerKind, producer string,
+) {
 	for space, keys := range declared.All() {
 		for _, key := range keys {
-			s.put(space, key, producer)
+			s.put(space, key, producerKind, producer)
 		}
 	}
 	for _, r := range repeated {
-		s.repeats = append(s.repeats, derivedKeyDeclaration{space: r.space, key: r.key, producer: producer})
+		s.repeats = append(s.repeats, derivedKeyDeclaration{
+			space: r.space, key: r.key, producer: producer, producerKind: producerKind,
+		})
 	}
 }
 
@@ -203,106 +220,167 @@ func mergeDerivedKeys(into *types.OrderedMap[[]string], declared types.OrderedMa
 	return repeated
 }
 
-// resolve reports nothing when every declared space carries each of its names
-// once, and halts naming every collision otherwise.
+// declarations is every declaration this group's contributors made, one entry
+// per contributor per name per space, each carrying whether one of that
+// contributor's own declarations held the name more than once.
 //
-// Every collision is reported rather than the first, so one build tells the
-// author the whole picture instead of one collision at a time. A name collides
-// when more than one contributor derived it, or when one contributor's single
-// declaration carried it more than once.
+// It answers what was declared and decides nothing. Whether a name collides is
+// the question a rule declared over the grouping asks of this answer, and
+// keeping the two apart is what leaves the rule something to decide: an answer
+// that already said which names collided would BE the rule.
 //
-// Producers are collected as a SET rather than a list, which is what makes one
-// contributor repeating a name across its several render crossings — a source
-// render, a workload synthesis, an artifacts placement — read as one declarer
-// rather than as a contributor colliding with itself. That restatement is
-// legitimate and stays legitimate: the set's size answers only the
-// across-contributors half. The within-one-declaration half is answered by the
-// repeats recorded alongside, because a set built here cannot tell a restatement
-// across crossings from a duplicate inside one of them.
+// A contributor appears once per name per space however many entries it
+// accumulated for that pair. Deduplicating here rather than leaving the
+// repetitions to be counted is the whole reason this answer is trustworthy: a
+// contributor legitimately restates a name across its several render crossings —
+// a source render, a workload synthesis, an artifacts placement — so by the time
+// the declarations have accumulated, that restatement and one declaration
+// carrying the name twice are the same pair of entries. The distinction was
+// drawn where it was still visible, at the moment a single declaration arrived,
+// and it is carried here on the entry it belongs to. A reader counting
+// repetitions would report a legitimate restatement as a defect.
 //
-// A contributor that repeated a name is named with the rest and marked, so a
-// name that both collides across contributors and repeats within one is reported
-// once with everything true about it rather than twice.
+// The repeats are read as a UNION with the declarations rather than as a lookup
+// into them, so a repeat whose declaration never reached the accumulator is
+// still answered for. Both are recorded through one entry point, so the case
+// does not arise today; reading the union rather than assuming it keeps the
+// answer from depending on that.
 //
-// The sets are plain maps and their names are sorted before they are reported.
-// Sorting is not decoration: it is what makes the message a total order derived
-// from the declared strings alone, rather than from the order the accumulating
-// walks happened to take. Nothing here reaches rendered output — a diagnostic is
-// the only consumer — so the ordered-map type would buy nothing, and the meaning
-// wanted here is sorted order rather than declaration order anyway.
-func (s *derivedKeySet) resolve(groupPath, provider string) error {
-	type spaceKey struct{ space, key string }
-	declarers := make(map[spaceKey]map[string]bool, len(s.entries))
-	for _, e := range s.entries {
-		sk := spaceKey{space: e.space, key: e.key}
-		if declarers[sk] == nil {
-			declarers[sk] = map[string]bool{}
-		}
-		declarers[sk][e.producer] = true
-	}
-	repeaters := make(map[spaceKey]map[string]bool, len(s.repeats))
+// The order is space, then name, then contributor kind, then contributor — a
+// total order derived from the declared strings alone. The walks that feed the
+// accumulator are not all fixed by the input: a boundary-scope feature's
+// declarations are reached through a plain Go map, whose iteration order is
+// randomised per run, so answering in arrival order would give identical input a
+// different sequence on different runs. Nothing here reaches rendered output, so
+// the ordered-map type would buy nothing and sorted order is the meaning wanted.
+//
+// Nothing here reads a name. A space is an opaque string its declarer chose, a
+// name is an opaque string its declarer derived, and this copies them out
+// unexamined — no format is recognised, no provider is named, and no name is
+// ever derived here.
+func (s *derivedKeySet) declarations() []constraint.DerivedNameDeclaration {
+	type entryKey struct{ space, key, kind, producer string }
+	repeated := make(map[entryKey]bool, len(s.repeats))
 	for _, e := range s.repeats {
-		sk := spaceKey{space: e.space, key: e.key}
-		if repeaters[sk] == nil {
-			repeaters[sk] = map[string]bool{}
-		}
-		repeaters[sk][e.producer] = true
+		repeated[entryKey{space: e.space, key: e.key, kind: e.producerKind, producer: e.producer}] = true
 	}
 
-	var collided []spaceKey
-	for sk, producers := range declarers {
-		if len(producers) > 1 || len(repeaters[sk]) > 0 {
-			collided = append(collided, sk)
+	seen := make(map[entryKey]bool, len(s.entries)+len(s.repeats))
+	keys := make([]entryKey, 0, len(s.entries)+len(s.repeats))
+	record := func(k entryKey) {
+		if seen[k] {
+			return
 		}
+		seen[k] = true
+		keys = append(keys, k)
 	}
-	// A repeat whose declaration never reached the accumulator would otherwise go
-	// unreported. Both are recorded through one entry point so the case does not
-	// arise today; reading the union rather than assuming it keeps the report from
-	// depending on that.
-	for sk := range repeaters {
-		if _, declared := declarers[sk]; !declared {
-			collided = append(collided, sk)
-		}
+	for _, e := range s.entries {
+		record(entryKey{space: e.space, key: e.key, kind: e.producerKind, producer: e.producer})
 	}
-	if len(collided) == 0 {
+	for k := range repeated {
+		record(k)
+	}
+	if len(keys) == 0 {
 		return nil
 	}
-	sort.Slice(collided, func(i, j int) bool {
-		if collided[i].space != collided[j].space {
-			return collided[i].space < collided[j].space
+
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].space != keys[j].space {
+			return keys[i].space < keys[j].space
 		}
-		return collided[i].key < collided[j].key
+		if keys[i].key != keys[j].key {
+			return keys[i].key < keys[j].key
+		}
+		if keys[i].kind != keys[j].kind {
+			return keys[i].kind < keys[j].kind
+		}
+		return keys[i].producer < keys[j].producer
 	})
 
-	clauses := make([]string, 0, len(collided))
-	for _, sk := range collided {
-		names := make([]string, 0, len(declarers[sk]))
-		for producer := range declarers[sk] {
-			names = append(names, producer)
-		}
-		for producer := range repeaters[sk] {
-			if !declarers[sk][producer] {
-				names = append(names, producer)
-			}
-		}
-		sort.Strings(names)
-		// Sorted first, marked second: the mark travels with the producer it
-		// describes and never influences where that producer sorts.
-		rendered := make([]string, 0, len(names))
-		for _, producer := range names {
-			if repeaters[sk][producer] {
-				producer += " (more than once)"
-			}
-			rendered = append(rendered, producer)
-		}
-		clauses = append(clauses, fmt.Sprintf("in key space %q the name %q is derived by %s",
-			sk.space, sk.key, joinWithAnd(rendered)))
+	out := make([]constraint.DerivedNameDeclaration, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, constraint.DerivedNameDeclaration{
+			KeySpace:                     k.space,
+			DerivedName:                  k.key,
+			Contributor:                  k.producer,
+			ContributorKind:              k.kind,
+			RepeatedWithinOneDeclaration: repeated[k],
+		})
 	}
-	inner := fmt.Errorf("%w: assembly path %q provider %q: %s; change what is derived so each name is derived once within its space",
-		ErrDerivedKeyCollision(), groupPath, provider, strings.Join(clauses, "; "))
-	// The location is left empty rather than set to the group path, the way the
-	// other group-scoped halts here do it: the message already names the assembly
-	// path and the provider, and setting the location too prefixes the rendered
-	// error with a path it goes on to repeat a few words later.
-	return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
+	return out
+}
+
+// derivedNameSets is the render's retained record of the names each dispatch
+// group's contributors declared they derived.
+//
+// It is a retention rather than a read of the render's working state because that
+// state is a loop-local: the accumulator each group fills as its contributors
+// render is dropped when the render returns, and the presentation of the grouping
+// outlives it. A reader asking what a group's contributors declared has this and
+// nothing else.
+//
+// It is keyed by the group rather than by a node, because the group is the scope
+// the question is asked at: a name displaces another only where the two outputs
+// merge, and what merges is a group.
+type derivedNameSets struct {
+	// byGroup is looked up by group and never walked, so it holds no order to
+	// keep: every reader arrives with a path and a provider in hand. The
+	// declarations inside each entry carry their own order.
+	byGroup map[dispatchKey][]constraint.DerivedNameDeclaration
+}
+
+// newDerivedNameSets records what each group's contributors declared they
+// derived, at the point every contributor has been sorted into its group.
+//
+// It is taken here because this is the first point the record is complete and the
+// last point at which acting on it still saves work: every contributor has
+// rendered, so every declaration a group will ever hold is already in it, and a
+// duplicate is settled entirely by the declarations in hand — no assembly output
+// is needed to see one, and stopping here stops the build before an assembler
+// merges output whose names were already known to collide.
+//
+// A group whose contributors declared nothing records nothing, which is the same
+// answer a group no reader ever asks about gets: there is no name to compare.
+func newDerivedNameSets(
+	groups map[dispatchKey]*pendingDispatch,
+	keys []dispatchKey,
+) *derivedNameSets {
+	out := &derivedNameSets{
+		byGroup: make(map[dispatchKey][]constraint.DerivedNameDeclaration, len(keys)),
+	}
+	for _, key := range keys {
+		group := groups[key]
+		if group == nil {
+			continue
+		}
+		if declared := group.derivedKeys.declarations(); len(declared) > 0 {
+			out.byGroup[key] = declared
+		}
+	}
+	return out
+}
+
+// declarations returns what one group's contributors declared they derived, and
+// nothing for a group nothing was recorded for.
+func (d *derivedNameSets) declarations(
+	assemblyPath, provider string,
+) []constraint.DerivedNameDeclaration {
+	return d.byGroup[dispatchKey{Path: assemblyPath, Provider: provider}]
+}
+
+// groupDerivedNames returns the names the contributors to one dispatch group
+// declared they derived inside their own output.
+//
+// It is unexported for the reason the group's other readers are: its only readers
+// are in this package — the presentation of what the grouping holds — and one walk
+// is what keeps a coordinate a rule runs over and the value it reads from being
+// derived twice. A render that recorded nothing answers nothing, which is the same
+// answer a group whose contributors declared nothing gets.
+func (r *RenderResult) groupDerivedNames(
+	assemblyPath, provider string,
+) []constraint.DerivedNameDeclaration {
+	if r.derivedNames == nil {
+		return nil
+	}
+	return r.derivedNames.declarations(assemblyPath, provider)
 }

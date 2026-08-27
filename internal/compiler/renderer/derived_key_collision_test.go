@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -26,118 +27,225 @@ const (
 	realDerivedExportName        = "aggrega-prod-api-orders-db-host"
 )
 
-// TestDerivedKeySet_DiagnosticInvariantUnderDeclarationOrder proves the property
-// at the unit that owns it: the same declarations, offered in any order, produce
-// the same diagnostic. The maps and groups feeding the accumulator upstream are
-// walked in orders that are not fixed by the input, so any dependence on
-// declaration order here would surface as a build that fails with a different
-// message on different runs of identical input.
-func TestDerivedKeySet_DiagnosticInvariantUnderDeclarationOrder(t *testing.T) {
+// derivedNamesView presents one group's derived-name declarations and nothing
+// else.
+//
+// The rule under test reads exactly one fact, so nothing behind the embedded
+// interface is ever asked for. It carries no value there deliberately: a read
+// panics rather than answering a zero value, so a rule that later starts reading
+// a second fact fails loudly instead of being quietly handed nothing.
+type derivedNamesView struct {
+	constraint.DispatchedView
+	declared []constraint.DerivedNameDeclaration
+}
+
+func (v derivedNamesView) AssemblyGroupDerivedNames(
+	_ string, _ string,
+) []constraint.DerivedNameDeclaration {
+	return v.declared
+}
+
+// derivedNamesAxes supplies the one group coordinate these cases are about.
+//
+// It is the real axis pair the traversal takes rather than a hand-built subject,
+// because a subject is this framework's to construct: driving the traversal is
+// what makes these cases exercise the invocation a build performs rather than a
+// call the production path never makes.
+type derivedNamesAxes struct {
+	path     string
+	provider string
+}
+
+func (a derivedNamesAxes) AssemblyPaths() []constraint.AuthoredCoordinate {
+	return []constraint.AuthoredCoordinate{{Value: a.path}}
+}
+
+func (a derivedNamesAxes) AssemblyGroupProviders(assemblyPath string) []string {
+	if assemblyPath != a.path {
+		return nil
+	}
+	return []string{a.provider}
+}
+
+// runDerivedNameRule invokes the declared rule over one group's declarations the
+// way a build does, and returns the messages it raised in the order it raised
+// them.
+//
+// It goes through the traversal rather than calling the rule's own function,
+// which is what keeps these cases honest about invocation: a rule invoked zero
+// times reports exactly what a rule that ran and approved reports, so a helper
+// that bypassed the traversal could not tell the two apart.
+func runDerivedNameRule(t *testing.T, set *derivedKeySet) []string {
+	t.Helper()
+
+	axes := derivedNamesAxes{path: "boundaries/default", provider: "collide"}
+	var view constraint.DispatchedView = derivedNamesView{declared: set.declarations()}
+	raised, err := constraint.RunOnAssemblyPathProviders(
+		func() error { return nil }, axes, axes, view,
+		AssemblyGroupDerivesEachNameOnce,
+	)
+	if err != nil {
+		t.Fatalf("the traversal failed: %v", err)
+	}
+	out := make([]string, 0, len(raised))
+	for _, o := range raised {
+		if !errors.Is(o.Sentinel(), ErrDerivedKeyCollision()) {
+			t.Fatalf("an objection carries %v rather than the derived-name condition", o.Sentinel())
+		}
+		out = append(out, constraint.ObjectionMessage(o))
+	}
+	return out
+}
+
+// TestDerivedNameRule_InvariantUnderDeclarationOrder proves the property at the
+// unit that owns it: the same declarations, offered in any order, produce the
+// same objections in the same sequence. The maps and groups feeding the
+// accumulator upstream are walked in orders that are not fixed by the input, so
+// any dependence on declaration order here would surface as a build that reports
+// a different message on different runs of identical input.
+func TestDerivedNameRule_InvariantUnderDeclarationOrder(t *testing.T) {
 	t.Parallel()
 
 	declarations := []derivedKeyDeclaration{
-		{space: "logical-ids", key: realDerivedLogicalID, producer: `component "one"`},
-		{space: "export-names", key: realDerivedExportName, producer: `component "two"`},
-		{space: "logical-ids", key: realDerivedLogicalID, producer: `component "three"`},
-		{space: "export-names", key: realDerivedExportName, producer: `component "four"`},
-		{space: "export-names", key: realDerivedExportName, producer: `component "five"`},
+		{space: "logical-ids", key: realDerivedLogicalID, producerKind: "component", producer: "one"},
+		{space: "export-names", key: realDerivedExportName, producerKind: "component", producer: "two"},
+		{space: "logical-ids", key: realDerivedLogicalID, producerKind: "component", producer: "three"},
+		{space: "export-names", key: realDerivedExportName, producerKind: "component", producer: "four"},
+		{space: "export-names", key: realDerivedExportName, producerKind: "component", producer: "five"},
 	}
 
-	var want string
+	var want []string
 	for _, order := range permutations(len(declarations)) {
 		var set derivedKeySet
 		for _, i := range order {
 			d := declarations[i]
-			set.put(d.space, d.key, d.producer)
+			set.put(d.space, d.key, d.producerKind, d.producer)
 		}
-		err := set.resolve("boundaries/default", "collide")
-		if err == nil {
-			t.Fatalf("order %v: expected a collision", order)
+		got := runDerivedNameRule(t, &set)
+		if len(got) == 0 {
+			t.Fatalf("order %v: expected objections", order)
 		}
-		if !errors.Is(err, ErrDerivedKeyCollision()) {
-			t.Fatalf("order %v: expected ErrDerivedKeyCollision, got %v", order, err)
-		}
-		if want == "" {
-			want = err.Error()
+		if want == nil {
+			want = got
 			continue
 		}
-		if err.Error() != want {
-			t.Fatalf("diagnostic depends on declaration order\nwant: %s\ngot (order %v): %s", want, order, err.Error())
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("the objections depend on declaration order\nwant: %v\ngot (order %v): %v", want, order, got)
 		}
 	}
 
-	// Every colliding space and name is reported, with every contributor named,
-	// and the spaces come out in space order rather than in the order the
-	// accumulating walks happened to take.
+	// Every colliding space and name is objected to, one objection per
+	// contributor that derived it, and the spaces come out in space order rather
+	// than in the order the accumulating walks happened to take.
+	if len(want) != 5 {
+		t.Fatalf("expected one objection per contributor per colliding name, got %d: %v", len(want), want)
+	}
 	for _, fragment := range []string{
-		`in key space "export-names" the name "aggrega-prod-api-orders-db-host" is derived by component "five", component "four" and component "two"`,
-		`in key space "logical-ids" the name "paymentsapiQueue" is derived by component "one" and component "three"`,
-		`assembly path "boundaries/default" provider "collide"`,
-		"change what is derived so each name is derived once within its space",
+		`key space "export-names"`,
+		`key space "logical-ids"`,
+		`derived by component "five"`,
+		`derived by component "one"`,
+		`dispatch path "boundaries/default"`,
+		`provider "collide"`,
 	} {
-		if !strings.Contains(want, fragment) {
-			t.Errorf("diagnostic missing %q\ngot: %s", fragment, want)
+		var found bool
+		for _, m := range want {
+			if strings.Contains(m, fragment) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("no objection carries %q\ngot: %v", fragment, want)
 		}
 	}
-	if strings.Index(want, "export-names") > strings.Index(want, "logical-ids") {
-		t.Errorf("colliding spaces must be reported in space order, got: %s", want)
+	joined := strings.Join(want, "\n")
+	if strings.Index(joined, "export-names") > strings.Index(joined, "logical-ids") {
+		t.Errorf("colliding spaces must be objected to in space order, got: %v", want)
 	}
 }
 
-// TestDerivedKeySet_BothDirections is the near-miss pair. The same two
-// contributors declaring into the same space halt when the name is identical and
-// do not halt when one character of it differs — so the guard is comparing the
+// TestDerivedNameRule_BothDirections is the near-miss pair. The same two
+// contributors declaring into the same space object when the name is identical
+// and stay silent when one character of it differs — so the rule is comparing the
 // declared strings for equality and nothing else.
-func TestDerivedKeySet_BothDirections(t *testing.T) {
+func TestDerivedNameRule_BothDirections(t *testing.T) {
 	t.Parallel()
 
-	t.Run("identical name halts", func(t *testing.T) {
+	t.Run("identical name objects", func(t *testing.T) {
 		t.Parallel()
 		var set derivedKeySet
-		set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
-		set.put("logical-ids", realDerivedLogicalID, `component "beta"`)
-		err := set.resolve("boundaries/default", "collide")
-		if err == nil {
-			t.Fatal("expected a halt when two contributors derive one name")
-		}
-		if !errors.Is(err, ErrDerivedKeyCollision()) {
-			t.Fatalf("expected ErrDerivedKeyCollision, got: %v", err)
+		set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
+		set.put("logical-ids", realDerivedLogicalID, "component", "beta")
+		if got := runDerivedNameRule(t, &set); len(got) != 2 {
+			t.Fatalf("expected one objection per contributor, got %d: %v", len(got), got)
 		}
 	})
 
-	t.Run("one character changed does not halt", func(t *testing.T) {
+	t.Run("one character changed stays silent", func(t *testing.T) {
 		t.Parallel()
 		var set derivedKeySet
-		set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
-		set.put("logical-ids", realDerivedLogicalIDNearMiss, `component "beta"`)
-		if err := set.resolve("boundaries/default", "collide"); err != nil {
-			t.Fatalf("a one-character difference must not halt: %v", err)
+		set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
+		set.put("logical-ids", realDerivedLogicalIDNearMiss, "component", "beta")
+		if got := runDerivedNameRule(t, &set); len(got) != 0 {
+			t.Fatalf("a one-character difference must not object: %v", got)
 		}
 	})
 }
 
-// TestDerivedKeySet_SameNameInDifferentSpacesDoesNotHalt pins the space as the
+// TestDerivedNameRule_SameNameInDifferentSpacesIsSilent pins the space as the
 // scope of the comparison. Two contributors deriving one name into two different
 // spaces have not collided — nothing in either output displaces the other — and a
-// check that compared names across spaces would reject legitimate authoring.
-func TestDerivedKeySet_SameNameInDifferentSpacesDoesNotHalt(t *testing.T) {
+// rule that compared names across spaces would reject legitimate authoring.
+func TestDerivedNameRule_SameNameInDifferentSpacesIsSilent(t *testing.T) {
 	t.Parallel()
 
 	var set derivedKeySet
-	set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
-	set.put("export-names", realDerivedLogicalID, `component "beta"`)
-	if err := set.resolve("boundaries/default", "collide"); err != nil {
-		t.Fatalf("one name in two different spaces must not halt: %v", err)
+	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
+	set.put("export-names", realDerivedLogicalID, "component", "beta")
+	if got := runDerivedNameRule(t, &set); len(got) != 0 {
+		t.Fatalf("one name in two different spaces must not object: %v", got)
 	}
 }
 
-// TestDerivedKeySet_OneContributorRestatingItselfAcrossCrossingsDoesNotHalt
-// covers the shape a single node produces legitimately, and it is the bound the
-// within-one-declaration check below must not break. A node renders across more
+// TestDerivedNameRule_TwoKindsOfContributorAreNamedByKind covers the axis a
+// component-only corpus cannot reach: a boundary-scope feature and a component
+// meeting on one name are named by what each of them is, because that is what
+// tells an author which block to open.
+func TestDerivedNameRule_TwoKindsOfContributorAreNamedByKind(t *testing.T) {
+	t.Parallel()
+
+	var set derivedKeySet
+	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
+	set.put("logical-ids", realDerivedLogicalID, "feature", "logging")
+	got := runDerivedNameRule(t, &set)
+	if len(got) != 2 {
+		t.Fatalf("expected one objection per contributor, got %d: %v", len(got), got)
+	}
+	for _, want := range []string{
+		`derived by component "alpha"`,
+		`derived by feature "logging"`,
+	} {
+		var found bool
+		for _, m := range got {
+			if strings.Contains(m, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("no objection carries %q\ngot: %v", want, got)
+		}
+	}
+}
+
+// TestDerivedNameRule_OneContributorRestatingItselfAcrossCrossingsIsSilent covers
+// the shape a single node produces legitimately, and it is the bound the
+// within-one-declaration case below must not break. A node renders across more
 // than one crossing — a source render, a workload synthesis, an artifacts
 // placement — and the same name declared at two of them is one contributor
 // describing one resource twice, not two contributors meeting on one name.
-// Reporting it would name the same component on both sides of a collision with
+// Objecting would name the same component on both sides of a collision with
 // itself.
 //
 // Two separate put calls are exactly what that restatement looks like once the
@@ -145,14 +253,26 @@ func TestDerivedKeySet_SameNameInDifferentSpacesDoesNotHalt(t *testing.T) {
 // declaration carried it twice and no repeat is recorded. That is the whole
 // difference from the case below, and it is why the distinction cannot be drawn
 // from the accumulated entries alone.
-func TestDerivedKeySet_OneContributorRestatingItselfAcrossCrossingsDoesNotHalt(t *testing.T) {
+func TestDerivedNameRule_OneContributorRestatingItselfAcrossCrossingsIsSilent(t *testing.T) {
 	t.Parallel()
 
 	var set derivedKeySet
-	set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
-	set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
-	if err := set.resolve("boundaries/default", "collide"); err != nil {
-		t.Fatalf("one contributor restating a name across crossings must not halt: %v", err)
+	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
+	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
+	if got := runDerivedNameRule(t, &set); len(got) != 0 {
+		t.Fatalf("one contributor restating a name across crossings must not object: %v", got)
+	}
+}
+
+// TestDerivedNameRule_EmptyIsSilent confirms the inert path: a group whose
+// contributors declared nothing raises nothing, so the rule costs a contributor
+// that declares nothing exactly nothing.
+func TestDerivedNameRule_EmptyIsSilent(t *testing.T) {
+	t.Parallel()
+
+	var set derivedKeySet
+	if got := runDerivedNameRule(t, &set); len(got) != 0 {
+		t.Fatalf("a group with no declarations must raise nothing: %v", got)
 	}
 }
 
@@ -236,12 +356,12 @@ func TestMergeDerivedKeys_RepeatReportIsAFunctionOfThePayload(t *testing.T) {
 	}
 }
 
-// TestDerivedKeySet_RepeatWithinOneDeclarationHalts carries the repeat through
-// the accumulator to the halt. One contributor is named, and it is marked as
-// having derived the name more than once — which is what tells the author the
-// defect is inside that one contributor's own derivation rather than a meeting
-// between two of them.
-func TestDerivedKeySet_RepeatWithinOneDeclarationHalts(t *testing.T) {
+// TestDerivedNameRule_RepeatWithinOneDeclarationObjects carries the repeat
+// through the accumulator to the objection. One contributor is named, and the
+// caption says it derived the name more than once — which is what tells the
+// author the defect is inside that one contributor's own derivation rather than a
+// meeting between two of them.
+func TestDerivedNameRule_RepeatWithinOneDeclarationObjects(t *testing.T) {
 	t.Parallel()
 
 	declared := types.OrderedMap[[]string]{}
@@ -251,30 +371,28 @@ func TestDerivedKeySet_RepeatWithinOneDeclarationHalts(t *testing.T) {
 	repeated := mergeDerivedKeys(&acc, declared)
 
 	var set derivedKeySet
-	set.putAll(acc, repeated, `component "alpha"`)
+	set.putAll(acc, repeated, "component", "alpha")
 
-	err := set.resolve("boundaries/default", "collide")
-	if err == nil {
-		t.Fatal("expected a halt when one declaration carries a name twice")
-	}
-	if !errors.Is(err, ErrDerivedKeyCollision()) {
-		t.Fatalf("expected ErrDerivedKeyCollision, got: %v", err)
+	got := runDerivedNameRule(t, &set)
+	if len(got) != 1 {
+		t.Fatalf("expected one objection naming the one contributor, got %d: %v", len(got), got)
 	}
 	for _, fragment := range []string{
-		`in key space "logical-ids" the name "paymentsapiQueue" is derived by component "alpha" (more than once)`,
-		"change what is derived so each name is derived once within its space",
+		`"paymentsapiQueue"`,
+		`key space "logical-ids"`,
+		`derived more than once by component "alpha"`,
 	} {
-		if !strings.Contains(err.Error(), fragment) {
-			t.Errorf("diagnostic missing %q\ngot: %s", fragment, err.Error())
+		if !strings.Contains(got[0], fragment) {
+			t.Errorf("objection missing %q\ngot: %s", fragment, got[0])
 		}
 	}
 }
 
-// TestDerivedKeySet_TheSameDeclarationWithoutTheRepeatDoesNotHalt is the other
-// direction, and it is the half that keeps the check from being satisfied by a
-// guard that refuses every declaration: the same contributor declaring two names
-// that differ by one character in one space renders.
-func TestDerivedKeySet_TheSameDeclarationWithoutTheRepeatDoesNotHalt(t *testing.T) {
+// TestDerivedNameRule_TheSameDeclarationWithoutTheRepeatIsSilent is the other
+// direction, and it is the half that keeps the rule from being satisfied by one
+// that refuses every declaration: the same contributor declaring two names that
+// differ by one character in one space renders.
+func TestDerivedNameRule_TheSameDeclarationWithoutTheRepeatIsSilent(t *testing.T) {
 	t.Parallel()
 
 	declared := types.OrderedMap[[]string]{}
@@ -284,50 +402,67 @@ func TestDerivedKeySet_TheSameDeclarationWithoutTheRepeatDoesNotHalt(t *testing.
 	repeated := mergeDerivedKeys(&acc, declared)
 
 	var set derivedKeySet
-	set.putAll(acc, repeated, `component "alpha"`)
-	if err := set.resolve("boundaries/default", "collide"); err != nil {
-		t.Fatalf("one declaration carrying two distinct names must not halt: %v", err)
+	set.putAll(acc, repeated, "component", "alpha")
+	if got := runDerivedNameRule(t, &set); len(got) != 0 {
+		t.Fatalf("one declaration carrying two distinct names must not object: %v", got)
 	}
 }
 
-// TestDerivedKeySet_ARepeatAndACollisionOnOneNameReportOnce covers the overlap of
-// the two halves. A name both repeated inside one contributor's declaration and
-// derived by a second contributor is one defect in one space, so it is reported
-// as one clause naming both contributors, with only the repeating one marked.
-func TestDerivedKeySet_ARepeatAndACollisionOnOneNameReportOnce(t *testing.T) {
+// TestDerivedNameRule_ARepeatAndACollisionOnOneNameNameBothContributors covers
+// the overlap of the two halves. A name both repeated inside one contributor's
+// declaration and derived by a second contributor is one defect in one space, so
+// both contributors are named once each and only the repeating one is captioned
+// as having derived it more than once.
+func TestDerivedNameRule_ARepeatAndACollisionOnOneNameNameBothContributors(t *testing.T) {
 	t.Parallel()
 
 	var set derivedKeySet
-	set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
-	set.put("logical-ids", realDerivedLogicalID, `component "alpha"`)
-	set.put("logical-ids", realDerivedLogicalID, `component "beta"`)
+	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
+	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
+	set.put("logical-ids", realDerivedLogicalID, "component", "beta")
 	set.repeats = append(set.repeats, derivedKeyDeclaration{
-		space: "logical-ids", key: realDerivedLogicalID, producer: `component "alpha"`,
+		space: "logical-ids", key: realDerivedLogicalID,
+		producerKind: "component", producer: "alpha",
 	})
 
-	err := set.resolve("boundaries/default", "collide")
-	if err == nil {
-		t.Fatal("expected a halt")
+	got := runDerivedNameRule(t, &set)
+	if len(got) != 2 {
+		t.Fatalf("expected one objection per contributor, got %d: %v", len(got), got)
 	}
-	msg := err.Error()
-	want := `in key space "logical-ids" the name "paymentsapiQueue" is derived by component "alpha" (more than once) and component "beta"`
-	if !strings.Contains(msg, want) {
-		t.Errorf("diagnostic missing %q\ngot: %s", want, msg)
+	joined := strings.Join(got, "\n")
+	for _, want := range []string{
+		`derived more than once by component "alpha"`,
+		`derived by component "beta"`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the objections do not carry %q\ngot: %v", want, got)
+		}
 	}
-	if strings.Count(msg, `the name "paymentsapiQueue"`) != 1 {
-		t.Errorf("one name in one space must be reported once, got: %s", msg)
+	if strings.Count(joined, `derived by component "alpha"`) != 0 {
+		t.Errorf("the repeating contributor must be captioned as repeating, got: %v", got)
 	}
 }
 
-// TestDerivedKeySet_EmptyResolves confirms the inert path: a group whose
-// contributors declared nothing passes, so the check costs a guest that declares
-// nothing exactly nothing.
-func TestDerivedKeySet_EmptyResolves(t *testing.T) {
+// TestDerivedNameRule_ARepeatWhoseDeclarationNeverAccumulatedIsStillAnswered
+// pins the union the retention reads rather than a lookup into the declarations.
+// Both are recorded through one entry point, so the case does not arise from the
+// production path; reading the union rather than assuming it keeps the answer
+// from depending on that.
+func TestDerivedNameRule_ARepeatWhoseDeclarationNeverAccumulatedIsStillAnswered(t *testing.T) {
 	t.Parallel()
 
 	var set derivedKeySet
-	if err := set.resolve("boundaries/default", "collide"); err != nil {
-		t.Fatalf("a group with no declarations must resolve: %v", err)
+	set.repeats = append(set.repeats, derivedKeyDeclaration{
+		space: "logical-ids", key: realDerivedLogicalID,
+		producerKind: "component", producer: "alpha",
+	})
+
+	got := runDerivedNameRule(t, &set)
+	if len(got) != 1 {
+		t.Fatalf("expected one objection, got %d: %v", len(got), got)
+	}
+	if !strings.Contains(got[0], `derived more than once by component "alpha"`) {
+		t.Errorf("objection does not name the repeating contributor\ngot: %s", got[0])
 	}
 }
 
