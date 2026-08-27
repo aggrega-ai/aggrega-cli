@@ -576,9 +576,9 @@ func dropCatalogViewInconsistencies(errs []*resolver.ResolverError) []*resolver.
 // or guard failure returns the error without invoking use.
 //
 // recipeFor is the component-instance-to-Recipe binding the caller will render
-// with. It is read by the advisory drain below and by nothing else here, so a
-// caller with no binding to offer passes nil and that one advisory is skipped
-// while every other check is unaffected.
+// with. It is read by the advisory suite below and by nothing else here, so a
+// caller with no binding to offer passes nil and the one rule keyed inside a bound
+// Recipe is asked about nothing while every other check is unaffected.
 func ResolveAndValidate(
 	ctx context.Context,
 	inputs Inputs,
@@ -639,13 +639,11 @@ func ResolveAndValidate(
 		// from the checks that needed only the Aggregate, and assigning here would
 		// silently drop them.
 		declaredAdvisories, err := resolver.RunAdvisories(
-			ctx.Err, normalized, resolveResult.Release, catalogLookup, resolveResult.Parameters)
+			ctx.Err, normalized, resolveResult.Release, catalogLookup, recipeFor, resolveResult.Parameters)
 		if err != nil {
 			return err
 		}
 		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories, declaredAdvisories...)
-		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
-			resolver.LintProvidesNotDeclared(normalized, catalogLookup, recipeFor)...)
 		for _, a := range resolveResult.LintAdvisories {
 			fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
 		}

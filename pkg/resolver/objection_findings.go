@@ -62,13 +62,54 @@ func FindingsFromObjections(
 	objections []constraint.Objection,
 	entity string,
 ) []*ResolverError {
+	return findings(objections, func(constraint.Objection) string { return entity })
+}
+
+// findingsAtTheirOwnDocument renders what a check raised into the finding shape,
+// attributing each finding to the document its own subject was authored in rather
+// than to one document supplied for the whole set.
+//
+// It exists for a rule whose subject is authored in neither of the two documents a
+// resolve is about. Such a rule's locator names a path inside a third document —
+// a Recipe's own entry, say — and attributing it to the application would name a
+// path that document does not contain, which sends a reader to a key they cannot
+// find. The document kind is supplied because a subject carries the file it was
+// authored in and not what kind of entity that file holds, and the entity
+// reference a finding renders reads as a kind and a name.
+//
+// fallback is used for a subject carrying no file at all, which is the shape every
+// coordinate derived from an authoring document takes here: it names no file
+// because the finding's document is the one the caller already knows.
+//
+// It shares the per-objection derivation with [FindingsFromObjections], so the two
+// differ in where the entity comes from and in nothing else.
+func findingsAtTheirOwnDocument(
+	objections []constraint.Objection,
+	kind string,
+	fallback string,
+) []*ResolverError {
+	return findings(objections, func(o constraint.Objection) string {
+		if o.SourceFile() == "" {
+			return fallback
+		}
+		return kind + " " + o.SourceFile()
+	})
+}
+
+// findings is the per-objection derivation both conversions above share: every
+// field of a finding read off the objection, with the entity supplied by the
+// caller's own rule for it.
+func findings(
+	objections []constraint.Objection,
+	entityOf func(constraint.Objection) string,
+) []*ResolverError {
 	if len(objections) == 0 {
 		return nil
 	}
 	out := make([]*ResolverError, 0, len(objections))
 	for _, o := range objections {
 		out = append(out, &ResolverError{
-			Entity:  entity,
+			Entity:  entityOf(o),
 			Field:   o.Locator(),
 			Message: strings.Join(o.RenderedDetail(), ", "),
 			Err:     o.Sentinel(),

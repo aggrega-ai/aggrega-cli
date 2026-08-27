@@ -40,6 +40,14 @@ type coordinateSet struct {
 	view  *normalizedView
 	nodes []constraint.NodeInstance
 	edges []constraint.EdgeInstance
+
+	// recipeFor resolves the Recipe bound to a node, and is nil for a caller
+	// that has none to offer. It is held rather than derived because the binding
+	// is not a reading of either authoring document: a Manifest names it, and the
+	// caller resolving it is the one that will render with it. A nil value leaves
+	// the axes hanging off it empty, which asks the rules over them about
+	// nothing rather than answering them from a Recipe nobody bound.
+	recipeFor RecipeBinding
 }
 
 // socketAlias identifies one connection within one node: the socket it wires and
@@ -66,6 +74,19 @@ func newCoordinateSet(view *normalizedView) *coordinateSet {
 		c.nodes = append(c.nodes, node)
 		c.edges = append(c.edges, connectionsOf(view, node)...)
 	}
+	return c
+}
+
+// withRecipeBinding hands the set the Recipe binding one axis is keyed inside,
+// and returns the set so construction reads as one expression.
+//
+// It is separate from the constructor because the binding is not a reading of
+// either authoring document and most callers have none: a Manifest names it, and
+// the caller resolving it is the one that will render with it. A set built
+// without it enumerates that one axis emptily and every other axis exactly as
+// before, so the rules over the rest are unaffected by its absence.
+func (c *coordinateSet) withRecipeBinding(recipeFor RecipeBinding) *coordinateSet {
+	c.recipeFor = recipeFor
 	return c
 }
 
@@ -269,6 +290,55 @@ func (c *coordinateSet) BoundaryAttachments(boundary string) []string {
 	return features.Keys()
 }
 
+// ProvidesKeys returns the keys the Recipe bound to one node publishes, in the
+// order that Recipe declares them.
+//
+// Declared order is the fact rather than an incidental property of it: the entries
+// are evaluated in the order the document writes them, so a rule invoked once per
+// key reports its findings in the order an author reads the block. Sorting them
+// would put a rule's output in an order no document contains.
+//
+// Each coordinate is positioned at the Recipe rather than at the Aggregate the
+// instance was authored in, because the entry is written in the Recipe and that is
+// the document an author edits to remove it. The Recipe's name stands in for its
+// path: the catalog loader does not retain the path on the parsed document, and a
+// logical identifier a reader can act on is what the position field admits where
+// no file applies.
+//
+// The axis is empty for a caller that offered no binding, for a node whose
+// instance the presentation does not answer for, and for a node the binding
+// resolves no Recipe for. In each case the published side of the comparison was
+// never read, so a rule over it is asked about nothing rather than being asked
+// about a Recipe that is not this build's.
+//
+// This axis reaches the instances the resolved Aggregate's own subsystem tree
+// declares and no others, because that is the node set the presentation's
+// coordinates are derived from. A component a sub-aggregate contributes is not in
+// it: composition happens after this stage, so no coordinate here names such a
+// node and no rule over this axis is invoked for one.
+func (c *coordinateSet) ProvidesKeys(node string) []constraint.AuthoredCoordinate {
+	if c.recipeFor == nil {
+		return nil
+	}
+	componentType, present := c.view.InstanceComponentType(node)
+	if !present {
+		return nil
+	}
+	recipe, bound := c.recipeFor(node, componentType)
+	if !bound || recipe == nil {
+		return nil
+	}
+	keys := recipe.Spec.Provides.Keys()
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]constraint.AuthoredCoordinate, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, constraint.AuthoredCoordinate{Value: key, SourceFile: recipe.Metadata.Name})
+	}
+	return out
+}
+
 // The presentation is held to every axis the rules this package declares are
 // keyed by, so an axis that stops being satisfied fails to compile here rather
 // than at the invocation that needed it.
@@ -283,4 +353,5 @@ var (
 	_ constraint.DeliveryKeyEnumerator         = (*coordinateSet)(nil)
 	_ constraint.SubsystemAttachmentEnumerator = (*coordinateSet)(nil)
 	_ constraint.BoundaryAttachmentEnumerator  = (*coordinateSet)(nil)
+	_ constraint.ProvidesKeyEnumerator         = (*coordinateSet)(nil)
 )

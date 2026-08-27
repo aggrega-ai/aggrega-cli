@@ -10,9 +10,25 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// RunAdvisories evaluates the ADVISORY rules that can be asked of the two
-// authoring documents before the composition is flattened, and returns one
-// finding per objection.
+// RecipeBinding resolves a component instance to the Recipe bound to it, by the
+// instance's name and its catalog type — the same two strings the render stage
+// binds by, so a caller supplying the build's own binding gets the Recipe that
+// will actually render. A caller with no binding to offer supplies nil.
+//
+// It is an input to the advisory suite rather than a reading of either authoring
+// document, because the binding is named on a Manifest and resolved by the caller
+// that will render with it. One declared rule is keyed inside the Recipe it
+// resolves; every other rule is unaffected by its absence.
+type RecipeBinding func(instanceName, componentType string) (*types.Recipe, bool)
+
+// RunAdvisories evaluates the ADVISORY rules complete before the composition is
+// flattened, and returns one finding per objection.
+//
+// What bounds the set is where each rule's FACTS are complete, not which documents
+// its subjects are authored in: the facts here are the two authoring documents
+// normalized with the catalog reachable, and one rule's subject is an entry inside
+// a Recipe the caller's binding resolves. So a finding here may name a third
+// document, and each names the one its own subject was written in.
 //
 // It is the sibling of [RunGuards] and it is a separate entry point rather than a
 // second return value from that one, which is the whole point of the split. A
@@ -43,12 +59,18 @@ import (
 // this returns an error alongside the findings. A caller with no cancellation
 // concern passes nil.
 //
+// recipeFor is the component-instance-to-Recipe binding the caller will render
+// with. One rule asked here is keyed inside the Recipe it resolves, so a caller
+// with no binding to offer passes nil and that one rule is asked about nothing
+// while every other rule is unaffected.
+//
 // Returns no findings when the application document is absent.
 func RunAdvisories(
 	cancelled constraint.Cancellation,
 	na types.NormalizedAggregate,
 	release *types.Release,
 	catalog CatalogLookup,
+	recipeFor RecipeBinding,
 	parameters map[string]any,
 ) ([]*ResolverError, error) {
 	agg := na.Aggregate()
@@ -63,18 +85,20 @@ func RunAdvisories(
 	// constructions without first moving the severity onto what a check raises,
 	// or the separation that keeps an advisory advisory goes with it.
 	contracts := newNormalizedView(na, release, catalog, parameters)
-	return runDeclaredAdvisories(cancelled, contracts,
+	return runDeclaredAdvisories(cancelled, contracts, recipeFor,
 		fmt.Sprintf("Aggregate %s", agg.Metadata.Name))
 }
 
-// runDeclaredAdvisories asks every advisory rule declared over the two
-// pre-flatten documents.
+// runDeclaredAdvisories asks every advisory rule whose facts are complete before
+// the composition is flattened.
 //
-// Every rule asked here reads what the APPLICATION wrote, so every finding names
-// the application document. That is the rules' subject matter and not a
-// simplification: a reading of what the deployment wrote is not attributable to
-// the application, and a rule of that kind arriving here would need the second
-// document named the way the halting suite names it.
+// The rules whose SUBJECT the application wrote name the application document, and
+// that is their subject matter rather than a simplification: a reading of what the
+// deployment wrote is not attributable to the application, and a rule of that kind
+// arriving here would need the second document named the way the halting suite
+// names it. A rule whose subject sits inside a third document — a Recipe entry the
+// caller's binding resolves — names that document per finding instead, because its
+// locator is a path inside it.
 //
 // 🔴 Each traversal call NAMES its rule as a literal argument, and that is a
 // constraint of the framework rather than a style. Which rules a caller invokes
@@ -86,9 +110,10 @@ func RunAdvisories(
 func runDeclaredAdvisories(
 	cancelled constraint.Cancellation,
 	view *normalizedView,
+	recipeFor RecipeBinding,
 	developerDocument string,
 ) ([]*ResolverError, error) {
-	coordinates := newCoordinateSet(view)
+	coordinates := newCoordinateSet(view).withRecipeBinding(recipeFor)
 	facts := constraint.NormalizedView(view)
 
 	var out []*ResolverError
@@ -117,6 +142,23 @@ func runDeclaredAdvisories(
 		cancelled, coordinates, coordinates, facts, attachmentNameNearADeclaredSlot)); err != nil {
 		return nil, err
 	}
+
+	// Once per key the Recipe bound to a component publishes. This one is
+	// attributed per finding rather than to the application document, because the
+	// entry it objects about is written in the Recipe and its locator names a path
+	// inside that document — a path the application does not contain. The
+	// application stands as the fallback for a subject carrying no file, which is
+	// what a coordinate derived from the authoring documents carries.
+	//
+	// The axis is empty when the caller offered no binding, so a caller with none
+	// is asked this rule about nothing while every reading above is unaffected.
+	providesObjections, err := constraint.RunOnNodeProvidesKeys(
+		cancelled, coordinates, coordinates, facts, publishedProvidesKeyIsDeclared)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, findingsAtTheirOwnDocument(
+		providesObjections, "Recipe", developerDocument)...)
 
 	return out, nil
 }

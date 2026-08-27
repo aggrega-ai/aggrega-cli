@@ -106,7 +106,21 @@ func aggWithAttachments(t *testing.T, attachmentNames []string) types.Normalized
 // reason no row asked for.
 func advisoriesOf(t *testing.T, na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
 	t.Helper()
-	got, err := RunAdvisories(nil, na, nil, catalog, nil)
+	return advisoriesBoundTo(t, na, catalog, nil)
+}
+
+// advisoriesBoundTo is advisoriesOf with a Recipe binding supplied, for the one
+// reading keyed inside a bound Recipe. The nil-binding form above is kept
+// separate rather than folded into this one, so every row that offers no binding
+// says so at the call and the two cases stay distinguishable in the source.
+func advisoriesBoundTo(
+	t *testing.T,
+	na types.NormalizedAggregate,
+	catalog CatalogLookup,
+	recipeFor RecipeBinding,
+) []*ResolverError {
+	t.Helper()
+	got, err := RunAdvisories(nil, na, nil, catalog, recipeFor, nil)
 	if err != nil {
 		t.Fatalf("RunAdvisories returned an error with no cancellation signal supplied: %v", err)
 	}
@@ -485,7 +499,7 @@ func TestRunAdvisories_Deterministic(t *testing.T) {
 func TestRunAdvisories_NoApplicationDocumentIsSilent(t *testing.T) {
 	t.Parallel()
 
-	got, err := RunAdvisories(nil, types.NormalizedAggregate{}, nil, socketCatalog(), nil)
+	got, err := RunAdvisories(nil, types.NormalizedAggregate{}, nil, socketCatalog(), nil, nil)
 	if err != nil {
 		t.Fatalf("RunAdvisories: %v", err)
 	}
@@ -619,7 +633,7 @@ func TestRunAdvisories_SuitePropagatesCancellation(t *testing.T) {
 
 	na := manyOffendingComponents(t, 40)
 	cancelled, reads := countingCancellation(2, errAdvisoryWalkCancelled)
-	got, err := RunAdvisories(cancelled, na, nil, socketCatalog(), nil)
+	got, err := RunAdvisories(cancelled, na, nil, socketCatalog(), nil, nil)
 	if !errors.Is(err, errAdvisoryWalkCancelled) {
 		t.Fatalf("RunAdvisories returned %v; want the signal's own reason", err)
 	}
