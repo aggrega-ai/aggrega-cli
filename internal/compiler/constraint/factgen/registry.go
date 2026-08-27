@@ -251,6 +251,48 @@ var facts = []factDecl{
 			"across its resolved inheritance chain, in author order with the " +
 			"chain root's first.",
 	},
+	{
+		Name:        "manifest-annotation-binding-keys",
+		Stage:       "document",
+		SourceField: "types.MappingTier.Annotations",
+		Subject:     []string{"document", "annotation-binding"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "ManifestAnnotationBindingKeys are the annotation keys the " +
+			"presented Manifest's binding registry declares, in author " +
+			"order.\n\nAn annotation binding is what lets an operator write a " +
+			"single annotation on a component and have it routed into a " +
+			"Feature attachment's pillar fields. The key is the annotation " +
+			"name the author writes.\n\nThe order is the author's and is " +
+			"carried rather than sorted, because a rule invoked once per " +
+			"binding raises in invocation order and that order is the order " +
+			"the findings reach the reader.\n\nIt counts the bindings the " +
+			"registry consumed by annotation expansion is built from, which " +
+			"is the tier the author writes under mappings.features.annotations " +
+			"and not the per-provider tiers a Manifest may also carry. A rule " +
+			"whose subject must span those tiers as well needs a fact that " +
+			"names them; this one does not, and says so rather than leaving " +
+			"the difference to be discovered by a rule that silently stops " +
+			"asking about half its input.",
+	},
+	{
+		Name:        "manifest-annotation-binding-feature",
+		Stage:       "document",
+		SourceField: "types.AnnotationBinding.Feature",
+		Subject:     []string{"document", "annotation-binding"},
+		Params: []paramDecl{
+			{Name: "document", Type: "string"},
+			{Name: "binding", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "ManifestAnnotationBindingFeature is the Feature an annotation " +
+			"binding routes to, and whether the presented Manifest declares a " +
+			"binding of that key at all.\n\nThe second result is load-bearing " +
+			"for the same reason it is on an instance's component type: a " +
+			"binding nobody declared and a declared binding naming the empty " +
+			"Feature are different findings, and a rule that cannot tell them " +
+			"apart reports the wrong one.",
+	},
 
 	// -------------------------------------------------------------- normalized
 

@@ -1074,6 +1074,34 @@ func coordinateFlowCases() []coordinateFlowCase {
 			want: []string{documentFile + "|port-set"},
 		},
 
+		// The Manifest's annotation-binding kind reads through its push entry, so
+		// the keys come from the caller. Two are presented for the reason the
+		// parameter case states: one instance cannot tell a walk from an
+		// invocation that ignored what it was handed. The two keys are
+		// deliberately not prefixes of one another, so a readback that truncated
+		// or confused them would not still compare equal.
+		{
+			kind: SubjectDocumentAnnotationBinding,
+			seam: seamTraversal,
+			read: func(_ traversalFixture) []string {
+				return readback(func(
+					c Check[traversalView, DocumentAnnotationBindingSubject],
+				) ([]Objection, error) {
+					return RunOnDocumentAnnotationBindings(
+						documentFile,
+						[]string{"feature.example/rewrite-host", "feature.example/tls"},
+						traversalView{}, c,
+					), nil
+				}, func(s DocumentAnnotationBindingSubject) string {
+					return s.SourceFile() + "|" + s.AnnotationBindingKey()
+				})
+			},
+			want: []string{
+				documentFile + "|feature.example/rewrite-host",
+				documentFile + "|feature.example/tls",
+			},
+		},
+
 		// The node kind reads its identifier and never its authored name, and the
 		// fixture makes the difference visible: the second node's identifier is
 		// qualified by the container it was reached through while its authored name is

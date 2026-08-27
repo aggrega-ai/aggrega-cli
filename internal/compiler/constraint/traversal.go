@@ -94,6 +94,15 @@ const (
 	authoredKeySubsystems = "subsystems"
 	authoredKeyComponents = "components"
 	authoredKeyAggregates = "aggregates"
+
+	// authoredKeyMappings and authoredKeyAnnotations are the two keys a
+	// Manifest's annotation registry is written under. They sit here with the
+	// rest rather than beside the one traversal that spells them, because the
+	// block is where an authoring key is declared once and the alternative is a
+	// second spelling of the same key appearing the first time a second rule
+	// names it.
+	authoredKeyMappings    = "mappings"
+	authoredKeyAnnotations = "annotations"
 )
 
 // scopeNesting describes one authoring axis whose scopes nest: the key the

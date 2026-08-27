@@ -49,6 +49,9 @@ const (
 	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 1 declared fact.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
+	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 2 declared facts.
+	SubjectDocumentAnnotationBinding SubjectKind = "(document, annotation-binding)"
+
 	// SubjectNode is the subject kind node, keyed by 20 declared facts.
 	SubjectNode SubjectKind = "node"
 
@@ -130,6 +133,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectDocument, Coordinates: []string{"document"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentParameter, Coordinates: []string{"document", "parameter"}, Traversal: TraversalPush},
 	{Kind: SubjectDocumentAssertion, Coordinates: []string{"document", "assertion"}, Traversal: TraversalPush},
+	{Kind: SubjectDocumentAnnotationBinding, Coordinates: []string{"document", "annotation-binding"}, Traversal: TraversalPush},
 	{Kind: SubjectNode, Coordinates: []string{"node"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeSocket, Coordinates: []string{"node", "socket"}, Traversal: TraversalPull},
 	{Kind: SubjectEdge, Coordinates: []string{"edge"}, Traversal: TraversalPull},

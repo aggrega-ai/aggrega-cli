@@ -125,6 +125,46 @@ func newDocumentAssertionSubject(sourceFile, assertion string, segments ...strin
 	}
 }
 
+// DocumentAnnotationBindingSubject is the subject of a check invoked once per
+// annotation binding the presented Manifest's registry declares.
+//
+// It is a separate kind from the document itself for the same reason a declared
+// parameter is: "once per binding" is a different once, and the subject can name
+// the binding's authored site where a document subject names only the file.
+//
+// The coordinate value is the annotation key the author wrote — the key the
+// binding is declared under, which is what identifies one binding among the
+// registry's entries.
+type DocumentAnnotationBindingSubject interface {
+	Subject
+
+	// AnnotationBindingKey is the annotation key whose binding the check was
+	// invoked for. The document itself is the other coordinate, and SourceFile
+	// names it.
+	AnnotationBindingKey() string
+
+	documentAnnotationBinding()
+}
+
+type documentAnnotationBindingSubject struct {
+	provenance
+	binding string
+}
+
+func (documentAnnotationBindingSubject) documentAnnotationBinding() {}
+
+func (s documentAnnotationBindingSubject) AnnotationBindingKey() string { return s.binding }
+
+func newDocumentAnnotationBindingSubject(
+	sourceFile, binding string,
+	segments ...string,
+) DocumentAnnotationBindingSubject {
+	return documentAnnotationBindingSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		binding:    binding,
+	}
+}
+
 // NodeSubject is the subject of a check invoked once per node: one component
 // instance in the flattened set, a sub-aggregate's nodes included.
 //

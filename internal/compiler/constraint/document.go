@@ -115,3 +115,58 @@ func RunOnDocumentParameters[V View](
 	}
 	return out
 }
+
+// RunOnDocumentAnnotationBindings invokes check once per annotation binding the
+// presented Manifest's registry declares, in the order the bindings are given.
+//
+// It is a push entry for the same reason [RunOnDocumentParameters] is, and the
+// reason is the outer coordinate rather than anything about a Manifest: the kind
+// is rooted at a document, and no point in the compilation holds a materialised
+// document set to walk. A Manifest is read one file at a time, so the caller
+// holding one presents it. What differs is the coordinate inside it — a
+// Manifest's declared binding keys are a set once the document is in hand, so
+// this entry walks them.
+//
+// bindings are the declared annotation keys, and the caller presents them in a
+// deterministic order it declares — the order the registry declares them in,
+// which is the order the author wrote. That obligation is the same one every
+// enumerator interface carries, and it lands here because the push side of the
+// framework has no enumerator to put it on: a check raises in the order it is
+// invoked, so this order is the order diagnostics appear in. Nothing here sorts
+// and nothing here derives a key.
+//
+// A locator names .spec.mappings.features.annotations.<key>, the site the
+// binding is authored at, assembled through the same helper every other
+// document-level site uses so one authored shape has one spelling.
+//
+// 🔴 The locator names the flat registry's site, which is the site the presented
+// key belongs to. A Manifest may also carry annotation bindings under
+// per-provider tiers, whose authored site is a different path; a key from such a
+// tier presented through this entry would be located at a key its file does not
+// contain. The fact this entry is enumerated from counts the flat tier alone and
+// says so in its own declaration, so the two agree by construction rather than by
+// a caller remembering. A rule whose subject must span the per-provider tiers
+// needs a fact that names them and a site that travels with the binding.
+//
+// It takes no [Cancellation] and returns no error, for the reason
+// [RunOnDocumentParameters] states: the signal is read once per outermost
+// coordinate, the outermost coordinate here is the document, and the loop over
+// documents is the caller's.
+func RunOnDocumentAnnotationBindings[V View](
+	sourceFile string,
+	bindings []string,
+	view V,
+	check Check[V, DocumentAnnotationBindingSubject],
+) []Objection {
+	var out []Objection
+	for _, binding := range bindings {
+		subject := newDocumentAnnotationBindingSubject(
+			sourceFile, binding,
+			documentSpecSegments(
+				authoredKeyMappings, authoredKeyFeatures, authoredKeyAnnotations, binding,
+			)...,
+		)
+		out = append(out, check.Run(view, subject)...)
+	}
+	return out
+}

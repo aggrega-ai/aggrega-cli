@@ -440,6 +440,30 @@ func (v *normalizedView) EntityAssertionNameSet(string) []string {
 		"inheritance chain: present the catalog entity's own document to read its assertion names")
 }
 
+// ManifestAnnotationBindingKeys refuses: this presentation holds the two
+// authoring documents, and an annotation binding registry is declared on neither
+// of them.
+//
+// Refusing rather than returning an empty set is the same judgement the two
+// refusals above make. An empty set is the truthful answer for a Manifest whose
+// registry declares nothing, so nothing downstream could tell that answer apart
+// from this one — and a rule invoked once per binding over an empty set is
+// invoked never, which reads exactly like a rule that ran and approved.
+func (v *normalizedView) ManifestAnnotationBindingKeys(string) []string {
+	panic("the normalized presentation holds the authoring documents, which declare no " +
+		"annotation binding registry: present the Manifest to read its binding keys")
+}
+
+// ManifestAnnotationBindingFeature refuses, for the reason above.
+//
+// The refusal covers the second result too. Answering (\"\", false) would say the
+// presented document declares no such binding, which is a claim about a Manifest
+// this presentation does not hold rather than an answer about one it does.
+func (v *normalizedView) ManifestAnnotationBindingFeature(string, string) (string, bool) {
+	panic("the normalized presentation holds the authoring documents, which declare no " +
+		"annotation binding registry: present the Manifest to read a binding's Feature")
+}
+
 // ---------------------------------------------------------------- instance facts
 
 // InstanceComponentType returns the component type a named instance declares,

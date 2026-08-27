@@ -377,28 +377,32 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 //     document is the whole file, so the coordinate and the provenance are the
 //     same string, and the kind owes no accessor of its own for it.
 var coordinateAccessors = map[string][]string{
-	"document":      {"SourceFile"},
-	"parameter":     {"ParameterName"},
-	"assertion":     {"AssertionName"},
-	"node":          {"NodeID"},
-	"socket":        {"SocketName"},
-	"edge":          {"NodeID", "SocketName", "AliasName"},
-	"attachment":    {"AttachmentName"},
-	"slot":          {"SlotName"},
-	"mechanism":     {"MechanismName"},
-	"delivery-key":  {"DeliveryKey"},
-	"pillar":        {"PillarName"},
-	"leaf":          {"LeafName"},
-	"locals-key":    {"LocalsKey"},
-	"provides-key":  {"ProvidesKey"},
-	"pipeline-step": {"StepID"},
-	"boundary":      {"BoundaryPath"},
-	"subsystem":     {"SubsystemPath"},
-	"module":        {"ModulePath"},
-	"provider":      {"ProviderName"},
-	"assembly-path": {"AssemblyPath"},
-	"path":          {"EmittedPath"},
-	"artifact":      {"ArtifactName"},
+	"document":  {"SourceFile"},
+	"parameter": {"ParameterName"},
+	"assertion": {"AssertionName"},
+	// The suffix says the value is the key a binding is declared under, which is
+	// what identifies one binding among the registry's entries. A Name suffix
+	// would suggest the binding carries a name of its own beside its key.
+	"annotation-binding": {"AnnotationBindingKey"},
+	"node":               {"NodeID"},
+	"socket":             {"SocketName"},
+	"edge":               {"NodeID", "SocketName", "AliasName"},
+	"attachment":         {"AttachmentName"},
+	"slot":               {"SlotName"},
+	"mechanism":          {"MechanismName"},
+	"delivery-key":       {"DeliveryKey"},
+	"pillar":             {"PillarName"},
+	"leaf":               {"LeafName"},
+	"locals-key":         {"LocalsKey"},
+	"provides-key":       {"ProvidesKey"},
+	"pipeline-step":      {"StepID"},
+	"boundary":           {"BoundaryPath"},
+	"subsystem":          {"SubsystemPath"},
+	"module":             {"ModulePath"},
+	"provider":           {"ProviderName"},
+	"assembly-path":      {"AssemblyPath"},
+	"path":               {"EmittedPath"},
+	"artifact":           {"ArtifactName"},
 }
 
 // subjectContractAccessors names the accessors [Subject] itself supplies, so a
@@ -892,6 +896,13 @@ var subjectKindBindings = map[SubjectKind]struct {
 		iface: reflect.TypeOf((*DocumentAssertionSubject)(nil)).Elem(),
 		make: func(f string) Subject {
 			return newDocumentAssertionSubject(f, "port-set", "spec", "assertions", "port-set")
+		},
+	},
+	SubjectDocumentAnnotationBinding: {
+		iface: reflect.TypeOf((*DocumentAnnotationBindingSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newDocumentAnnotationBindingSubject(f, "feature.example/rewrite-host",
+				"spec", "mappings", "features", "annotations", "feature.example/rewrite-host")
 		},
 	},
 	SubjectNode: {
