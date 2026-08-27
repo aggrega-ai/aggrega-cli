@@ -45,6 +45,7 @@ var factPlacements = []struct {
 	{"PerLeafAttachmentProvenance", "GraphView"},
 	{"StepExportScope", "DescribedView"},
 	{"DeclaredLocalsKeys", "HydratedView"},
+	{"EmittedFileOriginSet", "EmittedView"},
 	{"AssemblyGroupProviderSet", "DispatchedView"},
 	{"EmittedFilePathSet", "RenderedView"},
 }
@@ -77,6 +78,7 @@ func TestReadChainDerivesItFromTheDeclaredViews(t *testing.T) {
 		"GraphView",
 		"DescribedView",
 		"HydratedView",
+		"EmittedView",
 		"DispatchedView",
 		"RenderedView",
 	}

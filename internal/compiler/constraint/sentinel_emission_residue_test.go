@@ -182,9 +182,12 @@ var inlineCheckResidue = []inlineResidueEntry{
 		reason: "A genuine collision test, but the enclosing method both detects and produces: the by-path " +
 			"map is built for the collision test and then reused to build the returned map. Extracting the " +
 			"detection means either walking the entries twice or handing the intermediate map out, and " +
-			"handing it out is the re-derivation the framework exists to close. Left until the traversal " +
-			"over boundary, provider and path can supply the path coordinate to a check reading the " +
-			"emitted-file path set directly.",
+			"handing it out is the re-derivation the framework exists to close. The traversal over " +
+			"boundary, provider and path cannot supply the coordinate here, and the reason is position " +
+			"rather than absence: that traversal reads an attribution written onto each contribution only " +
+			"after the assembly loop, whereas this detection runs inside that loop, before any group's " +
+			"output paths exist. So it is left until a traversal over the assembling group's own " +
+			"placements can supply the path coordinate at the moment those placements exist.",
 	},
 	{
 		vehicle:     "ErrArtifactOutputCollision",

@@ -148,10 +148,12 @@ func (a assemblyGroups) AssemblyGroupBoundaryAssemblyNames(
 //
 // A stage's view contains the stage it extends, so every fact complete before the
 // grouping was known is readable here. Those facts are answered by the
-// presentation of the state each node reached before its artifact bytes existed,
-// embedded and delegated to, rather than derived again: one fact has one
-// producer, and two producers of a fact are free to disagree with nothing
-// comparing them.
+// presentation of what each node's own render emitted, embedded and delegated to,
+// rather than derived again: one fact has one producer, and two producers of a
+// fact are free to disagree with nothing comparing them. That presentation in
+// turn embeds the one below it, so a rule reading a fact from an earlier stage
+// through this value reaches the same answer that stage's own presentation
+// gives.
 //
 // # Why this stage exists at all rather than being folded into the one after it
 //
@@ -164,13 +166,13 @@ func (a assemblyGroups) AssemblyGroupBoundaryAssemblyNames(
 // would read an attribution whose file coordinates had already been written past
 // each other.
 type dispatchedView struct {
-	constraint.HydratedView
+	constraint.EmittedView
 	assemblyGroupFacts
 }
 
 // newDispatchedView presents how a render grouped its nodes for assembly, with
-// the facts complete earlier answered by the presentation of the state each node
-// reached before its artifact bytes existed.
+// the facts complete earlier answered by the presentation of what each node's own
+// render emitted.
 //
 // It is unexported because the render is the one thing that builds it: the
 // grouping it reads is the render's own working state, so a caller outside this
@@ -181,13 +183,13 @@ type dispatchedView struct {
 // and a presentation that answers emptily is worse than an absent one, because a
 // rule reading it cannot tell an empty answer from a real one.
 func newDispatchedView(
-	earlier constraint.HydratedView,
+	earlier constraint.EmittedView,
 	groups assemblyGroupFacts,
 ) constraint.DispatchedView {
 	if earlier == nil || groups == nil {
 		return nil
 	}
-	return &dispatchedView{HydratedView: earlier, assemblyGroupFacts: groups}
+	return &dispatchedView{EmittedView: earlier, assemblyGroupFacts: groups}
 }
 
 var _ constraint.DispatchedView = (*dispatchedView)(nil)

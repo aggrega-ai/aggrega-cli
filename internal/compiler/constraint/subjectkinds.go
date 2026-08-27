@@ -947,6 +947,57 @@ func newNodeAttachmentPipelineStepSubject(
 	}
 }
 
+// NodePathSubject is the subject of a check invoked once per output name one
+// node's own render emitted, before anything is grouped for assembly.
+//
+// It is rooted at a node because that is the scope an emission is complete in: a
+// Recipe's source, its workload, its artifacts entries and its pipeline steps all
+// emit under names chosen independently of one another, and nothing declares
+// those names distinct. So the node is what holds a whole emission, and the
+// output name is what several of its blocks can meet on.
+//
+// It is a different kind from the one keyed by a boundary, a provider and a path,
+// and neither reaches the other's coordinates. This one is one node's own output
+// under the names that node chose; that one is what a group assembled, under
+// paths an assembly may have renamed, nested or merged away — so a rule about an
+// emission two blocks of one Recipe collided in cannot be asked there, and a rule
+// about two providers meeting in one directory cannot be asked here.
+type NodePathSubject interface {
+	Subject
+
+	// NodeID identifies the node whose own render emitted the file, as every
+	// keyed fact takes it.
+	NodeID() string
+
+	// EmittedPath is the output name the check was invoked for: the name the
+	// node's own render placed the file under, before any assembly moved it. It
+	// contributes no locator segment, because it is output rather than something
+	// an author wrote — so a check naming a particular file reads it from here.
+	EmittedPath() string
+
+	nodePath()
+}
+
+type nodePathSubject struct {
+	provenance
+	node string
+	path string
+}
+
+func (nodePathSubject) nodePath() {}
+
+func (s nodePathSubject) NodeID() string { return s.node }
+
+func (s nodePathSubject) EmittedPath() string { return s.path }
+
+func newNodePathSubject(sourceFile, node, path string, segments ...string) NodePathSubject {
+	return nodePathSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		path:       path,
+	}
+}
+
 // BoundaryProviderPathSubject is the subject of a check invoked once per output
 // path written for one provider within one boundary.
 //

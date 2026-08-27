@@ -1175,6 +1175,47 @@ func RunOnBoundaryAttachmentArtifacts[V View](
 		})
 }
 
+// RunOnNodeEmittedPaths invokes check once per output name one node's own render
+// emitted, in node order and then name order.
+//
+// The locator is .spec.components.<name>, the component instance itself, spelled
+// level by level for a component reached through a subsystem — the same site the
+// node kind's own subjects carry, and for the same reason: a component instance
+// is what an author wrote and what a reader is sent to.
+//
+// The emitted name contributes no segment, and that is the point rather than an
+// omission. A name is output: it is produced by whichever of the node's blocks
+// emitted it, and no document holds it as a key — so a segment naming it would
+// spell a path the file does not contain. It remains a coordinate, because that
+// is what tells one of a node's emissions from another when a fact is keyed.
+//
+// The locator therefore stops one level short of the block that emitted the file,
+// and a rule over this kind makes that up in its detail: it names the emitted
+// name, CAPTIONED, because a filename standing bare beside another quoted value
+// is not something a reader can tell apart from it — see [DetailValue] for which
+// of a rule's values carries a caption. Naming the block is a rule's own job too,
+// and it reads that from the fact rather than from the subject: the subject knows
+// which file, and only the origin set knows which blocks put it there.
+func RunOnNodeEmittedPaths[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	paths NodeEmittedPathEnumerator,
+	view V,
+	check Check[V, NodePathSubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodePathSubject {
+		segments := componentAuthoredSegments(
+			node.AuthoredName, node.SubsystemPath, node.SynthesizedSubsystem,
+		)
+		names := paths.NodeEmittedPaths(node.ID)
+		out := make([]NodePathSubject, 0, len(names))
+		for _, name := range names {
+			out = append(out, newNodePathSubject(node.SourceFile, node.ID, name, segments...))
+		}
+		return out
+	})
+}
+
 // RunOnBoundaryProviderPaths invokes check once per output path written for one
 // provider within one boundary, in boundary order, then provider order, then
 // path order.

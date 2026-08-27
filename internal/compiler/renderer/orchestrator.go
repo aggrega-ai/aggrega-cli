@@ -96,6 +96,23 @@ type RenderResult struct {
 	// are the same whether it is populated or not.
 	HydratedView constraint.HydratedView
 
+	// EmittedView presents, as named facts, what each node's own render emitted
+	// before anything was grouped for assembly: which of the node's own blocks
+	// produced the file standing at each output name.
+	//
+	// It is published here because the emission it presents is a loop-local
+	// dropped when each node's turn ends, and because what survives the render is
+	// the assembled output, where an assembly is free to have renamed, nested or
+	// merged the node's own names away. So a reader asking which blocks of one
+	// Recipe met on one name has this and nothing else. It embeds the presentation
+	// of the state each node reached before its artifact bytes existed, so every
+	// fact complete earlier is readable through it.
+	//
+	// nil when the render could present no earlier stage to extend. Out-of-band:
+	// it carries no content that reaches an emitted file, and the emitted bytes
+	// are the same whether it is populated or not.
+	EmittedView constraint.EmittedView
+
 	// DispatchedView presents, as named facts, how this render sorted its nodes
 	// into the groups they were assembled in: the providers that met at each
 	// evaluated directory, and the boundaries that fed each group.
@@ -142,6 +159,17 @@ type RenderResult struct {
 	// Out-of-band: it carries no content that reaches an emitted file, and the
 	// emitted bytes are the same whether it is populated or not.
 	hydrated *hydratedProjections
+
+	// emitted is the render's retained set of per-node emission projections.
+	//
+	// It is published here because the emitted set each projection is taken from
+	// is a loop-local: it is split by the intermediate flag as its node joins a
+	// dispatch group and dropped when that node's turn ends. A reader asking which
+	// of a node's blocks emitted under one name has this and nothing else.
+	//
+	// Out-of-band: it carries no content that reaches an emitted file, and the
+	// emitted bytes are the same whether it is populated or not.
+	emitted *emittedProjections
 
 	// artifacts is the render's retained set of per-node artifact projections.
 	//
@@ -629,6 +657,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	input.artifacts = newArtifactProjections()
 	result.artifacts = input.artifacts
 
+	// Install this render's retention of what each node's own render emits. It is
+	// installed beside the retentions above and travels the same way — onto the
+	// travelling input, which reaches the recording site inside the node walk, and
+	// onto the result, which outlives that walk. It starts empty because its first
+	// content is produced by the walk rather than before it.
+	input.emitted = newEmittedProjections()
+	result.emitted = input.emitted
+
 	// Present the state each node reaches before its artifact bytes exist, with
 	// the facts complete earlier answered by the presentation built above. Built
 	// here because this is the first point holding every product it names: the
@@ -638,6 +674,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// retention this presentation reads, rather than this presentation waiting on
 	// the walk.
 	result.HydratedView = newHydratedView(result.DescribedView, input.hydrated)
+
+	// Present what each node's own render emits, with the facts complete earlier
+	// answered by the presentation built above. Built here rather than after the
+	// node walk for the reason that one is: it holds the retention by pointer, so
+	// it answers from whatever the walk has recorded by the time a reader asks.
+	result.EmittedView = newEmittedView(result.HydratedView, input.emitted)
 
 	// Producer-fulfilment (Component↔Recipe): the bound Recipe must publish every
 	// provides key its Component declares as the output contract in schema.provides.
@@ -1385,6 +1427,23 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 		}
 
+		// Reduce this node's completed emission to the projection that outlives it.
+		// The position is the last point at which the set is the node's OWN output
+		// and the first at which it is whole: every render pass that can contribute
+		// a file has run, and an own-scope pipeline has appended whatever it
+		// emitted. One statement later the node joins its dispatch group, where the
+		// set is split by the intermediate flag and merged with what other nodes and
+		// what attached FeatureRecipes emitted — so a projection taken after that
+		// would no longer be about this node alone.
+		//
+		// A pipeline deferred whole to post-assembly has contributed nothing by this
+		// point, which the projection records as the truthful answer rather than as a
+		// gap: such a pipeline emits into the merged documents a group assembled,
+		// under names no single node chose.
+		//
+		// The state is read and not retained.
+		input.emitted.recordNode(state)
+
 		key := dispatchKey{Path: finalPath, Provider: providerName}
 		nodeDispatch[nodeID] = key
 		nodeEngine[nodeID] = engine
@@ -1766,7 +1825,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// Present how the grouping came out, with the facts complete earlier answered
 	// by the presentation built before the node walk.
 	result.DispatchedView = newDispatchedView(
-		result.HydratedView, assemblyGroups{result: result},
+		result.EmittedView, assemblyGroups{result: result},
 	)
 
 	// The rules declared over the grouping are invoked here, against the directory

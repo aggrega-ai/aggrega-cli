@@ -2649,6 +2649,65 @@ type HydratedView interface {
 	BoundaryAttachmentArtifactTemplateText(boundary string, attachment string, artifact string) string
 }
 
+// EmittedView exposes the facts complete at the emitted stage: each node's
+// own emitted file set, complete and attributed: every file the node's own
+// render produced, under the name it will be placed by, together with the
+// authored input block each came from — all of it before the node is
+// sorted into any assembly group.
+//
+// It embeds HydratedView, so every fact complete earlier is readable here
+// and the containment is a compile-time fact rather than a documented
+// convention. A check declaring this view is placed at this stage, because
+// it is the earliest one at which every fact the check reads is complete.
+type EmittedView interface {
+	HydratedView
+
+	// EmittedFileOriginSet are the authored input blocks that produced the
+	// file standing at one output name within one node, deduplicated, in the
+	// order the render produced them.
+	//
+	// A Recipe can produce a file from more than one block — a source, a
+	// workload, an artifacts entry, and a step of a pipeline each contribute
+	// under a name chosen independently of the others — and nothing declares
+	// those names distinct from one another. So more than one entry here means
+	// two blocks of one Recipe each produced a file under one name, which is a
+	// state only the whole set makes visible: from either block alone the name
+	// looks unclaimed.
+	//
+	// One entry is the ordinary answer, and the ordinary answer is not the
+	// empty one: a name no block produced is a name the node did not emit, so
+	// the coordinate does not exist and no rule is invoked for it.
+	//
+	// It is the origins and not the bytes, and that is the whole of what this
+	// fact carries. What separates two blocks meeting on one name from one
+	// block emitting once is which blocks arrived, so a rule reading this
+	// needs no content — and a rule that could reach the bytes could compare
+	// them, which would let two blocks agreeing by accident pass as though the
+	// name had been claimed once.
+	//
+	// The order is stated rather than inherited. A node's blocks are read in a
+	// fixed sequence and each contributes by sorted name, so the sequence this
+	// returns is a function of the build alone; the first entry is the block
+	// that reached the name first, which is what tells an author which of two
+	// blocks to rename.
+	//
+	// The set counts a file the node's provider will hand to an assembly
+	// rather than write out directly. Two blocks meeting on one name have
+	// already collided in the node's own output, whichever of the two an
+	// assembly later consumes — so excluding such a file would answer
+	// emptily for exactly the providers that combine their nodes' output.
+	//
+	// It is keyed by the node and the output name, before anything is grouped
+	// for assembly. The output paths a provider wrote within a boundary are a
+	// separate fact at a later stage, and neither is derivable from the other:
+	// this one is one node's own emission under the names that node chose, and
+	// that one is what several nodes' output became once a group assembled it,
+	// under paths an assembly may have renamed, nested or merged away.
+	//
+	// Keyed by (node, path); read from renderer.PhaseBState.EmittedFiles.
+	EmittedFileOriginSet(node string, path string) []string
+}
+
 // DispatchedView exposes the facts complete at the dispatched stage: every
 // node's own rendered output sorted into the assembly groups it will be
 // merged in: the evaluated assembly path and the provider each group is
@@ -2656,12 +2715,12 @@ type HydratedView interface {
 // engine declared about combining and naming that group's output — all
 // of it complete before any group assembles.
 //
-// It embeds HydratedView, so every fact complete earlier is readable here
+// It embeds EmittedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
 // convention. A check declaring this view is placed at this stage, because
 // it is the earliest one at which every fact the check reads is complete.
 type DispatchedView interface {
-	HydratedView
+	EmittedView
 
 	// AssemblyGroupProviderSet are the providers that assemble at one
 	// evaluated assembly path, in the order the grouping recorded them.

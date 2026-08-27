@@ -21,12 +21,14 @@ func TestSingleFormatCarrier(t *testing.T) {
 	t.Parallel()
 
 	// RenderResult: {Files, Warnings, Diagnostics, Contributions, DescribedView,
-	// HydratedView, DispatchedView, RenderedView}, with Files valued by AssembledFile. Warnings and
-	// Diagnostics are advisory streams, not per-file carriers; Contributions
-	// carries per-group coordinates and is held to that below; the three views are
-	// stage presentations. A reintroduced `Formats map[string]string` sidecar keyed
-	// like the bytes shows up as an unexpected exported field and trips the set
-	// check.
+	// HydratedView, EmittedView, DispatchedView, RenderedView}, with Files valued by
+	// AssembledFile. Warnings and Diagnostics are advisory streams, not per-file
+	// carriers; Contributions carries per-group coordinates and is held to that
+	// below; the rest are stage presentations. That last set is described rather
+	// than counted, because a count sitting beside the list it counts is the field
+	// that goes stale first while everything around it still reads as current. A
+	// reintroduced `Formats map[string]string` sidecar keyed like the bytes shows up
+	// as an unexpected exported field and trips the set check.
 	//
 	// DescribedView and HydratedView are keyed by node, boundary, pipeline step,
 	// provides key and artifact name rather than by output path, so neither is a
@@ -35,7 +37,31 @@ func TestSingleFormatCarrier(t *testing.T) {
 	// coordinate of the node that declares it and not of the assembled output path
 	// the bytes end up under.
 	//
-	// DispatchedView is the closest call on the KEY axis, and it passes for the
+	// EmittedView is the closest call of all on the KEY axis, and the argument for
+	// it has to be made on both axes rather than on one. Its retention IS keyed by
+	// an output name — per node, then per name — which is the nearest any view here
+	// comes to being keyed the way the bytes are.
+	//
+	// On the KEY axis it passes because the name it is keyed by is not a key of
+	// Files. Files holds whole output paths: a dispatch prefix, and for a nesting
+	// assembler a per-node segment, composed onto the name a node's own render
+	// chose. A node's own name is a fragment those paths are built from rather than
+	// one of them — and for a node whose provider assembles, the name never reaches
+	// Files at all, because the assembler consumes the node's files and emits its
+	// own. So the two key spaces are related by composition in one direction and by
+	// replacement in the other, and neither makes them the same key.
+	//
+	// On the CARRIER axis it passes decisively, and that is the half worth stating
+	// because it is the half this guard exists for. The retention holds names and
+	// the authored input block each name came from, which is a closed vocabulary of
+	// block names — no bytes, no format, and nothing derived from either. The
+	// emitted bytes are read to build nothing and are not retained, so there is no
+	// per-file format for a sidecar to hide in and no second copy of the content
+	// beside the names. What would trip this guard is a retention that carried the
+	// bytes beside the names it is keyed by, which is exactly the shape this
+	// projection refuses.
+	//
+	// DispatchedView is the next closest call on the KEY axis, and it passes for the
 	// same reason RenderedView does. Both its facts are keyed by the evaluated
 	// assembly path — a directory several boundaries collapse into — which is a
 	// prefix of the paths Files is keyed by rather than the same key: Files holds
@@ -65,7 +91,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 	want := map[string]bool{
 		"Files": true, "Warnings": true, "Diagnostics": true,
 		"Contributions": true, "DescribedView": true, "HydratedView": true,
-		"DispatchedView": true, "RenderedView": true,
+		"EmittedView": true, "DispatchedView": true, "RenderedView": true,
 	}
 	for name := range exported {
 		if !want[name] {

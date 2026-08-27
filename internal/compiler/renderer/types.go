@@ -155,6 +155,19 @@ type RendererInput struct {
 	// it and publishes it on the result, where it outlives the render's node walk.
 	hydrated *hydratedProjections
 
+	// emitted retains, per node, the output names that node's own render emitted
+	// and the authored input blocks that produced each. The emitted set itself is
+	// a loop-local — accumulated across the render's passes, split by the
+	// intermediate flag as the node joins its dispatch group, and dropped when the
+	// node's turn ends — so a question about which of a node's blocks met on one
+	// name has nothing to read once the render finishes.
+	//
+	// It is unexported for the same reason the retentions around it are: it is the
+	// render's own working state rather than anything a caller supplies. An input
+	// built elsewhere leaves it unset and nothing is recorded. RenderAll installs
+	// it and publishes it on the result, where it outlives the render's node walk.
+	emitted *emittedProjections
+
 	// artifacts retains, per node, the artifact names that node's artifacts walk
 	// projected and the bytes each of them evaluated to. The walk's own state is a
 	// loop-local and only the provider's returned files survive it, so a question

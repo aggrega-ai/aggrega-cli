@@ -1043,6 +1043,16 @@ var subjectKindBindings = map[SubjectKind]struct {
 			return newAssemblyPathProviderSubject(f, "dist/shared/merged", "helm")
 		},
 	},
+	SubjectNodePath: {
+		iface: reflect.TypeOf((*NodePathSubject)(nil)).Elem(),
+		// The component's own site is the whole of the locator. An emitted name is
+		// produced by whichever of the node's blocks emitted it and is a key no
+		// document holds, so it contributes no segment — which is why the segments
+		// here stop at the component rather than naming the file.
+		make: func(f string) Subject {
+			return newNodePathSubject(f, "web", "deployment.yaml", "spec", "components", "web")
+		},
+	},
 	SubjectNodeArtifact: {
 		iface: reflect.TypeOf((*NodeArtifactSubject)(nil)).Elem(),
 		make: func(f string) Subject {

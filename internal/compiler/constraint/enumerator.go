@@ -789,6 +789,29 @@ type EmittedPathEnumerator interface {
 	EmittedPaths(boundary string, provider string) []string
 }
 
+// NodeEmittedPathEnumerator supplies the output names one node's own render
+// emitted, before anything is grouped for assembly.
+//
+// It is distinct from [EmittedPathEnumerator], which answers for a provider
+// within a boundary once assembly has flushed its groups. A node's own emission
+// is complete earlier and under the names that node chose, and an assembly is
+// free to rename, nest or merge those away — so neither axis is the other read
+// at a different moment, and the names one returns are not a subset of the
+// other's.
+type NodeEmittedPathEnumerator interface {
+	// NodeEmittedPaths returns the output names one node's own render emitted,
+	// deduplicated, in name order.
+	//
+	// The sibling node-rooted axes leave their order to the implementation to
+	// declare; this one fixes it, for the reason the assembled axis fixes its
+	// own. The order in which a render's passes place files is not a property of
+	// the input in the way an authored block's order is, and a name two passes
+	// both emitted would otherwise appear at whichever position the first pass to
+	// reach it happened to run at. Name order is derived from something ordered
+	// and is therefore the same on every run.
+	NodeEmittedPaths(node string) []string
+}
+
 // BoundaryAttachmentEnumerator supplies the Feature attachments declared on one
 // boundary itself.
 //

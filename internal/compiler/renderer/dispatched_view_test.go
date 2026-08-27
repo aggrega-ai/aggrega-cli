@@ -22,11 +22,11 @@ import (
 func declaredAtDispatchedStage(t *testing.T) []string {
 	t.Helper()
 	dispatched := reflect.TypeOf((*constraint.DispatchedView)(nil)).Elem()
-	hydrated := reflect.TypeOf((*constraint.HydratedView)(nil)).Elem()
+	emitted := reflect.TypeOf((*constraint.EmittedView)(nil)).Elem()
 
 	inherited := map[string]bool{}
-	for i := 0; i < hydrated.NumMethod(); i++ {
-		inherited[hydrated.Method(i).Name] = true
+	for i := 0; i < emitted.NumMethod(); i++ {
+		inherited[emitted.Method(i).Name] = true
 	}
 	var own []string
 	for i := 0; i < dispatched.NumMethod(); i++ {
@@ -144,11 +144,11 @@ func TestTheDispatchedPresentationRefusesAPartialConstruction(t *testing.T) {
 
 	for _, tc := range []struct {
 		name    string
-		earlier constraint.HydratedView
+		earlier constraint.EmittedView
 		groups  assemblyGroupFacts
 	}{
 		{"no earlier presentation", nil, assemblyGroups{result: &RenderResult{}}},
-		{"no group seam", stubHydratedView{}, nil},
+		{"no group seam", stubEmittedView{}, nil},
 		{"neither source", nil, nil},
 	} {
 		if got := newDispatchedView(tc.earlier, tc.groups); got != nil {
@@ -158,15 +158,15 @@ func TestTheDispatchedPresentationRefusesAPartialConstruction(t *testing.T) {
 
 	// The positive control. Without it a constructor that refused everything
 	// would satisfy every row above while presenting nothing at all.
-	if got := newDispatchedView(stubHydratedView{}, assemblyGroups{result: &RenderResult{}}); got == nil {
+	if got := newDispatchedView(stubEmittedView{}, assemblyGroups{result: &RenderResult{}}); got == nil {
 		t.Error("the presentation refused both sources present, so the refusals above prove nothing")
 	}
 }
 
-// stubHydratedView stands in for the earlier presentation where only this stage's
+// stubEmittedView stands in for the earlier presentation where only this stage's
 // own construction is under test. It answers nothing, so reading an earlier fact
 // through it is a nil dereference rather than a wrong answer — which is the
 // point: a test that reached for one would be reaching past what this file covers.
-type stubHydratedView struct {
-	constraint.HydratedView
+type stubEmittedView struct {
+	constraint.EmittedView
 }

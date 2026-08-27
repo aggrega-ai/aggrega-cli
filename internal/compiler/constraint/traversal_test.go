@@ -60,6 +60,7 @@ type traversalFixture struct {
 	providers         map[string][]string
 	assemblyProviders map[string][]string
 	emittedPaths      map[string][]string
+	nodeEmittedPaths  map[string][]string
 	boundaryAttach    map[string][]string
 	subsystemAttach   map[string][]string
 
@@ -159,6 +160,10 @@ func (f traversalFixture) Providers(boundary string) []string {
 
 func (f traversalFixture) EmittedPaths(boundary, provider string) []string {
 	return f.emittedPaths[fixtureKey(boundary, provider)]
+}
+
+func (f traversalFixture) NodeEmittedPaths(node string) []string {
+	return f.nodeEmittedPaths[fixtureKey(node)]
 }
 
 func (f traversalFixture) BoundaryAttachments(boundary string) []string {
@@ -383,6 +388,14 @@ func newTraversalFixture() traversalFixture {
 		emittedPaths: map[string][]string{
 			fixtureKey("prod/edge", "helm"):      {"a.yaml", "b.yaml"},
 			fixtureKey("prod/edge", "terraform"): {"main.tf.json"},
+		},
+		// Two names on one node and one on the other, so the transcript shows both
+		// the several-per-node case and the two nodes' different authored sites —
+		// which is the whole of what a node-rooted transcript can distinguish here,
+		// since an emitted name contributes no segment of its own.
+		nodeEmittedPaths: map[string][]string{
+			fixtureKey("web"):         {"deployment.yaml", "service.yaml"},
+			fixtureKey("billing.api"): {"main.tf.json"},
 		},
 		// Two on one boundary and none on the other, so a transcript shows the
 		// walk entering a boundary that declares none and yielding nothing there
@@ -711,6 +724,24 @@ func traversalCases() []traversalCase {
 			},
 			want: []string{
 				"featurerecipes/shared-db.yaml|.spec.pipeline.annotate",
+			},
+		},
+		{
+			// Three invocations over two nodes, and the provenance separates them
+			// only by node: an emitted name is output rather than an authored key,
+			// so the two names one node emitted carry one identical locator and the
+			// third carries the nested site its own node was written at. What tells
+			// the first two apart is their coordinates, which this transcript cannot
+			// see — that is what
+			// TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues is for.
+			kind: SubjectNodePath,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeEmittedPaths(cancelled, f, f, v, raisingCheck[NodePathSubject]())
+			},
+			want: []string{
+				"aggregate.yaml|.spec.components.web",
+				"aggregate.yaml|.spec.components.web",
+				"billing/aggregate.yaml|.spec.subsystems.billing.components.api",
 			},
 		},
 		{
@@ -1473,6 +1504,23 @@ func coordinateFlowCases() []coordinateFlowCase {
 		// Those are two correct spellings of one scope rather than a discrepancy: the
 		// coordinate is what a keyed fact takes, and the locator is what the authored
 		// document contains.
+		// The node-rooted kind whose innermost coordinate contributes no locator
+		// segment, which is why it needs this assertion rather than the provenance
+		// transcript: the two names one node emitted carry one identical locator, so
+		// nothing in that transcript distinguishes them and a traversal that
+		// discarded the name would read as correct there.
+		{
+			kind: SubjectNodePath,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodePathSubject]) ([]Objection, error) {
+					return RunOnNodeEmittedPaths(nil, f, f, traversalView{}, c)
+				}, func(s NodePathSubject) string {
+					return s.NodeID() + "|" + s.EmittedPath()
+				})
+			},
+			want: []string{"web|deployment.yaml", "web|service.yaml", "billing.api|main.tf.json"},
+		},
 		{
 			kind: SubjectBoundaryProviderPath,
 			seam: seamTraversal,

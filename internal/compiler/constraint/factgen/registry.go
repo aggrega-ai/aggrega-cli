@@ -108,8 +108,27 @@ var stages = []stageDecl{
 		HostPowers: []hostPower{powerFilesystem},
 	},
 	{
-		Name:    "dispatched",
+		Name:    "emitted",
 		Extends: "hydrated",
+		Holds: "each node's own emitted file set, complete and attributed: every " +
+			"file the node's own render produced, under the name it will be placed " +
+			"by, together with the authored input block each came from — all of it " +
+			"before the node is sorted into any assembly group",
+		// Producing this stage's facts renders the node, and every input block that
+		// can contribute a file goes through a guest: the source render, workload
+		// synthesis, an artifact entry's projection, and a pipeline step's own
+		// emission. The workspace read is named for the reason the stage before this
+		// one names it — an artifact entry or a workload body may be authored as an
+		// import, and the walk that turns either into an emitted file reads that
+		// file from the workspace — so a declaration of the crossing alone would
+		// assert this production needs nothing from the workspace, which is worse
+		// than an absent claim because a stage naming one power is read as having
+		// named them all.
+		HostPowers: []hostPower{powerFilesystem, powerGuestCrossing},
+	},
+	{
+		Name:    "dispatched",
+		Extends: "emitted",
 		Holds: "every node's own rendered output sorted into the assembly groups " +
 			"it will be merged in: the evaluated assembly path and the provider " +
 			"each group is keyed by, the boundaries that fed each, and what each " +
@@ -2918,6 +2937,56 @@ var facts = []factDecl{
 			"bytes are never produced.\n\nThe text is the entry's content " +
 			"whichever form the entry took: written inline, supplied by an " +
 			"imported file, or supplied by an entry of a library bundle.",
+	},
+
+	// ----------------------------------------------------------------- emitted
+
+	{
+		Name:        "emitted-file-origin-set",
+		Stage:       "emitted",
+		SourceField: "renderer.PhaseBState.EmittedFiles",
+		Subject:     []string{"node", "path"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "path", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "EmittedFileOriginSet are the authored input blocks that produced " +
+			"the file standing at one output name within one node, " +
+			"deduplicated, in the order the render produced them.\n\nA Recipe " +
+			"can produce a file from more than one block — a " +
+			"source, a workload, an artifacts entry, and a step of a pipeline " +
+			"each contribute under a name chosen independently of the others — " +
+			"and nothing declares those names distinct from one another. So more " +
+			"than one entry here means two blocks of one Recipe each produced a " +
+			"file under one name, which is a state only the whole set makes " +
+			"visible: from either block alone the name looks unclaimed.\n\nOne " +
+			"entry is the ordinary answer, and the ordinary answer is not the " +
+			"empty one: a name no block produced is a name the node did not " +
+			"emit, so the coordinate does not exist and no rule is invoked for " +
+			"it.\n\nIt is the origins and not the bytes, and that is the whole " +
+			"of what this fact carries. What separates two blocks meeting on one " +
+			"name from one block emitting once is which blocks arrived, so a " +
+			"rule reading this needs no content — and a rule that could reach " +
+			"the bytes could compare them, which would let two blocks agreeing " +
+			"by accident pass as though the name had been claimed once.\n\nThe " +
+			"order is stated rather than inherited. A node's blocks are read " +
+			"in a fixed sequence and each contributes by sorted name, so the " +
+			"sequence this returns is a function of the build alone; the first " +
+			"entry is the block that reached the name first, which is what " +
+			"tells an author which of two blocks to rename.\n\nThe set counts a file the " +
+			"node's provider will hand to an assembly rather than write out " +
+			"directly. Two blocks meeting on one name have already collided in " +
+			"the node's own output, whichever of the two an assembly later " +
+			"consumes — so excluding such a file would answer emptily for " +
+			"exactly the providers that combine their nodes' output.\n\nIt is " +
+			"keyed by the node and the output name, before anything is grouped " +
+			"for assembly. The output paths a provider wrote within a boundary " +
+			"are a separate fact at a later stage, and neither is derivable from " +
+			"the other: this one is one node's own emission under the names that " +
+			"node chose, and that one is what several nodes' output became once " +
+			"a group assembled it, under paths an assembly may have renamed, " +
+			"nested or merged away.",
 	},
 
 	// -------------------------------------------------------------- dispatched
