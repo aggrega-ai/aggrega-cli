@@ -121,11 +121,17 @@ var errUnmappedCustomMechanism = cerrors.Register("compiler-renderer/unmapped-cu
 // stay a documentary consumer contract, not a build-time check. Without this
 // halt a missing key would silently deliver nothing at inject/render time,
 // leaving the consumer's reference an unset environment variable, argument, or
-// file with no diagnostic. The wrapping chain at each emission site names the
-// realizer, the abstract entity, and the first missing key (declared keys are
-// checked in sorted order, so the reported key and the halt are byte-identical
-// across runs). Category: CATALOG_ERROR. Match with
+// file with no diagnostic. Category: CATALOG_ERROR. Match with
 // errors.Is(err, ErrProvidesContractUnfulfilled()).
+//
+// The two pairs report a shortfall differently, and the difference is
+// user-visible. Over the Component/Recipe pair it is reported by a declared rule
+// invoked once per declared key, so every key a Recipe is short of is named, each
+// positioned at its own entry in that Recipe's provides block. Over the
+// Feature/FeatureRecipe pair it is raised from the attachment's own resolution,
+// which reports the first missing key in sorted order and stops — so the reported
+// key and the halt are byte-identical across runs there. Keys are walked in
+// sorted order either way, which is what makes both deterministic.
 func ErrProvidesContractUnfulfilled() error { return errProvidesContractUnfulfilled }
 
 var errProvidesContractUnfulfilled = cerrors.Register("compiler-renderer/provides-contract-unfulfilled", cerrors.Meta{

@@ -713,19 +713,21 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// it answers from whatever the walk has recorded by the time a reader asks.
 	result.EmittedView = newEmittedView(result.HydratedView, input.emitted)
 
-	// Producer-fulfilment (Component↔Recipe): the bound Recipe must publish every
-	// provides key its Component declares as the output contract in schema.provides.
-	// The binding is a render-time fact (Manifest-driven), so the check runs here
-	// where the produced bag exists — a shortfall halts loudly rather than dropping
-	// the missing key silently at inject/render time.
+	// The output contract each node's component type declares, retained per node
+	// rather than recomputed later: it is what the consumer-context projection
+	// narrows each target's provides bag to, so a consumer reads the Component's
+	// published contract instead of whatever its Recipe happens to emit. Retaining
+	// it here is what lets the projection stay catalog-free — it receives the
+	// finished set as data. Every `continue` below leaves a node OUT of the set,
+	// which the projection reads as "do not narrow"; that is the intended reading,
+	// not an oversight (see NodeDeclaredProvides).
 	//
-	// The declared contract is also retained per node rather than recomputed later:
-	// it is what the consumer-context projection narrows each target's provides bag
-	// to, so a consumer reads the Component's published contract instead of whatever
-	// its Recipe happens to emit. Retaining it here is what lets the projection stay
-	// catalog-free — it receives the finished set as data. Every `continue` below
-	// leaves a node OUT of the set, which the projection reads as "do not narrow";
-	// that is the intended reading, not an oversight (see NodeDeclaredProvides).
+	// The producer-fulfilment reading over this retention — the bound Recipe must
+	// publish every key the contract declares — is the declared rule invoked
+	// below. It is not decided here: what this loop produces is the contract, and
+	// the two absences it passes over are properties of that axis rather than
+	// verdicts, which is why they read the same way to the projection and to the
+	// rule.
 	declaredProvides := NodeDeclaredProvides{}
 	if input.CatalogLookup.Component != nil {
 		for _, nodeID := range nodeIDs {
@@ -738,15 +740,21 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			if !found {
 				continue
 			}
-			contract := resolver.ComponentProvidesKeys(comp, input.CatalogLookup.SchemaLibraries)
-			declaredProvides[nodeID] = contract
-			if err := enforceProvidesContract(contract, allProvides[nodeID], nodeID,
-				fmt.Sprintf("node %q", nodeID),
-				fmt.Sprintf("Recipe %q", recipe.Metadata.Name),
-				fmt.Sprintf("Component %q", node.Component)); err != nil {
-				return nil, err
-			}
+			declaredProvides[nodeID] = resolver.ComponentProvidesKeys(comp, input.CatalogLookup.SchemaLibraries)
 		}
+	}
+
+	// Producer-fulfilment (Component↔Recipe), asked of the presentation of what
+	// the render resolved for each provides key. The binding is a render-time fact
+	// (Manifest-driven), so the reading runs here where the resolved bag exists —
+	// a shortfall halts loudly rather than delivering nothing under the missing key
+	// at inject/render time and leaving the consumer's reference silently unset.
+	if err := runProvidesContractRule(ctx.Err, input.GraphView != nil, result.HydratedView, declaredProvidesContract{
+		nodeOrder: nodeIDs,
+		declared:  declaredProvides,
+		recipes:   nodeRecipes,
+	}); err != nil {
+		return nil, err
 	}
 
 	// Step 5b: Recipe / FeatureRecipe assertions.

@@ -206,9 +206,22 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 // are checked in sorted order so the first missing key reported, and the halt,
 // are byte-identical across runs. contextPrefix locates the binding (e.g.
 // `node "x" attachment "y"`); realizer and abstract are the pre-quoted entity
-// descriptors (e.g. `Recipe "z"`, `Component "core/service"`) the diagnostic
-// names. nodeID sets the halt's source location. A single home for the one
-// realizing-side fulfilment semantic shared by every realizer/abstract pair.
+// descriptors (e.g. `FeatureRecipe "z"`, `Feature "core/secret"`) the diagnostic
+// names. nodeID sets the halt's source location.
+//
+// It reaches the Feature/FeatureRecipe pair, and that pair alone. The same
+// semantic over the Component/Recipe pair is declared as
+// [RecipePublishesEveryDeclaredProvidesKey] and invoked over the render's own
+// presentation of what each node resolved, so the two halves of one condition are
+// reached one way each rather than both through here. What keeps them one
+// condition is the sentinel: both raise [ErrProvidesContractUnfulfilled], and the
+// registered wording that names the condition is written once, on it.
+//
+// The attachment pair is not expressed the same way because it cannot be yet: the
+// resolved-provides fact the declared rule's predicate reads is keyed by node, and
+// an attachment's resolved provides are a separate surface with no fact of their
+// own. So this stays until there is one, and the shape it would take is the shape
+// beside it.
 func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap[string], nodeID, contextPrefix, realizer, abstract string) error {
 	keys := make([]string, 0, len(declared))
 	for k := range declared {

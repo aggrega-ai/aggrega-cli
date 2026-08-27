@@ -646,6 +646,81 @@ var ProvidesTemplateSelfContained = constraint.Check[
 	},
 }
 
+// RecipePublishesEveryDeclaredProvidesKey reports each key a component type's
+// output contract declares that the Recipe bound to the node resolved no value
+// for.
+//
+// The contract is structural key-presence, subset-required and
+// superset-permitted: every declared key has to arrive, while a Recipe
+// publishing more than the contract names has still fulfilled it. Extra keys are
+// therefore not this rule's finding at all — the reading that reports them is
+// advisory and sits on the other side of the same contract, and it is invoked
+// once per key the Recipe published rather than once per key the contract
+// declares. The two readings share a contract and share neither an axis nor a
+// severity.
+//
+// Values are never inspected. What arrives under a declared key is an opaque
+// pointer string the runtime resolves, so its declared type stays a documentary
+// contract between the producer and its consumers and there is nothing here to
+// check it against. Presence is the whole of the question.
+//
+// # Why the axis is the DECLARED keys and not the published ones
+//
+// The keys this rule is invoked over are the ones the contract declares, which
+// is what lets it see the condition at all: a key the Recipe never published is
+// absent from the published set by construction, so a rule walking that set
+// would be invoked zero times for exactly the inputs it exists to refuse. The
+// enumeration the caller supplies is the declared contract, positioned at the
+// Recipe — the document whose provides block an author adds the missing entry
+// to.
+//
+// # It reads presence from the pipe rather than from the authored block
+//
+// The fact it reads is the value the render resolved for the key, whose second
+// result is whether the key was resolved at all. That is the answer wanted: a
+// key an author wrote and whose template resolved to nothing is a key the
+// consumer reads as unset, and reading the authored block instead would report
+// such an entry as fulfilled. It also means one fact answers the whole
+// predicate, since the fact's absence half IS the violation.
+//
+// # Every shortfall is reported, not the first one
+//
+// The rule is invoked once per declared key, so a Recipe short of three of them
+// raises three objections and an author corrects all three from one build. Each
+// carries its own position — the Recipe, and the declared key inside its
+// provides block — which is why they are not folded into one message: a position
+// is something an author navigates to, and a single message naming three of them
+// can be navigated to none.
+//
+// Its detail leads with the missing key, which is the value the registered
+// wording is about and so carries no caption. The component type whose contract
+// declares it and the instance the Recipe was bound to follow, each captioned,
+// because the registered wording names neither and the locator names the
+// Recipe's own provides entry rather than either of them. The instance is what
+// tells two findings apart where one Recipe serves several instances of one type:
+// the entry at fault is written once, so those findings share a locator and
+// differ only here.
+var RecipePublishesEveryDeclaredProvidesKey = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeProvidesKeySubject,
+]{
+	Sentinel: ErrProvidesContractUnfulfilled(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeProvidesKeySubject,
+	) []constraint.Objection {
+		if _, resolved := v.ResolvedNodeProvides(s.NodeID(), s.ProvidesKey()); resolved {
+			return nil
+		}
+		componentType, _ := v.FlattenedNodeComponentType(s.NodeID())
+		return []constraint.Objection{s.RaiseWith(ErrProvidesContractUnfulfilled(),
+			constraint.Uncaptioned(s.ProvidesKey()),
+			constraint.Captioned("declared by component type", componentType),
+			constraint.Captioned("bound to component instance", s.NodeID()))}
+	},
+}
+
 // The two pillar roots an artifact template may only read when the document
 // carrying it supplies them. They are declared once and read by every form of the
 // rule — the three declared values below, one per carrier the artifacts walk is

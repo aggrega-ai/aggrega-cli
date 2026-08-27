@@ -5,9 +5,11 @@ package renderer
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // oneRecordedArtifact is the node axis and the artifact axis for a rule asked
@@ -518,6 +520,181 @@ func runNodeInjectDeliveryRule(
 	}
 	return objectionsAsDeveloperHalt(
 		raised, "attachments delivering a key another inject source already delivered")
+}
+
+// declaredProvidesContract is the node axis and the provides-key axis for the
+// rule over a component type's output contract: every node whose contract the
+// render read, and the keys that contract declares for each.
+//
+// # Why the axis is the declared contract rather than the published block
+//
+// The framework's own provides-key axis enumerates what a Recipe publishes,
+// which is the axis every other reading over that coordinate wants. This rule
+// wants the opposite side of the same contract: a key the Recipe never published
+// is absent from the published enumeration by construction, so a rule invoked
+// over it would be asked about nothing for exactly the inputs it exists to
+// refuse — and a rule invoked zero times reports what a rule that ran and
+// approved reports.
+//
+// # Both axes are read from the retention the render already built
+//
+// The node set is the key set of the retained contract map, and the keys are that
+// map's own values. Neither is re-derived: the map is built one loop above, from
+// the catalog the render holds, and it is the same value the consumer-context
+// projection later narrows each target's bag with. So the keys a rule is invoked
+// over and the keys a consumer is allowed to read are one reading rather than two
+// that agree today.
+//
+// That is also what carries the two conditions under which no contract is
+// enforced. A node with no bound Recipe and a node whose component type the
+// catalog does not answer for are both absent from the map, and absent for
+// reasons that are properties of the axis rather than verdicts of the rule: there
+// is no realizer to hold to a contract in the first case, and no contract was
+// read in the second. Absence of a declaration is not a declaration of nothing —
+// which is the same reading the projection makes of the same absence.
+//
+// # The node order is the walk's, not the map's
+//
+// A map holds no order, so the node sequence is taken from the sorted identifier
+// list the loop above walked rather than from the retention's keys. Findings then
+// arrive in the order the build already reported them in, and they arrive in the
+// same order on every run — which the deterministic-output contract requires of
+// anything that reaches a diagnostic.
+//
+// # The position is the Recipe, and it comes from the render's own binding
+//
+// A finding is positioned at the provides block of the Recipe bound to the node,
+// because that block is where the missing entry is added. The Recipe's name
+// stands in for its path: the catalog loader does not retain the path on the
+// parsed document, and a logical identifier a reader can act on is what the
+// position field admits where no file applies. The binding is read from the one
+// map the render resolved it into, so the document a finding names and the
+// document the render rendered are one answer.
+type declaredProvidesContract struct {
+	// nodeOrder is the identifier sequence the contract loop walked, sorted. It
+	// may name nodes the retention does not hold; those contribute no subject.
+	nodeOrder []string
+
+	// declared is the retained per-node contract: the keys a node's component
+	// type declares as its output. Its key set is the node axis.
+	declared NodeDeclaredProvides
+
+	// recipes is the render's own per-node Recipe binding, read for the document
+	// a finding is positioned at and for nothing else.
+	recipes map[string]*types.Recipe
+}
+
+// Nodes yields every node whose contract the render read, in the walk's order.
+func (d declaredProvidesContract) Nodes() []constraint.NodeInstance {
+	out := make([]constraint.NodeInstance, 0, len(d.declared))
+	for _, nodeID := range d.nodeOrder {
+		if _, held := d.declared[nodeID]; !held {
+			continue
+		}
+		out = append(out, constraint.NodeInstance{ID: nodeID})
+	}
+	return out
+}
+
+// ProvidesKeys yields the keys one node's contract declares, sorted, each
+// positioned at the provides block of the Recipe bound to that node.
+//
+// Sorted because a declared contract is a resolved set holding no authoring
+// order, so there is no order left to preserve and sorting is what makes the
+// sequence the same on every run.
+func (d declaredProvidesContract) ProvidesKeys(node string) []constraint.AuthoredCoordinate {
+	contract, held := d.declared[node]
+	if !held || len(contract) == 0 {
+		return nil
+	}
+	recipe := d.recipes[node]
+	if recipe == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(contract))
+	for key := range contract {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]constraint.AuthoredCoordinate, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, constraint.AuthoredCoordinate{Value: key, SourceFile: recipe.Metadata.Name})
+	}
+	return out
+}
+
+var (
+	_ constraint.NodeEnumerator        = declaredProvidesContract{}
+	_ constraint.ProvidesKeyEnumerator = declaredProvidesContract{}
+)
+
+// runProvidesContractRule asks the rule declared over what each node's Recipe
+// resolved about every key that node's component type declares, and returns what
+// it raised as the render's halt.
+//
+// It is called immediately after the contract retention is built and before
+// anything downstream reads a resolved provides bag. That is where the question
+// is answerable and the last place acting on it still saves work: the resolved
+// bag exists from the pass above, and everything after this point renders against
+// a bag a shortfall has already left a hole in — the consumer's reference to the
+// missing key would deliver nothing and render an unset value with no diagnostic,
+// which is the silence this halt exists to replace.
+//
+// Placing it here rather than after the node walk is what keeps the build
+// stopping where it stopped before the rule was declared.
+//
+// # The two absent-presentation conditions are DIFFERENT questions
+//
+// This rule's presentation extends one the render's CALLER supplies, and the
+// chain is cumulative — so an absent caller presentation leaves every later one
+// unbuilt. That is an ordinary outcome for a caller asking for a render rather
+// than for a build: it assembled a render's input directly, and a rule invoked
+// over facts nothing produced would be worse than one not invoked. Such a caller
+// leaves this reading uninvoked, which is what the sibling reading at this stage
+// does with the same absence and for the same reason.
+//
+// 🔴 That is a real bound on this refusal and it is stated rather than implied:
+// a caller supplying no graph presentation gets no producer-fulfilment reading,
+// so a Recipe short of its Component's contract renders for that caller instead
+// of halting. Every build path supplies the presentation, so the bound does not
+// reach a build; it reaches exactly the callers that assemble a render's input
+// themselves. Refusing those instead would refuse renders that succeed today,
+// which is a wider change than this reading is.
+//
+// An absent presentation BENEATH a present caller presentation is not an outcome,
+// it is a broken arrangement inside this package: the retention and the step
+// descriptor memo are installed unconditionally at one site, so a chain that
+// stops between the caller's presentation and this one means one of them went
+// missing. It halts rather than returning nothing, because the two are
+// indistinguishable to any reader downstream and silence is indistinguishable
+// from approval. The wording says the fault is the compiler's rather than the
+// author's, because every category attributes a fault to a document or a producer
+// and none of them says a check was reached without its inputs — so the wording
+// carries the attribution the category cannot, and an author meeting it is not
+// sent looking through a catalog that is not at fault.
+func runProvidesContractRule(
+	cancelled constraint.Cancellation,
+	callerPresentationSupplied bool,
+	view constraint.HydratedView,
+	axes declaredProvidesContract,
+) error {
+	if view == nil {
+		if !callerPresentationSupplied {
+			return nil
+		}
+		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{},
+			"the output contract each component type declares could not be checked against what its "+
+				"Recipe publishes — internal error: the check's inputs were incomplete. This is a fault "+
+				"in the compiler rather than in the catalog, so there is nothing to correct in the "+
+				"Component or the Recipe", nil, nil)
+	}
+	raised, err := constraint.RunOnNodeProvidesKeys(
+		cancelled, axes, axes, view, RecipePublishesEveryDeclaredProvidesKey,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(raised, "Recipes short of the output contract their Component declares")
 }
 
 // objectionsAsDeveloperHalt renders what a rule about what an application's own
