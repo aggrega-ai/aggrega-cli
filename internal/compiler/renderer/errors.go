@@ -348,14 +348,21 @@ var errDerivedKeyCollision = cerrors.Register("compiler-renderer/derived-key-col
 func ErrCircularImport() error { return refcycle.ErrCycle() }
 
 // ErrHostInLibraryImport fires when a library $import: carries a
-// registry host — the `oci://…` form. It is shared by the valuesMapping
-// (`<Library>#/mappings/<entry>`) and workload
-// (`<Library>#/workloads/<entry>`) surfaces: a library import is addressed
-// by bare-name identity, never by physical registry location — the library
+// registry host — the `oci://…` form. It is shared by all three $import
+// fragment surfaces: valuesMapping (`<Library>#/mappings/<entry>`),
+// workload (`<Library>#/workloads/<entry>`) and artifacts
+// (`<Library>#/artifacts/<entry>`). A library import is addressed by
+// bare-name identity, never by physical registry location — the library
 // name resolves against the loaded catalog and the version is supplied by
 // the lockfile. A host in the reference is rejected so physical location
 // cannot leak into authored source. The per-surface wrapping context names
 // which surface carried the host.
+//
+// The reference an entity itself authors is refused earlier, by that
+// entity's schema, which admits no `oci://` prefix at any of the three
+// $import positions on Recipe or FeatureRecipe. What still reaches this
+// sentinel is the reference no schema can describe: one read out of a
+// library entry's own body, which the consuming entity did not write.
 func ErrHostInLibraryImport() error { return errHostInLibraryImport }
 
 var errHostInLibraryImport = cerrors.Register("compiler-renderer/host-in-library-import", cerrors.Meta{

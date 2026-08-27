@@ -33,6 +33,16 @@ import (
 func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactsLibrary) (types.ArtifactsLibraryEntry, error) {
 	library, entry, ok := splitLibraryImportRef(ref, "/artifacts/")
 	if !ok {
+		// No production path reaches this arm, and it is retained deliberately.
+		// The one caller gates HasOCIPrefix ahead of its library-import branch, and
+		// unlike the mapping and workload resolvers this one does not recurse — a
+		// nested field-root $import inside a bundle file is refused rather than
+		// re-entered — so nothing feeds it a host-bearing reference. It stays
+		// because the three resolvers are deliberate mirrors of one another, and
+		// because without it the same authoring mistake would surface here as a
+		// shape error rather than a host error, which is the wrong steer. Its
+		// conformance is proved against its specification by a direct test rather
+		// than by a caller.
 		if strings.HasPrefix(ref, "oci://") {
 			return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: %q", ErrHostInLibraryImport(), ref)
 		}
