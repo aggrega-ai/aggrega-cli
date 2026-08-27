@@ -23,6 +23,32 @@ const constraintPackage = "../../compiler/constraint"
 
 const checkCorpus = "testdata/checks"
 
+// factPlacements is the stage each named fact becomes readable at, written by
+// hand and held against the chain by the tests below.
+//
+// It carries one row per STAGE and not one per fact, and both halves of that are
+// deliberate. A row per fact would be the hand-written table this package exists
+// not to have, so the rows stay spot-checks: one fact per stage, chosen for
+// being declared there. A row per stage is what stops a stage from joining the
+// chain with nothing asserted about it at all. The stage list is compared
+// exhaustively and so forces an edit of its own, but a loop over the rows
+// written notices nothing when a row is absent — so the coverage assertion
+// below compares the two sets instead, and it restates nothing the source does
+// not already fix, because the stages it compares against are derived.
+var factPlacements = []struct {
+	fact  string
+	stage string
+}{
+	{"DeclaredParameterKeys", "DocumentView"},
+	{"SocketRequired", "NormalizedView"},
+	{"ResolvedParameter", "TopologyView"},
+	{"PerLeafAttachmentProvenance", "GraphView"},
+	{"StepExportScope", "DescribedView"},
+	{"DeclaredLocalsKeys", "HydratedView"},
+	{"AssemblyGroupProviderSet", "DispatchedView"},
+	{"EmittedFilePathSet", "RenderedView"},
+}
+
 // TestReadChainDerivesItFromTheDeclaredViews reads the shipped chain and pins
 // what was derived from it: the base, the stages in order, and the stage each
 // fact becomes readable at.
@@ -66,19 +92,7 @@ func TestReadChainDerivesItFromTheDeclaredViews(t *testing.T) {
 	// Facts placed by reading the embedding. Each is expected readable from its
 	// own stage outward and NOT one stage earlier; the pair is what makes this a
 	// placement rather than a membership test.
-	for _, tc := range []struct {
-		fact  string
-		stage string
-	}{
-		{"DeclaredParameterKeys", "DocumentView"},
-		{"SocketRequired", "NormalizedView"},
-		{"ResolvedParameter", "TopologyView"},
-		{"PerLeafAttachmentProvenance", "GraphView"},
-		{"StepExportScope", "DescribedView"},
-		{"DeclaredLocalsKeys", "HydratedView"},
-		{"AssemblyGroupProviderSet", "DispatchedView"},
-		{"EmittedFilePathSet", "RenderedView"},
-	} {
+	for _, tc := range factPlacements {
 		at, ok := chain.Index(tc.stage)
 		if !ok {
 			t.Fatalf("the chain carries no stage named %s", tc.stage)
@@ -104,6 +118,130 @@ func TestReadChainDerivesItFromTheDeclaredViews(t *testing.T) {
 	if _, unknown := chain.NarrowestSufficient([]string{"SocketRequired"}); len(unknown) != 0 {
 		t.Errorf("a fact a view does declare is reported as unknown, so the reader answers "+
 			"\"unknown\" for everything (unknown: %v)", unknown)
+	}
+}
+
+// TestThePlacementExpectationCoversEveryStageTheChainCarries holds the
+// hand-written placement expectation to the stages the chain actually declares.
+//
+// The stage list is compared exhaustively, so a stage joining the chain forces an
+// edit there and cannot pass unnoticed. The placement rows have no such property
+// on their own: the loop over them iterates only the rows written, so a new
+// stage's row can simply be absent while every assertion stays green — and a
+// fact declared at that stage is then placed by nothing any test reads, free to
+// be readable one stage too early with no assertion to notice.
+//
+// This asks for one row per STAGE and not one per fact. The stage set is small
+// and derived, and the reading above already pins it exhaustively, so requiring
+// a row for each restates nothing the source does not already fix. A row per
+// fact would be a different thing entirely: the copy of the registry this
+// package exists not to hold.
+func TestThePlacementExpectationCoversEveryStageTheChainCarries(t *testing.T) {
+	t.Parallel()
+
+	chain, err := ReadChain(constraintPackage)
+	if err != nil {
+		t.Fatalf("read the view chain: %v", err)
+	}
+
+	var carried []string
+	for _, stage := range chain.Stages() {
+		carried = append(carried, stage.Name)
+	}
+	if len(carried) == 0 {
+		t.Fatalf("the chain reads as carrying no stage at all, so this assertion would compare an " +
+			"empty expectation against an empty chain and pass over anything")
+	}
+
+	var placed []string
+	for _, placement := range factPlacements {
+		placed = append(placed, placement.stage)
+	}
+
+	unplaced, unknown := stageCoverageGaps(carried, placed)
+	for _, stage := range unplaced {
+		t.Errorf("the chain carries %s and no row above places a fact at it.\n"+
+			"INVARIANT: every stage the chain carries has one fact placed at it by hand.\n"+
+			"CONSEQUENCE: a fact declared at an unasserted stage is placed by nothing any test "+
+			"reads, so it could be readable a stage earlier than its declaration and the whole "+
+			"placement reading would stay green.", stage)
+	}
+	for _, stage := range unknown {
+		t.Errorf("a row above places a fact at %s, which the chain does not carry, so the "+
+			"expectation is pinned to a stage that no longer exists", stage)
+	}
+}
+
+// TestTheStageCoverageComparisonFiresOnAWithheldStageAndOnAnUnknownOne is the
+// calibration that makes the coverage assertion above mean something.
+//
+// That assertion is green today because every stage has its row. It would be
+// exactly as green if the comparison reported nothing at all, and from outside
+// the two are indistinguishable. So the comparison is run here over a real
+// stage's row withheld, over a row naming a stage the chain does not carry, and
+// over the untouched pair — where it must be silent, because a comparison that
+// reports gaps over a complete expectation reports them over anything.
+func TestTheStageCoverageComparisonFiresOnAWithheldStageAndOnAnUnknownOne(t *testing.T) {
+	t.Parallel()
+
+	chain, err := ReadChain(constraintPackage)
+	if err != nil {
+		t.Fatalf("read the view chain: %v", err)
+	}
+
+	var carried, placed []string
+	for _, stage := range chain.Stages() {
+		carried = append(carried, stage.Name)
+	}
+	for _, placement := range factPlacements {
+		placed = append(placed, placement.stage)
+	}
+	if len(carried) < 2 {
+		t.Fatalf("the chain reads as carrying %d stage(s), so withholding one would leave nothing "+
+			"to compare", len(carried))
+	}
+
+	// A withheld row is the omission this comparison exists to catch: a stage in
+	// the chain that the expectation says nothing about.
+	withheld := carried[len(carried)-1]
+	if !slices.Contains(placed, withheld) {
+		t.Fatalf("the expectation places no fact at %s, so withholding its row withholds nothing "+
+			"and this calibration cannot run — the coverage assertion above is the failure to "+
+			"read", withheld)
+	}
+	kept := slices.DeleteFunc(slices.Clone(placed), func(stage string) bool { return stage == withheld })
+	unplaced, unknown := stageCoverageGaps(carried, kept)
+	if !slices.Equal(unplaced, []string{withheld}) {
+		t.Errorf("withholding the row for %s reports %v as unplaced; want exactly [%s] — a "+
+			"comparison that does not name it leaves the coverage assertion green over the very "+
+			"omission it is for", withheld, unplaced, withheld)
+	}
+	if len(unknown) != 0 {
+		t.Errorf("withholding a row reports %v as unknown, though every row left names a stage the "+
+			"chain carries", unknown)
+	}
+
+	// The other direction: an expectation left pinned to a stage the chain no
+	// longer carries. Without this, a comparison reporting every stage as
+	// unplaced and nothing as unknown would satisfy the assertion above.
+	const fabricated = "NoSuchViewIsDeclaredAnywhere"
+	unplaced, unknown = stageCoverageGaps(carried, append(slices.Clone(placed), fabricated))
+	if len(unplaced) != 0 {
+		t.Errorf("adding a row for a stage the chain does not carry reports %v as unplaced, though "+
+			"every carried stage still has its own row", unplaced)
+	}
+	if !slices.Equal(unknown, []string{fabricated}) {
+		t.Errorf("a row naming %s is reported as %v; want exactly [%s] — a comparison silent here "+
+			"accepts an expectation pinned to a stage that no longer exists", fabricated, unknown,
+			fabricated)
+	}
+
+	// The control. Both needles above are satisfied by a comparison that reports
+	// far too much; this is what refuses one.
+	if unplaced, unknown := stageCoverageGaps(carried, placed); len(unplaced) != 0 || len(unknown) != 0 {
+		t.Errorf("the untouched pair reports %v unplaced and %v unknown; want neither — a "+
+			"comparison reporting gaps over a complete expectation reports them over anything",
+			unplaced, unknown)
 	}
 }
 
@@ -444,6 +582,40 @@ func ExampleAnalyze() {
 	// unreadable     ViewHandedToAHelperRule      declares HydratedView   narrowest (none computed)
 	// no-fact-read   SubjectOnlyRule              declares GraphView      narrowest DocumentView
 	// unreadable     PredicateElsewhereRule       declares HydratedView   narrowest (none computed)
+}
+
+// stageCoverageGaps compares the stages a chain carries against the stages a
+// hand-written expectation places a fact at, in both directions: unplaced are
+// carried and unasserted, unknown are asserted and not carried.
+//
+// It is a function rather than a loop inlined into its one caller precisely so
+// that a needle exists. An inline comparison over the real expectation is green
+// today either because the expectation is complete or because the comparison
+// does not work, and nothing outside can tell those apart. Both results are
+// sorted, so a failure reads the same way on every run.
+func stageCoverageGaps(carried, placed []string) (unplaced, unknown []string) {
+	carriedSet := map[string]bool{}
+	for _, stage := range carried {
+		carriedSet[stage] = true
+	}
+	placedSet := map[string]bool{}
+	for _, stage := range placed {
+		placedSet[stage] = true
+	}
+
+	for stage := range carriedSet {
+		if !placedSet[stage] {
+			unplaced = append(unplaced, stage)
+		}
+	}
+	for stage := range placedSet {
+		if !carriedSet[stage] {
+			unknown = append(unknown, stage)
+		}
+	}
+	slices.Sort(unplaced)
+	slices.Sort(unknown)
+	return unplaced, unknown
 }
 
 // packageTokens are the identifiers, and the words inside the string and comment
