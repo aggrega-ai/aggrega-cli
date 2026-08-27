@@ -88,6 +88,43 @@ func TestResolveMappingLibraryImport_Recursive(t *testing.T) {
 	}
 }
 
+// TestResolveMappingLibraryImport_RecursiveTargetCarryingHostHalts pins the one
+// route a host-bearing reference can still travel. A consuming entity cannot
+// author one: every `$import:` position a Recipe or FeatureRecipe carries
+// refuses a registry host as the document is read, so such a document never
+// reaches a resolver at all. What no schema can describe is a library entry's
+// own body, which is declared as a plain string — so a host written there
+// arrives here on the recursive hop, and this is where it has to be refused.
+//
+// Both ends of that route are asserted, because the resolver is reachable only
+// behind a host-less reference and a direct call alone would not show that. The
+// target library is present and resolvable, so accepting the host would produce
+// its fragment and a nil error rather than a different failure — which is what
+// makes the refusal the property under test rather than a lookup miss.
+func TestResolveMappingLibraryImport_RecursiveTargetCarryingHostHalts(t *testing.T) {
+	t.Parallel()
+	libs := map[string]types.MappingLibrary{
+		"Helpers": mappingLibraryFixture("Helpers", map[string]string{
+			"Core": "$import: oci://hub.example.test/Base:1.0.0#/mappings/Real",
+		}),
+		"Base": mappingLibraryFixture("Base", map[string]string{
+			"Real": `{"final": true}`,
+		}),
+	}
+
+	// The recursive hop itself: the reference is host-less, the body it names
+	// is not.
+	if _, err := resolveMappingLibraryImport("Helpers#/mappings/Core", libs, nil); !errors.Is(err, ErrHostInLibraryImport()) {
+		t.Errorf("error = %v; want ErrHostInLibraryImport from the recursive hop", err)
+	}
+
+	// The same route from the surface an entity does author, so the refusal is
+	// reachable through a Recipe's own valuesMapping and not only from here.
+	if _, err := resolveValuesMappingText(types.ValuesMapping{Import: "Helpers#/mappings/Core"}, "recursive-host", "Recipe", libs); !errors.Is(err, ErrHostInLibraryImport()) {
+		t.Errorf("error = %v; want ErrHostInLibraryImport through the valuesMapping surface", err)
+	}
+}
+
 // TestResolveMappingLibraryImport_CycleHalts pins the cycle guard on the $import
 // surface: a library↔library import cycle halts with ErrCircularImport — the
 // shared refcycle.ErrCycle sentinel — naming the chain, rather than recursing

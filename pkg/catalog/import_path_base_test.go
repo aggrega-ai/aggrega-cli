@@ -6,19 +6,26 @@
 // resolves against the directory of the entity file that declared it, never
 // against the directory the build happens to run from.
 //
-// Each test chdirs into an unrelated directory carrying a same-named decoy
-// file, so a resolution that falls back to the process working directory is
-// observable as a wrong body rather than only as a missing one. Reading the
-// resolved path and comparing the sentinel is what separates the two
-// candidate bases; asserting absoluteness alone cannot.
+// Every test that reads a resolved path chdirs into an unrelated directory
+// carrying a same-named decoy file, so a resolution that falls back to the
+// process working directory is observable as a wrong body rather than only as a
+// missing one. Reading the resolved path and comparing the sentinel is what
+// separates the two candidate bases; asserting absoluteness alone cannot.
+//
+// The file also covers the two edges of that base: the values the resolution
+// must hand back rather than rebase, and the gate in front of it that refuses a
+// registry host in a reference an author wrote.
 
 package catalog
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 const (
@@ -163,11 +170,13 @@ spec:
 	assertResolvesBesideEntity(t, "artifacts", entry.Import)
 }
 
-// TestImportPathsThatAreNotLocalPathsSurviveResolution pins the three values
-// the resolution must hand back untouched. A bare-name library reference and
-// a registry-host reference are identities rather than paths, and the
-// consumption site reads their exact prefix to resolve or to reject them — so
-// rebasing either would defeat the read. An absolute path is already anchored.
+// TestImportPathsThatAreNotLocalPathsSurviveResolution pins the values the
+// resolution must hand back untouched. A bare-name library reference is an
+// identity rather than a path, and the consumption site reads its exact text to
+// find the library and the entry — so rebasing one would turn a resolvable
+// identity into a path under the entity's directory. Both fragment surfaces an
+// author can reference by identity are covered, so a change reaching one and
+// not the other is visible. An absolute path is already anchored.
 func TestImportPathsThatAreNotLocalPathsSurviveResolution(t *testing.T) {
 	absTarget := filepath.Join(t.TempDir(), "absolute.tmpl")
 	if err := os.WriteFile(absTarget, []byte(beside), 0o644); err != nil {
@@ -184,7 +193,7 @@ spec:
   implements: core/compute/server:1.0.0
   source: /already/absolute/chart
   valuesMapping:
-    $import: oci://hub.example.com/mappinglibrary/example/helpers:1.0.0
+    $import: BaseMappings#/mappings/SimpleValues
   workload:
     $import: BaseWorkloads#/workloads/StatelessService
   artifacts:
@@ -197,14 +206,11 @@ spec:
 		t.Fatalf("parse Recipe: %v", err)
 	}
 
-	// A registry host must still be readable at the consumption site, which
-	// is what lets the build reject it by name instead of reporting a
-	// missing file.
-	if got := r.Spec.ValuesMapping.Import; got != "oci://hub.example.com/mappinglibrary/example/helpers:1.0.0" {
-		t.Errorf("registry-host reference was rewritten: %q", got)
+	if got := r.Spec.ValuesMapping.Import; got != "BaseMappings#/mappings/SimpleValues" {
+		t.Errorf("mapping library reference was rewritten: %q", got)
 	}
-	if !r.Spec.ValuesMapping.HasOCIPrefix() {
-		t.Error("registry-host reference no longer reports its host after load")
+	if !r.Spec.ValuesMapping.IsLibraryImport() {
+		t.Error("mapping library reference no longer reports as a library import after load")
 	}
 	if got := r.Spec.Workload.Import; got != "BaseWorkloads#/workloads/StatelessService" {
 		t.Errorf("library reference was rewritten: %q", got)
@@ -218,6 +224,68 @@ spec:
 	}
 	if entry.Import != absTarget {
 		t.Errorf("absolute path was rewritten: got %q want %q", entry.Import, absTarget)
+	}
+}
+
+// TestAuthoredRegistryHostImportHaltsAtLoad pins the gate that sits in front of
+// that resolution on the mapping surface. A reference an author writes names a
+// library by identity, so a registry host in one is refused while the document
+// is being read, naming the field that carried it — rather than travelling on
+// to be reported a layer away from the text that produced it.
+//
+// The same document with a host-less identity is loaded first, so the refusal
+// below is attributable to the host alone rather than to anything else the
+// fixture happens to say.
+func TestAuthoredRegistryHostImportHaltsAtLoad(t *testing.T) {
+	const body = `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: import-host-refused
+  version: 1.0.0
+spec:
+  capability: helm
+  implements: core/compute/server:1.0.0
+  source: /already/absolute/chart
+  valuesMapping:
+    $import: %s
+`
+
+	admitted := importBaseFixture(t, "recipe.yaml", fmt.Sprintf(body, "BaseMappings#/mappings/SimpleValues"))
+	if _, err := parseRecipeEntity(mustRead(t, admitted), admitted); err != nil {
+		t.Fatalf("the host-less identity form should load: %v", err)
+	}
+
+	refused := importBaseFixture(t, "recipe.yaml", fmt.Sprintf(body, "oci://hub.example.com/mappinglibrary/example/helpers:1.0.0"))
+	_, err := parseRecipeEntity(mustRead(t, refused), refused)
+	if err == nil {
+		t.Fatal("a registry host on the valuesMapping $import should be refused as the document is read")
+	}
+	if !strings.Contains(err.Error(), "spec.valuesMapping") {
+		t.Errorf("the refusal does not name the field that carried the host: %v", err)
+	}
+}
+
+// TestRegistryHostImportSurvivesResolutionDirectly proves the resolution's
+// host-bearing arm against its specification rather than through a caller. No
+// document can reach it: every `$import:` position on both kinds that carry one
+// refuses a registry host as the document is read, so the value never arrives
+// at a rebase. The arm stays because it is what keeps the resolution total over
+// the values its own types can hold — a host-bearing reference joined to an
+// entity's directory would become a path, and the refusal that names it would
+// become a missing-file report.
+//
+// A reference read out of a library entry's body carries no such gate, because
+// that body is declared as a plain string; it is refused where it is consumed,
+// which is a different resolution in a different package.
+func TestRegistryHostImportSurvivesResolutionDirectly(t *testing.T) {
+	const ref = "oci://hub.example.com/mappinglibrary/example/helpers:1.0.0"
+
+	got, err := resolveImportPath(filepath.Join("entity", "recipe.yaml"), ref, types.ValuesMapping{Import: ref})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if got != ref {
+		t.Errorf("registry-host reference was rewritten: got %q want %q", got, ref)
 	}
 }
 

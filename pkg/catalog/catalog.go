@@ -1185,6 +1185,15 @@ type importRef interface {
 // named refusal into a missing-file report. Everything else is a local path and
 // is anchored to the entity's directory.
 //
+// The registry-host arm is not reachable from a document: every `$import:`
+// position on either kind refuses a registry host as the document is read, so
+// such a value is never carried this far. It is kept because it is what makes
+// the resolution total over the values these types can hold, and it is proved
+// against that specification directly rather than through a caller. A reference
+// read out of a library entry's body is not gated that way, because such a body
+// is declared as a plain string; it is refused where it is consumed, which is a
+// different resolution.
+//
 // This is the one home of that resolution for every import-bearing field, so
 // the surfaces cannot come to disagree on what a relative path means.
 func resolveImportPath(entityPath, authored string, ref importRef) (string, error) {
