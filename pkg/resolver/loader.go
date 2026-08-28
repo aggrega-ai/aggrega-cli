@@ -454,7 +454,7 @@ func rejectCrossBindingPathPillarCollision(man *types.Manifest, path string) err
 							Entity: "Manifest",
 							Field:  path,
 							Message: fmt.Sprintf(
-								"CATALOG_ERROR: annotation bindings %q and %q both target Feature %q with path %q routing to pillar %q; only one binding may declare a given (path, pillar) pair per Feature.",
+								"annotation bindings %q and %q both target Feature %q with path %q routing to pillar %q; only one binding may declare a given (path, pillar) pair per Feature",
 								priorKey, key, binding.Feature, p, pillar,
 							),
 							Err: ErrManifestCrossBindingPillarCollision(),

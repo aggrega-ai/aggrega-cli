@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
@@ -1671,6 +1672,71 @@ spec:
 	}
 	if !strings.Contains(msg, "not declared in binding map") {
 		t.Errorf("error should explain the binding-map declaration requirement; got: %s", msg)
+	}
+	// The category is named by the outer scope-path wrap and by nothing beneath it,
+	// so a joined diagnostic says it once however many inner findings it carries.
+	// An inner raise site that names it too renders the word twice on one line, and
+	// the count is what catches that — a Contains check passes on both shapes.
+	if n := strings.Count(msg, string(cerrors.OpsError)); n != 1 {
+		t.Errorf("the category is said %d times, want exactly 1\nfull: %s", n, msg)
+	}
+}
+
+// The Release side of the undeclared-subkey refusal, which routes through its own
+// raise site and its own scope-path wrap.
+//
+// It is a separate test rather than a row on the Aggregate-side one because the two
+// sides are separate implementations by design — the package documents them as
+// deliberate mirrors that must be edited in lockstep — so a single test over one
+// side proves nothing about the other, and the one-category invariant is exactly
+// the kind of property that can hold on one mirror and not the other.
+func TestExpand_StructuredSubkeyNotInBindingMap_ReleaseSide_Errors(t *testing.T) {
+	t.Parallel()
+	releaseSrc := `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: test
+  version: "1.0.0"
+  environment: testing
+spec:
+  aggregate: test
+  manifest: test
+  boundaries:
+    prod:
+      annotations:
+        feature.myco/db-pool:
+          unknown_subkey: "value"
+      components:
+        api:
+          description: api comp
+`
+	rr := &ResolveResult{
+		Manifest:             structuredManifest(t),
+		Release:              loadTestRelease(t, releaseSrc),
+		ReleasePath:          "release.yaml",
+		AnnotationProvenance: map[string]AnnotationProvenance{},
+	}
+	err := ExpandAnnotations(rr, structuredFeatureCatalog(t))
+	if err == nil {
+		t.Fatal("expected error for subkey not declared in binding map; got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "unknown_subkey") {
+		t.Errorf("error should name the unknown subkey; got: %s", msg)
+	}
+	if !strings.Contains(msg, "not declared in binding map") {
+		t.Errorf("error should explain the binding-map declaration requirement; got: %s", msg)
+	}
+	// The boundary and the component are the scope the inner finding cannot know, so
+	// they have to survive the raise rather than be replaced by it.
+	for _, want := range []string{"prod", "api"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("composed halt missing %q\nfull: %s", want, msg)
+		}
+	}
+	if n := strings.Count(msg, string(cerrors.OpsError)); n != 1 {
+		t.Errorf("the category is said %d times, want exactly 1\nfull: %s", n, msg)
 	}
 }
 

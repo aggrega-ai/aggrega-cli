@@ -58,7 +58,7 @@ func dispatchWorkloadSynthesis(
 	synth, ok := engine.(WorkloadSynthesizer)
 	if !ok {
 		inner := fmt.Errorf(
-			"CATALOG_ERROR: provider %q does not implement WorkloadSynthesizer; the Recipe declares workload: but the bound provider has no synthesised-mode implementation",
+			"provider %q has no synthesised-mode implementation; the Recipe declares a workload: block, which needs one",
 			providerName,
 		)
 		return nil, cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())

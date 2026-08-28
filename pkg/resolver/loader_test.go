@@ -417,11 +417,22 @@ spec:
 
 	_, err := LoadManifest(f)
 	if err == nil {
-		t.Fatal("expected CATALOG_ERROR on cross-binding (path, pillar) collision; got nil")
+		t.Fatal("expected a refusal on the cross-binding (path, pillar) collision; got nil")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "CATALOG_ERROR") {
-		t.Errorf("error missing CATALOG_ERROR prefix: %s", msg)
+	// The authoring domain is read off the finding rather than out of the text, so
+	// this asserts the routing rather than a spelling. The message itself must NOT
+	// name the domain: the boundary composes it into the diagnostic's head, and a
+	// message that names it too hands the reader the same word twice on one line.
+	var finding *ResolverError
+	if !errors.As(err, &finding) {
+		t.Fatalf("refusal should carry a *ResolverError so the boundary can route it; got %T", err)
+	}
+	if got, want := finding.ToCompilerError().Category, cerrors.CatalogError; got != want {
+		t.Errorf("category: got %q, want %q — a Manifest binding is catalog-authored content", got, want)
+	}
+	if n := strings.Count(msg, string(cerrors.CatalogError)); n != 0 {
+		t.Errorf("the message names the category %d times, want 0 — the head carries it\nfull: %s", n, msg)
 	}
 	if !strings.Contains(msg, "first-binding") || !strings.Contains(msg, "second-binding") {
 		t.Errorf("error should name both colliding bindings; got: %s", msg)
@@ -464,7 +475,7 @@ spec:
 
 	_, err := LoadManifest(f)
 	if err == nil {
-		t.Fatal("expected CATALOG_ERROR on nested-path collision; got nil")
+		t.Fatal("expected a refusal on the nested-path collision; got nil")
 	}
 	if !strings.Contains(err.Error(), "ingress.host") {
 		t.Errorf("error should name the colliding nested path; got: %v", err)

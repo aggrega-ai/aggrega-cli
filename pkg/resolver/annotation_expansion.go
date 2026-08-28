@@ -469,7 +469,7 @@ func expandBindingStructured(
 		if !found {
 			declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
 			errs = append(errs, fmt.Errorf(
-				"OPS_ERROR: annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
+				"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
 				subkey, key, sourceLocation, declared,
 			))
 			continue
@@ -549,7 +549,7 @@ func synthesizeAggregateFeatureFromAnnotation(
 			if !found {
 				declared := append(append([]string{}, binding.Maps.Infra...), binding.Maps.Values...)
 				errs = append(errs, fmt.Errorf(
-					"OPS_ERROR: annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
+					"annotation subkey %q on key %q at %s is not declared in binding map; declared paths: %v",
 					subkey, key, sourceLocation, declared,
 				))
 				continue
@@ -572,17 +572,26 @@ func synthesizeAggregateFeatureFromAnnotation(
 }
 
 // wrapAnnotationOpsErrorStage formats a per-annotation-key inner-stage
-// failure for collection through the errors.Join chain. The wrapper
-// does NOT carry the OPS_ERROR prefix — the outer scope-path wrap
-// (wrapAnnotationOpsError / wrapAggregateAnnotationOpsError) supplies
-// the OPS_ERROR prefix at the rendered-output boundary. Inner stage
-// errors composed through errors.Join therefore read as
-// "expansion <stage> failed at key %q: <reason>" while the outer
-// wrap renders as
-// "OPS_ERROR: annotation expansion at <scope> ...: <joined inner>".
-// Operators see exactly one OPS_ERROR prefix per diagnostic line.
+// failure for collection through the errors.Join chain.
+//
+// No finding raised inside the expansion carries the category word. Every such
+// finding is collected into the per-component error slice and reaches the reader
+// through one of the two scope-path wraps — wrapAnnotationOpsError on the Release
+// side, wrapAggregateAnnotationOpsError on the Aggregate side — and that wrap is
+// the single place the category is supplied, so it is named once per diagnostic
+// line however many findings the line joins. An inner site that names it too says
+// it twice at the rendered boundary, which is why the category belongs to the
+// wrap alone.
+//
+// The composed shapes are, inner:
+//
+//	annotation <stage> failed at key "<key>": <reason>
+//
+// and outer:
+//
+//	OPS_ERROR: annotation <stage> failed at boundary "<path>" component "<name>" key "<key>": <joined inner>
 func wrapAnnotationOpsErrorStage(key, stage string, inner error) error {
-	return fmt.Errorf("annotation expansion %s failed at key %q: %w", stage, key, inner)
+	return fmt.Errorf("annotation %s failed at key %q: %w", stage, key, inner)
 }
 
 // lookupFeature returns the resolved Feature for a binding's target
@@ -718,7 +727,7 @@ func splitBoundaryPath(path string) []string {
 // the OPS_ERROR prefix. The bad annotation value lives in the Release,
 // so the error is Release-scoped (OPS_ERROR) rather than Catalog-scoped.
 func wrapAnnotationOpsError(boundaryPath, componentName, key, stage string, inner error) error {
-	return fmt.Errorf("OPS_ERROR: annotation expansion %s failed at boundary %q component %q key %q: %w", stage, boundaryPath, componentName, key, inner)
+	return fmt.Errorf("OPS_ERROR: annotation %s failed at boundary %q component %q key %q: %w", stage, boundaryPath, componentName, key, inner)
 }
 
 // wrapAggregateAnnotationOpsError formats an annotation-expansion
@@ -727,7 +736,7 @@ func wrapAnnotationOpsError(boundaryPath, componentName, key, stage string, inne
 // rather than Release-scoped; the OPS_ERROR prefix is preserved for
 // uniform diagnostic ergonomics with the Release-side wrapper.
 func wrapAggregateAnnotationOpsError(componentPath, key, stage string, inner error) error {
-	return fmt.Errorf("OPS_ERROR: annotation expansion %s failed at aggregate component %q key %q: %w", stage, componentPath, key, inner)
+	return fmt.Errorf("OPS_ERROR: annotation %s failed at aggregate component %q key %q: %w", stage, componentPath, key, inner)
 }
 
 // validateAnnotationSideCompatibility enforces the

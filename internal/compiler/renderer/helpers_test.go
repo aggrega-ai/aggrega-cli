@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
@@ -490,12 +491,32 @@ func TestDispatchWorkloadSynthesis_AllBranches(t *testing.T) {
 		t.Errorf("nil workload: files=%v err=%v", files, err)
 	}
 
-	// Provider without WorkloadSynthesizer → CATALOG_ERROR.
+	// Provider without WorkloadSynthesizer → the catalog-authoring domain.
 	plainEngine := &noopEngine{}
 	w := &types.Workload{}
 	_, err = dispatchWorkloadSynthesis(ctx, plainEngine, tmplCtx, w, nodeCtx, "p-name")
 	if err == nil {
-		t.Errorf("engine without WorkloadSynthesizer should error")
+		t.Fatalf("engine without WorkloadSynthesizer should error")
+	}
+	// The domain is carried on the error and composed into the diagnostic's head, so
+	// the message must not name it as well. The count is what catches a message that
+	// does: the head supplies one occurrence, and a message naming the category too
+	// hands the reader the same word twice on the one line it leads with.
+	var ce *cerrors.CompilerError
+	if !errors.As(err, &ce) {
+		t.Fatalf("refusal should carry a *CompilerError so the boundary can route it; got %T", err)
+	}
+	if got, want := ce.Category, cerrors.CatalogError; got != want {
+		t.Errorf("category: got %q, want %q — the Recipe declaring workload: is catalog-authored", got, want)
+	}
+	if n := strings.Count(ce.Message, string(cerrors.CatalogError)); n != 0 {
+		t.Errorf("the message names the category %d times, want 0 — the head carries it\nmessage: %s", n, ce.Message)
+	}
+	if n := strings.Count(err.Error(), string(cerrors.CatalogError)); n != 1 {
+		t.Errorf("the rendered line says the category %d times, want exactly 1\nfull: %s", n, err.Error())
+	}
+	if !strings.Contains(ce.Message, "p-name") {
+		t.Errorf("the message should name the provider that lacks the capability; got: %s", ce.Message)
 	}
 }
 
