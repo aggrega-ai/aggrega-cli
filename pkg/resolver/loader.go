@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"go.yaml.in/yaml/v3"
@@ -329,7 +330,9 @@ func placementConflictMessage(prior, current boundaryPlacement, source string) s
 // LoadManifest reads and unmarshals a Manifest YAML file. The loader
 // enforces the reserved-prefix rule on annotation-binding keys: any
 // features.annotations entry keyed under the bare aggrega.ai/ prefix is
-// rejected with a CATALOG_ERROR-prefixed message at load time. The
+// rejected at load time, and every offending entry is named rather than
+// only the first. The failure is attributed to the Manifest, which is what
+// routes it to the catalog-authoring domain. The
 // prefix is reserved for the provider well-known annotations documented
 // at aggrega-docs/language-reference/providers/well-known-annotations.md;
 // authors of annotation-driven Feature bindings use feature.aggrega.ai/
@@ -375,38 +378,45 @@ func LoadManifestFromBytes(data []byte, path string) (*types.Manifest, error) {
 	return &man, nil
 }
 
-// rejectReservedAnnotationBindings walks every annotation-binding key
-// declared on the Manifest's features mapping and rejects any key using the
-// reserved aggrega.ai/ prefix. First-violation-halt matches existing
-// Manifest-load patterns for shape-level rejections.
+// rejectReservedAnnotationBindings asks the reserved-prefix rule of every
+// annotation binding the Manifest at path declares, and refuses the load when
+// any of them claims a key in the reserved keyspace.
+//
+// It presents the document and names the rule rather than walking the registry
+// itself: the rule is declared in this package as a constraint, so where it runs
+// follows from the fact it reads, and the provenance its findings carry is
+// supplied by the framework rather than assembled here. The binding keys are read
+// back off the presentation rather than off the Manifest beside it — they are one
+// of the facts the presentation states, so reading them anywhere else would be
+// answering from a second source that happens to agree.
+//
+// 🔴 It reports EVERY offending binding rather than the first. The rule is
+// invoked once per declared binding and the framework accumulates what each
+// invocation raised, so an author fixing a Manifest with several offending keys
+// sees all of them in one build instead of one per build.
+//
+// The findings are joined, so a caller matching the refusal by identity keeps
+// matching however many bindings offended.
 func rejectReservedAnnotationBindings(man *types.Manifest, path string) error {
-	reservedPrefix := types.ReservedLabelPrefixAggregaAI
-	check := func(annotations *types.OrderedMap[types.AnnotationBinding]) error {
-		if annotations == nil {
-			return nil
-		}
-		for _, key := range annotations.Keys() {
-			if strings.HasPrefix(key, reservedPrefix) {
-				return &ResolverError{
-					Entity: "Manifest",
-					Field:  path,
-					Message: fmt.Sprintf(
-						"CATALOG_ERROR: features.annotations binding %q uses reserved prefix %q; reserved for provider well-known annotations. Use feature.<your-domain>/ for Feature bindings.",
-						key, reservedPrefix,
-					),
-					Err: ErrManifestReservedPrefix(),
-				}
-			}
-		}
+	var presented constraint.DocumentView = newManifestDocumentView(path, man)
+	findings := findingsAtTheirOwnDocument(
+		constraint.RunOnDocumentAnnotationBindings(
+			path,
+			presented.ManifestAnnotationBindingKeys(path),
+			presented,
+			annotationBindingKeyAvoidsTheReservedPrefix,
+		),
+		"Manifest",
+		"Manifest",
+	)
+	if len(findings) == 0 {
 		return nil
 	}
-
-	if man.Spec.Mappings.Features != nil {
-		if err := check(man.Spec.Mappings.Features.Annotations); err != nil {
-			return err
-		}
+	joined := make([]error, 0, len(findings))
+	for _, f := range findings {
+		joined = append(joined, f)
 	}
-	return nil
+	return errors.Join(joined...)
 }
 
 // rejectCrossBindingPathPillarCollision walks every annotation binding

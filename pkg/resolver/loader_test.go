@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
@@ -215,17 +216,17 @@ spec:
 
 	_, err := LoadManifest(f)
 	if err == nil {
-		t.Fatal("expected CATALOG_ERROR on reserved-prefix binding; got nil")
+		t.Fatal("expected a refusal on the reserved-prefix binding; got nil")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "CATALOG_ERROR") {
-		t.Errorf("error missing CATALOG_ERROR prefix: %s", msg)
-	}
 	if !strings.Contains(msg, "aggrega.ai/forbidden-binding") {
 		t.Errorf("error message should name the offending key; got: %s", msg)
 	}
 	if !strings.Contains(msg, "reserved prefix") {
 		t.Errorf("error message should explain the reservation; got: %s", msg)
+	}
+	if !strings.Contains(msg, "feature.<your-domain>/") {
+		t.Errorf("error message should name the compliant shape the author writes instead; got: %s", msg)
 	}
 	if !errors.Is(err, ErrManifestReservedPrefix()) {
 		t.Errorf("error should wrap ErrManifestReservedPrefix (not ErrYAMLLoad); got chain: %v", err)
@@ -233,6 +234,129 @@ spec:
 	if errors.Is(err, ErrYAMLLoad()) {
 		t.Errorf("error should NOT wrap ErrYAMLLoad — the YAML parsed successfully; the failure is a semantic reservation check")
 	}
+}
+
+// The refusal is attributed to the catalog-authoring domain, and it is attributed
+// there structurally rather than by a category word typed into the message.
+//
+// The category is derived from the entity reference's leading kind word, so this
+// asserts the routing rather than the spelling: a finding whose entity reference
+// stopped naming the Manifest would silently be reported at the developer's
+// authoring surface, which is a file the author of the offending binding did not
+// write in.
+//
+// It also pins that the reference still carries the document the binding was
+// authored in. The refusal's locator names a key path inside that document rather
+// than the file, so a reader who lost the file from the reference would be handed
+// a path with no file to open it in.
+func TestLoadManifest_ReservedPrefixRefusalIsCatalogDomain(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	os.WriteFile(f, reservedPrefixManifestYAML("aggrega.ai/forbidden-binding"), 0644)
+
+	_, err := LoadManifest(f)
+	if err == nil {
+		t.Fatal("expected a refusal on the reserved-prefix binding; got nil")
+	}
+	var finding *ResolverError
+	if !errors.As(err, &finding) {
+		t.Fatalf("refusal should carry a *ResolverError so the boundary can route it; got %T", err)
+	}
+	if got, want := finding.ToCompilerError().Category, cerrors.CatalogError; got != want {
+		t.Errorf("category: got %q, want %q — a Manifest binding is catalog-authored content", got, want)
+	}
+	if !strings.HasPrefix(finding.Entity, "Manifest ") {
+		t.Errorf("entity reference %q should lead with the Manifest kind, which is what the "+
+			"category is derived from", finding.Entity)
+	}
+	if !strings.Contains(finding.Entity, f) {
+		t.Errorf("entity reference %q should name the document the binding was authored in, "+
+			"because the locator names a key path rather than a file", finding.Entity)
+	}
+	if got, want := finding.Field, ".spec.mappings.features.annotations"; got != want {
+		t.Errorf("locator: got %q, want %q — the registry's own authored site", got, want)
+	}
+}
+
+// Every offending binding is reported, not only the first.
+//
+// The rule is declared over the annotation-binding coordinate, so the framework
+// invokes it once per declared binding and accumulates what each invocation
+// raised. An author fixing a Manifest with three offending keys sees all three in
+// one build rather than one per build.
+//
+// The clean binding in the fixture is what makes the count a verdict rather than
+// a constant: a rule raising on every binding regardless would report four.
+func TestLoadManifest_ReservedPrefixNamesEveryOffendingBinding(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	os.WriteFile(f, reservedPrefixManifestYAML(
+		"aggrega.ai/first-forbidden",
+		"feature.example/permitted",
+		"aggrega.ai/second-forbidden",
+		"aggrega.ai/third-forbidden",
+	), 0644)
+
+	_, err := LoadManifest(f)
+	if err == nil {
+		t.Fatal("expected a refusal on the reserved-prefix bindings; got nil")
+	}
+
+	var joined interface{ Unwrap() []error }
+	if !errors.As(err, &joined) {
+		t.Fatalf("three offending bindings should compose into a joined refusal; got %T: %v", err, err)
+	}
+	if got, want := len(joined.Unwrap()), 3; got != want {
+		t.Fatalf("findings: got %d, want %d — one per offending binding and none for the clean one",
+			got, want)
+	}
+
+	msg := err.Error()
+	for _, key := range []string{
+		"aggrega.ai/first-forbidden",
+		"aggrega.ai/second-forbidden",
+		"aggrega.ai/third-forbidden",
+	} {
+		if !strings.Contains(msg, key) {
+			t.Errorf("refusal does not name the offending binding %q; got: %s", key, msg)
+		}
+	}
+	if strings.Contains(msg, "feature.example/permitted") {
+		t.Errorf("refusal names the permitted binding, so the rule is raising on every key "+
+			"rather than on the reserved ones; got: %s", msg)
+	}
+	if !errors.Is(err, ErrManifestReservedPrefix()) {
+		t.Errorf("the joined refusal should still match the sentinel by identity; got chain: %v", err)
+	}
+}
+
+// reservedPrefixManifestYAML builds a Manifest declaring one annotation binding
+// per key, in the order given, so a test fixing the offending set writes the keys
+// and nothing else.
+//
+// The author order is carried into the registry and out again as the order the
+// rule is invoked in, so the order written here is the order findings appear in.
+func reservedPrefixManifestYAML(keys ...string) []byte {
+	var b strings.Builder
+	b.WriteString(`apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+`)
+	for _, key := range keys {
+		b.WriteString("        " + key + `:
+          feature: core/forbidden:1.0.0
+          maps:
+            infra:
+              - target
+`)
+	}
+	return []byte(b.String())
 }
 
 func TestLoadManifest_AcceptsNamespacedPrefix(t *testing.T) {
