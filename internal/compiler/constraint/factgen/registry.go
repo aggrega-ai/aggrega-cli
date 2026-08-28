@@ -2822,6 +2822,71 @@ var facts = []factDecl{
 			"exists whenever the fact is asked.",
 	},
 	{
+		Name:        "boundary-attachment-execution-scope",
+		Stage:       "described",
+		SourceField: "types.FeatureRecipeSpec.ExecutionScope",
+		Subject:     []string{"boundary", "attachment"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "BoundaryAttachmentExecutionScope is the scope the FeatureRecipe one " +
+			"attachment declared on a boundary binds states its resource generation " +
+			"runs at, empty when it states none.\n\nDeclaring an attachment ON a " +
+			"boundary and declaring a FeatureRecipe that runs ONCE PER boundary are " +
+			"two separate decisions, made in two documents by two people, and " +
+			"neither implies the other. An attachment written at a boundary whose " +
+			"FeatureRecipe states no scope reaches every component that boundary " +
+			"holds and is evaluated once for each of them, against the full " +
+			"per-component context. So the boundary an attachment sits on does not " +
+			"say which surface it runs on, and a rule about the boundary-scope " +
+			"surface that assumed it would report on attachments that never reach " +
+			"that surface.\n\nIt is the boundary-rooted form of the same question " +
+			"the node-rooted axis already answers, and the two are separate facts " +
+			"rather than one reached differently: no node-rooted key can name an " +
+			"attachment written against a boundary that holds no component.\n\n" +
+			"Emptiness is a real answer and is the ordinary one: a FeatureRecipe " +
+			"stating no scope generates per component, which is also what an " +
+			"attachment with no bound FeatureRecipe amounts to.",
+	},
+	{
+		Name:        "boundary-attachment-authored-template-text",
+		Stage:       "described",
+		SourceField: "renderer.BoundaryScopeFRTemplateFields(fr)",
+		Subject:     []string{"boundary", "attachment", "template-field"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+			{Name: "field", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "BoundaryAttachmentAuthoredTemplateText is the template text the " +
+			"FeatureRecipe one attachment declared on a boundary writes for one of " +
+			"its inline template fields, as written and before anything is " +
+			"evaluated.\n\nThe field is a coordinate rather than part of this " +
+			"fact's name, and that is the whole shape rather than a detail of it. " +
+			"A FeatureRecipe carries several template fields and gains more over " +
+			"time; naming each in its own fact would put the field identity in " +
+			"structure, so a field added later would need a fact, a coordinate, a " +
+			"traversal entry and a declaration of its own — and would be silently " +
+			"ungated if any of the four were forgotten. Keyed by the field, the " +
+			"axis is data: one more label is enumerated and nothing else " +
+			"moves.\n\nOne fact serves every field because one reference set does. " +
+			"Within a carrier the render context is one type, so what a template on " +
+			"any of these fields may name is one question with one answer, and a " +
+			"rule reading this fact decides it the same way whichever field it was " +
+			"invoked for.\n\nThe fact is the text and not an analysis of it, on the " +
+			"reading every authored-text fact carries: a collected reference set is " +
+			"a judgement whose direction decides which rules may read it, and " +
+			"handing over the text leaves that direction to the rule that needs " +
+			"it.\n\nIt covers the fields written inline and says so rather than " +
+			"leaving the bound implied. A field whose content is imported from a " +
+			"file or a library is not enumerated at all, because that content is " +
+			"read when the render reaches it and there is nothing authored in this " +
+			"document to hand over.",
+	},
+	{
 		Name:        "provider-artifact-template-delimiters",
 		Stage:       "described",
 		SourceField: "wasm.ProviderContract.ArtifactDelimiters",

@@ -79,6 +79,12 @@ type traversalFixture struct {
 	attachLocals         map[string][]AuthoredCoordinate
 	boundaryAttachLocals map[string][]AuthoredCoordinate
 
+	// boundaryAttachFields carries its own coordinate shape because a template
+	// field's locator is not derivable from its label: the blocks the fields sit
+	// in differ from one another, and a keyed block's own key travels inside the
+	// label. The authored keys therefore arrive from the enumerator.
+	boundaryAttachFields map[string][]TemplateFieldCoordinate
+
 	attachEmittedPaths         map[string][]AuthoredCoordinate
 	boundaryAttachEmittedPaths map[string][]AuthoredCoordinate
 }
@@ -140,6 +146,12 @@ func (f traversalFixture) BoundaryAttachmentLocalsKeys(
 	boundary, attachment string,
 ) []AuthoredCoordinate {
 	return f.boundaryAttachLocals[fixtureKey(boundary, attachment)]
+}
+
+func (f traversalFixture) BoundaryAttachmentTemplateFields(
+	boundary, attachment string,
+) []TemplateFieldCoordinate {
+	return f.boundaryAttachFields[fixtureKey(boundary, attachment)]
 }
 
 func (f traversalFixture) ProvidesKeys(node string) []AuthoredCoordinate {
@@ -515,6 +527,35 @@ func newTraversalFixture() traversalFixture {
 		boundaryAttachLocals: map[string][]AuthoredCoordinate{
 			fixtureKey("prod/edge", "shared-db"): {{Value: "endpoint", SourceFile: "featurerecipes/shared-db.yaml"}},
 		},
+		// The template-field axis on the same carrier, and the three entries are
+		// chosen for what they separate rather than for coverage of the blocks.
+		//
+		// The first sits at the spec's top level, the second inside a keyed block —
+		// so a traversal splicing the label into the locator instead of using the
+		// authored keys would spell .spec.provides[dsn] and fail here. The third is
+		// keyed by a name carrying the locator dialect's own separator: its locator
+		// STOPS at the block, which is the established shape for an authored key the
+		// dialect cannot address, and a transcript showing it is what keeps that
+		// behaviour visible rather than looking like a dropped segment.
+		boundaryAttachFields: map[string][]TemplateFieldCoordinate{
+			fixtureKey("prod/edge", "shared-db"): {
+				{
+					Value:        "valuesMapping",
+					SourceFile:   "featurerecipes/shared-db.yaml",
+					AuthoredKeys: []string{"valuesMapping"},
+				},
+				{
+					Value:        "provides[dsn]",
+					SourceFile:   "featurerecipes/shared-db.yaml",
+					AuthoredKeys: []string{"provides", "dsn"},
+				},
+				{
+					Value:        "artifacts[cm.yaml]",
+					SourceFile:   "featurerecipes/shared-db.yaml",
+					AuthoredKeys: []string{"artifacts", "cm.yaml"},
+				},
+			},
+		},
 
 		// The SAME emitted name under two attachments on one node, for the reason the
 		// artifact axis above gives: two FeatureRecipes may each place a file under one
@@ -788,6 +829,26 @@ func traversalCases() []traversalCase {
 			},
 			want: []string{
 				"featurerecipes/shared-db.yaml|.spec.locals.endpoint",
+			},
+		},
+		{
+			// The template-field axis on the same carrier. The three records show the
+			// locator spelled from the AUTHORED KEYS rather than from the label: a
+			// top-level field, a field inside a keyed block — which a traversal splicing
+			// the label in would spell .spec.provides[dsn] and fail here — and a field
+			// whose key carries the dialect's own separator, which positions at the
+			// block and stops. That last is the established shape for an authored key
+			// the dialect cannot address, and it is why the rule over this kind names
+			// the field in its detail.
+			kind: SubjectBoundaryAttachmentTemplateField,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryAttachmentTemplateFields(cancelled, f, f, f, v,
+					raisingCheck[BoundaryAttachmentTemplateFieldSubject]())
+			},
+			want: []string{
+				"featurerecipes/shared-db.yaml|.spec.valuesMapping",
+				"featurerecipes/shared-db.yaml|.spec.provides.dsn",
+				"featurerecipes/shared-db.yaml|.spec.artifacts",
 			},
 		},
 		{
@@ -1532,6 +1593,22 @@ func coordinateFlowCases() []coordinateFlowCase {
 				})
 			},
 			want: []string{"prod/edge|shared-db|endpoint"},
+		},
+		{
+			kind: SubjectBoundaryAttachmentTemplateField,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, BoundaryAttachmentTemplateFieldSubject]) ([]Objection, error) {
+					return RunOnBoundaryAttachmentTemplateFields(nil, f, f, f, traversalView{}, c)
+				}, func(s BoundaryAttachmentTemplateFieldSubject) string {
+					return s.BoundaryPath() + "|" + s.AttachmentName() + "|" + s.TemplateField()
+				})
+			},
+			want: []string{
+				"prod/edge|shared-db|valuesMapping",
+				"prod/edge|shared-db|provides[dsn]",
+				"prod/edge|shared-db|artifacts[cm.yaml]",
+			},
 		},
 		{
 			kind: SubjectNodeProvidesKey,

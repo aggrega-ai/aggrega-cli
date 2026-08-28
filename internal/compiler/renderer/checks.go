@@ -1136,6 +1136,127 @@ var BoundaryAttachmentLocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
 	},
 }
 
+// BoundaryAttachmentTemplateReadsNoPerComponentPillar reports each inline
+// template field of a boundary-scope attachment's FeatureRecipe that names a
+// pillar the per-component path carries and this surface does not.
+//
+// # One rule over a whole family of authored fields
+//
+// It is invoked once per template field the FeatureRecipe writes, with the
+// authored field label as the innermost coordinate, so one declaration covers
+// every one of them and a field the FeatureRecipe gains later is covered with
+// nothing here moving. The alternative — a rule per template-bearing field — puts
+// the field identity in structure, and a field whose declaration somebody forgot
+// is then silently ungated with nothing able to report the omission.
+//
+// One rule serves them all because one reference set does: within this carrier
+// the render context is one type, so what a template on any of these fields may
+// name is one question with one answer. That is the condition to check before
+// this shape is reached for again, not a property every carrier has.
+//
+// # Why the execution scope is read and not assumed
+//
+// Declaring an attachment ON a boundary and declaring a FeatureRecipe that runs
+// ONCE PER boundary are two separate decisions. An attachment written at a
+// boundary whose FeatureRecipe states no scope reaches every component that
+// boundary holds and is evaluated against the full per-component context, where
+// the pillars this rule refuses are exactly the ones its templates are supposed
+// to read. So the rule ends on such an attachment before reading anything
+// further; refusing it would reject legal authoring on the strength of where the
+// operator happened to attach it.
+//
+// Its detail carries the offending reference bare, the field it was written in
+// captioned, and the set this surface defines captioned. The last two are derived
+// from the admission itself rather than restated, so what the build refuses and
+// what the author is told cannot disagree.
+//
+// # Why the field is named in the detail as well as positioned
+//
+// The locator spells the authored keys the dialect can address and stops at one
+// it cannot — a keyed block whose key is a filename carries the dialect's
+// separator inside a single authored key, so an artifact entry positions at the
+// block and no further. The block says where to look and only the detail can say
+// which field inside it. It is captioned, because a field label standing bare
+// beside another quoted value is not something a reader can tell apart from it.
+var BoundaryAttachmentTemplateReadsNoPerComponentPillar = constraint.Check[
+	constraint.DescribedView,
+	constraint.BoundaryAttachmentTemplateFieldSubject,
+]{
+	Sentinel: ErrFRTemplateInvalidField(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.BoundaryAttachmentTemplateFieldSubject,
+	) []constraint.Objection {
+		if v.BoundaryAttachmentExecutionScope(s.BoundaryPath(), s.AttachmentName()) != executionScopeBoundary {
+			return nil
+		}
+		ref := classifyBoundaryScopeFRTemplate(v.BoundaryAttachmentAuthoredTemplateText(
+			s.BoundaryPath(), s.AttachmentName(), s.TemplateField(),
+		))
+		if ref.Fault != boundaryScopeFRTemplatePerComponentPillar {
+			return nil
+		}
+		caption, phrase := templateAdmittedSetPhrase(ref.Violation)
+		return []constraint.Objection{s.RaiseWith(
+			ErrFRTemplateInvalidField(),
+			constraint.Uncaptioned(ref.Violation.Ref.Path),
+			constraint.Captioned("written in", s.TemplateField()),
+			constraint.Captioned(caption, phrase),
+		)}
+	},
+}
+
+// BoundaryAttachmentTemplateReadsOnlyDefinedReferences reports each inline
+// template field of a boundary-scope attachment's FeatureRecipe that names a
+// reference the render context does not define at all.
+//
+// It is a separate identity from the rule above for the reason the locals pair
+// are separate: the two describe different mistakes. That one names a field that
+// EXISTS and carries nothing here, so the author rewrites the reference against
+// the pillars this surface populates; this one names a reference that exists
+// nowhere — a stale root, or a mistyped key beneath a closed pillar — which no
+// rewriting against a scope will fix and which would otherwise render as an empty
+// value in the emitted output. The two share their whole body and differ in which
+// fault they report, so a field carries at most one of them.
+//
+// It reads the execution scope and ends on an attachment that is not boundary
+// scope, for the reason stated on the rule above.
+//
+// Its detail names the offending reference bare, the field it was written in
+// captioned for the reason the rule above states, and the set that was consulted
+// captioned — which for a refused key is that key's own root rather than the
+// context, the distinction the author needs since the two refusals read
+// identically otherwise.
+var BoundaryAttachmentTemplateReadsOnlyDefinedReferences = constraint.Check[
+	constraint.DescribedView,
+	constraint.BoundaryAttachmentTemplateFieldSubject,
+]{
+	Sentinel: ErrTemplateUnknownRoot(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.BoundaryAttachmentTemplateFieldSubject,
+	) []constraint.Objection {
+		if v.BoundaryAttachmentExecutionScope(s.BoundaryPath(), s.AttachmentName()) != executionScopeBoundary {
+			return nil
+		}
+		ref := classifyBoundaryScopeFRTemplate(v.BoundaryAttachmentAuthoredTemplateText(
+			s.BoundaryPath(), s.AttachmentName(), s.TemplateField(),
+		))
+		if ref.Fault != boundaryScopeFRTemplateUnknownRoot {
+			return nil
+		}
+		caption, phrase := templateAdmittedSetPhrase(ref.Violation)
+		return []constraint.Objection{s.RaiseWith(
+			ErrTemplateUnknownRoot(),
+			constraint.Uncaptioned(ref.Violation.Ref.Path),
+			constraint.Captioned("written in", s.TemplateField()),
+			constraint.Captioned(caption, phrase),
+		)}
+	},
+}
+
 // RecipePublishesEveryDeclaredProvidesKey reports each key a component type's
 // output contract declares that the Recipe bound to the node resolved no value
 // for.

@@ -411,13 +411,17 @@ var coordinateAccessors = map[string][]string{
 	"locals-key":    {"LocalsKey"},
 	"provides-key":  {"ProvidesKey"},
 	"pipeline-step": {"StepID"},
-	"boundary":      {"BoundaryPath"},
-	"subsystem":     {"SubsystemPath"},
-	"module":        {"ModulePath"},
-	"provider":      {"ProviderName"},
-	"assembly-path": {"AssemblyPath"},
-	"path":          {"EmittedPath"},
-	"artifact":      {"ArtifactName"},
+	// The accessor says the value is a template FIELD rather than a key, because
+	// the coordinate is not one authored key: it labels a whole template-bearing
+	// field, which for a keyed block carries the entry's own key inside the label.
+	"template-field": {"TemplateField"},
+	"boundary":       {"BoundaryPath"},
+	"subsystem":      {"SubsystemPath"},
+	"module":         {"ModulePath"},
+	"provider":       {"ProviderName"},
+	"assembly-path":  {"AssemblyPath"},
+	"path":           {"EmittedPath"},
+	"artifact":       {"ArtifactName"},
 }
 
 // subjectContractAccessors names the accessors [Subject] itself supplies, so a
@@ -1014,6 +1018,13 @@ var subjectKindBindings = map[SubjectKind]struct {
 		make: func(f string) Subject {
 			return newBoundaryAttachmentLocalsKeySubject(f, "prod", "shared-db", "endpoint",
 				"spec", "locals", "endpoint")
+		},
+	},
+	SubjectBoundaryAttachmentTemplateField: {
+		iface: reflect.TypeOf((*BoundaryAttachmentTemplateFieldSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newBoundaryAttachmentTemplateFieldSubject(f, "prod", "shared-db", "provides[dsn]",
+				"spec", "provides", "dsn")
 		},
 	},
 	SubjectNodeProvidesKey: {

@@ -165,97 +165,212 @@ var boundaryScopeFRScope = templateScope{
 	exclude: []string{"context", "workload", "attachment_name", "inject", "inject_raw"},
 }
 
-// validateBoundaryScopeFRTemplate parses every inline template field on a FR
-// with spec.executionScope: boundary and checks each one against
-// boundaryScopeFRScope. Returns nil on pass; ErrFRTemplateInvalidField wrapped
-// with the FR name and the offending reference when a template names a
-// per-component-only pillar (.context.*, .workload.*, .attachment_name, .inject,
-// .inject_raw); ErrTemplateUnknownRoot when it names a reference the boundary-scope
-// render context does not define at all; or a CATALOG_ERROR if any inline template
-// fails to parse.
+// BoundaryScopeFRTemplateField is one inline template field a FeatureRecipe
+// declares: the label an author reads it back by, the text as written, and the
+// authored keys beneath the document's spec that name it.
+//
+// The three travel together because they are three readings of one authored
+// entry, and a surface deriving any of them from another would be free to differ
+// from this one. The label is what a diagnostic quotes, the text is what the
+// admission check parses, and the keys are what position a finding inside the
+// FeatureRecipe.
+type BoundaryScopeFRTemplateField struct {
+	// Label names the field the way an author reads it back: the authored key,
+	// carrying the entry's own key or the step's id where the block is keyed.
+	Label string
+
+	// Text is the template as written, before anything is evaluated.
+	Text string
+
+	// AuthoredKeys are the keys beneath the FeatureRecipe's spec that name this
+	// field, one segment per key.
+	//
+	// They are carried rather than derived from the label, and the difference is
+	// not tidiness. Deriving them would mean parsing the label's grammar a second
+	// time, in a second place, and the grammar joins an authored key to its block
+	// with characters an authored key is not constrained to exclude — so a
+	// provides or locals key containing one of them would not survive the round
+	// trip, and the locator would name a path the file does not contain.
+	AuthoredKeys []string
+}
+
+// BoundaryScopeFRTemplateFields presents every inline template field a
+// FeatureRecipe declares, as the one enumeration of that set.
+//
+// It is one home because three surfaces need the same answer: the pre-evaluation
+// refusal below, the axis a declared rule over these fields is invoked along, and
+// the presentation that hands one field's authored text to such a rule. Two
+// enumerations would be free to differ on which fields they carry, and a field
+// either of them omitted would be silently unchecked — which is the failure an
+// enumerated set exists to prevent.
+//
+// A field whose content is imported from a file or a library carries no text
+// here and is absent from the set: that content is disk-resident or resolved when
+// the render reaches it, so there is nothing to read before then. The inline
+// forms are the whole of what this set covers, and a caller stating its coverage
+// states that bound with it.
+//
+// The order is the document's own within each keyed block and fixed between the
+// blocks, so a caller reporting the first offending field reports the same field
+// on every run.
+func BoundaryScopeFRTemplateFields(fr *types.FeatureRecipe) []BoundaryScopeFRTemplateField {
+	if fr == nil {
+		return nil
+	}
+	var out []BoundaryScopeFRTemplateField
+	add := func(label, text string, keys ...string) {
+		if text == "" {
+			return
+		}
+		out = append(out, BoundaryScopeFRTemplateField{Label: label, Text: text, AuthoredKeys: keys})
+	}
+	add("valuesMapping", fr.Spec.ValuesMapping.Inline, "valuesMapping")
+	add("injectMapping", fr.Spec.InjectMapping, "injectMapping")
+	add("workload", fr.Spec.Workload.Inline, "workload")
+	for k, v := range fr.Spec.Artifacts.All() {
+		add("artifacts["+k+"]", v.Inline, "artifacts", k)
+	}
+	for k, v := range fr.Spec.Provides.All() {
+		add("provides["+k+"]", v, "provides", k)
+	}
+	for k, v := range fr.Spec.Locals.All() {
+		add("locals["+k+"]", v, "locals", k)
+	}
+	for _, step := range fr.Spec.Pipeline {
+		add("pipeline["+step.ID+"].with", step.With, "pipeline", step.ID, "with")
+	}
+	return out
+}
+
+// boundaryScopeFRTemplateFault names what one boundary-scope FeatureRecipe
+// template field is refused for, or records that every reference it makes is
+// admitted.
+type boundaryScopeFRTemplateFault int
+
+const (
+	// boundaryScopeFRTemplateAdmitted is a field the surface admits every
+	// reference of.
+	boundaryScopeFRTemplateAdmitted boundaryScopeFRTemplateFault = iota
+
+	// boundaryScopeFRTemplateUnparsed is a field that is not a template at all.
+	// It is a failure to READ the field rather than a verdict on what the field
+	// says, which is why it is a class of its own: naming a refused reference for
+	// one would describe the author's mistake wrongly.
+	boundaryScopeFRTemplateUnparsed
+
+	// boundaryScopeFRTemplatePerComponentPillar is a field naming a root this
+	// surface excludes — a pillar the context type carries for the per-component
+	// path, which holds nothing when the recipe renders once for a boundary.
+	boundaryScopeFRTemplatePerComponentPillar
+
+	// boundaryScopeFRTemplateUnknownRoot is a field naming a reference the render
+	// context does not define at all: a stale root, or a mistyped key beneath a
+	// closed pillar such as .boundary.
+	boundaryScopeFRTemplateUnknownRoot
+)
+
+// boundaryScopeFRTemplateRef is one field's classification: the fault it carries,
+// the refused reference where there is one, and the parse failure where the field
+// could not be read at all.
+type boundaryScopeFRTemplateRef struct {
+	Fault     boundaryScopeFRTemplateFault
+	Violation *templateScopeViolation
+	ParseErr  error
+}
+
+// classifyBoundaryScopeFRTemplate decides what one authored template field on a
+// boundary-scope FeatureRecipe is refused for.
+//
+// It is the ONE home of that decision, and both surfaces asking it route through
+// here: the refusal the render makes before it dispatches such a recipe, and the
+// rules declared over the same fields. Two readings of one admission would be
+// free to disagree about which reference offends and about which identity
+// describes it, and the disagreement would surface as one author being told two
+// different things about one template.
+//
+// The reference set is collected by the UNDER-collecting walk, through the scope
+// itself. That direction is the one an allow-list may use: it attributes a
+// reference only where the spelling names a pillar unambiguously, so a field read
+// inside a rebound range body — which names a field of the element rather than a
+// pillar — is not counted, and legal authoring is not refused.
+func classifyBoundaryScopeFRTemplate(text string) boundaryScopeFRTemplateRef {
+	tree, err := gotmpl.ParseTree(text, "{{", "}}")
+	if err != nil {
+		return boundaryScopeFRTemplateRef{Fault: boundaryScopeFRTemplateUnparsed, ParseErr: err}
+	}
+	v := boundaryScopeFRScope.check(tree)
+	switch {
+	case v == nil:
+		return boundaryScopeFRTemplateRef{Fault: boundaryScopeFRTemplateAdmitted}
+	case v.Level == scopeLevelRoot && slices.Contains(boundaryScopeFRScope.exclude, v.Ref.Segs[0]):
+		return boundaryScopeFRTemplateRef{Fault: boundaryScopeFRTemplatePerComponentPillar, Violation: v}
+	default:
+		return boundaryScopeFRTemplateRef{Fault: boundaryScopeFRTemplateUnknownRoot, Violation: v}
+	}
+}
+
+// validateBoundaryScopeFRTemplate parses every inline template field on a FR with
+// spec.executionScope: boundary and checks each one against boundaryScopeFRScope.
+// Returns nil on pass; ErrFRTemplateInvalidField wrapped with the FR name and the
+// offending reference when a template names a per-component-only pillar
+// (.context.*, .workload, .attachment_name, .inject, .inject_raw);
+// ErrTemplateUnknownRoot when it names a reference the boundary-scope render
+// context does not define at all; or a CATALOG_ERROR if any inline template fails
+// to parse.
 //
 // Because the check is a positive scope over what the context type defines rather
 // than a list of refused names, a template that reaches for a pillar that does not
 // exist — or for a mistyped key under .boundary — is refused here too, instead of
 // rendering as an empty value in the FR's emitted output.
 //
-// Templates checked (inline only): valuesMapping, injectMapping, each provides
-// entry, each locals entry, and each pipeline step `with` template. Templates
-// loaded from external files (paths rather than inline strings) are not parsed
-// here — file content load + parse happens at engine-render time. A parse
-// failure propagates as a CATALOG_ERROR rather than being skipped: this
-// validator is the only surface that parses injectMapping and pipeline `with`
-// for a boundary-scope FR (the dispatch evaluates only locals, valuesMapping,
-// and provides), so a skipped parse error would drop silently for those fields.
+// Which fields are checked is [BoundaryScopeFRTemplateFields] and is not restated
+// here: an enumeration beside a caller is a second copy of the set, and the field
+// such a copy omitted would go unchecked with nothing reporting it. That set
+// covers the inline forms only — content imported from a file or a library is
+// loaded and parsed when the render reaches it. A parse failure propagates as a
+// CATALOG_ERROR rather than being skipped: this is the only surface that parses
+// injectMapping and pipeline `with` for a boundary-scope FR, the dispatch
+// evaluating only locals, valuesMapping and provides, so a skipped parse error
+// would drop silently for those fields.
+//
+// # Why this refusal is kept beside the rules declared over the same fields
+//
+// The rules run over the boundary an attachment was declared on. This runs
+// wherever such a recipe is dispatched, which includes an attachment declared on
+// a COMPONENT — a site no boundary-rooted axis reaches, because there is no
+// boundary key to enumerate it under. So the two are not one refusal expressed
+// twice: the rules add a position inside the document and report every offending
+// field, while this reaches a carrier they cannot see. Both route their decision
+// through classifyBoundaryScopeFRTemplate, so what they can disagree about is
+// only which fields they were asked over.
 func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 	if fr == nil {
 		return nil
 	}
 	frName := fr.Metadata.Name
-	type tmplField struct {
-		label string
-		text  string
-	}
-	var tmpls []tmplField
-	// Inline-mode valuesMapping text is available here; file / library
-	// imports defer to render-time validation (the template text is
-	// disk-resident or OCI-resolved at that point).
-	if fr.Spec.ValuesMapping.Inline != "" {
-		tmpls = append(tmpls, tmplField{label: "valuesMapping", text: fr.Spec.ValuesMapping.Inline})
-	}
-	if fr.Spec.InjectMapping != "" {
-		tmpls = append(tmpls, tmplField{label: "injectMapping", text: fr.Spec.InjectMapping})
-	}
-	// Inline workload / artifacts templates are subject to the same boundary-
-	// scope allowlist (file / library imports defer to render-time validation,
-	// as with valuesMapping above). A boundary-scope FR's synthesised workload
-	// or emitted artifacts reference .boundary.* pillars, never .context.* /
-	// .workload / .attachment_name / .inject.
-	if fr.Spec.Workload.Inline != "" {
-		tmpls = append(tmpls, tmplField{label: "workload", text: fr.Spec.Workload.Inline})
-	}
-	for k, v := range fr.Spec.Artifacts.All() {
-		if v.Inline != "" {
-			tmpls = append(tmpls, tmplField{label: "artifacts[" + k + "]", text: v.Inline})
-		}
-	}
-	for k, v := range fr.Spec.Provides.All() {
-		tmpls = append(tmpls, tmplField{label: "provides[" + k + "]", text: v})
-	}
-	for k, v := range fr.Spec.Locals.All() {
-		tmpls = append(tmpls, tmplField{label: "locals[" + k + "]", text: v})
-	}
-	for _, step := range fr.Spec.Pipeline {
-		if step.With != "" {
-			tmpls = append(tmpls, tmplField{label: "pipeline[" + step.ID + "].with", text: step.With})
-		}
-	}
-	for _, t := range tmpls {
-		tree, err := gotmpl.ParseTree(t.text, "{{", "}}")
-		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frName},
-				fmt.Sprintf("FeatureRecipe %q %s template failed to parse", frName, t.label))
-		}
-		if v := boundaryScopeFRScope.check(tree); v != nil {
-			return boundaryScopeFRErr(frName, t.label, v)
+	for _, field := range BoundaryScopeFRTemplateFields(fr) {
+		switch ref := classifyBoundaryScopeFRTemplate(field.Text); ref.Fault {
+		case boundaryScopeFRTemplateUnparsed:
+			return cerrors.Wrap(ref.ParseErr, cerrors.CatalogError, cerrors.SourceLocation{File: frName},
+				fmt.Sprintf("FeatureRecipe %q %s template failed to parse", frName, field.Label))
+		case boundaryScopeFRTemplatePerComponentPillar:
+			return boundaryScopeFRPerComponentPillarErr(frName, field.Label, ref.Violation)
+		case boundaryScopeFRTemplateUnknownRoot:
+			return templateUnknownRootErr(cerrors.CatalogError, fmt.Sprintf("%s %s", frName, field.Label), ref.Violation)
 		}
 	}
 	return nil
 }
 
-// boundaryScopeFRErr names a refused reference with the diagnostic that actually
-// describes it. A per-component pillar this surface excludes reports the
-// boundary-scope halt; a reference the render context does not define at all — a
-// stale root, or a mistyped key under a closed pillar such as .boundary — reports
-// the unknown-reference halt instead, so neither diagnostic tells the author their
-// reference is something it is not.
-func boundaryScopeFRErr(frName, label string, v *templateScopeViolation) error {
-	if v.Level == scopeLevelRoot && slices.Contains(boundaryScopeFRScope.exclude, v.Ref.Segs[0]) {
-		inner := fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field %s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .attachment_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
-			ErrFRTemplateInvalidField(), frName, v.Ref.Path, label)
-		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
-	}
-	return templateUnknownRootErr(cerrors.CatalogError, fmt.Sprintf("%s %s", frName, label), v)
+// boundaryScopeFRPerComponentPillarErr states the halt for a template naming a
+// pillar this surface excludes, in the terms that describe it: a field that exists
+// for the per-component path and carries nothing here. A reference the render
+// context does not define at all reports the unknown-reference halt instead, so
+// neither diagnostic tells the author their reference is something it is not.
+func boundaryScopeFRPerComponentPillarErr(frName, label string, v *templateScopeViolation) error {
+	inner := fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field %s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .attachment_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
+		ErrFRTemplateInvalidField(), frName, v.Ref.Path, label)
+	return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
 }
 
 // dispatchBoundaryScopeFR runs a boundary-scope FeatureRecipe once for a

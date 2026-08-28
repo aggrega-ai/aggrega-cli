@@ -431,6 +431,51 @@ func (v *describedView) BoundaryAttachmentAuthoredLocals(
 	return text
 }
 
+// BoundaryAttachmentExecutionScope returns the scope the FeatureRecipe one
+// attachment declared on a boundary binds states its resource generation runs at,
+// empty when it states none.
+//
+// It is answered from the FeatureRecipe the render resolved for the attachment,
+// through the same binding the render dispatches it with — so a rule reading it
+// is told which surface that dispatch will actually use.
+func (v *describedView) BoundaryAttachmentExecutionScope(
+	boundary string, attachment string,
+) string {
+	fr, ok := v.boundaryAttachmentFeatureRecipe(boundary, attachment)
+	if !ok {
+		return ""
+	}
+	return fr.Spec.ExecutionScope
+}
+
+// BoundaryAttachmentAuthoredTemplateText returns the template text the
+// FeatureRecipe one attachment declared on a boundary writes for one of its
+// inline template fields, as written and before anything is evaluated.
+//
+// It is answered from the same enumeration the field axis is built from, so a
+// field that axis presents is a field this can answer. Reading the field out of
+// the spec by name here instead would be a second reading of which fields exist,
+// and a field the two disagreed about would be enumerated with no text or carry
+// text nothing was invoked for.
+//
+// A label the enumeration does not carry answers empty, which is the honest
+// reading: the field is enumerated rather than looked up, so a label reaching
+// here that the document does not write names nothing.
+func (v *describedView) BoundaryAttachmentAuthoredTemplateText(
+	boundary string, attachment string, field string,
+) string {
+	fr, ok := v.boundaryAttachmentFeatureRecipe(boundary, attachment)
+	if !ok {
+		return ""
+	}
+	for _, entry := range BoundaryScopeFRTemplateFields(fr) {
+		if entry.Label == field {
+			return entry.Text
+		}
+	}
+	return ""
+}
+
 // ProviderArtifactTemplateDelimiters returns the delimiter pair the provider
 // rendering a node's documents declares its artifact entries are read with.
 //

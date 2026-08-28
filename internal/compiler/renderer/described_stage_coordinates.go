@@ -327,6 +327,48 @@ func (c *describedStageCoordinates) BoundaryAttachmentPipelineSteps(
 	return stepCoordinatesOf(fr.Spec.Pipeline, fr.Metadata.Name)
 }
 
+// BoundaryAttachmentTemplateFields returns the inline template fields the
+// FeatureRecipe one boundary-declared attachment binds writes, in the order that
+// FeatureRecipe's fields are enumerated in.
+//
+// The enumeration is BoundaryScopeFRTemplateFields — the same one the render's
+// own refusal walks — so a field presented here is a field that refusal reaches,
+// and a field added to the set arrives on both surfaces at once. Reproducing the
+// set here would let the axis and the refusal cover different fields, and the
+// field whichever of them omitted would be unchecked with nothing reporting it.
+//
+// Every attachment the boundary declares is enumerated, whatever scope its
+// FeatureRecipe states. The axis presents what the document writes; which of
+// those attachments a given rule is about is the rule's to select, from the
+// execution-scope fact keyed at this same coordinate. Narrowing here instead
+// would make the axis mean one rule rather than the document.
+//
+// Each coordinate is positioned at the FeatureRecipe rather than at the Release
+// the attachment was declared in, because the field is written in the
+// FeatureRecipe and that is the document an author edits. The FeatureRecipe's
+// name stands in for its path, for the reason the provides axis states.
+func (c *describedStageCoordinates) BoundaryAttachmentTemplateFields(
+	boundary string, attachment string,
+) []constraint.TemplateFieldCoordinate {
+	fr, held := c.boundaryAttachmentFeatureRecipe(boundary, attachment)
+	if !held {
+		return nil
+	}
+	fields := BoundaryScopeFRTemplateFields(fr)
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make([]constraint.TemplateFieldCoordinate, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, constraint.TemplateFieldCoordinate{
+			Value:        field.Label,
+			SourceFile:   fr.Metadata.Name,
+			AuthoredKeys: field.AuthoredKeys,
+		})
+	}
+	return out
+}
+
 // walkBoundaries visits every declared boundary with the path it is named by,
 // descending into nested scopes, in the deployment's own order.
 func (c *describedStageCoordinates) walkBoundaries(visit func(path string, b types.Boundary)) {

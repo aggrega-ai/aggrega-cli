@@ -935,6 +935,79 @@ func newBoundaryAttachmentLocalsKeySubject(
 	}
 }
 
+// BoundaryAttachmentTemplateFieldSubject is the subject of a check invoked once
+// per inline template field the FeatureRecipe one attachment declared on a
+// boundary writes.
+//
+// The innermost coordinate is the AUTHORED FIELD LABEL, and that is what makes
+// the kind a family rather than one kind per template-bearing field. A
+// FeatureRecipe carries several such fields and gains more over time; a kind per
+// field would put the field identity in structure, so a field added later would
+// need its own kind, fact, traversal entry and declaration — and would be
+// silently ungated if any of the four were forgotten. Keyed by the label, the
+// field axis is data, and what a check covers is enumerable rather than a count
+// of how many declarations somebody remembered to write.
+//
+// The kind pays where ONE reference set serves the whole carrier, and that is the
+// condition to check before reaching for it again. Within one carrier the render
+// context is one type, so what a template on any of these fields may name is one
+// question with one answer. A carrier whose fields are evaluated against several
+// context types has no such single answer, and there the mapping is necessarily
+// keyed per field — which is the per-surface granularity this shape exists to
+// avoid, wearing the family's clothes.
+//
+// It is rooted at a boundary because that is where such an attachment is
+// declared: it is written once and reaches every component the boundary holds,
+// so a node-rooted walk would present one authored document once per component
+// and not at all for a boundary holding none.
+type BoundaryAttachmentTemplateFieldSubject interface {
+	Subject
+
+	// BoundaryPath is the boundary the attachment was declared on, as every keyed
+	// fact takes it. It is the scope's path from the document's own scope set
+	// rather than a bare name, because boundaries nest and two scopes at
+	// different depths may carry one name.
+	BoundaryPath() string
+
+	// AttachmentName is the attachment whose FeatureRecipe writes the field: the
+	// name the operator declared it under.
+	AttachmentName() string
+
+	// TemplateField is the inline template field the check was invoked for,
+	// labelled the way an author reads it back — the authored key, carrying the
+	// entry's own key or the step's id where the block is keyed.
+	TemplateField() string
+
+	boundaryAttachmentTemplateField()
+}
+
+type boundaryAttachmentTemplateFieldSubject struct {
+	provenance
+	boundary   string
+	attachment string
+	field      string
+}
+
+func (boundaryAttachmentTemplateFieldSubject) boundaryAttachmentTemplateField() {}
+
+func (s boundaryAttachmentTemplateFieldSubject) BoundaryPath() string { return s.boundary }
+
+func (s boundaryAttachmentTemplateFieldSubject) AttachmentName() string { return s.attachment }
+
+func (s boundaryAttachmentTemplateFieldSubject) TemplateField() string { return s.field }
+
+func newBoundaryAttachmentTemplateFieldSubject(
+	sourceFile, boundary, attachment, field string,
+	segments ...string,
+) BoundaryAttachmentTemplateFieldSubject {
+	return boundaryAttachmentTemplateFieldSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		boundary:   boundary,
+		attachment: attachment,
+		field:      field,
+	}
+}
+
 // NodeProvidesKeySubject is the subject of a check invoked once per key a node's
 // Recipe provides.
 type NodeProvidesKeySubject interface {

@@ -448,6 +448,99 @@ func runAuthoredLocalsRule(
 	return objectionsAsHalt(raised, "locals entries that read a sibling they cannot")
 }
 
+// authoredTemplateFieldAxes is the axis set the rules over an authored template
+// field on a boundary-declared attachment are invoked once per: the boundary set,
+// the attachments each boundary declares, and the template fields each of those
+// attachments' FeatureRecipes writes.
+//
+// It is a fourth set beside the three above rather than more members of any of
+// them, for the reason the locals and provides sets are their own: these rules
+// read text an author wrote, which is there whether a plugin was ever loaded or
+// not, so folding them into the plugin-report set would put them behind that
+// set's resolution guard — and a rule skipped by a guard reports exactly what a
+// rule that ran and approved reports. It is separate from the locals set because
+// the axes are separate: that one enumerates the keys of one block, this one the
+// template-bearing fields of a whole document.
+//
+// Naming all three axes together is what makes the innermost one
+// un-skippable: a value supplying boundaries and attachments but no field
+// enumeration does not compile here, so these rules cannot be invoked over an
+// empty subject set by a caller that merely forgot one axis.
+type authoredTemplateFieldAxes interface {
+	constraint.BoundaryEnumerator
+	constraint.BoundaryAttachmentEnumerator
+	constraint.BoundaryAttachmentTemplateFieldEnumerator
+}
+
+// runAuthoredTemplateFieldRule invokes the rules declared over the inline
+// template fields a boundary-declared attachment's FeatureRecipe writes, and
+// returns what they raised as the render's halt.
+//
+// It runs before anything is evaluated, which is what the rules read for: the
+// value a refused template would produce is never produced, so the authored text
+// is the only input that can carry the question. It carries no plugin-resolution
+// guard, for the reason the two authored-text readings above carry none.
+//
+// # One declaration per field, one rule per fault
+//
+// The rules are invoked once per template field, so a FeatureRecipe reaching
+// outside its scope in three of its fields raises three objections and an author
+// corrects all three from one build. Each carries its own position — the
+// FeatureRecipe, and the authored field inside it — which is why they are not
+// folded into one message: a position is something an author navigates to, and a
+// single message naming three of them can be navigated to none.
+//
+// Both rules over the axis are asked, because they are separate findings with
+// separate remedies: one names a pillar that exists for the per-component path
+// and carries nothing here, which the author rewrites against the boundary
+// pillars; the other names a reference that exists nowhere, which no rewriting
+// against a scope will fix. A field declining the first is reported by the second
+// and never by neither.
+//
+// # What this does NOT reach, stated because an unstated bound reads as coverage
+//
+// The axis is the attachments a BOUNDARY declares. A FeatureRecipe declaring the
+// boundary scope is dispatched to the same surface when its attachment was
+// declared on a COMPONENT instead, and no boundary key enumerates that
+// attachment — so the rules are not invoked over it. That carrier keeps the
+// refusal the render makes at dispatch, which is retained for exactly this reason
+// and shares this rule's decision rather than re-implementing it. The set of
+// fields is the inline ones: content imported from a file or a library is read
+// when the render reaches it and is not authored in this document.
+//
+// So what the declaration adds is a position and a breadth on one carrier, never
+// a refusal the build did not already make.
+//
+// The cancellation signal is the caller's own, so a long walk over a large
+// deployment stops within one boundary of the caller asking it to.
+func runAuthoredTemplateFieldRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates authoredTemplateFieldAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	raised, err := constraint.RunOnBoundaryAttachmentTemplateFields(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		BoundaryAttachmentTemplateReadsNoPerComponentPillar,
+	)
+	if err != nil {
+		return err
+	}
+
+	objections, err := constraint.RunOnBoundaryAttachmentTemplateFields(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		BoundaryAttachmentTemplateReadsOnlyDefinedReferences,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	return objectionsAsHalt(raised, "template fields that reach outside the context they are evaluated against")
+}
+
 // crossBoundaryLinkAxis is the axis the rule over a connection's two rendering
 // providers is invoked once per: the connection set the finalised graph carries.
 //

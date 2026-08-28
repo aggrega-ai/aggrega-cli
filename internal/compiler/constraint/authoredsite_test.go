@@ -280,14 +280,23 @@ spec:
 		// FeatureRecipe, which is why a locator over one of its entries names this
 		// document's own spec path and carries no boundary key: the boundary is where
 		// the attachment was declared, not where the block was written.
+		//
+		// It carries a template-bearing field at the spec's top level as well as one
+		// inside a keyed block, because the template-field axis positions at both
+		// shapes and a document holding only one of them would leave the other's
+		// locator unresolved against any real file.
 		"featurerecipes/shared-db.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
 metadata:
   name: shared-db
 spec:
+  valuesMapping: |
+    name: {{ .boundary.boundary_name }}
   locals:
     endpoint: "{{ .boundary.path }}-db"
+  provides:
+    dsn: "postgres://{{ .locals.endpoint }}"
   pipeline:
     - id: annotate
       plugin: core/annotator:1.0.0

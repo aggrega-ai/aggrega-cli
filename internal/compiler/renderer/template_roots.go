@@ -341,21 +341,33 @@ func templateRootsPhrase(prefix string, names []string) string {
 	return strings.Join(out, ", ")
 }
 
+// templateAdmittedSetPhrase states which set a refused reference was consulted
+// against, as the caption naming that set and the set itself spelled the way an
+// author would write its members.
+//
+// It is one home because two surfaces state it: the halt the evaluation raises,
+// and the detail a rule declared over the same admission carries. Which set was
+// consulted depends on the nesting the refusal happened at — the context's own
+// roots for a refused root, the root's declared keys for a refused key — and two
+// readings of that would be free to tell one author their reference was measured
+// against a set it was not.
+func templateAdmittedSetPhrase(v *templateScopeViolation) (caption, phrase string) {
+	if v.Level == scopeLevelKey {
+		root := "." + v.Ref.Segs[0]
+		return root + " defines", templateRootsPhrase(root, v.Admitted)
+	}
+	return "the render context defines", templateRootsPhrase("", v.Admitted)
+}
+
 // templateUnknownRootErr states the unknown-reference halt every template surface
 // shares, charged to the authoring domain the calling surface names. One wording
 // and one sentinel across every surface; only the artifact the author is sent to
 // differs.
 func templateUnknownRootErr(category cerrors.Category, name string, v *templateScopeViolation) error {
+	caption, phrase := templateAdmittedSetPhrase(v)
 	values := []string{
 		fmt.Sprintf("template %q references %q", name, v.Ref.Path),
-		"the render context defines " + templateRootsPhrase("", v.Admitted),
-	}
-	if v.Level == scopeLevelKey {
-		root := "." + v.Ref.Segs[0]
-		values = []string{
-			fmt.Sprintf("template %q references %q", name, v.Ref.Path),
-			root + " defines " + templateRootsPhrase(root, v.Admitted),
-		}
+		caption + " " + phrase,
 	}
 	return cerrors.Wrap(ErrTemplateUnknownRoot(), category, cerrors.SourceLocation{File: name},
 		cerrors.ComposeMessage(ErrTemplateUnknownRoot(), values, ""))

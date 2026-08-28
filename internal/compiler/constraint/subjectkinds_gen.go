@@ -82,7 +82,7 @@ const (
 	// SubjectNodePillarLeaf is the subject kind (node, pillar, leaf), keyed by 1 declared fact.
 	SubjectNodePillarLeaf SubjectKind = "(node, pillar, leaf)"
 
-	// SubjectBoundaryAttachment is the subject kind (boundary, attachment), keyed by 5 declared facts.
+	// SubjectBoundaryAttachment is the subject kind (boundary, attachment), keyed by 6 declared facts.
 	SubjectBoundaryAttachment SubjectKind = "(boundary, attachment)"
 
 	// SubjectNodeParameter is the subject kind (node, parameter), keyed by 1 declared fact.
@@ -117,6 +117,9 @@ const (
 
 	// SubjectBoundaryAttachmentLocalsKey is the subject kind (boundary, attachment, locals-key), keyed by 2 declared facts.
 	SubjectBoundaryAttachmentLocalsKey SubjectKind = "(boundary, attachment, locals-key)"
+
+	// SubjectBoundaryAttachmentTemplateField is the subject kind (boundary, attachment, template-field), keyed by 1 declared fact.
+	SubjectBoundaryAttachmentTemplateField SubjectKind = "(boundary, attachment, template-field)"
 
 	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 4 declared facts.
 	SubjectNodeArtifact SubjectKind = "(node, artifact)"
@@ -174,6 +177,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeLocalsKey, Coordinates: []string{"node", "locals-key"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentLocalsKey, Coordinates: []string{"node", "attachment", "locals-key"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentLocalsKey, Coordinates: []string{"boundary", "attachment", "locals-key"}, Traversal: TraversalPull},
+	{Kind: SubjectBoundaryAttachmentTemplateField, Coordinates: []string{"boundary", "attachment", "template-field"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifact, Coordinates: []string{"node", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentArtifact, Coordinates: []string{"node", "attachment", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentArtifact, Coordinates: []string{"boundary", "attachment", "artifact"}, Traversal: TraversalPull},

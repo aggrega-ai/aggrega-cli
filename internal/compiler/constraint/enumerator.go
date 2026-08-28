@@ -650,6 +650,59 @@ type BoundaryAttachmentLocalsKeyEnumerator interface {
 	BoundaryAttachmentLocalsKeys(boundary string, attachment string) []AuthoredCoordinate
 }
 
+// TemplateFieldCoordinate is one authored template field on a carrier: the label
+// it is named by, the file it was written in, and the keys beneath that
+// document's spec that locate it.
+//
+// It carries its own authored keys rather than reusing [AuthoredCoordinate]
+// because a template field is not named by one key. The blocks a carrier's
+// template fields sit in differ from one another — one is a scalar at the spec's
+// top level, another an entry inside a keyed block, another a field of a step —
+// so a single value cannot both read back as a label and spell a path. Deriving
+// the path from the label instead would mean parsing the label's grammar in a
+// second place, and that grammar joins an authored key to its block with
+// characters an authored key is not constrained to exclude: a key containing one
+// would not survive the round trip, and the locator would spell a path the file
+// does not contain.
+//
+// An axis declaring its own coordinate shape is the established form where the
+// axis needs more than a value and a file; see [AttachmentLeaf], which carries a
+// site for its own reason.
+type TemplateFieldCoordinate struct {
+	// Value is the field's label, the way an author reads it back.
+	Value string
+
+	// SourceFile is the workspace-relative file the field was authored in, empty
+	// when it has no single-file origin.
+	SourceFile string
+
+	// AuthoredKeys are the keys beneath the document's spec that name this field,
+	// one segment per key, outermost first.
+	AuthoredKeys []string
+}
+
+// BoundaryAttachmentTemplateFieldEnumerator supplies the inline template fields
+// the FeatureRecipe one attachment declared on a boundary writes.
+//
+// The axis is keyed per boundary and not per node for the reason the boundary's
+// own attachment axis is: such an attachment is declared once and reaches every
+// component the boundary holds, so enumerating its fields per component would
+// present one authored document many times over, and not at all for a boundary
+// holding none.
+//
+// It enumerates what the DOCUMENT declares and never what some rule is about. An
+// implementation narrowing the set to the fields one rule cares for would make
+// the axis mean that rule rather than the document, and the coverage a caller
+// reads off the axis would then be a claim about the rule's own selection — which
+// is the unenumerable shape a field-keyed axis exists to remove. A rule with
+// something to select on reads a fact and selects.
+type BoundaryAttachmentTemplateFieldEnumerator interface {
+	// BoundaryAttachmentTemplateFields returns the inline template fields one
+	// boundary-declared attachment's FeatureRecipe writes, in a deterministic
+	// order the implementation declares.
+	BoundaryAttachmentTemplateFields(boundary string, attachment string) []TemplateFieldCoordinate
+}
+
 // ProvidesKeyEnumerator supplies the keys one node's Recipe provides.
 type ProvidesKeyEnumerator interface {
 	// ProvidesKeys returns a node's provides keys, in a deterministic order the

@@ -674,6 +674,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
+		// The rules over the inline template fields a boundary-declared
+		// attachment's FeatureRecipe writes, asked against the same presentation
+		// and the same enumeration.
+		//
+		// They are asked here, ahead of the boundary-scope provides pre-pass and
+		// the node walk that follow, because that is where those fields are
+		// evaluated: a reference the render context does not define would
+		// otherwise reach the pre-pass and resolve through the missing-key policy
+		// into an empty value in emitted output. Asking before evaluation is the
+		// whole reason a rule reads authored text.
+		if err := runAuthoredTemplateFieldRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
 		// The advisory over the two providers a connection's ends render through,
 		// invoked against the same presentation and the same enumeration. It is
 		// asked here because both providers and both capability claims are settled

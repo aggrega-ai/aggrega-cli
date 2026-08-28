@@ -999,6 +999,69 @@ func RunOnBoundaryAttachmentLocalsKeys[V View](
 		})
 }
 
+// authoredFieldSegments returns the segments naming a template field inside its
+// own document: the spec, then the authored keys the enumerator supplied.
+//
+// The keys arrive from the enumerator rather than being derived from the field's
+// label, because the blocks a carrier's template fields sit in differ from one
+// another and no single reading of a label spells all of them. An enumerator
+// supplying none leaves the locator at the spec, which routes a consumer to the
+// document rather than to a plausible-looking path the file does not contain.
+func authoredFieldSegments(authoredKeys []string) []string {
+	if len(authoredKeys) == 0 {
+		return []string{authoredKeySpec}
+	}
+	return documentSpecSegments(authoredKeys[0], authoredKeys[1:]...)
+}
+
+// RunOnBoundaryAttachmentTemplateFields invokes check once per inline template
+// field the FeatureRecipe each attachment declared on a boundary writes, in
+// boundary order, then attachment order, then the order that FeatureRecipe's
+// fields are enumerated in.
+//
+// The locator is the authored field inside the FeatureRecipe's own file, spelled
+// from the keys the enumerator supplied — .spec.provides.<key> for a provides
+// entry, .spec.valuesMapping for the values mapping, and so on. The boundary
+// contributes no segment, on the reading every boundary-rooted kind whose locator
+// names a FeatureRecipe carries: a boundary key spliced onto a
+// FeatureRecipe-rooted locator would name a path that document does not have. The
+// boundary remains a coordinate, because that is what tells one attachment's
+// fields from another boundary's when a fact is keyed.
+//
+// The boundary set is walked rather than the node set: such an attachment is
+// declared once and reaches every component the boundary holds, so a node-rooted
+// walk would ask about one authored document once per component.
+//
+// # The field is enumerated, which is what makes coverage assertable
+//
+// The innermost coordinate is the authored field label, so a carrier gaining a
+// template field gains a subject with no kind, fact, traversal entry or
+// declaration moving. That is the property the family is for: what a rule over
+// this kind covers is read off the enumeration rather than counted from how many
+// declarations somebody remembered to write.
+func RunOnBoundaryAttachmentTemplateFields[V View](
+	cancelled Cancellation,
+	boundaries BoundaryEnumerator,
+	attachments BoundaryAttachmentEnumerator,
+	fields BoundaryAttachmentTemplateFieldEnumerator,
+	view V,
+	check Check[V, BoundaryAttachmentTemplateFieldSubject],
+) ([]Objection, error) {
+	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
+		func(boundary AuthoredCoordinate) []BoundaryAttachmentTemplateFieldSubject {
+			var out []BoundaryAttachmentTemplateFieldSubject
+			for _, attachment := range attachments.BoundaryAttachments(boundary.Value) {
+				for _, entry := range fields.BoundaryAttachmentTemplateFields(boundary.Value, attachment) {
+					out = append(out, newBoundaryAttachmentTemplateFieldSubject(
+						entry.SourceFile, boundary.Value, attachment, entry.Value,
+						authoredFieldSegments(entry.AuthoredKeys)...,
+					))
+				}
+			}
+			return out
+		})
+}
+
 // RunOnNodeProvidesKeys invokes check once per key each node's Recipe provides,
 // in node order and then provides order.
 //
