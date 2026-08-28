@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: extends-mapping-unrelated-recipe-manifest
+  version: "1.0.0"
+spec:
+  # The mapped type is the wrapper; the recipe implements a type the wrapper does
+  # not extend. This is the positive control for the same gate the sibling
+  # manifest must pass: it proves a finding is reachable over this fixture, so a
+  # zero-finding result on the sibling means the ancestry was resolved rather than
+  # that the gate never ran.
+  mappings:
+    components:
+      type:
+        example/wrapped-server: example-unrelated-recipe:1.0.0

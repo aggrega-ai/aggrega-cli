@@ -1432,20 +1432,38 @@ func (l *LazyLookup) AggregateLookup() resolver.AggregateLookup {
 	return l.recipeCatalog().AggregateLookup()
 }
 
-// AssertManifestImplementsConsistency runs the catalog's manifest-implements
+// VerifyManifestImplementsConsistency runs the catalog's manifest-implements
 // consistency gate (each mapped type resolves to a recipe whose spec.implements
 // matches, directly or through a base the mapped type extends) over the
-// lazily-enumerated recipe set — the build's earliest loud guardrail, reading the
-// closure rather than a bridged eager catalog.
+// lazily-enumerated recipe set, reading the closure rather than a bridged eager
+// catalog, and returns one finding per inconsistent mapping.
+//
+// It returns findings rather than a joined error because the verdict is a
+// caller's to reach: a surface that produces a deployable artifact halts on a
+// finding, while a surface that reports on a document enumerates it alongside its
+// other findings. A gate that could only fail would force the reporting surfaces
+// to choose between staying silent and replacing their whole report with one
+// line.
 //
 // The ancestry resolver is this view's own, NOT the recipe shell's. The shell
 // carries recipes and libraries but no Component index, so the shell's own
 // resolver would find no ancestry and the gate would refuse every mapping onto a
 // base's Recipe — silently, and only on this path.
-func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) error {
+func (l *LazyLookup) VerifyManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) []error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.recipeCatalog().AssertManifestImplementsConsistency(manifest, manifestPath, l.componentAncestry)
+	return l.recipeCatalog().VerifyManifestImplementsConsistency(manifest, manifestPath, l.componentAncestry)
+}
+
+// AssertManifestImplementsConsistency joins the findings
+// VerifyManifestImplementsConsistency produces into a single error, nil when
+// every mapping is consistent. It is the halt form for a caller that reaches its
+// verdict from the gate alone; a caller that carries the findings onward reads
+// them from the verify form instead. The two share one producer, so a halting and
+// a reporting surface can never come to disagree about which mappings are
+// inconsistent.
+func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) error {
+	return errors.Join(l.VerifyManifestImplementsConsistency(manifest, manifestPath)...)
 }
 
 // componentAncestry is this view's ComponentAncestryResolver: it walks the
@@ -1462,7 +1480,9 @@ func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifes
 // chain, so it reports the cycle rather than exhausting the stack on it.
 //
 // Lock-free by contract, like the other internal cascade readers: the exported
-// consistency gate above already holds l.mu when it hands this method over.
+// verify form above already holds l.mu when it hands this method over, and the
+// assert form reaches the cascade only through it, so both entries arrive here
+// under the lock.
 func (l *LazyLookup) componentAncestry(componentType string) ([]string, error) {
 	return componentAncestryOver(componentType, l.resolveComponent)
 }

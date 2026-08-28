@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: example/base-server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    infra:
+      port: { type: integer, default: 8080 }

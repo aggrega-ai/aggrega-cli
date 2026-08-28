@@ -356,13 +356,13 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// Shared Release→closure orchestration: load the Release, resolve + compose
 	// the Manifest, resolve the Aggregate, gate the external seed on a registry
 	// pin, and compute + augment the closure once. Every front door runs this same
-	// shared resolver, so the sequence cannot drift between them. The build's
-	// manifest-implements consistency halt runs via AfterManifest so it still fires
-	// before the closure walk — the earliest loud point — and Augment folds the
-	// cross-document library axes so the closure matches the one drift is verified
-	// against. An in-closure entity skipped at tolerant load surfaces as an
-	// unresolvable URI; withSkipContext replays WHY it was skipped so the failure is
-	// never a bare "not found".
+	// shared resolver, so the sequence cannot drift between them. The resolver runs
+	// the manifest-implements consistency gate itself, before the closure walk —
+	// the earliest loud point — and hands back its findings; the halt below is this
+	// command's verdict on them. Augment folds the cross-document library axes so
+	// the closure matches the one drift is verified against. An in-closure entity
+	// skipped at tolerant load surfaces as an unresolvable URI; withSkipContext
+	// replays WHY it was skipped so the failure is never a bare "not found".
 	progress.phase(phaseClosure)
 	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
 		View:            lazyView,
@@ -371,12 +371,16 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		WorkspaceConfig: wsCfg,
 		Lockfile:        lf,
 		Augment:         true,
-		AfterManifest: func(m *types.Manifest, p string) error {
-			return lazyView.AssertManifestImplementsConsistency(m, p)
-		},
 	})
 	if cerr != nil {
 		return withSkipContext(cerr, skipped)
+	}
+	// A build emits a deployable artifact, so a mapping the catalog contradicts is
+	// a halt: rendering a component through a recipe that does not implement its
+	// type would produce an artifact nobody asked for. The findings are joined so
+	// every inconsistent mapping is reported at once rather than one per re-run.
+	if err := stderrors.Join(resolved.ManifestConsistencyFindings...); err != nil {
+		return err
 	}
 	rel := resolved.Release
 	manifest := resolved.Manifest

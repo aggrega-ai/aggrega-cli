@@ -237,7 +237,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 		CompilerVersion: s.serverVersion,
 	})
 
-	diags := validateDiagnostics(vr)
+	diags := validateDiagnostics(vr, resolved.ManifestConsistencyFindings)
 	payload := validateResultPayload{
 		Scope:       validateScopeRelease,
 		Target:      releasePath,
@@ -359,15 +359,24 @@ func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError
 }
 
 // validateDiagnostics flattens a ValidateResult into the ordered list of
-// diagnostic strings, in the order the semantic-validation gates run:
-// closure-scoped extends, then the schema-pillar gate, then the resolve/analyze
-// pipeline, then the resolution-completeness findings, then the input-kind
-// capability check computed after the pipeline. It surfaces each error
-// verbatim — the same text the CLI validation produces — so a consumer reads
-// the compiler's own message. The gate order matches the shared layer's
-// documented field order, so this is the single mapping every front end shares.
-func validateDiagnostics(vr *compilerops.ValidateResult) []string {
+// diagnostic strings, in the order the semantic-validation gates run: the
+// Manifest mapping-table findings, then closure-scoped extends, then the
+// schema-pillar gate, then the resolve/analyze pipeline, then the
+// resolution-completeness findings, then the input-kind capability check computed
+// after the pipeline. It surfaces each error verbatim — the same text the CLI
+// validation produces — so a consumer reads the compiler's own message. The gate
+// order matches the shared layer's documented field order, so this is the single
+// mapping every front end shares.
+//
+// consistencyFindings comes from the closure resolution rather than from vr,
+// because the Manifest is judged before this result's first gate runs. It is a
+// parameter rather than a field so a caller cannot omit it and report a Manifest
+// as sound without having asked; there is no value here meaning "not checked".
+func validateDiagnostics(vr *compilerops.ValidateResult, consistencyFindings []error) []string {
 	var out []string
+	for _, f := range consistencyFindings {
+		out = append(out, f.Error())
+	}
 	for _, e := range vr.ClosureExtendsErrors {
 		out = append(out, "catalog extends: "+e.Error())
 	}

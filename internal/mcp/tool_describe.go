@@ -48,6 +48,12 @@ type describeReleasePayload struct {
 	Environment string           `json:"environment"`
 	EntityCount int              `json:"entity_count"`
 	Entities    []describeEntity `json:"entities"`
+	// MappingDiagnostics names each Manifest mapping whose target recipe does not
+	// implement the mapped type. This tool reports on a Release rather than
+	// producing anything from it, so a fault is described alongside the closure
+	// rather than replacing the description with a refusal: a caller asking what a
+	// Release contains is answered, and told what is wrong with it.
+	MappingDiagnostics []string `json:"mapping_diagnostics,omitempty"`
 }
 
 var describeToolSpec = toolSpec{
@@ -174,6 +180,9 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 		Environment: resolved.Release.Metadata.Environment,
 		EntityCount: len(resolved.Closure.Entities),
 	}
+	for _, f := range resolved.ManifestConsistencyFindings {
+		payload.MappingDiagnostics = append(payload.MappingDiagnostics, f.Error())
+	}
 	if detail {
 		for _, e := range resolved.Closure.Entities {
 			payload.Entities = append(payload.Entities, describeEntity{URI: e.URI, Version: e.ResolvedVersion, Kind: e.KindHint})
@@ -208,6 +217,12 @@ func renderDescribeReleaseText(p describeReleasePayload) string {
 		} else {
 			fmt.Fprintf(&b, "    - %s\n", e.URI)
 		}
+	}
+	// The mapping faults follow the closure they were found in rather than
+	// preceding it, so the description the caller asked for arrives first and is
+	// not mistaken for an error report.
+	for _, d := range p.MappingDiagnostics {
+		fmt.Fprintf(&b, "  mapping: %s\n", d)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

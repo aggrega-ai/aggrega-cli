@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-mapping-inconsistent
+  version: "1.0.0"
+spec:
+  parameters:
+    port:
+      type: integer
+      required: true
+  components: {}

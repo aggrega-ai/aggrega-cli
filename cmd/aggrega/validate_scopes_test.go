@@ -32,8 +32,8 @@ func TestRenderReleaseValidation_VerdictInvariantAcrossVerbosity(t *testing.T) {
 	}
 
 	var detailedOut, conciseOut bytes.Buffer
-	detailedErr := renderReleaseValidation(vr, "release.yaml", compilerops.VerbosityDetailed, &detailedOut, &detailedOut)
-	conciseErr := renderReleaseValidation(vr, "release.yaml", compilerops.VerbosityConcise, &conciseOut, &conciseOut)
+	detailedErr := renderReleaseValidation(vr, nil, "release.yaml", compilerops.VerbosityDetailed, &detailedOut, &detailedOut)
+	conciseErr := renderReleaseValidation(vr, nil, "release.yaml", compilerops.VerbosityConcise, &conciseOut, &conciseOut)
 
 	// Verdict invariant: the returned error is identical across verbosity.
 	if detailedErr == nil || conciseErr == nil {
@@ -108,7 +108,7 @@ func TestRenderReleaseValidation_AssertionMessageSurvivesFlattening(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			err := renderReleaseValidation(vr, "release.yaml", tc.verbosity, &out, &out)
+			err := renderReleaseValidation(vr, nil, "release.yaml", tc.verbosity, &out, &out)
 			if err == nil {
 				t.Fatal("expected a non-nil verdict for a failing assertion")
 			}
@@ -139,10 +139,10 @@ func TestRenderReleaseValidation_CleanVerdictInvariant(t *testing.T) {
 	}
 
 	var detailedOut, conciseOut bytes.Buffer
-	if err := renderReleaseValidation(vr, "release.yaml", compilerops.VerbosityDetailed, &detailedOut, &detailedOut); err != nil {
+	if err := renderReleaseValidation(vr, nil, "release.yaml", compilerops.VerbosityDetailed, &detailedOut, &detailedOut); err != nil {
 		t.Fatalf("detailed clean pass must return nil; got %v", err)
 	}
-	if err := renderReleaseValidation(vr, "release.yaml", compilerops.VerbosityConcise, &conciseOut, &conciseOut); err != nil {
+	if err := renderReleaseValidation(vr, nil, "release.yaml", compilerops.VerbosityConcise, &conciseOut, &conciseOut); err != nil {
 		t.Fatalf("concise clean pass must return nil; got %v", err)
 	}
 

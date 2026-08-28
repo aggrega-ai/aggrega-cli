@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: tier4-mapping-inconsistent-manifest
+  version: "1.0.0"
+spec:
+  # The mapped type is not the type the target recipe implements, so the
+  # mapping-table consistency gate produces a finding. The mapped type is
+  # deliberately one no component in the Aggregate uses, which keeps the fault
+  # confined to the mapping table: the resolution stage still reaches the
+  # parameter-contract violation the Release carries, so the fixture exercises a
+  # mapping fault and an unrelated diagnostic at once.
+  mappings:
+    components:
+      type:
+        example/unused-server: example-elsewhere-recipe:1.0.0

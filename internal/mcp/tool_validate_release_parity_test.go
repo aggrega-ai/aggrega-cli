@@ -15,11 +15,13 @@ package mcp
 // calls the SAME core DIRECTLY over the same resolved inputs the tool passes (the
 // tool's own resolveToolWorkspace, lockfile load, and view construction), and
 // asserts the payload's verdict, diagnostics, and notices equal the core's. The
-// six fixture cases exercise every field of ValidateResult in isolation: a clean
-// closure, the closure-scoped extends gate, the closure-scoped schema-pillar gate,
-// the resolve/analyze pipeline, the resolution-completeness findings, and the
-// input-kind capability class (the load-bearing proof that the shared result is a
-// superset every front end renders).
+// fixture cases each isolate one diagnostic class: a clean closure, the
+// closure-scoped extends gate, the closure-scoped schema-pillar gate, the
+// resolve/analyze pipeline, the resolution-completeness findings, the input-kind
+// capability class (the load-bearing proof that the shared result is a superset
+// every front end renders), and the Manifest mapping table — which is the one class
+// decided by the closure resolution rather than by a ValidateResult field, so it is
+// what holds the tool to reading the resolution's findings too.
 //
 // The fixture YAML is duplicated across the CLI and serve legs deliberately: each
 // leg constructs the fixture independently and independently calls the core, so a
@@ -89,6 +91,22 @@ spec:
   mappings:
     components:
       type: {}
+`
+
+// releaseParityMappingInconsistentManifest maps the api-server type onto the
+// web-ui recipe, whose spec.implements names a different type. Both entities live
+// in the shared catalog, so the mapping resolves and is judged rather than skipped
+// — which is what makes the resulting finding real.
+const releaseParityMappingInconsistentManifest = `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: parity-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/compute/api-server: helm-web-ui-synthesized-with-artifacts:1.0.0
 `
 
 const releaseParityDefaultRelease = `apiVersion: aggrega.ai/v1alpha1
@@ -270,6 +288,16 @@ func releaseParityCases() []releaseParityCase {
 				"plugins/sourced-only-renderer.yaml": releaseParityInputKindPlugin,
 			},
 		},
+		// The mapping-table class. It is the one case here whose finding is decided
+		// by the closure RESOLUTION rather than by a ValidateResult gate, so it is
+		// also the case that holds the tool to reading the finding off the resolved
+		// closure: a tool that mapped only ValidateResult would report this Release
+		// as valid.
+		{
+			name:      "mapping-inconsistent",
+			aggregate: releaseParityBackendAggregate,
+			manifest:  releaseParityMappingInconsistentManifest,
+		},
 	}
 }
 
@@ -299,8 +327,12 @@ func writeReleaseParityWorkspace(t *testing.T, c releaseParityCase) (root string
 
 // TestValidateToolReleaseScopeCoreParity proves the release-scope MCP payload
 // carries the shared core's verdict, ordered diagnostics, and advisory notices
-// verbatim across all six fixture cases. The core is called directly over the same
+// verbatim across every fixture case. The core is called directly over the same
 // resolved inputs the tool passes, so the payload cannot pass by drift.
+//
+// The case count is deliberately not written here. releaseParityCases is the
+// statement of how many there are; a number repeated in prose beside it only
+// resets the clock until the next case is added.
 func TestValidateToolReleaseScopeCoreParity(t *testing.T) {
 	for _, c := range releaseParityCases() {
 		c := c
@@ -345,7 +377,10 @@ func TestValidateToolReleaseScopeCoreParity(t *testing.T) {
 				CompilerVersion: s.serverVersion,
 			})
 
-			wantDiags := validateDiagnostics(vr)
+			// The mapping findings come off the resolved closure, exactly as
+			// validateReleaseScope reads them, so the oracle mirrors production
+			// rather than a subset of it.
+			wantDiags := validateDiagnostics(vr, resolved.ManifestConsistencyFindings)
 			wantNotices := releaseAdvisories(vr)
 
 			if c.name == "clean" {

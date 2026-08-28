@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: extends-mapping
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: example/wrapped-server

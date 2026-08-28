@@ -36,9 +36,8 @@ import (
 // closure are resolved; WorkspaceRoot and WorkspaceConfig supply the closure
 // walk's workspace anchor and resolved artifact-cache directory.
 //
-// Lockfile, Augment, and AfterManifest are per-caller opt-ins; their zero values
-// preserve the base resolution shape (no pin gate, no library-axis fold, no
-// hook).
+// Lockfile and Augment are per-caller opt-ins; their zero values preserve the
+// base resolution shape (no pin gate, no library-axis fold).
 type ClosureInputs struct {
 	View            *catalog.LazyLookup
 	ReleasePath     string
@@ -61,14 +60,6 @@ type ClosureInputs struct {
 	// which is what a caller that folds the library axes separately needs so the
 	// fold does not run twice.
 	Augment bool
-
-	// AfterManifest, when non-nil, runs after the Manifest's extends chain is
-	// composed and before the top-level Aggregate resolves, receiving the composed
-	// Manifest and its source path. A caller injects a manifest-level consistency
-	// gate here so it fires at the earliest loud point — before the closure walk. A
-	// returned error aborts resolution with a compose-stage ClosureError. nil skips
-	// the hook.
-	AfterManifest func(manifest *types.Manifest, manifestPath string) error
 }
 
 // ResolvedClosure bundles the entities a build or drift flow needs together —
@@ -95,6 +86,22 @@ type ResolvedClosure struct {
 	// the descent would read as "none wired" and skip without a word. Callers that
 	// only render may ignore Lookup entirely.
 	Lookup closure.Lookup
+
+	// ManifestConsistencyFindings carries one finding per Manifest mapping whose
+	// mapped type does not resolve to a recipe declaring it — directly or through a
+	// base the mapped type extends. It is empty when every mapping is consistent.
+	//
+	// The findings are carried rather than returned as a failure because the
+	// verdict differs by what the caller produces, not by what the gate found: a
+	// caller that emits a deployable artifact joins them and halts, while a caller
+	// that reports on a document enumerates them beside its other findings. A
+	// failure at this position could not express that — resolution stops there, so
+	// a reporting caller would be left with one line in place of everything else it
+	// had to say about the document, at every keystroke on an editor surface.
+	//
+	// Every caller owes a verdict. An empty read is a legitimate one only where the
+	// caller genuinely produces no report and no artifact.
+	ManifestConsistencyFindings []error
 }
 
 // ClosureStage names the point in ResolveClosure at which resolution failed, so
@@ -150,13 +157,20 @@ func (e *ClosureError) Unwrap() error { return e.err }
 // entity is never enumerated-fatal.
 //
 // The optional inputs shape the resolution: a non-nil in.Lockfile gates the
-// external Aggregate seed on a registry pin; in.AfterManifest runs a
-// manifest-level hook before the Aggregate resolves; in.Augment folds the
-// cross-document library axes into the returned closure. Their zero values leave
-// the base resolution unchanged.
+// external Aggregate seed on a registry pin; in.Augment folds the cross-document
+// library axes into the returned closure. Their zero values leave the base
+// resolution unchanged.
+//
+// Two Manifest-level judgements run unconditionally on the composed Manifest,
+// before the Aggregate resolves and before the closure walk: the reference-shape
+// gate, which fails, and the mapping-table consistency gate, whose findings ride
+// back on ResolvedClosure.ManifestConsistencyFindings for the caller to reach a
+// verdict on. Neither is a caller opt-in — every front end reads the same
+// Manifest, so a per-caller gate would leave the rest of them silent.
 //
 // On failure the returned *ClosureError names the failing stage and carries the
-// rendered detail; the *ResolvedClosure is nil. On success the error is nil.
+// rendered detail; the *ResolvedClosure is nil. On success the error is nil and
+// the caller owes a verdict on ManifestConsistencyFindings.
 func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 	rel, err := resolver.LoadRelease(in.ReleasePath)
 	if err != nil {
@@ -183,22 +197,13 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 			err:   err,
 		}
 	}
-	if in.AfterManifest != nil {
-		if herr := in.AfterManifest(manifest, manRes.Path); herr != nil {
-			return nil, &ClosureError{
-				Stage: ClosureStageComposeManifest,
-				msg:   herr.Error(),
-				err:   herr,
-			}
-		}
-	}
 	// Reference shape is judged here, on the composed Manifest, before anything
 	// looks a mapping value up. It is unconditional rather than a per-caller
 	// opt-in: the verdict is syntactic, every front end that computes a closure
-	// needs it, and hanging it off the AfterManifest hook would cover the one
-	// caller that wires that hook and leave the rest reporting a present recipe
-	// as absent. Only the first fault is reported, because the closure walk that
-	// follows would halt on it anyway.
+	// needs it, and a caller-supplied hook would cover only the callers that wired
+	// it and leave the rest reporting a present recipe as absent. Only the first
+	// fault is reported, because the closure walk that follows would halt on it
+	// anyway.
 	if faults := catalog.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
 		return nil, &ClosureError{
 			Stage: ClosureStageManifestReferenceShape,
@@ -206,6 +211,26 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 			err:   faults[0],
 		}
 	}
+	// Mapping-table consistency is judged here too, at the same pre-closure-walk
+	// moment and for the same reason: the composed Manifest is in hand and nothing
+	// downstream has resolved against it yet. It is unconditional rather than a
+	// per-caller opt-in — every front end that computes a closure reads the same
+	// mapping table, so a caller-supplied hook would cover the callers that wire it
+	// and leave the rest reporting a recipe that does not implement the mapped type
+	// as though the mapping were sound.
+	//
+	// It runs AFTER the reference-shape gate above because it looks each mapping
+	// value up, and a value whose shape a recipe reference cannot express has no
+	// recipe to judge it against.
+	//
+	// The ancestry resolver comes from the view rather than from the recipe shell:
+	// the view's own resolver reads the Component cascade, so a mapping onto a
+	// base's Recipe is judged consistent. The shell carries no Component index and
+	// would refuse every such mapping.
+	//
+	// Unlike the shape gate, this one produces findings rather than a failure. The
+	// verdict belongs to the caller — see ResolvedClosure.ManifestConsistencyFindings.
+	consistencyFindings := in.View.VerifyManifestImplementsConsistency(manifest, manRes.Path)
 	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, in.View.AggregateLookup(), nil)
 	if err != nil {
 		return nil, &ClosureError{
@@ -249,13 +274,14 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 		}
 	}
 	return &ResolvedClosure{
-		Release:       rel,
-		Manifest:      manifest,
-		Aggregate:     aggregate,
-		AggBytes:      aggBytes,
-		AggregatePath: aggRes.Path,
-		Closure:       cl,
-		Lookup:        lookup,
+		Release:                     rel,
+		Manifest:                    manifest,
+		Aggregate:                   aggregate,
+		AggBytes:                    aggBytes,
+		AggregatePath:               aggRes.Path,
+		Closure:                     cl,
+		Lookup:                      lookup,
+		ManifestConsistencyFindings: consistencyFindings,
 	}, nil
 }
 

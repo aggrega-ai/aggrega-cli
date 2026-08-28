@@ -114,6 +114,29 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
 	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
 
+	// Manifest mapping-table findings, decided by the closure resolution above and
+	// therefore ahead of every gate below. They are a Tier-D class: the fault is in
+	// the Manifest, not in the edited Aggregate, so it carries no position in this
+	// file and sits at 1:1 behind the "Dependencies: " prefix, the same footing the
+	// resolution-completeness findings use.
+	//
+	// The daemon ADVISES rather than halts — it publishes them and keeps going —
+	// and every early return below carries them forward. That is the whole reason
+	// the resolver hands these back as findings instead of failing: a failure at
+	// that position replaces this file's entire diagnostic set with one line, at
+	// every keystroke, so an editor would lose every other thing it had to say
+	// about the buffer in exchange for one Manifest complaint.
+	var mappingDiags []Diagnostic
+	for _, f := range resolved.ManifestConsistencyFindings {
+		mappingDiags = append(mappingDiags, Diagnostic{
+			Line:     1,
+			Column:   1,
+			Severity: editorSeverityError,
+			Message:  "Dependencies: " + f.Error(),
+			Code:     diagnosticCode(f),
+		})
+	}
+
 	// Run the semantic-validation core through the shared compiler-operations
 	// layer (closure-scoped extends gate, closure-scoped schema-pillar gate,
 	// Steps 1-4 pipeline, resolution-completeness findings). The gates read
@@ -137,13 +160,13 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// Tier-D closure-level diagnostic; an out-of-closure broken extends is never
 	// resolved.
 	if len(vr.ClosureExtendsErrors) > 0 {
-		return []Diagnostic{{
+		return append(mappingDiags, Diagnostic{
 			Line:     1,
 			Column:   1,
 			Severity: editorSeverityError,
 			Message:  fmt.Sprintf("Dependencies: catalog extends: %v", vr.ClosureExtendsErrors[0]),
 			Code:     diagnosticCode(vr.ClosureExtendsErrors[0]),
-		}}
+		})
 	}
 
 	// Closure-scoped Pass-2 — early-warning schema-pillar gate. An in-closure
@@ -151,13 +174,13 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// surfaces as a Tier-D closure-level diagnostic, with the skip context
 	// explaining a missing library. build remains the authoritative validator.
 	if vr.PillarError != nil {
-		return []Diagnostic{{
+		return append(mappingDiags, Diagnostic{
 			Line:     1,
 			Column:   1,
 			Severity: editorSeverityError,
 			Message:  "Dependencies: " + s.skipContext(view, vr.PillarError.Error()),
 			Code:     diagnosticCode(vr.PillarError),
-		}}
+		})
 	}
 
 	// The verdict-plugin trust gate — the workspace configuration disagreed with
@@ -167,13 +190,13 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// file, so it surfaces as a closure-level diagnostic at file:1:1, the same
 	// footing the two gates above use.
 	if vr.VerdictTrustError != nil {
-		return []Diagnostic{{
+		return append(mappingDiags, Diagnostic{
 			Line:     1,
 			Column:   1,
 			Severity: editorSeverityError,
 			Message:  "Dependencies: " + vr.VerdictTrustError.Error(),
 			Code:     diagnosticCode(vr.VerdictTrustError),
-		}}
+		})
 	}
 
 	// Cancellation (shutdown drain) surfaces as a context error from the
@@ -187,7 +210,9 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// scalar end positions in the validated file's coordinate space.
 	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 
-	var diags []Diagnostic
+	// The mapping findings lead the published set, matching the order they were
+	// decided in: the Manifest was judged before the pipeline ran.
+	diags := mappingDiags
 	tier4 := vr.Tier4
 
 	// Resolver-class violations (Step 1) — Tier-A position recovery

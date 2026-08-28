@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: example/wrapped-server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  extends: example/base-server:1.0.0
+  schema: inherited

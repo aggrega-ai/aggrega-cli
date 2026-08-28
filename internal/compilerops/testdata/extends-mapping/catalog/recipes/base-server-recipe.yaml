@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: example-base-server-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: example/base-server
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: 1
+    containers:
+      main:
+        image: base-server:latest
+        ports:
+          web: {{ optional .infra `port` 8080 }}

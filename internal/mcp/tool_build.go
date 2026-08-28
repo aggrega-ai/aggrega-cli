@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -105,6 +106,16 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	if cerr != nil {
 		return errorResult(explainToolError(
 			"The build could not resolve the Release closure.", cerr, closureStageKind(cerr.Stage)))
+	}
+	// This tool produces an artifact, so it reaches the same verdict the command
+	// line's build does on a Manifest the catalog contradicts: it refuses. The
+	// report-shaped tools beside it enumerate the same finding and carry on, which
+	// is the distinction — what the caller asked to be produced, not how the
+	// finding was reached.
+	if err := errors.Join(resolved.ManifestConsistencyFindings...); err != nil {
+		return errorResult(explainToolError(
+			"The build refused: the Manifest maps a type onto a recipe that does not implement it.",
+			err, "manifest"))
 	}
 
 	// BuildToBuffer renders to in-memory buffers and performs no filesystem

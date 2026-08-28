@@ -155,7 +155,7 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		WorkspaceConfig: wsCfg,
 		CompilerVersion: provenanceCompilerVersion(),
 	})
-	return renderReleaseValidation(vr, releasePath, verbosity, diagOut, out)
+	return renderReleaseValidation(vr, resolved.ManifestConsistencyFindings, releasePath, verbosity, diagOut, out)
 }
 
 // renderReleaseValidation writes a release-scoped validation result's diagnostics
@@ -168,6 +168,15 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 // together, and any pipeline diagnostic or input-kind error yields a non-zero
 // verdict. Advisories never change the verdict.
 //
+// consistencyFindings carries the Manifest mapping-table findings from the
+// closure resolution, which happens before any gate here runs. This verb reports
+// on a document rather than producing an artifact, so a finding is enumerated
+// alongside everything else the document has wrong rather than replacing it — and
+// it still yields a non-zero verdict, because the mapping is wrong whoever asked.
+// It is a parameter rather than a field on the result so a caller cannot leave it
+// unpopulated and report a sound Manifest for an unsound one; there is no value
+// that means "not checked".
+//
 // verbosity governs output VOLUME only — never the verdict or the exit code.
 // The detailed form (the default) writes every diagnostic in gate order plus the
 // advisory lines; the concise form writes a single summary line carrying the
@@ -175,8 +184,24 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 // run the identical checks, reach the identical verdict, and return the identical
 // error (or nil). Diagnostics and advisories go to diagOut; the success summary
 // goes to out.
-func renderReleaseValidation(vr *compilerops.ValidateResult, releasePath, verbosity string, diagOut, out io.Writer) error {
+func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings []error, releasePath, verbosity string, diagOut, out io.Writer) error {
 	detailed := verbosity != compilerops.VerbosityConcise
+
+	// The mapping-table findings were decided ahead of every gate below — the
+	// closure resolution judged the composed Manifest before any of these gates
+	// read anything — so they are reported first, and deliberately outside the
+	// reach of the three early returns that follow: a Manifest fault is never
+	// hidden by a later gate refusing first. In the concise form they fold into the
+	// summary count with the other verdict-affecting classes.
+	var mappingDiags []string
+	for _, f := range consistencyFindings {
+		mappingDiags = append(mappingDiags, cerrors.CauseChain(f))
+	}
+	if detailed {
+		for _, d := range mappingDiags {
+			fmt.Fprintf(diagOut, "  mapping: %s\n", d)
+		}
+	}
 
 	if len(vr.ClosureExtendsErrors) > 0 {
 		if detailed {
@@ -252,20 +277,31 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, releasePath, verbos
 			fmt.Fprintf(diagOut, "  input-kind: %s\n", cerrors.CauseChain(e))
 		}
 	} else {
-		// The concise form collapses the verdict-affecting diagnostics — the
-		// pipeline diagnostics followed by the input-kind errors, in gate order —
-		// into a count and the first, and emits no advisory lines.
-		if total := len(pipelineDiags) + len(vr.InputKindErrors); total > 0 {
+		// The concise form collapses the verdict-affecting diagnostics — the mapping
+		// findings, then the pipeline diagnostics, then the input-kind errors, in the
+		// order they were decided — into a count and the first, and emits no advisory
+		// lines.
+		if total := len(mappingDiags) + len(pipelineDiags) + len(vr.InputKindErrors); total > 0 {
 			first := ""
-			if len(pipelineDiags) > 0 {
+			switch {
+			case len(mappingDiags) > 0:
+				first = "mapping: " + mappingDiags[0]
+			case len(pipelineDiags) > 0:
 				first = pipelineDiags[0]
-			} else {
+			default:
 				first = "input-kind: " + cerrors.CauseChain(vr.InputKindErrors[0])
 			}
 			fmt.Fprintf(diagOut, "release dependency validation: %d diagnostic(s); first: %s\n", total, first)
 		}
 	}
 
+	// The verdict follows the reporting order above, so the message names the
+	// earliest-decided class rather than whichever check happens to be tested
+	// first. A mapping finding is advisory in POSITION only — it never truncates
+	// the report — and never in verdict: the mapping is wrong whoever asked.
+	if len(mappingDiags) > 0 {
+		return fmt.Errorf("release dependency validation failed: %d manifest mapping diagnostic(s)", len(mappingDiags))
+	}
 	if len(pipelineDiags) > 0 {
 		return fmt.Errorf("release dependency validation failed: %d diagnostic(s)", len(pipelineDiags))
 	}

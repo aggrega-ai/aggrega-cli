@@ -169,7 +169,29 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 		index[f.Kind+"|"+f.Name] = f.Path
 	}
 	paths := closureEntityFiles(lazyView, rc.Closure, index)
-	return lintConventionsFiles(rw, catalogFlagDirs, paths, trusted, out, diagOut, collect)
+	lintErr := lintConventionsFiles(rw, catalogFlagDirs, paths, trusted, out, diagOut, collect)
+
+	// A Manifest mapping the catalog contradicts is reported here rather than
+	// halting ahead of the pass, so the conventions report the author came for
+	// arrives whole. It is not a convention finding, though, and it does not
+	// inherit the advisory exit code conventions carry: the mapping names a recipe
+	// that does not implement the mapped type, which is wrong however the author
+	// feels about conventions, so it moves the verdict.
+	//
+	// A real lint failure — a plugin that would not load, a file that would not
+	// read — wins the returned error, because it means the pass itself did not
+	// happen and reporting a mapping verdict over an incomplete pass would overstate
+	// what ran.
+	for _, f := range rc.ManifestConsistencyFindings {
+		fmt.Fprintf(diagOut, "mapping: %s\n", f)
+	}
+	if lintErr != nil {
+		return lintErr
+	}
+	if n := len(rc.ManifestConsistencyFindings); n > 0 {
+		return fmt.Errorf("release manifest mapping: %d diagnostic(s)", n)
+	}
+	return nil
 }
 
 // lintConventionsFiles runs the structural publishing-linter rules (the default

@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: extends-mapping-base-recipe-manifest
+  version: "1.0.0"
+spec:
+  # The mapped type is the WRAPPER; the recipe implements the BASE the wrapper
+  # extends. This is the reduced-extends contract: a wrapper served by its base's
+  # Recipe needs no Recipe of its own, so the mapping is consistent and the
+  # closure resolution must produce no finding for it.
+  mappings:
+    components:
+      type:
+        example/wrapped-server: example-base-server-recipe:1.0.0
