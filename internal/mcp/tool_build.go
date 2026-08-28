@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 )
 
 // buildArgs is the build tool's argument shape.
@@ -36,6 +37,12 @@ type buildFile struct {
 type buildResultPayload struct {
 	Release string      `json:"release"`
 	Files   []buildFile `json:"files"`
+	// Deprecations names each pinned reference carrying a recorded deprecation
+	// marker, from the shared report every surface reads. It is present on a
+	// successful build for the same reason the command line prints the notices on
+	// one: reporting is unconditional and only halting is configured, so raising
+	// the halt threshold never reduces what the caller is told.
+	Deprecations []string `json:"deprecations,omitempty"`
 }
 
 var buildToolSpec = toolSpec{
@@ -118,6 +125,33 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 			err, "manifest"))
 	}
 
+	// The deprecation report over the lockfile's recorded markers, and this verb's
+	// verdict on it. The tool produces an artifact, so it reaches the same verdict
+	// the command line's build does: it reports every recorded marker and refuses
+	// where the workspace configured a halt at that severity, through the one shared
+	// halting rule. The dial is the build's own and is read here because this IS the
+	// build operation over a different transport — one key doing one job. The
+	// report-shaped tools beside it enumerate the same findings and carry on.
+	//
+	// The refusal carries EVERY notice rather than only the halting one, so choosing
+	// a stricter threshold never costs the caller a finding.
+	deprecations := lf.DeprecationFindings()
+	var deprecationHalt error
+	deprecationNotices := make([]string, 0, len(deprecations))
+	for _, f := range deprecations {
+		deprecationNotices = append(deprecationNotices, f.Notice())
+		if deprecationHalt == nil {
+			deprecationHalt = deprecation.HaltFor(
+				f.Notice(), deprecation.Severity(f.Severity), deprecation.Severity(tw.cfg.Build.HaltOnDeprecatedSeverity))
+		}
+	}
+	if deprecationHalt != nil {
+		return errorResult(explainToolError(
+			"The build refused: this Release pins a deprecated artifact at or above the configured halt severity. "+
+				"Every recorded marker in this Release:\n  "+strings.Join(deprecationNotices, "\n  "),
+			deprecationHalt, "release"))
+	}
+
 	// BuildToBuffer renders to in-memory buffers and performs no filesystem
 	// writes; the returned artifacts are returned to the caller and never
 	// persisted here, so the workspace is unchanged by a build tool call.
@@ -138,6 +172,9 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 
 	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
 	payload := buildResultPayload{Release: releasePath, Files: renderedFiles(result, detail)}
+	if len(deprecationNotices) > 0 {
+		payload.Deprecations = deprecationNotices
+	}
 	text := renderBuildText(payload)
 	return textResult(text, payload)
 }

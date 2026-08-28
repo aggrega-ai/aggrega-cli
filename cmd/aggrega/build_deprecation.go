@@ -6,30 +6,37 @@ package main
 import (
 	"fmt"
 	"io"
-	"sort"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// enforceClosureDeprecation reports the deprecation status of every reference in
-// the closure under one build-time gate — catalog entities, the four library
+// enforceLockfileDeprecation reports the deprecation status of every pinned
+// reference under one build-time gate — catalog entities, the four library
 // sections, and Wasm plugins — and halts only where the workspace asked for a
-// halt. Its source is the lockfile Deprecation record — a
-// retroactive marker discovered and verified at pull time, carrying a severity
-// in the ordered set warning < error < retracted. It reads ONLY the lockfile, so
-// it never touches a registry, preserving the ahead-of-time boundary that build
-// is offline and lockfile-only.
+// halt. Its source is the shared report over the lockfile's recorded
+// Deprecation records — retroactive markers discovered and verified at pull
+// time, each carrying a severity in the ordered set
+// warning < error < retracted. It reads ONLY the lockfile, so it never touches a
+// registry, preserving the ahead-of-time boundary that build is offline and
+// lockfile-only.
+//
+// The report itself is produced by Lockfile.DeprecationFindings and is not
+// composed here, because it is the same report on every surface that says
+// anything about a deprecated reference. What belongs here is the BUILD's
+// verdict on it, which is what this gate is: a notice per finding, and a halt
+// where the workspace configured one. The gate's own godoc for why the recorded
+// rows are the consumed references, and for what those rows cannot reach, sits
+// with the producer.
 //
 // Reporting and halting are independent axes, and keeping them independent is
 // the point of this gate:
 //
-//   - Reporting is unconditional. Every reference carrying a recorded marker
-//     produces a notice on diagOut naming it, its severity and its
-//     message, at every severity. No configuration silences it, so raising a
-//     halt threshold never reduces what the build says.
+//   - Reporting is unconditional. Every finding produces a notice on diagOut
+//     naming the reference, its severity and its message, at every severity. No
+//     configuration silences it, so raising a halt threshold never reduces what
+//     the build says.
 //   - Halting is governed by configuration alone. A recorded marker halts when
 //     build.halt_on_deprecated_severity names a severity AND the recorded
 //     severity meets or exceeds it. The dial is not set by default, so a default
@@ -42,121 +49,36 @@ import (
 // every severity, so the default behaviour does not depend on how an
 // unrecognised severity happens to compare.
 //
-// The notice reports an observation moment: a recorded marker states what a
-// registry reported at some past pull, so how stale it might be is part of the
-// fact.
-//
 // The walk always completes before a halt is returned, so a configured halt
 // never costs the reader the notices for references sorted after the halting one;
-// the first halting marker in the walk owns the returned error. Iteration is
-// over the sorted closure URIs, so the surfaced order is
-// deterministic and independent of closure order.
+// the first halting finding in the walk owns the returned error. The producer
+// sorts by URI, so the surfaced order is deterministic.
 //
-// The gate is kind-independent, and that is the property to preserve. Neither
-// side of it names a closure section or a lockfile section: the walked references
-// come from the closure's own enumeration of its verifiable axes, and the recorded
-// markers from the lockfile's own enumeration of its marker-bearing rows. A gate
-// that named the sections instead reported on exactly the sections someone
-// remembered, and a reference on an unnamed section built silently against a
-// withdrawn artifact — with the gate's own silence reading as "nothing is
-// withdrawn". Adding a section to either type is a build-time question rather than
-// a silent omission, because the coverage assertion beside the closure enumeration
-// requires every declared section to be classified.
-func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
+// The gate is kind-independent, and that is the property to preserve. It names
+// no lockfile section: the findings come from the lockfile's own enumeration of
+// its marker-bearing rows. A gate that named the sections instead reported on
+// exactly the sections someone remembered, and a reference on an unnamed section
+// built silently against a deprecated artifact — with the gate's own silence
+// reading as "nothing is deprecated". Adding a section to the lockfile is a
+// build-time question rather than a silent omission, because the coverage
+// assertion beside that enumeration requires every declared section to be
+// classified.
+func enforceLockfileDeprecation(lf *lockfile.Lockfile, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
 	threshold := deprecation.Severity(buildCfg.HaltOnDeprecatedSeverity)
-	// One stamp governs every recorded marker in this lockfile, so it is rendered
-	// once rather than per reference.
-	asOf := lockfileAsOfSuffix(lf.GeneratedAt)
-
-	rows := lf.VerifiedFactRows()
-	recByURI := make(map[string]*lockfile.DeprecationRecord, len(rows))
-	for _, row := range rows {
-		if rec := row.Deprecation(); rec != nil {
-			recByURI[row.URI] = rec
-		}
-	}
-
-	// Evaluate every axis under one gate: all of them are consumed by the build and
-	// any of them can carry a recorded marker. The walk is sorted by URI, so the
-	// surfaced order — and therefore which reference owns a halt — is deterministic
-	// and independent of both closure order and the order the axes are enumerated in.
-	// The record index above is keyed by URI across every section, so two references
-	// sharing one URI would share one record; that is the pre-existing keying rather
-	// than an assumption about the sections being disjoint, and it is why the index
-	// and the walk are joined on the same key.
-	axes := cl.VerifiableAxes()
-	total := 0
-	for _, axis := range axes {
-		total += len(axis.Refs)
-	}
-	refs := make([]closure.VerifiableRef, 0, total)
-	for _, axis := range axes {
-		refs = append(refs, axis.Refs...)
-	}
-	sort.Slice(refs, func(i, j int) bool { return refs[i].URI < refs[j].URI })
 
 	// A halt is recorded rather than returned mid-walk: returning here would
-	// drop the notices for every entity sorted after the halting one, which is
+	// drop the notices for every finding sorted after the halting one, which is
 	// the one way a stricter dial could make the build say LESS.
 	var halt error
 
-	for _, e := range refs {
-		// The moment qualifies the recorded fact, so it sits with the message
-		// rather than after the threshold clause, which would read as though the
-		// policy were what had been recorded.
-		if rec, ok := recByURI[e.URI]; ok {
-			fmt.Fprintf(diagOut, "  deprecation: %s is deprecated (%s): %s%s\n", e.URI, rec.Severity, rec.Message, asOf)
-			// The empty threshold is read as "no halt configured" here rather
-			// than left to MeetsThreshold's unranked arm: that arm exists for a
-			// malformed value, and resting the shipped default on it would let a
-			// later change in how an unrecognised severity ranks silently invert
-			// the default from advising to halting.
-			if halt == nil && threshold != "" && deprecation.MeetsThreshold(deprecation.Severity(rec.Severity), threshold) {
-				halt = fmt.Errorf("%w: %s is deprecated (%s): %s%s: %s",
-					deprecation.ErrDeprecatedEntity(), e.URI, rec.Severity, rec.Message, asOf, haltThresholdClause(threshold))
-			}
+	for _, f := range lf.DeprecationFindings() {
+		fmt.Fprintf(diagOut, "  deprecation: %s\n", f.Notice())
+		// The halting rule and the halt's wording are the shared ones every
+		// artifact-producing surface applies, so this verb and the AI-native build
+		// cannot come to halt on different markers under the same configuration.
+		if halt == nil {
+			halt = deprecation.HaltFor(f.Notice(), deprecation.Severity(f.Severity), threshold)
 		}
 	}
 	return halt
-}
-
-// haltThresholdClause renders the threshold half of a halt message, naming the
-// policy that triggered the halt. It returns a string rather than an error, and
-// the halt message interpolates it, so the message wraps exactly ONE error: its
-// sentinel, ErrDeprecatedEntity. A second wrapped error would make the message a
-// multi-error, and a multi-error renders as its wrapped errors alone — dropping
-// the format string's own text, which is where the entity, the severity, the
-// message and the observation moment all live.
-func haltThresholdClause(threshold deprecation.Severity) string {
-	return fmt.Sprintf("halt_on_deprecated_severity is %q", threshold)
-}
-
-// lockfileAsOfSuffix renders when a recorded marker was observed — the moment the
-// lockfile carrying it was generated — together with the command that refreshes it,
-// so a reader can tell a stale record from a fresh one. A withdrawal is mutable
-// registry state, so the record says what the registry reported at that pull and
-// never what it reports now; the suffix exists to stop the message implying a
-// currency the offline build cannot provide.
-//
-// The stamp can only lag the true observation, never lead it: it is set solely when
-// a pull generates the lockfile, a re-pull that changes nothing keeps the earlier
-// stamp, and the build preserves whatever it loaded. So the suffix errs toward
-// reporting the record as older than it is, which is the safe direction.
-//
-// generatedAt is the lockfile's own stamp, already RFC 3339 when present; empty
-// means the lockfile carries none, which is reported as such rather than rendered
-// as a zero moment.
-//
-// This is deliberately NOT shared with the as-of wording on the index-served
-// surfaces (the pull-time withdrawal notices and the inspect deprecation block).
-// The two report different facts: a different provenance (the local registry index
-// versus the lockfile), a different refresh command, and a different input (a parsed
-// instant plus a presence flag versus an already-formatted string, so no formatting
-// rule is duplicated here). Folding them together would take a template with every
-// distinguishing part injected, which would single-source nothing.
-func lockfileAsOfSuffix(generatedAt string) string {
-	if generatedAt == "" {
-		return " (recorded in the lockfile at pull, which carries no generation time; re-run `aggrega pull` to refresh it)"
-	}
-	return fmt.Sprintf(" (recorded in the lockfile at pull, as of %s; re-run `aggrega pull` to refresh it)", generatedAt)
 }

@@ -54,6 +54,12 @@ type describeReleasePayload struct {
 	// rather than replacing the description with a refusal: a caller asking what a
 	// Release contains is answered, and told what is wrong with it.
 	MappingDiagnostics []string `json:"mapping_diagnostics,omitempty"`
+	// Deprecations names each pinned reference carrying a recorded deprecation
+	// marker, from the shared report the build reads — so a caller asking what a
+	// Release depends on is told which of those dependencies has been deprecated,
+	// rather than having to build it to find out. This tool describes rather than
+	// produces, so the entries are informational and never a refusal.
+	Deprecations []string `json:"deprecations,omitempty"`
 }
 
 var describeToolSpec = toolSpec{
@@ -183,6 +189,9 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 	for _, f := range resolved.ManifestConsistencyFindings {
 		payload.MappingDiagnostics = append(payload.MappingDiagnostics, f.Error())
 	}
+	for _, f := range lf.DeprecationFindings() {
+		payload.Deprecations = append(payload.Deprecations, f.Notice())
+	}
 	if detail {
 		for _, e := range resolved.Closure.Entities {
 			payload.Entities = append(payload.Entities, describeEntity{URI: e.URI, Version: e.ResolvedVersion, Kind: e.KindHint})
@@ -223,6 +232,9 @@ func renderDescribeReleaseText(p describeReleasePayload) string {
 	// not mistaken for an error report.
 	for _, d := range p.MappingDiagnostics {
 		fmt.Fprintf(&b, "  mapping: %s\n", d)
+	}
+	for _, d := range p.Deprecations {
+		fmt.Fprintf(&b, "  deprecation: %s\n", d)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

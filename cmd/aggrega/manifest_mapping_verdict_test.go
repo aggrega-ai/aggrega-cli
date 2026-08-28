@@ -232,7 +232,7 @@ func TestRenderReleaseValidation_MappingFindingAdvisesWithNonZeroVerdict(t *test
 	}
 
 	var out bytes.Buffer
-	err := renderReleaseValidation(vr, findings, "release.yaml", compilerops.VerbosityDetailed, &out, &out)
+	err := renderReleaseValidation(vr, findings, nil, "release.yaml", compilerops.VerbosityDetailed, &out, &out)
 	if err == nil {
 		t.Fatal("advise is not exit zero: a mapping finding must still yield a non-zero verdict")
 	}
@@ -246,7 +246,7 @@ func TestRenderReleaseValidation_MappingFindingAdvisesWithNonZeroVerdict(t *test
 
 	// The clean control: no findings, no mapping verdict.
 	var cleanOut bytes.Buffer
-	if cerr := renderReleaseValidation(&compilerops.ValidateResult{}, nil, "release.yaml",
+	if cerr := renderReleaseValidation(&compilerops.ValidateResult{}, nil, nil, "release.yaml",
 		compilerops.VerbosityDetailed, &cleanOut, &cleanOut); cerr != nil {
 		t.Fatalf("no findings must yield a nil verdict; got %v", cerr)
 	}

@@ -130,6 +130,23 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 		lockForClosure = lf
 	}
 
+	// The deprecation report over the lockfile's recorded markers — the same report
+	// the build reads, so this pass names the same references rather than a subset.
+	// A pass that said nothing about a withdrawn dependency would read as though
+	// there were none.
+	//
+	// It is reported BEFORE the gates and the pass below, because it depends on
+	// neither: a recorded marker is a fact about the lockfile alone, so a workspace
+	// whose closure does not resolve — or whose gate refuses — still learns that a
+	// pin has been withdrawn, which is often the explanation. It does not move the
+	// verdict, for the reason the build's own default records: a marker is registry
+	// state applied after the version was pinned, and the dial that turns it into a
+	// halt governs the build alone. A workspace with no lockfile has no recorded
+	// markers either, so reporting nothing there skips nothing.
+	for _, f := range lockForClosure.DeprecationFindings() {
+		fmt.Fprintf(diagOut, "deprecation: %s\n", f.Notice())
+	}
+
 	// Hold this Release's configuration to the record of the plugin identities
 	// trusted for its verdict attachments, and carry the recorded digests into the
 	// linter socket's resolution. It runs before any entity is linted, so a gate

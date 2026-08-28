@@ -9,18 +9,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// closureWithRecordedMarker builds the minimal input the build-time gate needs to
-// reach its recorded-marker branch: one closure entity, one lockfile row carrying a
-// deprecation record, and the lockfile's own generation stamp.
-func closureWithRecordedMarker(uri, severity, message, generatedAt string) (closure.Closure, *lockfile.Lockfile) {
-	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
-	lf := &lockfile.Lockfile{
+// lockfileWithRecordedMarker builds the minimal input the build-time gate needs to
+// reach its recorded-marker branch: one lockfile row carrying a deprecation
+// record, and the lockfile's own generation stamp.
+func lockfileWithRecordedMarker(uri, severity, message, generatedAt string) *lockfile.Lockfile {
+	return &lockfile.Lockfile{
 		GeneratedAt: generatedAt,
 		Entities: []lockfile.Entity{{
 			URI: uri,
@@ -30,7 +28,6 @@ func closureWithRecordedMarker(uri, severity, message, generatedAt string) (clos
 			},
 		}},
 	}
-	return cl, lf
 }
 
 // TestBuildAdvisoryForRecordedMarkerCarriesTheObservationMoment pins the advisory
@@ -39,10 +36,10 @@ func closureWithRecordedMarker(uri, severity, message, generatedAt string) (clos
 // how far behind the record might be.
 func TestBuildAdvisoryForRecordedMarkerCarriesTheObservationMoment(t *testing.T) {
 	const stamp = "2026-07-01T09:30:00Z"
-	cl, lf := closureWithRecordedMarker("oci://reg.example/components/api", "warning", "superseded by v3", stamp)
+	lf := lockfileWithRecordedMarker("oci://reg.example/components/api", "warning", "superseded by v3", stamp)
 
 	var out bytes.Buffer
-	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
+	err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
 	if err != nil {
 		t.Fatalf("advisory severity must not halt the build: %v", err)
 	}
@@ -61,10 +58,10 @@ func TestBuildAdvisoryForRecordedMarkerCarriesTheObservationMoment(t *testing.T)
 // on a fact that may predate the current registry state by any amount.
 func TestBuildHaltForRecordedMarkerCarriesTheObservationMoment(t *testing.T) {
 	const stamp = "2026-07-01T09:30:00Z"
-	cl, lf := closureWithRecordedMarker("oci://reg.example/components/api", "retracted", "withdrawn: bad release", stamp)
+	lf := lockfileWithRecordedMarker("oci://reg.example/components/api", "retracted", "withdrawn: bad release", stamp)
 
 	var out bytes.Buffer
-	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
+	err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
 	if err == nil {
 		t.Fatal("a recorded marker at or above the threshold must halt the build")
 	}
@@ -99,10 +96,10 @@ func TestBuildRecordedMarkerWithoutAStampReportsItsAbsence(t *testing.T) {
 		{name: "halt", severity: "retracted", wantHalt: true, threshold: "error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cl, lf := closureWithRecordedMarker("oci://reg.example/components/api", tc.severity, "no longer maintained", "")
+			lf := lockfileWithRecordedMarker("oci://reg.example/components/api", tc.severity, "no longer maintained", "")
 
 			var out bytes.Buffer
-			err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: tc.threshold}, &out)
+			err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: tc.threshold}, &out)
 			if tc.wantHalt != (err != nil) {
 				t.Fatalf("wantHalt=%v, got err=%v", tc.wantHalt, err)
 			}
@@ -124,22 +121,20 @@ func TestBuildRecordedMarkerWithoutAStampReportsItsAbsence(t *testing.T) {
 	}
 }
 
-// closureWithThreeRecordedSeverities builds a closure carrying one entity per
+// lockfileWithThreeRecordedSeverities builds a lockfile carrying one row per
 // severity, keyed so the URI sort puts them in warning, error, retracted order.
 // It is the input both axes need: what the gate REPORTS is asked of all three at
-// once, and what it HALTS on is asked of a walk where the halting entity is not
-// the last.
-func closureWithThreeRecordedSeverities(generatedAt string) (closure.Closure, *lockfile.Lockfile) {
+// once, and what it HALTS on is asked of a walk where the halting row is not the
+// last.
+func lockfileWithThreeRecordedSeverities(generatedAt string) *lockfile.Lockfile {
 	const base = "oci://reg.example/components/"
 	rows := []struct{ name, severity, message string }{
 		{"a", "warning", "superseded by a2"},
 		{"b", "error", "no longer fit for new use"},
 		{"c", "retracted", "withdrawn"},
 	}
-	cl := closure.Closure{}
 	lf := &lockfile.Lockfile{GeneratedAt: generatedAt}
 	for _, r := range rows {
-		cl.Entities = append(cl.Entities, closure.ResolvedRef{URI: base + r.name})
 		lf.Entities = append(lf.Entities, lockfile.Entity{
 			URI: base + r.name,
 			Deprecation: &lockfile.DeprecationRecord{
@@ -148,7 +143,7 @@ func closureWithThreeRecordedSeverities(generatedAt string) (closure.Closure, *l
 			},
 		})
 	}
-	return cl, lf
+	return lf
 }
 
 // TestBuildWithNoThresholdAdvisesEverySeverity pins the default: with no halt
@@ -158,12 +153,12 @@ func closureWithThreeRecordedSeverities(generatedAt string) (closure.Closure, *l
 // succeeding, loudly advised.
 func TestBuildWithNoThresholdAdvisesEverySeverity(t *testing.T) {
 	const stamp = "2026-07-01T09:30:00Z"
-	cl, lf := closureWithThreeRecordedSeverities(stamp)
+	lf := lockfileWithThreeRecordedSeverities(stamp)
 
 	var out bytes.Buffer
 	// workspaceconfig.Default() leaves HaltOnDeprecatedSeverity empty, so the
 	// zero BuildConfig IS the default configuration.
-	if err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{}, &out); err != nil {
+	if err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{}, &out); err != nil {
 		t.Fatalf("no configured threshold must halt on nothing; got: %v", err)
 	}
 
@@ -191,10 +186,10 @@ func TestBuildWithNoThresholdAdvisesEverySeverity(t *testing.T) {
 // silently, with nothing in the output to show a report went missing.
 func TestBuildStrictThresholdStillReportsEveryEntity(t *testing.T) {
 	const stamp = "2026-07-01T09:30:00Z"
-	cl, lf := closureWithThreeRecordedSeverities(stamp)
+	lf := lockfileWithThreeRecordedSeverities(stamp)
 
 	var out bytes.Buffer
-	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
+	err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
 	if !errors.Is(err, deprecation.ErrDeprecatedEntity()) {
 		t.Fatalf("a recorded marker at the configured threshold must halt; got: %v", err)
 	}
@@ -225,10 +220,10 @@ func TestBuildStrictThresholdStillReportsEveryEntity(t *testing.T) {
 // regardless. This asserts on what the user actually reads.
 func TestBuildHaltRendersItsWholeMessageToTheTerminal(t *testing.T) {
 	const stamp = "2026-07-01T09:30:00Z"
-	cl, lf := closureWithRecordedMarker("oci://reg.example/components/api", "retracted", "withdrawn: bad release", stamp)
+	lf := lockfileWithRecordedMarker("oci://reg.example/components/api", "retracted", "withdrawn: bad release", stamp)
 
 	var out bytes.Buffer
-	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, &out)
+	err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, &out)
 	if err == nil {
 		t.Fatal("a recorded marker at the configured threshold must halt the build")
 	}
@@ -253,11 +248,13 @@ func TestBuildHaltRendersItsWholeMessageToTheTerminal(t *testing.T) {
 // notice at all, so the suffix cannot escape the recorded-marker arm by someone
 // hoisting the advisory out of its own conditional.
 func TestBuildEmitsNothingWhenNoRecordedMarkerApplies(t *testing.T) {
-	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: "oci://reg.example/components/api"}}}
-	lf := &lockfile.Lockfile{GeneratedAt: "2026-07-01T09:30:00Z"}
+	lf := &lockfile.Lockfile{
+		GeneratedAt: "2026-07-01T09:30:00Z",
+		Entities:    []lockfile.Entity{{URI: "oci://reg.example/components/api"}},
+	}
 
 	var out bytes.Buffer
-	if err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out); err != nil {
+	if err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out); err != nil {
 		t.Fatalf("an entity with no recorded marker must not halt: %v", err)
 	}
 	if got := out.String(); got != "" {

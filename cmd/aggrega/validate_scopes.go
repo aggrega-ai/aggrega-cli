@@ -155,7 +155,11 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		WorkspaceConfig: wsCfg,
 		CompilerVersion: provenanceCompilerVersion(),
 	})
-	return renderReleaseValidation(vr, resolved.ManifestConsistencyFindings, releasePath, verbosity, diagOut, out)
+	// The deprecation report is the shared one every surface reads, from the
+	// lockfile loaded above. This verb produces a REPORT, so it enumerates each
+	// finding beside everything else it has to say; the halt on a recorded marker
+	// belongs to the verbs that produce an artifact.
+	return renderReleaseValidation(vr, resolved.ManifestConsistencyFindings, lf.DeprecationFindings(), releasePath, verbosity, diagOut, out)
 }
 
 // renderReleaseValidation writes a release-scoped validation result's diagnostics
@@ -177,6 +181,14 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 // unpopulated and report a sound Manifest for an unsound one; there is no value
 // that means "not checked".
 //
+// deprecationFindings carries the shared deprecation report over the lockfile's
+// recorded markers — the same report the build reads, so the two surfaces name the
+// same references — and is a parameter for the same reason. Its lines are
+// exit-code-neutral, matching the recorded stance of the build's own default: a
+// marker is registry state applied after the version was pinned, so it advises
+// unless a workspace configured a halt, and the halt dial governs the build alone.
+// Reporting them here removes the silence; it does not move this verb's verdict.
+//
 // verbosity governs output VOLUME only — never the verdict or the exit code.
 // The detailed form (the default) writes every diagnostic in gate order plus the
 // advisory lines; the concise form writes a single summary line carrying the
@@ -184,8 +196,20 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 // run the identical checks, reach the identical verdict, and return the identical
 // error (or nil). Diagnostics and advisories go to diagOut; the success summary
 // goes to out.
-func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings []error, releasePath, verbosity string, diagOut, out io.Writer) error {
+func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings []error, deprecationFindings []lockfile.DeprecationFinding, releasePath, verbosity string, diagOut, out io.Writer) error {
 	detailed := verbosity != compilerops.VerbosityConcise
+
+	// The deprecation report leads, and outside the reach of every early return
+	// below, for the same reason the mapping findings do: it was decided before any
+	// gate here read anything — the marker was recorded at the pull that wrote the
+	// lockfile. A gate refusing first must not hide it. It is written in the
+	// detailed form only, like the other advisory lines, since the concise form
+	// collapses the verdict-affecting classes and these affect no verdict.
+	if detailed {
+		for _, f := range deprecationFindings {
+			fmt.Fprintf(diagOut, "  deprecation: %s\n", f.Notice())
+		}
+	}
 
 	// The mapping-table findings were decided ahead of every gate below — the
 	// closure resolution judged the composed Manifest before any of these gates

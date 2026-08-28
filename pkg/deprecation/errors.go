@@ -4,6 +4,8 @@
 package deprecation
 
 import (
+	"fmt"
+
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -19,3 +21,31 @@ var errDeprecatedEntity = cerrors.Register("deprecation/deprecated-entity", cerr
 	ShortCode: "E0122",
 	Message:   "deprecation: build consumes a deprecated entity",
 })
+
+// HaltFor returns the halt a configured threshold produces for one recorded
+// marker, or nil when that marker does not halt. notice is the marker's rendered
+// sentence — the reference, its severity, its message, and when the record was
+// observed — which the returned message carries verbatim, so the halt says exactly
+// what the report said and adds only the policy that stopped the build.
+//
+// It is the single home of the halting rule, so every artifact-producing surface
+// halts on the same markers. Two surfaces each deciding for themselves is how one
+// would come to stop a build the other let through under the same configuration,
+// with the workspace's configured policy silently not applying on one of them.
+//
+// An unset threshold is tested for explicitly rather than left to rank below every
+// severity: MeetsThreshold's unranked arm exists for a malformed value, and
+// resting the shipped default on it would let a later change in how an
+// unrecognised severity ranks silently invert the default from advising to
+// halting.
+//
+// The message wraps exactly ONE error, its sentinel: the threshold clause is
+// interpolated as text rather than wrapped, because a multi-error renders as its
+// wrapped errors alone — dropping the format string's own content, which is where
+// the reference, the severity, the message and the observation moment all live.
+func HaltFor(notice string, recorded, threshold Severity) error {
+	if threshold == "" || !MeetsThreshold(recorded, threshold) {
+		return nil
+	}
+	return fmt.Errorf("%w: %s: halt_on_deprecated_severity is %q", ErrDeprecatedEntity(), notice, threshold)
+}

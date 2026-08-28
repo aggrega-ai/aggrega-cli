@@ -475,11 +475,12 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		fmt.Fprintf(diagOut, "  deprecation: %s\n", w)
 	}
 
-	// Deprecated-entity policy gate: evaluate each closure entity's deprecation
-	// status from the retroactive lockfile marker, halting or advising per the
-	// workspace build policy. Reads only the lockfile — no registry access (the
-	// ahead-of-time boundary).
-	if err := enforceClosureDeprecation(cl, lf, wsCfg.Build, diagOut); err != nil {
+	// Deprecated-entity policy gate: report every pinned reference carrying a
+	// retroactive lockfile marker, halting or advising per the workspace build
+	// policy. The report is the shared one every surface reads; the verdict is this
+	// verb's, because a build produces an artifact. Reads only the lockfile — no
+	// registry access (the ahead-of-time boundary).
+	if err := enforceLockfileDeprecation(lf, wsCfg.Build, diagOut); err != nil {
 		return err
 	}
 

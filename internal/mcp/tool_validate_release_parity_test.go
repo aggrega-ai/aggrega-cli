@@ -381,7 +381,7 @@ func TestValidateToolReleaseScopeCoreParity(t *testing.T) {
 			// validateReleaseScope reads them, so the oracle mirrors production
 			// rather than a subset of it.
 			wantDiags := validateDiagnostics(vr, resolved.ManifestConsistencyFindings)
-			wantNotices := releaseAdvisories(vr)
+			wantNotices := releaseAdvisories(vr, lf)
 
 			if c.name == "clean" {
 				if len(wantDiags) != 0 {

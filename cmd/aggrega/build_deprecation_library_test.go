@@ -9,13 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// pinnedRetractedLibraryClosure builds the case version selection structurally
+// pinnedRetractedLibraryLockfile builds the case version selection structurally
 // cannot reach: a workspace holding a library at an EXPLICITLY PINNED version that
 // was retracted after the pin was taken.
 //
@@ -28,7 +27,7 @@ import (
 //
 // One library per library section, each at a pinned version carrying a retracted
 // marker.
-func pinnedRetractedLibraryClosure(generatedAt string) (closure.Closure, *lockfile.Lockfile) {
+func pinnedRetractedLibraryLockfile(generatedAt string) *lockfile.Lockfile {
 	const pinned = "1.4.0"
 	retracted := func(reason string) *lockfile.DeprecationRecord {
 		return &lockfile.DeprecationRecord{
@@ -45,15 +44,6 @@ func pinnedRetractedLibraryClosure(generatedAt string) (closure.Closure, *lockfi
 		workloadURI  = "Deployments:" + pinned
 		artifactsURI = "Bundles:" + pinned
 	)
-	lib := func(uri string) []closure.ResolvedLibrary {
-		return []closure.ResolvedLibrary{{URI: uri, ResolvedVersion: pinned, ResolutionPath: "tier-3-pull"}}
-	}
-	cl := closure.Closure{
-		SchemaLibraries:    lib(schemaURI),
-		MappingLibraries:   lib(mappingURI),
-		WorkloadLibraries:  lib(workloadURI),
-		ArtifactsLibraries: lib(artifactsURI),
-	}
 	lf := &lockfile.Lockfile{
 		GeneratedAt: generatedAt,
 		SchemaLibraries: []lockfile.SchemaLibrary{{
@@ -69,7 +59,7 @@ func pinnedRetractedLibraryClosure(generatedAt string) (closure.Closure, *lockfi
 			URI: artifactsURI, ResolvedVersion: pinned, Deprecation: retracted("withdrawn: stale bundle"),
 		}},
 	}
-	return cl, lf
+	return lf
 }
 
 // TestBuildReportsAPinnedRetractedLibrary is the demonstration the build axis
@@ -77,27 +67,29 @@ func pinnedRetractedLibraryClosure(generatedAt string) (closure.Closure, *lockfi
 // explicitly pinned version is reported at build time, with the moment the record
 // was observed and the command that refreshes it.
 //
-// The expected set is derived from the closure's own axis enumeration rather than
-// from a hand-written list of library kinds, so a library section added later is
-// covered by this test without anyone remembering to extend it.
+// The expected set is derived from the lockfile's own enumeration of its
+// marker-bearing rows rather than from a hand-written list of library kinds, so a
+// library section added later is covered by this test without anyone remembering
+// to extend it — the same enumeration the gate itself reads, which is what makes
+// an added section a build-time question rather than a silent omission.
 func TestBuildReportsAPinnedRetractedLibrary(t *testing.T) {
 	const stamp = "2026-08-01T09:30:00Z"
-	cl, lf := pinnedRetractedLibraryClosure(stamp)
+	lf := pinnedRetractedLibraryLockfile(stamp)
 
 	var wantURIs []string
-	for _, axis := range cl.VerifiableAxes() {
-		for _, ref := range axis.Refs {
-			wantURIs = append(wantURIs, ref.URI)
+	for _, row := range lf.VerifiedFactRows() {
+		if row.Deprecation() != nil {
+			wantURIs = append(wantURIs, row.URI)
 		}
 	}
 	if len(wantURIs) == 0 {
-		t.Fatal("the fixture closure yielded no references; the assertion would pass vacuously")
+		t.Fatal("the fixture lockfile yielded no marker-bearing rows; the assertion would pass vacuously")
 	}
 
 	var out bytes.Buffer
 	// The default workspace configures no halt threshold, so this arm proves the
 	// REPORT is unconditional: a withdrawal is announced even where nothing stops.
-	if err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{}, &out); err != nil {
+	if err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{}, &out); err != nil {
 		t.Fatalf("no configured threshold must halt on nothing; got: %v", err)
 	}
 
@@ -124,10 +116,10 @@ func TestBuildReportsAPinnedRetractedLibrary(t *testing.T) {
 // weakest possible outcome — a configured policy that does not apply.
 func TestBuildHaltsOnAPinnedRetractedLibrary(t *testing.T) {
 	const stamp = "2026-08-01T09:30:00Z"
-	cl, lf := pinnedRetractedLibraryClosure(stamp)
+	lf := pinnedRetractedLibraryLockfile(stamp)
 
 	var out bytes.Buffer
-	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, &out)
+	err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, &out)
 	if !errors.Is(err, deprecation.ErrDeprecatedEntity()) {
 		t.Fatalf("a withdrawn library at the configured threshold must halt the build; got: %v", err)
 	}
@@ -147,7 +139,7 @@ func TestBuildHaltsOnAPinnedRetractedLibrary(t *testing.T) {
 }
 
 // TestBuildReportsALibraryAlongsideAnEntity proves the two axes share one gate
-// rather than one gate each: a closure holding both a withdrawn entity and a
+// rather than one gate each: a lockfile holding both a withdrawn entity and a
 // withdrawn library produces both notices from a single sorted walk, with one
 // halt owned by whichever sorts first.
 func TestBuildReportsALibraryAlongsideAnEntity(t *testing.T) {
@@ -155,10 +147,6 @@ func TestBuildReportsALibraryAlongsideAnEntity(t *testing.T) {
 	const entityURI = "oci://reg.example/components/api"
 	const libraryURI = "PortSpec:1.4.0"
 
-	cl := closure.Closure{
-		Entities:        []closure.ResolvedRef{{URI: entityURI, KindHint: "component"}},
-		SchemaLibraries: []closure.ResolvedLibrary{{URI: libraryURI}},
-	}
 	rec := func(msg string) *lockfile.DeprecationRecord {
 		return &lockfile.DeprecationRecord{Severity: string(deprecation.SeverityRetracted), Message: msg}
 	}
@@ -169,7 +157,7 @@ func TestBuildReportsALibraryAlongsideAnEntity(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{}, &out); err != nil {
+	if err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{}, &out); err != nil {
 		t.Fatalf("no configured threshold must halt on nothing; got: %v", err)
 	}
 	for _, uri := range []string{entityURI, libraryURI} {

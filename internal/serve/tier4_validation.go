@@ -71,11 +71,51 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// no-pin Tier-3 re-fetch on a drifted cache, masking the drift a
 	// verify-on-read skip would surface — guarded by an end-to-end test
 	// (TestServeValidateVerifiesCacheAgainstPinBeforeTier4).
+	//
+	// The loaded lockfile is retained past the pin extraction because the
+	// deprecation report below reads its recorded markers. Retaining it does NOT
+	// change what is passed to the closure resolution: that still receives nil, so
+	// the quiet-load posture described above is untouched.
 	var pins map[string]catalog.Pin
-	if lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(s.activeReleasePath)); err == nil && lf != nil {
+	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(s.activeReleasePath))
+	if lfErr != nil {
+		lf = nil
+	}
+	if lf != nil {
 		pins = catalog.PinsFromLockfile(lf)
 	}
 	view := s.lazyCatalog.ForRequest(pins)
+
+	// The deprecation report over the lockfile's recorded markers — the same report
+	// the build reads, so the editor names the same references the build would.
+	//
+	// It is computed HERE, before closure resolution, so it is carried through the
+	// closure-level failure return as well: a recorded marker is a fact about the
+	// lockfile alone, so the author still learns a pin is withdrawn on an edit where
+	// the closure does not resolve at all — where it may well be the explanation.
+	// That is more than the mapping findings below can offer, which are decided BY
+	// the resolution.
+	//
+	// Past that point it is bounded exactly as every other closure-level class is:
+	// this function returns nothing once the requested file is not the active
+	// Release's Aggregate, so the notice reaches the author while the Aggregate is
+	// open rather than on whatever document they happen to be editing.
+	//
+	// They publish at warning severity and never as errors. The daemon reaches no
+	// verdict to contribute to, and the marker's own severity is named in the
+	// message text, so mapping a recorded severity onto the editor's error tier
+	// would put a policy stance in the editor that the product deliberately leaves
+	// to a build-time dial. A withdrawn pin surfaces without the editor asserting
+	// the buffer is broken.
+	var deprecationDiags []Diagnostic
+	for _, f := range lf.DeprecationFindings() {
+		deprecationDiags = append(deprecationDiags, Diagnostic{
+			Line:     1,
+			Column:   1,
+			Severity: editorSeverityWarning,
+			Message:  "Dependencies: " + f.Notice(),
+		})
+	}
 
 	// Quiet load — pins only, no drift verify — so the closure axes are not
 	// reconstructed here (nil lockfile). Drift is surfaced by the at-startup check
@@ -86,14 +126,16 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		// Aggregate read) — Tier-D fall-back at file:1:1. The code comes off
 		// the envelope's cause rather than off its Message: the message is
 		// rendered text, and the condition the failure names is only reachable
-		// through the failure itself.
-		return []Diagnostic{{
+		// through the failure itself. The deprecation notices ride along because
+		// they were decided before this resolution ran and a withdrawn pin can be
+		// why it failed.
+		return append(deprecationDiags, Diagnostic{
 			Line:     1,
 			Column:   1,
 			Severity: editorSeverityError,
 			Message:  "Dependencies: " + envelope.Message,
 			Code:     diagnosticCode(envelope.cause),
-		}}
+		})
 	}
 
 	// The Tier-4 branch is meaningful only when the request file IS
@@ -126,7 +168,10 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// that position replaces this file's entire diagnostic set with one line, at
 	// every keystroke, so an editor would lose every other thing it had to say
 	// about the buffer in exchange for one Manifest complaint.
-	var mappingDiags []Diagnostic
+	// The deprecation notices lead every set below, matching the order the facts
+	// were decided in: the lockfile recorded its markers at the pull, before the
+	// Manifest was judged and before any gate here read anything.
+	mappingDiags := deprecationDiags
 	for _, f := range resolved.ManifestConsistencyFindings {
 		mappingDiags = append(mappingDiags, Diagnostic{
 			Line:     1,
