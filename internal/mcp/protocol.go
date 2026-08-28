@@ -67,12 +67,17 @@ type initializeParams struct {
 }
 
 // initializeResult is the server's half of the initialize handshake: the
-// negotiated protocol revision, the capabilities it advertises, and its
-// implementation identity.
+// negotiated protocol revision, the capabilities it advertises, its
+// implementation identity, and the guidance a client may surface to the model.
+//
+// Instructions carries that guidance — the mental model an assistant needs
+// before its first call, which it cannot recover from tool schemas alone. The
+// protocol makes the field optional, so it is omitted from the wire when empty.
 type initializeResult struct {
 	ProtocolVersion string             `json:"protocolVersion"`
 	Capabilities    serverCapabilities `json:"capabilities"`
 	ServerInfo      implementation     `json:"serverInfo"`
+	Instructions    string             `json:"instructions,omitempty"`
 }
 
 // implementation names a protocol participant — the client in

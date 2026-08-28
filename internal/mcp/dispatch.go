@@ -86,9 +86,10 @@ func (s *server) handleNotification(req *rpcRequest) {
 }
 
 // handleInitialize answers the initialize handshake. It advertises the
-// tools, resources, and prompts capabilities and reports the server
-// identity. The negotiated protocol revision echoes the client's when the
-// server supports it, and otherwise reports the revision the client
+// tools, resources, and prompts capabilities, reports the server
+// identity, and hands back the connect-time guidance a client may surface
+// to the model. The negotiated protocol revision echoes the client's when
+// the server supports it, and otherwise reports the revision the client
 // should adopt. Malformed params are logged and the handshake proceeds
 // with the server's revision, since the negotiation can complete without
 // them.
@@ -110,7 +111,8 @@ func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 			Resources: &resourcesCapability{Subscribe: false, ListChanged: false},
 			Prompts:   &promptsCapability{ListChanged: false},
 		},
-		ServerInfo: implementation{Name: serverName, Version: s.serverVersion},
+		ServerInfo:   implementation{Name: serverName, Version: s.serverVersion},
+		Instructions: serverInstructions,
 	}, nil
 }
 
