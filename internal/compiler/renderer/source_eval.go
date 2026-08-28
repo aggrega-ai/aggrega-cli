@@ -162,7 +162,8 @@ func renderSourceString(tmplText string, ctx LocalsContext, label string) (strin
 		return tmplText, nil
 	}
 	site := localsRefSite{Where: fmt.Sprintf("Recipe source %q", label), File: label}
-	if err := checkLocalsReferenceOrder(tmplText, site, ctx.Locals, ctx.Locals.Keys()); err != nil {
+	resolved := ctx.Locals.Keys()
+	if err := checkLocalsReferenceOrder(tmplText, site, resolved, resolved); err != nil {
 		return "", err
 	}
 	out, err := evalValueTemplate(fmt.Sprintf("recipe-source[%s]", label), tmplText, recipeLocalsScope.with(ctx), "{{", "}}")

@@ -2421,6 +2421,50 @@ type DescribedView interface {
 	// Keyed by (node, provides-key); read from types.RecipeSpec.Provides.
 	AuthoredNodeProvides(node string, key string) string
 
+	// DeclaredLocalsKeys are the local names a node's Recipe declares, in
+	// author order.
+	//
+	// Author order is the fact, not an incidental property of it: locals are
+	// evaluated in the order they are declared, so a rule about what a local
+	// may reference is a rule about this order.
+	//
+	// It is complete as soon as the Recipe bound to the node is known, which
+	// is why it is declared here rather than beside the values the block
+	// resolves to. The keys are authored and the values are evaluated, and a
+	// rule that admits or refuses what an author may write has to be able to
+	// run BEFORE the evaluation it exists to prevent — so a rule reading
+	// this fact together with the authored text beside it decides the whole
+	// question from declarations.
+	//
+	// Keyed by (node, locals-key); read from types.RecipeSpec.Locals.
+	DeclaredLocalsKeys(node string) []string
+
+	// AuthoredNodeLocals is the template text a node's Recipe declares for one
+	// local, as written and before anything is evaluated.
+	//
+	// It is the pair of the key-order fact beside it rather than a second
+	// reading of the same thing: that one says which locals exist and in what
+	// order, this one says what each of them was written as, and a rule about
+	// what a local may reference needs both. The order decides which siblings
+	// a given entry may read; the text decides which it does read.
+	//
+	// The fact is the text and not an analysis of it. A reference set
+	// collected from a template is a judgement about which references it
+	// makes, and the direction of that judgement decides which rules may read
+	// it — one that over-collects serves a rule asking what a template
+	// consumed, and would refuse authoring the template language permits.
+	// Handing over the text leaves the direction to the rule that needs it,
+	// which for this surface is the refusing direction.
+	//
+	// Emptiness is one answer rather than two. The key is enumerated rather
+	// than looked up, so it exists whenever the fact is asked, and an entry
+	// whose text is empty leaves a rule over the text with nothing to read
+	// either way; a second result reporting presence would put a second
+	// condition on one question, and the two could then disagree.
+	//
+	// Keyed by (node, locals-key); read from types.RecipeSpec.Locals.
+	AuthoredNodeLocals(node string, key string) string
+
 	// ProviderArtifactTemplateDelimiters is the delimiter pair the provider
 	// rendering a node's documents declares its artifact entries are read
 	// with, so that a target syntax colliding with the usual pair is left
@@ -2510,16 +2554,6 @@ type DescribedView interface {
 // it is the earliest one at which every fact the check reads is complete.
 type HydratedView interface {
 	DescribedView
-
-	// DeclaredLocalsKeys are the local names a node's Recipe declares, in
-	// author order.
-	//
-	// Author order is the fact, not an incidental property of it: locals are
-	// evaluated in the order they are declared, so a rule about what a local
-	// may reference is a rule about this order.
-	//
-	// Keyed by (node, locals-key); read from types.RecipeSpec.Locals.
-	DeclaredLocalsKeys(node string) []string
 
 	// ResolvedNodeProvides is the value a node's Recipe resolved for one
 	// provides key, and whether the key was resolved at all.

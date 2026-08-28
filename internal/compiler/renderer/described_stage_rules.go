@@ -287,6 +287,93 @@ func runAuthoredProvidesRule(
 	return objectionsAsHalt(raised, "provides entries that reach outside the data they are evaluated against")
 }
 
+// authoredLocalsAxes is the axis pair the rules over an authored locals entry are
+// invoked once per: the node set, and the locals each node's Recipe declares.
+//
+// It is a third set beside the two above rather than more members of either,
+// for the reason the provides pair is its own: these rules read text an author
+// wrote, which is there whether a plugin was ever loaded or not, so folding them
+// into the plugin-report set would put them behind that set's resolution guard —
+// and a rule skipped by a guard reports exactly what a rule that ran and approved
+// reports. It is separate from the provides pair because the axes are separate:
+// one enumerates what a Recipe publishes, the other what it declares locally, and
+// a value satisfying one does not satisfy the other.
+type authoredLocalsAxes interface {
+	constraint.NodeEnumerator
+	constraint.LocalsKeyEnumerator
+}
+
+// runAuthoredLocalsRule invokes the rules declared over the text a Recipe wrote
+// for each of its locals, and returns what they raised as the render's halt.
+//
+// It runs before anything is evaluated, which is where the question belongs: a
+// reference these rules refuse resolves through the missing-key policy to an empty
+// string, so the value a refusal exists to prevent is exactly the one that would be
+// produced. Asking afterwards would mean asking about output already written from
+// a segment the author never supplied.
+//
+// # Two identities, one body, and both are asked
+//
+// The two faults a locals reference can carry have separate fixes and therefore
+// separate identities — a sibling declared below its reader is an ordering fault, a
+// key the block never declares is a naming one — so they are two declared rules.
+// Both are asked over the same axis, and an entry raises at most one of them,
+// because the shared classification names the first offending reference together
+// with the fault it has.
+//
+// # Every offending entry is reported, not the first
+//
+// The rules are invoked once per local, so a block that reaches outside what it may
+// read in three entries raises three objections and an author corrects all three
+// from one build. That is wider than the evaluation-time refusal beneath this,
+// which aborts the block at its first offender — and each objection carries its own
+// position, the Recipe and the authored key inside it, which is why they are not
+// folded into one message.
+//
+// # What this does NOT reach, stated because an unstated bound reads as coverage
+//
+// The rules are declared over a node's own Recipe locals block and over nothing
+// else. A FeatureRecipe's own locals — attachment-scoped and boundary-scope alike —
+// carry the identical contract and are refused by the evaluation-time path beneath,
+// which is retained for exactly that reason and shares this rule's decision rather
+// than re-implementing it. So the coverage this adds is a position and a breadth on
+// one carrier, never a refusal the build did not already make.
+//
+// The cancellation signal is the caller's own, so a long walk over a large graph
+// stops within one node of the caller asking it to.
+func runAuthoredLocalsRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates authoredLocalsAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	// Each rule is named at its own call site rather than iterated over as a list.
+	// That is not style: the derivation that reports which declared rules a build
+	// invokes reads the check named at a traversal call, so a loop variable makes
+	// both of these invisible to it — and a rule the derived surface cannot see
+	// reads there exactly as a rule nothing invokes.
+	var raised []constraint.Objection
+	objections, err := constraint.RunOnNodeLocalsKeys(
+		ctx.Err, coordinates, coordinates, view, LocalsEntryReadsNoLaterSibling,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	objections, err = constraint.RunOnNodeLocalsKeys(
+		ctx.Err, coordinates, coordinates, view, LocalsEntryReadsOnlyDeclaredSiblings,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	return objectionsAsHalt(raised, "locals entries that read a sibling they cannot")
+}
+
 // crossBoundaryLinkAxis is the axis the rule over a connection's two rendering
 // providers is invoked once per: the connection set the finalised graph carries.
 //

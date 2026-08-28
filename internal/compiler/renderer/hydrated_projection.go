@@ -49,19 +49,15 @@ type valuesMappingRefs struct {
 }
 
 // hydratedProjection is what one node's mid-render state is reduced to once that
-// state is complete: per-node resolved locals and provides, the resolved source,
-// the parsed workload, and each artifact entry's template text before anything
-// evaluates it.
+// state is complete: the node's inline values-mapping reference set, the resolved
+// source, the parsed workload, its attributed deliveries, and each artifact
+// entry's template text before anything evaluates it.
 //
 // Every field is a value already read out of the state. None of them is a
 // carrier the state can be walked back out of, which is the property that keeps
 // this a projection: a reader holding one of these can answer the declared
 // questions and can reach nothing else.
 type hydratedProjection struct {
-	// DeclaredLocalsKeys are the local names the node's Recipe declares, in
-	// author order.
-	DeclaredLocalsKeys []string
-
 	// ValuesMappingTemplateRefs is the node's inline values-mapping reference
 	// set, and whether the mapping is authored inline.
 	ValuesMappingTemplateRefs valuesMappingRefs
@@ -268,7 +264,6 @@ func (h *hydratedProjections) recordNode(state *PhaseBState) {
 		ParsedNodeWorkloadPresent:  workloadPresent,
 	}
 	if recipe := state.Recipe; recipe != nil {
-		p.DeclaredLocalsKeys = recipe.Spec.Locals.Keys()
 		p.ValuesMappingTemplateRefs = collectValuesMappingRefs(recipe.Spec.ValuesMapping)
 	}
 

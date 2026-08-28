@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -799,6 +800,173 @@ var ProvidesTemplateSelfContained = constraint.Check[
 		}
 		return []constraint.Objection{s.Raise(
 			ErrProvidesSelfContainment(), violation.Ref.Path,
+		)}
+	},
+}
+
+// localsReferenceFault classifies the reference one locals entry makes, given the
+// block's declared key order, the entry's own key, and the text standing at it.
+//
+// It is the shared body of the two rules below, and sharing it is what makes them
+// one rule reported under two identities rather than two rules that can come to
+// disagree. The decision itself is a third thing again — a pure classification in
+// the template package — so the surface that evaluates a locals block and the
+// surface that refuses one from declarations alone reach the same verdict without
+// either reaching into the other.
+//
+// It takes the two facts' VALUES rather than the presentation they came from, and
+// that is not merely tidier: a helper handed the presentation would put the facts a
+// rule reads outside the rule's own body, where the narrowing read over the shipped
+// checks cannot see them — so the rule would be neither cleared nor accused of
+// declaring a wider view than it reads.
+//
+// # The author-order prefix, and why it is a slice of the declared order
+//
+// The entries above this one in author order are exactly the locals this one may
+// read. That is not an approximation of what the evaluation does: the evaluation
+// refuses before it evaluates and any refusal aborts the block, so the readable set
+// at the entry for key k is the declared order's prefix above k, always. So the
+// prefix is taken from the key-order fact rather than from any record of what
+// resolved, which is what lets the rule run before anything resolves.
+//
+// An entry the declared order does not name yields no fault. Both facts are
+// answered from the one ordered mapping the Recipe holds, so a key the axis
+// presented is a key that order contains; a presentation answering the two from two
+// sources would be the second producer the design forbids, and this reads as
+// admitted rather than inventing a prefix for an entry whose position is unknown.
+func localsReferenceFault(declared []string, key, text string) gotmpl.RootKeyReference {
+	at := slices.Index(declared, key)
+	if at < 0 {
+		return gotmpl.RootKeyReference{}
+	}
+	return gotmpl.ClassifyRootKeyReference(
+		text, "{{", "}}", localsContextRoot, declared[:at], declared,
+	)
+}
+
+// localsResolvedAt is the locals readable at one entry: the declared order's prefix
+// above it, empty for an entry that order does not name.
+//
+// It is separate from the classification above because the two are asked at
+// different moments — the classification decides whether there is a fault, and this
+// spells the readable set into the finding — and one function returning both would
+// hand every caller a value it did not ask for.
+func localsResolvedAt(declared []string, key string) []string {
+	at := slices.Index(declared, key)
+	if at < 0 {
+		return nil
+	}
+	return declared[:at]
+}
+
+// LocalsEntryReadsNoLaterSibling reports each local whose template reads a sibling
+// the same block declares BELOW it.
+//
+// A locals block resolves in author order and an entry reads only a sibling
+// defined above it. The block is never sorted, reordered or topologically arranged
+// to make a later definition reachable, because emitted output would then follow an
+// inference rather than what the author wrote — so the reference is refused instead
+// of resolved. Without the refusal it resolves through the missing-key policy to an
+// empty string, and a derived hostname or a secret name silently loses the segment
+// it was built from.
+//
+// # Why an ordering question is answerable from declarations
+//
+// The rule reads two facts and neither is a value: the keys the block declares, in
+// author order, and the text standing at this entry. The prefix above this entry is
+// what it may read, so the whole question is decided before anything is evaluated —
+// which is where it has to be decided, since the value a refused template would
+// produce is never produced.
+//
+// # Its detail, and why the remedy travels with the occurrence
+//
+// The offending expression stands bare, because the registered wording already says
+// a sibling defined later is what the finding is about. The key it names and the
+// locals readable at this point are captioned, since a reference path and a key are
+// both dotted words and nothing else in the message tells them apart.
+//
+// The remedy is supplied per objection rather than registered with the condition,
+// and this rule is why that channel exists: a SELF-reference is the same condition
+// — the key is declared and unresolved — and no reordering fixes it, so the remedy
+// that applies to every other occurrence is wrong for exactly that one. A registered
+// sentence would state the wrong remedy at whichever class it did not describe.
+//
+// The node and the key are not in the detail, because the locator carries both: the
+// finding is positioned at the Recipe's own locals entry, which is what an author
+// edits.
+var LocalsEntryReadsNoLaterSibling = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeLocalsKeySubject,
+]{
+	Sentinel: ErrLocalsForwardReference(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeLocalsKeySubject,
+	) []constraint.Objection {
+		declared := v.DeclaredLocalsKeys(s.NodeID())
+		ref := localsReferenceFault(declared, s.LocalsKey(), v.AuthoredNodeLocals(s.NodeID(), s.LocalsKey()))
+		if ref.Fault != gotmpl.RootKeyUnresolved {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrLocalsForwardReference(),
+			localsForwardRemedy(ref.Key, s.LocalsKey()),
+			constraint.Uncaptioned(ref.Path),
+			// The caption says which key the expression names and stops there. It
+			// deliberately does not say the key is declared LATER: a self-reference
+			// is this same condition and its key is declared at the entry itself,
+			// so a caption asserting a position would be false for that class —
+			// which is the class the remedy below exists to describe.
+			constraint.Captioned("the key it names is", ref.Key),
+			constraint.Captioned("resolved at this point",
+				localsResolvedPhrase(localsResolvedAt(declared, s.LocalsKey()))),
+		)}
+	},
+}
+
+// LocalsEntryReadsOnlyDeclaredSiblings reports each local whose template reads a
+// key the block does not declare at all.
+//
+// The locals pillar is an open keyed map, so an unknown key under it passes the
+// root check and resolves through the missing-key policy to an empty string; the
+// refusal is what stops that empty value from reaching an emitted artifact.
+//
+// It is a separate identity from the ordering rule above because the two mistakes
+// have separate fixes: this one is a NAMING fault the author corrects by fixing the
+// key, and no reordering makes it readable. One condition covering both would tell
+// an author who mistyped a key to reorder a block that is already in the right
+// order.
+//
+// The two rules share their whole body and differ in which fault they report, which
+// is what keeps them one rule under two identities. It also means an entry carries
+// at most one of them: the classification names the first offending reference and
+// the fault it has, so no input is reported twice.
+//
+// Its detail names the offending expression bare, and captions the key that does
+// not exist and the keys the block does declare — so the correction is readable
+// from the finding, which is the whole of what a naming fault needs.
+var LocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeLocalsKeySubject,
+]{
+	Sentinel: ErrLocalsUnknownReference(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeLocalsKeySubject,
+	) []constraint.Objection {
+		declared := v.DeclaredLocalsKeys(s.NodeID())
+		ref := localsReferenceFault(declared, s.LocalsKey(), v.AuthoredNodeLocals(s.NodeID(), s.LocalsKey()))
+		if ref.Fault != gotmpl.RootKeyUndeclared {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrLocalsUnknownReference(),
+			localsUnknownRemedy,
+			constraint.Uncaptioned(ref.Path),
+			constraint.Captioned("the missing key is", ref.Key),
+			constraint.Captioned("the block declares", localsDeclaredList(declared)),
 		)}
 	},
 }

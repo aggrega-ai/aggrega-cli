@@ -662,6 +662,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
+		// The rules over the text a Recipe wrote for each of its locals, asked here
+		// for the same reason and against the same presentation. They are asked
+		// AFTER the provides reading and BEFORE the pass below, and both halves of
+		// that placement are deliberate: the provides reading is about a template
+		// reaching outside its data at all, which is the coarser fault, while these
+		// are about which sibling inside the block a template may read — and the
+		// pass below is where the block would otherwise resolve a reference these
+		// refuse into an empty string.
+		if err := runAuthoredLocalsRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
 		// The advisory over the two providers a connection's ends render through,
 		// invoked against the same presentation and the same enumeration. It is
 		// asked here because both providers and both capability claims are settled

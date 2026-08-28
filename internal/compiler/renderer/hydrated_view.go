@@ -8,11 +8,11 @@ import (
 )
 
 // hydratedView presents, as named facts, the state each render reached before any
-// of its artifact bytes existed: the local names a node's Recipe declares, the
-// value it resolved for each provides key, the reference set of its inline values
-// mapping, whether a source survived resolution, whether a workload was parsed,
-// the attributed deliveries its injection pipe carries, and the template text
-// standing at each artifact before anything evaluates it.
+// of its artifact bytes existed: the value it resolved for each provides key, the
+// reference set of its inline values mapping, whether a source survived
+// resolution, whether a workload was parsed, the attributed deliveries its
+// injection pipe carries, and the template text standing at each artifact before
+// anything evaluates it.
 //
 // The last three are presented per carrier rather than per node alone, because
 // three documents author them: a node's own Recipe, the FeatureRecipe an
@@ -117,21 +117,6 @@ func newHydratedView(
 		return nil
 	}
 	return &hydratedView{DescribedView: earlier, projections: projections}
-}
-
-// DeclaredLocalsKeys returns the local names a node's Recipe declares, in author
-// order.
-//
-// Author order is the fact rather than an incidental property of it: locals are
-// evaluated in the order they are declared, so a rule about what a local may
-// reference is a rule about this order. The order is the one the Recipe's own
-// ordered mapping holds, so it is the order the author wrote.
-func (v *hydratedView) DeclaredLocalsKeys(node string) []string {
-	p, ok := v.projections.projection(node)
-	if !ok {
-		return nil
-	}
-	return p.DeclaredLocalsKeys
 }
 
 // ResolvedNodeProvides returns the value a node's Recipe resolved for one

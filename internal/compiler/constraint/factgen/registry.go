@@ -2655,6 +2655,57 @@ var facts = []factDecl{
 			"question, and the two could then disagree.",
 	},
 	{
+		Name:        "declared-locals-keys",
+		Stage:       "described",
+		SourceField: "types.RecipeSpec.Locals",
+		Subject:     []string{"node", "locals-key"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "DeclaredLocalsKeys are the local names a node's Recipe declares, " +
+			"in author order.\n\nAuthor order is the fact, not an " +
+			"incidental property of it: locals are evaluated in the order they " +
+			"are declared, so a rule about what a local may reference is a rule " +
+			"about this order.\n\nIt is complete as soon as the Recipe bound to " +
+			"the node is known, which is why it is declared here rather than " +
+			"beside the values the block resolves to. The keys are authored and " +
+			"the values are evaluated, and a rule that admits or refuses what an " +
+			"author may write has to be able to run BEFORE the evaluation it " +
+			"exists to prevent — so a rule reading this fact together with the " +
+			"authored text beside it decides the whole question from " +
+			"declarations.",
+	},
+	{
+		Name:        "authored-node-locals",
+		Stage:       "described",
+		SourceField: "types.RecipeSpec.Locals",
+		Subject:     []string{"node", "locals-key"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "key", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "AuthoredNodeLocals is the template text a node's Recipe declares " +
+			"for one local, as written and before anything is evaluated.\n" +
+			"\nIt is the pair of the key-order fact beside it rather than a " +
+			"second reading of the same thing: that one says which locals exist " +
+			"and in what order, this one says what each of them was written as, " +
+			"and a rule about what a local may reference needs both. The order " +
+			"decides which siblings a given entry may read; the text decides " +
+			"which it does read.\n\nThe fact is the text and not an analysis " +
+			"of it. A reference set collected from a template is a judgement " +
+			"about which references it makes, and the direction of that " +
+			"judgement decides which rules may read it — one that over-collects " +
+			"serves a rule asking what a template consumed, and would refuse " +
+			"authoring the template language permits. Handing over the text " +
+			"leaves the direction to the rule that needs it, which for this " +
+			"surface is the refusing direction.\n\nEmptiness is one answer " +
+			"rather than two. The key is enumerated rather than looked up, so it " +
+			"exists whenever the fact is asked, and an entry whose text is empty " +
+			"leaves a rule over the text with nothing to read either way; a " +
+			"second result reporting presence would put a second condition on " +
+			"one question, and the two could then disagree.",
+	},
+	{
 		Name:        "provider-artifact-template-delimiters",
 		Stage:       "described",
 		SourceField: "wasm.ProviderContract.ArtifactDelimiters",
@@ -2739,19 +2790,6 @@ var facts = []factDecl{
 
 	// ---------------------------------------------------------------- hydrated
 
-	{
-		Name:        "declared-locals-keys",
-		Stage:       "hydrated",
-		SourceField: "types.RecipeSpec.Locals",
-		Subject:     []string{"node", "locals-key"},
-		Params:      []paramDecl{{Name: "node", Type: "string"}},
-		Returns:     "[]string",
-		Doc: "DeclaredLocalsKeys are the local names a node's Recipe declares, " +
-			"in author order.\n\nAuthor order is the fact, not an " +
-			"incidental property of it: locals are evaluated in the order they " +
-			"are declared, so a rule about what a local may reference is a rule " +
-			"about this order.",
-	},
 	{
 		Name:        "resolved-node-provides",
 		Stage:       "hydrated",

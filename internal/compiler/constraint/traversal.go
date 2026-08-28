@@ -886,15 +886,20 @@ func RunOnNodeAttachmentPillarLeaves[V View](
 // different document from the Aggregate the node was authored in — so the file
 // comes from the enumerated entry and not from the node.
 //
-// No production path invokes it, and what stands between it and one is
-// structural rather than unfinished work. The two faults a locals key can carry
-// — a reference to a name declared later in the block, and a reference to a name
-// the block does not declare at all — are decided while the block is being
-// evaluated, from each entry's authored template text and the set resolved so
-// far. No fact carries that text, and the fact this kind is keyed by is complete
-// only once the whole block has resolved, which is after the moment the ordering
-// fault is decided. So the two faults are refused where they are decided, and
-// this entry stays for a rule about a declared local that needs neither.
+// # The order is what the two faults over this axis are decided from
+//
+// A locals key can carry two faults — a reference to a name declared later in the
+// block, and a reference to a name the block does not declare at all — and both are
+// decided from the declared order plus the entry's own authored text. The prefix of
+// this enumeration above a given entry IS the set that entry may read, because the
+// evaluation refuses before it evaluates and any refusal aborts the block. So the
+// question is answerable from declarations, which is what makes it answerable at
+// all: a template either fault refuses is exactly one whose value is never
+// produced.
+//
+// Two facts carry those inputs at the stage the Recipe binding is known — the keys
+// in author order, and the text standing at each — and the rules reading them are
+// invoked over this entry from the render's own described-stage reading.
 func RunOnNodeLocalsKeys[V View](
 	cancelled Cancellation,
 	nodes NodeEnumerator,

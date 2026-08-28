@@ -109,7 +109,7 @@ const (
 	// SubjectNodeProvidesKey is the subject kind (node, provides-key), keyed by 2 declared facts.
 	SubjectNodeProvidesKey SubjectKind = "(node, provides-key)"
 
-	// SubjectNodeLocalsKey is the subject kind (node, locals-key), keyed by 1 declared fact.
+	// SubjectNodeLocalsKey is the subject kind (node, locals-key), keyed by 2 declared facts.
 	SubjectNodeLocalsKey SubjectKind = "(node, locals-key)"
 
 	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 3 declared facts.

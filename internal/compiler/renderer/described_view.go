@@ -20,7 +20,12 @@ import (
 // declares its step is compatible with, the scope of the export each step
 // dispatches to, the provider that renders each site's own documents, the
 // assembly claim and artifact delimiter pair that provider declares, and the
-// text a Recipe authored for each provides key.
+// text a Recipe authored for each provides key and for each local.
+//
+// The two authored-text facts sit here rather than beside the values they resolve
+// to, and that placement is the whole of what makes a rule over them possible: a
+// template such a rule refuses is exactly one whose value is never produced, so a
+// fact read from the resolved side could not carry the question at all.
 //
 // It satisfies [constraint.DescribedView], and the compiler holds it to that
 // contract at the bottom of this file rather than a comment claiming it.
@@ -322,6 +327,42 @@ func (v *describedView) AuthoredNodeProvides(node string, key string) string {
 		return ""
 	}
 	text, _ := recipe.Spec.Provides.Get(key)
+	return text
+}
+
+// DeclaredLocalsKeys returns the local names a node's Recipe declares, in author
+// order.
+//
+// Author order is the fact rather than an incidental property of it: locals are
+// evaluated in the order they are declared, so a rule about what a local may
+// reference is a rule about this order. The order is the one the Recipe's own
+// ordered mapping holds, so it is the order the author wrote.
+//
+// It is answered from the Recipe set this presentation already holds rather than
+// from any retention of what the block resolved to. The keys are authored, so they
+// are complete as soon as the binding is known — and reading them from a later
+// product would put the fact behind the evaluation a rule over it exists to
+// prevent.
+func (v *describedView) DeclaredLocalsKeys(node string) []string {
+	recipe, ok := v.recipes[node]
+	if !ok || recipe == nil {
+		return nil
+	}
+	return recipe.Spec.Locals.Keys()
+}
+
+// AuthoredNodeLocals returns the template text a node's Recipe declares for one
+// local, as written and before anything is evaluated.
+//
+// It is answered from the same Recipe the key order above is read from, so a key
+// that order presents is a key this can answer — a rule invoked over the order
+// cannot be asked about an entry whose text nothing would supply.
+func (v *describedView) AuthoredNodeLocals(node string, key string) string {
+	recipe, ok := v.recipes[node]
+	if !ok || recipe == nil {
+		return ""
+	}
+	text, _ := recipe.Spec.Locals.Get(key)
 	return text
 }
 

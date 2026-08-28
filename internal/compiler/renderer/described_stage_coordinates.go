@@ -34,8 +34,8 @@ type GraphCoordinates interface {
 
 // describedStageCoordinates derives the coordinates the described stage adds to
 // the ones the finalised graph already carries: the steps of each pipeline a
-// build declares, the keys each node's Recipe publishes, the boundary set, and
-// the attachments each boundary declares on itself.
+// build declares, the keys each node's Recipe publishes, the locals it declares,
+// the boundary set, and the attachments each boundary declares on itself.
 //
 // It extends the graph stage's enumeration rather than restating it, the way a
 // stage's presentation extends the presentation below it. The node axis and the
@@ -44,11 +44,11 @@ type GraphCoordinates interface {
 // reach.
 //
 // Every axis returns a deterministic order and each states which. A pipeline's
-// steps keep the order the entity declares them in; a Recipe's provides keys keep
-// the order that Recipe declares them in; the boundary set keeps the deployment's
-// own order, enclosing scope before the scopes nested inside it; a boundary's
-// attachments keep the order that boundary declares them in. No axis here ranges
-// a plain Go map.
+// steps keep the order the entity declares them in; a Recipe's provides keys and
+// its locals each keep the order that Recipe declares them in; the boundary set
+// keeps the deployment's own order, enclosing scope before the scopes nested inside
+// it; a boundary's attachments keep the order that boundary declares them in. No
+// axis here ranges a plain Go map.
 //
 // The pipelines are read through the same binding the render resolves entities
 // with, so a pipeline enumerated here is the pipeline the render runs. A step
@@ -174,6 +174,39 @@ func (c *describedStageCoordinates) ProvidesKeys(node string) []constraint.Autho
 		return nil
 	}
 	keys := recipe.Spec.Provides.Keys()
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]constraint.AuthoredCoordinate, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, constraint.AuthoredCoordinate{Value: key, SourceFile: recipe.Metadata.Name})
+	}
+	return out
+}
+
+// LocalsKeys returns the locals a node's Recipe declares, in the order that
+// Recipe declares them.
+//
+// Declared order is the fact rather than an incidental property of it, and here it
+// is load-bearing twice over: the entries are evaluated in that order, so a rule
+// invoked once per local is asked in the order the question is decided, and the
+// prefix of this axis above a given entry IS the set that entry may read.
+//
+// The Recipe is the one the render bound to the node, and it is the same map the
+// presentation reads the authored text out of — so a local enumerated here is a
+// local that presentation can answer, and a rule cannot be invoked about an entry
+// whose text nothing would supply.
+//
+// Each coordinate is positioned at the Recipe rather than at the Aggregate the
+// component was authored in, because the entry is written in the Recipe and that is
+// the document an author edits. The Recipe's name stands in for its path, for the
+// reason the provides axis states.
+func (c *describedStageCoordinates) LocalsKeys(node string) []constraint.AuthoredCoordinate {
+	recipe, held := c.recipes[node]
+	if !held || recipe == nil {
+		return nil
+	}
+	keys := recipe.Spec.Locals.Keys()
 	if len(keys) == 0 {
 		return nil
 	}
@@ -334,10 +367,12 @@ func stepCoordinatesOf(steps []types.PipelineStep, sourceFile string) []constrai
 var (
 	_ describedStageAxes                                  = (*describedStageCoordinates)(nil)
 	_ authoredProvidesAxes                                = (*describedStageCoordinates)(nil)
+	_ authoredLocalsAxes                                  = (*describedStageCoordinates)(nil)
 	_ crossBoundaryLinkAxis                               = (*describedStageCoordinates)(nil)
 	_ constraint.NodeEnumerator                           = (*describedStageCoordinates)(nil)
 	_ constraint.EdgeEnumerator                           = (*describedStageCoordinates)(nil)
 	_ constraint.ProvidesKeyEnumerator                    = (*describedStageCoordinates)(nil)
+	_ constraint.LocalsKeyEnumerator                      = (*describedStageCoordinates)(nil)
 	_ constraint.AttachmentEnumerator                     = (*describedStageCoordinates)(nil)
 	_ constraint.PipelineStepEnumerator                   = (*describedStageCoordinates)(nil)
 	_ constraint.AttachmentPipelineStepEnumerator         = (*describedStageCoordinates)(nil)

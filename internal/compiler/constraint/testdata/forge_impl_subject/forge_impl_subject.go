@@ -25,6 +25,10 @@ func (impostor) RaiseWith(error, ...constraint.DetailValue) constraint.Objection
 	return constraint.Objection{}
 }
 
+func (impostor) RaiseWithAdvice(error, string, ...constraint.DetailValue) constraint.Objection {
+	return constraint.Objection{}
+}
+
 func (impostor) RaiseAt(error, string, ...string) constraint.Objection {
 	return constraint.Objection{}
 }

@@ -5,7 +5,6 @@ package renderer
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
@@ -160,9 +159,16 @@ func evaluateLocalsInOrder(
 		return resolved, nil
 	}
 	declared := locals.Keys()
+	// The author-order prefix is carried explicitly rather than read back off
+	// resolved, and that is what makes the contract legible rather than emergent.
+	// Any halt below aborts the whole block, so at the entry for key k this holds
+	// exactly the keys above k in author order — which is the same value a reader
+	// with the declared order and nothing else can compute. Stating it as its own
+	// value is what lets that reader be held to this one.
+	resolvedKeys := make([]string, 0, len(declared))
 	for key, tmplText := range locals.All() {
 		s := site(key)
-		if err := checkLocalsReferenceOrder(tmplText, s, resolved, declared); err != nil {
+		if err := checkLocalsReferenceOrder(tmplText, s, resolvedKeys, declared); err != nil {
 			return types.OrderedMap[string]{}, err
 		}
 		val, err := evalValueTemplate(name(key), tmplText, scope.with(withPrefix(resolved)), "{{", "}}")
@@ -170,6 +176,7 @@ func evaluateLocalsInOrder(
 			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: s.File}, s.Where)
 		}
 		resolved.Set(key, strings.TrimSpace(val))
+		resolvedKeys = append(resolvedKeys, key)
 	}
 	return resolved, nil
 }
@@ -177,48 +184,46 @@ func evaluateLocalsInOrder(
 // checkLocalsReferenceOrder refuses a .locals reference the template cannot
 // legitimately read at the point it is evaluated.
 //
-// resolved is the locals already evaluated when this template runs; declared is
-// every key the block names. The two sets are what separate the two halts, and the
-// separation is the point: a reference to a declared-but-unresolved key is an
-// ORDERING fault the author fixes by moving the definition above its reader, while
-// a reference to a key the block never declares is a NAMING fault the author fixes
-// by correcting the key. One condition covering both would tell an author who
-// mistyped a key to reorder their block.
+// resolved is the locals already evaluated when this template runs, in author
+// order; declared is every key the block names. The two sets are what separate the
+// two halts, and the separation is the point: a reference to a
+// declared-but-unresolved key is an ORDERING fault the author fixes by moving the
+// definition above its reader, while a reference to a key the block never declares
+// is a NAMING fault the author fixes by correcting the key. One condition covering
+// both would tell an author who mistyped a key to reorder their block.
 //
-// The comparison walks the parsed tree's root-anchored references through the same
-// walk every other reference check in this package shares, so it reads NAMES and
-// never template text: the pillar's name appearing inside a string literal or a
-// comment is not a reference, and a key read inside a rebound range body names a
-// field of the element rather than a local. Nothing here inspects what a resolved
-// value means.
+// # The decision is not made here
 //
-// A malformed template yields no tree and no refusal — a parse failure is the
-// evaluator's diagnostic to report, and naming an ordering fault for one would
-// describe the author's mistake wrongly. A bare .locals reference is admitted,
-// matching the whole-root admission every scope applies: what a template does with
-// the pillar once it holds it is the evaluator's business.
-func checkLocalsReferenceOrder(tmplText string, site localsRefSite, resolved types.OrderedMap[string], declared []string) error {
-	if tmplText == "" {
+// Which reference offends, and which of the two faults it carries, is
+// [gotmpl.ClassifyRootKeyReference] — the one home of that decision for every
+// surface that admits or refuses such a reference. What is composed here is the
+// DIAGNOSTIC: the referencing site, the remedy that applies to this occurrence,
+// and the wrapping this package's callers expect. That split is what lets the
+// lock-time closure walk reach the same decision without reaching into this
+// package, which it cannot: this package already imports that walk's own.
+//
+// The classification reads NAMES through the under-collecting parsed-tree walk, so
+// the pillar's name appearing inside a string literal or a comment is not a
+// reference, and a key read inside a rebound range body names a field of the
+// element rather than a local. Nothing here inspects what a resolved value means.
+//
+// A malformed template yields no refusal — a parse failure is the evaluator's
+// diagnostic to report, and naming an ordering fault for one would describe the
+// author's mistake wrongly. A bare .locals reference is admitted, matching the
+// whole-root admission every scope applies: what a template does with the pillar
+// once it holds it is the evaluator's business.
+func checkLocalsReferenceOrder(tmplText string, site localsRefSite, resolved, declared []string) error {
+	ref := gotmpl.ClassifyRootKeyReference(
+		tmplText, "{{", "}}", localsContextRoot, resolved, declared,
+	)
+	switch ref.Fault {
+	case gotmpl.RootKeyUnresolved:
+		return localsForwardRefErr(site, ref.Path, ref.Key, resolved)
+	case gotmpl.RootKeyUndeclared:
+		return localsUnknownRefErr(site, ref.Path, ref.Key, declared)
+	default:
 		return nil
 	}
-	tree, err := gotmpl.ParseTree(tmplText, "{{", "}}")
-	if err != nil {
-		return nil
-	}
-	for _, ref := range gotmpl.CollectRootRefs(tree) {
-		if ref.Segs[0] != localsContextRoot || len(ref.Segs) < 2 {
-			continue
-		}
-		referenced := ref.Segs[1]
-		if _, ok := resolved.Get(referenced); ok {
-			continue
-		}
-		if slices.Contains(declared, referenced) {
-			return localsForwardRefErr(site, ref.Path, referenced, resolved.Keys())
-		}
-		return localsUnknownRefErr(site, ref.Path, referenced, declared)
-	}
-	return nil
 }
 
 // checkProvidesLocalsReferences refuses a provides template that reads a local the
@@ -231,8 +236,8 @@ func checkLocalsReferenceOrder(tmplText string, site localsRefSite, resolved typ
 // evaluates provides against resolved locals routes through here, so the refusal is
 // one contract rather than one per provides path.
 //
-// There is no forward class on this surface, and that is why the resolved block is
-// passed as BOTH arguments: a provides template runs after the whole block has
+// There is no forward class on this surface, and that is why the resolved block's
+// key set is passed as BOTH arguments: a provides template runs after the whole block has
 // resolved, so every declared local is a resolved local and the only fault a
 // reference can carry is a NAMING one. Passing the same set twice is what collapses
 // checkLocalsReferenceOrder's two halts to the naming halt alone — telling an author
@@ -253,22 +258,75 @@ func checkProvidesLocalsReferences(
 	}
 	declared := resolved.Keys()
 	for key, tmplText := range provides.All() {
-		if err := checkLocalsReferenceOrder(tmplText, site(key), resolved, declared); err != nil {
+		if err := checkLocalsReferenceOrder(tmplText, site(key), declared, declared); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// localsForwardRemedy is the ONE home of what an ordering fault tells the author
+// to do, and it is a function of the occurrence rather than of the condition.
+//
+// A self-reference is the same condition — the key is declared and unresolved —
+// and no reordering fixes it, so the remedy that applies to every other ordering
+// fault is wrong for exactly this one. That is why the remedy cannot live on the
+// registered identity: a sentence registered with it in would be wrong at
+// whichever of the two classes it did not describe.
+//
+// entry is the locals key being evaluated. It is empty on a surface that is not
+// itself a locals entry — a provides or source template — where a self-reference
+// is impossible, so the reordering remedy is the only one that can apply.
+func localsForwardRemedy(referenced, entry string) string {
+	if referenced == entry {
+		return "a locals entry cannot read itself; compute the value from .values and .infra directly"
+	}
+	return fmt.Sprintf("define %q above %q in the locals block", referenced, entry)
+}
+
+// localsResolvedPhrase names the locals readable at the point a refused reference
+// was made, as a diagnostic quotes them back.
+//
+// It is one home because two reporting paths state it — the composition below and
+// the declared check over the same fault — and a second spelling of "nothing is
+// readable yet" would leave the two saying different things about one state.
+func localsResolvedPhrase(resolvedKeys []string) string {
+	if len(resolvedKeys) == 0 {
+		return "no locals are resolved yet"
+	}
+	return templateRootsPhrase("."+localsContextRoot, resolvedKeys)
+}
+
+// localsDeclaredList is the locals a block declares as a bare list, and "none"
+// where it declares no locals at all.
+//
+// The empty case is reachable: a provides or source template may read .locals on
+// an entity that declares no locals block at all, and naming an empty list there
+// would leave the reader with nothing where a set was promised.
+func localsDeclaredList(declared []string) string {
+	if len(declared) == 0 {
+		return "none"
+	}
+	return templateRootsPhrase("."+localsContextRoot, declared)
+}
+
+// localsDeclaredPhrase is that same set as a CLAUSE, for a diagnostic that reads
+// as prose rather than as captioned values.
+//
+// The two spellings differ only in the empty case, and deliberately: a clause
+// stating an absence reads as a sentence, while a value slot holding one reads as a
+// word. Both derive the populated case from one list, so the set a reader is told
+// about cannot differ between them.
+func localsDeclaredPhrase(declared []string) string {
+	if len(declared) == 0 {
+		return "no locals are declared"
+	}
+	return "it declares " + localsDeclaredList(declared)
+}
+
 func localsForwardRefErr(site localsRefSite, path, referenced string, resolvedKeys []string) error {
-	available := "no locals are resolved yet"
-	if len(resolvedKeys) > 0 {
-		available = templateRootsPhrase("."+localsContextRoot, resolvedKeys)
-	}
-	remedy := fmt.Sprintf("define %q above %q in the locals block", referenced, site.Key)
-	if referenced == site.Key {
-		remedy = "a locals entry cannot read itself; compute the value from .values and .infra directly"
-	}
+	available := localsResolvedPhrase(resolvedKeys)
+	remedy := localsForwardRemedy(referenced, site.Key)
 	return cerrors.Wrap(ErrLocalsForwardReference(), cerrors.CatalogError, cerrors.SourceLocation{File: site.File},
 		cerrors.ComposeMessage(ErrLocalsForwardReference(), []string{
 			fmt.Sprintf("%s references %q", site.Where, path),
@@ -279,20 +337,21 @@ func localsForwardRefErr(site localsRefSite, path, referenced string, resolvedKe
 }
 
 func localsUnknownRefErr(site localsRefSite, path, referenced string, declared []string) error {
-	// The empty case is reachable: a provides or source template may read .locals on
-	// an entity that declares no locals block at all, and naming an empty list there
-	// would leave the diagnostic's second half blank.
-	declares := "no locals are declared"
-	if len(declared) > 0 {
-		declares = "it declares " + templateRootsPhrase("."+localsContextRoot, declared)
-	}
+	declares := localsDeclaredPhrase(declared)
 	return cerrors.Wrap(ErrLocalsUnknownReference(), cerrors.CatalogError, cerrors.SourceLocation{File: site.File},
 		cerrors.ComposeMessage(ErrLocalsUnknownReference(), []string{
 			fmt.Sprintf("%s references %q", site.Where, path),
 			fmt.Sprintf("the locals block declares no %q", referenced),
 			declares,
-		}, "correct the key name"))
+		}, localsUnknownRemedy))
 }
+
+// localsUnknownRemedy is what a naming fault tells the author to do. Unlike the
+// ordering remedy it is the same at every occurrence, so it is a constant rather
+// than a function — and it is a constant rather than part of the registered
+// sentence because the two reporting paths place a remedy in the same slot and a
+// registered one would be stated twice by one of them.
+const localsUnknownRemedy = "correct the key name"
 
 // EvaluateRecipeLocals evaluates each entry in recipe.Spec.Locals as a Go template
 // against the restricted LocalsContext. Returns a deterministic resolved OrderedMap.

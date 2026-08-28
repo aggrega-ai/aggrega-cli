@@ -44,6 +44,11 @@ type Subject interface {
 	// caption saying what it is. See [DetailValue].
 	RaiseWith(sentinel error, detail ...DetailValue) Objection
 
+	// RaiseWithAdvice is RaiseWith for a rule whose remedy is a property of
+	// the occurrence rather than of the rule, so no registered sentence
+	// could carry it. See [Objection.Advice].
+	RaiseWithAdvice(sentinel error, advice string, detail ...DetailValue) Objection
+
 	// RaiseAt produces an Objection attributed to the element leaf names
 	// inside this subject, carrying sentinel, leaf as the first detail
 	// value, and the check's remaining detail after it.
@@ -89,21 +94,23 @@ func newProvenance(sourceFile string, segments ...string) provenance {
 	}
 }
 
-// Raise and RaiseWith are two signatures over one construction, and both parts
-// of that are deliberate.
+// Raise, RaiseWith and RaiseWithAdvice are three signatures over one
+// construction, and both parts of that are deliberate.
 //
-// The construction is single: Raise widens its values and hands them here, so
-// there is one place an objection's fields are populated and the two forms cannot
-// come to disagree about what raising means.
+// The construction is single: each narrower form widens its arguments and hands
+// them to the widest, so there is one place an objection's fields are populated
+// and the forms cannot come to disagree about what raising means.
 //
-// The signatures stay two, which is the part a later reading is likely to want to
-// "unify" — folding Raise away so every rule wrapped its values. The rendered
-// message is identical either way, so no reported behaviour turns on the choice,
-// and the great majority of rules raise exactly the one value their registered
-// text names: a wrapper on those is ceremony that says nothing, at every call
-// site, forever. So the narrow form is kept for the ordinary case and the wide
-// one is reached for only when a rule has something to caption. Widening Raise
-// into the wide form is a change with a cost and no reader-visible benefit.
+// The signatures stay several, which is the part a later reading is likely to want
+// to "unify" — folding the narrow forms away so every rule wrapped its values and
+// passed an empty remedy. The rendered message is identical either way, so no
+// reported behaviour turns on the choice, and the great majority of rules raise
+// exactly the one value their registered text names and have no remedy of their
+// own: ceremony on those says nothing, at every call site, forever. So the narrow
+// form is kept for the ordinary case, the captioning form is reached for when a
+// rule has something to caption, and the advising form when a rule's remedy is a
+// property of the occurrence rather than of the rule. Collapsing them is a change
+// with a cost and no reader-visible benefit.
 func (p provenance) Raise(sentinel error, detail ...string) Objection {
 	values := make([]DetailValue, 0, len(detail))
 	for _, d := range detail {
@@ -113,7 +120,25 @@ func (p provenance) Raise(sentinel error, detail ...string) Objection {
 }
 
 func (p provenance) RaiseWith(sentinel error, detail ...DetailValue) Objection {
-	o := Objection{sentinel: sentinel, file: p.file, locator: p.locator}
+	return p.RaiseWithAdvice(sentinel, "", detail...)
+}
+
+// RaiseWithAdvice is the widest of the three, and it is the one construction the
+// other two widen into — so an objection's fields are populated in exactly one
+// place and no two forms can come to disagree about what raising means.
+//
+// Advice is a separate parameter rather than a further detail value because the
+// two land in different parts of a composed message: a detail names a value the
+// finding is about and is quoted as one, while advice is a sentence telling the
+// author what to change. A rule that put its remedy in the detail would have it
+// rendered as a quoted value among the values, which reads as one more thing the
+// finding is about.
+//
+// It is reached for only by a rule whose remedy is a property of the occurrence.
+// A rule whose registered sentence already says what to do supplies none, and the
+// message it composes is unchanged by the parameter existing.
+func (p provenance) RaiseWithAdvice(sentinel error, advice string, detail ...DetailValue) Objection {
+	o := Objection{sentinel: sentinel, file: p.file, locator: p.locator, advice: advice}
 	if len(detail) > 0 {
 		o.detail = make([]DetailValue, len(detail))
 		copy(o.detail, detail)

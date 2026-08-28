@@ -11,7 +11,8 @@ import (
 
 // Objection is what a check hands back when an input violates the rule the
 // check enforces: the sentinel naming the rule, the provenance of the subject
-// the objection is about, and the check's detail.
+// the objection is about, the check's detail, and — where the rule has one —
+// the advice that applies to this occurrence.
 //
 // It is deliberately not a diagnostic. The framework converts an objection
 // into whatever shape the caller reading it needs, so a check stays ignorant
@@ -19,16 +20,26 @@ import (
 // provenance the framework supplied.
 //
 // Every field is unexported and there is no exported constructor: the only way
-// to produce a populated Objection is [Subject.Raise] or [Subject.RaiseWith],
-// and a Subject comes only from this package. The zero value is constructible,
-// as it is for any Go struct, and carries no sentinel and no provenance —
-// [Objection.Sentinel] returns nil for it, which is how a reader tells it apart
-// from a raised objection.
+// to produce a populated Objection is [Subject.Raise], [Subject.RaiseWith],
+// [Subject.RaiseWithAdvice] or [Subject.RaiseAt], and a Subject comes only from
+// this package. The zero value is constructible, as it is for any Go struct, and
+// carries no sentinel and no provenance — [Objection.Sentinel] returns nil for
+// it, which is how a reader tells it apart from a raised objection.
 type Objection struct {
 	sentinel error
 	file     string
 	locator  string
 	detail   []DetailValue
+
+	// advice is what this occurrence tells the author to do, empty for a rule
+	// whose registered sentence says the whole of it.
+	//
+	// It is per objection rather than per rule because that is the only place it
+	// can be true: a rule whose remedy differs between two of its own violation
+	// classes — reorder the block, versus the block cannot be reordered to make
+	// this reference resolve — has no single sentence to register, and a
+	// registered one would be wrong at whichever class it did not describe.
+	advice string
 }
 
 // DetailValue is one value a check supplied, and the caption naming what that
@@ -105,6 +116,17 @@ func (o Objection) SourceFile() string { return o.file }
 // never carries a line or a column; see the package documentation.
 func (o Objection) Locator() string { return o.locator }
 
+// Advice returns what this occurrence tells the author to do, or the empty
+// string for a rule whose registered sentence says the whole of it.
+//
+// It is read separately from the detail because it occupies a different slot in
+// a composed message: the detail names the values the finding is about, and the
+// advice names the edit. A boundary composing its own diagnostic around the
+// rule's registered wording reads both — see [Objection.RenderedDetail] — and one
+// taking the whole rendered message reads neither, because [ObjectionMessage] has
+// already placed them.
+func (o Objection) Advice() string { return o.advice }
+
 // Detail returns the check's detail values in the order the check supplied
 // them. The result is a copy, so a caller cannot reach back into the
 // objection, and it is nil when the check supplied no detail.
@@ -144,6 +166,11 @@ func (o Objection) Detail() []string {
 //
 // [ObjectionMessage] renders from this, so a detail list has one spelling
 // however many boundaries read one.
+//
+// A boundary composing its own diagnostic this way places the rule's values and
+// has to place its advice too, from [Objection.Advice] — the two are separate
+// accessors because they land in separate parts of a sentence, and a boundary
+// reading only this one drops the remedy for a rule that carries one.
 func (o Objection) RenderedDetail() []string {
 	if len(o.detail) == 0 {
 		return nil
@@ -203,12 +230,26 @@ func (o Objection) RenderedDetail() []string {
 // A check that supplied no detail gets the registered wording alone, so a rule
 // whose identity says the whole of it reads as a sentence rather than as one
 // with an empty parenthesis after it.
+//
+// # The advice slot
+//
+// The composition's third part is the advice for this occurrence, and it is filled
+// from the objection rather than left empty. That the slot exists at all is the
+// shared composition's own decision, taken on the ground that a sentence
+// registered with advice in it is advice that has to be true at every site raising
+// the condition — so advice belongs to the raise. A check IS the raise path, which
+// is why the objection carries it and this places it: a rule whose remedy differs
+// between its own violation classes has no registered sentence that could hold it,
+// and stating the wrong remedy is worse than stating none.
+//
+// A rule supplying no advice composes exactly as it did before the slot was
+// filled, so the slot costs such a rule nothing and moves no message it produced.
 func ObjectionMessage(o Objection) string {
 	condition := o.Sentinel()
 	if _, registered := cerrors.MessageOf(condition); !registered {
 		condition = unregisteredCondition{sentinel: condition}
 	}
-	return cerrors.ComposeMessage(condition, o.RenderedDetail(), "")
+	return cerrors.ComposeMessage(condition, o.RenderedDetail(), o.Advice())
 }
 
 // unregisteredCondition presents a sentinel carrying no registered identity to
