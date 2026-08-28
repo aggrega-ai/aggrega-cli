@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -117,5 +118,130 @@ func TestDescendSkipSetIsDeterministic(t *testing.T) {
 	a, b := build(), build()
 	if len(a) != 1 || len(b) != 1 || a[0].URL != b[0].URL || a[0].PinnedVersion != b[0].PinnedVersion {
 		t.Errorf("non-deterministic source-descent: %+v vs %+v", a, b)
+	}
+}
+
+// TestDescendRefusesAForwardSiblingReference: an entry reading a sibling the block
+// declares BELOW it is an author-order fault, decidable from the block alone, and
+// is refused rather than skipped — even though the source coordinate here is a
+// literal and reads no local at all. The refusal is what the tolerance stopped
+// covering.
+//
+// The condition is matched through the render package's own accessor. That is the
+// assertion that one authoring fault carries one condition wherever it is
+// reported: a second condition minted for this surface would leave this match
+// failing while the halt still occurred.
+func TestDescendRefusesAForwardSiblingReference(t *testing.T) {
+	t.Parallel()
+	uri := "x:1.0.0"
+	r := makeRecipe(uri, helmSource("1.0.0"))
+	r.Spec.Locals.Set("derived", `{{ .locals.base }}.internal`)
+	r.Spec.Locals.Set("base", "svc")
+	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
+
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if !errors.Is(err, renderer.ErrLocalsForwardReference()) {
+		t.Fatalf("a forward sibling reference should halt with the ordering condition; got %v", err)
+	}
+	if errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
+		t.Errorf("the halt should not also report a coordinate-resolution failure: "+
+			"the fault is in the authored block and is the same at every phase; got %v", err)
+	}
+	// Clause by clause, what the diagnostic owes an author: the entry at fault, the
+	// reference it wrote, where the definition actually sits, and what to change.
+	msg := err.Error()
+	for _, want := range []string{
+		"spec.locals.derived",
+		`".locals.base"`,
+		`defines "base" later`,
+		"entries resolve in author order",
+		`define "base" above "derived" in the locals block`,
+	} {
+		if !contains(msg, want) {
+			t.Errorf("the diagnostic omits %q; got %v", want, msg)
+		}
+	}
+}
+
+// TestDescendRefusesAnUnknownLocalsReference: a key the block never declares is a
+// NAMING fault, and it reports the naming condition with the declared set rather
+// than telling the author to reorder a block that is already in order.
+func TestDescendRefusesAnUnknownLocalsReference(t *testing.T) {
+	t.Parallel()
+	uri := "x:1.0.0"
+	r := makeRecipe(uri, helmSource("1.0.0"))
+	r.Spec.Locals.Set("base", "svc")
+	r.Spec.Locals.Set("derived", `{{ .locals.bass }}.internal`)
+	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
+
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if !errors.Is(err, renderer.ErrLocalsUnknownReference()) {
+		t.Fatalf("a reference to an undeclared key should halt with the naming condition; got %v", err)
+	}
+	msg := err.Error()
+	for _, want := range []string{`declares no "bass"`, ".locals.base", "correct the key name"} {
+		if !contains(msg, want) {
+			t.Errorf("the diagnostic omits %q; got %v", want, msg)
+		}
+	}
+	if contains(msg, "above") {
+		t.Errorf("a naming fault must not tell the author to reorder the block; got %v", msg)
+	}
+}
+
+// TestDescendSelfReferenceRemedyDoesNotSayReorder: a self-reference is the same
+// ordering condition, and no reordering fixes it. The remedy and the position
+// sentence are both functions of the occurrence for that reason, so this asserts
+// the pair a registered sentence would have got wrong.
+func TestDescendSelfReferenceRemedyDoesNotSayReorder(t *testing.T) {
+	t.Parallel()
+	uri := "x:1.0.0"
+	r := makeRecipe(uri, helmSource("1.0.0"))
+	r.Spec.Locals.Set("loop", `{{ .locals.loop }}-x`)
+	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
+
+	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if !errors.Is(err, renderer.ErrLocalsForwardReference()) {
+		t.Fatalf("a self reference should halt with the ordering condition; got %v", err)
+	}
+	msg := err.Error()
+	if !contains(msg, "a locals entry cannot read itself") {
+		t.Errorf("the self-reference remedy is missing; got %v", msg)
+	}
+	if contains(msg, `defines "loop" later`) {
+		t.Errorf("the diagnostic says the key is defined LATER, which is false for a self "+
+			"reference — it is defined at the referencing entry; got %v", msg)
+	}
+	if !contains(msg, `defines "loop" at this entry`) {
+		t.Errorf("the diagnostic should say where the key actually sits; got %v", msg)
+	}
+}
+
+// TestDescendAdmitsAReadOfASkippedEarlierSibling is the narrowing's own regression
+// guard, and it guards the mistake the narrowing most easily makes.
+//
+// The second entry reads the first, which is legitimately skipped here. That is a
+// BACKWARD reference and the block is correctly ordered, so it must stay admitted:
+// classifying against the keys that actually RESOLVED — rather than against the
+// declared order's prefix — would report an ordering fault and refuse a document
+// the render accepts.
+func TestDescendAdmitsAReadOfASkippedEarlierSibling(t *testing.T) {
+	t.Parallel()
+	uri := "mariadb-bitnami:1.0.0"
+	r := makeRecipe(uri, helmSource("1.0.0"))
+	r.Spec.Locals.Set("secret_target_root_password", `{{ .context.instance_id }}-root-password`)
+	r.Spec.Locals.Set("derived_secret_name", `{{ .locals.secret_target_root_password }}-v2`)
+	loader := &fakeRecipeLoader{recipes: map[string]*types.Recipe{uri: r}}
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
+
+	got, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("a backward read of a skipped render-time-only sibling must stay admitted; got %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("artifacts = %d; want 1 (the source resolved despite both skipped entries)", len(got))
 	}
 }

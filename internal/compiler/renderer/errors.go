@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 )
@@ -40,46 +41,19 @@ var errTemplateUnknownRoot = cerrors.Register("compiler-renderer/template-unknow
 	Message:   "template references a root the render context does not define",
 })
 
-// ErrLocalsForwardReference is the Loud Guardrail halt raised when a locals
-// entry references a sibling the same block declares but has not resolved yet.
-// A locals block resolves in author order, and an entry reads only a sibling
-// defined above it; the block is never sorted or reordered to make a later
-// definition reachable, because emitted output would then follow an inference
-// rather than what the author wrote. Without this halt the reference resolves
-// through the missing-key policy to an empty string, so a derived hostname or a
-// secret name silently loses the segment it was built from. The wrapping
-// diagnostic names the referencing entry, the referenced key, the entries
-// resolved at that point, and the remedy — move the definition above its
-// reader. It is deliberately distinct from ErrLocalsUnknownReference: this one
-// is an ORDERING fault whose fix is to reorder the block, and reporting both
-// through one condition would tell an author who mistyped a key to reorder
-// their block. Category: CATALOG_ERROR. Match with
-// errors.Is(err, ErrLocalsForwardReference()).
-func ErrLocalsForwardReference() error { return errLocalsForwardReference }
+// ErrLocalsForwardReference is the ordering fault a locals reference carries when
+// the key it names is declared below the point the template runs. It is declared
+// where the classification that decides it is declared, because the surface that
+// resolves a block for rendered output and the surface that resolves one for a
+// `source:` coordinate both report it and sit in packages that cannot reach each
+// other — so this is a re-export rather than a second condition, and a match
+// against either name succeeds for a halt raised by either surface.
+func ErrLocalsForwardReference() error { return gotmpl.ErrLocalsForwardReference() }
 
-var errLocalsForwardReference = cerrors.Register("compiler-renderer/locals-forward-reference", cerrors.Meta{
-	ShortCode: "E0042",
-	Message:   "locals entry references a sibling defined later in the same block",
-})
-
-// ErrLocalsUnknownReference is the Loud Guardrail halt raised when a template
-// references a key the locals block does not declare at all — a mistyped key, or
-// one that was renamed or removed. Every surface that reads the pillar raises it:
-// a locals entry, a provides template, and a Recipe source template. The locals
-// pillar is an open keyed map, so an unknown key under it passes the root check
-// and resolves through the missing-key policy to an empty string; the halt is
-// what stops that empty value from reaching an emitted artifact. The wrapping
-// diagnostic names the referencing entry, the key that does not exist, and the
-// keys the block does declare, so the correction is readable from the halt. It is deliberately
-// distinct from ErrLocalsForwardReference: this one is a NAMING fault whose fix
-// is to correct the key, and the two mistakes have different remedies.
-// Category: CATALOG_ERROR. Match with errors.Is(err, ErrLocalsUnknownReference()).
-func ErrLocalsUnknownReference() error { return errLocalsUnknownReference }
-
-var errLocalsUnknownReference = cerrors.Register("compiler-renderer/locals-unknown-reference", cerrors.Meta{
-	ShortCode: "E0043",
-	Message:   "template references a key the locals block does not declare",
-})
+// ErrLocalsUnknownReference is the naming fault a locals reference carries when
+// the block declares no such key at all. Declared and re-exported for the reason
+// stated above.
+func ErrLocalsUnknownReference() error { return gotmpl.ErrLocalsUnknownReference() }
 
 func ErrProvidesEvaluation() error { return errProvidesEvaluation }
 

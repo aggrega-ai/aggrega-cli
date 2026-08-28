@@ -13,6 +13,7 @@ import (
 	"text/template/parse"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -45,7 +46,9 @@ import (
 //
 // Returns ErrSourceTemplateAtLockTime wrapped with the template's
 // source location on .provides references, ambiguous kind
-// classification, or missing .infra/.locals keys.
+// classification, or missing .infra/.locals keys; and
+// ErrLocalsForwardReference / ErrLocalsUnknownReference on a locals entry
+// whose reference into the pillar the block's own author order refuses.
 func DescendRecipeSources(
 	perEntityInfra map[string][]ComponentSourceInfra,
 	closure Closure,
@@ -226,7 +229,9 @@ func DescendRecipeSources(
 // Returns (nil, nil) when recipe.Spec.Source is nil (sourceless
 // Recipe — orchestrator skips resolution). Returns
 // ErrSourceTemplateAtLockTime on .provides references, ambiguous
-// kind classification, or missing keys.
+// kind classification, or missing keys, and
+// ErrLocalsForwardReference / ErrLocalsUnknownReference on a refused
+// locals reference.
 func EvaluateSourceSpec(values, infra map[string]any, recipe *types.Recipe) (*SourceSpec, error) {
 	if recipe == nil || recipe.Spec.Source == nil {
 		return nil, nil
@@ -263,7 +268,9 @@ func EvaluateSourceSpecFields(values, infra map[string]any, source any, locals t
 // (`version`, `ref`, `chart`, `module_subdir`) are evaluated against
 // {.values, .infra, .locals} per amendment §3.7. Returns
 // ErrSourceTemplateAtLockTime on .provides references, ambiguous
-// kind classification, or missing keys.
+// kind classification, or missing keys, and
+// ErrLocalsForwardReference / ErrLocalsUnknownReference on a refused
+// locals reference.
 func buildSourceSpec(source any, values, infra map[string]any, locals types.OrderedMap[string], recipeURI string) (*SourceSpec, error) {
 	switch s := source.(type) {
 	case string:
@@ -537,48 +544,72 @@ func providesError(fieldPath string) error {
 // A block that feeds rendered output is resolved by the renderer's own
 // pass, which is the one home of that contract for every rendering
 // surface. This pass cannot route through it: that package imports this
-// one, so the dependency direction leaves no home reachable from both. The
-// shared part is therefore the DECISION rather than the loop — the
-// reference classification lives in internal/gotmpl, which both packages
-// can import — and what remains duplicated is the walk, held to the
-// renderer's by assertions that drive the two against each other.
+// one, so the dependency direction leaves no home reachable from both. What
+// is shared is therefore everything except the loop — the reference
+// classification, the two conditions a refused reference carries, the
+// remedy each of them states, and the phrases naming the readable and
+// declared key sets all live in internal/gotmpl, which both packages can
+// import. What remains duplicated is the walk, held to the renderer's by
+// assertions that drive the two against each other.
 //
-// # The two evaluators differ in both directions, and neither difference is a phase difference
+// # The tolerance is bounded by what the block itself decides, and by nothing else
 //
-// This pass is LAXER on one axis and STRICTER on the other. Both are
-// properties of the surface being resolved, not of the phase: acquiring a
-// lockfile and building against one run this same body.
+// An entry whose template cannot EXECUTE is skipped and the walk continues.
+// That covers an entry reading data no source coordinate can see — a
+// render-time-only `.context.instance_id` consumed by a values mapping is the
+// case it exists for — and the tolerance is real, because such an entry is
+// legitimately absent here.
 //
-//   - Laxer: an entry whose template cannot EXECUTE is skipped and the walk
-//     continues. That covers an entry reading data no source coordinate can
-//     see — a render-time-only `.context.instance_id` consumed by a values
-//     mapping is the case it exists for — and the tolerance is real, because
-//     such an entry is legitimately absent here. It also OVER-covers: an
-//     entry reading a sibling declared below it, or a key the block never
-//     declares, is the same execute failure and is skipped too, where the
-//     renderer's pass refuses it outright. The gate that remains is the
-//     source template's own evaluation, which fails naming the source field
-//     when `source:` needed a local that was skipped. This over-coverage is
-//     stated rather than defended, and the tolerance is expected to narrow
-//     to the case it exists for.
-//   - Stricter: this surface registers Aggrega's template helpers alone,
-//     without the broad general-purpose set a rendering surface layers them
-//     over, so an authored name means one thing wherever a coordinate is
-//     evaluated. An entry calling a function only the rendering surface
-//     registers therefore fails to PARSE here — and a parse failure is
-//     outside the tolerance above, so it halts while the renderer's pass
-//     admits it.
+// What the tolerance does NOT cover is a reference into the locals pillar that
+// the block's own author order refuses: a sibling declared below the entry
+// reading it, or a key the block never declares. Both are decidable from the
+// declared key order and the authored text alone, with no value and no
+// layer-specific datum, so the answer is the same wherever the question is
+// asked — which is why it is asked here rather than deferred. The reference is
+// classified BEFORE the entry is evaluated, so the refusal does not depend on
+// whether the entry would have executed, and it carries the same condition the
+// rendered-output pass reports for the same mistake.
+//
+// The readable set the classification is given is the declared order's PREFIX
+// above the entry, not the keys that happened to resolve. That is what keeps
+// the tolerance transitive: an entry reading a legitimately-skipped earlier
+// sibling is admitted here and then fails to execute, so it is skipped in turn,
+// where a readable set narrowed to what resolved would have called a
+// correctly-ordered block an ordering fault.
+//
+// # The remaining difference from the rendered-output pass runs the other way
+//
+// This surface registers Aggrega's template helpers alone, without the broad
+// general-purpose set a rendering surface layers them over, so an authored name
+// means one thing wherever a coordinate is evaluated. An entry calling a
+// function only the rendering surface registers therefore fails to PARSE here —
+// and a parse failure is outside the tolerance, so it halts while the
+// renderer's pass admits it. That difference is a property of the surface being
+// resolved, not of the phase: acquiring a lockfile and building against one run
+// this same body.
 func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeURI string) error {
+	declared := locals.Keys()
+	// The author-order prefix is carried explicitly rather than read back off
+	// ctx.Locals, and the difference is the whole of the paragraph above: entries
+	// drop out of ctx.Locals legitimately here, and a prefix taken from it would
+	// shrink as they did. Keys() and All() walk the one ordered mapping in the one
+	// order, so at the entry for the key at index i this holds exactly the keys
+	// above it.
+	above := 0
 	for k, v := range locals.All() {
-		resolved, err := evalSourceTemplate(v, ctx, recipeURI+".spec.locals."+k)
+		fieldPath := recipeURI + ".spec.locals." + k
+		if err := refuseLocalsReference(v, fieldPath, k, declared[:above], declared); err != nil {
+			return err
+		}
+		above++
+		resolved, err := evalSourceTemplate(v, ctx, fieldPath)
 		if err != nil {
-			// The tolerance is bounded by error CLASS, and the two classes kept
-			// loud are the ones no surface can resolve: a template that does not
-			// parse, and a `.provides` reverse reference. Everything else is an
-			// execute failure and is skipped — see this function's own contract
-			// above for what that covers, what it over-covers, and why a parse
-			// failure landing outside it makes this surface the stricter one on
-			// that axis.
+			// What remains of the tolerance is bounded by error CLASS, and the two
+			// classes kept loud are the ones no surface can resolve: a template that
+			// does not parse, and a `.provides` reverse reference. Everything else
+			// is an execute failure and is skipped — see this function's own
+			// contract above for what that covers, and why a parse failure landing
+			// outside it makes this surface the stricter one on that axis.
 			if errors.Is(err, ErrSourceTemplateParse()) || errors.Is(err, ErrSourceTemplateProvidesRef()) {
 				return err
 			}
@@ -587,6 +618,60 @@ func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeU
 		ctx.Locals[k] = resolved
 	}
 	return nil
+}
+
+// refuseLocalsReference halts on a locals reference the entry cannot legitimately
+// read at the point it is evaluated: a sibling the block declares below it, or a
+// key the block does not declare at all.
+//
+// # The decision is not made here, and neither are the sentences
+//
+// Which reference offends, which of the two faults it carries, what the author is
+// told to do about it, and how the readable and declared key sets are spelled all
+// live in internal/gotmpl — the one home each of them has for every surface that
+// admits or refuses such a reference. This function composes the DIAGNOSTIC around
+// them: the field path the halt is positioned at, and the wrapping this package's
+// callers expect. That split is deliberate and is the same split the
+// rendered-output pass records at its own composition: the two surfaces cannot
+// reach each other, so what they share has to be reachable from both, and what is
+// left over is the locator each one carries.
+//
+// readable is the declared order's prefix above this entry; declared is every key
+// the block names. The two sets are what separate the two faults, and the
+// separation is the point: a declared-but-not-yet-readable key is an ORDERING
+// fault the author fixes by moving the definition above its reader, while a key
+// the block never declares is a NAMING fault the author fixes by correcting the
+// key. One condition covering both would tell an author who mistyped a key to
+// reorder their block.
+//
+// A malformed template yields no refusal here. A parse failure is the evaluator's
+// diagnostic to report, and naming a reference fault for one would describe the
+// author's mistake wrongly.
+func refuseLocalsReference(tmplText, fieldPath, entry string, readable, declared []string) error {
+	ref := gotmpl.ClassifyRootKeyReference(
+		tmplText, "{{", "}}", gotmpl.LocalsContextRoot, readable, declared,
+	)
+	switch ref.Fault {
+	case gotmpl.RootKeyUnresolved:
+		return cerrors.Wrap(gotmpl.ErrLocalsForwardReference(), cerrors.CatalogError,
+			cerrors.SourceLocation{File: fieldPath},
+			cerrors.ComposeMessage(gotmpl.ErrLocalsForwardReference(), []string{
+				fmt.Sprintf("%s references %q", fieldPath, ref.Path),
+				gotmpl.LocalsForwardPosition(ref.Key, entry),
+				"entries resolve in author order and an entry reads only a sibling defined above it",
+				fmt.Sprintf("resolved at this point: %s", gotmpl.LocalsReadablePhrase(readable)),
+			}, gotmpl.LocalsForwardRemedy(ref.Key, entry)))
+	case gotmpl.RootKeyUndeclared:
+		return cerrors.Wrap(gotmpl.ErrLocalsUnknownReference(), cerrors.CatalogError,
+			cerrors.SourceLocation{File: fieldPath},
+			cerrors.ComposeMessage(gotmpl.ErrLocalsUnknownReference(), []string{
+				fmt.Sprintf("%s references %q", fieldPath, ref.Path),
+				fmt.Sprintf("the locals block declares no %q", ref.Key),
+				gotmpl.LocalsDeclaredPhrase(declared),
+			}, gotmpl.LocalsUnknownRemedy))
+	default:
+		return nil
+	}
 }
 
 // classifyEntityKind reads a catalog URI and returns "recipe" or

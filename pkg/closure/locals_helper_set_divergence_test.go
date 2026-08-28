@@ -138,9 +138,9 @@ func renderVerdictForOneEntry(t *testing.T, expr string) localsDivergenceVerdict
 	case err == nil:
 		return localsAdmitted
 	case errors.Is(err, renderer.ErrLocalsForwardReference()):
-		return localsRenderOrdering
+		return localsRefusedOrdering
 	case errors.Is(err, renderer.ErrLocalsUnknownReference()):
-		return localsRenderNaming
+		return localsRefusedNaming
 	default:
 		t.Fatalf("the render halted on a condition this comparison does not model: %v", err)
 		return ""

@@ -105,7 +105,12 @@ var featureRecipeLocalsScope = templateScope{
 // reference check compares against one spelling; a guard test holds the constant to
 // the json tags of the context types that carry the pillar, so a renamed pillar
 // cannot leave the check watching a root no context defines.
-const localsContextRoot = "locals"
+//
+// The spelling itself is declared beside the classification every such check
+// routes through, because the surface that resolves a block for a `source:`
+// coordinate compares against it too and cannot reach this package. The guard
+// below therefore holds that declaration to these types' json tags.
+const localsContextRoot = gotmpl.LocalsContextRoot
 
 // localsRefSite names the template a reference check is running for: the phrase a
 // diagnostic quotes to locate it, the source location the halt carries, and the
@@ -127,11 +132,15 @@ type localsRefSite struct {
 // true. One other evaluator of an authored locals block exists — the one that
 // resolves a block so a Recipe's `source:` coordinate can read it, in the closure
 // package this one imports. It does NOT route through here, because the
-// dependency direction leaves no home reachable from both, and it answers
-// differently in both directions: laxer on an out-of-order or unknown reference,
-// stricter on the template functions it registers. Its own contract is documented
-// where it is implemented, and assertions drive the two against each other rather
-// than leaving the relationship to these two comments.
+// dependency direction leaves no home reachable from both. On the reference-order
+// contract below the two now answer identically, and structurally: both classify
+// the reference through the same function, over the same author-order prefix, and
+// report the same two conditions. Where they still differ is the template
+// FUNCTION SET each registers: that one registers the narrower set, so THIS pass
+// admits an expression it refuses — the reverse of the direction the ordering
+// contract used to run in. Its own contract is documented where it is
+// implemented, and assertions drive the two against each other rather than
+// leaving the relationship to these two comments.
 //
 // The contract, implemented once:
 //
@@ -276,93 +285,36 @@ func checkProvidesLocalsReferences(
 	return nil
 }
 
-// localsForwardRemedy is the ONE home of what an ordering fault tells the author
-// to do, and it is a function of the occurrence rather than of the condition.
-//
-// A self-reference is the same condition — the key is declared and unresolved —
-// and no reordering fixes it, so the remedy that applies to every other ordering
-// fault is wrong for exactly this one. That is why the remedy cannot live on the
-// registered identity: a sentence registered with it in would be wrong at
-// whichever of the two classes it did not describe.
-//
-// entry is the locals key being evaluated. It is empty on a surface that is not
-// itself a locals entry — a provides or source template — where a self-reference
-// is impossible, so the reordering remedy is the only one that can apply.
-func localsForwardRemedy(referenced, entry string) string {
-	if referenced == entry {
-		return "a locals entry cannot read itself; compute the value from .values and .infra directly"
-	}
-	return fmt.Sprintf("define %q above %q in the locals block", referenced, entry)
-}
-
-// localsResolvedPhrase names the locals readable at the point a refused reference
-// was made, as a diagnostic quotes them back.
-//
-// It is one home because two reporting paths state it — the composition below and
-// the declared check over the same fault — and a second spelling of "nothing is
-// readable yet" would leave the two saying different things about one state.
-func localsResolvedPhrase(resolvedKeys []string) string {
-	if len(resolvedKeys) == 0 {
-		return "no locals are resolved yet"
-	}
-	return templateRootsPhrase("."+localsContextRoot, resolvedKeys)
-}
-
-// localsDeclaredList is the locals a block declares as a bare list, and "none"
-// where it declares no locals at all.
-//
-// The empty case is reachable: a provides or source template may read .locals on
-// an entity that declares no locals block at all, and naming an empty list there
-// would leave the reader with nothing where a set was promised.
-func localsDeclaredList(declared []string) string {
-	if len(declared) == 0 {
-		return "none"
-	}
-	return templateRootsPhrase("."+localsContextRoot, declared)
-}
-
-// localsDeclaredPhrase is that same set as a CLAUSE, for a diagnostic that reads
-// as prose rather than as captioned values.
-//
-// The two spellings differ only in the empty case, and deliberately: a clause
-// stating an absence reads as a sentence, while a value slot holding one reads as a
-// word. Both derive the populated case from one list, so the set a reader is told
-// about cannot differ between them.
-func localsDeclaredPhrase(declared []string) string {
-	if len(declared) == 0 {
-		return "no locals are declared"
-	}
-	return "it declares " + localsDeclaredList(declared)
-}
+// The remedy sentences and the phrases naming the readable and declared key sets
+// are NOT declared here. They are declared beside the classification that decides
+// the fault, because the surface that resolves a locals block for a `source:`
+// coordinate states the same sentences and cannot reach this package — and two
+// copies of "define X above Y" would be free to tell one author two things about
+// one mistake. What is composed here is the DIAGNOSTIC around them: the
+// referencing site, the source location, and the wrapping this package's callers
+// expect.
 
 func localsForwardRefErr(site localsRefSite, path, referenced string, resolvedKeys []string) error {
-	available := localsResolvedPhrase(resolvedKeys)
-	remedy := localsForwardRemedy(referenced, site.Key)
+	available := gotmpl.LocalsReadablePhrase(resolvedKeys)
+	remedy := gotmpl.LocalsForwardRemedy(referenced, site.Key)
 	return cerrors.Wrap(ErrLocalsForwardReference(), cerrors.CatalogError, cerrors.SourceLocation{File: site.File},
 		cerrors.ComposeMessage(ErrLocalsForwardReference(), []string{
 			fmt.Sprintf("%s references %q", site.Where, path),
-			fmt.Sprintf("the locals block defines %q later", referenced),
+			gotmpl.LocalsForwardPosition(referenced, site.Key),
 			"entries resolve in author order and an entry reads only a sibling defined above it",
 			fmt.Sprintf("resolved at this point: %s", available),
 		}, remedy))
 }
 
 func localsUnknownRefErr(site localsRefSite, path, referenced string, declared []string) error {
-	declares := localsDeclaredPhrase(declared)
+	declares := gotmpl.LocalsDeclaredPhrase(declared)
 	return cerrors.Wrap(ErrLocalsUnknownReference(), cerrors.CatalogError, cerrors.SourceLocation{File: site.File},
 		cerrors.ComposeMessage(ErrLocalsUnknownReference(), []string{
 			fmt.Sprintf("%s references %q", site.Where, path),
 			fmt.Sprintf("the locals block declares no %q", referenced),
 			declares,
-		}, localsUnknownRemedy))
+		}, gotmpl.LocalsUnknownRemedy))
 }
-
-// localsUnknownRemedy is what a naming fault tells the author to do. Unlike the
-// ordering remedy it is the same at every occurrence, so it is a constant rather
-// than a function — and it is a constant rather than part of the registered
-// sentence because the two reporting paths place a remedy in the same slot and a
-// registered one would be stated twice by one of them.
-const localsUnknownRemedy = "correct the key name"
 
 // EvaluateRecipeLocals evaluates each entry in recipe.Spec.Locals as a Go template
 // against the restricted LocalsContext. Returns a deterministic resolved OrderedMap.

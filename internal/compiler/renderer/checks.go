@@ -911,7 +911,7 @@ var LocalsEntryReadsNoLaterSibling = constraint.Check[
 		}
 		return []constraint.Objection{s.RaiseWithAdvice(
 			ErrLocalsForwardReference(),
-			localsForwardRemedy(ref.Key, s.LocalsKey()),
+			gotmpl.LocalsForwardRemedy(ref.Key, s.LocalsKey()),
 			constraint.Uncaptioned(ref.Path),
 			// The caption says which key the expression names and stops there. It
 			// deliberately does not say the key is declared LATER: a self-reference
@@ -920,7 +920,7 @@ var LocalsEntryReadsNoLaterSibling = constraint.Check[
 			// which is the class the remedy below exists to describe.
 			constraint.Captioned("the key it names is", ref.Key),
 			constraint.Captioned("resolved at this point",
-				localsResolvedPhrase(localsResolvedAt(declared, s.LocalsKey()))),
+				gotmpl.LocalsReadablePhrase(localsResolvedAt(declared, s.LocalsKey()))),
 		)}
 	},
 }
@@ -963,10 +963,10 @@ var LocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
 		}
 		return []constraint.Objection{s.RaiseWithAdvice(
 			ErrLocalsUnknownReference(),
-			localsUnknownRemedy,
+			gotmpl.LocalsUnknownRemedy,
 			constraint.Uncaptioned(ref.Path),
 			constraint.Captioned("the missing key is", ref.Key),
-			constraint.Captioned("the block declares", localsDeclaredList(declared)),
+			constraint.Captioned("the block declares", gotmpl.LocalsDeclaredList(declared)),
 		)}
 	},
 }
