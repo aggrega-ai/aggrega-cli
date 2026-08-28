@@ -817,6 +817,124 @@ func newNodeLocalsKeySubject(sourceFile, node, key string, segments ...string) N
 	}
 }
 
+// NodeAttachmentLocalsKeySubject is the subject of a check invoked once per local
+// the FeatureRecipe one attachment binds on a node declares.
+//
+// It is keyed per attachment as well as per node because the block is authored on
+// the FeatureRecipe the attachment binds, a different document from the node's own
+// Recipe. Two attachments on one node carry independently authored locals blocks
+// whose keys are chosen with no knowledge of each other, and neither can read the
+// node's own block: a base Recipe's resolved locals are merged over an
+// attachment's AFTER that block has resolved, so they are not readable from inside
+// it. A kind carrying only the node and the key could name none of that.
+//
+// Locals are evaluated in the order they are declared, so a check over this kind
+// is invoked in that order and a rule about what a local may reference is a rule
+// about it.
+type NodeAttachmentLocalsKeySubject interface {
+	Subject
+
+	// NodeID identifies the node carrying the attachment, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// AttachmentName is the attachment whose FeatureRecipe declares the local.
+	AttachmentName() string
+
+	// LocalsKey is the declared local the check was invoked for: the key the
+	// author wrote, which a later local in the same block references it by.
+	LocalsKey() string
+
+	nodeAttachmentLocalsKey()
+}
+
+type nodeAttachmentLocalsKeySubject struct {
+	provenance
+	node       string
+	attachment string
+	key        string
+}
+
+func (nodeAttachmentLocalsKeySubject) nodeAttachmentLocalsKey() {}
+
+func (s nodeAttachmentLocalsKeySubject) NodeID() string { return s.node }
+
+func (s nodeAttachmentLocalsKeySubject) AttachmentName() string { return s.attachment }
+
+func (s nodeAttachmentLocalsKeySubject) LocalsKey() string { return s.key }
+
+func newNodeAttachmentLocalsKeySubject(
+	sourceFile, node, attachment, key string,
+	segments ...string,
+) NodeAttachmentLocalsKeySubject {
+	return nodeAttachmentLocalsKeySubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		attachment: attachment,
+		key:        key,
+	}
+}
+
+// BoundaryAttachmentLocalsKeySubject is the subject of a check invoked once per
+// local the FeatureRecipe one boundary-scope attachment binds declares.
+//
+// It is rooted at a boundary rather than at a node because that is where the
+// attachment is declared. Such an attachment is written once and reaches every
+// component the boundary holds, so a node-rooted walk would ask about one authored
+// block once per component — the same authored text presented as many times as the
+// boundary has members — and would ask about it not at all for a boundary holding
+// none, which is silence a caller cannot tell from approval.
+//
+// The keys in that block are chosen independently of any component's, so this is a
+// separate kind rather than the node-rooted one reached differently: no
+// node-rooted key can name a local authored against a boundary.
+type BoundaryAttachmentLocalsKeySubject interface {
+	Subject
+
+	// BoundaryPath is the boundary the attachment was declared on, as every keyed
+	// fact takes it. It is the scope's path from the document's own scope set
+	// rather than a bare name, because boundaries nest and two scopes at
+	// different depths may carry one name.
+	BoundaryPath() string
+
+	// AttachmentName is the attachment whose FeatureRecipe declares the local:
+	// the name the operator wrote it under.
+	AttachmentName() string
+
+	// LocalsKey is the declared local the check was invoked for: the key the
+	// author wrote, which a later local in the same block references it by.
+	LocalsKey() string
+
+	boundaryAttachmentLocalsKey()
+}
+
+type boundaryAttachmentLocalsKeySubject struct {
+	provenance
+	boundary   string
+	attachment string
+	key        string
+}
+
+func (boundaryAttachmentLocalsKeySubject) boundaryAttachmentLocalsKey() {}
+
+func (s boundaryAttachmentLocalsKeySubject) BoundaryPath() string { return s.boundary }
+
+func (s boundaryAttachmentLocalsKeySubject) AttachmentName() string { return s.attachment }
+
+func (s boundaryAttachmentLocalsKeySubject) LocalsKey() string { return s.key }
+
+func newBoundaryAttachmentLocalsKeySubject(
+	sourceFile, boundary, attachment, key string,
+	segments ...string,
+) BoundaryAttachmentLocalsKeySubject {
+	return boundaryAttachmentLocalsKeySubject{
+		provenance: newProvenance(sourceFile, segments...),
+		boundary:   boundary,
+		attachment: attachment,
+		key:        key,
+	}
+}
+
 // NodeProvidesKeySubject is the subject of a check invoked once per key a node's
 // Recipe provides.
 type NodeProvidesKeySubject interface {

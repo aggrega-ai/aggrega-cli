@@ -1002,6 +1002,20 @@ var subjectKindBindings = map[SubjectKind]struct {
 			return newNodeLocalsKeySubject(f, "web", "fullname", "spec", "locals", "fullname")
 		},
 	},
+	SubjectNodeAttachmentLocalsKey: {
+		iface: reflect.TypeOf((*NodeAttachmentLocalsKeySubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newNodeAttachmentLocalsKeySubject(f, "web", "tls", "fullname",
+				"spec", "locals", "fullname")
+		},
+	},
+	SubjectBoundaryAttachmentLocalsKey: {
+		iface: reflect.TypeOf((*BoundaryAttachmentLocalsKeySubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newBoundaryAttachmentLocalsKeySubject(f, "prod", "shared-db", "endpoint",
+				"spec", "locals", "endpoint")
+		},
+	},
 	SubjectNodeProvidesKey: {
 		iface: reflect.TypeOf((*NodeProvidesKeySubject)(nil)).Elem(),
 		make: func(f string) Subject {

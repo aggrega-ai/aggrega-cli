@@ -618,6 +618,38 @@ type LocalsKeyEnumerator interface {
 	LocalsKeys(node string) []AuthoredCoordinate
 }
 
+// AttachmentLocalsKeyEnumerator supplies the locals the FeatureRecipe one
+// attachment binds on a node declares.
+//
+// The block an attachment carries is supplied here and never through
+// [LocalsKeyEnumerator]: an implementation folding an attachment's keys into a
+// node's own answer would present two independently authored blocks under one
+// key, and the author-order prefix a rule reads off that answer would then span
+// two documents.
+//
+// Each entry carries its own file, because a FeatureRecipe is a different
+// document from the Aggregate the attachment was written in.
+type AttachmentLocalsKeyEnumerator interface {
+	// AttachmentLocalsKeys returns the locals one attachment's FeatureRecipe
+	// declares on a node, in the order they are declared — which is the order
+	// they are evaluated in, so a rule about what one of them may reference is a
+	// rule about this order.
+	AttachmentLocalsKeys(node string, attachment string) []AuthoredCoordinate
+}
+
+// BoundaryAttachmentLocalsKeyEnumerator supplies the locals the FeatureRecipe one
+// boundary-scope attachment binds declares.
+//
+// The axis is keyed per boundary and not per node for the reason the boundary's
+// own attachment axis is: such an attachment is declared once at the boundary and
+// reaches every component the boundary holds, so enumerating its locals per
+// component would present one authored block many times over.
+type BoundaryAttachmentLocalsKeyEnumerator interface {
+	// BoundaryAttachmentLocalsKeys returns the locals one boundary-scope
+	// attachment's FeatureRecipe declares, in the order they are declared.
+	BoundaryAttachmentLocalsKeys(boundary string, attachment string) []AuthoredCoordinate
+}
+
 // ProvidesKeyEnumerator supplies the keys one node's Recipe provides.
 type ProvidesKeyEnumerator interface {
 	// ProvidesKeys returns a node's provides keys, in a deterministic order the

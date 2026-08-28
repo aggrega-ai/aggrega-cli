@@ -366,6 +366,71 @@ func (v *describedView) AuthoredNodeLocals(node string, key string) string {
 	return text
 }
 
+// AttachmentDeclaredLocalsKeys returns the local names the FeatureRecipe one
+// attachment binds on a node declares, in author order.
+//
+// It is answered from the FeatureRecipe the render resolved for the attachment,
+// through the same binding the render evaluates that block with — so a key
+// presented here is a key that evaluation will reach.
+//
+// The answer is the attachment's OWN block and nothing else. The node's resolved
+// locals are merged over it after it has resolved, so folding them in would
+// present a rule with keys the block cannot read at the point it runs.
+func (v *describedView) AttachmentDeclaredLocalsKeys(node string, attachment string) []string {
+	fr, ok := v.attachmentFeatureRecipe(node, attachment)
+	if !ok {
+		return nil
+	}
+	return fr.Spec.Locals.Keys()
+}
+
+// AttachmentAuthoredLocals returns the template text the FeatureRecipe one
+// attachment binds on a node declares for one local, as written and before
+// anything is evaluated.
+//
+// It is answered from the same FeatureRecipe the key order above is read from, so
+// a key that order presents is a key this can answer.
+func (v *describedView) AttachmentAuthoredLocals(node string, attachment string, key string) string {
+	fr, ok := v.attachmentFeatureRecipe(node, attachment)
+	if !ok {
+		return ""
+	}
+	text, _ := fr.Spec.Locals.Get(key)
+	return text
+}
+
+// BoundaryAttachmentDeclaredLocalsKeys returns the local names the FeatureRecipe
+// one boundary-scope attachment binds declares, in author order.
+//
+// It is answered from the FeatureRecipe the render resolved for the attachment at
+// the boundary it was declared on, which is the block that render evaluates.
+func (v *describedView) BoundaryAttachmentDeclaredLocalsKeys(
+	boundary string, attachment string,
+) []string {
+	fr, ok := v.boundaryAttachmentFeatureRecipe(boundary, attachment)
+	if !ok {
+		return nil
+	}
+	return fr.Spec.Locals.Keys()
+}
+
+// BoundaryAttachmentAuthoredLocals returns the template text the FeatureRecipe one
+// boundary-scope attachment binds declares for one local, as written and before
+// anything is evaluated.
+//
+// It is answered from the same FeatureRecipe the key order above is read from, so
+// a key that order presents is a key this can answer.
+func (v *describedView) BoundaryAttachmentAuthoredLocals(
+	boundary string, attachment string, key string,
+) string {
+	fr, ok := v.boundaryAttachmentFeatureRecipe(boundary, attachment)
+	if !ok {
+		return ""
+	}
+	text, _ := fr.Spec.Locals.Get(key)
+	return text
+}
+
 // ProviderArtifactTemplateDelimiters returns the delimiter pair the provider
 // rendering a node's documents declares its artifact entries are read with.
 //

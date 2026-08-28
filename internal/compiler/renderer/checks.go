@@ -972,6 +972,170 @@ var LocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
 	},
 }
 
+// AttachmentLocalsEntryReadsNoLaterSibling reports each local of the FeatureRecipe
+// an attachment binds on a node whose template reads a sibling the same block
+// declares BELOW it.
+//
+// It is the node-carried attachment's form of the rule the node's own Recipe block
+// carries, and the contract it enforces is the same one: the block resolves in
+// author order, an entry reads only a sibling defined above it, and the block is
+// never reordered to make a later definition reachable. What differs is the
+// document the finding is positioned at and the coordinate the facts are keyed by,
+// which is exactly why it is a separate declaration rather than the same rule
+// reached over a wider axis: the block is authored on the FeatureRecipe, and two
+// attachments on one node write theirs independently.
+//
+// # The prefix is the attachment's OWN block, and that bound is the substance
+//
+// A base Recipe's resolved locals are merged over this block AFTER it has
+// resolved, so they are not readable from inside it. The readable set is therefore
+// the prefix of THIS block and stops there, and an attachment local naming a
+// base-Recipe key is reading a key that does not exist at the point it runs — which
+// the naming rule beside this one reports.
+//
+// Its detail carries what the node's own form carries and for the same reasons: the
+// offending expression bare, the key it names captioned, and the locals readable at
+// this point captioned. The remedy travels with the occurrence because a
+// self-reference is this same condition and no reordering fixes that one.
+var AttachmentLocalsEntryReadsNoLaterSibling = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentLocalsKeySubject,
+]{
+	Sentinel: ErrLocalsForwardReference(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentLocalsKeySubject,
+	) []constraint.Objection {
+		declared := v.AttachmentDeclaredLocalsKeys(s.NodeID(), s.AttachmentName())
+		ref := localsReferenceFault(declared, s.LocalsKey(),
+			v.AttachmentAuthoredLocals(s.NodeID(), s.AttachmentName(), s.LocalsKey()))
+		if ref.Fault != gotmpl.RootKeyUnresolved {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrLocalsForwardReference(),
+			gotmpl.LocalsForwardRemedy(ref.Key, s.LocalsKey()),
+			constraint.Uncaptioned(ref.Path),
+			constraint.Captioned("the key it names is", ref.Key),
+			constraint.Captioned("resolved at this point",
+				gotmpl.LocalsReadablePhrase(localsResolvedAt(declared, s.LocalsKey()))),
+		)}
+	},
+}
+
+// AttachmentLocalsEntryReadsOnlyDeclaredSiblings reports each local of the
+// FeatureRecipe an attachment binds on a node whose template reads a key the block
+// does not declare at all.
+//
+// It is a separate identity from the ordering rule above for the reason the node's
+// own pair are separate: this is a NAMING fault the author corrects by fixing the
+// key, and no reordering makes it readable. The two share their whole body and
+// differ in which fault they report, so an entry carries at most one of them.
+//
+// The class it reaches that the node's own form cannot is an attachment local
+// naming a base-Recipe key: the merge happens after this block resolves, so such a
+// key is undeclared here and the finding says so rather than suggesting a reorder.
+var AttachmentLocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentLocalsKeySubject,
+]{
+	Sentinel: ErrLocalsUnknownReference(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentLocalsKeySubject,
+	) []constraint.Objection {
+		declared := v.AttachmentDeclaredLocalsKeys(s.NodeID(), s.AttachmentName())
+		ref := localsReferenceFault(declared, s.LocalsKey(),
+			v.AttachmentAuthoredLocals(s.NodeID(), s.AttachmentName(), s.LocalsKey()))
+		if ref.Fault != gotmpl.RootKeyUndeclared {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrLocalsUnknownReference(),
+			gotmpl.LocalsUnknownRemedy,
+			constraint.Uncaptioned(ref.Path),
+			constraint.Captioned("the missing key is", ref.Key),
+			constraint.Captioned("the block declares", gotmpl.LocalsDeclaredList(declared)),
+		)}
+	},
+}
+
+// BoundaryAttachmentLocalsEntryReadsNoLaterSibling reports each local of the
+// FeatureRecipe a boundary-scope attachment binds whose template reads a sibling
+// the same block declares BELOW it.
+//
+// The contract is the one every locals block follows; what is its own here is
+// where the block is reached from. Such an attachment is declared at a boundary and
+// stands against no single component, so the rule is invoked over the boundary set
+// rather than the node set — one authored block asked about once, whatever the
+// boundary holds, including a boundary holding no component at all.
+//
+// There is no base block to merge over this one, because there is no component
+// whose Recipe could contribute one. The readable set is the prefix of this block
+// and that is the whole of it.
+var BoundaryAttachmentLocalsEntryReadsNoLaterSibling = constraint.Check[
+	constraint.DescribedView,
+	constraint.BoundaryAttachmentLocalsKeySubject,
+]{
+	Sentinel: ErrLocalsForwardReference(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.BoundaryAttachmentLocalsKeySubject,
+	) []constraint.Objection {
+		declared := v.BoundaryAttachmentDeclaredLocalsKeys(s.BoundaryPath(), s.AttachmentName())
+		ref := localsReferenceFault(declared, s.LocalsKey(),
+			v.BoundaryAttachmentAuthoredLocals(s.BoundaryPath(), s.AttachmentName(), s.LocalsKey()))
+		if ref.Fault != gotmpl.RootKeyUnresolved {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrLocalsForwardReference(),
+			gotmpl.LocalsForwardRemedy(ref.Key, s.LocalsKey()),
+			constraint.Uncaptioned(ref.Path),
+			constraint.Captioned("the key it names is", ref.Key),
+			constraint.Captioned("resolved at this point",
+				gotmpl.LocalsReadablePhrase(localsResolvedAt(declared, s.LocalsKey()))),
+		)}
+	},
+}
+
+// BoundaryAttachmentLocalsEntryReadsOnlyDeclaredSiblings reports each local of the
+// FeatureRecipe a boundary-scope attachment binds whose template reads a key the
+// block does not declare at all.
+//
+// It is a separate identity from the ordering rule above for the reason every form
+// of this pair is separate: a naming fault is corrected by fixing the key, and
+// telling such an author to reorder a block already in the right order would
+// describe their mistake wrongly.
+var BoundaryAttachmentLocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
+	constraint.DescribedView,
+	constraint.BoundaryAttachmentLocalsKeySubject,
+]{
+	Sentinel: ErrLocalsUnknownReference(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.BoundaryAttachmentLocalsKeySubject,
+	) []constraint.Objection {
+		declared := v.BoundaryAttachmentDeclaredLocalsKeys(s.BoundaryPath(), s.AttachmentName())
+		ref := localsReferenceFault(declared, s.LocalsKey(),
+			v.BoundaryAttachmentAuthoredLocals(s.BoundaryPath(), s.AttachmentName(), s.LocalsKey()))
+		if ref.Fault != gotmpl.RootKeyUndeclared {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrLocalsUnknownReference(),
+			gotmpl.LocalsUnknownRemedy,
+			constraint.Uncaptioned(ref.Path),
+			constraint.Captioned("the missing key is", ref.Key),
+			constraint.Captioned("the block declares", gotmpl.LocalsDeclaredList(declared)),
+		)}
+	},
+}
+
 // RecipePublishesEveryDeclaredProvidesKey reports each key a component type's
 // output contract declares that the Recipe bound to the node resolved no value
 // for.

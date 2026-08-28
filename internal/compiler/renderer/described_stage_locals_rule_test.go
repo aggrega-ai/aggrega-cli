@@ -413,6 +413,13 @@ type localsAxis struct {
 	nodes []string
 	keys  []string
 	file  string
+
+	// attachments is the per-node attachment set, empty for the proofs that
+	// present none. It is supplied rather than derived because the attachment
+	// axis is what the node-carried attachment rules are invoked over: a fixture
+	// answering nil here yields no subject, and a rule invoked zero times reports
+	// exactly what a rule that ran and approved reports.
+	attachments []string
 }
 
 func (a localsAxis) Nodes() []constraint.NodeInstance {
@@ -423,14 +430,31 @@ func (a localsAxis) Nodes() []constraint.NodeInstance {
 	return out
 }
 
-// Attachments and Edges answer empty: these proofs present neither, so the
-// coordinate set is satisfied without standing in for a cascade or a connection
-// set none of them exercises. The methods are present because the set names every
-// axis the stage's rules are keyed by, which is what stops a fixture silently
-// omitting one.
-func (a localsAxis) Attachments(_ string) []string { return nil }
+// Attachments answers whatever the fixture was given, and the boundary, locals
+// and connection axes beneath it answer empty. The methods are present because the
+// coordinate set names every axis the stage's rules are keyed by, which is what
+// stops a fixture silently omitting one.
+//
+// The distinction matters to the read counts the proofs below take. A fixture
+// given no attachment yields no attachment subject, so the two attachment-borne
+// locals rules are invoked zero times — which is why the fact presentation beside
+// this one, whose embedded view has no value behind it, does not panic on a fact it
+// does not answer. A fixture that DOES present an attachment routes the locals
+// question on through the enumeration built over the render's own products, which
+// is where the attachment-borne proofs take it.
+func (a localsAxis) Attachments(_ string) []string { return a.attachments }
 
 func (a localsAxis) Edges() []constraint.EdgeInstance { return nil }
+
+func (a localsAxis) Boundaries() []constraint.AuthoredCoordinate { return nil }
+
+func (a localsAxis) BoundaryAttachments(_ string) []string { return nil }
+
+func (a localsAxis) AttachmentLocalsKeys(_, _ string) []constraint.AuthoredCoordinate { return nil }
+
+func (a localsAxis) BoundaryAttachmentLocalsKeys(_, _ string) []constraint.AuthoredCoordinate {
+	return nil
+}
 
 func (a localsAxis) LocalsKeys(_ string) []constraint.AuthoredCoordinate {
 	out := make([]constraint.AuthoredCoordinate, 0, len(a.keys))

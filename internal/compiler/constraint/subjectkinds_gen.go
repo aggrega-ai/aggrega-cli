@@ -112,6 +112,12 @@ const (
 	// SubjectNodeLocalsKey is the subject kind (node, locals-key), keyed by 2 declared facts.
 	SubjectNodeLocalsKey SubjectKind = "(node, locals-key)"
 
+	// SubjectNodeAttachmentLocalsKey is the subject kind (node, attachment, locals-key), keyed by 2 declared facts.
+	SubjectNodeAttachmentLocalsKey SubjectKind = "(node, attachment, locals-key)"
+
+	// SubjectBoundaryAttachmentLocalsKey is the subject kind (boundary, attachment, locals-key), keyed by 2 declared facts.
+	SubjectBoundaryAttachmentLocalsKey SubjectKind = "(boundary, attachment, locals-key)"
+
 	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 4 declared facts.
 	SubjectNodeArtifact SubjectKind = "(node, artifact)"
 
@@ -166,6 +172,8 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectBoundaryAttachmentPipelineStep, Coordinates: []string{"boundary", "attachment", "pipeline-step"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeProvidesKey, Coordinates: []string{"node", "provides-key"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeLocalsKey, Coordinates: []string{"node", "locals-key"}, Traversal: TraversalPull},
+	{Kind: SubjectNodeAttachmentLocalsKey, Coordinates: []string{"node", "attachment", "locals-key"}, Traversal: TraversalPull},
+	{Kind: SubjectBoundaryAttachmentLocalsKey, Coordinates: []string{"boundary", "attachment", "locals-key"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifact, Coordinates: []string{"node", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentArtifact, Coordinates: []string{"node", "attachment", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentArtifact, Coordinates: []string{"boundary", "attachment", "artifact"}, Traversal: TraversalPull},

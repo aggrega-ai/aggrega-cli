@@ -206,13 +206,71 @@ func (c *describedStageCoordinates) LocalsKeys(node string) []constraint.Authore
 	if !held || recipe == nil {
 		return nil
 	}
-	keys := recipe.Spec.Locals.Keys()
+	return localsCoordinatesOf(recipe.Spec.Locals, recipe.Metadata.Name)
+}
+
+// AttachmentLocalsKeys returns the locals the FeatureRecipe one attachment binds
+// on a node declares, in the order that FeatureRecipe declares them.
+//
+// Declared order is the fact rather than an incidental property of it, and here it
+// is load-bearing twice over, exactly as it is on a node's own block: the entries
+// are evaluated in that order, and the prefix of this axis above a given entry IS
+// the set that entry may read.
+//
+// The FeatureRecipe is resolved through the same binding the render evaluates the
+// attachment with, and it is the same document the presentation reads the authored
+// text out of — so a local enumerated here is a local that presentation can
+// answer.
+//
+// Each coordinate is positioned at the FeatureRecipe rather than at the Aggregate
+// the attachment was written in, because the entry is written in the FeatureRecipe
+// and that is the document an author edits. The FeatureRecipe's name stands in for
+// its path, for the reason the provides axis states.
+func (c *describedStageCoordinates) AttachmentLocalsKeys(
+	node string, attachment string,
+) []constraint.AuthoredCoordinate {
+	fr, held := c.attachmentFeatureRecipe(node, attachment)
+	if !held {
+		return nil
+	}
+	return localsCoordinatesOf(fr.Spec.Locals, fr.Metadata.Name)
+}
+
+// BoundaryAttachmentLocalsKeys returns the locals the FeatureRecipe one
+// boundary-scope attachment binds declares, in the order that FeatureRecipe
+// declares them.
+//
+// The axis is per boundary rather than per node because that is where such an
+// attachment is declared: it is written once and reaches every component the
+// boundary holds, so a per-node axis would present one authored block once per
+// component.
+func (c *describedStageCoordinates) BoundaryAttachmentLocalsKeys(
+	boundary string, attachment string,
+) []constraint.AuthoredCoordinate {
+	fr, held := c.boundaryAttachmentFeatureRecipe(boundary, attachment)
+	if !held {
+		return nil
+	}
+	return localsCoordinatesOf(fr.Spec.Locals, fr.Metadata.Name)
+}
+
+// localsCoordinatesOf presents a declared locals block as the coordinate shape the
+// locals traversals take, keeping the order the document declares.
+//
+// One home because three axes need it — a node's own Recipe block, an attachment's
+// FeatureRecipe block, and a boundary-scope attachment's. A second reading would
+// be free to differ on the order it preserves or on what it does with an empty
+// block, and the prefix of this order is what a rule over the axis decides from.
+func localsCoordinatesOf(
+	locals types.OrderedMap[string], sourceFile string,
+) []constraint.AuthoredCoordinate {
+	keys := locals.Keys()
 	if len(keys) == 0 {
 		return nil
 	}
 	out := make([]constraint.AuthoredCoordinate, 0, len(keys))
 	for _, key := range keys {
-		out = append(out, constraint.AuthoredCoordinate{Value: key, SourceFile: recipe.Metadata.Name})
+		out = append(out, constraint.AuthoredCoordinate{Value: key, SourceFile: sourceFile})
 	}
 	return out
 }

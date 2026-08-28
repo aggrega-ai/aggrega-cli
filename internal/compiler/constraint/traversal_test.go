@@ -76,6 +76,9 @@ type traversalFixture struct {
 	attachArtifacts         map[string][]AuthoredCoordinate
 	boundaryAttachArtifacts map[string][]AuthoredCoordinate
 
+	attachLocals         map[string][]AuthoredCoordinate
+	boundaryAttachLocals map[string][]AuthoredCoordinate
+
 	attachEmittedPaths         map[string][]AuthoredCoordinate
 	boundaryAttachEmittedPaths map[string][]AuthoredCoordinate
 }
@@ -127,6 +130,16 @@ func (f traversalFixture) AttachmentPillarLeaves(node, attachment, pillar string
 
 func (f traversalFixture) LocalsKeys(node string) []AuthoredCoordinate {
 	return f.locals[fixtureKey(node)]
+}
+
+func (f traversalFixture) AttachmentLocalsKeys(node, attachment string) []AuthoredCoordinate {
+	return f.attachLocals[fixtureKey(node, attachment)]
+}
+
+func (f traversalFixture) BoundaryAttachmentLocalsKeys(
+	boundary, attachment string,
+) []AuthoredCoordinate {
+	return f.boundaryAttachLocals[fixtureKey(boundary, attachment)]
 }
 
 func (f traversalFixture) ProvidesKeys(node string) []AuthoredCoordinate {
@@ -479,6 +492,30 @@ func newTraversalFixture() traversalFixture {
 			fixtureKey("prod/edge", "shared-db"): {{Value: "dashboard.json", SourceFile: "featurerecipes/shared-db.yaml"}},
 		},
 
+		// The SAME local key under two attachments on one node, which is what the
+		// attachment coordinate exists to separate on this axis: two FeatureRecipes
+		// write their locals with no knowledge of each other, nothing declares local
+		// names unique across documents, and a key carrying only the node and the
+		// local would answer for whichever was asked last. The files differ, so the
+		// provenance transcript tells the two carriers apart as well as the readback.
+		//
+		// One attachment declares two locals in a deliberately non-alphabetical order,
+		// which is what shows the traversal preserving author order — the order the
+		// readable prefix at each entry is taken from.
+		attachLocals: map[string][]AuthoredCoordinate{
+			fixtureKey("web", "tls"): {
+				{Value: "issuer", SourceFile: "featurerecipes/tls.yaml"},
+				{Value: "fullname", SourceFile: "featurerecipes/tls.yaml"},
+			},
+			fixtureKey("web", "logging"): {{Value: "fullname", SourceFile: "featurerecipes/logging.yaml"}},
+		},
+		// One of the boundary's two attachments declares a locals block and the other
+		// declares none, so a transcript shows the walk entering an attachment that
+		// declares no block and yielding nothing there rather than stopping.
+		boundaryAttachLocals: map[string][]AuthoredCoordinate{
+			fixtureKey("prod/edge", "shared-db"): {{Value: "endpoint", SourceFile: "featurerecipes/shared-db.yaml"}},
+		},
+
 		// The SAME emitted name under two attachments on one node, for the reason the
 		// artifact axis above gives: two FeatureRecipes may each place a file under one
 		// name, nothing declares emitted names unique across documents, and a key
@@ -716,6 +753,41 @@ func traversalCases() []traversalCase {
 			want: []string{
 				"recipes/web.yaml|.spec.locals.fullname",
 				"recipes/api.yaml|.spec.locals.prefix",
+			},
+		},
+		{
+			// Two attachments on one node, each declaring a local named `fullname`
+			// in its own document, plus a second local above one of them. The
+			// locators are identical in their dotted part and differ only in the
+			// file, which is the shape the attachment coordinate exists to
+			// separate — and the pair of `fullname` entries is what a
+			// node-and-key-only kind would have collapsed. The order inside the
+			// first attachment is the authored one and not alphabetical, so a
+			// traversal that sorted would fail here.
+			kind: SubjectNodeAttachmentLocalsKey,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeAttachmentLocalsKeys(cancelled, f, f, f, v,
+					raisingCheck[NodeAttachmentLocalsKeySubject]())
+			},
+			want: []string{
+				"featurerecipes/tls.yaml|.spec.locals.issuer",
+				"featurerecipes/tls.yaml|.spec.locals.fullname",
+				"featurerecipes/logging.yaml|.spec.locals.fullname",
+			},
+		},
+		{
+			// The boundary-rooted twin: one authored block reached once, from the
+			// scope it was declared at rather than once per component the boundary
+			// holds. The boundary contributes no locator segment, because the entry
+			// is authored in the FeatureRecipe and a boundary key spliced onto that
+			// path would name something that document does not have.
+			kind: SubjectBoundaryAttachmentLocalsKey,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryAttachmentLocalsKeys(cancelled, f, f, f, v,
+					raisingCheck[BoundaryAttachmentLocalsKeySubject]())
+			},
+			want: []string{
+				"featurerecipes/shared-db.yaml|.spec.locals.endpoint",
 			},
 		},
 		{
@@ -1429,6 +1501,37 @@ func coordinateFlowCases() []coordinateFlowCase {
 				}, func(s NodeLocalsKeySubject) string { return s.NodeID() + "|" + s.LocalsKey() })
 			},
 			want: []string{"web|fullname", "billing.api|prefix"},
+		},
+
+		// The two attachment-borne locals kinds, whose reason for existing is exactly
+		// what these readbacks show. Both attachments on the node declare a local
+		// named `fullname`, so a traversal that dropped the attachment would produce
+		// two identical records while every declaration assertion stayed green — and
+		// the node's own readback above carries a `fullname` too, which is the
+		// collision a single node-and-key kind would have folded into one answer.
+		{
+			kind: SubjectNodeAttachmentLocalsKey,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeAttachmentLocalsKeySubject]) ([]Objection, error) {
+					return RunOnNodeAttachmentLocalsKeys(nil, f, f, f, traversalView{}, c)
+				}, func(s NodeAttachmentLocalsKeySubject) string {
+					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.LocalsKey()
+				})
+			},
+			want: []string{"web|tls|issuer", "web|tls|fullname", "web|logging|fullname"},
+		},
+		{
+			kind: SubjectBoundaryAttachmentLocalsKey,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, BoundaryAttachmentLocalsKeySubject]) ([]Objection, error) {
+					return RunOnBoundaryAttachmentLocalsKeys(nil, f, f, f, traversalView{}, c)
+				}, func(s BoundaryAttachmentLocalsKeySubject) string {
+					return s.BoundaryPath() + "|" + s.AttachmentName() + "|" + s.LocalsKey()
+				})
+			},
+			want: []string{"prod/edge|shared-db|endpoint"},
 		},
 		{
 			kind: SubjectNodeProvidesKey,

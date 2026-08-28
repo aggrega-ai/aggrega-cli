@@ -235,12 +235,20 @@ spec:
 		// dialect's separator, which is the ordinary shape on this axis: an inline
 		// entry's key is its output filename. So a locator over the entry names this
 		// block and stops, and that is what the walk below confirms resolves.
+		//
+		// Its locals block is written in the order the fixture enumerates it and not
+		// alphabetically, because author order is the contract on that axis: the
+		// second entry reads the first, which is legal precisely because the first
+		// stands above it in this document.
 		"featurerecipes/tls.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
 metadata:
   name: tls
 spec:
+  locals:
+    issuer: "{{ .values.app.issuer }}"
+    fullname: "{{ .attachment_name }}-{{ .locals.issuer }}"
   pipeline:
     - id: stamp
       plugin: core/stamper:1.0.0
@@ -249,16 +257,18 @@ spec:
     values.yaml: "replicas: 2"
 `,
 		// The second attachment on the same node, carrying an artifacts entry that
-		// resolves to the SAME output name as the first one's. Nothing declares output
-		// names unique across documents, so this is ordinary authoring rather than a
-		// contrived collision — and it is what makes the attachment coordinate
-		// load-bearing.
+		// resolves to the SAME output name as the first one's, and a local under the
+		// SAME key. Nothing declares either unique across documents, so this is
+		// ordinary authoring rather than a contrived collision — and it is what makes
+		// the attachment coordinate load-bearing on both axes.
 		"featurerecipes/logging.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
 metadata:
   name: logging
 spec:
+  locals:
+    fullname: "{{ .context.instance_id }}-logs"
   pipeline:
     - id: stamp
       plugin: core/stamper:1.0.0
@@ -266,12 +276,18 @@ spec:
   artifacts:
     values.yaml: "level: info"
 `,
+		// The boundary-scope attachment. Its locals block is authored here, in the
+		// FeatureRecipe, which is why a locator over one of its entries names this
+		// document's own spec path and carries no boundary key: the boundary is where
+		// the attachment was declared, not where the block was written.
 		"featurerecipes/shared-db.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
 metadata:
   name: shared-db
 spec:
+  locals:
+    endpoint: "{{ .boundary.path }}-db"
   pipeline:
     - id: annotate
       plugin: core/annotator:1.0.0

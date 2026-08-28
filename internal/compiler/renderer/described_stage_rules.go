@@ -298,9 +298,19 @@ func runAuthoredProvidesRule(
 // reports. It is separate from the provides pair because the axes are separate:
 // one enumerates what a Recipe publishes, the other what it declares locally, and
 // a value satisfying one does not satisfy the other.
+// It names all five axes together rather than one per carrier, and that grouping
+// is what makes a carrier structurally un-skippable: a value satisfying the node
+// axes and not the attachment ones does not compile here, so a caller cannot
+// supply coordinates for one carrier and leave another's rules invoked zero times
+// — which reports exactly what a rule that ran and approved reports.
 type authoredLocalsAxes interface {
 	constraint.NodeEnumerator
 	constraint.LocalsKeyEnumerator
+	constraint.AttachmentEnumerator
+	constraint.AttachmentLocalsKeyEnumerator
+	constraint.BoundaryEnumerator
+	constraint.BoundaryAttachmentEnumerator
+	constraint.BoundaryAttachmentLocalsKeyEnumerator
 }
 
 // runAuthoredLocalsRule invokes the rules declared over the text a Recipe wrote
@@ -330,14 +340,33 @@ type authoredLocalsAxes interface {
 // position, the Recipe and the authored key inside it, which is why they are not
 // folded into one message.
 //
+// # Three carriers, because the rule has three and not one
+//
+// A locals block is authored on three documents — a node's own Recipe, the
+// FeatureRecipe an attachment binds on a node, and the FeatureRecipe a
+// boundary-scope attachment binds — and each is reached by its own coordinate. The
+// contract is identical at all three and the decision is one shared classification,
+// so what differs is only the axis a rule is invoked over and the document a
+// finding is positioned at. Both are exactly what a declared rule needs, which is
+// why there are three pairs here rather than one pair over a widened axis: no
+// node-rooted key can name a local authored against a boundary, and a node-rooted
+// key alone cannot tell one attachment's block from another's.
+//
 // # What this does NOT reach, stated because an unstated bound reads as coverage
 //
-// The rules are declared over a node's own Recipe locals block and over nothing
-// else. A FeatureRecipe's own locals — attachment-scoped and boundary-scope alike —
-// carry the identical contract and are refused by the evaluation-time path beneath,
-// which is retained for exactly that reason and shares this rule's decision rather
-// than re-implementing it. So the coverage this adds is a position and a breadth on
-// one carrier, never a refusal the build did not already make.
+// The rules read a locals ENTRY against its own block's author order. A template on
+// another surface that reads .locals — a provides entry, a Recipe's source
+// coordinate — is decided from the block's fully resolved key set, which is a later
+// product than this stage holds, so those refusals stay with the evaluation-time
+// path and are not declared here. The block a Recipe resolves for a source
+// coordinate at lock time is refused by its own walk, outside this pipeline
+// entirely.
+//
+// The evaluation-time refusals beneath these rules are retained rather than
+// replaced. They share this rule's decision rather than re-implementing it, and
+// they abort a block at its first offender where these report every offending entry
+// — so what the declaration adds is a position and a breadth, never a refusal the
+// build did not already make.
 //
 // The cancellation signal is the caller's own, so a long walk over a large graph
 // stops within one node of the caller asking it to.
@@ -365,6 +394,51 @@ func runAuthoredLocalsRule(
 
 	objections, err = constraint.RunOnNodeLocalsKeys(
 		ctx.Err, coordinates, coordinates, view, LocalsEntryReadsOnlyDeclaredSiblings,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	// The block the FeatureRecipe an attachment binds on a node declares. It is a
+	// separate axis rather than the same one reached differently: the block is
+	// authored on the FeatureRecipe, and two attachments on one node write theirs
+	// with no knowledge of each other.
+	objections, err = constraint.RunOnNodeAttachmentLocalsKeys(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		AttachmentLocalsEntryReadsNoLaterSibling,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	objections, err = constraint.RunOnNodeAttachmentLocalsKeys(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		AttachmentLocalsEntryReadsOnlyDeclaredSiblings,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	// The block a boundary-scope attachment's FeatureRecipe declares. The boundary
+	// set is walked rather than the node set, because such an attachment is written
+	// once and reaches every component the boundary holds — so a node-rooted walk
+	// would ask about one authored block once per component, and not at all for a
+	// boundary holding none.
+	objections, err = constraint.RunOnBoundaryAttachmentLocalsKeys(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		BoundaryAttachmentLocalsEntryReadsNoLaterSibling,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	objections, err = constraint.RunOnBoundaryAttachmentLocalsKeys(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		BoundaryAttachmentLocalsEntryReadsOnlyDeclaredSiblings,
 	)
 	if err != nil {
 		return err

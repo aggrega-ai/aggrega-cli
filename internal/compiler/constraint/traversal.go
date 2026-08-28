@@ -920,6 +920,85 @@ func RunOnNodeLocalsKeys[V View](
 	})
 }
 
+// RunOnNodeAttachmentLocalsKeys invokes check once per local the FeatureRecipe
+// each attachment binds on a node declares, in node order, then attachment order,
+// then the order that FeatureRecipe declares its locals.
+//
+// The locator is .spec.locals.<key> in the FeatureRecipe's own file, on the same
+// reading the node-carried attachment's artifacts axis states: the entry is
+// authored in the FeatureRecipe, which is the document an author edits to change
+// it, and that document is neither the Aggregate the attachment was written in nor
+// the node's own Recipe. So the attachment reaches the subject as a coordinate
+// without reaching the locator — the coordinate is what tells this locals block
+// from the node's own and from another attachment's when a fact is keyed.
+//
+// # The order is what the two faults over this axis are decided from
+//
+// The prefix of this enumeration above a given entry IS the set that entry may
+// read, exactly as it is on the node's own block: the evaluation refuses before it
+// evaluates and any refusal aborts the block. The prefix is the attachment's OWN
+// block and stops there — the node's resolved locals are merged over it after it
+// has resolved, so an attachment local naming a base-Recipe key is reading a key
+// that does not exist at the point it runs.
+func RunOnNodeAttachmentLocalsKeys[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	attachments AttachmentEnumerator,
+	locals AttachmentLocalsKeyEnumerator,
+	view V,
+	check Check[V, NodeAttachmentLocalsKeySubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentLocalsKeySubject {
+		var out []NodeAttachmentLocalsKeySubject
+		for _, attachment := range attachments.Attachments(node.ID) {
+			for _, entry := range locals.AttachmentLocalsKeys(node.ID, attachment) {
+				out = append(out, newNodeAttachmentLocalsKeySubject(
+					entry.SourceFile, node.ID, attachment, entry.Value,
+					documentSpecSegments(authoredKeyLocals, entry.Value)...,
+				))
+			}
+		}
+		return out
+	})
+}
+
+// RunOnBoundaryAttachmentLocalsKeys invokes check once per local the FeatureRecipe
+// each boundary-scope attachment binds declares, in boundary order, then
+// attachment order, then the order that FeatureRecipe declares its locals.
+//
+// The locator is .spec.locals.<key> in the FeatureRecipe's own file, so the
+// boundary contributes no locator segment — the reading the other boundary-rooted
+// kinds whose locator names a FeatureRecipe state: a boundary key spliced onto a
+// FeatureRecipe-rooted locator would name a path that document does not have. The
+// boundary remains a coordinate, because that is what tells this locals block from
+// another boundary's when a fact is keyed.
+//
+// The boundary set is walked rather than the node set: such an attachment is
+// declared once and reaches every component the boundary holds, so a node-rooted
+// walk would ask about one authored block once per component.
+func RunOnBoundaryAttachmentLocalsKeys[V View](
+	cancelled Cancellation,
+	boundaries BoundaryEnumerator,
+	attachments BoundaryAttachmentEnumerator,
+	locals BoundaryAttachmentLocalsKeyEnumerator,
+	view V,
+	check Check[V, BoundaryAttachmentLocalsKeySubject],
+) ([]Objection, error) {
+	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
+		func(boundary AuthoredCoordinate) []BoundaryAttachmentLocalsKeySubject {
+			var out []BoundaryAttachmentLocalsKeySubject
+			for _, attachment := range attachments.BoundaryAttachments(boundary.Value) {
+				for _, entry := range locals.BoundaryAttachmentLocalsKeys(boundary.Value, attachment) {
+					out = append(out, newBoundaryAttachmentLocalsKeySubject(
+						entry.SourceFile, boundary.Value, attachment, entry.Value,
+						documentSpecSegments(authoredKeyLocals, entry.Value)...,
+					))
+				}
+			}
+			return out
+		})
+}
+
 // RunOnNodeProvidesKeys invokes check once per key each node's Recipe provides,
 // in node order and then provides order.
 //

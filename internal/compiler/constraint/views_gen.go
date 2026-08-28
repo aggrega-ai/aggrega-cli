@@ -2465,6 +2465,114 @@ type DescribedView interface {
 	// Keyed by (node, locals-key); read from types.RecipeSpec.Locals.
 	AuthoredNodeLocals(node string, key string) string
 
+	// AttachmentDeclaredLocalsKeys are the local names the FeatureRecipe one
+	// attachment binds on a node declares, in author order.
+	//
+	// Author order is the fact, not an incidental property of it: the entries
+	// are evaluated in the order they are written, so a rule about what one of
+	// them may reference is a rule about this order.
+	//
+	// It is keyed per attachment as well as per node because the block is
+	// authored on the FeatureRecipe the attachment binds, a different document
+	// from the node's own Recipe. Two attachments on one node therefore carry
+	// independently authored locals blocks whose key names are chosen with no
+	// knowledge of each other, so a key carrying only the node would answer
+	// for whichever block was asked last.
+	//
+	// The attachment's block is its OWN, and that is what makes the answer
+	// usable: the node's resolved locals are merged over it after it has
+	// resolved, so they are not readable from inside it, and a set folding
+	// them in would report a reference as legitimate that the evaluation
+	// refuses.
+	//
+	// It is complete as soon as the FeatureRecipe the attachment binds is
+	// known, which is why it is declared here rather than beside the values
+	// the block resolves to. The keys are authored and the values are
+	// evaluated, and a rule that admits or refuses what an author may write
+	// has to be able to run BEFORE the evaluation it exists to prevent.
+	//
+	// Keyed by (node, attachment, locals-key); read from
+	// types.FeatureRecipeSpec.Locals.
+	AttachmentDeclaredLocalsKeys(node string, attachment string) []string
+
+	// AttachmentAuthoredLocals is the template text the FeatureRecipe one
+	// attachment binds on a node declares for one local, as written and before
+	// anything is evaluated.
+	//
+	// It is the pair of the key-order fact beside it rather than a second
+	// reading of the same thing: that one says which locals exist and in what
+	// order, this one says what each of them was written as, and a rule about
+	// what a local may reference needs both. The order decides which siblings
+	// a given entry may read; the text decides which it does read.
+	//
+	// It is keyed per attachment as well as per node for the reason the order
+	// fact beside it is: the block belongs to the FeatureRecipe rather than to
+	// the node, and two attachments on one node write theirs independently.
+	//
+	// The fact is the text and not an analysis of it. A reference set
+	// collected from a template is a judgement about which references it
+	// makes, and the direction of that judgement decides which rules may read
+	// it — one that over-collects serves a rule asking what a template
+	// consumed, and would refuse authoring the template language permits.
+	// Handing over the text leaves the direction to the rule that needs it,
+	// which for this surface is the refusing direction.
+	//
+	// Emptiness is one answer rather than two. The key is enumerated rather
+	// than looked up, so it exists whenever the fact is asked, and an entry
+	// whose text is empty leaves a rule over the text with nothing to read
+	// either way.
+	//
+	// Keyed by (node, attachment, locals-key); read from
+	// types.FeatureRecipeSpec.Locals.
+	AttachmentAuthoredLocals(node string, attachment string, key string) string
+
+	// BoundaryAttachmentDeclaredLocalsKeys are the local names the
+	// FeatureRecipe one boundary-scope attachment binds declares, in author
+	// order.
+	//
+	// Author order is the fact for the reason it is on every form of this
+	// question: the entries are evaluated in the order they are written, so a
+	// rule about what one of them may reference is a rule about this order.
+	//
+	// It is rooted at a boundary rather than at a node because that is where
+	// the attachment is declared. Such an attachment is written once and
+	// reaches every component the boundary holds, so a node-rooted key would
+	// present one authored block once per component — the same text answered
+	// for as many times as the boundary has members — and would answer for
+	// it not at all where the boundary holds none, which is silence a rule
+	// cannot tell from approval.
+	//
+	// The block is the attachment's own and carries no component's locals,
+	// because such an attachment stands against no single component: there is
+	// no node whose Recipe could contribute one.
+	//
+	// Keyed by (boundary, attachment, locals-key); read from
+	// types.FeatureRecipeSpec.Locals.
+	BoundaryAttachmentDeclaredLocalsKeys(boundary string, attachment string) []string
+
+	// BoundaryAttachmentAuthoredLocals is the template text the FeatureRecipe
+	// one boundary-scope attachment binds declares for one local, as written
+	// and before anything is evaluated.
+	//
+	// It is the pair of the key-order fact beside it: that one says which
+	// locals exist and in what order, this one says what each was written as,
+	// and a rule about what a local may reference needs both.
+	//
+	// It is rooted at a boundary for the reason the order fact beside it is,
+	// and the two are read together over one enumerated key.
+	//
+	// The fact is the text and not an analysis of it, on the same reading
+	// every authored-text fact carries: a collected reference set is a
+	// judgement whose direction decides which rules may read it, and handing
+	// over the text leaves that direction to the rule that needs it.
+	//
+	// Emptiness is one answer rather than two. The key is enumerated rather
+	// than looked up, so it exists whenever the fact is asked.
+	//
+	// Keyed by (boundary, attachment, locals-key); read from
+	// types.FeatureRecipeSpec.Locals.
+	BoundaryAttachmentAuthoredLocals(boundary string, attachment string, key string) string
+
 	// ProviderArtifactTemplateDelimiters is the delimiter pair the provider
 	// rendering a node's documents declares its artifact entries are read
 	// with, so that a target syntax colliding with the usual pair is left
