@@ -103,6 +103,17 @@ type hydratedProjection struct {
 	// second time somewhere else would read the file twice and could answer
 	// differently each time.
 	ArtifactTemplateText types.OrderedMap[string]
+
+	// ArtifactRecordedContentPin is the content digest the node's Recipe recorded
+	// for each of its artifacts, keyed by the output name the entry resolves to.
+	//
+	// An entry is present only where the walk resolved a form that carries a pin —
+	// content supplied by an imported file — so presence in this map is the whole
+	// of what says a comparison is owed. That gate sits at the recording site
+	// rather than in whatever reads this, because the walk is the only place that
+	// knows which form it resolved: an inline entry is pinned by whatever pins the
+	// entity, and a bundle-supplied one by the version the bundle resolved at.
+	ArtifactRecordedContentPin types.OrderedMap[string]
 }
 
 // An artifacts block is authored on the entity that carries it, and three
@@ -173,6 +184,14 @@ type nodeAttachmentProjection struct {
 	// held in the order the entries were walked.
 	AttachmentArtifactTemplateText types.OrderedMap[string]
 
+	// AttachmentArtifactRecordedContentPin is the content digest the
+	// FeatureRecipe recorded for each of the attachment's artifacts, keyed by the
+	// output name the entry resolves to.
+	//
+	// An entry is present only where the walk resolved a form that carries a pin,
+	// on the reading the node's own field states.
+	AttachmentArtifactRecordedContentPin types.OrderedMap[string]
+
 	// AttachmentInjectMappingMechanisms pairs each mechanism the host component's
 	// own injection block declares with whether this attachment's rendered
 	// injectMapping output named it, in the order the component declared them.
@@ -202,6 +221,14 @@ type boundaryAttachmentProjection struct {
 	// each of the boundary-scope attachment's artifacts, keyed by the output name
 	// the entry resolves to and held in the order the entries were walked.
 	BoundaryAttachmentArtifactTemplateText types.OrderedMap[string]
+
+	// BoundaryAttachmentArtifactRecordedContentPin is the content digest the
+	// FeatureRecipe recorded for each of the boundary-scope attachment's
+	// artifacts, keyed by the output name the entry resolves to.
+	//
+	// An entry is present only where the walk resolved a form that carries a pin,
+	// on the reading the node's own field states.
+	BoundaryAttachmentArtifactRecordedContentPin types.OrderedMap[string]
 }
 
 // hydratedProjections is one render's retained set of those projections, keyed
@@ -329,6 +356,31 @@ func (h *hydratedProjections) recordArtifactTemplate(nodeID, outputName, text st
 	p.ArtifactTemplateText.Set(outputName, text)
 }
 
+// recordArtifactContentPin retains the content digest a node's Recipe recorded
+// for one of its artifacts, under the output name that entry resolves to.
+//
+// It is called from the artifacts walk beside the text recording, and only for an
+// entry whose resolved form carries a pin. So an artifact absent from this map is
+// one no comparison is owed for, which is the whole of the form gate: an inline
+// entry is pinned by whatever pins the entity it is part of, and a bundle-supplied
+// one by the version the bundle was resolved at.
+//
+// A nil set records nothing, which keeps the attachment-carried artifacts flowing
+// through the same walk out of a fact declared over a node's own Recipe.
+func (h *hydratedProjections) recordArtifactContentPin(nodeID, outputName, pin string) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p, ok := h.byNode[nodeID]
+	if !ok {
+		p = &hydratedProjection{}
+		h.byNode[nodeID] = p
+	}
+	p.ArtifactRecordedContentPin.Set(outputName, pin)
+}
+
 // recordNodeInjectDeliveries retains the attributed deliveries one node's
 // injection pipe carries.
 //
@@ -441,6 +493,14 @@ type attachmentCarrier interface {
 	// of this attachment's FeatureRecipe, under the output name that entry
 	// resolves to.
 	recordArtifactTemplate(outputName, text string)
+
+	// recordArtifactContentPin retains the content digest this attachment's
+	// FeatureRecipe recorded for one artifact, under the output name that entry
+	// resolves to.
+	//
+	// It is called only where the walk resolved a form that carries a pin, so a
+	// carrier reaching this at all is a carrier for which a comparison is owed.
+	recordArtifactContentPin(outputName, pin string)
 
 	// recordEmission reduces this attachment render's completed emitted file set to
 	// the projection that outlives it, under this carrier's own key.
@@ -738,6 +798,16 @@ func (r nodeAttachmentCarrier) recordArtifactTemplate(outputName, text string) {
 	h.nodeAttachmentEntry(r.key).AttachmentArtifactTemplateText.Set(outputName, text)
 }
 
+func (r nodeAttachmentCarrier) recordArtifactContentPin(outputName, pin string) {
+	h := r.into
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.nodeAttachmentEntry(r.key).AttachmentArtifactRecordedContentPin.Set(outputName, pin)
+}
+
 func (r nodeAttachmentCarrier) recordEmission(state *PhaseBState) {
 	r.emittedInto.recordNodeAttachment(r.key, state)
 }
@@ -764,6 +834,16 @@ func (r boundaryAttachmentCarrier) recordArtifactTemplate(outputName, text strin
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.boundaryAttachmentEntry(r.key).BoundaryAttachmentArtifactTemplateText.Set(outputName, text)
+}
+
+func (r boundaryAttachmentCarrier) recordArtifactContentPin(outputName, pin string) {
+	h := r.into
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.boundaryAttachmentEntry(r.key).BoundaryAttachmentArtifactRecordedContentPin.Set(outputName, pin)
 }
 
 func (r boundaryAttachmentCarrier) recordEmission(state *PhaseBState) {

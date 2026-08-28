@@ -329,6 +329,30 @@ func (s *PhaseBState) recordArtifactTemplateText(outputName, text string) {
 	}
 }
 
+// recordArtifactContentPin retains the content digest the document this render's
+// artifacts belong to recorded for one artifact, against whichever carrier the
+// state holds.
+//
+// It routes exactly as the text recording above does, and for the same reason: the
+// walk records without knowing which carrier it is on, and the two arms are
+// exclusive by construction rather than by a test here.
+//
+// It is called only for an entry whose resolved form carries a pin, so what the
+// retention holds is the set of entries a comparison is owed for. The gate sits at
+// the call site because the walk is the only place that knows which form it
+// resolved — a pin recorded for every entry would leave each reader to decide
+// whether the comparison applied, and a reader deciding wrongly either refuses a
+// legal inline entry or admits an imported one unverified.
+func (s *PhaseBState) recordArtifactContentPin(outputName, pin string) {
+	if s == nil {
+		return
+	}
+	s.hydrated.recordArtifactContentPin(s.NodeID, outputName, pin)
+	if s.attachmentHydrated != nil {
+		s.attachmentHydrated.recordArtifactContentPin(outputName, pin)
+	}
+}
+
 // recordAttachmentPillars reduces the mid-render state one attachment's render
 // reached to the projection that outlives it.
 //

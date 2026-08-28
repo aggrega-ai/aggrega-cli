@@ -5,7 +5,6 @@ package renderer
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,36 +203,132 @@ metadata:
 	}
 }
 
-// E6: an imported artifact whose recorded pin matches renders; a pin that no
-// longer matches the file's current content halts loudly with the gap-fix
-// sentinel. This is the resolution-time freeze / build-time verify contract for
-// $import artifact files.
-func TestBuildArtifactsProjection_ImportPinVerify(t *testing.T) {
-	tmplCtx, state, nodeCtx := newArtifactsCtx()
+// E6: the resolution-time freeze / build-time verify contract for $import
+// artifact files, at the half this tier can prove — that the walk retains the
+// recorded pin for exactly the authoring form that carries one.
+//
+// The comparison itself is a declared rule reading two facts, so the halt is
+// driven at the entry point rather than here: the rule needs the presentation
+// over this retention, and a state assembled directly carries none. The
+// production wiring, the halt and its message are proved in the invocation
+// tests over RenderAll; what this fixes is the input those rules read.
+//
+// The form gate lives at the recording site, so the three rows below are the
+// whole of it: an imported entry with a recorded pin retains that pin, an
+// imported entry in an unfrozen Recipe retains nothing, and an inline entry
+// retains nothing even where a pin was authored under its key. The last is the
+// one a reader is most likely to expect the other way — a hand-authored pin on
+// an inline entry is admitted by the schema and compared by nothing, because an
+// inline entry is part of the entity and is pinned by whatever pins that.
+func TestBuildArtifactsProjection_ImportPinRetention(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "policy.yaml")
 	body := []byte("kind: NetworkPolicy\nmetadata:\n  name: deny-all\n")
 	if err := os.WriteFile(p, body, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+	frozen := digest.ContentDigest(body)
+
+	for _, row := range []struct {
+		name     string
+		entry    types.ArtifactEntry
+		pins     []types.ArtifactDigest
+		wantPin  string
+		wantHeld bool
+	}{
+		{
+			name:     "imported entry with a recorded pin retains it",
+			entry:    types.ArtifactEntry{Import: p},
+			pins:     []types.ArtifactDigest{{Name: "policy", Digest: frozen}},
+			wantPin:  frozen,
+			wantHeld: true,
+		},
+		{
+			name:  "imported entry in a Recipe that was never frozen retains nothing",
+			entry: types.ArtifactEntry{Import: p},
+		},
+		{
+			name:  "inline entry retains nothing even where a pin names its key",
+			entry: types.ArtifactEntry{Inline: "kind: Inline\n"},
+			pins:  []types.ArtifactDigest{{Name: "policy", Digest: frozen}},
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			tmplCtx, state, nodeCtx := newArtifactsCtx()
+			store := newHydratedProjections(NodeProvides{})
+			state.hydrated = store
+			resetArtifacts(state)
+			state.Recipe.Spec.Artifacts.Set("policy", row.entry)
+			state.Recipe.Spec.ArtifactDigests = row.pins
+
+			if _, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}"); err != nil {
+				t.Fatalf("buildArtifactsProjection: %v", err)
+			}
+			proj, ok := store.projection("api")
+			if !ok {
+				t.Fatalf("the render recorded nothing for the node")
+			}
+			pin, held := proj.ArtifactRecordedContentPin.Get("policy")
+			if held != row.wantHeld {
+				t.Fatalf("pin held = %v, want %v.\n"+
+					"INVARIANT: presence is what says a comparison is owed, and the form gate that "+
+					"decides it lives at the recording site — so a reader cannot pair a pin with an "+
+					"authoring form that carries none.", held, row.wantHeld)
+			}
+			if pin != row.wantPin {
+				t.Errorf("retained pin = %q, want %q", pin, row.wantPin)
+			}
+		})
+	}
+}
+
+// The tampered-file direction at this tier: the retention still carries the pin
+// frozen at resolution, and the text beside it is the file's CURRENT content — so
+// the two disagree, which is the input the declared rule refuses.
+//
+// It is the positive control for the retention rows above: without it a recording
+// that stored the text's own digest rather than the Recipe's recorded one would
+// satisfy every row there and never disagree with anything.
+func TestBuildArtifactsProjection_TamperedImportLeavesTheTwoFactsDisagreeing(t *testing.T) {
+	tmplCtx, state, nodeCtx := newArtifactsCtx()
+	store := newHydratedProjections(NodeProvides{})
+	state.hydrated = store
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "policy.yaml")
+	body := []byte("kind: NetworkPolicy\nmetadata:\n  name: deny-all\n")
+	if err := os.WriteFile(p, body, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	frozen := digest.ContentDigest(body)
+
 	resetArtifacts(state)
 	state.Recipe.Spec.Artifacts.Set("policy", types.ArtifactEntry{Import: p})
-	// A matching pin renders without complaint.
-	state.Recipe.Spec.ArtifactDigests = []types.ArtifactDigest{{Name: "policy", Digest: digest.ContentDigest(body)}}
-	if _, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}"); err != nil {
-		t.Fatalf("matching pin should render: %v", err)
-	}
+	state.Recipe.Spec.ArtifactDigests = []types.ArtifactDigest{{Name: "policy", Digest: frozen}}
 
-	// Tamper the imported file after the freeze: the build must halt loudly.
 	if err := os.WriteFile(p, []byte("kind: NetworkPolicy\nmetadata:\n  name: allow-all\n"), 0o644); err != nil {
 		t.Fatalf("tamper: %v", err)
 	}
-	_, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}")
-	if err == nil {
-		t.Fatalf("tampered import rendered without halting; expected a loud halt")
+	if _, err := buildArtifactsProjection(nil, tmplCtx, state, nodeCtx, "{{", "}}"); err != nil {
+		t.Fatalf("buildArtifactsProjection: %v", err)
 	}
-	if !errors.Is(err, ErrArtifactContentMismatch()) {
-		t.Errorf("tampered-import error = %v; want ErrArtifactContentMismatch", err)
+
+	proj, ok := store.projection("api")
+	if !ok {
+		t.Fatalf("the render recorded nothing for the node")
+	}
+	pin, held := proj.ArtifactRecordedContentPin.Get("policy")
+	if !held || pin != frozen {
+		t.Fatalf("retained pin = (%q, %v), want the digest frozen at resolution", pin, held)
+	}
+	text, _ := proj.ArtifactTemplateText.Get("policy")
+	if got := digest.ContentDigest([]byte(text)); got == pin {
+		t.Fatalf("the retained text digests to the recorded pin after the file was tampered, "+
+			"so the two facts cannot disagree and the rule over them can never fire.\n"+
+			"text digest %s, recorded pin %s", got, pin)
+	}
+	if !strings.Contains(text, "allow-all") {
+		t.Errorf("the retained text is not the file's current content: %q", text)
 	}
 }
 

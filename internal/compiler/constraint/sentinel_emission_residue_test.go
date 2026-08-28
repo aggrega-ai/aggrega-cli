@@ -202,16 +202,6 @@ var inlineCheckResidue = []inlineResidueEntry{
 			"artifacts. Leaving is what the declared facts support, not a deferral of convenience.",
 	},
 	{
-		vehicle:     "ErrArtifactContentMismatch",
-		vehicleKind: vehicleSentinel,
-		host:        "buildArtifactsProjection",
-		file:        "internal/compiler/renderer/artifacts.go",
-		disposition: dispositionLiftable,
-		reason: "The cleanest member of this set: a two-value comparison between an imported artifact's " +
-			"content digest and the Recipe's recorded pin, both normalized-stage, with no dependency on any " +
-			"projection state. It is a build-verify check wearing a projection loop's clothes.",
-	},
-	{
 		vehicle:     "ErrRenderedFileCollision",
 		vehicleKind: vehicleSentinel,
 		host:        "RenderLoadedChart",

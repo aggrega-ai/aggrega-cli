@@ -2721,6 +2721,39 @@ type HydratedView interface {
 	// Keyed by (node, artifact); read from types.RecipeSpec.Artifacts.
 	ArtifactTemplateText(node string, artifact string) string
 
+	// ArtifactRecordedContentPin is the content digest a node's Recipe
+	// recorded for one of its artifacts, and whether the entry carries a
+	// recorded pin at all.
+	//
+	// The second result is load-bearing and is not a convenience over an empty
+	// string. A Recipe that was never frozen records no pin, an entry whose
+	// authoring form carries none records none either, and a rule that could
+	// not tell those from a pin whose value happened to be empty would either
+	// refuse every unfrozen Recipe or admit a pin it never compared.
+	//
+	// A pin is recorded for exactly one authoring form: an entry supplied by
+	// an imported file from the workspace. An inline entry is part of the
+	// entity, so its content is already pinned by whatever pins the entity; an
+	// entry supplied by a library bundle is pinned by the version that bundle
+	// was resolved at rather than by a file digest; and a reference carrying a
+	// registry host is refused where it is consumed and never reaches this
+	// fact. So the form gate lives in the production, at the one site that
+	// knows which form the walk resolved, rather than in each reader — a
+	// rule handed the pin plus a second fact naming the form would be free to
+	// pair them wrongly, and the pairing is the whole of what decides whether
+	// a comparison is owed.
+	//
+	// It is declared beside the entry's template text and keyed the same way,
+	// because the two are the two halves of one comparison and a reader
+	// holding one without the other has nothing to compare. The coordinate is
+	// the name the entry resolved to, which for an imported entry is the
+	// authored key itself — so a bundle-supplied output, whose coordinate is
+	// the key with the bundle's own filename nested under it, matches no
+	// recorded pin, which is the same answer its authoring form gives.
+	//
+	// Keyed by (node, artifact); read from types.RecipeSpec.ArtifactDigests.
+	ArtifactRecordedContentPin(node string, artifact string) (string, bool)
+
 	// AttachmentResolvedSourceDeclared reports whether the FeatureRecipe one
 	// attachment binds on a node carries a source once source resolution has
 	// run.
@@ -2802,6 +2835,27 @@ type HydratedView interface {
 	// Keyed by (node, attachment, artifact); read from
 	// types.FeatureRecipeSpec.Artifacts.
 	AttachmentArtifactTemplateText(node string, attachment string, artifact string) string
+
+	// AttachmentArtifactRecordedContentPin is the content digest the
+	// FeatureRecipe one attachment binds on a node recorded for one of its
+	// artifacts, and whether the entry carries a recorded pin at all.
+	//
+	// Every reading the node-scoped form carries applies here over a different
+	// document: the second result separates an unfrozen FeatureRecipe and an
+	// entry whose form carries no pin from a pin whose value is empty, and a
+	// pin is recorded for exactly one authoring form, the entry supplied by an
+	// imported file.
+	//
+	// It is keyed by the attachment as well as by the node for the reason the
+	// text fact beside it is: the attachment's render walks the same producer
+	// under the HOST component's node identity, so a pin keyed by the node
+	// alone would measure the attachment's own content against whatever the
+	// host's Recipe happened to record — and two attachments on one node
+	// record independently, with nothing making their output names distinct.
+	//
+	// Keyed by (node, attachment, artifact); read from
+	// types.FeatureRecipeSpec.ArtifactDigests.
+	AttachmentArtifactRecordedContentPin(node string, attachment string, artifact string) (string, bool)
 
 	// BoundaryAttachmentResolvedSourceDeclared reports whether the
 	// FeatureRecipe one boundary-scope attachment binds carries a source once
@@ -2885,6 +2939,26 @@ type HydratedView interface {
 	// Keyed by (boundary, attachment, artifact); read from
 	// types.FeatureRecipeSpec.Artifacts.
 	BoundaryAttachmentArtifactTemplateText(boundary string, attachment string, artifact string) string
+
+	// BoundaryAttachmentArtifactRecordedContentPin is the content digest the
+	// FeatureRecipe one boundary-scope attachment binds recorded for one of
+	// its artifacts, and whether the entry carries a recorded pin at all.
+	//
+	// Every reading the two node-rooted forms carry applies here: the second
+	// result separates an unfrozen FeatureRecipe and an entry whose form
+	// carries no pin from a pin whose value is empty, and a pin is recorded
+	// for exactly one authoring form, the entry supplied by an imported file.
+	//
+	// It is rooted at a boundary because that is where the attachment is
+	// declared, on the reading the text fact beside it gives: such an
+	// attachment is written once and reaches every component the boundary
+	// holds, so a component-rooted key would hold one recorded pin under as
+	// many keys as the boundary has members and none at all for a boundary
+	// holding none.
+	//
+	// Keyed by (boundary, attachment, artifact); read from
+	// types.FeatureRecipeSpec.ArtifactDigests.
+	BoundaryAttachmentArtifactRecordedContentPin(boundary string, attachment string, artifact string) (string, bool)
 }
 
 // EmittedView exposes the facts complete at the emitted stage: each

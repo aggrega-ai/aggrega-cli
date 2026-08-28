@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -1351,6 +1352,189 @@ var BoundaryAttachmentArtifactPillarDeclared = constraint.Check[
 			),
 			v.BoundaryAttachmentParsedWorkloadPresent(s.BoundaryPath(), s.AttachmentName()),
 			v.BoundaryAttachmentResolvedSourceDeclared(s.BoundaryPath(), s.AttachmentName()),
+			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
+		)
+	},
+}
+
+// The artifact-content-pin rule, declared once per artifacts block the rule
+// governs.
+//
+// One rule, three values, on the reading the artifact-pillar family above states:
+// three separately authored artifacts blocks are three subject kinds, an entry's
+// output name is meaningful only together with the block it was written in, and the
+// pins are recorded in three different documents. A value reading node-keyed facts
+// about a FeatureRecipe's entries would measure that FeatureRecipe's content
+// against whatever the host component's Recipe happened to record.
+//
+// The predicate has ONE body, [artifactContentPinObjections], so the digest
+// function, the comparison and the reporting exist once. A second copy would agree
+// on the day it was written and be free to drift the moment either the digest or
+// the wording moved — and a drift here means one carrier refusing content another
+// admits.
+
+// artifactContentPinObjections is the one body of the artifact-content-pin
+// predicate: it re-digests the text standing at one artifact and reports a
+// disagreement with the digest that entry's document recorded for it.
+//
+// pinned is what says a comparison is owed, and it is read rather than inferred
+// from an empty pin. An entry carries a recorded pin only where its resolved form
+// is content supplied by an imported file: an inline entry is part of the entity
+// and is pinned by whatever pins that, and a bundle-supplied one is pinned by the
+// version the bundle resolved at. That gate lives in the fact's production, at the
+// one site that knows which form the walk resolved, so a reader cannot pair a pin
+// with the wrong form.
+//
+// It re-digests the text rather than reading a digest computed elsewhere, because
+// the text is the fact and the digest is a function of it: a second recorded digest
+// beside the text would be a second answer to one question, free to disagree with
+// the bytes the text fact carries. The digest is the shared content digest the
+// freeze itself uses, so the value compared and the value recorded come from one
+// implementation.
+//
+// carrierDetail is what the calling value adds after the digests — the attachment,
+// where the entry belongs to one — and is positional rather than variadic so a
+// value cannot omit it silently.
+//
+// Its detail leaves the artifact bare, because the registered wording already says
+// imported artifact content is what the finding is about, and captions the two
+// digests, which are otherwise two hex strings a reader cannot tell apart. The
+// locator names the artifacts block in the document the entry was written in, which
+// is where the `$import` naming the drifted file is authored.
+func artifactContentPinObjections[S artifactPillarSubject](
+	s S,
+	templateText string,
+	pin string,
+	pinned bool,
+	carrierDetail []constraint.DetailValue,
+) []constraint.Objection {
+	if !pinned {
+		return nil
+	}
+	got := digest.ContentDigest([]byte(templateText))
+	if got == pin {
+		return nil
+	}
+	detail := []constraint.DetailValue{
+		constraint.Uncaptioned(s.ArtifactName()),
+		constraint.Captioned("its content digests to", got),
+		constraint.Captioned("the recorded pin is", pin),
+	}
+	return []constraint.Objection{s.RaiseWith(
+		ErrArtifactContentMismatch(), append(detail, carrierDetail...)...,
+	)}
+}
+
+// ArtifactContentMatchesItsRecordedPin reports each of a node's artifacts whose
+// imported content no longer digests to the pin its Recipe recorded.
+//
+// A Recipe carrying a recorded pin for an entry has been frozen against the bytes
+// that entry's imported file held at resolution. The build re-digests the file it
+// reads and refuses the disagreement, so a file edited after resolution halts
+// loudly rather than rendering content nothing verified. A Recipe that was never
+// frozen records no pin and has nothing to compare, which is why the fact reports
+// presence rather than answering with an empty digest.
+//
+// It reads two facts and holds no traversal over subjects, because it is invoked
+// once per artifact the node's walk resolved. Both are keyed by the node and the
+// entry's output name: the text, which is the entry's content after the walk
+// resolved whichever form it took, and the recorded pin, which is present only for
+// the one form that carries one.
+//
+// # Why the text and not the projected bytes
+//
+// The comparison is against the entry's content, not against what evaluating it
+// produced. An artifact template is a template: evaluating it substitutes values
+// that differ per node, so a digest over the output would disagree with the
+// recorded pin for every node whose values differ — while the content the pin was
+// taken from is the same text for every node that binds the Recipe.
+var ArtifactContentMatchesItsRecordedPin = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeArtifactSubject,
+]{
+	Sentinel: ErrArtifactContentMismatch(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeArtifactSubject,
+	) []constraint.Objection {
+		pin, pinned := v.ArtifactRecordedContentPin(s.NodeID(), s.ArtifactName())
+		return artifactContentPinObjections(
+			s,
+			v.ArtifactTemplateText(s.NodeID(), s.ArtifactName()),
+			pin, pinned, nil,
+		)
+	},
+}
+
+// AttachmentArtifactContentMatchesItsRecordedPin reports each artifact of the
+// FeatureRecipe one attachment binds on a node whose imported content no longer
+// digests to the pin that FeatureRecipe recorded.
+//
+// Every reading the value above sets out applies here over a different document.
+// Each of its two facts is keyed by the attachment as well as by the node, and that
+// is what makes the verdict the attachment's rather than the host's: the render of
+// an attachment walks the same producer under the HOST component's node identity,
+// so facts keyed by the node alone would measure this FeatureRecipe's content
+// against the host Recipe's recorded pin — admitting drifted content wherever the
+// host recorded nothing, and refusing intact content wherever the host recorded a
+// pin under the same output name.
+//
+// Its detail names the attachment, which is what says which FeatureRecipe: the
+// locator names the artifacts block inside that document, and a node may carry
+// several attachments whose blocks are separate documents.
+var AttachmentArtifactContentMatchesItsRecordedPin = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeAttachmentArtifactSubject,
+]{
+	Sentinel: ErrArtifactContentMismatch(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeAttachmentArtifactSubject,
+	) []constraint.Objection {
+		pin, pinned := v.AttachmentArtifactRecordedContentPin(
+			s.NodeID(), s.AttachmentName(), s.ArtifactName(),
+		)
+		return artifactContentPinObjections(
+			s,
+			v.AttachmentArtifactTemplateText(s.NodeID(), s.AttachmentName(), s.ArtifactName()),
+			pin, pinned,
+			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
+		)
+	},
+}
+
+// BoundaryAttachmentArtifactContentMatchesItsRecordedPin reports each artifact of
+// the FeatureRecipe one boundary-scope attachment binds whose imported content no
+// longer digests to the pin that FeatureRecipe recorded.
+//
+// It is the same question the two values above ask, rooted where such an attachment
+// is declared. A boundary-scope attachment is written once on a boundary and reaches
+// every component the boundary holds, so its facts are keyed by the boundary rather
+// than by any component: keyed by a node, one authored entry would be measured once
+// per component the boundary holds, and not at all for a boundary holding none.
+//
+// Its detail names the attachment, on the reading the node-carried form follows.
+var BoundaryAttachmentArtifactContentMatchesItsRecordedPin = constraint.Check[
+	constraint.HydratedView,
+	constraint.BoundaryAttachmentArtifactSubject,
+]{
+	Sentinel: ErrArtifactContentMismatch(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.BoundaryAttachmentArtifactSubject,
+	) []constraint.Objection {
+		pin, pinned := v.BoundaryAttachmentArtifactRecordedContentPin(
+			s.BoundaryPath(), s.AttachmentName(), s.ArtifactName(),
+		)
+		return artifactContentPinObjections(
+			s,
+			v.BoundaryAttachmentArtifactTemplateText(
+				s.BoundaryPath(), s.AttachmentName(), s.ArtifactName(),
+			),
+			pin, pinned,
 			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
 		)
 	},

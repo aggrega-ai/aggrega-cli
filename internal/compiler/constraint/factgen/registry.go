@@ -2980,6 +2980,44 @@ var facts = []factDecl{
 			"keeps such a rule from having to know which form it was handed.",
 	},
 	{
+		Name:        "artifact-recorded-content-pin",
+		Stage:       "hydrated",
+		SourceField: "types.RecipeSpec.ArtifactDigests",
+		Subject:     []string{"node", "artifact"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "artifact", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "ArtifactRecordedContentPin is the content digest a node's Recipe " +
+			"recorded for one of its artifacts, and whether the entry carries a " +
+			"recorded pin at all.\n\nThe second result is load-bearing and is not " +
+			"a convenience over an empty string. A Recipe that was never frozen " +
+			"records no pin, an entry whose authoring form carries none records " +
+			"none either, and a rule that could not tell those from a pin whose " +
+			"value happened to be empty would either refuse every unfrozen " +
+			"Recipe or admit a pin it never compared.\n\nA pin is recorded for " +
+			"exactly one authoring form: an entry supplied by an imported file " +
+			"from the workspace. An inline entry is part of the entity, so its " +
+			"content is already pinned by whatever pins the entity; an entry " +
+			"supplied by a library bundle is pinned by the version that bundle " +
+			"was resolved at rather than by a file digest; and a reference " +
+			"carrying a registry host is refused where it is consumed and never " +
+			"reaches this fact. So the form gate lives in the production, at the " +
+			"one site that knows which form the walk resolved, rather than in " +
+			"each reader — a rule handed the pin plus a second fact naming the " +
+			"form would be free to pair them wrongly, and the pairing is the " +
+			"whole of what decides whether a comparison is owed.\n\nIt is " +
+			"declared beside the entry's template text and keyed the same way, " +
+			"because the two are the two halves of one comparison and a reader " +
+			"holding one without the other has nothing to compare. The " +
+			"coordinate is the name the entry resolved to, which for an imported " +
+			"entry is the authored key itself — so a bundle-supplied output, " +
+			"whose coordinate is the key with the bundle's own filename nested " +
+			"under it, matches no recorded pin, which is the same answer its " +
+			"authoring form gives.",
+	},
+	{
 		Name:        "attachment-resolved-source-declared",
 		Stage:       "hydrated",
 		SourceField: "types.FeatureRecipeSpec.Source",
@@ -3073,6 +3111,32 @@ var facts = []factDecl{
 			"the same question of all three.",
 	},
 	{
+		Name:        "attachment-artifact-recorded-content-pin",
+		Stage:       "hydrated",
+		SourceField: "types.FeatureRecipeSpec.ArtifactDigests",
+		Subject:     []string{"node", "attachment", "artifact"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+			{Name: "artifact", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "AttachmentArtifactRecordedContentPin is the content digest the " +
+			"FeatureRecipe one attachment binds on a node recorded for one of its " +
+			"artifacts, and whether the entry carries a recorded pin at all.\n\n" +
+			"Every reading the node-scoped form carries applies here over a " +
+			"different document: the second result separates an unfrozen " +
+			"FeatureRecipe and an entry whose form carries no pin from a pin whose " +
+			"value is empty, and a pin is recorded for exactly one authoring form, " +
+			"the entry supplied by an imported file.\n\nIt is keyed by the " +
+			"attachment as well as by the node for the reason the text fact beside " +
+			"it is: the attachment's render walks the same producer under the HOST " +
+			"component's node identity, so a pin keyed by the node alone would " +
+			"measure the attachment's own content against whatever the host's " +
+			"Recipe happened to record — and two attachments on one node record " +
+			"independently, with nothing making their output names distinct.",
+	},
+	{
 		Name:        "boundary-attachment-resolved-source-declared",
 		Stage:       "hydrated",
 		SourceField: "types.FeatureRecipeSpec.Source",
@@ -3160,6 +3224,31 @@ var facts = []factDecl{
 			"bytes are never produced.\n\nThe text is the entry's content " +
 			"whichever form the entry took: written inline, supplied by an " +
 			"imported file, or supplied by an entry of a library bundle.",
+	},
+	{
+		Name:        "boundary-attachment-artifact-recorded-content-pin",
+		Stage:       "hydrated",
+		SourceField: "types.FeatureRecipeSpec.ArtifactDigests",
+		Subject:     []string{"boundary", "attachment", "artifact"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+			{Name: "artifact", Type: "string"},
+		},
+		Returns: "(string, bool)",
+		Doc: "BoundaryAttachmentArtifactRecordedContentPin is the content digest " +
+			"the FeatureRecipe one boundary-scope attachment binds recorded for one " +
+			"of its artifacts, and whether the entry carries a recorded pin at " +
+			"all.\n\nEvery reading the two node-rooted forms carry applies here: " +
+			"the second result separates an unfrozen FeatureRecipe and an entry " +
+			"whose form carries no pin from a pin whose value is empty, and a pin " +
+			"is recorded for exactly one authoring form, the entry supplied by an " +
+			"imported file.\n\nIt is rooted at a boundary because that is where the " +
+			"attachment is declared, on the reading the text fact beside it gives: " +
+			"such an attachment is written once and reaches every component the " +
+			"boundary holds, so a component-rooted key would hold one recorded pin " +
+			"under as many keys as the boundary has members and none at all for a " +
+			"boundary holding none.",
 	},
 
 	// ----------------------------------------------------------------- emitted

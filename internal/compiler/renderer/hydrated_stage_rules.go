@@ -408,6 +408,136 @@ func attachmentArtifactPillarHalt(
 		outputName, attachment))
 }
 
+// runArtifactContentPinRule asks the pin rule declared over this stage's facts
+// about one artifact entry, and returns what it raised as the render's halt.
+//
+// It sits at the same seam in the artifacts walk the pillar rule does and is called
+// ahead of it, because content that has drifted from its recorded pin is content
+// nothing verified: an entry is refused before anything reads it for any other
+// purpose, so a build meeting both faults reports the drift rather than a pillar
+// reference inside unverified bytes.
+//
+// Both halves of the question are answerable only in that span. The text is
+// recorded on the line above, after the walk resolved whichever form the entry
+// took, and the pin is recorded beside it for the one form that carries one; before
+// the recording neither exists, and after evaluation the text has been replaced by
+// what evaluating it produced, which no recorded pin describes.
+//
+// The two nil conditions differ exactly as they do for the pillar rule: an absent
+// presentation says this render is not the one these facts are declared over, which
+// is the ordinary state of a FeatureRecipe's render, while an absent retention
+// beneath a present presentation would leave the rule reading an empty text and no
+// pin — admitting every entry it was asked about — so it halts rather than passing.
+func runArtifactContentPinRule(
+	cancelled constraint.Cancellation,
+	state *PhaseBState,
+	outputName string,
+) error {
+	if state == nil || state.hydratedFacts == nil {
+		return nil
+	}
+	findingFile := artifactFindingFile(state)
+	if state.hydrated == nil {
+		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+			fmt.Sprintf("artifact %q could not be checked against the content digest its Recipe "+
+				"recorded — internal error: the check's inputs were incomplete. This is a fault in "+
+				"the compiler rather than in the Recipe, so there is nothing to correct in the "+
+				"catalog", outputName), nil, nil)
+	}
+
+	subject := oneRecordedArtifact{
+		nodeID:     state.NodeID,
+		outputName: outputName,
+		sourceFile: findingFile,
+	}
+	raised, err := constraint.RunOnNodeArtifacts(
+		cancelled, subject, subject, state.hydratedFacts, ArtifactContentMatchesItsRecordedPin,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(raised, fmt.Sprintf(
+		"artifact %q content does not match the digest its Recipe recorded", outputName))
+}
+
+// runAttachmentArtifactContentPinRule asks the pin rule declared over whichever
+// carrier this render was reached from about one artifact entry, and returns what it
+// raised as the render's halt.
+//
+// Both traversals are named here for the reason the pillar rule's carrier entry
+// gives: the framework's coverage read resolves a call to a declaration and follows
+// nothing through a value, so a traversal reached through an interface method would
+// belong to no calling surface and the placement table would report the rule as
+// invoked and reachable from nowhere.
+func runAttachmentArtifactContentPinRule(
+	cancelled constraint.Cancellation,
+	state *PhaseBState,
+	outputName string,
+) error {
+	if state == nil || state.attachmentHydrated == nil {
+		return nil
+	}
+	carrier := state.attachmentHydrated
+	findingFile := artifactFindingFile(state)
+	facts, err := carrier.readableFacts(findingFile, outputName)
+	if err != nil || facts == nil {
+		return err
+	}
+
+	if key, rooted := carrier.nodeAttachmentCarrierKey(); rooted {
+		subject := oneRecordedAttachmentArtifact{
+			key:        key,
+			outputName: outputName,
+			sourceFile: findingFile,
+		}
+		raised, err := constraint.RunOnNodeAttachmentArtifacts(
+			cancelled, subject, subject, subject, facts,
+			AttachmentArtifactContentMatchesItsRecordedPin,
+		)
+		if err != nil {
+			return err
+		}
+		return attachmentArtifactContentPinHalt(raised, key.attachment, outputName)
+	}
+
+	if key, rooted := carrier.boundaryAttachmentCarrierKey(); rooted {
+		subject := oneRecordedBoundaryAttachmentArtifact{
+			key:        key,
+			outputName: outputName,
+			sourceFile: findingFile,
+		}
+		raised, err := constraint.RunOnBoundaryAttachmentArtifacts(
+			cancelled, subject, subject, subject, facts,
+			BoundaryAttachmentArtifactContentMatchesItsRecordedPin,
+		)
+		if err != nil {
+			return err
+		}
+		return attachmentArtifactContentPinHalt(raised, key.attachment, outputName)
+	}
+
+	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: findingFile},
+		fmt.Sprintf("artifact %q could not be checked against the content digest the FeatureRecipe "+
+			"recorded — internal error: the render carries no identity to check it under. This is a "+
+			"fault in the compiler rather than in the FeatureRecipe, so there is nothing to correct "+
+			"in the catalog", outputName), nil, nil)
+}
+
+// attachmentArtifactContentPinHalt is the halt both carriers' findings are returned
+// as, and it names the FeatureRecipe rather than the Recipe.
+//
+// One home for the wording because the two carriers give an author the same thing to
+// do — re-freeze the entry's pin if the change was intended, or restore the file —
+// and which carrier reached it is not a difference the author acts on. The
+// attachment is named because it is what says which FeatureRecipe.
+func attachmentArtifactContentPinHalt(
+	raised []constraint.Objection, attachment, outputName string,
+) error {
+	return objectionsAsHalt(raised, fmt.Sprintf(
+		"artifact %q content does not match the digest the FeatureRecipe attachment %q binds recorded",
+		outputName, attachment))
+}
+
 // oneNodesAttachments is the node axis and the attachment axis for a rule asked
 // about the attachments of a single node, narrowed to the node whose injection
 // pipe the walk has just filled.

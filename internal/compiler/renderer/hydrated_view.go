@@ -225,6 +225,23 @@ func (v *hydratedView) ArtifactTemplateText(node string, artifact string) string
 	return text
 }
 
+// ArtifactRecordedContentPin returns the content digest a node's Recipe recorded
+// for one of its artifacts, and whether the entry carries a recorded pin at all.
+//
+// The second result is what says a comparison is owed. The retention holds an
+// entry only where the walk resolved a form that carries a pin, so an absent
+// answer covers three cases that need the same treatment: a Recipe that was never
+// frozen, an entry whose form carries no pin, and a node or an artifact this
+// retention does not hold — including an artifact of an attachment rather than of
+// the node's own Recipe, which is answered through that attachment's own carrier.
+func (v *hydratedView) ArtifactRecordedContentPin(node string, artifact string) (string, bool) {
+	p, ok := v.projections.projection(node)
+	if !ok {
+		return "", false
+	}
+	return p.ArtifactRecordedContentPin.Get(artifact)
+}
+
 // AttachmentResolvedSourceDeclared reports whether the FeatureRecipe one
 // attachment binds on a node carries a source once source resolution has run.
 //
@@ -289,6 +306,27 @@ func (v *hydratedView) AttachmentArtifactTemplateText(
 	}
 	text, _ := p.AttachmentArtifactTemplateText.Get(artifact)
 	return text
+}
+
+// AttachmentArtifactRecordedContentPin returns the content digest the
+// FeatureRecipe one attachment binds on a node recorded for one of its artifacts,
+// and whether the entry carries a recorded pin at all.
+//
+// It is answered from the attachment's own carrier and never from the node's, on
+// the reading the text accessor beside it states: the attachment's render walks the
+// same producer under the host component's node identity, so a node-keyed answer
+// would measure this FeatureRecipe's content against whatever the host's Recipe
+// recorded.
+func (v *hydratedView) AttachmentArtifactRecordedContentPin(
+	node string, attachment string, artifact string,
+) (string, bool) {
+	p, ok := v.projections.nodeAttachmentProjectionOf(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	if !ok {
+		return "", false
+	}
+	return p.AttachmentArtifactRecordedContentPin.Get(artifact)
 }
 
 // AttachmentInjectMappingMechanisms returns the mechanisms the host component's
@@ -369,6 +407,26 @@ func (v *hydratedView) BoundaryAttachmentArtifactTemplateText(
 	}
 	text, _ := p.BoundaryAttachmentArtifactTemplateText.Get(artifact)
 	return text
+}
+
+// BoundaryAttachmentArtifactRecordedContentPin returns the content digest the
+// FeatureRecipe one boundary-scope attachment binds recorded for one of its
+// artifacts, and whether the entry carries a recorded pin at all.
+//
+// It is rooted at the boundary for the reason the text accessor beside it is: such
+// an attachment is declared once on a boundary and reaches every component that
+// boundary holds, so a component-rooted key would answer one recorded pin under as
+// many keys as the boundary has members.
+func (v *hydratedView) BoundaryAttachmentArtifactRecordedContentPin(
+	boundary string, attachment string, artifact string,
+) (string, bool) {
+	p, ok := v.projections.boundaryAttachmentProjectionOf(
+		boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	)
+	if !ok {
+		return "", false
+	}
+	return p.BoundaryAttachmentArtifactRecordedContentPin.Get(artifact)
 }
 
 var _ constraint.HydratedView = (*hydratedView)(nil)

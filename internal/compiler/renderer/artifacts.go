@@ -22,7 +22,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
@@ -137,6 +136,28 @@ func buildArtifactsProjection(
 		// same walk under the node's identity. A render carrying no carrier records
 		// nothing.
 		state.recordArtifactTemplateText(outputName, tmplText)
+		// The pin rules, asked ahead of the pillar rules below because content that
+		// has drifted from its recorded pin is content nothing verified: such an
+		// entry is refused before anything reads it for any other purpose, so a
+		// build meeting both faults reports the drift rather than a pillar
+		// reference inside unverified bytes.
+		//
+		// The recorded pin was retained by the branch that resolved the
+		// entry, which is the one place that knows whether the entry's form carries
+		// one at all; an entry with no recorded pin leaves both rules with nothing to
+		// compare, which is the ordinary answer for an inline entry and for a Recipe
+		// that was never frozen.
+		//
+		// Two lines for the same reason the pillar readings below are two: the facts
+		// are keyed by the carrier the render was reached from, so an attachment's
+		// entries — which flow through this walk under the HOST component's node
+		// identity — are asked about through their own carrier's values.
+		if err := runArtifactContentPinRule(cancelled, state, outputName); err != nil {
+			return err
+		}
+		if err := runAttachmentArtifactContentPinRule(cancelled, state, outputName); err != nil {
+			return err
+		}
 		// The rule declared over this stage's facts, asked about the entry recorded
 		// on the line above. It sits between the recording and the evaluation below
 		// because that is the only span where the entry's text exists and nothing
@@ -272,21 +293,21 @@ func buildArtifactsProjection(
 			origin := "inline"
 			if entry.Import != "" {
 				origin = "import"
-				// Build-verify: an imported artifact whose recipe carries a recorded
-				// pin must still hash to that pin — a file edited after resolution
-				// halts loudly rather than rendering unverified content. A recipe with
-				// no recorded pin (never frozen) has nothing to compare and proceeds.
+				// The recorded pin is retained here rather than at the emit seam,
+				// because this is the one branch that knows the entry's resolved form
+				// is content supplied by an imported file — the only form a pin is
+				// recorded for. An inline entry is pinned by whatever pins the entity
+				// it is part of, and a bundle-supplied one by the version the bundle
+				// resolved at, so neither carries a file digest to compare against.
+				// Retaining a pin for every entry and leaving each reader to decide
+				// whether the comparison applied would put the form gate in as many
+				// places as there are readers.
+				//
+				// A Recipe that was never frozen records nothing, which leaves the
+				// rules over this entry with nothing to compare and is the ordinary
+				// answer rather than an approval.
 				if pin, ok := recipepin.MatchArtifactPin(state.Recipe.Spec.ArtifactDigests, key); ok {
-					if got := digest.ContentDigest([]byte(tmplText)); got != pin.Digest {
-						return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactContentMismatch(),
-							cerrors.CatalogError, cerrors.SourceLocation{File: entry.Import},
-							cerrors.ComposeMessage(ErrArtifactContentMismatch(), []string{
-								fmt.Sprintf("Recipe %q", state.RecipeName),
-								fmt.Sprintf("artifact %q", key),
-								fmt.Sprintf("imported file %s", entry.Import),
-								fmt.Sprintf("digest %s does not match recorded pin %s", got, pin.Digest),
-							}, ""))
-					}
+					state.recordArtifactContentPin(name, pin.Digest)
 				}
 			}
 			if err := emit(name, origin, tmplText); err != nil {
