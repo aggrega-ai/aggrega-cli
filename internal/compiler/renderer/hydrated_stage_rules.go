@@ -522,6 +522,74 @@ func runNodeInjectDeliveryRule(
 		raised, "attachments delivering a key another inject source already delivered")
 }
 
+// runInjectMappingMechanismRule asks the rule declared over one node's recorded
+// injectMapping pairings about each attachment attached to that node, and returns
+// what it raised as the render's halt.
+//
+// It is called from inside the node walk, immediately after every attachment's
+// injectMapping has been evaluated and its pairing recorded, and before anything
+// downstream reads the rewritten pipe. That is the earliest point the whole
+// question is answerable: the component's declarations are read once at the top
+// of the phase, and the mechanisms an output names exist only once that output
+// has rendered.
+//
+// # What moving the reading to here changes, and what it does not
+//
+// The reading it replaces ran inside the parse, so it stopped the phase at the
+// FIRST attachment whose output left a declared mechanism unnamed and the
+// attachments after it were never evaluated. Gathered here, every attachment's
+// mapping is evaluated before the question is asked. The inputs that halt are
+// unchanged — a build reaching this line with any pairing unmapped halts, and one
+// with none renders — and every declared mechanism an attachment leaves unmapped
+// is now reported rather than only the first.
+//
+// What does change is which fault an input carrying TWO faults reports. A
+// FeatureRecipe later in the cascade whose locals or whose mapping template fails
+// to evaluate now halts the phase before this line is reached, where the reading
+// inside the parse would have refused the earlier attachment's unmapped mechanism
+// first. Both are catalog faults in the same node's attachment set and both halt,
+// so the build stops either way; the work between the two points is template
+// evaluation over documents already in hand, with no guest crossing and no bytes,
+// and it is discarded on either fault.
+//
+// Reaching it any later would be worse for the reason the sibling reading beside
+// it gives: the pipe this phase rewrites is what every sub-pass below renders
+// against, so a reading gathered after the node walk would refuse the same inputs
+// after every other node had rendered.
+//
+// # The two absent inputs are different questions
+//
+// An absent presentation, an absent enumeration, or a node the enumeration does
+// not describe all leave the rule uninvoked, which is the honest outcome rather
+// than a silent skip: the presentation and the enumeration are installed together,
+// unconditionally, by the one assembler inside this package, and the enumeration
+// describes every node the walk visits — so all three states are reachable only by
+// assembling a render's input directly. A rule invoked over coordinates the facts
+// were not keyed by, or positioned from an instance carrying no provenance, would
+// be worse than one not invoked.
+//
+// The cancellation signal is the caller's own, so a walk over a large attachment
+// set stops within one subject of the caller asking it to.
+func runInjectMappingMechanismRule(
+	cancelled constraint.Cancellation,
+	view constraint.HydratedView,
+	coordinates constraint.AttachmentEnumerator,
+	node constraint.NodeInstance,
+) error {
+	if view == nil || coordinates == nil || node.ID == "" {
+		return nil
+	}
+	subject := oneNodesAttachments{node: node, attachments: coordinates}
+	raised, err := constraint.RunOnNodeAttachments(
+		cancelled, subject, subject, view, AttachmentInjectMappingCoversEveryAuthoredMechanism,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(
+		raised, "attachments whose injectMapping leaves a declared inject mechanism unmapped")
+}
+
 // declaredProvidesContract is the node axis and the provides-key axis for the
 // rule over a component type's output contract: every node whose contract the
 // render read, and the keys that contract declares for each.

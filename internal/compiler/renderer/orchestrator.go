@@ -1137,6 +1137,22 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
+		// Retain what each attachment's mapping said about the mechanisms this
+		// component declared, then ask the rule declared over that record whether
+		// any attachment left one unmapped. The recording is unconditional and the
+		// reading is immediately after it: this is the point every mapping has
+		// rendered and nothing below has read the rewritten pipe yet, so a
+		// declaration reaching nothing is refused before any output is rendered
+		// against a pipe short of it.
+		for _, delivery := range mappedDelivery {
+			input.hydrated.recordAttachmentInjectMappingMechanisms(
+				nodeID, delivery.InstanceName, delivery.Mechanisms)
+		}
+		if err := runInjectMappingMechanismRule(
+			ctx.Err, result.HydratedView, input.GraphCoordinates, nodeInstances[nodeID],
+		); err != nil {
+			return nil, err
+		}
 		// The FeatureRecipe route is readable only now. A slot declaring no delivery
 		// of its own hands delivery to the FeatureRecipe, whose injectMapping names
 		// its delivery key with a template — so the key exists only in the rendered

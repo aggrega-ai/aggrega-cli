@@ -6,6 +6,7 @@ package renderer
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -43,6 +44,19 @@ type InjectMappingDelivery struct {
 	InstanceName string
 	Mapping      string
 	Keys         redact.DeliveryKeys
+
+	// Mechanisms pairs each mechanism the host component's own injection block
+	// declares with whether this mapping's rendered output carries a top-level
+	// key for it, and with the FeatureRecipe the mapping was read from.
+	//
+	// It travels with the keys rather than beside them for the reason the keys
+	// travel with the authored text: both halves come out of one evaluation, and
+	// the mechanisms a rendered output names are knowable only from that output.
+	//
+	// It is empty where the output named no mechanism — a flat delivery
+	// dictionary, or an output that parsed as nothing — because such an output
+	// makes no claim about the component's declarations to read against.
+	Mechanisms []constraint.InjectMappingMechanism
 }
 
 // ExecutePhaseA runs Phase A (Pre-Render Interception) for one node.
@@ -62,14 +76,12 @@ type InjectMappingDelivery struct {
 // unevaluated text.
 //
 // The authored-mechanism set is collected once from ctx.InjectRaw — the
-// immutable Developer intent populated by BuildInjectPipe. The set is passed
-// into every ParseInjectMappingOutput call so the dangling-reference check
-// (every authored mechanism must surface in the parsed FR injectMapping
-// output) sees the full Component- or Feature-attachment authoring at every
-// FR iteration. ctx.InjectRaw must be either nil or a *types.InjectBlock per
-// the field's contract; any other concrete type indicates a contract
-// violation upstream and produces a loud halt rather than silently skipping
-// the dangling-reference check.
+// immutable Developer intent populated by BuildInjectPipe — so every
+// attachment's mapping is read against the full Component- or
+// Feature-attachment authoring. ctx.InjectRaw must be either nil or a
+// *types.InjectBlock per the field's contract; any other concrete type
+// indicates a contract violation upstream and produces a loud halt rather than
+// silently reading against an empty set.
 //
 // It returns one InjectMappingDelivery per attachment whose mapping produced an
 // overlay, in the order the attachments were resolved. That report is what lets a
@@ -77,6 +89,14 @@ type InjectMappingDelivery struct {
 // a mapping's delivery key is itself a template, so the key is knowable only from
 // the rendered overlay while what the mapping READ is knowable only from its
 // authored text, and this is the one point where both are in scope.
+//
+// Each entry also carries the pairing between the mechanisms the host component
+// declared and the mechanisms that attachment's rendered output named. The
+// verdict on that pairing is not reached here: a mechanism the output leaves
+// unnamed is a delivery this attachment silently drops, and the rule declared
+// over the recorded pairing is what refuses it. Reaching the verdict here would
+// put a check inside a phase, where it could be neither placed nor positioned by
+// the framework that computes both.
 func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef) ([]InjectMappingDelivery, error) {
 	var authored []string
 	if ctx.InjectRaw != nil {
@@ -155,12 +175,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		}
 
 		// Parse the output and deep-merge over the inject pipe
-		overlay, err := ParseInjectMappingOutput(output, authored)
-		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError,
-				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
-				fmt.Sprintf("feature %q (recipe %q) injectMapping output parse", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
-		}
+		overlay, mapped := ParseInjectMappingOutput(output)
 
 		if overlay != nil {
 			DeepMergeInjectStructured(&ctx.Context.Inject, overlay)
@@ -170,11 +185,52 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 				InstanceName: ref.InstanceName,
 				Mapping:      tmplText,
 				Keys:         overlayDeliveryKeys(overlay),
+				Mechanisms: authoredMechanismsMapped(
+					authored, mapped, ref.FeatureRecipe.Metadata.Name),
 			})
 		}
 	}
 
 	return delivered, nil
+}
+
+// authoredMechanismsMapped pairs each mechanism the host component's own
+// injection block declares with whether one attachment's rendered injectMapping
+// output named it, and stamps the FeatureRecipe the output was read from onto
+// each pair.
+//
+// The authored order is kept, because it is the order the component wrote its
+// mechanisms in and so the order an author reads them back in. The rendered
+// names are searched rather than walked for the same reason the two sides are
+// paired at all: the question is asked of the component's declarations, and a
+// mechanism the output names that the component never declared is not this
+// pairing's business — a mapping is free to write mechanisms of its own.
+//
+// It answers nothing at all when the output named no mechanism, which is the
+// state a flat delivery dictionary and an unparsed output both reach. Returning
+// a pairing there would say every declared mechanism went unnamed, and that
+// reading turns the flat-output idiom into a refusal. The two states are told
+// apart by the rendered names being absent rather than empty, which is what the
+// parse reports.
+func authoredMechanismsMapped(
+	authored, mapped []string, recipe string,
+) []constraint.InjectMappingMechanism {
+	if len(mapped) == 0 || len(authored) == 0 {
+		return nil
+	}
+	named := make(map[string]bool, len(mapped))
+	for _, mechanism := range mapped {
+		named[mechanism] = true
+	}
+	out := make([]constraint.InjectMappingMechanism, 0, len(authored))
+	for _, mechanism := range authored {
+		out = append(out, constraint.InjectMappingMechanism{
+			Mechanism: mechanism,
+			Recipe:    recipe,
+			Mapped:    named[mechanism],
+		})
+	}
+	return out
 }
 
 // overlayDeliveryKeys names the delivery keys one parsed injectMapping overlay

@@ -139,6 +139,38 @@ type InjectDelivery struct {
 	Delivered bool
 }
 
+// InjectMappingMechanism is one delivery mechanism the host component's
+// own injection block declares, as one attachment's rendered injectMapping
+// output names it: the mechanism, the FeatureRecipe whose mapping was
+// evaluated, and whether that output carries a top-level key for the
+// mechanism.
+//
+// The two sides are one fact because neither answers anything alone. A
+// mechanism the component declares is only interesting beside a mapping
+// that had the chance to carry it, and a key a mapping carries is only
+// interesting beside a component that asked for that mechanism — so a
+// reader given either set alone would have to fetch the other and pair
+// them, which is the re-derivation declaring the fact exists to close.
+//
+// The FeatureRecipe travels with the pair because the mapping is authored
+// there rather than on the attachment that binds it, and the two names are
+// independent: an attachment instance is named by whoever attached it and
+// the FeatureRecipe by whoever published it. A reader holding only the
+// attachment could not name the document the mapping is written in.
+type InjectMappingMechanism struct {
+	// Mechanism is the delivery mechanism the host component's own injection
+	// block declares.
+	Mechanism string
+
+	// Recipe is the FeatureRecipe whose injectMapping was evaluated for the
+	// attachment, which is the document a missing key is added to.
+	Recipe string
+
+	// Mapped reports whether that rendered output carries a top-level key for
+	// the mechanism.
+	Mapped bool
+}
+
 // ArtifactTemplateDelimiters is the delimiter pair an artifact template is
 // read with: the opening delimiter and the closing one.
 //
@@ -2467,9 +2499,10 @@ type DescribedView interface {
 // HydratedView exposes the facts complete at the hydrated stage: per-node
 // resolved locals and provides, and the mid-render products standing
 // beside them — the resolved source, the parsed workload, each artifact
-// entry's template text before it is evaluated, and the attributed
-// deliveries each node's injection pipe carries — all of it state that
-// exists before any artifact bytes.
+// entry's template text before it is evaluated, the attributed deliveries
+// each node's injection pipe carries, and the mechanisms each attachment's
+// rendered injectMapping output names — all of it state that exists
+// before any artifact bytes.
 //
 // It embeds DescribedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
@@ -2594,6 +2627,38 @@ type HydratedView interface {
 	//
 	// Keyed by (node, attachment); read from types.InjectPipe.
 	NodeInjectDeliveries(node string) []InjectDelivery
+
+	// AttachmentInjectMappingMechanisms are the delivery mechanisms the host
+	// component's own injection block declares, one entry per mechanism, each
+	// naming the FeatureRecipe whose injectMapping was evaluated for this
+	// attachment and whether that mapping's rendered output carries a
+	// top-level key for the mechanism — in the order the component declared
+	// the mechanisms.
+	//
+	// A FeatureRecipe's injectMapping rewrites the pipe the host component
+	// delivers into, and it names the mechanisms it writes as the top-level
+	// keys of its own output. So a component declaring a mechanism the
+	// mapping's output does not name has asked for a delivery this attachment
+	// silently drops, and the pair of names is what says so. Neither name is
+	// recoverable afterwards: the merge folds the output into one pipe and the
+	// pipe remembers no mapping, while the mapping's delivery key is itself a
+	// template, so only the RENDERED output says which mechanisms it filled.
+	//
+	// It is keyed per attachment because each attachment carries its own
+	// mapping and each is evaluated against the same component's declarations,
+	// so two attachments on one node answer independently.
+	//
+	// It is empty for an attachment binding a FeatureRecipe that declares no
+	// injectMapping, for one whose mapping rendered nothing, and for one whose
+	// output is a flat delivery dictionary rather than a mechanism-keyed
+	// document — a flat output names no mechanism at all, so it makes no
+	// claim about the component's declarations to read against. It is empty
+	// for a component that declares no injection block of its own, which is
+	// the ordinary answer.
+	//
+	// Keyed by (node, attachment); read from
+	// types.FeatureRecipeSpec.InjectMapping.
+	AttachmentInjectMappingMechanisms(node string, attachment string) []InjectMappingMechanism
 
 	// ArtifactTemplateText is the template text standing at one of a node's
 	// artifacts, as it is before anything evaluates it.

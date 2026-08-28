@@ -107,28 +107,36 @@ func TestMergeAdditional_BothBranches(t *testing.T) {
 	}
 }
 
-// TestParseInjectMappingOutput_EveryShape pins the structured-parse,
-// flat-map fallback, dangling-reference error, and empty-output cases.
+// TestParseInjectMappingOutput_EveryShape pins the structured-parse, flat-map
+// fallback and empty-output cases, together with the mechanism naming each of
+// them reports.
+//
+// The naming is asserted on every shape rather than only on the structured one,
+// because the difference between "named none" and "named nothing" is what tells
+// a flat delivery dictionary — the legitimate env-only idiom — from a structured
+// output that filled no mechanism. A reading that collapsed the two would refuse
+// every flat-output FeatureRecipe.
 func TestParseInjectMappingOutput_EveryShape(t *testing.T) {
 	t.Parallel()
 	// Empty / brace-only.
-	got, err := ParseInjectMappingOutput("", nil)
-	if got != nil || err != nil {
-		t.Errorf("empty → (nil, nil); got (%v, %v)", got, err)
+	got, mechanisms := ParseInjectMappingOutput("")
+	if got != nil || mechanisms != nil {
+		t.Errorf("empty → (nil, nil); got (%v, %v)", got, mechanisms)
 	}
-	got, err = ParseInjectMappingOutput("{}", nil)
-	if got != nil || err != nil {
-		t.Errorf("braces → (nil, nil); got (%v, %v)", got, err)
+	got, mechanisms = ParseInjectMappingOutput("{}")
+	if got != nil || mechanisms != nil {
+		t.Errorf("braces → (nil, nil); got (%v, %v)", got, mechanisms)
 	}
 
-	// Flat-map output (single-level map).
+	// Flat-map output (single-level map): it names no mechanism at all, which is
+	// what keeps the rule over this naming from refusing the env-only idiom.
 	output := "K1: v1\nK2: v2\n"
-	got, err = ParseInjectMappingOutput(output, nil)
-	if err != nil {
-		t.Fatalf("flat: %v", err)
-	}
+	got, mechanisms = ParseInjectMappingOutput(output)
 	if got == nil || got.Env.Len() != 2 {
 		t.Errorf("flat-map should populate Env; got %v", got)
+	}
+	if mechanisms != nil {
+		t.Errorf("a flat output names no mechanism; got %v", mechanisms)
 	}
 
 	// Structured output.
@@ -137,27 +145,25 @@ func TestParseInjectMappingOutput_EveryShape(t *testing.T) {
 file:
   F1: /x
 `
-	got, err = ParseInjectMappingOutput(output, nil)
-	if err != nil {
-		t.Fatalf("structured: %v", err)
-	}
+	got, mechanisms = ParseInjectMappingOutput(output)
 	if got == nil || got.Env.Len() != 1 || got.File.Len() != 1 {
 		t.Errorf("structured: got %+v", got)
 	}
+	if len(mechanisms) != 2 || mechanisms[0] != "env" || mechanisms[1] != "file" {
+		t.Errorf("structured naming = %v; want [env file]", mechanisms)
+	}
 
-	// Dangling-reference: authored mechanism not in output.
+	// A structured output that fills one mechanism names exactly that one, which
+	// is what says the other declared mechanisms went unmapped.
 	output = `env:
   K1: v1
 `
-	_, err = ParseInjectMappingOutput(output, []string{"env", "file"})
-	if err == nil || !errors.Is(err, ErrUnmappedCustomMechanism()) {
-		t.Errorf("authored 'file' missing should error ErrUnmappedCustomMechanism; got %v", err)
+	got, mechanisms = ParseInjectMappingOutput(output)
+	if got == nil {
+		t.Fatalf("structured single-mechanism output should parse; got nil")
 	}
-
-	// Authored matches structured output.
-	got, err = ParseInjectMappingOutput(output, []string{"env"})
-	if err != nil || got == nil {
-		t.Errorf("authored env present: err=%v got=%v", err, got)
+	if len(mechanisms) != 1 || mechanisms[0] != "env" {
+		t.Errorf("single-mechanism naming = %v; want [env]", mechanisms)
 	}
 }
 
@@ -358,9 +364,9 @@ func TestParseInjectMappingOutput_MalformedYAML(t *testing.T) {
 	t.Parallel()
 	// "[" parses as an unclosed sequence — YAML can't read it, both
 	// structured and flat fall back to (nil, nil).
-	got, err := ParseInjectMappingOutput("[\n  not closed", nil)
-	if err != nil || got != nil {
-		t.Errorf("malformed: (%v, %v); want (nil, nil)", got, err)
+	got, mechanisms := ParseInjectMappingOutput("[\n  not closed")
+	if got != nil || mechanisms != nil {
+		t.Errorf("malformed: (%v, %v); want (nil, nil)", got, mechanisms)
 	}
 }
 

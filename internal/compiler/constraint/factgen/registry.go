@@ -92,9 +92,10 @@ var stages = []stageDecl{
 		Extends: "described",
 		Holds: "per-node resolved locals and provides, and the mid-render products " +
 			"standing beside them — the resolved source, the parsed workload, " +
-			"each artifact entry's template text before it is evaluated, and the " +
-			"attributed deliveries each node's injection pipe carries — all of it " +
-			"state that exists before any artifact bytes",
+			"each artifact entry's template text before it is evaluated, the " +
+			"attributed deliveries each node's injection pipe carries, and the " +
+			"mechanisms each attachment's rendered injectMapping output names — " +
+			"all of it state that exists before any artifact bytes",
 		// The powers named here are the ones this production genuinely exercises,
 		// and the filesystem read is the one a reader is most likely to think
 		// wrong. An artifact entry and a workload body may each be authored as an
@@ -238,6 +239,32 @@ var records = []recordDecl{
 			{Name: "DeliveryKey", Type: "string", Doc: "DeliveryKey is the key the value is delivered under, which is what the consumer reads it by."},
 			{Name: "Attachment", Type: "string", Doc: "Attachment is the attachment instance whose own injection block asked for the delivery, empty where the component's own block or one of its connections did."},
 			{Name: "Delivered", Type: "bool", Doc: "Delivered reports whether a value arrived under the key, which is false for a delivery whose reference resolved to nothing and for one whose key another delivery already holds."},
+		},
+	},
+	{
+		Name: "InjectMappingMechanism",
+		Doc: "InjectMappingMechanism is one delivery mechanism the host " +
+			"component's own injection block declares, as one attachment's " +
+			"rendered injectMapping output names it: the mechanism, the " +
+			"FeatureRecipe whose mapping was evaluated, and whether that " +
+			"output carries a top-level key for the mechanism.\n\nThe two " +
+			"sides are one fact because neither answers anything alone. A " +
+			"mechanism the component declares is only interesting beside a " +
+			"mapping that had the chance to carry it, and a key a mapping " +
+			"carries is only interesting beside a component that asked for " +
+			"that mechanism — so a reader given either set alone would have " +
+			"to fetch the other and pair them, which is the re-derivation " +
+			"declaring the fact exists to close.\n\nThe FeatureRecipe " +
+			"travels with the pair because the mapping is authored there " +
+			"rather than on the attachment that binds it, and the two names " +
+			"are independent: an attachment instance is named by whoever " +
+			"attached it and the FeatureRecipe by whoever published it. A " +
+			"reader holding only the attachment could not name the document " +
+			"the mapping is written in.",
+		Fields: []recordField{
+			{Name: "Mechanism", Type: "string", Doc: "Mechanism is the delivery mechanism the host component's own injection block declares."},
+			{Name: "Recipe", Type: "string", Doc: "Recipe is the FeatureRecipe whose injectMapping was evaluated for the attachment, which is the document a missing key is added to."},
+			{Name: "Mapped", Type: "bool", Doc: "Mapped reports whether that rendered output carries a top-level key for the mechanism."},
 		},
 	},
 	{
@@ -2841,6 +2868,43 @@ var facts = []factDecl{
 			"surface as the one that has to change.\n\nIt is empty for a node " +
 			"whose pipe carries nothing, which is the ordinary answer for a " +
 			"component that delivers nothing into its own render context.",
+	},
+	{
+		Name:        "attachment-inject-mapping-mechanisms",
+		Stage:       "hydrated",
+		SourceField: "types.FeatureRecipeSpec.InjectMapping",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "[]InjectMappingMechanism",
+		Doc: "AttachmentInjectMappingMechanisms are the delivery mechanisms " +
+			"the host component's own injection block declares, one entry " +
+			"per mechanism, each naming the FeatureRecipe whose injectMapping " +
+			"was evaluated for this attachment and whether that mapping's " +
+			"rendered output carries a top-level key for the mechanism — in " +
+			"the order the component declared the mechanisms.\n\nA " +
+			"FeatureRecipe's injectMapping rewrites the pipe the host " +
+			"component delivers into, and it names the mechanisms it writes " +
+			"as the top-level keys of its own output. So a component " +
+			"declaring a mechanism the mapping's output does not name has " +
+			"asked for a delivery this attachment silently drops, and the " +
+			"pair of names is what says so. Neither name is recoverable " +
+			"afterwards: the merge folds the output into one pipe and the " +
+			"pipe remembers no mapping, while the mapping's delivery key is " +
+			"itself a template, so only the RENDERED output says which " +
+			"mechanisms it filled.\n\nIt is keyed per attachment because " +
+			"each attachment carries its own mapping and each is evaluated " +
+			"against the same component's declarations, so two attachments " +
+			"on one node answer independently.\n\nIt is empty for an " +
+			"attachment binding a FeatureRecipe that declares no " +
+			"injectMapping, for one whose mapping rendered nothing, and for " +
+			"one whose output is a flat delivery dictionary rather than a " +
+			"mechanism-keyed document — a flat output names no mechanism at " +
+			"all, so it makes no claim about the component's declarations to " +
+			"read against. It is empty for a component that declares no " +
+			"injection block of its own, which is the ordinary answer.",
 	},
 	{
 		Name:        "artifact-template-text",

@@ -672,6 +672,80 @@ var AttachmentInjectKeyNotDeliveredByAnotherSource = constraint.Check[
 	},
 }
 
+// AttachmentInjectMappingCoversEveryAuthoredMechanism reports each delivery
+// mechanism the host component's own injection block declares that one
+// attachment's rendered injectMapping output carries no top-level key for.
+//
+// A FeatureRecipe's injectMapping rewrites the pipe the host component delivers
+// into, and it names the mechanisms it writes as the top-level keys of its own
+// rendered output. A component declaring a mechanism the output does not name has
+// therefore asked for a delivery this attachment drops on the floor: the merge
+// applies what the output carried and the declaration reaches nothing. The build
+// halts rather than rendering against a pipe missing a mechanism the author
+// dictated, and the author resolves it by writing the mechanism's key into the
+// FeatureRecipe's mapping — which is what the registered wording says.
+//
+// It is invoked once per attachment, which is the side the finding is positioned
+// at, and reads one fact — the pairing between what the component declared and
+// what that attachment's output named. The attachment is the positioned side
+// because the FeatureRecipe is reached through it: the mapping is authored in a
+// catalog document the Aggregate does not contain, and the attachment's entry is
+// the position in the author's own file that binds it. The FeatureRecipe is named
+// in the detail for that reason rather than left to be looked up.
+//
+// Each unmapped mechanism is its own objection, so a component declaring two
+// mechanisms an attachment maps neither of is told about both rather than about
+// whichever the component declared first.
+//
+// # Why a mapping naming nothing is not a mapping naming none
+//
+// An output that parsed as a flat delivery dictionary makes no claim about
+// mechanisms at all — it is the legitimate idiom for a FeatureRecipe producing
+// env-only deliveries — and neither does an attachment binding a FeatureRecipe
+// with no mapping to evaluate. The fact reports no pairing for either, so this
+// rule is invoked over an empty answer and raises nothing. Reading an empty
+// answer as "every declared mechanism went unmapped" would refuse every such
+// FeatureRecipe, and the two states are told apart by the fact rather than here.
+//
+// # What the detail names
+//
+// The mechanism stands bare, because the registered wording already says an
+// inject mechanism with no matching key is what the finding is about. The
+// FeatureRecipe is captioned, since a mechanism name and a recipe name are both
+// bare words and nothing else in the message tells them apart — and it is the
+// document the remedy is applied to, which the locator cannot reach: the locator
+// names the attachment's entry in the Aggregate, and the mapping is written
+// somewhere else entirely.
+//
+// The node and the attachment are not in the detail, because the locator carries
+// both.
+var AttachmentInjectMappingCoversEveryAuthoredMechanism = constraint.Check[
+	constraint.HydratedView,
+	constraint.NodeAttachmentSubject,
+]{
+	Sentinel: ErrUnmappedCustomMechanism(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.HydratedView,
+		s constraint.NodeAttachmentSubject,
+	) []constraint.Objection {
+		var out []constraint.Objection
+		for _, declared := range v.AttachmentInjectMappingMechanisms(
+			s.NodeID(), s.AttachmentName(),
+		) {
+			if declared.Mapped {
+				continue
+			}
+			out = append(out, s.RaiseWith(
+				ErrUnmappedCustomMechanism(),
+				constraint.Uncaptioned(declared.Mechanism),
+				constraint.Captioned("recipe", declared.Recipe),
+			))
+		}
+		return out
+	},
+}
+
 // ProvidesTemplateSelfContained reports each provides entry whose template
 // reaches outside the self-contained data a provides template is evaluated
 // against.

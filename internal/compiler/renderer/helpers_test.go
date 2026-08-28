@@ -113,9 +113,16 @@ func TestEnrichedEdgeViewFromIREdge_FieldProjection(t *testing.T) {
 	}
 }
 
-// TestMechanismPresent_EveryDispatch pins each branch: env / file /
-// arg (typed fields) + Additional (default) + missing.
-func TestMechanismPresent_EveryDispatch(t *testing.T) {
+// TestStructuredMechanisms_EveryDispatch pins each branch of the naming a
+// structured overlay carries: env / file / arg from the typed field's zero state,
+// every Additional key from key presence, and nothing for a pipe carrying
+// nothing.
+//
+// The membership assertions are written as membership rather than as a slice
+// comparison because membership is what a reader of this naming asks: a
+// mechanism is named or it is not. The ORDER is asserted separately below, since
+// it is the order an author reads a finding back in.
+func TestStructuredMechanisms_EveryDispatch(t *testing.T) {
 	t.Parallel()
 	p := &types.InjectPipe{}
 	p.Env.Set("K", "v")
@@ -125,26 +132,51 @@ func TestMechanismPresent_EveryDispatch(t *testing.T) {
 	inner.Set("k", "v")
 	p.Additional.Set("custom-mech", inner)
 
-	if !mechanismPresent(p, "env") {
-		t.Errorf("env should be present")
+	named := map[string]bool{}
+	for _, mechanism := range structuredMechanisms(p) {
+		named[mechanism] = true
 	}
-	if !mechanismPresent(p, "file") {
-		t.Errorf("file should be present")
+	for _, want := range []string{"env", "file", "arg", "custom-mech"} {
+		if !named[want] {
+			t.Errorf("%s should be named", want)
+		}
 	}
-	if !mechanismPresent(p, "arg") {
-		t.Errorf("arg should be present")
-	}
-	if !mechanismPresent(p, "custom-mech") {
-		t.Errorf("custom-mech should be present")
-	}
-	if mechanismPresent(p, "absent") {
-		t.Errorf("absent should not be present")
+	if named["absent"] {
+		t.Errorf("absent should not be named")
 	}
 
-	// Empty inject pipe.
-	empty := &types.InjectPipe{}
-	if mechanismPresent(empty, "env") {
-		t.Errorf("empty env should not be present")
+	// The typed mechanisms lead in field order, then the Additional keys in the
+	// order the output wrote them.
+	if got := structuredMechanisms(p); len(got) != 4 ||
+		got[0] != "env" || got[1] != "file" || got[2] != "arg" || got[3] != "custom-mech" {
+		t.Errorf("structuredMechanisms order = %v; want [env file arg custom-mech]", got)
+	}
+
+	// Empty inject pipe, and a nil one.
+	if got := structuredMechanisms(&types.InjectPipe{}); len(got) != 0 {
+		t.Errorf("an empty pipe names nothing; got %v", got)
+	}
+	if got := structuredMechanisms(nil); got != nil {
+		t.Errorf("a nil pipe names nothing; got %v", got)
+	}
+}
+
+// TestStructuredMechanisms_CustomMechanismWithNoDeliveries pins the one case the
+// typed and the Additional readings answer differently: a custom mechanism whose
+// key the output wrote with nothing under it is NAMED, because the key exists
+// only because the output named it — while a typed mechanism written empty is
+// not, because the field exists whether the output wrote it or not.
+//
+// It is the reading the unmarshal hook imposes rather than a choice, and it is
+// pinned because a rule over this naming refuses a mechanism it reports unnamed.
+func TestStructuredMechanisms_CustomMechanismWithNoDeliveries(t *testing.T) {
+	t.Parallel()
+	p := &types.InjectPipe{}
+	p.Additional.Set("ssm_param", types.OrderedMap[string]{})
+
+	got := structuredMechanisms(p)
+	if len(got) != 1 || got[0] != "ssm_param" {
+		t.Errorf("a custom mechanism written with no deliveries is still named; got %v", got)
 	}
 }
 

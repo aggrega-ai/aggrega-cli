@@ -4,8 +4,6 @@
 package renderer
 
 import (
-	"fmt"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -68,17 +66,21 @@ func mergeAdditional(base *types.OrderedMap[types.OrderedMap[string]], overlay t
 // fall through to the flat-map fallback (every key under .env), matching the
 // "Recipe author writes a flat env dictionary" idiom.
 //
-// Dangling-reference check. When the structured parse produces non-empty
-// content AND the caller passes a non-nil authored-mechanism set (the set of
-// mechanisms the Developer declared on the Component or Feature attachment's
-// inject block), every authored mechanism must have a corresponding top-level
-// key in the parsed output. Authored mechanisms missing from the output halt
-// with ErrUnmappedCustomMechanism — the binding between Developer-authored
-// mechanism and Recipe-author-provided template key fails to resolve. The
-// check runs before the flat-map fallback so flat-map outputs (which do not
-// advertise structured intent) continue to work for callers authoring only
-// inject.env. Callers passing nil authored skip the check.
-func ParseInjectMappingOutput(output string, authored []string) (*types.InjectPipe, error) {
+// It also reports the top-level mechanism names the STRUCTURED parse found, in
+// the order the output wrote them: the three typed mechanisms wherever their
+// field is non-zero, then every key the output routed into Additional. That
+// second result is what a reader needs to say whether a mechanism the host
+// component declared reached this mapping's output, and it cannot be recovered
+// afterwards — the merge folds the overlay into one pipe carrying no record of
+// which mapping wrote what.
+//
+// It is empty, rather than absent, for the two outputs that name no mechanism:
+// an output that parsed as a flat delivery dictionary, and one that parsed as
+// nothing at all. A flat output does not advertise structured intent — it is the
+// legitimate idiom for a Recipe producing env-only deliveries — so it makes no
+// claim about which mechanisms it fills, and reading it as claiming none would
+// turn every such Recipe into a refusal.
+func ParseInjectMappingOutput(output string) (*types.InjectPipe, []string) {
 	output = trimWhitespace(output)
 	if output == "" || output == "{}" {
 		return nil, nil
@@ -89,18 +91,11 @@ func ParseInjectMappingOutput(output string, authored []string) (*types.InjectPi
 	var structured types.InjectPipe
 	if err := parse.TemplateOutput([]byte(output), &structured); err == nil {
 		if !structured.Env.IsZero() || !structured.File.IsZero() || !structured.Arg.IsZero() || structured.Additional.Len() > 0 {
-			for _, mech := range authored {
-				if !mechanismPresent(&structured, mech) {
-					return nil, fmt.Errorf("%w: mechanism %q has no matching key in injectMapping output", ErrUnmappedCustomMechanism(), mech)
-				}
-			}
-			return &structured, nil
+			return &structured, structuredMechanisms(&structured)
 		}
 	}
 
-	// Fallback: try flat map (all goes to env). The dangling-reference check
-	// is intentionally skipped — flat output is the legitimate idiom for
-	// Recipes producing env-only deliveries.
+	// Fallback: try flat map (all goes to env).
 	var flat types.OrderedMap[string]
 	if err := parse.TemplateOutput([]byte(output), &flat); err == nil && flat.Len() > 0 {
 		return &types.InjectPipe{Env: flat}, nil
@@ -109,21 +104,37 @@ func ParseInjectMappingOutput(output string, authored []string) (*types.InjectPi
 	return nil, nil
 }
 
-// mechanismPresent reports whether the parsed InjectPipe carries a top-level
-// key for the named mechanism. Core mechanisms (env / file / arg) check the
-// typed field's zero state; everything else checks Additional.Get.
-func mechanismPresent(p *types.InjectPipe, mech string) bool {
-	switch mech {
-	case "env":
-		return !p.Env.IsZero()
-	case "file":
-		return !p.File.IsZero()
-	case "arg":
-		return !p.Arg.IsZero()
-	default:
-		_, ok := p.Additional.Get(mech)
-		return ok
+// structuredMechanisms names the top-level mechanism keys one structurally
+// parsed InjectPipe carries: the three typed mechanisms wherever their field is
+// non-zero, then every key routed into Additional in the order the output wrote
+// them.
+//
+// The typed mechanisms are read from the field's zero state and the rest from
+// key presence, which is the same distinction the unmarshal hook makes when it
+// routes a key: a typed field exists whether or not the output wrote it, so
+// emptiness is the only thing that separates the two cases there, while an
+// Additional key exists only because the output named it. So a custom mechanism
+// written with no deliveries under it counts as named, and a typed mechanism
+// written empty does not — which is the reading the hook itself imposes and not
+// a choice made here.
+func structuredMechanisms(p *types.InjectPipe) []string {
+	if p == nil {
+		return nil
 	}
+	var out []string
+	if !p.Env.IsZero() {
+		out = append(out, "env")
+	}
+	if !p.File.IsZero() {
+		out = append(out, "file")
+	}
+	if !p.Arg.IsZero() {
+		out = append(out, "arg")
+	}
+	for mechanism := range p.Additional.All() {
+		out = append(out, mechanism)
+	}
+	return out
 }
 
 func trimWhitespace(s string) string {

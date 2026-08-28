@@ -306,6 +306,33 @@ func (v *hydratedView) AttachmentArtifactTemplateText(
 	return text
 }
 
+// AttachmentInjectMappingMechanisms returns the mechanisms the host component's
+// own injection block declares, paired with whether one attachment's rendered
+// injectMapping output named each of them, and with the FeatureRecipe that output
+// was read from.
+//
+// It is answered from the attachment's own carrier rather than from the node's,
+// because each attachment carries its own mapping: two attachments on one node
+// are evaluated against the same declarations and may name different mechanisms,
+// so a node-keyed answer would report one attachment's mapping for the other's.
+//
+// An attachment whose mapping named no mechanism answers empty, and so does an
+// attachment the render did not reach and a component that declared no injection
+// block. All three are the ordinary answer rather than a claim that a mechanism
+// went unnamed: what says a mechanism was left out is an entry reporting it
+// unmapped, and an empty answer contains none.
+func (v *hydratedView) AttachmentInjectMappingMechanisms(
+	node string, attachment string,
+) []constraint.InjectMappingMechanism {
+	p, ok := v.projections.nodeAttachmentProjectionOf(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	if !ok {
+		return nil
+	}
+	return p.AttachmentInjectMappingMechanisms
+}
+
 // BoundaryAttachmentResolvedSourceDeclared reports whether the FeatureRecipe one
 // boundary-scope attachment binds carries a source once source resolution has
 // run.

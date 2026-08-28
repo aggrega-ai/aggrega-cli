@@ -176,6 +176,17 @@ type nodeAttachmentProjection struct {
 	// attachment's artifacts, keyed by the output name the entry resolves to and
 	// held in the order the entries were walked.
 	AttachmentArtifactTemplateText types.OrderedMap[string]
+
+	// AttachmentInjectMappingMechanisms pairs each mechanism the host component's
+	// own injection block declares with whether this attachment's rendered
+	// injectMapping output named it, in the order the component declared them.
+	//
+	// It is recorded where that mapping is evaluated rather than beside the
+	// fields around it, because that is the only point at which both halves are
+	// in hand: the component's declarations are read once for the node, and the
+	// mechanisms the output names exist only in the parsed overlay, which the
+	// merge folds into a pipe that remembers no mapping.
+	AttachmentInjectMappingMechanisms []constraint.InjectMappingMechanism
 }
 
 // boundaryAttachmentProjection is what the mid-render state of one boundary-scope
@@ -270,6 +281,31 @@ func (h *hydratedProjections) recordNode(state *PhaseBState) {
 		p.NodeInjectDeliveries = existing.NodeInjectDeliveries
 	}
 	h.byNode[state.NodeID] = p
+}
+
+// recordAttachmentInjectMappingMechanisms retains the pairing between the
+// mechanisms one node's own injection block declares and the mechanisms one
+// attachment's rendered injectMapping output named.
+//
+// It is called from the node walk, once per attachment whose mapping produced an
+// overlay, rather than where the attachment's own render completes: the mapping
+// is evaluated in the host node's Phase A and the attachment's render is a
+// separate walk that never sees it. The carrier is still the attachment's,
+// because the mapping is that attachment's FeatureRecipe's and two attachments on
+// one node answer independently.
+//
+// A nil set records nothing, which is the state of a render whose caller
+// assembled its own input.
+func (h *hydratedProjections) recordAttachmentInjectMappingMechanisms(
+	nodeID, attachment string, mechanisms []constraint.InjectMappingMechanism,
+) {
+	if h == nil || nodeID == "" || attachment == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p := h.nodeAttachmentEntry(nodeAttachmentKey{node: nodeID, attachment: attachment})
+	p.AttachmentInjectMappingMechanisms = mechanisms
 }
 
 // recordArtifactTemplate retains the template text standing at one of a node's
