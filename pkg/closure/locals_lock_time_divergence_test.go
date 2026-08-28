@@ -16,12 +16,20 @@ import (
 //
 // The build's render refuses a reference a locals entry cannot legitimately read —
 // a sibling declared below it, or a key the block never declares — before it
-// evaluates anything. Source descent, which runs while a lockfile is acquired,
-// evaluates the same block and applies a deliberate tolerance instead: an entry
-// whose template cannot execute at lock time is SKIPPED and the walk continues,
-// because such an entry ordinarily reads data that exists only at render time. Its
-// gate is the source template's own evaluation, which fails naming the source field
-// if `source:` needed a local that was skipped.
+// evaluates anything. Source descent, which resolves the same block so a
+// `source:` coordinate can read it, applies a deliberate tolerance instead: an
+// entry whose template cannot execute there is SKIPPED and the walk continues,
+// because such an entry ordinarily reads data that exists only when an artifact is
+// rendered. Its gate is the source template's own evaluation, which fails naming
+// the source field if `source:` needed a local that was skipped.
+//
+// 🔴 Which of the two runs is a question about the SURFACE being resolved, not
+// about the phase. Source descent's body is reached from the lock-time entry point
+// and from the build-time one alike, so a difference recorded here is a difference
+// between two evaluators — never between acquiring a lockfile and building against
+// it. The lock-versus-build reading is the easy mistake, and it is wrong in a way
+// that matters: it invites the conclusion that a build accepts whatever a lockfile
+// acquisition refuses, which is not so.
 //
 // # This file pins that arrangement so a change to it fails rather than passing
 //
@@ -32,19 +40,28 @@ import (
 // earlier one, which is true and is not the same claim. So the relationship was held
 // by nothing, and a change on either side would have moved it silently.
 //
-// # The invariant is one-directional, and that is the part worth pinning
+// # The invariant is one-directional ON THE ORDERING AXIS, and that is the part worth pinning
 //
-// Every difference runs the same way: the render HALTS where the closure ADMITS.
-// No row has the closure halting where the render admits, and that direction is
-// what makes the gap a later diagnostic rather than a wrong one — lock and pull
-// write a pin that is correct for the expression they read, and a later build
-// refuses the entry the pin never depended on. The reverse direction would be the
-// serious defect: a lockfile refusing a document the compiler accepts.
+// 🔴 The scope in that heading is load-bearing. This corpus varies ONE thing: where
+// an entry sits relative to the sibling it reads, and whether the key it reads
+// exists at all. Over that axis every difference runs the same way — the render
+// HALTS where source descent ADMITS — and that direction is what makes the gap a
+// later diagnostic rather than a wrong one: lock and pull write a pin that is
+// correct for the expression they read, and a later build refuses the entry the
+// pin never depended on.
 //
-// The table below is therefore not a wish. It records what the two paths do today,
-// and the assertions after it are what a change has to contend with: the
-// one-directional invariant, and a corpus that carries agreements and
-// disagreements both, so no row can be satisfied by a path that stopped being
+// The one-directionality is a property OF THIS CORPUS, not of the two evaluators.
+// A second axis runs the other way, and the file beside this one pins it: source
+// descent registers a smaller template-function set, so an entry calling a
+// function only the render registers fails to PARSE there, and a parse failure is
+// outside the tolerance. On that axis source descent halts where the render
+// admits. Read the assertion below as what it is — the direction this corpus
+// exhibits — rather than as a claim about every difference the two can have.
+//
+// The table is therefore not a wish. It records what the two paths do today, and
+// the assertions after it are what a change has to contend with: the
+// one-directional invariant over this axis, and a corpus that carries agreements
+// and disagreements both, so no row can be satisfied by a path that stopped being
 // asked.
 
 // localsDivergenceVerdict is what one path did with an authored locals block,
@@ -232,12 +249,15 @@ func TestTheLockTimeLocalsToleranceDivergesFromTheBuildInOneDirectionOnly(t *tes
 			t.Errorf("%s: source descent reported %q, the pin records %q", row.name, gotClosure, row.wantClosure)
 		}
 
-		// THE INVARIANT. A row where source descent refuses a block the render
-		// admits is the direction that would be a defect: a lockfile refusing a
-		// document the compiler accepts.
+		// THE INVARIANT, over this corpus's one axis. A row where source descent
+		// refuses a block the render admits has reversed the direction every
+		// ordering-axis row runs in.
 		if gotRender == localsAdmitted && gotClosure != localsAdmitted {
-			t.Errorf("%s: source descent refused %q what the render ADMITS — the divergence has reversed direction, "+
-				"which means lock time now refuses a document a build accepts", row.name, gotClosure)
+			t.Errorf("%s: source descent refused %q what the render ADMITS — the ordering-axis divergence "+
+				"has reversed direction. Read that as a change to THIS axis and nothing wider: source "+
+				"descent already refuses what the render admits on the template-function axis, which the "+
+				"file beside this one pins, so a reversal here is not evidence that a lockfile now refuses "+
+				"a document a build accepts", row.name, gotClosure)
 		}
 
 		if gotRender == gotClosure {

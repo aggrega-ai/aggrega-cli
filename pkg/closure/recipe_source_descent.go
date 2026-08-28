@@ -523,24 +523,62 @@ func providesError(fieldPath string) error {
 
 // resolveLocals evaluates each .locals entry against the current
 // {Values, Infra} substrate and writes the resolved value back into
-// ctx.Locals. Locals are evaluated in OrderedMap iteration order,
-// mirroring base rendering's locals preamble. Later .locals entries may
-// reference earlier .locals via `.locals.<earlier_key>`; the
-// closure's same-pass-as-source semantics align with build-time
-// expectations.
+// ctx.Locals, in author order, so a later entry may read an earlier one
+// through `.locals.<earlier_key>`.
+//
+// It resolves a block for ONE purpose: so a `source:` coordinate can read
+// it. Both entry points into this file's source evaluation reach it — the
+// one a lockfile acquisition uses and the one a build uses — so this pass
+// answers the same way at both, which is what makes a pinned coordinate
+// re-derivable.
+//
+// # It is a second evaluator of an authored locals block, and the split is deliberate
+//
+// A block that feeds rendered output is resolved by the renderer's own
+// pass, which is the one home of that contract for every rendering
+// surface. This pass cannot route through it: that package imports this
+// one, so the dependency direction leaves no home reachable from both. The
+// shared part is therefore the DECISION rather than the loop — the
+// reference classification lives in internal/gotmpl, which both packages
+// can import — and what remains duplicated is the walk, held to the
+// renderer's by assertions that drive the two against each other.
+//
+// # The two evaluators differ in both directions, and neither difference is a phase difference
+//
+// This pass is LAXER on one axis and STRICTER on the other. Both are
+// properties of the surface being resolved, not of the phase: acquiring a
+// lockfile and building against one run this same body.
+//
+//   - Laxer: an entry whose template cannot EXECUTE is skipped and the walk
+//     continues. That covers an entry reading data no source coordinate can
+//     see — a render-time-only `.context.instance_id` consumed by a values
+//     mapping is the case it exists for — and the tolerance is real, because
+//     such an entry is legitimately absent here. It also OVER-covers: an
+//     entry reading a sibling declared below it, or a key the block never
+//     declares, is the same execute failure and is skipped too, where the
+//     renderer's pass refuses it outright. The gate that remains is the
+//     source template's own evaluation, which fails naming the source field
+//     when `source:` needed a local that was skipped. This over-coverage is
+//     stated rather than defended, and the tolerance is expected to narrow
+//     to the case it exists for.
+//   - Stricter: this surface registers Aggrega's template helpers alone,
+//     without the broad general-purpose set a rendering surface layers them
+//     over, so an authored name means one thing wherever a coordinate is
+//     evaluated. An entry calling a function only the rendering surface
+//     registers therefore fails to PARSE here — and a parse failure is
+//     outside the tolerance above, so it halts while the renderer's pass
+//     admits it.
 func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeURI string) error {
 	for k, v := range locals.All() {
 		resolved, err := evalSourceTemplate(v, ctx, recipeURI+".spec.locals."+k)
 		if err != nil {
-			// Precise tolerance. A malformed template (parse) or a `.provides`
-			// reverse reference is invalid at any phase — keep it loud. An
-			// execute/missingkey failure means this local references data not
-			// available at the per-Release closure (e.g. a render-time-only
-			// `.context.instance_id` consumed by valuesMapping); it is not a
-			// lock-time concern, so skip it and continue. The source template's
-			// own evaluation remains the gate — if `source:` references this
-			// now-absent local, that eval fails with ErrSourceTemplateAtLockTime
-			// naming the source field.
+			// The tolerance is bounded by error CLASS, and the two classes kept
+			// loud are the ones no surface can resolve: a template that does not
+			// parse, and a `.provides` reverse reference. Everything else is an
+			// execute failure and is skipped — see this function's own contract
+			// above for what that covers, what it over-covers, and why a parse
+			// failure landing outside it makes this surface the stricter one on
+			// that axis.
 			if errors.Is(err, ErrSourceTemplateParse()) || errors.Is(err, ErrSourceTemplateProvidesRef()) {
 				return err
 			}

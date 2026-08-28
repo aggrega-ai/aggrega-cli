@@ -118,9 +118,20 @@ type localsRefSite struct {
 	Key   string
 }
 
-// evaluateLocalsInOrder is the ONE home of the locals evaluation contract. Every
-// surface that resolves a locals block routes through it, so the surfaces agree by
-// construction rather than by four loops being reviewed against each other.
+// evaluateLocalsInOrder is the ONE home of the locals evaluation contract for
+// every surface that resolves a block FOR RENDERED OUTPUT. Each of those routes
+// through it, so they agree by construction rather than by several loops being
+// reviewed against each other.
+//
+// 🔴 That scope is the whole of the claim, and stating it is what keeps the claim
+// true. One other evaluator of an authored locals block exists — the one that
+// resolves a block so a Recipe's `source:` coordinate can read it, in the closure
+// package this one imports. It does NOT route through here, because the
+// dependency direction leaves no home reachable from both, and it answers
+// differently in both directions: laxer on an out-of-order or unknown reference,
+// stricter on the template functions it registers. Its own contract is documented
+// where it is implemented, and assertions drive the two against each other rather
+// than leaving the relationship to these two comments.
 //
 // The contract, implemented once:
 //
