@@ -110,11 +110,10 @@ const (
 
 	// ContextKindManifestRecipeReference matches a cursor on the VALUE
 	// side of a Manifest mapping pair under spec.mappings — a Recipe
-	// URI reference. Eight Manifest mapping paths classify to this
-	// Kind (flat vs legacy provider-keyed × components vs features ×
-	// type vs name). Key-side cursor on the same mappings is NOT
-	// classified at this Kind (the key carries a Component / Feature
-	// URI with different resolution semantics).
+	// URI reference. Four Manifest mapping paths classify to this
+	// Kind (components vs features × type vs name). Key-side cursor on
+	// the same mappings is NOT classified at this Kind (the key carries
+	// a Component / Feature URI with different resolution semantics).
 	ContextKindManifestRecipeReference
 
 	// ContextKindReleaseAggregatePath matches a cursor on the value of

@@ -118,11 +118,11 @@ func (v aggregateDocumentView) ManifestAnnotationBindingFeature(string, string) 
 // rather than answering, because answering would hand back this document's fact
 // under another document's name.
 //
-// It presents the flat registry — the bindings written under
-// mappings.features.annotations — and not the per-provider tiers a Manifest may
-// also carry. That is the surface annotation expansion consumes, so presenting it
-// is presenting what the compiler acts on; the bound is stated on the fact's own
-// declaration so a rule meets it there rather than discovering it.
+// It presents the binding registry — the bindings written under
+// mappings.features.annotations, which is the one site a Manifest declares an
+// annotation binding at. That is also the surface annotation expansion consumes,
+// so presenting it is presenting the whole of what the compiler acts on, and the
+// fact's own declaration states the same site so a rule meets it there.
 type manifestDocumentView struct {
 	// path is the workspace-relative file the Manifest was read from. It is the
 	// document coordinate itself, which is why an accessor's argument is checked
@@ -132,9 +132,9 @@ type manifestDocumentView struct {
 	// bindings is the annotation binding registry built from that document.
 	//
 	// The registry is held rather than the Manifest, and that is the point
-	// rather than a convenience: the registry is where reading the flat tier
-	// already happens, so presenting from it keeps one reading of that tier
-	// instead of a second one here that agrees with it today.
+	// rather than a convenience: the registry is where that tier is already
+	// read, so presenting from it keeps one reading of it instead of a second
+	// one here that agrees with it today.
 	bindings *AnnotationRegistry
 }
 

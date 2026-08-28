@@ -340,13 +340,12 @@ var facts = []factDecl{
 			"carried rather than sorted, because a rule invoked once per " +
 			"binding raises in invocation order and that order is the order " +
 			"the findings reach the reader.\n\nIt counts the bindings the " +
-			"registry consumed by annotation expansion is built from, which " +
-			"is the tier the author writes under mappings.features.annotations " +
-			"and not the per-provider tiers a Manifest may also carry. A rule " +
-			"whose subject must span those tiers as well needs a fact that " +
-			"names them; this one does not, and says so rather than leaving " +
-			"the difference to be discovered by a rule that silently stops " +
-			"asking about half its input.",
+			"registry consumed by annotation expansion is built from. A " +
+			"Manifest declares an annotation binding at one site, " +
+			"mappings.features.annotations, so this fact's subject and the " +
+			"input annotation expansion reads are the same set, and a rule " +
+			"invoked over it is asking about the whole of what the compiler " +
+			"acts on.",
 	},
 	{
 		Name:        "manifest-annotation-binding-feature",

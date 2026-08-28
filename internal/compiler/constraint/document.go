@@ -139,14 +139,11 @@ func RunOnDocumentParameters[V View](
 // binding is authored at, assembled through the same helper every other
 // document-level site uses so one authored shape has one spelling.
 //
-// 🔴 The locator names the flat registry's site, which is the site the presented
-// key belongs to. A Manifest may also carry annotation bindings under
-// per-provider tiers, whose authored site is a different path; a key from such a
-// tier presented through this entry would be located at a key its file does not
-// contain. The fact this entry is enumerated from counts the flat tier alone and
-// says so in its own declaration, so the two agree by construction rather than by
-// a caller remembering. A rule whose subject must span the per-provider tiers
-// needs a fact that names them and a site that travels with the binding.
+// 🔴 The locator names the registry's site, which is the one site a Manifest
+// declares an annotation binding at, so every presented key is locatable at the
+// path this entry assembles. The fact this entry is enumerated from is declared
+// over that same site and says so in its own declaration, so the two agree by
+// construction rather than by a caller remembering.
 //
 // It takes no [Cancellation] and returns no error, for the reason
 // [RunOnDocumentParameters] states: the signal is read once per outermost
