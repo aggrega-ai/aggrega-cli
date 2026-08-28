@@ -324,6 +324,29 @@ func (s *Server) rangeWorkspaceDocs(ctx context.Context, visit func(doc workspac
 	})
 }
 
+// entityOrderLess is the total order every workspace-entity projection
+// reports its entities in: kind, then name, then source file.
+//
+// The source file breaks every remaining tie, because the traversal
+// yields at most one entity per file. That is what makes the order total,
+// and a total order is what makes a projection's marshalled bytes a
+// function of the workspace's content rather than of the sequence the
+// traversal delivered it in — the parse-cache pass and the on-disk walk
+// deliver in path order, which is not this order.
+//
+// It sits beside the traversal, and there is one of it, so two
+// projections a client joins against each other cannot order the same
+// entities differently.
+func entityOrderLess(aKind, aName, aFile, bKind, bName, bFile string) bool {
+	if aKind != bKind {
+		return aKind < bKind
+	}
+	if aName != bName {
+		return aName < bName
+	}
+	return aFile < bFile
+}
+
 // excludedDirName matches directory names the workspace walker
 // unconditionally skips.
 func excludedDirName(name string) bool {

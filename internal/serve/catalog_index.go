@@ -69,12 +69,11 @@ func (s *Server) dispatchCatalogIndex(ctx context.Context, req *jsonRPCRequest) 
 // declares no kind: and is skipped, which is what keeps this an entity
 // index rather than a file listing.
 //
-// Ordering is by kind, then name, then source file. The source file
-// breaks every remaining tie because the traversal yields one entity per
-// file, which makes the order total and therefore the marshalled bytes
-// stable across calls. That matters more than it looks: the parse cache
-// iterates in map order, so an index that leaned on traversal order
-// would reorder between two identical requests.
+// Ordering is the shared workspace-entity order — kind, then name, then
+// source file — which the traversal's own delivery order is not. An index
+// that leaned on traversal order would report entities in the order their
+// file names happen to sort in, and would reorder the moment a file was
+// renamed.
 func (s *Server) catalogIndex(ctx context.Context) []CatalogEntity {
 	out := []CatalogEntity{}
 	s.rangeWorkspaceDocs(ctx, func(doc workspaceDoc) bool {
@@ -106,13 +105,7 @@ func (s *Server) catalogIndex(ctx context.Context) []CatalogEntity {
 	})
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i], out[j]
-		if a.Kind != b.Kind {
-			return a.Kind < b.Kind
-		}
-		if a.Name != b.Name {
-			return a.Name < b.Name
-		}
-		return a.File < b.File
+		return entityOrderLess(a.Kind, a.Name, a.File, b.Kind, b.Name, b.File)
 	})
 	return out
 }

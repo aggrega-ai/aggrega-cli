@@ -498,6 +498,8 @@ func (s *Server) dispatch(ctx context.Context, req *jsonRPCRequest) error {
 		return s.dispatchCompletion(ctx, req)
 	case "aggrega/catalogIndex":
 		return s.dispatchCatalogIndex(ctx, req)
+	case "aggrega/attachCandidates":
+		return s.dispatchAttachCandidates(ctx, req)
 	case "aggrega/releaseCandidates":
 		return s.dispatchReleaseCandidates(ctx, req)
 	case "aggrega/activeRelease":
