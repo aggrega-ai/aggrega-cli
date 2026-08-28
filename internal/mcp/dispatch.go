@@ -13,8 +13,9 @@ import "encoding/json"
 // tools/list returns the curated tool set and tools/call runs a named tool.
 // The resource surfaces enumerate the fixed schema family and the CLI entry
 // point, advertise the full set of URI templates, and read a resource by URI;
-// the prompt surfaces list and render the authoring personas. An unrecognized
-// method returns the standard method-not-found envelope.
+// the prompt surfaces list and render the authoring personas and the workflow
+// calling sequences. An unrecognized method returns the standard method-not-found
+// envelope.
 func (s *server) dispatch(req *rpcRequest) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":

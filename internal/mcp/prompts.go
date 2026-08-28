@@ -10,12 +10,12 @@ import (
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 )
 
-// promptSpec is one authoring prompt the server can render: its name, the
-// description the client shows, the arguments it accepts, and the renderer that
-// builds its messages. Every renderer emits pointers into the resource and tool
-// surfaces — schema://, langref://, authoring://, and the tool names — rather
-// than restating schema or documentation prose, so a prompt never duplicates
-// content that lives in a resource.
+// promptSpec is one prompt the server can render: its name, the description the
+// client shows, the arguments it accepts, and the renderer that builds its
+// messages. Every renderer emits pointers into the resource and tool surfaces —
+// schema://, langref://, authoring://, and the tool names — rather than restating
+// schema or documentation prose, so a prompt never duplicates content that lives
+// in a resource.
 type promptSpec struct {
 	name        string
 	description string
@@ -23,10 +23,16 @@ type promptSpec struct {
 	render      func(args map[string]string) (getPromptResult, *rpcError)
 }
 
-// promptRegistry is the fixed set of authoring prompts, in advertised order. The
-// three personas frame the collaborating authoring roles; the per-kind template
-// focuses the same authoring loop on one entity kind. The order is fixed so the
-// advertised list is byte-stable across runs.
+// promptRegistry is the fixed prompt set, in advertised order: the authoring
+// prompts first, then the workflow prompts. The three personas frame the
+// collaborating authoring roles and the per-kind template focuses the same
+// authoring loop on one entity kind, so all four answer "what am I writing"; the
+// workflow prompts answer "which calls, in what order" for a goal that spans
+// several operations. The order is fixed so the advertised list is byte-stable
+// across runs.
+//
+// The workflow group is appended from its own slice rather than restated member
+// by member, so the group has exactly one home.
 //
 // It is assembled in init rather than a package-level literal so each renderer
 // can reference shared helpers in this file without an initializer-order
@@ -34,12 +40,12 @@ type promptSpec struct {
 var promptRegistry []promptSpec
 
 func init() {
-	promptRegistry = []promptSpec{
+	promptRegistry = append([]promptSpec{
 		developerPromptSpec,
 		architectPromptSpec,
 		opsPromptSpec,
 		authorEntityPromptSpec,
-	}
+	}, workflowPromptSpecs...)
 }
 
 // fourDomainFraming states the collaborating-roles separation as guidance, not
