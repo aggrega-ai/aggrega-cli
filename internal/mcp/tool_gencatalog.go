@@ -75,7 +75,7 @@ func genCatalogInvoke(s *server, ctx context.Context, args json.RawMessage) (*ca
 	var a genCatalogArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid gen-catalog arguments: " + err.Error()}
+			return nil, invalidToolArguments("gen-catalog", err)
 		}
 	}
 	switch {

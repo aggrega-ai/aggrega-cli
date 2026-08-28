@@ -93,7 +93,7 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	var a lintArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid lint arguments: " + err.Error()}
+			return nil, invalidToolArguments("lint", err)
 		}
 	}
 	entity := strings.TrimSpace(a.Entity)

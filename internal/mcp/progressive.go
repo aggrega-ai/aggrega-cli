@@ -81,7 +81,7 @@ func describeCapabilitiesInvoke(_ *server, _ context.Context, args json.RawMessa
 	var a describeCapabilitiesArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid describe-capabilities arguments: " + err.Error()}
+			return nil, invalidToolArguments(describeCapabilitiesName, err)
 		}
 	}
 	kind := strings.ToLower(strings.TrimSpace(a.Kind))

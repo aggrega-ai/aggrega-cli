@@ -6,6 +6,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
@@ -126,6 +129,107 @@ func errorResult(guidance string) (*callToolResult, *rpcError) {
 	}, nil
 }
 
+// payload names in the corrective text a decode failure produces: what the
+// surface that rejected the call calls the object it could not read. A tool
+// reads an arguments object; a protocol method reads a params object.
+const (
+	payloadArguments = "arguments"
+	payloadParams    = "params"
+)
+
+// invalidToolArguments builds the protocol error a tool returns when it cannot
+// read its arguments object. The call never reached the operation, so there is
+// no operation outcome to report as a tool-level failure; what the caller needs
+// is the corrective text, which is why this shares one route with the
+// request-params failure below.
+func invalidToolArguments(tool string, err error) *rpcError {
+	return &rpcError{Code: codeInvalidParams, Message: decodeFailureGuidance(tool, payloadArguments, err)}
+}
+
+// invalidRequestParams builds the protocol error a method returns when it cannot
+// read its params object.
+func invalidRequestParams(method string, err error) *rpcError {
+	return &rpcError{Code: codeInvalidParams, Message: decodeFailureGuidance(method, payloadParams, err)}
+}
+
+// decodeFailureGuidance renders a failure to read a request payload into the
+// corrective text a caller acts on: what the payload got wrong, and what to send
+// instead. subject names the surface the payload was sent to and payload names
+// what that surface calls it, so one route serves every decode failure on this
+// server and the phrasing cannot drift between them.
+//
+// It reports the failure against the shape the caller authored — the payload's
+// own field names and JSON types — and deliberately never against the internal
+// shape the payload decodes into: an internal shape is not something a caller
+// can see, correct, or look up, so naming it costs the caller the correction and
+// costs the message its only purpose.
+func decodeFailureGuidance(subject, payload string, err error) string {
+	resend := fmt.Sprintf("Send the %s as a JSON object whose keys are the names %s declares, then call it again.",
+		payload, subject)
+
+	var syntaxErr *json.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		return fmt.Sprintf("%s: the %s are not valid JSON (byte offset %d). %s",
+			subject, payload, syntaxErr.Offset, resend)
+	}
+
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &typeErr) {
+		if typeErr.Field != "" {
+			if want := jsonTypeWord(typeErr.Type); want != "" {
+				return fmt.Sprintf("%s: the %q field must be %s, but %s was sent. Correct that field and call %s again.",
+					subject, typeErr.Field, want, articled(typeErr.Value), subject)
+			}
+			return fmt.Sprintf("%s: the %q field was sent as %s, which it does not accept. Correct that field and call %s again.",
+				subject, typeErr.Field, articled(typeErr.Value), subject)
+		}
+		return fmt.Sprintf("%s: the %s must be a JSON object, but %s was sent. %s",
+			subject, payload, articled(typeErr.Value), resend)
+	}
+
+	return fmt.Sprintf("%s: the %s could not be read. %s", subject, payload, resend)
+}
+
+// jsonTypeWord names the JSON type a decoded field accepts, in the vocabulary of
+// the document the caller wrote rather than of the value it decodes into. An
+// unnamed type yields the empty string, which the caller renders as a shapeless
+// rejection instead of guessing.
+func jsonTypeWord(t reflect.Type) string {
+	if t == nil {
+		return ""
+	}
+	switch t.Kind() {
+	case reflect.String:
+		return "a string"
+	case reflect.Bool:
+		return "a boolean"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return "a number"
+	case reflect.Slice, reflect.Array:
+		return "an array"
+	case reflect.Map, reflect.Struct:
+		return "an object"
+	default:
+		return ""
+	}
+}
+
+// articled prefixes a JSON type name from the decoder with its article, so the
+// rendered sentence reads as prose. An empty name yields a neutral noun phrase
+// rather than a dangling article.
+func articled(jsonType string) string {
+	switch jsonType {
+	case "":
+		return "another value"
+	case "array", "object":
+		return "an " + jsonType
+	default:
+		return "a " + jsonType
+	}
+}
+
 // handleToolsList answers tools/list with the curated set: each tool's name,
 // its rich description, and the JSON Schema for its arguments, in registry
 // order.
@@ -149,7 +253,7 @@ func (s *server) handleToolsList() (any, *rpcError) {
 func (s *server) handleToolsCall(params json.RawMessage) (any, *rpcError) {
 	var p callToolParams
 	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "invalid tools/call params: " + err.Error()}
+		return nil, invalidRequestParams("tools/call", err)
 	}
 	if p.Name == "" {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "tools/call requires a tool name; available tools: " + toolNames()}

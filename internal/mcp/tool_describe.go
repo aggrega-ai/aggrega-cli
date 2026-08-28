@@ -94,7 +94,7 @@ func describeInvoke(s *server, _ context.Context, args json.RawMessage) (*callTo
 	var a describeArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid describe arguments: " + err.Error()}
+			return nil, invalidToolArguments("describe", err)
 		}
 	}
 	name := strings.TrimSpace(a.Name)
@@ -137,9 +137,9 @@ func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolRe
 		payload := describeComponentPayload{Kind: "Feature", Name: feat.Metadata.Name, Version: feat.Metadata.Version, Definition: def}
 		return textResult(renderDescribeEntityText(payload, feat.Metadata.Description), payload)
 	}
-	return errorResult(fmt.Sprintf(
-		"No Component or Feature named %q resolved in the catalog. Check the type URI and that the catalog directories cover it.\n\nSee: %s",
-		name, docPointerFor("component")))
+	return errorResult(explainDiagnostic(fmt.Sprintf(
+		"No Component or Feature named %q resolved in the catalog. Check the type URI and that the catalog directories cover it.",
+		name), "component"))
 }
 
 // describeRelease resolves a Release's catalog closure and returns a summary of

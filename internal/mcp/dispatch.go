@@ -138,7 +138,7 @@ func negotiateProtocolVersion(requested string) string {
 func (s *server) handleResourcesRead(params json.RawMessage) (any, *rpcError) {
 	var p readResourceParams
 	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "invalid resources/read params: " + err.Error()}
+		return nil, invalidRequestParams("resources/read", err)
 	}
 	if p.URI == "" {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "resources/read requires a resource uri"}

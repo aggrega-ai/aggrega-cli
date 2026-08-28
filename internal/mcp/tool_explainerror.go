@@ -107,7 +107,7 @@ var explainErrorToolSpec = toolSpec{
 		var a explainErrorArgs
 		if len(args) > 0 {
 			if err := json.Unmarshal(args, &a); err != nil {
-				return nil, &rpcError{Code: codeInvalidParams, Message: "invalid explain-error arguments: " + err.Error()}
+				return nil, invalidToolArguments("explain-error", err)
 			}
 		}
 		if strings.TrimSpace(a.Message) == "" {

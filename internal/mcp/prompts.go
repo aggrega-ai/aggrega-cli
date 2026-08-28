@@ -190,7 +190,7 @@ func handlePromptsList() (any, *rpcError) {
 func handlePromptsGet(params json.RawMessage) (any, *rpcError) {
 	var p getPromptParams
 	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "invalid prompts/get params: " + err.Error()}
+		return nil, invalidRequestParams("prompts/get", err)
 	}
 	if p.Name == "" {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "prompts/get requires a prompt name; available prompts: " + promptNames()}

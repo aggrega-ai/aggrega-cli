@@ -79,7 +79,7 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	var a buildArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid build arguments: " + err.Error()}
+			return nil, invalidToolArguments("build", err)
 		}
 	}
 	if strings.TrimSpace(a.Release) == "" {

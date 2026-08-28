@@ -139,7 +139,7 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 	var a validateArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid validate arguments: " + err.Error()}
+			return nil, invalidToolArguments("validate", err)
 		}
 	}
 	release := strings.TrimSpace(a.Release)

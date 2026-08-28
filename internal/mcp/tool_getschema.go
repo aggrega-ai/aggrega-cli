@@ -55,7 +55,7 @@ var getSchemaToolSpec = toolSpec{
 		var a getSchemaArgs
 		if len(args) > 0 {
 			if err := json.Unmarshal(args, &a); err != nil {
-				return nil, &rpcError{Code: codeInvalidParams, Message: "invalid get-schema arguments: " + err.Error()}
+				return nil, invalidToolArguments("get-schema", err)
 			}
 		}
 		if a.List {
@@ -68,11 +68,19 @@ var getSchemaToolSpec = toolSpec{
 		}
 		schema, ok := schemas.SchemaByKind(kind)
 		if !ok {
-			return errorResult(fmt.Sprintf("unknown schema kind %q. Valid kinds: %s",
-				kind, strings.Join(schemas.Kinds(), ", ")))
+			return errorResult(unknownSchemaKindGuidance(kind))
 		}
 		return textResult(schema, getSchemaResult{Kind: kind, Schema: json.RawMessage(schema)})
 	},
+}
+
+// unknownSchemaKindGuidance renders the corrective text for a kind token no
+// schema answers to: the token as it was sent, and the full valid set so the
+// caller corrects a typo without a second call. Both schema-driven tools reach
+// the same set through the same route, so the two failures cannot phrase the
+// same rejection differently.
+func unknownSchemaKindGuidance(kind string) string {
+	return fmt.Sprintf("unknown schema kind %q. Valid kinds: %s", kind, strings.Join(schemas.Kinds(), ", "))
 }
 
 // scaffoldArgs is the scaffold tool's argument shape.
@@ -114,7 +122,7 @@ var scaffoldToolSpec = toolSpec{
 		var a scaffoldArgs
 		if len(args) > 0 {
 			if err := json.Unmarshal(args, &a); err != nil {
-				return nil, &rpcError{Code: codeInvalidParams, Message: "invalid scaffold arguments: " + err.Error()}
+				return nil, invalidToolArguments("scaffold", err)
 			}
 		}
 		kind := strings.TrimSpace(a.Kind)
@@ -123,8 +131,7 @@ var scaffoldToolSpec = toolSpec{
 		}
 		schema, ok := schemas.SchemaByKind(kind)
 		if !ok {
-			return errorResult(fmt.Sprintf("unknown schema kind %q. Valid kinds: %s",
-				kind, strings.Join(schemas.Kinds(), ", ")))
+			return errorResult(unknownSchemaKindGuidance(kind))
 		}
 		skeleton, err := schemaSkeleton([]byte(schema), strings.TrimSpace(a.Name))
 		if err != nil {
