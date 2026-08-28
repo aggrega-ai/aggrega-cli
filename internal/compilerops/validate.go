@@ -11,9 +11,50 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// ValidationClosureInputs carries the resolution inputs a front door supplies
+// when it validates a Release. It is ClosureInputs without Augment, and the
+// omission is the point: the footing a release-scope validation resolves on is
+// fixed by the core that consumes the closure rather than chosen per front door,
+// so there is no field here for a front door to set it with. Lockfile carries the
+// same contract it has on ClosureInputs, which is where it is documented.
+type ValidationClosureInputs struct {
+	View            *catalog.LazyLookup
+	ReleasePath     string
+	WorkspaceRoot   string
+	WorkspaceConfig workspaceconfig.Config
+	Lockfile        *lockfile.Lockfile
+}
+
+// ResolveValidationClosure resolves the closure the release-scope
+// semantic-validation core below runs over. Every front door that validates a
+// Release resolves through here, so the footing is one value at one site rather
+// than a field each front door fills for itself — and the reason it is off is
+// held by the code that sets it instead of by a copy of a comment at each caller.
+//
+// Augment stays off: the release-scope validation core runs over the
+// un-augmented closure (the same footing serve's Tier-4 validation uses).
+// Folding the library axes here would turn a schema-pillar validation
+// diagnostic — the case a $ref to an absent library exercises — into an earlier
+// closure-resolution error, changing the verb's diagnostic surface.
+//
+// Only the construction is shared. The *ClosureError is handed back exactly as
+// ResolveClosure produced it, stage included, because a front door annotates a
+// resolution failure in its own terms and those surfaces legitimately differ.
+func ResolveValidationClosure(in ValidationClosureInputs) (*ResolvedClosure, *ClosureError) {
+	return ResolveClosure(ClosureInputs{
+		View:            in.View,
+		ReleasePath:     in.ReleasePath,
+		WorkspaceRoot:   in.WorkspaceRoot,
+		WorkspaceConfig: in.WorkspaceConfig,
+		Lockfile:        in.Lockfile,
+		Augment:         false,
+	})
+}
 
 // ValidateInputs carries the explicit state Validate needs. View is the
 // request-scoped catalog lookup every resolution reads through, so the whole

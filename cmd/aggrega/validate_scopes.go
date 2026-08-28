@@ -117,23 +117,17 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 
 	// Route onto the shared full-Tier-4 semantic-validation core — the same core
 	// the other front doors validate a Release with — so every front door runs one
-	// implementation. ResolveClosure loads the Manifest and Aggregate siblings and
-	// walks the closure over the pinned view; Validate runs the closure-scoped
+	// implementation. ResolveValidationClosure loads the Manifest and Aggregate
+	// siblings and walks the closure over the pinned view; Validate runs the closure-scoped
 	// extends and schema-pillar gates, the Steps 1-4 pipeline, the
 	// resolution-completeness findings, the input-kind capability check, and the
 	// advisory lines.
-	// Augment stays off: the release-scope validation core runs over the
-	// un-augmented closure (the same footing serve's Tier-4 validation uses).
-	// Folding the library axes here would turn a schema-pillar validation
-	// diagnostic — the case a $ref to an absent library exercises — into an earlier
-	// closure-resolution error, changing the verb's diagnostic surface.
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+	resolved, cerr := compilerops.ResolveValidationClosure(compilerops.ValidationClosureInputs{
 		View:            lazyView,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   wsRoot,
 		WorkspaceConfig: wsCfg,
 		Lockfile:        lf,
-		Augment:         false,
 	})
 	if cerr != nil {
 		// A file the catalog read refused makes its entity unresolvable, and an
