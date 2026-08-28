@@ -1226,6 +1226,28 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 	if _, err = verifyFetchedPlugin(ctx, fp, cfg, targetFor, diagOut); err != nil {
 		return verdictPluginResolution{}, err
 	}
+	// Withdrawal discovery runs at this same registry-touching moment, over the same
+	// bound location the signature verification above just used. It runs only where
+	// something was identified: with no identity there is no record to carry a
+	// withdrawal, so discovering one would have nowhere to go.
+	if identity.Coordinate != "" {
+		rec, derr := discoverVerdictPluginDeprecation(ctx, cfg, pullverify.Entity{
+			URI:            fp.URI,
+			ManifestDigest: fp.ManifestDigest,
+			Host:           fp.Host,
+			Location:       fp.Location,
+			Kind:           fp.Kind,
+		}, targetFor, diagOut)
+		if derr != nil {
+			return verdictPluginResolution{}, derr
+		}
+		if rec != nil {
+			identity.Deprecation = &pluginstrust.Deprecation{
+				Message:  rec.Message,
+				Severity: rec.Severity,
+			}
+		}
+	}
 	return identity, nil
 }
 

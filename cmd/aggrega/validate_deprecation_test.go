@@ -22,7 +22,11 @@ import (
 // withdrawn reference. It goes through the producer rather than constructing a
 // finding, which is the only way to make one: a surface cannot report a moment its
 // lockfile never recorded.
-func retractedPinFindings(t *testing.T, stamp string) []lockfile.DeprecationFinding {
+// retractedPinFindings renders the notices for a lockfile pinning one retracted
+// reference. It returns the rendered sentences rather than the findings, because
+// each store that can hold a marker renders its own sentence with its own
+// provenance and the renderer takes the rendered form.
+func retractedPinFindings(t *testing.T, stamp string) []string {
 	t.Helper()
 	lf := &lockfile.Lockfile{
 		GeneratedAt: stamp,
@@ -38,7 +42,11 @@ func retractedPinFindings(t *testing.T, stamp string) []lockfile.DeprecationFind
 	if len(findings) == 0 {
 		t.Fatal("the fixture produced no findings; every assertion below would pass vacuously")
 	}
-	return findings
+	notices := make([]string, 0, len(findings))
+	for _, f := range findings {
+		notices = append(notices, f.Notice())
+	}
+	return notices
 }
 
 // TestValidateReportsARetractedPinAndStaysGreen pins the advisory arm. The verb

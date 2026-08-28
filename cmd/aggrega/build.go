@@ -27,6 +27,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
@@ -481,6 +482,19 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// verb's, because a build produces an artifact. Reads only the lockfile — no
 	// registry access (the ahead-of-time boundary).
 	if err := enforceLockfileDeprecation(lf, wsCfg.Build, diagOut); err != nil {
+		return err
+	}
+
+	// The same gate over the other store. A plugin attached at a verdict role — a
+	// linter, or governance at ir-verdict / render-verdict — shapes no rendered byte,
+	// so it is recorded beside the lockfile rather than pinned in it and has no row
+	// the gate above could read. Without this, a withdrawn gate plugin is fetched,
+	// cached and run with nothing said. Reads only the record: no registry access.
+	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(releasePath))
+	if trustErr != nil {
+		return trustErr
+	}
+	if err := enforceTrustDeprecation(trustRecord, wsCfg.Build, diagOut); err != nil {
 		return err
 	}
 

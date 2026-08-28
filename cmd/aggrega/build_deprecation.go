@@ -9,6 +9,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -76,6 +77,45 @@ func enforceLockfileDeprecation(lf *lockfile.Lockfile, buildCfg workspaceconfig.
 		// The halting rule and the halt's wording are the shared ones every
 		// artifact-producing surface applies, so this verb and the AI-native build
 		// cannot come to halt on different markers under the same configuration.
+		if halt == nil {
+			halt = deprecation.HaltFor(f.Notice(), deprecation.Severity(f.Severity), threshold)
+		}
+	}
+	return halt
+}
+
+// enforceTrustDeprecation reports every plugin trusted for an accept-or-reject
+// verdict whose recorded artifact carries a withdrawal, halting only where the
+// workspace asked for a halt.
+//
+// It is the sibling of the lockfile gate above, over the other store, and the two
+// are separate for the reason the trust record's own producer states at length: the
+// stores differ in scope, in subject, and in two inverted axes — lifecycle and
+// semantics. What is deliberately NOT separate is the part a reader would be harmed
+// by differing: the reporting rule is the same (unconditional, at every severity, no
+// configuration silences it) and the halting rule is literally the same function
+// against the same dial, so one workspace configuration cannot mean one thing for a
+// pinned reference and another for a trusted plugin.
+//
+// Why a gate here at all, rather than leaving it to the pull that discovered the
+// withdrawal: a pull happens once and a build happens continually, so a pull-time
+// notice alone would say it to whoever ran the pull and to nobody afterwards. The
+// artifact is fetched, cached and RUN at build, which is where the reader needs to
+// be told.
+//
+// It reads only the record, so it touches no registry — the same ahead-of-time
+// boundary the lockfile gate keeps. A nil record holds nothing and reports nothing,
+// which is the workspace that has recorded no verdict attachment.
+func enforceTrustDeprecation(trust *pluginstrust.Trust, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
+	threshold := deprecation.Severity(buildCfg.HaltOnDeprecatedSeverity)
+
+	// Recorded rather than returned mid-walk, for the reason the gate above records:
+	// returning here would drop the notices for every finding sorted after the
+	// halting one, which is the one way a stricter dial could make the build say LESS.
+	var halt error
+
+	for _, f := range trust.DeprecationFindings() {
+		fmt.Fprintf(diagOut, "  deprecation: %s\n", f.Notice())
 		if halt == nil {
 			halt = deprecation.HaltFor(f.Notice(), deprecation.Severity(f.Severity), threshold)
 		}

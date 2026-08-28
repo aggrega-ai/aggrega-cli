@@ -76,17 +76,9 @@ func discoverClosureDeprecations(
 
 		rec, verr := discoverEntityDeprecation(ctx, wsCfg, e, policy, origSigner, targetFor)
 		if verr != nil {
-			// A missing marker is not an error — most artifacts are not
-			// deprecated. Only an untrusted/unsigned MARKER (one that exists but
-			// does not verify) is a policy decision.
-			if errors.Is(verr, errNoDeprecationMarker) {
-				continue
+			if herr := honorDeprecationDiscoveryError(e, policy, configured, verr, diagOut); herr != nil {
+				return herr
 			}
-			requireSignature := configured && policy.SigningRequiredForKind(e.Kind)
-			if requireSignature && !policy.Advisory {
-				return fmt.Errorf("pullverify: %s: %w", e.URI, verr)
-			}
-			fmt.Fprintf(diagOut, "  deprecation: %s: marker present but not honored (%v); not recorded\n", e.URI, verr)
 			continue
 		}
 		if rec != nil {
@@ -179,6 +171,97 @@ func carryForwardExternalInputs(lf *lockfile.Lockfile, prior *lockfile.Lockfile)
 // row that returns it, distinguishing "not deprecated" from "deprecated by a
 // marker that does not verify".
 var errNoDeprecationMarker = errors.New("no deprecation marker")
+
+// honorDeprecationDiscoveryError decides what a failed marker discovery means for
+// the run: an error to halt on, or nil to leave the artifact un-deprecated and
+// carry on. A diagnostic is written on the nil path, so a marker that was dropped
+// is never dropped silently.
+//
+// It is the single home of that decision, and it is shared rather than repeated
+// because the two axes discovery runs over — the closure's verifiable references
+// and the verdict attachments recorded beside the lockfile — must not come to
+// disagree about when an unhonored marker is fatal. Two copies would be free to
+// drift on exactly the judgement that matters, and the drift would show only on a
+// workspace whose registry policy sits in the narrow band where they differ.
+//
+// The rule itself: a missing marker is not an error at all, because most artifacts
+// are not deprecated. A marker that IS present and does not verify is a policy
+// decision — fatal under a registry that both requires signatures and is not
+// advisory, reported and skipped otherwise.
+func honorDeprecationDiscoveryError(
+	e pullverify.Entity,
+	policy workspaceconfig.RegistryConfig,
+	configured bool,
+	verr error,
+	diagOut io.Writer,
+) error {
+	if errors.Is(verr, errNoDeprecationMarker) {
+		return nil
+	}
+	if configured && policy.SigningRequiredForKind(e.Kind) && !policy.Advisory {
+		return fmt.Errorf("pullverify: %s: %w", e.URI, verr)
+	}
+	fmt.Fprintf(diagOut, "  deprecation: %s: marker present but not honored (%v); not recorded\n", e.URI, verr)
+	return nil
+}
+
+// discoverVerdictPluginDeprecation runs the same marker discovery over ONE
+// verdict attachment's plugin artifact that the closure pass runs over a pinned
+// reference, and returns the verified withdrawal to record beside the lockfile, or
+// nil when there is none to record.
+//
+// It exists because the closure pass structurally cannot reach these artifacts. Its
+// input is the closure's verifiable axes, and a plugin attached at a verdict role is
+// cache-not-pin: it never enters the closure and has no lockfile row, so a marker on
+// it was discoverable by nothing. That is the gap this closes, and it is a gap in
+// what is REACHED rather than in what the closure pass walks.
+//
+// Everything that decides whether a marker is honored is shared with that pass
+// rather than re-derived: discoverEntityDeprecation verifies the marker's own
+// signature against the honored signer set, and honorDeprecationDiscoveryError
+// decides what a marker that does not verify means. So the two axes can differ in
+// WHAT they walk and never in what they trust.
+//
+// The artifact's own verified signer is recovered rather than inherited, through the
+// same best-effort read the index build uses for the same reason: a keyless registry
+// honors a marker signed by the artifact's own publisher, so without it a publisher
+// withdrawing their own plugin would go unhonored. The closure pass gets this fact
+// free from the signature pass that ran ahead of it; this pass has no such pass to
+// read from. A nil answer narrows the honored set to the registry's configured
+// deprecation identities, so a failure there can only under-record a withdrawal.
+//
+// A workspace or registry that skips signature verification discovers nothing, which
+// matches the closure pass exactly: a marker is honored on the strength of its
+// signature, so where signatures are not checked there is no basis to honor one.
+func discoverVerdictPluginDeprecation(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	e pullverify.Entity,
+	targetFor pullverify.TargetFor,
+	diagOut io.Writer,
+) (*lockfile.DeprecationRecord, error) {
+	if wsCfg.SkipSignatureVerification || targetFor == nil || e.ManifestDigest == "" {
+		return nil, nil
+	}
+	policy, configured := wsCfg.RegistryTrustPolicy(e.Host)
+	if policy.SkipSignatureVerification {
+		return nil, nil
+	}
+
+	var origSigner *pullverify.Result
+	if target, subjectRef, terr := targetFor(e); terr == nil && target != nil {
+		origSigner = verifiedArtifactSigner(ctx, wsCfg, target, subjectRef, policy)
+	}
+
+	rec, verr := discoverEntityDeprecation(ctx, wsCfg, e, policy, origSigner, targetFor)
+	if verr != nil {
+		return nil, honorDeprecationDiscoveryError(e, policy, configured, verr, diagOut)
+	}
+	if rec != nil {
+		fmt.Fprintf(diagOut, "  deprecation: %s deprecated (%s) by %s\n", e.URI, rec.Severity, deprecationSignerLabel(rec.Signer))
+	}
+	return rec, nil
+}
 
 // latestDeprecationMarker fetches and decodes each candidate marker referrer
 // and returns the descriptor and decoded marker carrying the newest issuedOn. A

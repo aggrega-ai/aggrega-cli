@@ -641,8 +641,10 @@ func maximalLockfile() lockfile.Lockfile {
 }
 
 // maximalPluginsTrust populates every field of the trust record: the schema
-// version and one fully-populated record. The record's three fields are all
-// required by the schema, so a single record covers the whole surface.
+// version and one fully-populated record. The record's three identity fields are
+// required by the schema and its withdrawal is optional, so a single record
+// carrying all four covers the whole surface — the optional one included, which is
+// the field a maximal instance exists to reach.
 func maximalPluginsTrust() pluginstrust.Trust {
 	return pluginstrust.Trust{
 		Version: pluginstrust.CurrentVersion,
@@ -650,6 +652,10 @@ func maximalPluginsTrust() pluginstrust.Trust {
 			Plugin:          "governance/aggrega-security-baseline",
 			ResolvedVersion: "1.0.0",
 			Digest:          pinDigest,
+			Deprecation: &pluginstrust.Deprecation{
+				Message:  "withdrawn; migrate to governance/aggrega-security-baseline 2",
+				Severity: "retracted",
+			},
 		}},
 	}
 }

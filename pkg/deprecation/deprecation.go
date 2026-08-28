@@ -44,6 +44,32 @@ const (
 	SeverityRetracted Severity = "retracted"
 )
 
+// StatedAs returns the phrase a notice uses to state an artifact's recorded
+// severity to a reader.
+//
+// A notice names the severity VALUE the author wrote, so a reader can match what
+// they are told against what a publisher recorded and against the halt threshold
+// they configure. `retracted` is stated as retracted; the two advisory severities
+// are stated as deprecated and name which of the two they are. Calling a retraction
+// "deprecated" is the case this exists to prevent: the two mean different things —
+// discouraged but still selected, against excluded from selection — and reporting
+// the stronger as the weaker understates what happened.
+//
+// It is the single home of that wording, so two surfaces reporting the same
+// recorded severity cannot come to describe it differently. A severity outside the
+// closed set is stated verbatim rather than guessed at, which keeps a malformed
+// value legible as itself instead of being reported as one of the three.
+func (s Severity) StatedAs() string {
+	switch s {
+	case SeverityRetracted:
+		return "retracted"
+	case SeverityWarning, SeverityError:
+		return "deprecated (" + string(s) + ")"
+	default:
+		return string(s)
+	}
+}
+
 // severityRank orders the three severities from least to most severe:
 // warning (0) < error (1) < retracted (2). An unknown severity ranks below
 // warning (-1) so it never satisfies a threshold. It is the single definition

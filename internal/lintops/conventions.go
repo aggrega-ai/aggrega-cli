@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -144,6 +145,21 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 	// halt governs the build alone. A workspace with no lockfile has no recorded
 	// markers either, so reporting nothing there skips nothing.
 	for _, f := range lockForClosure.DeprecationFindings() {
+		fmt.Fprintf(diagOut, "deprecation: %s\n", f.Notice())
+	}
+
+	// The same report over the other store, for the same reason and with the same
+	// verdict — none. A plugin attached at a verdict role is recorded beside the
+	// lockfile rather than pinned in it, so it has no row the report above can reach;
+	// a pass silent about a withdrawn linter would read as though there were none,
+	// and this is the pass that runs those linters. It is read before the record's
+	// own dropped-gate refusal below, so a withdrawal is stated even where that
+	// refusal stops the pass — a withdrawal is often the explanation.
+	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(releasePath))
+	if trustErr != nil {
+		return trustErr
+	}
+	for _, f := range trustRecord.DeprecationFindings() {
 		fmt.Fprintf(diagOut, "deprecation: %s\n", f.Notice())
 	}
 

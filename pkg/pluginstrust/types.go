@@ -18,17 +18,29 @@
 // first sighting. Addressing by coordinate is what makes the two
 // distinguishable at all.
 //
+// Besides the identity, a record carries the withdrawal a publisher has attached
+// to the artifact that identity names, when one was discovered and verified. That
+// is a fact about the recorded artifact rather than a second identity, which is
+// what lets it be recorded without weakening the hold the identity fields place on
+// a resolution — see Deprecation.
+//
 // What the file deliberately does not carry:
 //
 //   - Rule inputs. A governance verdict attachment's external rule files are
 //     recorded as content digests in the lockfile's verdict_inputs section; a
 //     linter attachment's rule inputs are recorded in neither file.
 //   - Signatures. Rotating a plugin is re-recording its identity here, not
-//     managing an overlapping key window.
+//     managing an overlapping key window. That extends to the signer of a
+//     withdrawal: only a signature-verified withdrawal is recorded at all, so
+//     recording who signed it would add provenance without adding trust.
 //   - Resolution provenance — no registry host, no resolution tier, and no
 //     path on the machine that wrote the file. Recording where an artifact
 //     came from would make the bytes machine-specific, which is the one thing
 //     a committed record must not be.
+//   - Any wall-clock moment. The file carries no stamp at all, so an unchanged
+//     resolution produces the same bytes over time as well as across machines.
+//     A withdrawal is therefore reported as recorded at pull without naming when,
+//     which is a narrower claim than the lockfile's and a deliberate one.
 //
 // Which attachments are recorded is decided by the ATTACHMENT's role, through
 // workspaceconfig.Config.VerdictAttachments — never by a property of the plugin
@@ -59,6 +71,11 @@ type Trust struct {
 // Field declaration order is alphabetical to drive yaml.v3's canonical key
 // emission, matching the Lockfile-wide discipline.
 type TrustedPlugin struct {
+	// Deprecation is the verified withdrawal marker discovered for the artifact
+	// Digest names, or nil when none was. It is optional and omitted from the
+	// written bytes when absent, so a record for an artifact nobody has withdrawn
+	// is byte-identical to one written before this field existed.
+	Deprecation *Deprecation `yaml:"deprecation,omitempty"`
 	// Digest is the content digest of the resolved plugin artifact
 	// (`sha256:...`).
 	Digest string `yaml:"digest"`
@@ -70,6 +87,48 @@ type TrustedPlugin struct {
 	// ResolvedVersion is the concrete version selected for this plugin when the
 	// record was written.
 	ResolvedVersion string `yaml:"resolved_version"`
+}
+
+// Deprecation is a verified withdrawal a publisher attached to a trusted plugin's
+// artifact after publishing it: the severity in the ordered set
+// warning < error < retracted, and the marker's own message.
+//
+// It carries no signer, and that is the record's own contract rather than an
+// omission: a withdrawal is recorded only when its signature verified, so the
+// signer adds provenance to a fact whose trust was already established, and this
+// file records no provenance of any kind. It also carries no observation moment,
+// because the file carries no wall-clock stamp at all — which is what makes an
+// unchanged resolution byte-identical over time.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the discipline the rest of this file follows.
+type Deprecation struct {
+	// Message is the withdrawal's recorded human-readable message, which is the
+	// marker's own message or, where it carried none, its reason.
+	Message string `yaml:"message"`
+	// Severity is the recorded severity: warning, error or retracted.
+	Severity string `yaml:"severity"`
+}
+
+// Equal reports whether p and q record the same thing.
+//
+// It exists because TrustedPlugin stopped being comparable with `==` the moment it
+// gained a pointer field: `==` still compiles and still type-checks, but it compares
+// the POINTER rather than what it addresses, so two records carrying identical
+// withdrawals would be reported as differing. Every caller asking "has this record
+// moved" asks here, so that trap has one answer rather than one per call site.
+func (p TrustedPlugin) Equal(q TrustedPlugin) bool {
+	if p.Plugin != q.Plugin || p.ResolvedVersion != q.ResolvedVersion || p.Digest != q.Digest {
+		return false
+	}
+	switch {
+	case p.Deprecation == nil && q.Deprecation == nil:
+		return true
+	case p.Deprecation == nil || q.Deprecation == nil:
+		return false
+	default:
+		return *p.Deprecation == *q.Deprecation
+	}
 }
 
 // CurrentVersion is the trust-record schema version this package reads and
@@ -117,6 +176,50 @@ func (t *Trust) Upsert(p TrustedPlugin) {
 		}
 	}
 	t.Plugins = append(t.Plugins, p)
+}
+
+// RecordDeprecation records d as the withdrawal of the artifact digest names, on
+// the entry addressed by coordinate, and reports whether the record changed.
+//
+// It is the single home of the rule that a withdrawal follows ARTIFACT IDENTITY
+// rather than the pin decision, and every part of that rule is here rather than at
+// a call site:
+//
+//   - The digest must match the one the entry already records. A withdrawal is a
+//     fact about one artifact, so recording one discovered for a different artifact
+//     against this entry would attach it to bytes it says nothing about. A resolution
+//     reporting a different digest is a change of IDENTITY, which is the entry's own
+//     business and governed by the entry's own rule — a run that did not ask for it
+//     is refused rather than reaching here.
+//   - Recording is therefore not adoption, which is what lets it happen on an
+//     ordinary pull. The identity fields are untouched; only a new fact about the
+//     artifact those fields already name is added. Gating this on the pin decision
+//     instead would leave the common case unreachable: a publisher withdraws an
+//     artifact a workspace already trusts, so the entry is always already held by
+//     the time there is anything to record.
+//   - A nil d records nothing and clears nothing. A withdrawal that has stopped
+//     being published is not chased: the record says what was seen for these bytes,
+//     and the only way a withdrawal leaves is with its entry, on the explicit
+//     upgrade that replaces or prunes it.
+//
+// A nil receiver, an empty coordinate and an unheld coordinate all record nothing
+// and report false, the same contract Find, Upsert and Remove offer at their edges.
+func (t *Trust) RecordDeprecation(coordinate, digest string, d *Deprecation) bool {
+	if t == nil || coordinate == "" || d == nil {
+		return false
+	}
+	for i := range t.Plugins {
+		if t.Plugins[i].Plugin != coordinate || t.Plugins[i].Digest != digest {
+			continue
+		}
+		if held := t.Plugins[i].Deprecation; held != nil && *held == *d {
+			return false
+		}
+		recorded := *d
+		t.Plugins[i].Deprecation = &recorded
+		return true
+	}
+	return false
 }
 
 // Remove drops the record addressed by coordinate and reports whether one was

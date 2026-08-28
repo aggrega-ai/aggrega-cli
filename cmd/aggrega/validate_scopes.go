@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -159,7 +160,27 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// lockfile loaded above. This verb produces a REPORT, so it enumerates each
 	// finding beside everything else it has to say; the halt on a recorded marker
 	// belongs to the verbs that produce an artifact.
-	return renderReleaseValidation(vr, resolved.ManifestConsistencyFindings, lf.DeprecationFindings(), releasePath, verbosity, diagOut, out)
+	//
+	// Both stores are read, because which one holds a marker is decided by the
+	// attachment's role rather than by anything the reader chose: a plugin attached
+	// at a verdict role is recorded beside the lockfile and has no row here. A
+	// surface reading one store and not the other reports a withdrawal for some
+	// references and stays silent for others, and its silence reads as "nothing is
+	// withdrawn". An unreadable record is reported rather than skipped, for the same
+	// reason the record's loader refuses one: a damaged record must not be able to
+	// pass as an empty one.
+	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(releasePath))
+	if trustErr != nil {
+		return trustErr
+	}
+	var notices []string
+	for _, f := range lf.DeprecationFindings() {
+		notices = append(notices, f.Notice())
+	}
+	for _, f := range trustRecord.DeprecationFindings() {
+		notices = append(notices, f.Notice())
+	}
+	return renderReleaseValidation(vr, resolved.ManifestConsistencyFindings, notices, releasePath, verbosity, diagOut, out)
 }
 
 // renderReleaseValidation writes a release-scoped validation result's diagnostics
@@ -196,7 +217,12 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 // run the identical checks, reach the identical verdict, and return the identical
 // error (or nil). Diagnostics and advisories go to diagOut; the success summary
 // goes to out.
-func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings []error, deprecationFindings []lockfile.DeprecationFinding, releasePath, verbosity string, diagOut, out io.Writer) error {
+// deprecationNotices arrives already rendered, one sentence per finding, because
+// the two stores a marker can sit in render their own sentence: the lockfile-backed
+// one names the moment the record was observed, and the trust-record-backed one
+// cannot, since that record carries no wall-clock stamp at all. Re-rendering either
+// through the other's wording would assert a provenance it does not have.
+func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings []error, deprecationNotices []string, releasePath, verbosity string, diagOut, out io.Writer) error {
 	detailed := verbosity != compilerops.VerbosityConcise
 
 	// The deprecation report leads, and outside the reach of every early return
@@ -206,8 +232,8 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings
 	// detailed form only, like the other advisory lines, since the concise form
 	// collapses the verdict-affecting classes and these affect no verdict.
 	if detailed {
-		for _, f := range deprecationFindings {
-			fmt.Fprintf(diagOut, "  deprecation: %s\n", f.Notice())
+		for _, notice := range deprecationNotices {
+			fmt.Fprintf(diagOut, "  deprecation: %s\n", notice)
 		}
 	}
 

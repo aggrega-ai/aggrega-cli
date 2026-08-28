@@ -33,13 +33,20 @@ import (
 // against. For a bare-name attachment the two strings coincide; for a
 // location-shaped reference they do not.
 //
+// Deprecation is the verified withdrawal discovered for that artifact during the
+// same pull, or nil when none was found. It is carried alongside the identity
+// rather than looked up later because it is a fact about the very bytes this
+// resolution identified: discovered anywhere else it could describe a different
+// artifact than the one recorded beside it.
+//
 // An empty Coordinate means the plugin was not in the content cache, so there was
 // nothing to identify.
 type verdictPluginResolution struct {
-	BareURI    string
-	Coordinate string
-	Version    string
-	Digest     string
+	BareURI     string
+	Coordinate  string
+	Version     string
+	Digest      string
+	Deprecation *pluginstrust.Deprecation
 }
 
 // errVerdictPluginIdentityChanged reports that a pull resolved an attachment
@@ -350,12 +357,26 @@ func recordVerdictPluginTrust(releasePath string, attachments []workspaceconfig.
 			Plugin:          r.Coordinate,
 			ResolvedVersion: r.Version,
 			Digest:          r.Digest,
+			Deprecation:     r.Deprecation,
 		}
 		held, isHeld := trust.Find(r.Coordinate)
 		if isHeld && !reresolvedByThisPull(mode, r.BareURI) {
+			// The identity is held, which is this record's whole rule. A withdrawal
+			// is not an identity, so it is still recorded — onto the entry whose
+			// recorded digest is the one just resolved, which is what keeps a fact
+			// about one artifact from being written against another. Without this
+			// arm the field would be reachable only on a first sighting, and the
+			// ordinary case — a publisher withdrawing an artifact a workspace
+			// already trusts — would never reach it at all.
+			if trust.RecordDeprecation(r.Coordinate, r.Digest, r.Deprecation) {
+				changed = true
+			}
 			continue
 		}
-		if isHeld && held == fresh {
+		// Equal rather than ==, because the record stopped being comparable with ==
+		// the moment it gained a pointer field: == still compiles and compares the
+		// pointer, so two identical withdrawals would read as a change.
+		if isHeld && held.Equal(fresh) {
 			continue
 		}
 		trust.Upsert(fresh)

@@ -33,13 +33,24 @@ const header = `# Aggrega plugin trust record — written by "aggrega pull", rea
 # record it already has rather than adding a second one. That is what lets a
 # build tell a re-versioned plugin from one it has never seen.
 #
+# It also records a "deprecation" block on a plugin whose publisher has
+# deprecated the artifact behind the recorded digest after publishing it, when
+# the marker carried a signature that verified. That is a fact about the
+# artifact already recorded rather than a second identity, which is why a plain
+# "aggrega pull" adds one while still leaving the identity alone. Every command
+# that reports on this file names such a plugin, because a deprecated gate is
+# otherwise fetched, cached and run with nothing said. A recorded marker leaves
+# only with its record.
+#
 # WHAT IT DOES NOT RECORD. The rule inputs a verdict plugin reads. A
 # plugins.governance verdict attachment's external rule files are recorded as
 # digests in the lockfile beside this file, under verdict_inputs; a
 # plugins.linter attachment's rule inputs are recorded in neither file. This
-# record also carries no signature, and no resolution provenance — no registry
-# host, and no path on the machine that wrote it — so the same resolution
-# produces the same bytes wherever it runs.
+# record also carries no signature — including the one on a deprecation marker,
+# which is verified before the marker is recorded at all — and no resolution
+# provenance, no registry host, no path on the machine that wrote it, and no
+# clock reading, so the same resolution produces the same bytes wherever and
+# whenever it runs.
 #
 # WHERE THE REST LIVES. Everything a build reproduces byte-for-byte is pinned in
 # the lockfile beside this file. A verdict attachment shapes none of the
@@ -114,18 +125,24 @@ func marshalCanonical(t *Trust) ([]byte, error) {
 //
 // Maintenance hazard, and it is the same one the lockfile writer beside this file
 // documents: any field added to TrustedPlugin that holds a SLICE or a POINTER
-// must be cloned here explicitly. TrustedPlugin holds only scalars today, so the
-// element copy below is complete — but a struct copy clones scalar fields while
-// SHARING slice headers and pointers, so the day a composite field is added, a
-// caller mutating the output would reach back into the input and the sort would
-// mutate the caller's slice. The same reaches a field added to Trust itself: the
-// literal below copies Version by value and assigns Plugins explicitly, so a
-// newly added composite field left out of that sequence is silently absent from
-// the canonical form rather than shared with the caller.
+// must be cloned here explicitly, because a struct copy clones scalar fields while
+// SHARING slice headers and pointers — so without the clone a caller mutating the
+// output would reach back into the input. TrustedPlugin holds one pointer field
+// today, Deprecation, and the loop below clones it; a further composite field owes
+// the same treatment. The same reaches a field added to Trust itself: the literal
+// below copies Version by value and assigns Plugins explicitly, so a newly added
+// composite field left out of that sequence is silently absent from the canonical
+// form rather than shared with the caller.
 func canonicalise(t *Trust) *Trust {
 	out := &Trust{Version: t.Version}
 	out.Plugins = make([]TrustedPlugin, len(t.Plugins))
 	copy(out.Plugins, t.Plugins)
+	for i := range out.Plugins {
+		if d := out.Plugins[i].Deprecation; d != nil {
+			cloned := *d
+			out.Plugins[i].Deprecation = &cloned
+		}
+	}
 	sort.Slice(out.Plugins, func(i, j int) bool {
 		return out.Plugins[i].Plugin < out.Plugins[j].Plugin
 	})
