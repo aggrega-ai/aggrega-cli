@@ -11,24 +11,40 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// A node's emitted file set is a loop-local, and it is a shorter-lived one than
+// A render's emitted file set is a loop-local, and it is a shorter-lived one than
 // the state the stage before this retains. It is accumulated across the render's
-// passes, read by the per-node collision detection, split by the intermediate
-// flag as the node joins its dispatch group, and gone when that node's turn ends.
-// By the time the render returns, the names each block emitted under and the
-// blocks themselves are unreachable: what survives is the assembled output, where
-// an assembly is free to have renamed, nested or merged the node's own names away.
+// passes, split by the intermediate flag as its output joins a dispatch group, and
+// gone when that render's turn ends. By the time the build returns, the names each
+// block emitted under and the blocks themselves are unreachable: what survives is the
+// assembled output, where an assembly is free to have renamed, nested or merged the
+// render's own names away.
 //
 // So this file retains a PROJECTION of that set and never the set itself. The
-// projection carries the output names and, per name, which of the node's blocks
+// projection carries the output names and, per name, which of the render's blocks
 // produced it. It carries no bytes, which is what bounds the cost: the retention
 // grows with the number of files a build emits rather than with their size, and a
 // build emitting large artifacts retains no more than one emitting small ones.
 //
-// The retention and the presentation are one file because the retention is one
-// field. The stage before this holds four structures at three scopes and earns a
-// file of its own for them; a second file here would be a second place to look for
-// one map.
+// # Three carriers, because one rule runs over three renders
+//
+// The emission this stage describes happens in three separately authored documents.
+// A component node's own Recipe emits under that node's identity. The FeatureRecipe
+// one attachment binds on a node emits under the HOST component's node identity, over
+// blocks the attachment declares. The FeatureRecipe one boundary-scope attachment
+// binds emits under a composite dispatch marker, against no single component.
+//
+// A single node-keyed retention would fold the second into the first, so a rule
+// reading it would answer about the host's own emission while the blocks in question
+// were the attachment's — admitting a collision the attachment never wrote wherever
+// the host has one, and refusing none of the attachment's own. Both directions are
+// wrong and neither is visible from the outcome. And no widening of a node-and-name
+// enumeration produces the attachment coordinate, so the answer is a fact per carrier
+// rather than a wider axis over one fact.
+//
+// So this file holds three retentions under three key types, three accessors, and
+// three coordinate axes — one per carrier — sharing the one projection helper that
+// reduces an accumulation to its per-name origin sets. The shape is the one the stage
+// before this already carries for the same three carriers.
 
 // emittedProjection is what one node's completed emission is reduced to: the
 // output names its own render placed files under, and the blocks that produced
@@ -52,23 +68,136 @@ type emittedProjection struct {
 	EmittedFileOriginSet types.OrderedMap[[]string]
 }
 
-// emittedProjections is one render's retained set of those projections, keyed by
-// node.
+// attachmentEmittedProjection is what the completed emission of the render one
+// attachment carries on a node is reduced to.
 //
-// It is installed once per render and lives for the whole of it, each entry
-// written as its node's own emission completes.
+// It is the carrier-keyed form of [emittedProjection] and holds the same shape for
+// the same reasons. It is a separate type rather than the same one under a second
+// key because the accessor that reads it is a separate declared fact: the field name
+// is the correspondence with that accessor, and one type carrying both names would
+// claim to answer either fact from either key.
+type attachmentEmittedProjection struct {
+	// AttachmentEmittedFileOriginSet are the authored input blocks that produced
+	// each file the attachment's own render emitted, keyed by the output name that
+	// render chose and held in name order, with each entry's blocks deduplicated
+	// and in the order the render produced them.
+	//
+	// The name is the render's own, before the caller composes the attachment's
+	// output prefix onto it: two of this render's blocks meeting on a name have
+	// already collided whatever prefix is later added, and prefixing first would
+	// make the retention answer under a name no block chose.
+	AttachmentEmittedFileOriginSet types.OrderedMap[[]string]
+
+	// sourceFile is the FeatureRecipe this render's blocks were authored in, which
+	// is the document an author edits to rename one of two that met.
+	//
+	// It is unexported because it is a locator input rather than a declared fact:
+	// the guard beside this file compares the retention's EXPORTED fields against
+	// what the stage declares, so an exported field here would be reported as a
+	// retention carrying something no accessor answers.
+	//
+	// It is retained rather than recovered because it cannot be recovered: the
+	// render is reached under the host component's node identity, so nothing
+	// downstream of it names the FeatureRecipe.
+	sourceFile string
+}
+
+// boundaryAttachmentEmittedProjection is what the completed emission of the render
+// one boundary-scope attachment carries is reduced to.
+//
+// It is rooted at the boundary because that is where such an attachment is
+// declared, which is also why its fact is keyed there.
+type boundaryAttachmentEmittedProjection struct {
+	// BoundaryAttachmentEmittedFileOriginSet are the authored input blocks that
+	// produced each file that render emitted, keyed by the output name the render
+	// chose and held in name order.
+	//
+	// The name is the render's own, before the caller routes the output by the flag
+	// saying whether an assembly consumes it.
+	BoundaryAttachmentEmittedFileOriginSet types.OrderedMap[[]string]
+
+	// sourceFile is the FeatureRecipe this render's blocks were authored in,
+	// retained and unexported for the reasons its node-carried sibling states.
+	sourceFile string
+}
+
+// emittedProjections is one render's retained set of those projections, keyed by
+// node and, for what an attachment's render emitted, by that attachment's carrier.
+//
+// It is installed once per render and lives for the whole of it, each entry written
+// as its own render's emission completes.
+//
+// The three carriers are held in three maps under three key types rather than in one
+// map under a carrier discriminator, on the reading the sibling retention at the
+// stage before this states: a boundary-rooted identity is then unable to be written
+// into a node-rooted key at all, which is a property of the types rather than of a
+// discriminator being set correctly at every write.
 type emittedProjections struct {
 	// mu serialises writes, for the reason the sibling retention gives: the node
 	// walk is sequential today, so the lock is never contended, and it is here
 	// because a map written from two goroutines is a crash rather than a wrong
 	// answer — which is not a property this value can assert about its callers.
-	mu     sync.Mutex
-	byNode map[string]*emittedProjection
+	mu                   sync.Mutex
+	byNode               map[string]*emittedProjection
+	byNodeAttachment     map[nodeAttachmentKey]*attachmentEmittedProjection
+	byBoundaryAttachment map[boundaryAttachmentKey]*boundaryAttachmentEmittedProjection
 }
 
 // newEmittedProjections returns an empty set for one render.
 func newEmittedProjections() *emittedProjections {
-	return &emittedProjections{byNode: map[string]*emittedProjection{}}
+	return &emittedProjections{
+		byNode:               map[string]*emittedProjection{},
+		byNodeAttachment:     map[nodeAttachmentKey]*attachmentEmittedProjection{},
+		byBoundaryAttachment: map[boundaryAttachmentKey]*boundaryAttachmentEmittedProjection{},
+	}
+}
+
+// originsByEmittedName reduces one render's accumulated emission to the origin set
+// each output name carries: the blocks that produced a file under that name,
+// deduplicated, in production order, with the names themselves in name order.
+//
+// It is one function because it is one mechanic, and all three carriers' recorders
+// call it. A second copy per carrier would agree today and would be free to diverge
+// on the deduplication rule or the ordering — and the divergence would be invisible,
+// because each carrier's own reading would look correct in isolation.
+//
+// The names are collected and sorted before the map is filled, so the key order is a
+// function of the input rather than of the order the render's passes happened to
+// place files in. The order WITHIN an entry is production order, which IS a property
+// of the input: a render's blocks are read in a fixed sequence, so the first block
+// listed is the one that reached the name first.
+func originsByEmittedName(files []EmittedFile) types.OrderedMap[[]string] {
+	originsByName := map[string][]string{}
+	names := make([]string, 0, len(files))
+	for _, f := range files {
+		origin := f.Origin.String()
+		existing, seen := originsByName[f.Name]
+		if !seen {
+			names = append(names, f.Name)
+			originsByName[f.Name] = []string{origin}
+			continue
+		}
+		// A block emitting several files under one name is one contributor, not
+		// several: what this fact reports is which blocks met on a name, so a
+		// repeat from a block already listed adds nothing to answer.
+		duplicate := false
+		for _, already := range existing {
+			if already == origin {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			originsByName[f.Name] = append(existing, origin)
+		}
+	}
+	sort.Strings(names)
+
+	var out types.OrderedMap[[]string]
+	for _, name := range names {
+		out.Set(name, originsByName[name])
+	}
+	return out
 }
 
 // recordNode reduces one node's completed emission to its projection and retains
@@ -96,44 +225,111 @@ func (e *emittedProjections) recordNode(state *PhaseBState) {
 		return
 	}
 
-	// Names first, sorted, so the map's key order is name order. Ranging the
-	// accumulation once to collect names and once to fill them is what makes the
-	// key order a function of the input rather than of the order the passes
-	// happened to place files in.
-	originsByName := map[string][]string{}
-	names := make([]string, 0, len(state.EmittedFiles))
-	for _, f := range state.EmittedFiles {
-		origin := f.Origin.String()
-		existing, seen := originsByName[f.Name]
-		if !seen {
-			names = append(names, f.Name)
-			originsByName[f.Name] = []string{origin}
-			continue
-		}
-		// A block emitting several files under one name is one contributor, not
-		// several: what this fact reports is which blocks met on a name, so a
-		// repeat from a block already listed adds nothing to answer.
-		duplicate := false
-		for _, already := range existing {
-			if already == origin {
-				duplicate = true
-				break
-			}
-		}
-		if !duplicate {
-			originsByName[f.Name] = append(existing, origin)
-		}
-	}
-	sort.Strings(names)
-
-	p := &emittedProjection{}
-	for _, name := range names {
-		p.EmittedFileOriginSet.Set(name, originsByName[name])
-	}
+	p := &emittedProjection{EmittedFileOriginSet: originsByEmittedName(state.EmittedFiles)}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.byNode[state.NodeID] = p
+}
+
+// recordNodeAttachment reduces the completed emission of the render one attachment
+// carries on a node to its projection and retains that.
+//
+// It is called where that render's own emission is complete — after every pass of it
+// that can contribute a file has run — and before the caller composes the
+// attachment's output prefix onto the names or merges them into any dispatch map.
+// That is the span in which the set is this attachment's own: one statement later the
+// names are prefixed and the files join what other renders produced.
+//
+// The carrier is supplied rather than derived, because it is not derivable at that
+// render: the node identity such a render carries is the HOST component's, so a set
+// filed under it would answer about the host while the blocks being read are the
+// attachment's.
+//
+// It READS the state and retains no reference to it, on the reading the node's own
+// recorder states: the map it builds is its own and holds only names and block tags.
+func (e *emittedProjections) recordNodeAttachment(key nodeAttachmentKey, state *PhaseBState) {
+	if e == nil || state == nil {
+		return
+	}
+	projected := originsByEmittedName(state.EmittedFiles)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.byNodeAttachment[key] = &attachmentEmittedProjection{
+		AttachmentEmittedFileOriginSet: projected,
+		sourceFile:                     artifactFindingFile(state),
+	}
+}
+
+// recordBoundaryAttachment reduces the completed emission of the render one
+// boundary-scope attachment carries to its projection and retains that.
+//
+// It is called at the same point of that render its node-carried sibling is called
+// at, and before the caller routes the output by the flag saying whether an assembly
+// consumes it.
+//
+// The key is rooted at the boundary because that is where the attachment is
+// declared; the render itself carries a composite dispatch marker rather than any
+// component's node identity, so no node-rooted key could name it.
+func (e *emittedProjections) recordBoundaryAttachment(
+	key boundaryAttachmentKey, state *PhaseBState,
+) {
+	if e == nil || state == nil {
+		return
+	}
+	projected := originsByEmittedName(state.EmittedFiles)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.byBoundaryAttachment[key] = &boundaryAttachmentEmittedProjection{
+		BoundaryAttachmentEmittedFileOriginSet: projected,
+		sourceFile:                             artifactFindingFile(state),
+	}
+}
+
+// coordinates presents this retention as the three emitted coordinate axes.
+//
+// It is the one construction seam for those axes, so every site that invokes a rule
+// over an emission reaches the same reader. A caller building its own would be a
+// second implementation of the name axis, free to differ on the deduplication the
+// retention already performed.
+func (e *emittedProjections) coordinates() *emittedStageCoordinates {
+	return newEmittedStageCoordinates(e)
+}
+
+// nodeAttachmentProjection returns one attachment carrier's retained emission, and
+// reports whether the render reached that carrier at all.
+//
+// The report separates a render that emitted nothing from one the walk never
+// reached, on the division the node's own reader draws: the presentation collapses
+// the two because a fact accessor returns a value and never a report, while the
+// enumeration does not, because an axis over a carrier nothing rendered would present
+// rules coordinates nothing produced.
+func (e *emittedProjections) nodeAttachmentProjection(
+	key nodeAttachmentKey,
+) (*attachmentEmittedProjection, bool) {
+	if e == nil {
+		return nil, false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	p, ok := e.byNodeAttachment[key]
+	return p, ok
+}
+
+// boundaryAttachmentProjection returns one boundary-scope attachment carrier's
+// retained emission, and reports whether the render reached that carrier at all.
+func (e *emittedProjections) boundaryAttachmentProjection(
+	key boundaryAttachmentKey,
+) (*boundaryAttachmentEmittedProjection, bool) {
+	if e == nil {
+		return nil, false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	p, ok := e.byBoundaryAttachment[key]
+	return p, ok
 }
 
 // recordedNodes reports how many nodes the retention holds.
@@ -268,6 +464,50 @@ func (v *emittedView) EmittedFileOriginSet(node string, path string) []string {
 	return origins
 }
 
+// AttachmentEmittedFileOriginSet returns the authored input blocks that produced the
+// file standing at one output name within the render one attachment carries on a
+// node.
+//
+// It answers from the carrier-keyed retention rather than from the node's own, which
+// is what keeps this render's emission and the host component's separate: the two
+// renders emit under the same node identity, and only the attachment coordinate tells
+// them apart.
+//
+// A carrier the retention does not hold, and a name that render emitted nothing
+// under, both answer with no blocks — the same answer for the same reason the
+// presentation's own contract gives: an accessor returns a value and never a report.
+func (v *emittedView) AttachmentEmittedFileOriginSet(
+	node string, attachment string, path string,
+) []string {
+	p, ok := v.emissions.nodeAttachmentProjection(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	if !ok {
+		return nil
+	}
+	origins, _ := p.AttachmentEmittedFileOriginSet.Get(path)
+	return origins
+}
+
+// BoundaryAttachmentEmittedFileOriginSet returns the authored input blocks that
+// produced the file standing at one output name within the render one boundary-scope
+// attachment carries.
+//
+// It is keyed at the boundary because that is where the attachment is declared, so
+// one authored document has one entry however many components the boundary holds.
+func (v *emittedView) BoundaryAttachmentEmittedFileOriginSet(
+	boundary string, attachment string, path string,
+) []string {
+	p, ok := v.emissions.boundaryAttachmentProjection(
+		boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	)
+	if !ok {
+		return nil
+	}
+	origins, _ := p.BoundaryAttachmentEmittedFileOriginSet.Get(path)
+	return origins
+}
+
 var _ constraint.EmittedView = (*emittedView)(nil)
 
 // emittedStageCoordinates is the node and output-name enumeration one render's
@@ -320,7 +560,63 @@ func (c *emittedStageCoordinates) NodeEmittedPaths(node string) []string {
 	return p.EmittedFileOriginSet.Keys()
 }
 
-// The enumeration is held to the axis the rules over a render's own emissions are
-// keyed by, so an axis that stops being satisfied fails to compile here rather
+// NodeAttachmentEmittedPaths returns the output names the render one attachment
+// carries on a node emitted, deduplicated, in name order.
+//
+// It reads the same carrier-keyed retention the fact is answered from, for the reason
+// the node's own axis reads its own: one reader means the names a rule is invoked
+// over and the names its facts are keyed by cannot disagree.
+//
+// A carrier the retention does not hold answers with nothing, which is what a render
+// that emitted nothing gives: neither has a name for a rule to be asked about.
+// Each name carries the FeatureRecipe the render's blocks were authored in, which
+// the retention holds because nothing downstream of that render names it.
+func (c *emittedStageCoordinates) NodeAttachmentEmittedPaths(
+	node string, attachment string,
+) []constraint.AuthoredCoordinate {
+	p, ok := c.emissions.nodeAttachmentProjection(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	if !ok {
+		return nil
+	}
+	return emittedNameCoordinates(p.AttachmentEmittedFileOriginSet.Keys(), p.sourceFile)
+}
+
+// BoundaryAttachmentEmittedPaths returns the output names the render one
+// boundary-scope attachment carries emitted, deduplicated, in name order, each
+// carrying the FeatureRecipe those blocks were authored in.
+func (c *emittedStageCoordinates) BoundaryAttachmentEmittedPaths(
+	boundary string, attachment string,
+) []constraint.AuthoredCoordinate {
+	p, ok := c.emissions.boundaryAttachmentProjection(
+		boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	)
+	if !ok {
+		return nil
+	}
+	return emittedNameCoordinates(p.BoundaryAttachmentEmittedFileOriginSet.Keys(), p.sourceFile)
+}
+
+// emittedNameCoordinates pairs each output name with the document its blocks were
+// authored in.
+//
+// It is one function because both attachment axes need the identical pairing, and a
+// second copy would be free to differ on whether a name contributes a locator
+// segment — which it does not: a name is output, and no document holds it as a key.
+func emittedNameCoordinates(names []string, sourceFile string) []constraint.AuthoredCoordinate {
+	out := make([]constraint.AuthoredCoordinate, 0, len(names))
+	for _, name := range names {
+		out = append(out, constraint.AuthoredCoordinate{Value: name, SourceFile: sourceFile})
+	}
+	return out
+}
+
+// The enumeration is held to the three axes the rules over a render's own emissions
+// are keyed by, so an axis that stops being satisfied fails to compile here rather
 // than at the invocation that needed it.
-var _ constraint.NodeEmittedPathEnumerator = (*emittedStageCoordinates)(nil)
+var (
+	_ constraint.NodeEmittedPathEnumerator               = (*emittedStageCoordinates)(nil)
+	_ constraint.NodeAttachmentEmittedPathEnumerator     = (*emittedStageCoordinates)(nil)
+	_ constraint.BoundaryAttachmentEmittedPathEnumerator = (*emittedStageCoordinates)(nil)
+)

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
@@ -62,11 +63,21 @@ func TestRetainedEmissionCoversEveryDeclaredEmittedFact(t *testing.T) {
 
 	declared := declaredAtEmittedStage(t)
 
+	// Every carrier's projection is swept, not just the node's own. The stage
+	// declares one fact per carrier, so a sweep over one type would report the other
+	// two carriers' facts as retained by nothing — and a sweep that named only the
+	// type it happened to find first would pass while a whole carrier went
+	// unretained.
 	var retained []string
-	typ := reflect.TypeOf(emittedProjection{})
-	for i := 0; i < typ.NumField(); i++ {
-		if f := typ.Field(i); f.IsExported() {
-			retained = append(retained, f.Name)
+	for _, typ := range []reflect.Type{
+		reflect.TypeOf(emittedProjection{}),
+		reflect.TypeOf(attachmentEmittedProjection{}),
+		reflect.TypeOf(boundaryAttachmentEmittedProjection{}),
+	} {
+		for i := 0; i < typ.NumField(); i++ {
+			if f := typ.Field(i); f.IsExported() {
+				retained = append(retained, f.Name)
+			}
 		}
 	}
 	sort.Strings(retained)
@@ -319,30 +330,15 @@ type twoBlocksOnOneName struct {
 
 func (v twoBlocksOnOneName) EmittedFileOriginSet(_ string, _ string) []string { return v.origins }
 
-// nameClaimedOnce is a proof instrument and not a declared rule.
+// nameClaimedOnce is the DECLARED rule over a node's own emission, named locally so
+// the traversal below reads as what it drives.
 //
-// It is here to establish that the coordinates the render publishes reach a
-// predicate through the framework's own traversal, and that the predicate reads
-// the fact for the subject it was invoked for. Declaring the rule this stands in
-// for — and moving a halt onto it — is a separate act with its own equivalence to
-// establish against the detection that runs today; this raises nothing in any
-// build.
-var nameClaimedOnce = constraint.Check[constraint.EmittedView, constraint.NodePathSubject]{
-	Sentinel: ErrArtifactOutputCollision(),
-	Severity: constraint.SeverityFatal,
-	Run: func(
-		v constraint.EmittedView,
-		s constraint.NodePathSubject,
-	) []constraint.Objection {
-		if len(v.EmittedFileOriginSet(s.NodeID(), s.EmittedPath())) < 2 {
-			return nil
-		}
-		return []constraint.Objection{s.RaiseWith(
-			ErrArtifactOutputCollision(),
-			constraint.Captioned("emitted name", s.EmittedPath()),
-		)}
-	},
-}
+// It was a proof instrument standing in for a rule that did not exist yet. The rule
+// exists, is invoked from the render's own node walk, and halts — so a stand-in here
+// would prove the traversal reaches a predicate while saying nothing about the
+// predicate the build actually runs. Pointing this at the production value is what
+// makes the two directions asserted below properties of the shipped rule.
+var nameClaimedOnce = EmittedNameProducedByOneBlock
 
 // TestAPredicateIsReachedOverTheEmittedNamesOfACompiledBuild proves the fact is
 // answered THROUGH the framework rather than merely present on an interface: the
@@ -409,12 +405,22 @@ func TestAPredicateIsReachedOverTheEmittedNamesOfACompiledBuild(t *testing.T) {
 		t.Fatalf("the predicate raised %d objection(s) over %d name(s) answered as claimed twice, want %d",
 			len(raised), visited, visited)
 	}
+	// The rule's detail is the output name and the blocks that met, in that order.
+	// Both are asserted rather than counted: the name alone would not say which of
+	// two blocks to rename, and a rule reporting the blocks without the name would
+	// not say which file. A count would pass on either half missing and the other
+	// duplicated.
 	for _, o := range raised {
 		if o.Sentinel() == nil {
 			t.Error("an objection carries no condition, so the subject it was raised from is unusable")
 		}
-		if detail := o.Detail(); len(detail) != 1 {
-			t.Errorf("objection detail = %v, want the emitted name alone", detail)
+		detail := o.Detail()
+		if len(detail) != 2 {
+			t.Errorf("objection detail = %v, want the output name and the blocks that produced it", detail)
+			continue
+		}
+		if !strings.Contains(detail[1], "source") || !strings.Contains(detail[1], "artifacts-inline") {
+			t.Errorf("the objection does not name both substituted blocks: %v", detail)
 		}
 	}
 

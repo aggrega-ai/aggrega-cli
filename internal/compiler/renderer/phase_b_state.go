@@ -28,9 +28,8 @@ type PhaseBState struct {
 	NodeID string
 
 	// BoundaryPath is the boundary the node belongs to. Used by the
-	// orchestrator's per-boundary file collection; not consumed by Phase B
-	// sub-passes today but kept for forward compatibility (B.5 may need
-	// it once cross-boundary detection lands).
+	// orchestrator's per-boundary file collection and not consumed by the
+	// render's own passes.
 	BoundaryPath string
 
 	// RecipePath / RecipeName / RecipeVersion are operator-facing
@@ -74,10 +73,12 @@ type PhaseBState struct {
 	// the display says so instead of showing the emitted document.
 	DisplayWorkload *types.Workload
 
-	// EmittedFiles accumulates the per-input-kind file contributions across
-	// B.1 (sourced), B.3 (artifacts; stub today), and B.4 (workload
-	// synthesis). Order is preserved (byte-for-byte deterministic output);
-	// B.5 detects cross-origin collisions over this list.
+	// EmittedFiles accumulates this render's per-input-kind file
+	// contributions: the source render, the artifacts walk, workload
+	// synthesis, and an own-scope pipeline's EMITs. Order is preserved
+	// (byte-for-byte deterministic output). Once the accumulation is
+	// complete it is reduced to the projection the filename-collision rule
+	// reads, which is where two blocks meeting on one name is refused.
 	EmittedFiles []EmittedFile
 
 	// PhaseReached records the last completed sub-pass index (0..6).
@@ -235,6 +236,35 @@ type PhaseBState struct {
 	// able to read them.
 	hydratedFacts constraint.HydratedView
 
+	// emitted is the render's retained set of per-carrier emitted-file projections,
+	// and emittedFacts presents it as named facts.
+	//
+	// They travel on a node's own state for one reason: the carrier an attachment's
+	// render is given is built HERE, from the host node's state, and a carrier must
+	// carry both stages' products or it would record an emission nothing is then
+	// asked about. A node's own emission is recorded by the orchestrator from the
+	// render input rather than through these, so what these two exist for is to
+	// reach the carrier construction sites.
+	//
+	// They are set together, on the reading the hydrated pair above states: a walk
+	// that records facts must also be able to read them, and a state given one
+	// without the other would leave a rule invoked zero times — which reads exactly
+	// like a rule that ran and approved.
+	emitted      *emittedProjections
+	emittedFacts constraint.EmittedView
+
+	// callerPresentationSupplied reports whether the render's CALLER handed in the
+	// presentation this render's view chain extends.
+	//
+	// It exists so a rule that HALTS can tell the two ways its presentation can be
+	// absent apart. A caller supplying nothing is asking for a render rather than a
+	// build, and a rule invoked over facts nothing produced would be worse than one
+	// not invoked. A caller that did supply one, standing over an absent
+	// presentation here, is a chain that broke inside this package — and passing
+	// that over would turn a build that refuses today into one that renders, which
+	// is the silent direction a halting rule must not have.
+	callerPresentationSupplied bool
+
 	// artifacts is the render's retained set of per-node artifact projections,
 	// carried here so the artifacts walk can record each entry's evaluated bytes
 	// at the point that entry becomes part of what the render projects — after the
@@ -311,6 +341,22 @@ func (s *PhaseBState) recordAttachmentPillars() {
 		return
 	}
 	s.attachmentHydrated.recordPillars(s)
+}
+
+// recordAttachmentEmission reduces the completed emitted file set of one
+// attachment's render to the projection that outlives it, under that render's own
+// carrier.
+//
+// It is the routing seam for that recording, so the render records without knowing
+// which carrier it is on — the same shape the artifact-template recording above
+// uses. A state that is not an attachment's render records nothing, which is the
+// case for a node's own render: its emission is recorded by the orchestrator, at the
+// point the node's own set is complete and before the node joins its dispatch group.
+func (s *PhaseBState) recordAttachmentEmission() {
+	if s == nil || s.attachmentHydrated == nil {
+		return
+	}
+	s.attachmentHydrated.recordEmission(s)
 }
 
 // displayContext returns the context the projection is handed: the live one when

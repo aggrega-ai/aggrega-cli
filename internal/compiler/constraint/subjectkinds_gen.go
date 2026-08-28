@@ -124,6 +124,12 @@ const (
 	// SubjectNodePath is the subject kind (node, path), keyed by 1 declared fact.
 	SubjectNodePath SubjectKind = "(node, path)"
 
+	// SubjectNodeAttachmentPath is the subject kind (node, attachment, path), keyed by 1 declared fact.
+	SubjectNodeAttachmentPath SubjectKind = "(node, attachment, path)"
+
+	// SubjectBoundaryAttachmentPath is the subject kind (boundary, attachment, path), keyed by 1 declared fact.
+	SubjectBoundaryAttachmentPath SubjectKind = "(boundary, attachment, path)"
+
 	// SubjectAssemblyPathProvider is the subject kind (assembly-path, provider), keyed by 7 declared facts.
 	SubjectAssemblyPathProvider SubjectKind = "(assembly-path, provider)"
 
@@ -164,6 +170,8 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeAttachmentArtifact, Coordinates: []string{"node", "attachment", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentArtifact, Coordinates: []string{"boundary", "attachment", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectNodePath, Coordinates: []string{"node", "path"}, Traversal: TraversalPull},
+	{Kind: SubjectNodeAttachmentPath, Coordinates: []string{"node", "attachment", "path"}, Traversal: TraversalPull},
+	{Kind: SubjectBoundaryAttachmentPath, Coordinates: []string{"boundary", "attachment", "path"}, Traversal: TraversalPull},
 	{Kind: SubjectAssemblyPathProvider, Coordinates: []string{"assembly-path", "provider"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryProviderPath, Coordinates: []string{"boundary", "provider", "path"}, Traversal: TraversalPull},
 }

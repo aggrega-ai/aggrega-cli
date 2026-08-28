@@ -430,7 +430,7 @@ func dispatchBoundaryScopeFR(
 	// was declared at the point it was minted above. Reading it here as well would
 	// declare one name twice for one derivation.
 	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "",
-		state.hydrated.attachmentOnBoundary(state.hydratedFacts, key.BoundaryPath, frInstance),
+		carrierProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 	if err != nil {
 		return err

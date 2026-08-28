@@ -1216,6 +1216,91 @@ func RunOnNodeEmittedPaths[V View](
 	})
 }
 
+// RunOnNodeAttachmentEmittedPaths invokes check once per output name the render each
+// attachment carries on a node emitted, in node order, then attachment order, then
+// name order.
+//
+// The locator names the FeatureRecipe's own file and stops at its spec, which is the
+// document an author edits to rename one of the colliding blocks. It is neither the
+// Aggregate the attachment was written in nor the node's own Recipe, on the reading
+// [RunOnNodeAttachmentArtifacts] states: the file comes from the enumerated entry
+// rather than from the node.
+//
+// The emitted name contributes no segment, for the reason [RunOnNodeEmittedPaths]
+// gives: a name is output, produced by whichever block emitted it, and no document
+// holds it as a key — so a segment naming it would spell a path the file does not
+// contain. It remains a coordinate, because that is what tells one of a render's
+// emissions from another when a fact is keyed.
+//
+// The attachment likewise reaches the subject as a coordinate without reaching the
+// locator, which is not an inconsistency: the locator names the document to edit,
+// while the coordinate is what tells this render's emission from the host node's own
+// and from another attachment's on the same node.
+//
+// So a rule over this kind owes the emitted name in its detail, CAPTIONED, exactly
+// as the node-rooted form does — see [DetailValue] for which of a rule's values
+// carries a caption — and it names the blocks from the fact rather than from the
+// subject, because the subject knows which file and only the origin set knows which
+// blocks put it there.
+func RunOnNodeAttachmentEmittedPaths[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	attachments AttachmentEnumerator,
+	paths NodeAttachmentEmittedPathEnumerator,
+	view V,
+	check Check[V, NodeAttachmentPathSubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentPathSubject {
+		var out []NodeAttachmentPathSubject
+		for _, attachment := range attachments.Attachments(node.ID) {
+			for _, entry := range paths.NodeAttachmentEmittedPaths(node.ID, attachment) {
+				out = append(out, newNodeAttachmentPathSubject(
+					entry.SourceFile, node.ID, attachment, entry.Value,
+				))
+			}
+		}
+		return out
+	})
+}
+
+// RunOnBoundaryAttachmentEmittedPaths invokes check once per output name the render
+// each boundary-scope attachment carries emitted, in boundary order, then attachment
+// order, then name order.
+//
+// The locator names the FeatureRecipe's own file, which is the document an author
+// edits to rename one of the colliding blocks, and the boundary contributes no
+// segment — the reading [RunOnBoundaryAttachmentArtifacts] states for the other
+// boundary-rooted kind whose locator names a FeatureRecipe: a boundary key spliced
+// onto a FeatureRecipe-rooted locator would name a path that document does not have.
+// The boundary remains a coordinate, because that is what tells this render's
+// emission from another boundary's when a fact is keyed.
+//
+// The emitted name contributes no segment either, for the reason every emitted axis
+// gives: a name is output and no document holds it as a key. So a rule over this
+// kind owes the emitted name in its detail, captioned, and reads the blocks from the
+// fact rather than from the subject.
+func RunOnBoundaryAttachmentEmittedPaths[V View](
+	cancelled Cancellation,
+	boundaries BoundaryEnumerator,
+	attachments BoundaryAttachmentEnumerator,
+	paths BoundaryAttachmentEmittedPathEnumerator,
+	view V,
+	check Check[V, BoundaryAttachmentPathSubject],
+) ([]Objection, error) {
+	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
+		func(boundary AuthoredCoordinate) []BoundaryAttachmentPathSubject {
+			var out []BoundaryAttachmentPathSubject
+			for _, attachment := range attachments.BoundaryAttachments(boundary.Value) {
+				for _, entry := range paths.BoundaryAttachmentEmittedPaths(boundary.Value, attachment) {
+					out = append(out, newBoundaryAttachmentPathSubject(
+						entry.SourceFile, boundary.Value, attachment, entry.Value,
+					))
+				}
+			}
+			return out
+		})
+}
+
 // RunOnBoundaryProviderPaths invokes check once per output path written for one
 // provider within one boundary, in boundary order, then provider order, then
 // path order.

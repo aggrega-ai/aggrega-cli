@@ -1097,6 +1097,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// would let a state record facts nothing can then be asked about, which
 		// reads as a rule that ran and approved.
 		state.hydratedFacts = result.HydratedView
+		// The emitted retention and its presentation travel the same way, and for a
+		// narrower reason: a node's own emission is recorded by this orchestrator
+		// directly, so what these reach is the carrier an attachment's render is
+		// given, which is built from this state and must carry both stages' products.
+		state.emitted = input.emitted
+		state.emittedFacts = result.EmittedView
+		// Whether the CALLER supplied the presentation this chain extends, so a
+		// halting rule over an attachment's emission can tell a render asked for
+		// without one from a chain that broke in this package. Every build path
+		// supplies it; a caller assembling a render's input itself may not.
+		state.callerPresentationSupplied = input.GraphView != nil
 		// The state's copy is the authoritative set for this node: a Phase B
 		// sub-pass records the workload display decision onto it, and a capture
 		// reading a copy taken earlier would show a document the decision said to
@@ -1414,8 +1425,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Phase B.3 — artifacts evaluation. Each artifacts: entry (inline
 		// content or $import:-loaded) renders through Go templates against
 		// the full TemplateContext, gets provenance labels merged into K8s metadata
-		// when present, and accumulate on state.EmittedFiles for Phase
-		// B.5 collision detection.
+		// when present, and accumulate on state.EmittedFiles — which is what the
+		// filename-collision rule reads once this node's emission is complete.
 		if err := phaseB3(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
 			// An artifacts-evaluation failure is normally a catalog fault: the
 			// entry, its import, or its template is what went wrong. A provider
@@ -1443,14 +1454,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// the orchestrator level: the granularity is per emitted file, not per
 		// node.
 
-		// Phase B.5 — filename collision detection across input-kind
-		// origins. Collisions can surface across EmitOriginSource
-		// and EmitOriginWorkload contributions (when a Recipe declares both
-		// source: and workload:); EmitOriginArtifacts* contributions land
-		// when the artifacts render path ships.
-		if err := phaseB5(state); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
-		}
+		// Two output names one node's own blocks both produced are refused by the
+		// value declared over this node's emission, invoked once below at the point
+		// that emission is recorded. It is asked there rather than here because the
+		// set is not yet whole at this line: an own-scope Recipe pipeline can still
+		// append what a step emits.
 
 		// Group per (evaluated_path, provider). Per-node file map is built
 		// from state.EmittedFiles (carries every input-kind contribution).
@@ -1523,9 +1531,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				}
 				state.EmittedFiles = pres.Own
 				result.Warnings = append(result.Warnings, pres.Warnings...)
-				if err := phaseB5(state); err != nil {
-					return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q pipeline EMIT collision", nodeID))
-				}
+				// A step EMIT clashing with a rendered name is refused below, with
+				// every other way two of this node's blocks can meet on one name:
+				// the set is whole from this line and the value declared over it is
+				// asked once, at the point the emission is recorded.
 			}
 		}
 
@@ -1545,6 +1554,35 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		//
 		// The state is read and not retained.
 		input.emitted.recordNode(state)
+
+		// Then ask the value declared over this node's own emission whether two of
+		// its blocks met on one output name. The recording above and this reading
+		// are adjacent because the rule reads that retention: recording anywhere
+		// else would leave the rule asked about a set that is not this node's.
+		//
+		// This is the one place the question is asked for this carrier. The two
+		// hand-written detections it replaces ran earlier in this walk — one after
+		// workload synthesis, one after the own-scope pipeline — and the inputs that
+		// halt are unchanged, because the pipeline rebuilds every file it was given
+		// and appends what a step emitted: it cannot drop a file or change one's
+		// name or origin, so a collision present before it is present here.
+		// The node is taken from the build's own enumeration where it describes
+		// this node, and falls back to the bare identity where it does not. The
+		// fallback is what keeps the rule's REACH independent of the enumeration:
+		// a caller supplying no coordinates would otherwise leave this node
+		// unchecked, and this rule replaced a detection that ran on every node.
+		// What the enumeration contributes is the locator, not the invocation.
+		emittingNode, described := nodeInstances[nodeID]
+		if !described {
+			emittingNode = constraint.NodeInstance{ID: nodeID}
+		}
+		if err := runNodeEmissionCollisionRule(
+			ctx.Err, input.GraphView != nil, result.EmittedView,
+			input.emitted.coordinates(), emittingNode,
+		); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError,
+				cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+		}
 
 		key := dispatchKey{Path: finalPath, Provider: providerName}
 		nodeDispatch[nodeID] = key

@@ -2853,11 +2853,13 @@ type HydratedView interface {
 	BoundaryAttachmentArtifactTemplateText(boundary string, attachment string, artifact string) string
 }
 
-// EmittedView exposes the facts complete at the emitted stage: each node's
-// own emitted file set, complete and attributed: every file the node's own
+// EmittedView exposes the facts complete at the emitted stage: each
+// render's own emitted file set, complete and attributed: every file that
 // render produced, under the name it will be placed by, together with the
-// authored input block each came from — all of it before the node is
-// sorted into any assembly group.
+// authored input block each came from — held per carrier, so a node's
+// own render, the render one attachment carries on a node, and the render
+// one boundary-scope attachment carries each answer for their own emission
+// — all of it before anything is sorted into an assembly group.
 //
 // It embeds HydratedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
@@ -2910,6 +2912,90 @@ type EmittedView interface {
 	//
 	// Keyed by (node, path); read from renderer.PhaseBState.EmittedFiles.
 	EmittedFileOriginSet(node string, path string) []string
+
+	// AttachmentEmittedFileOriginSet are the authored input blocks that
+	// produced the file standing at one output name within the render one
+	// attachment carries on a node, deduplicated, in the order that render
+	// produced them.
+	//
+	// It is the carrier-keyed form of the node's own origin set and answers
+	// the same question of a different document. A FeatureRecipe can produce a
+	// file from more than one block — a source, a workload, an artifacts
+	// entry, and a step of a pipeline each contribute under a name chosen
+	// independently of the others — so more than one entry here means two
+	// blocks of one FeatureRecipe each produced a file under one name, which
+	// is a state only the whole set makes visible.
+	//
+	// It is keyed per attachment as well as per node because the blocks are
+	// authored on the FeatureRecipe the attachment binds, a different document
+	// from the node's own Recipe. The render runs under the HOST component's
+	// node identity, so a key carrying only the node would answer about the
+	// host's own emission while the blocks being read are the attachment's —
+	// admitting a collision the attachment never wrote wherever the host has
+	// one, and refusing none of the attachment's own. Both directions are
+	// wrong and neither is visible from the outcome. Two attachments on one
+	// node are likewise independently authored, and nothing makes one's output
+	// names distinct from the other's.
+	//
+	// It is a separate fact rather than the node's own set reached through a
+	// wider enumeration, because widening an enumerator cannot supply a
+	// coordinate the fact is not keyed by: the attachment is what tells one
+	// block from another, and no enumeration over nodes and names produces it.
+	//
+	// It is the origins and not the bytes, on the reading the node's own form
+	// carries: what separates two blocks meeting on one name from one block
+	// emitting once is which blocks arrived, and a rule that could reach the
+	// bytes could compare them, which would let two blocks agreeing by
+	// accident pass as though the name had been claimed once.
+	//
+	// The order is stated rather than inherited, for the reason the node's own
+	// form gives: the blocks are read in a fixed sequence and each contributes
+	// by sorted name, so the first entry is the block that reached the name
+	// first.
+	//
+	// The name is the one the render itself chose, before the caller places
+	// the output under the attachment's own prefix. A collision between two of
+	// this render's blocks has already happened under that name, whatever
+	// prefix is later composed onto it.
+	//
+	// Keyed by (node, attachment, path); read from
+	// renderer.PhaseBState.EmittedFiles.
+	AttachmentEmittedFileOriginSet(node string, attachment string, path string) []string
+
+	// BoundaryAttachmentEmittedFileOriginSet are the authored input blocks
+	// that produced the file standing at one output name within the render one
+	// boundary-scope attachment carries, deduplicated, in the order that
+	// render produced them.
+	//
+	// It answers the same question its two sibling forms answer of their own
+	// documents: more than one entry means two blocks of one FeatureRecipe
+	// each produced a file under one name, which is a state only the whole set
+	// makes visible.
+	//
+	// It is rooted at a boundary rather than at a node because that is where
+	// such an attachment is declared. It is written once and reaches every
+	// component the boundary holds, so a component-rooted key would hold one
+	// authored document under as many keys as the boundary has members, and
+	// none at all for a boundary holding none. The render carries a composite
+	// dispatch marker rather than any component's node identity, so no
+	// node-rooted key can name it.
+	//
+	// It is a separate fact rather than either sibling reached through a
+	// different coordinate, because the output names in this render are chosen
+	// independently of any component's and of any other attachment's, and
+	// nothing declares them unique across documents.
+	//
+	// It is the origins and not the bytes, and the order is stated rather than
+	// inherited, on the readings every form of this fact carries.
+	//
+	// The name is the one the render itself chose, before the caller routes
+	// the output by the flag saying whether an assembly consumes it. Two
+	// blocks meeting on one name have already collided in that render's own
+	// output, whichever way it is later routed.
+	//
+	// Keyed by (boundary, attachment, path); read from
+	// renderer.PhaseBState.EmittedFiles.
+	BoundaryAttachmentEmittedFileOriginSet(boundary string, attachment string, path string) []string
 }
 
 // DispatchedView exposes the facts complete at the dispatched stage: every

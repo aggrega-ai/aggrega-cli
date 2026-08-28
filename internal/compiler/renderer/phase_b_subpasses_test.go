@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -327,72 +328,92 @@ func TestPhaseB3_NoArtifacts_NoError(t *testing.T) {
 	}
 }
 
-// ----- TestPhaseB5_NoCollision_FeaturesUnderSubPath -----
+// ----- the rule over a node's own emitted names -----
 
-// Verifies that B.5 collision detection is scoped to cross-origin collisions
-// at boundary root, not file-name collisions across feature subtrees. Two
-// features emitting a file named "deployment.yaml" under their own
-// "features/<x>/" prefix do NOT collide; they have distinct full paths.
+// nodeEmissionVerdict drives the rule declared over one node's own emission across
+// the emission it is handed, and returns the render's halt.
 //
-// Note: today's file-prefixing happens at the orchestrator (lines 276, 333);
-// the EmittedFile.Name carries the full path the orchestrator has already
-// prefixed. So the collision detector groups by the full Name including
-// subpath — which means features/x/deployment.yaml ≠ features/y/deployment.yaml,
-// and the filename-collision rule correctly does NOT fire.
-func TestPhaseB5_NoCollision_FeaturesUnderSubPath(t *testing.T) {
+// It records the emission into a real retention, presents it through the real
+// presentation, and asks the rule through the framework's own traversal over the
+// real coordinate axis — so what these cases exercise is the production path rather
+// than the predicate in isolation. The caller-presentation flag is true, because
+// these cases are about what the rule decides rather than about the arrangement that
+// would make it skip.
+func nodeEmissionVerdict(t *testing.T, files []EmittedFile) error {
+	t.Helper()
+	state := NewPhaseBState(minimalRecipe("test"), "test", "default", "recipe.yaml")
+	state.EmittedFiles = files
+
+	retention := newEmittedProjections()
+	retention.recordNode(state)
+	view := newEmittedView(stubHydratedForEmitted{}, retention)
+	if view == nil {
+		t.Fatal("no presentation was built over the retention, so a verdict from it would certify nothing")
+	}
+	axis := retention.coordinates()
+	if axis == nil {
+		t.Fatal("no coordinate axis was built over the retention")
+	}
+	// The traversal must reach a subject. An axis that selected none would report no
+	// objection and read exactly like a rule that ran and approved.
+	if visited := len(axis.NodeEmittedPaths("test")); visited == 0 {
+		t.Fatal("the traversal would visit no emitted name; a verdict from it would certify nothing")
+	}
+	return runNodeEmissionCollisionRule(
+		context.Background().Err, true, view, axis,
+		constraint.NodeInstance{ID: "test", SourceFile: "aggregate.yaml"},
+	)
+}
+
+// Verifies the rule is scoped to two blocks meeting on ONE name, and not to two
+// blocks emitting names that merely resemble each other. Two attachments emitting a
+// file called "deployment.yaml" under their own "features/<x>/" prefix do not meet:
+// the name each carries is the whole path, so the two names differ.
+func TestNodeEmission_DistinctPrefixedNames_NoCollision(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("test")
-	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-	state.EmittedFiles = []EmittedFile{
+	err := nodeEmissionVerdict(t, []EmittedFile{
 		{Name: "features/mon/deployment.yaml", Origin: EmitOriginSource, Body: []byte("a")},
 		{Name: "features/log/deployment.yaml", Origin: EmitOriginSource, Body: []byte("b")},
-	}
-
-	if err := phaseB5(state); err != nil {
-		t.Errorf("non-colliding feature subpaths should pass, got %v", err)
+	})
+	if err != nil {
+		t.Errorf("names that differ do not meet, so the rule must not fire, got %v", err)
 	}
 }
 
-// Verifies that a true cross-origin collision at boundary root produces a
-// filename-collision catalog failure.
-func TestPhaseB5_CrossOriginCollision_Fails(t *testing.T) {
+// Verifies two blocks meeting on one name halt, and that the diagnostic names both
+// the output name and the two blocks — which is what makes the finding actionable,
+// since a name alone does not say which of two blocks to rename.
+func TestNodeEmission_TwoBlocksOnOneName_Halts(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("test")
-	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-	state.EmittedFiles = []EmittedFile{
+	err := nodeEmissionVerdict(t, []EmittedFile{
 		{Name: "deployment.yaml", Origin: EmitOriginSource, Body: []byte("a")},
 		{Name: "deployment.yaml", Origin: EmitOriginWorkload, Body: []byte("b")},
-	}
-
-	err := phaseB5(state)
+	})
 	if !errors.Is(err, validator.ErrRecipeFilenameCollisionAcrossInputKinds()) {
 		t.Fatalf("expected ErrRecipeFilenameCollisionAcrossInputKinds, got %v", err)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "deployment.yaml") {
-		t.Errorf("error should name the colliding file, got: %v", msg)
+		t.Errorf("the diagnostic should name the output name, got: %v", msg)
 	}
 	if !strings.Contains(msg, "source") || !strings.Contains(msg, "workload") {
-		t.Errorf("error should name both contributing origins, got: %v", msg)
+		t.Errorf("the diagnostic should name both contributing blocks, got: %v", msg)
 	}
 }
 
-// Verifies that within-origin duplication (e.g., two artifacts entries with
-// the same name) is NOT caught by the filename-collision rule — two entries
-// under one key are refused when the document is decoded. B.5 only fires on
-// cross-origin collisions.
-func TestPhaseB5_WithinOriginDuplication_NoFilenameCollision(t *testing.T) {
+// Verifies that ONE block emitting several files under one name does not fire the
+// rule. That is one authoring decision rather than two blocks meeting, and the
+// retention records such a block as a single contributor for exactly that reason;
+// duplicate keys inside one artifacts block are refused when the document is
+// decoded.
+func TestNodeEmission_OneBlockRepeatingAName_NoCollision(t *testing.T) {
 	t.Parallel()
-	r := minimalRecipe("test")
-	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-	state.EmittedFiles = []EmittedFile{
+	err := nodeEmissionVerdict(t, []EmittedFile{
 		{Name: "config.yaml", Origin: EmitOriginArtifactsInline, Body: []byte("a")},
 		{Name: "config.yaml", Origin: EmitOriginArtifactsInline, Body: []byte("b")},
-	}
-
-	if err := phaseB5(state); err != nil {
-		t.Errorf("within-origin duplication is refused when the document is decoded; the "+
-			"filename-collision rule must not fire, got %v", err)
+	})
+	if err != nil {
+		t.Errorf("one block repeating a name is one contributor, so the rule must not fire, got %v", err)
 	}
 }
 

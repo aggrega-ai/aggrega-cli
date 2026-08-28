@@ -1073,6 +1073,24 @@ var subjectKindBindings = map[SubjectKind]struct {
 				"spec", "artifacts", "dashboard.json")
 		},
 	},
+	SubjectNodeAttachmentPath: {
+		iface: reflect.TypeOf((*NodeAttachmentPathSubject)(nil)).Elem(),
+		// No segments at all. An emitted name is produced by whichever of the
+		// render's blocks emitted it and is a key no document holds, so it
+		// contributes none; and the locator's file is the FeatureRecipe rather than
+		// a path inside it, so neither the node nor the attachment contributes one
+		// either. Both remain coordinates, which is what tells this render's
+		// emission from the host node's own.
+		make: func(f string) Subject {
+			return newNodeAttachmentPathSubject(f, "web", "tls", "deployment.yaml")
+		},
+	},
+	SubjectBoundaryAttachmentPath: {
+		iface: reflect.TypeOf((*BoundaryAttachmentPathSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newBoundaryAttachmentPathSubject(f, "prod", "shared-db", "statefulset.yaml")
+		},
+	},
 	SubjectBoundaryAttachment: {
 		iface: reflect.TypeOf((*BoundaryAttachmentSubject)(nil)).Elem(),
 		make: func(f string) Subject {

@@ -351,7 +351,7 @@ func runAttachmentArtifactPillarRule(
 		return err
 	}
 
-	if key, rooted := carrier.nodeAttachmentPillarKey(); rooted {
+	if key, rooted := carrier.nodeAttachmentCarrierKey(); rooted {
 		subject := oneRecordedAttachmentArtifact{
 			key:        key,
 			outputName: outputName,
@@ -366,7 +366,7 @@ func runAttachmentArtifactPillarRule(
 		return attachmentArtifactPillarHalt(raised, key.attachment, outputName)
 	}
 
-	if key, rooted := carrier.boundaryAttachmentPillarKey(); rooted {
+	if key, rooted := carrier.boundaryAttachmentCarrierKey(); rooted {
 		subject := oneRecordedBoundaryAttachmentArtifact{
 			key:        key,
 			outputName: outputName,

@@ -812,6 +812,58 @@ type NodeEmittedPathEnumerator interface {
 	NodeEmittedPaths(node string) []string
 }
 
+// NodeAttachmentEmittedPathEnumerator supplies the output names the render one
+// attachment carries on a node emitted, before anything is grouped for assembly.
+//
+// It is the carrier-keyed sibling of [NodeEmittedPathEnumerator]. The two are
+// separate axes rather than one read at two keys: an attachment's render runs under
+// the host component's node identity, so folding its names into the node's own
+// answer would present them under a key that cannot tell them from the node's — and
+// a collision rule reading that answer would attribute one document's fault to
+// another.
+type NodeAttachmentEmittedPathEnumerator interface {
+	// NodeAttachmentEmittedPaths returns the output names the render one
+	// attachment carries on a node emitted, deduplicated, in name order.
+	//
+	// The order is fixed here rather than left to the implementation, for the
+	// reason [NodeEmittedPathEnumerator] fixes its own: the order in which a
+	// render's passes place files is not a property of the input, so a name two
+	// passes both emitted would otherwise appear at whichever position the first
+	// pass to reach it happened to run at.
+	//
+	// Each name carries its own file, and that is the difference from the
+	// node-rooted axis rather than an inconsistency with it. The blocks that met on
+	// one of these names are authored in the FeatureRecipe the attachment binds,
+	// which is a different document from the one the node was written in — so the
+	// document an author edits travels with the entry, exactly as it does on the
+	// attachment's artifact axis. The name itself contributes no locator segment,
+	// because it is output.
+	NodeAttachmentEmittedPaths(node string, attachment string) []AuthoredCoordinate
+}
+
+// BoundaryAttachmentEmittedPathEnumerator supplies the output names the render one
+// boundary-scope attachment carries emitted, before anything is grouped for
+// assembly.
+//
+// The axis is keyed per boundary and not per node for the reason every
+// boundary-scope axis is: such an attachment is declared once at the boundary and
+// reaches every component it holds, so enumerating per component would present one
+// render's names many times over and none at all for a boundary holding no
+// components.
+type BoundaryAttachmentEmittedPathEnumerator interface {
+	// BoundaryAttachmentEmittedPaths returns the output names the render one
+	// boundary-scope attachment carries emitted, deduplicated, in name order.
+	//
+	// The order is fixed here rather than left to the implementation, on the
+	// reading its two sibling emitted axes carry.
+	//
+	// Each name carries its own file, the FeatureRecipe the attachment binds, for
+	// the reason the node-carried attachment axis gives: that is the document an
+	// author edits, and it is neither the deployment the attachment was declared in
+	// nor any component's Recipe.
+	BoundaryAttachmentEmittedPaths(boundary string, attachment string) []AuthoredCoordinate
+}
+
 // BoundaryAttachmentEnumerator supplies the Feature attachments declared on one
 // boundary itself.
 //

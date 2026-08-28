@@ -112,10 +112,13 @@ var stages = []stageDecl{
 	{
 		Name:    "emitted",
 		Extends: "hydrated",
-		Holds: "each node's own emitted file set, complete and attributed: every " +
-			"file the node's own render produced, under the name it will be placed " +
-			"by, together with the authored input block each came from — all of it " +
-			"before the node is sorted into any assembly group",
+		Holds: "each render's own emitted file set, complete and attributed: every " +
+			"file that render produced, under the name it will be placed by, " +
+			"together with the authored input block each came from — held per " +
+			"carrier, so a node's own render, the render one attachment carries on " +
+			"a node, and the render one boundary-scope attachment carries each " +
+			"answer for their own emission — all of it before anything is sorted " +
+			"into an assembly group",
 		// Producing this stage's facts renders the node, and every input block that
 		// can contribute a file goes through a guest: the source render, workload
 		// synthesis, an artifact entry's projection, and a pipeline step's own
@@ -3169,6 +3172,90 @@ var facts = []factDecl{
 			"node chose, and that one is what several nodes' output became once " +
 			"a group assembled it, under paths an assembly may have renamed, " +
 			"nested or merged away.",
+	},
+	{
+		Name:        "attachment-emitted-file-origin-set",
+		Stage:       "emitted",
+		SourceField: "renderer.PhaseBState.EmittedFiles",
+		Subject:     []string{"node", "attachment", "path"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+			{Name: "path", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "AttachmentEmittedFileOriginSet are the authored input blocks that " +
+			"produced the file standing at one output name within the render one " +
+			"attachment carries on a node, deduplicated, in the order that render " +
+			"produced them.\n\nIt is the carrier-keyed form of the node's own " +
+			"origin set and answers the same question of a different document. A " +
+			"FeatureRecipe can produce a file from more than one block — a source, " +
+			"a workload, an artifacts entry, and a step of a pipeline each " +
+			"contribute under a name chosen independently of the others — so more " +
+			"than one entry here means two blocks of one FeatureRecipe each " +
+			"produced a file under one name, which is a state only the whole set " +
+			"makes visible.\n\nIt is keyed per attachment as well as per node " +
+			"because the blocks are authored on the FeatureRecipe the attachment " +
+			"binds, a different document from the node's own Recipe. The render " +
+			"runs under the HOST component's node identity, so a key carrying only " +
+			"the node would answer about the host's own emission while the blocks " +
+			"being read are the attachment's — admitting a collision the attachment " +
+			"never wrote wherever the host has one, and refusing none of the " +
+			"attachment's own. Both directions are wrong and neither is visible " +
+			"from the outcome. Two attachments on one node are likewise " +
+			"independently authored, and nothing makes one's output names distinct " +
+			"from the other's.\n\nIt is a separate fact rather than the node's own " +
+			"set reached through a wider enumeration, because widening an " +
+			"enumerator cannot supply a coordinate the fact is not keyed by: the " +
+			"attachment is what tells one block from another, and no enumeration " +
+			"over nodes and names produces it.\n\nIt is the origins and not the " +
+			"bytes, on the reading the node's own form carries: what separates two " +
+			"blocks meeting on one name from one block emitting once is which " +
+			"blocks arrived, and a rule that could reach the bytes could compare " +
+			"them, which would let two blocks agreeing by accident pass as though " +
+			"the name had been claimed once.\n\nThe order is stated rather than " +
+			"inherited, for the reason the node's own form gives: the blocks are " +
+			"read in a fixed sequence and each contributes by sorted name, so the " +
+			"first entry is the block that reached the name first.\n\nThe name is " +
+			"the one the render itself chose, before the caller places the output " +
+			"under the attachment's own prefix. A collision between two of this " +
+			"render's blocks has already happened under that name, whatever prefix " +
+			"is later composed onto it.",
+	},
+	{
+		Name:        "boundary-attachment-emitted-file-origin-set",
+		Stage:       "emitted",
+		SourceField: "renderer.PhaseBState.EmittedFiles",
+		Subject:     []string{"boundary", "attachment", "path"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+			{Name: "path", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "BoundaryAttachmentEmittedFileOriginSet are the authored input blocks " +
+			"that produced the file standing at one output name within the render " +
+			"one boundary-scope attachment carries, deduplicated, in the order that " +
+			"render produced them.\n\nIt answers the same question its two sibling " +
+			"forms answer of their own documents: more than one entry means two " +
+			"blocks of one FeatureRecipe each produced a file under one name, which " +
+			"is a state only the whole set makes visible.\n\nIt is rooted at a " +
+			"boundary rather than at a node because that is where such an " +
+			"attachment is declared. It is written once and reaches every component " +
+			"the boundary holds, so a component-rooted key would hold one authored " +
+			"document under as many keys as the boundary has members, and none at " +
+			"all for a boundary holding none. The render carries a composite " +
+			"dispatch marker rather than any component's node identity, so no " +
+			"node-rooted key can name it.\n\nIt is a separate fact rather than " +
+			"either sibling reached through a different coordinate, because the " +
+			"output names in this render are chosen independently of any " +
+			"component's and of any other attachment's, and nothing declares them " +
+			"unique across documents.\n\nIt is the origins and not the bytes, and " +
+			"the order is stated rather than inherited, on the readings every form " +
+			"of this fact carries.\n\nThe name is the one the render itself chose, " +
+			"before the caller routes the output by the flag saying whether an " +
+			"assembly consumes it. Two blocks meeting on one name have already " +
+			"collided in that render's own output, whichever way it is later routed.",
 	},
 
 	// -------------------------------------------------------------- dispatched

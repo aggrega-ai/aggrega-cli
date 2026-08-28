@@ -274,8 +274,8 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 // computation — the generic, invariant-forced work) and dispatches it to the
 // provider's ArtifactsEmitter, which decides the output format, the provenance
 // placement, the output path, and the final bytes. Each returned file carries
-// its own EmitOrigin tag (artifacts-inline / artifacts-import) so the Phase B.5
-// cross-origin collision detector can name every contributor on a clash.
+// its own EmitOrigin tag (artifacts-inline / artifacts-import) so the
+// filename-collision rule can name every contributor on a clash.
 //
 // An engine that does not implement ArtifactsEmitter, while the Recipe declares
 // artifacts:, produces a CATALOG_ERROR — mirroring the WorkloadSynthesizer gate
@@ -349,22 +349,6 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 		state.capture(trace.PassPhaseB4, f.Name, tmplCtx)
 	}
 	state.PhaseReached = 4
-	return nil
-}
-
-// phaseB5 detects filename collisions across input-kind origins on
-// state.EmittedFiles. Cross-origin collisions produce a filename-collision
-// validation failure (the reserved sentinel format). Within-origin collisions
-// are caught elsewhere: duplicate artifacts: entry keys are refused when the
-// document is decoded, and engine-internal logic covers duplicate sourced
-// output.
-//
-// Implementation lives in phase_b_collision.go's detectFilenameCollisions.
-func phaseB5(state *PhaseBState) error {
-	if err := detectFilenameCollisions(state); err != nil {
-		return err
-	}
-	state.PhaseReached = 5
 	return nil
 }
 
@@ -522,7 +506,7 @@ func phaseB6(
 		// node's own. It carries this render's presentation too, so the rule declared
 		// over the carrier's facts can be asked inside the walk that records them.
 		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Instance,
-			state.hydrated.attachmentOnNode(state.hydratedFacts, nodeID, item.Instance),
+			carrierProductsOf(state).attachmentOnNode(nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 		if err != nil {
 			return nil, nil, nil, err
@@ -763,8 +747,10 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // generating FeatureRecipe at a per-component site (feature or credential
 // attachment). It mirrors the component render path exactly: the central
 // input-kind gate, then sourced engine.Render / synthesised workload synthesis
-// / artifacts emission via the same Phase B leaf passes (phaseB2/B3/B4) and the
-// same Phase B.5 cross-input-kind filename-collision check. A render-only
+// / artifacts emission via the same Phase B leaf passes (phaseB2/B3/B4). Its
+// emission is then recorded and checked for two of its blocks meeting on one
+// output name, under the carrier this render belongs to rather than under the
+// host component's node identity the passes run beneath. A render-only
 // synthetic Recipe carries the FR's input-kind fields so those passes — which
 // read state.Recipe.Spec.* — operate unchanged; this is reuse of the component
 // machinery, not a parallel FeatureRecipe track. Returns the accumulated
@@ -935,7 +921,22 @@ func renderFeatureRecipeFiles(
 	if err := phaseB4(ctx, frCtx, state, frEngine, synthNodeCtx); err != nil {
 		return nil, "", err
 	}
-	if err := phaseB5(state); err != nil {
+	// Reduce this render's completed emission to the projection that outlives it,
+	// then ask the value declared over this carrier's emission whether two of the
+	// FeatureRecipe's blocks met on one output name.
+	//
+	// This is the position: every pass of this render that can contribute a file has
+	// run, and the caller has not yet touched the set — the per-component caller
+	// composes the attachment's output prefix onto every name, and the
+	// boundary-scope caller routes them by the intermediate flag. Either would put
+	// the set beyond the point at which it is this attachment's own emission under
+	// the names its own blocks chose.
+	//
+	// The recording and the reading are adjacent deliberately: the rule reads the
+	// retention, so recording anywhere but immediately before it would leave the
+	// rule asked about an emission that is not this one.
+	state.recordAttachmentEmission()
+	if err := runAttachmentEmissionCollisionRule(ctx.Err, state); err != nil {
 		return nil, "", err
 	}
 

@@ -75,6 +75,9 @@ type traversalFixture struct {
 
 	attachArtifacts         map[string][]AuthoredCoordinate
 	boundaryAttachArtifacts map[string][]AuthoredCoordinate
+
+	attachEmittedPaths         map[string][]AuthoredCoordinate
+	boundaryAttachEmittedPaths map[string][]AuthoredCoordinate
 }
 
 func fixtureKey(parts ...string) string { return strings.Join(parts, "\x00") }
@@ -164,6 +167,16 @@ func (f traversalFixture) EmittedPaths(boundary, provider string) []string {
 
 func (f traversalFixture) NodeEmittedPaths(node string) []string {
 	return f.nodeEmittedPaths[fixtureKey(node)]
+}
+
+func (f traversalFixture) NodeAttachmentEmittedPaths(node, attachment string) []AuthoredCoordinate {
+	return f.attachEmittedPaths[fixtureKey(node, attachment)]
+}
+
+func (f traversalFixture) BoundaryAttachmentEmittedPaths(
+	boundary, attachment string,
+) []AuthoredCoordinate {
+	return f.boundaryAttachEmittedPaths[fixtureKey(boundary, attachment)]
 }
 
 func (f traversalFixture) BoundaryAttachments(boundary string) []string {
@@ -464,6 +477,33 @@ func newTraversalFixture() traversalFixture {
 		// stopping.
 		boundaryAttachArtifacts: map[string][]AuthoredCoordinate{
 			fixtureKey("prod/edge", "shared-db"): {{Value: "dashboard.json", SourceFile: "featurerecipes/shared-db.yaml"}},
+		},
+
+		// The SAME emitted name under two attachments on one node, for the reason the
+		// artifact axis above gives: two FeatureRecipes may each place a file under one
+		// name, nothing declares emitted names unique across documents, and a key
+		// carrying only the node and the name would answer for whichever was asked last.
+		//
+		// One attachment emits two names and the other one, so the transcript shows the
+		// several-per-carrier case as well as the shared name. The files differ, which is
+		// what lets a provenance transcript tell the two carriers apart at all — an
+		// emitted name contributes no locator segment.
+		attachEmittedPaths: map[string][]AuthoredCoordinate{
+			fixtureKey("web", "tls"): {
+				{Value: "deployment.yaml", SourceFile: "featurerecipes/tls.yaml"},
+				{Value: "secret.yaml", SourceFile: "featurerecipes/tls.yaml"},
+			},
+			fixtureKey("web", "logging"): {
+				{Value: "deployment.yaml", SourceFile: "featurerecipes/logging.yaml"},
+			},
+		},
+		// One of the boundary's two attachments emits and the other emits nothing, so a
+		// transcript shows the walk entering an attachment whose render placed no file
+		// and yielding nothing there rather than stopping.
+		boundaryAttachEmittedPaths: map[string][]AuthoredCoordinate{
+			fixtureKey("prod/edge", "shared-db"): {
+				{Value: "statefulset.yaml", SourceFile: "featurerecipes/shared-db.yaml"},
+			},
 		},
 	}
 }
@@ -805,6 +845,46 @@ func traversalCases() []traversalCase {
 			},
 			want: []string{
 				"featurerecipes/shared-db.yaml|.spec.artifacts",
+			},
+		},
+		{
+			// Three invocations from two attachments on one node, and the locators
+			// carry no segment at all: an emitted name is output, so it contributes
+			// none, and the FeatureRecipe's own spec is not an authored key path the
+			// dialect walks into either. What the transcript CAN show is the file,
+			// which is the FeatureRecipe rather than the Aggregate the attachment was
+			// written in — so a rule's finding sends an author to the document the
+			// colliding blocks are in.
+			//
+			// The two carriers share one emitted name and are told apart here only by
+			// their files; what tells them apart as SUBJECTS is the attachment
+			// coordinate, which this transcript cannot see — that is what the
+			// readback below is for.
+			kind: SubjectNodeAttachmentPath,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeAttachmentEmittedPaths(cancelled, f, f, f, v,
+					raisingCheck[NodeAttachmentPathSubject]())
+			},
+			want: []string{
+				"featurerecipes/tls.yaml|",
+				"featurerecipes/tls.yaml|",
+				"featurerecipes/logging.yaml|",
+			},
+		},
+		{
+			// One invocation from two enumerated attachments on one boundary, and none
+			// at all from the second boundary: the walk enters an attachment whose
+			// render placed no file, yields nothing there, and carries on. The
+			// boundary contributes no segment, for the reason its artifact twin above
+			// gives — a boundary key spliced onto a FeatureRecipe-rooted locator would
+			// name a path that document does not have.
+			kind: SubjectBoundaryAttachmentPath,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryAttachmentEmittedPaths(cancelled, f, f, f, v,
+					raisingCheck[BoundaryAttachmentPathSubject]())
+			},
+			want: []string{
+				"featurerecipes/shared-db.yaml|",
 			},
 		},
 		{
@@ -1440,6 +1520,41 @@ func coordinateFlowCases() []coordinateFlowCase {
 				})
 			},
 			want: []string{"prod/edge|shared-db|dashboard.json"},
+		},
+
+		// The emitted-name kind whose reason for existing this readback shows directly:
+		// the first and third records carry the same node and the same output name, and
+		// the attachment is the only thing separating them. A traversal that dropped the
+		// attachment would produce two identical records while every declaration
+		// assertion stayed green — and the provenance transcript above could not see it,
+		// because an emitted name contributes no locator segment at all.
+		{
+			kind: SubjectNodeAttachmentPath,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeAttachmentPathSubject]) ([]Objection, error) {
+					return RunOnNodeAttachmentEmittedPaths(nil, f, f, f, traversalView{}, c)
+				}, func(s NodeAttachmentPathSubject) string {
+					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.EmittedPath()
+				})
+			},
+			want: []string{
+				"web|tls|deployment.yaml",
+				"web|tls|secret.yaml",
+				"web|logging|deployment.yaml",
+			},
+		},
+		{
+			kind: SubjectBoundaryAttachmentPath,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, BoundaryAttachmentPathSubject]) ([]Objection, error) {
+					return RunOnBoundaryAttachmentEmittedPaths(nil, f, f, f, traversalView{}, c)
+				}, func(s BoundaryAttachmentPathSubject) string {
+					return s.BoundaryPath() + "|" + s.AttachmentName() + "|" + s.EmittedPath()
+				})
+			},
+			want: []string{"prod/edge|shared-db|statefulset.yaml"},
 		},
 		{
 			kind: SubjectNodeSocket,

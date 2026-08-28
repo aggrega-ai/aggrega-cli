@@ -17,9 +17,10 @@ import (
 // The workload-requires-provider-workloadSchema constraint is enforced at
 // render time by the central input-kind gate (a synthesised Recipe bound to a
 // provider with no workload-synthesis capability halts loudly there).
-// The filename-collision rule is enforced at emission time (collision across
-// input-kind origins) and is reserved here so the load-time validator and the
-// emission-time detector share an error shape.
+// The filename-collision rule is enforced once each emitting document's own
+// emission is complete, which is the earliest point the names a block produced
+// are known; its identity is declared here so every rule constraining a Recipe
+// reports in one shape whatever surface raises it.
 //
 // Every rule here reports through NewShapeRuleError, so a Recipe failure is a
 // *ValidationError whatever stage detected it.
@@ -40,18 +41,28 @@ var errRecipeNoInputKind = cerrors.Register("validator/recipe-no-input-kind", ce
 	Message:   "Recipe: at least one input kind required",
 })
 
-// ErrRecipeFilenameCollisionAcrossInputKinds: emission-time filename
-// collision across input-kind origins (source output, workload synthesis,
-// artifacts). RESERVED for emission-time use; not surfaced by ValidateRecipe
-// at load time. The sentinel is declared here so the load-time validator and
-// the emission-time detector report the same failure shape.
+// ErrRecipeFilenameCollisionAcrossInputKinds: two input-kind blocks of one
+// document produced a file under a single output name — a source render, a
+// workload synthesis, an artifacts entry and a pipeline step each choose their
+// output names independently, and nothing declares those names distinct.
+//
+// It is not surfaced by ValidateRecipe at load time, and it cannot be: which
+// names a block produces is known only once that block has rendered. The
+// condition is raised where the emission is complete, per emitting document.
+//
+// One identity covers all three emitting documents — a component's own Recipe,
+// and the FeatureRecipe an attachment binds on a component or on a boundary —
+// because it is one authoring fault with one remedy: rename the output in one of
+// the two blocks that met. Minting a second identity per document would present
+// a single fault as unrelated conditions, and the document a finding is about is
+// already carried by its own position and detail.
 func ErrRecipeFilenameCollisionAcrossInputKinds() error {
 	return errRecipeFilenameCollisionAcrossInputKinds
 }
 
 var errRecipeFilenameCollisionAcrossInputKinds = cerrors.Register("validator/recipe-filename-collision-across-input-kinds", cerrors.Meta{
 	ShortCode: "E0211",
-	Message:   "Recipe: filename collision across input-kind origins at emission",
+	Message:   "filename collision across input kinds: two input-kind blocks produced a file under one output name",
 })
 
 // ErrRecipeEvalProviderConstraint: the eval provider executes formatting

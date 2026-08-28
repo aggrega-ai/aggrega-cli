@@ -4,10 +4,12 @@
 package rendercore
 
 // EmitOrigin tags the input kind that produced an EmittedFile. The tag is
-// load-bearing for Phase B.5 filename-collision detection — collisions
-// across input kinds produce a CATALOG_ERROR under the filename-collision
-// rule, while collisions within a single input kind are caught by other
-// rules (duplicate artifacts: entry keys are refused when the document is
+// load-bearing for the filename-collision rule: what separates two blocks
+// meeting on one output name from one block emitting once is which blocks
+// arrived, so the rule reads these tags and nothing else. Two distinct tags
+// under one name produce a CATALOG_ERROR under the filename-collision rule,
+// while one tag repeating is one contributor rather than a collision
+// (duplicate artifacts: entry keys are refused when the document is
 // decoded; engine-internal logic covers duplicate sourced or synthesized
 // output).
 type EmitOrigin int
@@ -35,13 +37,14 @@ const (
 	// EmitOriginPipeline — the file originated from a pipeline step's EMIT
 	// side effect (a new document a Wasm guest contributed to the node's
 	// own or host set). Distinct from the render-time origins above so the
-	// Phase B.5 cross-origin collision detector can name a pipeline EMIT
-	// that clashes with a rendered filename.
+	// filename-collision rule can name a pipeline EMIT that clashes with a
+	// rendered filename.
 	EmitOriginPipeline
 )
 
 // String returns a human-readable origin tag suitable for inclusion in
-// CATALOG_ERROR messages (see Phase B.5 collision detector).
+// CATALOG_ERROR messages. It is what the filename-collision rule names as
+// the blocks that met on an output name.
 func (o EmitOrigin) String() string {
 	switch o {
 	case EmitOriginSource:
@@ -60,15 +63,16 @@ func (o EmitOrigin) String() string {
 }
 
 // EmittedFile carries one rendered file plus the input-kind origin that
-// produced it. Phase B.5's collision detector groups EmittedFiles by Name
-// and reports cross-origin collisions via the filename-collision
-// CATALOG_ERROR.
+// produced it. Once a render's emission is complete it is reduced to a
+// projection holding, per output name, which blocks produced it — and the
+// filename-collision rule reads that projection, reporting a name more than
+// one block produced under the filename-collision CATALOG_ERROR.
 //
-// EmittedFiles accumulate in declaration order across the sub-pass pipeline
-// to satisfy the byte-for-byte deterministic-output invariant — the
-// collision detector sorts findings alphabetically for output stability,
-// but the emitted-files list itself preserves the order they were
-// produced.
+// EmittedFiles accumulate in declaration order across the render's passes
+// to satisfy the byte-for-byte deterministic-output invariant. The
+// projection sorts its names so the order a rule is invoked in is a
+// function of the input, while the emitted-files list itself preserves the
+// order they were produced.
 //
 // Intermediate=true marks a file as transient input to a BoundaryAssembler
 // (see synthesis.go). The orchestrator collects intermediates into the

@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // This file holds this package's rules expressed as constraint declarations:
@@ -1182,6 +1183,171 @@ var BoundaryAttachmentArtifactPillarDeclared = constraint.Check[
 			),
 			v.BoundaryAttachmentParsedWorkloadPresent(s.BoundaryPath(), s.AttachmentName()),
 			v.BoundaryAttachmentResolvedSourceDeclared(s.BoundaryPath(), s.AttachmentName()),
+			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
+		)
+	},
+}
+
+// emittedNameCollisionObjections is the predicate all three emitted-name collision
+// values share: an output name more than one of a render's blocks produced is
+// refused, and a name one block produced is not.
+//
+// It is one function because it is one rule. The three values differ only in which
+// carrier's fact they read and which document they name, so a second copy of the
+// predicate would agree on the day it was written and be free to drift the moment
+// the condition gains a term — and a drift here would let one carrier refuse an
+// input the others admit, which is a difference no reader could tell from a
+// deliberate one.
+//
+// # Why the test is the size of the set and nothing finer
+//
+// The fact answers with the blocks that produced a file under one name,
+// deduplicated. So two or more entries means two independently authored blocks met
+// on a name, and one entry means a single block produced it — including a block that
+// produced several files under one name, which the retention records as one
+// contributor because that is one authoring decision rather than a collision between
+// two.
+//
+// The bytes are deliberately unreachable here. A predicate that could compare
+// content would let two blocks that happen to agree pass as though the name had been
+// claimed once, which is the same output with the author's intent unrecorded.
+//
+// # What the detail carries, and why each value is spelled as it is
+//
+// The emitted name is CAPTIONED, because it is a filename and a filename standing
+// bare beside another quoted value is not something a reader can tell apart from it.
+// The blocks that met are captioned too and are joined into one value in the order
+// the fact answered, which is production order — so the first block named is the one
+// that reached the name first, which is what tells an author which of the two to
+// rename. Whatever the caller adds, naming the attachment where the locator cannot,
+// follows.
+//
+// # Every offending name is reported, one objection each
+//
+// The rule is invoked once per emitted name, so a render whose blocks met on two
+// names raises twice and an author is told about both. The hand-written reading this
+// replaced returned one failure carrying every collision it found; the set of
+// authored faults reported is the same, and the shape is one positioned diagnostic
+// per fault rather than one message listing several positions.
+func emittedNameCollisionObjections(
+	s constraint.Subject,
+	emittedName string,
+	origins []string,
+	extra []constraint.DetailValue,
+) []constraint.Objection {
+	if len(origins) < 2 {
+		return nil
+	}
+	detail := []constraint.DetailValue{
+		constraint.Captioned("output name", emittedName),
+		constraint.Captioned("produced by", strings.Join(origins, ", ")),
+	}
+	detail = append(detail, extra...)
+	return []constraint.Objection{
+		s.RaiseWith(validator.ErrRecipeFilenameCollisionAcrossInputKinds(), detail...),
+	}
+}
+
+// EmittedNameProducedByOneBlock reports each output name that more than one block of
+// a node's own Recipe produced a file under.
+//
+// A Recipe's source render, its workload synthesis, its artifacts entries and its
+// pipeline steps each place files under names chosen independently of one another,
+// and nothing declares those names distinct. Two of them meeting on one name means
+// one of the two files is not in the output the author expected, and which one
+// survives is a property of the order the blocks happen to run in rather than of
+// anything the author wrote — so the build halts and names both contributors instead
+// of shipping whichever won.
+//
+// It reads one fact and holds no traversal, because it is invoked once per name the
+// node's own render emitted.
+//
+// Its detail names the output name and the blocks that met, and deliberately not the
+// node: the fault is in the Recipe's text rather than in any one node that binds it,
+// so naming a node would point an author at an instance when the edit is in the
+// block every instance shares. The locator names the component instance, which is
+// where a reader starts.
+var EmittedNameProducedByOneBlock = constraint.Check[
+	constraint.EmittedView,
+	constraint.NodePathSubject,
+]{
+	Sentinel: validator.ErrRecipeFilenameCollisionAcrossInputKinds(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.EmittedView,
+		s constraint.NodePathSubject,
+	) []constraint.Objection {
+		return emittedNameCollisionObjections(
+			s,
+			s.EmittedPath(),
+			v.EmittedFileOriginSet(s.NodeID(), s.EmittedPath()),
+			nil,
+		)
+	},
+}
+
+// AttachmentEmittedNameProducedByOneBlock reports each output name that more than
+// one block of the FeatureRecipe one attachment binds on a node produced a file
+// under.
+//
+// It is the same rule the value above states, asked of a different document. Its
+// fact is keyed by the attachment as well as by the node, and that is what makes the
+// verdict the attachment's rather than the host's: an attachment's render emits
+// under the HOST component's node identity, so a fact keyed by the node alone would
+// answer about the host's own emission while the blocks in question are the
+// attachment's — refusing none of the attachment's own collisions and refusing the
+// host's twice.
+//
+// Its detail names the attachment as well, because the locator cannot: the locator
+// names the FeatureRecipe the author edits, and a node may carry several attachments
+// whose FeatureRecipes are separate documents.
+var AttachmentEmittedNameProducedByOneBlock = constraint.Check[
+	constraint.EmittedView,
+	constraint.NodeAttachmentPathSubject,
+]{
+	Sentinel: validator.ErrRecipeFilenameCollisionAcrossInputKinds(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.EmittedView,
+		s constraint.NodeAttachmentPathSubject,
+	) []constraint.Objection {
+		return emittedNameCollisionObjections(
+			s,
+			s.EmittedPath(),
+			v.AttachmentEmittedFileOriginSet(s.NodeID(), s.AttachmentName(), s.EmittedPath()),
+			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
+		)
+	},
+}
+
+// BoundaryAttachmentEmittedNameProducedByOneBlock reports each output name that more
+// than one block of the FeatureRecipe one boundary-scope attachment binds produced a
+// file under.
+//
+// It is the same question the two values above ask, rooted where such an attachment
+// is declared. A boundary-scope attachment is written once on a boundary and reaches
+// every component the boundary holds, so its fact is keyed by the boundary rather
+// than by any component: keyed by a node, one authored document would be asked about
+// once per component the boundary holds, and not at all for a boundary holding none.
+//
+// Its detail names the output name, the blocks that met, and the attachment, on the
+// reading the node-carried form follows.
+var BoundaryAttachmentEmittedNameProducedByOneBlock = constraint.Check[
+	constraint.EmittedView,
+	constraint.BoundaryAttachmentPathSubject,
+]{
+	Sentinel: validator.ErrRecipeFilenameCollisionAcrossInputKinds(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.EmittedView,
+		s constraint.BoundaryAttachmentPathSubject,
+	) []constraint.Objection {
+		return emittedNameCollisionObjections(
+			s,
+			s.EmittedPath(),
+			v.BoundaryAttachmentEmittedFileOriginSet(
+				s.BoundaryPath(), s.AttachmentName(), s.EmittedPath(),
+			),
 			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
 		)
 	},

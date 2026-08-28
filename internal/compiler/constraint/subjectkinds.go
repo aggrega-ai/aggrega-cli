@@ -998,6 +998,132 @@ func newNodePathSubject(sourceFile, node, path string, segments ...string) NodeP
 	}
 }
 
+// NodeAttachmentPathSubject is the subject of a check invoked once per output name
+// the render one attachment carries on a node emitted, before anything is grouped
+// for assembly.
+//
+// It is the carrier-keyed form of [NodePathSubject] and exists for the reason that
+// kind's own documentation gives for being rooted where it is, applied to a
+// different document: the blocks that can meet on a name here are the FeatureRecipe
+// the attachment binds, and its source, workload, artifacts entries and pipeline
+// steps all emit under names chosen independently of one another.
+//
+// It is keyed per attachment as well as per node because the render runs under the
+// HOST component's node identity over blocks the FeatureRecipe declares. A kind
+// carrying only the node and the name would therefore be asked about the host's own
+// emission while the blocks in question are the attachment's — admitting a collision
+// the attachment never wrote wherever the host has one, and refusing none of the
+// attachment's own. Two attachments on one node are independently authored, and
+// nothing makes one's output names distinct from the other's.
+type NodeAttachmentPathSubject interface {
+	Subject
+
+	// NodeID identifies the node carrying the attachment, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// AttachmentName is the attachment whose FeatureRecipe emitted the file.
+	AttachmentName() string
+
+	// EmittedPath is the output name the check was invoked for: the name the
+	// attachment's own render placed the file under, before the caller composed
+	// the attachment's prefix onto it. It contributes no locator segment, because
+	// it is output rather than something an author wrote.
+	EmittedPath() string
+
+	nodeAttachmentPath()
+}
+
+type nodeAttachmentPathSubject struct {
+	provenance
+	node       string
+	attachment string
+	path       string
+}
+
+func (nodeAttachmentPathSubject) nodeAttachmentPath() {}
+
+func (s nodeAttachmentPathSubject) NodeID() string { return s.node }
+
+func (s nodeAttachmentPathSubject) AttachmentName() string { return s.attachment }
+
+func (s nodeAttachmentPathSubject) EmittedPath() string { return s.path }
+
+func newNodeAttachmentPathSubject(
+	sourceFile, node, attachment, path string,
+	segments ...string,
+) NodeAttachmentPathSubject {
+	return nodeAttachmentPathSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		attachment: attachment,
+		path:       path,
+	}
+}
+
+// BoundaryAttachmentPathSubject is the subject of a check invoked once per output
+// name the render one boundary-scope attachment carries emitted, before anything is
+// grouped for assembly.
+//
+// It is rooted at a boundary rather than at a node because that is where such an
+// attachment is declared. It is written once and reaches every component the
+// boundary holds, so a node-rooted walk would ask about one authored document once
+// per component and not at all for a boundary holding none — silence a caller cannot
+// tell from approval. The render carries a composite dispatch marker rather than any
+// component's node identity, so no node-rooted key can name it.
+//
+// The output names in that render are chosen independently of any component's and of
+// any other attachment's, so this is a separate kind rather than either sibling
+// reached differently.
+type BoundaryAttachmentPathSubject interface {
+	Subject
+
+	// BoundaryPath is the boundary the attachment was declared on, as every keyed
+	// fact takes it. It is the scope's path from the document's own scope set
+	// rather than a bare name, because boundaries nest and two scopes at different
+	// depths may carry one name.
+	BoundaryPath() string
+
+	// AttachmentName is the attachment whose FeatureRecipe emitted the file: the
+	// name the operator wrote it under.
+	AttachmentName() string
+
+	// EmittedPath is the output name the check was invoked for: the name that
+	// render placed the file under, before the caller routed it by the flag saying
+	// whether an assembly consumes it. It contributes no locator segment, because
+	// it is output rather than something an author wrote.
+	EmittedPath() string
+
+	boundaryAttachmentPath()
+}
+
+type boundaryAttachmentPathSubject struct {
+	provenance
+	boundary   string
+	attachment string
+	path       string
+}
+
+func (boundaryAttachmentPathSubject) boundaryAttachmentPath() {}
+
+func (s boundaryAttachmentPathSubject) BoundaryPath() string { return s.boundary }
+
+func (s boundaryAttachmentPathSubject) AttachmentName() string { return s.attachment }
+
+func (s boundaryAttachmentPathSubject) EmittedPath() string { return s.path }
+
+func newBoundaryAttachmentPathSubject(
+	sourceFile, boundary, attachment, path string,
+	segments ...string,
+) BoundaryAttachmentPathSubject {
+	return boundaryAttachmentPathSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		boundary:   boundary,
+		attachment: attachment,
+		path:       path,
+	}
+}
+
 // BoundaryProviderPathSubject is the subject of a check invoked once per output
 // path written for one provider within one boundary.
 //
