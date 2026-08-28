@@ -166,42 +166,25 @@ func (s *Server) completionForCompletionContext(kind completion.ContextKind, ctx
 	return nil
 }
 
-// enumerateWorkspaceURIs walks parse-cache + workspace for files
-// whose kind: matches the filter. Returns deduped sorted metadata.name
-// values. Empty filter matches every kind (rare).
+// enumerateWorkspaceURIs projects the workspace document traversal down
+// to the metadata.name values of documents whose kind: matches the
+// filter. Returns them deduped and sorted. Empty filter matches every
+// kind (rare).
+//
+// Completion is a fast path; cancellation is honored at the dispatcher
+// entry check rather than mid-traversal, so a background context
+// suffices here.
 func (s *Server) enumerateWorkspaceURIs(kindFilter string) []string {
 	seen := map[string]bool{}
-	// Parse-cache pass first.
-	s.parseCache.Range(func(_ string, node *yaml.Node, _ []byte) bool {
-		if kindFilter != "" && scalarAtPathOnDoc(node, []string{"kind"}) != kindFilter {
+	s.rangeWorkspaceDocs(context.Background(), func(doc workspaceDoc) bool {
+		if kindFilter != "" && scalarAtPathOnDoc(doc.node, []string{"kind"}) != kindFilter {
 			return true
 		}
-		name, _ := metadataNameOf(node)
+		name, _ := metadataNameOf(doc.node)
 		if name != "" {
 			seen[name] = true
 		}
 		return true
-	})
-	// Workspace-walk fallback. Completion is a fast path; cancellation is
-	// honored at the dispatcher entry check rather than mid-walk, so a
-	// background context suffices here.
-	_ = s.walkWorkspaceYAML(context.Background(), func(path string) error {
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		var doc yaml.Node
-		if uerr := yaml.Unmarshal(content, &doc); uerr != nil {
-			return nil
-		}
-		if kindFilter != "" && scalarAtPathOnDoc(&doc, []string{"kind"}) != kindFilter {
-			return nil
-		}
-		name, _ := metadataNameOf(&doc)
-		if name != "" {
-			seen[name] = true
-		}
-		return nil
 	})
 	out := make([]string, 0, len(seen))
 	for k := range seen {
@@ -211,41 +194,28 @@ func (s *Server) enumerateWorkspaceURIs(kindFilter string) []string {
 	return out
 }
 
-// enumerateRecipeImplements maps each enumerated Recipe/FeatureRecipe URI
-// (metadata.name) to its spec.implements value, for implements-aware Manifest
-// recipe-reference completion ranking. Mirrors enumerateWorkspaceURIs's
-// parse-cache-then-walk enumeration so the keys match exactly; first occurrence
-// wins (parse-cache over walk), matching the URI enumerator's dedup.
+// enumerateRecipeImplements projects the workspace document traversal
+// down to a map from each Recipe/FeatureRecipe's metadata.name to its
+// spec.implements value, for implements-aware Manifest recipe-reference
+// completion ranking. Its keys match enumerateWorkspaceURIs's output
+// exactly because both read the same traversal; first document to
+// declare a name wins, which the traversal's per-path ordering makes
+// deterministic.
 func (s *Server) enumerateRecipeImplements(kindFilter string) map[string]string {
 	out := map[string]string{}
-	record := func(node *yaml.Node) {
-		if scalarAtPathOnDoc(node, []string{"kind"}) != kindFilter {
-			return
+	s.rangeWorkspaceDocs(context.Background(), func(doc workspaceDoc) bool {
+		if scalarAtPathOnDoc(doc.node, []string{"kind"}) != kindFilter {
+			return true
 		}
-		name, _ := metadataNameOf(node)
+		name, _ := metadataNameOf(doc.node)
 		if name == "" {
-			return
+			return true
 		}
 		if _, ok := out[name]; ok {
-			return
+			return true
 		}
-		out[name] = scalarAtPathOnDoc(node, []string{"spec", "implements"})
-	}
-	s.parseCache.Range(func(_ string, node *yaml.Node, _ []byte) bool {
-		record(node)
+		out[name] = scalarAtPathOnDoc(doc.node, []string{"spec", "implements"})
 		return true
-	})
-	_ = s.walkWorkspaceYAML(context.Background(), func(path string) error {
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		var doc yaml.Node
-		if uerr := yaml.Unmarshal(content, &doc); uerr != nil {
-			return nil
-		}
-		record(&doc)
-		return nil
 	})
 	return out
 }
@@ -293,8 +263,21 @@ func (s *Server) enumerateWorkspaceRelativePaths(kindFilter string) []string {
 // duplicated here to keep the package boundary clean (no
 // cross-package leak of internal helpers).
 func scalarAtPathOnDoc(doc *yaml.Node, path []string) string {
+	n := nodeAtPathOnDoc(doc, path)
+	if n != nil && n.Kind == yaml.ScalarNode {
+		return n.Value
+	}
+	return ""
+}
+
+// nodeAtPathOnDoc walks doc following the supplied mapping keys and
+// returns the node the last key addresses, or nil when any key along
+// the way is absent or its parent is not a mapping. It is the single
+// home for the key-descent itself, so a reader that wants a scalar and
+// a reader that wants a mapping descend identically.
+func nodeAtPathOnDoc(doc *yaml.Node, path []string) *yaml.Node {
 	if doc == nil {
-		return ""
+		return nil
 	}
 	n := doc
 	if n.Kind == yaml.DocumentNode && len(n.Content) > 0 {
@@ -302,7 +285,7 @@ func scalarAtPathOnDoc(doc *yaml.Node, path []string) string {
 	}
 	for _, key := range path {
 		if n == nil || n.Kind != yaml.MappingNode {
-			return ""
+			return nil
 		}
 		var next *yaml.Node
 		for i := 0; i+1 < len(n.Content); i += 2 {
@@ -312,14 +295,11 @@ func scalarAtPathOnDoc(doc *yaml.Node, path []string) string {
 			}
 		}
 		if next == nil {
-			return ""
+			return nil
 		}
 		n = next
 	}
-	if n != nil && n.Kind == yaml.ScalarNode {
-		return n.Value
-	}
-	return ""
+	return n
 }
 
 // sortStringSlice sorts s ascending in place. Avoids importing sort.

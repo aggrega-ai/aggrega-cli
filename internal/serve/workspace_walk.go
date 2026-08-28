@@ -9,9 +9,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
@@ -135,14 +137,29 @@ func (w *gitignoreWalker) matchesAny(path string, isDir bool) bool {
 // `..cache` beside the workspace files — is an ordinary directory and
 // is walked; only one that climbs above the root is dropped.
 func (w *gitignoreWalker) relComponents(path string) []string {
-	rel, err := filepath.Rel(w.root, path)
+	rel, ok := relInsideRoot(w.root, path)
+	if !ok {
+		return nil
+	}
+	return strings.Split(rel, "/")
+}
+
+// relInsideRoot reports path's location relative to root, in slash
+// form, and whether it lies inside that root at all. It is the single
+// home for the containment judgement, so every caller that asks where a
+// path sits relative to the workspace shares one coordinate system.
+//
+// A path equal to the root, or one that climbs above it, is reported as
+// not contained rather than as a relative path with a leading climb.
+func relInsideRoot(root, path string) (string, bool) {
+	rel, err := filepath.Rel(root, path)
 	if err != nil || rel == "." {
-		return nil
+		return "", false
 	}
-	if _, ok := pathscope.Resolve(w.root, rel); !ok {
-		return nil
+	if _, ok := pathscope.Resolve(root, rel); !ok {
+		return "", false
 	}
-	return strings.Split(filepath.ToSlash(rel), "/")
+	return filepath.ToSlash(rel), true
 }
 
 // ancestorsToRoot returns the directory chain from the file's
@@ -216,6 +233,95 @@ func (w *gitignoreWalker) matcherFor(dir string) gitignore.Matcher {
 	matcher := gitignore.NewMatcher(patterns)
 	w.cache[dir] = matcher
 	return matcher
+}
+
+// workspaceDoc is one parsed workspace YAML document delivered by
+// rangeWorkspaceDocs, paired with the cleaned absolute path it was read
+// from.
+//
+// The node is the same pointer the parse cache holds for a cached
+// document, so a visitor reads it and never mutates it.
+type workspaceDoc struct {
+	path string
+	node *yaml.Node
+}
+
+// rangeWorkspaceDocs invokes visit once per workspace YAML document,
+// and is the single traversal every workspace-wide document projection
+// is built on. Returning false from visit stops the traversal.
+//
+// Two passes, in this order:
+//
+//   - The parse cache, holding whatever content the editor last sent —
+//     which may be an unsaved buffer, and is therefore newer than the
+//     bytes on disk.
+//   - The on-disk workspace walk, honoring the exclusion list and
+//     `.gitignore` chain walkWorkspaceYAML applies.
+//
+// A path the cache pass already delivered is skipped by the walk pass,
+// so each file is visited at most once and the fresher document is the
+// one a visitor sees. Path identity is what makes that de-duplication
+// exact: it models "the same file reached twice" directly, where
+// de-duplicating on the entity's declared name would report a
+// mid-rename buffer and its own on-disk predecessor as two separate
+// entities, only one of which exists.
+//
+// Paths are compared after filepath.Clean and nothing further. Cleaning
+// is a pure text operation, so the traversal reads no ambient process
+// state; the cost is that a client addressing one file under two
+// spellings supplies two identities the traversal cannot tell apart.
+//
+// Delivery order is deterministic: the cache pass is sorted by path
+// before delivery, because the cache's own iteration is map-ordered,
+// and the walk pass visits lexically.
+//
+// Cancellation is honored between files during the walk pass. The cache
+// pass snapshots under the cache lock and invokes visit after releasing
+// it, so a visitor is never running while the lock is held and may be
+// as expensive as it needs to be.
+func (s *Server) rangeWorkspaceDocs(ctx context.Context, visit func(doc workspaceDoc) bool) {
+	seen := map[string]bool{}
+
+	var cached []workspaceDoc
+	s.parseCache.Range(func(file string, node *yaml.Node, _ []byte) bool {
+		cached = append(cached, workspaceDoc{path: filepath.Clean(file), node: node})
+		return true
+	})
+	sort.Slice(cached, func(i, j int) bool { return cached[i].path < cached[j].path })
+	for _, doc := range cached {
+		if seen[doc.path] {
+			continue
+		}
+		seen[doc.path] = true
+		if !visit(doc) {
+			return
+		}
+	}
+
+	stopped := false
+	_ = s.walkWorkspaceYAML(ctx, func(path string) error {
+		if stopped {
+			return filepath.SkipAll
+		}
+		clean := filepath.Clean(path)
+		if seen[clean] {
+			return nil
+		}
+		seen[clean] = true
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var doc yaml.Node
+		if uerr := yaml.Unmarshal(content, &doc); uerr != nil {
+			return nil
+		}
+		if !visit(workspaceDoc{path: clean, node: &doc}) {
+			stopped = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
 }
 
 // excludedDirName matches directory names the workspace walker

@@ -496,6 +496,8 @@ func (s *Server) dispatch(ctx context.Context, req *jsonRPCRequest) error {
 		return s.dispatchHover(ctx, req)
 	case "aggrega/completion":
 		return s.dispatchCompletion(ctx, req)
+	case "aggrega/catalogIndex":
+		return s.dispatchCatalogIndex(ctx, req)
 	case "aggrega/releaseCandidates":
 		return s.dispatchReleaseCandidates(ctx, req)
 	case "aggrega/activeRelease":

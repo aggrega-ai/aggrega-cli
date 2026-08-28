@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -351,5 +353,62 @@ func TestWorkspaceWalkAppliesGitignoreToLeadingDoubleDotName(t *testing.T) {
 	}
 	if sawScratch {
 		t.Errorf("walk visited %v; `.gitignore` names ..scratch.yaml, and a name beginning with two dots is inside the root like any other, so its exclusion must apply", seen)
+	}
+}
+
+// TestWorkspaceDocTraversalDeliversCachedDocumentsInPathOrder pins the
+// ordering contract of the shared document traversal, through the
+// projection that depends on it most sharply.
+//
+// enumerateRecipeImplements keeps the FIRST document to declare a given
+// name and imposes no ordering of its own, so its answer is only
+// well-defined if the traversal's delivery order is. The parse cache
+// iterates in Go map order, so without the traversal's own ordering two
+// documents declaring one name would each win on some fraction of calls
+// and the daemon would rank completions differently between two
+// identical requests.
+//
+// Two Recipe documents deliberately share metadata.name and differ in
+// spec.implements, which is the only shape where the tie-break is
+// observable at all.
+func TestWorkspaceDocTraversalDeliversCachedDocumentsInPathOrder(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"a-first.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: shared
+spec:
+  implements: from-a
+`,
+		"b-second.yaml": `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: shared
+spec:
+  implements: from-b
+`,
+	}
+	writeWorkspaceTree(t, root, files)
+	srv := newTestServer(t, root, &bytes.Buffer{}, &bytes.Buffer{})
+	for rel := range files {
+		abs := filepath.Join(root, rel)
+		content, err := os.ReadFile(abs)
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		var doc yaml.Node
+		if err := yaml.Unmarshal(content, &doc); err != nil {
+			t.Fatalf("parse %s: %v", rel, err)
+		}
+		srv.parseCache.Put(abs, &doc, content)
+	}
+
+	// The lower path wins, on every call.
+	for i := 1; i <= 20; i++ {
+		got := srv.enumerateRecipeImplements("Recipe")
+		if got["shared"] != "from-a" {
+			t.Fatalf("call %d: implements = %q, want %q — the traversal delivered the higher path first", i, got["shared"], "from-a")
+		}
 	}
 }
