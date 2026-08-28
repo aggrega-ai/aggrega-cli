@@ -197,6 +197,31 @@ func runGraphStageRules(
 	}
 	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
 
+	// No delivery key one of a component's dependency connections delivers is
+	// also delivered by another of that component's connections, evaluated once
+	// per connection. It is the sibling of the reading above over the other side
+	// of the same keyed space: that one asks whether a key the component declared
+	// for itself is also delivered by a connection, this one whether two
+	// connections deliver it between them — a pairing no rule was invoked over,
+	// so the later delivery silently displaced the earlier and the build stayed
+	// green. The keys are the ones the connections DELIVER rather than the ones
+	// their authors wrote, because a delivery that reaches no consumer takes no
+	// key and collides with nothing. The connection set is the graph's own, so a
+	// connection an attachment projected or the deployment wired is in range
+	// exactly as the component's own is. The signal is read once per connection,
+	// which is the granularity the traversal promises, and each finding is
+	// positioned at the delivery entry the author can change.
+	violations, err = constraint.RunOnEdges(
+		ctx.Err,
+		coordinates,
+		out.GraphView,
+		resolver.ConnectionInjectKeyNotDeliveredByAnotherConnection,
+	)
+	if err != nil {
+		return err
+	}
+	out.Analysis.Errors = append(out.Analysis.Errors, analyzer.ErrorsFromObjections(violations)...)
+
 	// No delivery entry on any connection reads from a key the component the
 	// connection points at does not publish, evaluated once per connection the
 	// composition drew together with the surface that drew it. The equivalent

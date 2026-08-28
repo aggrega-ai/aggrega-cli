@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -241,19 +242,49 @@ func TestTheSelfInjectCollisionRuleIsInvokedOverTheCompiledGraph(t *testing.T) {
 			t.Fatalf("the compilation carries %d projected connection(s) on the front end, want 2", projected)
 		}
 
+		// The fixture trips two rules and not one, because the two projected
+		// connections deliver the same key into one node as well as duplicating
+		// the key the component declared for itself. That second pairing is a
+		// separate rule's subject — the one over what a component's connections
+		// deliver between them — and it raises one finding per connection at the
+		// connection's own delivery entry. Its findings are partitioned off here
+		// rather than removed from the fixture: the projection is what puts this
+		// rule's own collision beyond the reading that runs before the
+		// composition, so narrowing the fixture to avoid the sibling would take
+		// the proof with it.
+		var selfInject, betweenConnections []analyzer.AnalysisError
+		for _, finding := range out.Analysis.Errors {
+			if errors.Is(finding.Sentinel, renderer.ErrSelfInjectKeyCollision()) {
+				selfInject = append(selfInject, finding)
+				continue
+			}
+			betweenConnections = append(betweenConnections, finding)
+		}
+
 		// One finding per delivering connection, which is the count the reading
 		// this replaced could not produce: it returned the first collision and
 		// stopped. Asserted by count so the change is pinned rather than noted.
-		if len(out.Analysis.Errors) != projected {
-			t.Fatalf("the phases reported %d finding(s), want one per colliding connection (%d): %v",
-				len(out.Analysis.Errors), projected, out.Analysis.Errors)
+		if len(selfInject) != projected {
+			t.Fatalf("the phases reported %d finding(s) for this rule, want one per colliding connection (%d): %v",
+				len(selfInject), projected, out.Analysis.Errors)
+		}
+		// The sibling's own count, asserted here so a fixture that stopped
+		// tripping it — or started raising something else again — is caught by
+		// this proof rather than passing as a partition that happened to be
+		// whatever size it was.
+		if len(betweenConnections) != projected {
+			t.Errorf("the phases reported %d finding(s) outside this rule, want one per connection (%d): %v",
+				len(betweenConnections), projected, betweenConnections)
+		}
+		for i, finding := range betweenConnections {
+			if !errors.Is(finding.Sentinel, resolver.ErrInjectKeyCollision()) {
+				t.Errorf("finding %d outside this rule carries %v, want the between-connections condition",
+					i, finding.Sentinel)
+			}
 		}
 
 		var sockets, messages []string
-		for i, finding := range out.Analysis.Errors {
-			if !errors.Is(finding.Sentinel, renderer.ErrSelfInjectKeyCollision()) {
-				t.Errorf("finding %d carries %v, want the collision condition", i, finding.Sentinel)
-			}
+		for i, finding := range selfInject {
 			// The position the reading this replaced could not reach: it named the
 			// component identifier in the file slot and carried no locator at all,
 			// so an editor placed every one of its findings at the head of the
