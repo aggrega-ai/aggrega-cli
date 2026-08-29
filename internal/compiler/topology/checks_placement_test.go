@@ -107,10 +107,24 @@ spec:
         mod.consumer: {}
         mod.store: {}
 `
-	// One of the module's two components, and no routing entry. The module is
-	// placed: which of its components carry their own entries is a separate
-	// question from whether the deployment placed the module at all.
-	const boundaryNamingOneComponent = `apiVersion: aggrega.ai/v1alpha1
+	// A module of one component, used by the row below. Naming one of two
+	// components places the module just as well, but the component the boundary
+	// did not name is then placed by nothing, so such a fixture would halt for a
+	// fault the row is not about. The one-component shape keeps the row to the
+	// single question it asks.
+	const oneComponentModule = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: mod
+spec:
+  components:
+    store:
+      type: app/db:1.0.0
+`
+	// The module's component named under the id it carries once the composition
+	// is flattened, and no routing entry at all — which is the half of the rule
+	// that a reading keyed on the routing block would get wrong.
+	const boundaryNamingTheDottedComponent = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
   name: demo-prod
@@ -149,10 +163,10 @@ spec:
 			release: boundaryNamingEveryComponent,
 		},
 		{
-			name:    "naming one component by qualified dotted path places the module",
+			name:    "naming a component by qualified dotted path places the module, with no routing entry",
 			root:    rootAggregate,
-			module:  module,
-			release: boundaryNamingOneComponent,
+			module:  oneComponentModule,
+			release: boundaryNamingTheDottedComponent,
 		},
 		{
 			name:    "a module contributing no component has nothing to place",
@@ -388,11 +402,31 @@ spec:
 // component of the application's own document, which belongs to no module and so
 // is reported by nothing until the component rule exists.
 //
-// The third row is the exclusion's own cost, asserted rather than left implied:
-// a module the deployment placed only in part passes both rules, because the
-// module rule reads the module as placed and the component rule passes every
-// component a module contributed. Both rules staying silent here is the
-// behaviour, not an oversight.
+// The third row is the case the two rules divide between them and the exclusion
+// must not swallow: a module the deployment placed only in part. The module rule
+// reads such a module as placed and passes it by design, so the components it
+// left unnamed are the component rule's, and each is reported at its own key.
+// The exclusion is therefore keyed on the module being placed nowhere rather
+// than on a module having contributed the component at all.
+//
+// The fourth row is what separates reporting once per orphan from reporting once
+// per module or once per component: a module contributing three components of
+// which a boundary names one produces exactly two findings, each naming the
+// component it is about. A count of one would mean the rule folded them onto the
+// module, and a count of three would mean it counted the component the boundary
+// did name.
+//
+// The first and third rows are the two halves of one claim and have to be read
+// together: the exclusion still keeps a wholly unplaced module to a single
+// report, and it no longer hides the components a partly placed one leaves
+// behind.
+//
+// Each row asserts the whole violation set rather than only that the named rule
+// is in it, and on the last two rows that is what carries the second half of the
+// claim: a set holding no `.spec.aggregates` locator is the evidence that the
+// module rule stayed silent on a module the deployment placed in part. The
+// module rule's own silence cannot be observed any other way once a sibling
+// halts the build, so asserting the set is what keeps it observable.
 func TestPlacementRulesDivideTheGroundAndEachReportsOnce(t *testing.T) {
 	t.Parallel()
 
@@ -470,6 +504,32 @@ spec:
       components:
         mod.store: {}
 `
+	// Three components, none of which binds a socket, so the only thing the count
+	// row can be measuring is how many orphans the rule reports.
+	const threeComponentModule = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: mod
+spec:
+  components:
+    alpha:
+      type: app/db:1.0.0
+    beta:
+      type: app/db:1.0.0
+    gamma:
+      type: app/db:1.0.0
+`
+	const boundaryNamingOneOfThree = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      directory: ./out
+      components:
+        mod.alpha: {}
+`
 
 	cases := []struct {
 		name       string
@@ -495,10 +555,20 @@ spec:
 			wantFields: []string{".spec.components.db"},
 		},
 		{
-			name:    "a module placed in part is passed by both rules",
-			root:    rootWithModule,
-			module:  twoComponentModule,
-			release: boundaryNamingOneModuleComponent,
+			name:       "a module placed in part reports the component it left unplaced, by the component rule",
+			root:       rootWithModule,
+			module:     twoComponentModule,
+			release:    boundaryNamingOneModuleComponent,
+			sentinel:   ErrUnplacedComponent(),
+			wantFields: []string{".spec.components.consumer"},
+		},
+		{
+			name:       "a module of three whose boundary names one reports the other two, each at its own key",
+			root:       rootWithModule,
+			module:     threeComponentModule,
+			release:    boundaryNamingOneOfThree,
+			sentinel:   ErrUnplacedComponent(),
+			wantFields: []string{".spec.components.beta", ".spec.components.gamma"},
 		},
 	}
 
@@ -528,6 +598,177 @@ spec:
 			}
 		})
 	}
+}
+
+// TestNestedModulePlacementIsReadPerModuleAndNotPerComposition proves the
+// component rule's exclusion follows the module that actually contributed the
+// component, where several modules contain it and their verdicts differ.
+//
+// Nesting is the shape that makes the two verdicts come apart, and no row over a
+// flat module can produce it. A node a nested module contributed sits under two
+// module keys at once — the inner module's and the outer one's — and because the
+// outer module holds everything the inner one does plus its own components, the
+// outer can be placed while the inner is placed nowhere. The two keys then
+// disagree about the same node, and which of them the exclusion reads is the
+// whole question.
+//
+// The first row is the disagreement itself: the deployment names the outer
+// module's own component and nothing the inner one contributed. Reading the outer
+// key would report every component of the inner module, on top of the one report
+// the module rule already makes at the inner module's key — the many-reports-for-
+// one-fault noise the exclusion exists to prevent. So exactly one finding is
+// right, and it is the module rule's.
+//
+// The second row is the same composition one step further placed, so the inner
+// module is placed in part rather than nowhere. Its remaining component is then
+// nobody else's to report, and the component rule reports it at its own key. The
+// two rows differ by one boundary entry and must produce different rules, which
+// is what makes either of them evidence.
+//
+// The third row is the control both are read against: every component named, and
+// nothing reported. Without it a rule that halted on every nested composition
+// would satisfy the first two.
+func TestNestedModulePlacementIsReadPerModuleAndNotPerComposition(t *testing.T) {
+	t.Parallel()
+
+	const rootAggregate = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: demo
+spec:
+  aggregates:
+    outer:
+      type: ./outer.yaml
+`
+	// The outer module carries a component of its own as well as the nested
+	// module, so the deployment can place the outer module without placing
+	// anything the inner one contributed.
+	const outerModule = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: outer
+spec:
+  components:
+    edge:
+      type: app/db:1.0.0
+  aggregates:
+    inner:
+      type: ./inner.yaml
+`
+	const innerModule = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: inner
+spec:
+  components:
+    store:
+      type: app/db:1.0.0
+    cache:
+      type: app/db:1.0.0
+`
+	const namingTheOuterComponentOnly = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      directory: ./out
+      components:
+        outer.edge: {}
+`
+	const namingTheOuterComponentAndOneInnerOne = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      directory: ./out
+      components:
+        outer.edge: {}
+        outer.inner.store: {}
+`
+	const namingEveryComponent = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      directory: ./out
+      components:
+        outer.edge: {}
+        outer.inner.store: {}
+        outer.inner.cache: {}
+`
+
+	build := func(t *testing.T, relYAML string) error {
+		t.Helper()
+		normalized := types.NormalizeRelease(mustRelease(t, relYAML))
+		boundaryInfra, _, routedInfra := resolver.WireBoundaryContexts(normalized)
+		loader := func(ref string, _ map[string]any) (*types.Aggregate, string, map[string]any, error) {
+			switch ref {
+			case "./outer.yaml":
+				return mustAggregate(t, outerModule), "outer.yaml", nil, nil
+			case "./inner.yaml":
+				return mustAggregate(t, innerModule), "inner.yaml", nil, nil
+			}
+			return nil, "", nil, fmt.Errorf("fixture has no module %q", ref)
+		}
+		_, err := Build(BuildConfig{
+			ResolveResult: &resolver.ResolveResult{
+				Aggregate:            mustAggregate(t, rootAggregate),
+				Release:              normalized.Release(),
+				BoundaryInfra:        boundaryInfra,
+				RoutedAggregateInfra: routedInfra,
+			},
+			CatalogLookup:    bindingCatalog(t),
+			LoadSubAggregate: loader,
+		})
+		return err
+	}
+
+	fields := func(t *testing.T, err error, sentinel error) []string {
+		t.Helper()
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("the halt must carry the named rule; got %v", err)
+		}
+		var multi *resolver.MultiResolverError
+		if !errors.As(err, &multi) {
+			t.Fatalf("the halt must carry its violations; got %T", err)
+		}
+		out := make([]string, 0, len(multi.Violations))
+		for _, v := range multi.Violations {
+			out = append(out, v.Field)
+		}
+		return out
+	}
+
+	t.Run("an inner module placed nowhere is reported once at the inner module", func(t *testing.T) {
+		t.Parallel()
+		got := fields(t, build(t, namingTheOuterComponentOnly), ErrUnplacedSubModule())
+		want := []string{".spec.aggregates.inner"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("a module placed nowhere is one fault at one key, and its components stay the module rule's; want %v, got %v", want, got)
+		}
+	})
+
+	t.Run("an inner module placed in part reports its remaining component", func(t *testing.T) {
+		t.Parallel()
+		got := fields(t, build(t, namingTheOuterComponentAndOneInnerOne), ErrUnplacedComponent())
+		want := []string{".spec.components.cache"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("a component of a module placed in part is reported at its own key; want %v, got %v", want, got)
+		}
+	})
+
+	t.Run("every component named passes both rules", func(t *testing.T) {
+		t.Parallel()
+		if err := build(t, namingEveryComponent); err != nil {
+			t.Fatalf("a composition whose every component is named must build; got %v", err)
+		}
+	})
 }
 
 // TestBoundaryComponentResolutionReadsBothAxesAndNotTheSpelling proves the

@@ -535,6 +535,11 @@ spec:
     store:
       type: app/db:1.0.0
 `
+	// The boundary names both of the module's components, not only the one the
+	// edge entry configures. Naming the consumer alone would leave the store
+	// placed by nothing, so every row using this Release would carry a placement
+	// fault on top of the socket fault it is about — and the positive rows would
+	// halt for a reason they are not testing.
 	releaseOnSocket := func(socket string) string {
 		return `apiVersion: aggrega.ai/v1alpha1
 kind: Release
@@ -544,6 +549,7 @@ spec:
   boundaries:
     prod:
       components:
+        mod.store: {}
         mod.consumer:
           uses:
             ` + socket + `:
