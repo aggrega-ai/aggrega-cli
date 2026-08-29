@@ -1358,9 +1358,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// a declaration made by a crossing that ran before the sink existed would be
 		// lost, and losing a declaration is losing exactly the evidence the
 		// duplicate check reads.
+		//
+		// This sink is the NODE's own, so what arrives over it is recorded under the
+		// node's own label. An attachment's render carries a copy of this context and
+		// rewires the sink to its own label before it runs, because a name an
+		// attachment's guest derived is the attachment's rather than the node's and
+		// has to be comparable against a sibling attachment's.
+		nodeProducer := derivedKeyProducerFor(producerKindComponent, nodeID, "")
 		nodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
-			state.DerivedKeyRepeats = append(state.DerivedKeyRepeats,
-				mergeDerivedKeys(&state.DerivedKeys, declared)...)
+			state.DerivedKeys.declare(nodeProducer, declared)
 		}
 		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID,
@@ -1778,8 +1784,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// every attachment's declaration silently: the group check then reports
 		// nothing, and reads as coverage. It is the same snapshot-before-attachments
 		// hazard the host-document write-back below is keyed by path to survive.
-		nodeKind, nodeInstance := nodeProducerKind(nodeID)
-		dispatch[key].derivedKeys.putAll(state.DerivedKeys, state.DerivedKeyRepeats, nodeKind, nodeInstance)
+		//
+		// Every producer within the node arrives under its own label rather than all
+		// of them under the node's: the node's own render, and each attachment it
+		// carries under the key the author wrote it beneath. Two attachments
+		// reaching one name are then two declarers, which is what they are.
+		state.DerivedKeys.into(&dispatch[key].derivedKeys)
 		// Stash deferred host PATCHes under the host component's dispatch group.
 		// The host node IS this node (a component-scope FR patches the component
 		// it is attached to), so the merged documents the PATCH targets are the
@@ -1962,8 +1972,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// alongside the file routing above: a contributor whose output is entirely
 		// pre-assembly fragments still derived the names it declared, and those
 		// names still meet the other contributors' names in the merged output.
-		frKind, frInstance := nodeProducerKind(syntheticNodeID)
-		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], boundaryFRState.DerivedKeyRepeats[key], frKind, frInstance)
+		//
+		// The label carries the boundary path as well as the instance name, and both
+		// are read from the accumulator's own key rather than recovered from the
+		// synthetic node identity above. That identity joins the two parts with
+		// characters either part may itself contain, so cutting it apart again
+		// cannot return what went in — and it drops the path entirely, which is what
+		// let one instance name written at two boundaries arrive as one declarer.
+		frProducer := derivedKeyProducerFor(producerKindFeature, key.FRInstance, key.BoundaryPath)
+		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], boundaryFRState.DerivedKeyRepeats[key], frProducer)
 		// Record the boundary as a contributor for the dispatch group's
 		// diagnostic context.
 		alreadyContributing := false

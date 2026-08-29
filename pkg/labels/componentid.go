@@ -85,20 +85,33 @@ var (
 
 // boundaryFeatureContextReserve is how many characters of a shortened identity
 // the boundary path keeps: whatever the limit leaves once the digest's own
-// space, the prefix, the instance's reserved run and the joins between them are
-// all accounted for.
+// space, the prefix, the instance's reserved run and the joins between the
+// regions are all accounted for.
 //
-// It is one number rather than an expression evaluated per identity, which is
-// the whole point of reserving a fixed run for the instance. The three joins are
-// the worst case — prefix to path, path to instance, instance to digest — so an
-// identity carrying no boundary path simply comes out shorter than the limit
-// rather than finding this budget wrong.
-var boundaryFeatureContextReserve = k8sLabelValueMaxLength -
-	len(boundaryFeatureIDEncoding.Segment(boundaryFeatureIDPrefix)) -
-	3*len(boundaryFeatureIDJoin) -
-	boundaryFeatureInstanceReserve -
-	len(boundaryFeatureIDAbsentMark) -
-	boundaryFeatureDigestLength
+// It is one number per identity rather than an expression evaluated per part,
+// which is the whole point of reserving a fixed run for the instance.
+//
+// 🔴 The join term is computed from the regions actually being joined, and that
+// is a correctness property rather than a tidiness one. A fixed multiple is
+// correct only for the arity its author had in hand: one more region needs one
+// more join, and a budget that did not account for it would hand the boundary
+// path characters the limit does not have — so the composition would emit a
+// value LONGER than the target accepts, which is a name the target refuses
+// rather than one that merely reads poorly. Every other reserve here is a
+// property of the scheme; this one is a property of the caller, so it is the
+// caller's arity that decides it.
+func boundaryFeatureContextReserve(regions int) int {
+	joins := regions - 1
+	if joins < 0 {
+		joins = 0
+	}
+	return k8sLabelValueMaxLength -
+		len(boundaryFeatureIDEncoding.Segment(boundaryFeatureIDPrefix)) -
+		joins*len(boundaryFeatureIDJoin) -
+		boundaryFeatureInstanceReserve -
+		len(boundaryFeatureIDAbsentMark) -
+		boundaryFeatureDigestLength
+}
 
 // BoundaryFeatureComponentID composes the component identity every resource a
 // boundary-attached feature emits carries, from the parts an author wrote: the
@@ -161,6 +174,19 @@ func boundaryFeatureIDParts(instance string, boundaryPath []string) []string {
 // the obvious implementation cuts a string from the wrong end and returns a
 // plausible wrong identity with nothing reporting it.
 func shortenBoundaryFeatureComponentID(plain, instance string, boundaryPath []string) string {
+	// How many regions this identity is assembled from, counted before any budget
+	// is worked out because the joins between them come out of that budget: the
+	// prefix, the boundary path where the feature has one, the instance, and the
+	// digest.
+	//
+	// A feature attached at the top has no boundary path, and so no region for
+	// one: an empty run between two joins would read as a part somebody wrote.
+	hasContext := len(boundaryPath) > 0
+	regionCount := 3
+	if hasContext {
+		regionCount++
+	}
+
 	// Reserved first: this run is subtracted from the limit in
 	// boundaryFeatureContextReserve before any part below is measured.
 	tail := boundaryFeatureIDAbsentMark + boundaryFeatureIDDigest(plain)
@@ -169,13 +195,11 @@ func shortenBoundaryFeatureComponentID(plain, instance string, boundaryPath []st
 		boundaryFeatureIDEncoding.Segment(instance), boundaryFeatureInstanceReserve)
 	// Then whatever the reserves leave, for the boundary path.
 	contextRegion := clipWrittenRegion(
-		boundaryFeatureIDEncoding.Name(boundaryPath...), boundaryFeatureContextReserve)
+		boundaryFeatureIDEncoding.Name(boundaryPath...), boundaryFeatureContextReserve(regionCount))
 
-	regions := make([]string, 0, 4)
+	regions := make([]string, 0, regionCount)
 	regions = append(regions, boundaryFeatureIDEncoding.Segment(boundaryFeatureIDPrefix))
-	// A feature attached at the top has no boundary path, and so no region for
-	// one: an empty run between two joins would read as a part somebody wrote.
-	if len(boundaryPath) > 0 {
+	if hasContext {
 		regions = append(regions, contextRegion)
 	}
 	return strings.Join(append(regions, instanceRegion, tail), boundaryFeatureIDJoin)

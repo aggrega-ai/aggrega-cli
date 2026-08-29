@@ -497,6 +497,18 @@ func phaseB6(
 		}
 
 		frNodeCtx := nodeCtx
+		// This attachment is a contributor of its own, so the names its render
+		// derives are declared under its own label rather than the host node's.
+		// The sink is rewired for the same reason the boundary-scope render
+		// rewires its own: the copied context's sink records against the node,
+		// so a name this attachment's guest derived would be uncomparable
+		// against a sibling attachment's — the two would arrive as one declarer,
+		// and a collision between them would read as one contributor restating
+		// itself, which the group check rules legitimate.
+		attachmentProducer := derivedKeyProducerFor(producerKindComponent, nodeID, item.Instance)
+		frNodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
+			state.DerivedKeys.declare(attachmentProducer, declared)
+		}
 		frNodeCtx.OriginalSource = fr.Spec.Source
 		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, fr.Spec.SourceDigests)
 		if err != nil {
@@ -525,16 +537,15 @@ func phaseB6(
 		// declaration per render, which is the unit the check's within-one-
 		// declaration half is defined over.
 		//
-		// The coverage that buys, stated because an unstated bound reads as a full
-		// one: every contributor's declarations reach the group under that
-		// contributor's own name, so two attachments on DIFFERENT nodes reaching
-		// one label value are two declarers and halt, as do an attachment and a
-		// boundary-scope feature. Two attachments on the SAME node reaching one
-		// label value are one declarer restating a name across two of its own
-		// renders, which is the shape this check does not refuse.
+		// Declared under THIS ATTACHMENT's label rather than the host node's, which
+		// is what the coverage rests on: every contributor's declarations reach the
+		// group under its own label, so two attachments reaching one label value are
+		// two declarers and halt — whether they sit on two different components or
+		// on the same one — as do an attachment and a boundary-scope feature. The
+		// attachment key is a coordinate of the value being declared, since the
+		// value is derived from it, so it is a coordinate of the label too.
 		if frComponentID != "" {
-			state.DerivedKeyRepeats = append(state.DerivedKeyRepeats,
-				declareDerivedKey(&state.DerivedKeys, componentIDKeySpace, frComponentID)...)
+			state.DerivedKeys.declareDerived(attachmentProducer, componentIDKeySpace, frComponentID)
 		}
 
 		// Component-scope FeatureRecipe pipeline. Every attachment's

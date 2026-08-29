@@ -27,6 +27,23 @@ const (
 	realDerivedExportName        = "aggrega-prod-api-orders-db-host"
 )
 
+// The three shapes of contributor these cases build labels for, each composed
+// through the one helper production uses. Written as helpers rather than as
+// struct literals so a case cannot quietly assemble a label the production path
+// could never produce — which is what would let a case pass over a coordinate
+// production drops.
+func declaredByComponent(name string) derivedKeyProducer {
+	return derivedKeyProducerFor(producerKindComponent, name, "")
+}
+
+func declaredByAttachment(node, attachment string) derivedKeyProducer {
+	return derivedKeyProducerFor(producerKindComponent, node, attachment)
+}
+
+func declaredByBoundaryFeature(instance, boundaryPath string) derivedKeyProducer {
+	return derivedKeyProducerFor(producerKindFeature, instance, boundaryPath)
+}
+
 // derivedNamesView presents one group's derived-name declarations and nothing
 // else.
 //
@@ -107,11 +124,11 @@ func TestDerivedNameRule_InvariantUnderDeclarationOrder(t *testing.T) {
 	t.Parallel()
 
 	declarations := []derivedKeyDeclaration{
-		{space: "logical-ids", key: realDerivedLogicalID, producerKind: "component", producer: "one"},
-		{space: "export-names", key: realDerivedExportName, producerKind: "component", producer: "two"},
-		{space: "logical-ids", key: realDerivedLogicalID, producerKind: "component", producer: "three"},
-		{space: "export-names", key: realDerivedExportName, producerKind: "component", producer: "four"},
-		{space: "export-names", key: realDerivedExportName, producerKind: "component", producer: "five"},
+		{space: "logical-ids", key: realDerivedLogicalID, producer: declaredByComponent("one")},
+		{space: "export-names", key: realDerivedExportName, producer: declaredByComponent("two")},
+		{space: "logical-ids", key: realDerivedLogicalID, producer: declaredByComponent("three")},
+		{space: "export-names", key: realDerivedExportName, producer: declaredByComponent("four")},
+		{space: "export-names", key: realDerivedExportName, producer: declaredByComponent("five")},
 	}
 
 	var want []string
@@ -119,7 +136,7 @@ func TestDerivedNameRule_InvariantUnderDeclarationOrder(t *testing.T) {
 		var set derivedKeySet
 		for _, i := range order {
 			d := declarations[i]
-			set.put(d.space, d.key, d.producerKind, d.producer)
+			set.put(d.space, d.key, d.producer)
 		}
 		got := runDerivedNameRule(t, &set)
 		if len(got) == 0 {
@@ -175,8 +192,8 @@ func TestDerivedNameRule_BothDirections(t *testing.T) {
 	t.Run("identical name objects", func(t *testing.T) {
 		t.Parallel()
 		var set derivedKeySet
-		set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
-		set.put("logical-ids", realDerivedLogicalID, "component", "beta")
+		set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+		set.put("logical-ids", realDerivedLogicalID, declaredByComponent("beta"))
 		if got := runDerivedNameRule(t, &set); len(got) != 2 {
 			t.Fatalf("expected one objection per contributor, got %d: %v", len(got), got)
 		}
@@ -185,8 +202,8 @@ func TestDerivedNameRule_BothDirections(t *testing.T) {
 	t.Run("one character changed stays silent", func(t *testing.T) {
 		t.Parallel()
 		var set derivedKeySet
-		set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
-		set.put("logical-ids", realDerivedLogicalIDNearMiss, "component", "beta")
+		set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+		set.put("logical-ids", realDerivedLogicalIDNearMiss, declaredByComponent("beta"))
 		if got := runDerivedNameRule(t, &set); len(got) != 0 {
 			t.Fatalf("a one-character difference must not object: %v", got)
 		}
@@ -201,8 +218,8 @@ func TestDerivedNameRule_SameNameInDifferentSpacesIsSilent(t *testing.T) {
 	t.Parallel()
 
 	var set derivedKeySet
-	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
-	set.put("export-names", realDerivedLogicalID, "component", "beta")
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+	set.put("export-names", realDerivedLogicalID, declaredByComponent("beta"))
 	if got := runDerivedNameRule(t, &set); len(got) != 0 {
 		t.Fatalf("one name in two different spaces must not object: %v", got)
 	}
@@ -216,8 +233,8 @@ func TestDerivedNameRule_TwoKindsOfContributorAreNamedByKind(t *testing.T) {
 	t.Parallel()
 
 	var set derivedKeySet
-	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
-	set.put("logical-ids", realDerivedLogicalID, "feature", "logging")
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+	set.put("logical-ids", realDerivedLogicalID, declaredByBoundaryFeature("logging", "cluster"))
 	got := runDerivedNameRule(t, &set)
 	if len(got) != 2 {
 		t.Fatalf("expected one objection per contributor, got %d: %v", len(got), got)
@@ -257,8 +274,8 @@ func TestDerivedNameRule_OneContributorRestatingItselfAcrossCrossingsIsSilent(t 
 	t.Parallel()
 
 	var set derivedKeySet
-	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
-	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
 	if got := runDerivedNameRule(t, &set); len(got) != 0 {
 		t.Fatalf("one contributor restating a name across crossings must not object: %v", got)
 	}
@@ -371,7 +388,7 @@ func TestDerivedNameRule_RepeatWithinOneDeclarationObjects(t *testing.T) {
 	repeated := mergeDerivedKeys(&acc, declared)
 
 	var set derivedKeySet
-	set.putAll(acc, repeated, "component", "alpha")
+	set.putAll(acc, repeated, declaredByComponent("alpha"))
 
 	got := runDerivedNameRule(t, &set)
 	if len(got) != 1 {
@@ -402,7 +419,7 @@ func TestDerivedNameRule_TheSameDeclarationWithoutTheRepeatIsSilent(t *testing.T
 	repeated := mergeDerivedKeys(&acc, declared)
 
 	var set derivedKeySet
-	set.putAll(acc, repeated, "component", "alpha")
+	set.putAll(acc, repeated, declaredByComponent("alpha"))
 	if got := runDerivedNameRule(t, &set); len(got) != 0 {
 		t.Fatalf("one declaration carrying two distinct names must not object: %v", got)
 	}
@@ -417,12 +434,12 @@ func TestDerivedNameRule_ARepeatAndACollisionOnOneNameNameBothContributors(t *te
 	t.Parallel()
 
 	var set derivedKeySet
-	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
-	set.put("logical-ids", realDerivedLogicalID, "component", "alpha")
-	set.put("logical-ids", realDerivedLogicalID, "component", "beta")
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("beta"))
 	set.repeats = append(set.repeats, derivedKeyDeclaration{
 		space: "logical-ids", key: realDerivedLogicalID,
-		producerKind: "component", producer: "alpha",
+		producer: declaredByComponent("alpha"),
 	})
 
 	got := runDerivedNameRule(t, &set)
@@ -454,7 +471,7 @@ func TestDerivedNameRule_ARepeatWhoseDeclarationNeverAccumulatedIsStillAnswered(
 	var set derivedKeySet
 	set.repeats = append(set.repeats, derivedKeyDeclaration{
 		space: "logical-ids", key: realDerivedLogicalID,
-		producerKind: "component", producer: "alpha",
+		producer: declaredByComponent("alpha"),
 	})
 
 	got := runDerivedNameRule(t, &set)
@@ -517,6 +534,320 @@ func TestMergeDerivedKeysDoesNotAliasItsInput(t *testing.T) {
 	got, _ := acc.Get("logical-ids")
 	if got[0] != "aQueue" {
 		t.Errorf("the merged space aliases the caller's slice: got %v", got)
+	}
+}
+
+// producerCoordinates is the corpus the label's own property is asserted over:
+// coordinate triples chosen for the edges a joined label would fold at rather
+// than for how a real one reads.
+//
+// The first two rows are the fold itself, written out because they are the whole
+// argument: a feature named `a@b` attached at `c` and one named `a` attached at
+// `b@c` are two attachments an author can tell apart, and any label that runs the
+// two coordinates together with a separator either of them may contain reaches
+// one string for both. The rest carry the separators a boundary path actually
+// uses, a coordinate that is empty, one carrying the quote a message renders
+// with, and one that is not valid UTF-8.
+func producerCoordinates() []derivedKeyProducer {
+	return []derivedKeyProducer{
+		{kind: producerKindFeature, name: "a@b", scope: "c"},
+		{kind: producerKindFeature, name: "a", scope: "b@c"},
+		{kind: producerKindFeature, name: "a", scope: "b"},
+		{kind: producerKindFeature, name: "a-b", scope: "c"},
+		{kind: producerKindFeature, name: "a", scope: "b-c"},
+		{kind: producerKindFeature, name: "a/b", scope: "c"},
+		{kind: producerKindFeature, name: "a", scope: "b/c"},
+		{kind: producerKindFeature, name: "bridge", scope: "eu/prod"},
+		{kind: producerKindFeature, name: "bridge", scope: "eu/prod/west"},
+		{kind: producerKindFeature, name: "bridge", scope: ""},
+		{kind: producerKindComponent, name: "a", scope: "b"},
+		{kind: producerKindComponent, name: "alpha", scope: ""},
+		{kind: producerKindComponent, name: "alpha", scope: "cache a"},
+		{kind: producerKindComponent, name: "alpha", scope: "cache-a"},
+		{kind: producerKindComponent, name: `say "hi"`, scope: ""},
+		{kind: producerKindComponent, name: "", scope: `say "hi"`},
+		{kind: producerKindComponent, name: "\xff\xfe", scope: "b"},
+		{kind: producerKindComponent, name: "\xff", scope: "\xfeb"},
+	}
+}
+
+// TestDerivedKeyProducer_ReadsBackIntoTheCoordinatesItWasBuiltFrom is the round
+// trip that makes the label's structure a property rather than an intention.
+//
+// The reader is direct field access and shares no code with the composer: a
+// reader that called the composer, or any decoder written beside it, would agree
+// with it whatever it did. What is being established is that every coordinate
+// survives composition intact and separable — which a label run together into one
+// string cannot provide, since no reader can put back a boundary the join
+// destroyed.
+func TestDerivedKeyProducer_ReadsBackIntoTheCoordinatesItWasBuiltFrom(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range producerCoordinates() {
+		got := derivedKeyProducerFor(want.kind, want.name, want.scope)
+		if got.kind != want.kind || got.name != want.name || got.scope != want.scope {
+			t.Errorf("(%q, %q, %q) composed to (%q, %q, %q)",
+				want.kind, want.name, want.scope, got.kind, got.name, got.scope)
+		}
+	}
+}
+
+// TestDerivedKeyProducer_TwoCoordinateTriplesReachTwoLabels is the half that can
+// fail. Every distinct triple in the corpus reaches a distinct label, including
+// the two that a separator join would fold — so the label is injective over its
+// coordinates by construction, with no encoding and no comparison of strings.
+func TestDerivedKeyProducer_TwoCoordinateTriplesReachTwoLabels(t *testing.T) {
+	t.Parallel()
+
+	corpus := producerCoordinates()
+	for i := range corpus {
+		for j := i + 1; j < len(corpus); j++ {
+			a := derivedKeyProducerFor(corpus[i].kind, corpus[i].name, corpus[i].scope)
+			b := derivedKeyProducerFor(corpus[j].kind, corpus[j].name, corpus[j].scope)
+			if a == b {
+				t.Errorf("(%q, %q, %q) and (%q, %q, %q) reach one label",
+					corpus[i].kind, corpus[i].name, corpus[i].scope,
+					corpus[j].kind, corpus[j].name, corpus[j].scope)
+			}
+		}
+	}
+}
+
+// TestDerivedNameRule_TheFoldingPairAreTwoContributors carries the property above
+// through to what it buys. The pair a joined label folds declares one name, and
+// the rule reports two contributors — which is what it would stop doing the day
+// the label became one string.
+func TestDerivedNameRule_TheFoldingPairAreTwoContributors(t *testing.T) {
+	t.Parallel()
+
+	var set derivedKeySet
+	set.put("logical-ids", realDerivedLogicalID, declaredByBoundaryFeature("a@b", "c"))
+	set.put("logical-ids", realDerivedLogicalID, declaredByBoundaryFeature("a", "b@c"))
+
+	got := runDerivedNameRule(t, &set)
+	if len(got) != 2 {
+		t.Fatalf("expected one objection per contributor, got %d: %v", len(got), got)
+	}
+	joined := strings.Join(got, "\n")
+	for _, want := range []string{
+		`derived by feature "a@b", attached at boundary "c"`,
+		`derived by feature "a", attached at boundary "b@c"`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the objections do not carry %q\ngot: %v", want, got)
+		}
+	}
+}
+
+// TestDerivedNameRule_OneNameAtTwoBoundariesIsTwoContributors is the coordinate
+// the boundary-scope label had been dropping, at the unit that owns the
+// comparison. One instance name written at two boundaries is two attachments the
+// author wrote, so one name declared by both is two declarers.
+func TestDerivedNameRule_OneNameAtTwoBoundariesIsTwoContributors(t *testing.T) {
+	t.Parallel()
+
+	var set derivedKeySet
+	set.put("logical-ids", realDerivedLogicalID, declaredByBoundaryFeature("bridge", "eu"))
+	set.put("logical-ids", realDerivedLogicalID, declaredByBoundaryFeature("bridge", "us"))
+
+	if got := runDerivedNameRule(t, &set); len(got) != 2 {
+		t.Fatalf("expected one objection per boundary, got %d: %v", len(got), got)
+	}
+}
+
+// TestDerivedNameRule_TwoAttachmentsOnOneComponentAreTwoContributors is the
+// mirror coordinate, at the same unit: two attachment keys on one component are
+// two contributors, where the component's own name alone made them one.
+func TestDerivedNameRule_TwoAttachmentsOnOneComponentAreTwoContributors(t *testing.T) {
+	t.Parallel()
+
+	var set derivedKeySet
+	set.put("logical-ids", realDerivedLogicalID, declaredByAttachment("alpha", "cache a"))
+	set.put("logical-ids", realDerivedLogicalID, declaredByAttachment("alpha", "cache-a"))
+
+	got := runDerivedNameRule(t, &set)
+	if len(got) != 2 {
+		t.Fatalf("expected one objection per attachment, got %d: %v", len(got), got)
+	}
+	joined := strings.Join(got, "\n")
+	for _, want := range []string{
+		`derived by component "alpha", carrying attachment "cache a"`,
+		`derived by component "alpha", carrying attachment "cache-a"`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the objections do not carry %q\ngot: %v", want, got)
+		}
+	}
+}
+
+// TestDerivedNameRule_AComponentsOwnRenderCarriesNoFurtherCoordinate is the
+// negative direction of the coordinate's presentation. A component's own render
+// is identified by its name alone, so nothing further is presented — a caption
+// standing in front of an empty value would read as a coordinate the author
+// failed to supply rather than one that does not apply.
+func TestDerivedNameRule_AComponentsOwnRenderCarriesNoFurtherCoordinate(t *testing.T) {
+	t.Parallel()
+
+	var set derivedKeySet
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("beta"))
+
+	got := runDerivedNameRule(t, &set)
+	if len(got) != 2 {
+		t.Fatalf("expected one objection per contributor, got %d: %v", len(got), got)
+	}
+	joined := strings.Join(got, "\n")
+	if strings.Contains(joined, `carrying attachment ""`) {
+		t.Errorf("a contributor with no further coordinate presented an empty one\ngot: %v", got)
+	}
+	if !strings.Contains(joined, `derived by component "alpha", provider`) {
+		t.Errorf("the objection does not read as a component's own render\ngot: %v", got)
+	}
+}
+
+// TestDerivedKeyLedger_KeepsEachProducersDeclarationsApart is the accumulator's
+// own case. One node's several producers declare into one ledger, and what
+// reaches the group is one contributor per producer — not one contributor for the
+// node. Two attachments declaring one name are therefore two entries there, which
+// is what the rule above needs in order to see them at all.
+func TestDerivedKeyLedger_KeepsEachProducersDeclarationsApart(t *testing.T) {
+	t.Parallel()
+
+	var ledger derivedKeyLedger
+	ledger.declareDerived(declaredByAttachment("alpha", "cache a"), componentIDKeySpace, "cache-a")
+	ledger.declareDerived(declaredByAttachment("alpha", "cache-a"), componentIDKeySpace, "cache-a")
+
+	var set derivedKeySet
+	ledger.into(&set)
+	if got := runDerivedNameRule(t, &set); len(got) != 2 {
+		t.Fatalf("expected one objection per attachment, got %d: %v", len(got), got)
+	}
+}
+
+// TestDerivedKeyLedger_ANodeAndItsOwnAttachmentAreTwoContributors states the
+// consequence of identifying a contributor by every coordinate its derivation
+// reads, and it is worth asserting because it widens what halts.
+//
+// A component's own render and the render of an attachment it carries are two
+// derivations over two different authored inputs, and their output merges into
+// one assembled output — so one name reached by both is one of them displacing
+// the other, exactly as it is between two components. The finer identification is
+// not optional either: attachments on one component can only be told apart from
+// each other if the attachment is the unit, and once it is, the component's own
+// render is a third thing rather than a member of one of them.
+//
+// The bound the ledger still keeps is the one below: several crossings of the
+// SAME producer remain one contributor.
+func TestDerivedKeyLedger_ANodeAndItsOwnAttachmentAreTwoContributors(t *testing.T) {
+	t.Parallel()
+
+	var ledger derivedKeyLedger
+	ledger.declareDerived(declaredByComponent("alpha"), "logical-ids", realDerivedLogicalID)
+	ledger.declareDerived(declaredByAttachment("alpha", "cache"), "logical-ids", realDerivedLogicalID)
+
+	var set derivedKeySet
+	ledger.into(&set)
+	got := runDerivedNameRule(t, &set)
+	if len(got) != 2 {
+		t.Fatalf("expected one objection per contributor, got %d: %v", len(got), got)
+	}
+	joined := strings.Join(got, "\n")
+	for _, want := range []string{
+		`derived by component "alpha", provider`,
+		`derived by component "alpha", carrying attachment "cache"`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the objections do not carry %q\ngot: %v", want, got)
+		}
+	}
+}
+
+// TestDerivedKeyLedger_OneProducerRestatingItselfAcrossCrossingsIsSilent is the
+// bound the case above must not break. One producer renders across several
+// crossings and may restate a name at each; the ledger merges those into that
+// producer's own accumulation, so the group still sees one contributor and the
+// legitimate restatement stays legitimate.
+func TestDerivedKeyLedger_OneProducerRestatingItselfAcrossCrossingsIsSilent(t *testing.T) {
+	t.Parallel()
+
+	declared := types.OrderedMap[[]string]{}
+	declared.Set("logical-ids", []string{realDerivedLogicalID})
+
+	var ledger derivedKeyLedger
+	producer := declaredByAttachment("alpha", "cache a")
+	ledger.declare(producer, declared)
+	ledger.declare(producer, declared)
+
+	var set derivedKeySet
+	ledger.into(&set)
+	if got := runDerivedNameRule(t, &set); len(got) != 0 {
+		t.Fatalf("one producer restating a name across crossings must not object: %v", got)
+	}
+}
+
+// TestDerivedKeyLedger_ReportsARepeatInsideOneOfAProducersDeclarations keeps the
+// within-one-declaration half alive through the ledger. The distinction is drawn
+// while a single declaration is whole, which is now inside one producer's
+// accumulation rather than inside the node's — so a producer whose own single
+// declaration carried a name twice is still reported as having derived it more
+// than once.
+func TestDerivedKeyLedger_ReportsARepeatInsideOneOfAProducersDeclarations(t *testing.T) {
+	t.Parallel()
+
+	declared := types.OrderedMap[[]string]{}
+	declared.Set("logical-ids", []string{realDerivedLogicalID, realDerivedLogicalID})
+
+	var ledger derivedKeyLedger
+	ledger.declare(declaredByAttachment("alpha", "cache a"), declared)
+
+	var set derivedKeySet
+	ledger.into(&set)
+	got := runDerivedNameRule(t, &set)
+	if len(got) != 1 {
+		t.Fatalf("expected one objection naming the one producer, got %d: %v", len(got), got)
+	}
+	if !strings.Contains(got[0], `derived more than once by component "alpha", carrying attachment "cache a"`) {
+		t.Errorf("the objection does not name the repeating attachment\ngot: %s", got[0])
+	}
+}
+
+// TestDerivedKeyLedger_DrainsInDeclarationOrder pins the accumulator's own
+// contribution to a report that is a function of the input. The rule sorts what
+// it presents, so this ordering reaches no message directly; what it protects is
+// that nothing upstream of the sort depends on Go's map iteration.
+func TestDerivedKeyLedger_DrainsInDeclarationOrder(t *testing.T) {
+	t.Parallel()
+
+	want := []derivedKeyProducer{
+		declaredByComponent("alpha"),
+		declaredByAttachment("alpha", "cache a"),
+		declaredByAttachment("alpha", "cache-a"),
+	}
+	for run := 0; run < 40; run++ {
+		var ledger derivedKeyLedger
+		for _, p := range want {
+			ledger.declareDerived(p, componentIDKeySpace, "value")
+		}
+		// A second declaration by a producer already in the ledger joins that
+		// producer's own accumulation rather than opening a new entry.
+		ledger.declareDerived(want[0], componentIDKeySpace, "value")
+
+		var set derivedKeySet
+		ledger.into(&set)
+		// One entry per name per producer reaches the set, so the order under test
+		// is the order the producers first appear in.
+		seen := map[derivedKeyProducer]bool{}
+		got := make([]derivedKeyProducer, 0, len(want))
+		for _, e := range set.entries {
+			if seen[e.producer] {
+				continue
+			}
+			seen[e.producer] = true
+			got = append(got, e.producer)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("run %d: drained %v, want %v", run, got, want)
+		}
 	}
 }
 

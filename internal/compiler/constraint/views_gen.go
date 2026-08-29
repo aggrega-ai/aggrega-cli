@@ -65,10 +65,10 @@ type AttachmentDeclaration struct {
 }
 
 // DerivedNameDeclaration is one contributor's declaration that it derived
-// one name into one of its own key spaces: the space, the name, the
-// contributor and what kind of contributor it is, and whether a single one
-// of that contributor's declarations carried the name more than once
-// within that space.
+// one name into one of its own key spaces: the space, the name, every
+// coordinate that identifies the contributor, and whether a single one of
+// that contributor's declarations carried the name more than once within
+// that space.
 //
 // It is one fact rather than several because no half of it answers
 // anything alone. A name without its space says nothing — one name in
@@ -98,6 +98,18 @@ type DerivedNameDeclaration struct {
 	// ContributorKind is what that contributor is in authoring terms, either a
 	// component or a feature, which is what says where its name is written.
 	ContributorKind string
+
+	// ContributorScope is the further authored coordinate that completes the
+	// contributor's identity within what its kind names: the attachment key a
+	// component carries, or the path of the boundary a feature is attached at.
+	// It is empty where the kind's own name identifies the contributor on its
+	// own, which is the case for a component's own render. It is carried apart
+	// from Contributor rather than run together with it because the pair is
+	// compared as well as read: two contributors differing only in this
+	// coordinate have to arrive as two, and one joined string could fold them
+	// into one — leaving a name two of them derived compared against
+	// nothing.
+	ContributorScope string
 
 	// RepeatedWithinOneDeclaration reports whether a single one of that
 	// contributor's declarations carried this name more than once inside this

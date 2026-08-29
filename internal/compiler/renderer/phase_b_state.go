@@ -112,33 +112,29 @@ type PhaseBState struct {
 	Diagnostics []Diagnostic
 
 	// DerivedKeys is the per-node accumulator for every derived name this node is
-	// answerable for, keyed by the space it was derived into: the names the node's
-	// provider guest declares, under the guest's own space names, and the names the
-	// compiler derived for the node itself — a component-identity label value for
-	// an attachment — under a space the compiler names. A node can render across
-	// more than one crossing — a source render, a workload synthesis, an artifacts
-	// placement, an attachment's own render — and each returns its own declaration,
-	// so the declarations merge here: a space already present gains the new
-	// crossing's names rather than replacing them. The orchestrator moves the
-	// merged set into the node's dispatch group, where duplicates across
-	// contributors are checked once every contributor has rendered.
+	// answerable for: the names the node's provider guest declares, under the
+	// guest's own space names, and the names the compiler derived — a
+	// component-identity label value for an attachment — under a space the
+	// compiler names.
+	//
+	// It is kept per PRODUCER rather than per node, because a node is not one
+	// contributor: its own render is one and each attachment it carries is
+	// another, and two attachments reaching one name is a collision the group
+	// check can only see if the two arrive under two labels. Within one producer
+	// the declarations merge across that producer's several render crossings — a
+	// source render, a workload synthesis, an artifacts placement — so a space
+	// already present gains the new crossing's names rather than replacing them,
+	// and a name repeated inside a single declaration is kept apart from a name
+	// restated at two crossings. The orchestrator moves the whole ledger into the
+	// node's dispatch group, where duplicates across contributors are checked once
+	// every contributor has rendered.
 	//
 	// 🔴 The move happens after the node's ATTACHMENTS have rendered, and it has to:
 	// an attachment's render declares into this accumulator, so reading it any
 	// earlier snapshots it before those declarations arrive and drops them without
 	// a trace. Empty for a node that derived nothing and whose guest declared
 	// nothing, which leaves the check inert for it.
-	DerivedKeys types.OrderedMap[[]string]
-
-	// DerivedKeyRepeats carries the names one of this node's declarations held
-	// more than once inside a single one of its key spaces. It travels beside
-	// DerivedKeys rather than inside it because the merge above is what makes it
-	// unrecoverable: once two crossings' names sit in one list, a name declared
-	// twice by one crossing and a name restated at two crossings are the same
-	// pair of entries, and only the first is a failure. Recorded as each
-	// declaration arrives, and moved into the node's dispatch group alongside the
-	// declarations themselves.
-	DerivedKeyRepeats []derivedKeyRepeat
+	DerivedKeys derivedKeyLedger
 
 	// Trace is the per-node trace.Writer threaded from the orchestrator.
 	// nil-safe: a no-op writer when --trace is off, an async fs writer

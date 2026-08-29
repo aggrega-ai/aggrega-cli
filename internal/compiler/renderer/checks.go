@@ -291,6 +291,26 @@ func derivedNameCaption(contributorKind string, repeated bool) string {
 	return "derived by " + contributorKind
 }
 
+// derivedNameScopeCaption is the rule's word for the further coordinate that
+// completes a contributor's identity, spelled for the kind of contributor it
+// belongs to.
+//
+// The coordinate exists because the kind's own name does not always identify one
+// contributor: a component carries one attachment per key its author wrote, and a
+// feature instance name may be written at more than one boundary. Presenting it
+// bare would leave a reader with two quoted strings and no way to tell which is
+// which, so the caption says what the second one is in the words the author's own
+// document uses for it.
+//
+// The kind arrives as a fact and is not decided here, exactly as in the caption
+// above: the render classifies a contributor once, at the site that names one.
+func derivedNameScopeCaption(contributorKind string) string {
+	if contributorKind == producerKindFeature {
+		return "attached at boundary"
+	}
+	return "carrying attachment"
+}
+
 // AssemblyGroupDerivesEachNameOnce reports each contributor to a dispatch group
 // that derived a name another contributor to the same group also derived, or that
 // carried one name twice inside a single one of its own declarations.
@@ -387,17 +407,28 @@ var AssemblyGroupDerivesEachNameOnce = constraint.Check[
 				continue
 			}
 			for _, d := range run {
-				out = append(out, s.RaiseWith(
-					ErrDerivedKeyCollision(),
+				details := []constraint.DetailValue{
 					constraint.Uncaptioned(d.DerivedName),
 					constraint.Captioned("key space", d.KeySpace),
 					constraint.Captioned(
 						derivedNameCaption(d.ContributorKind, d.RepeatedWithinOneDeclaration),
 						d.Contributor,
 					),
+				}
+				// The further coordinate is presented only where there is one. A
+				// contributor its kind's own name identifies has none, and an empty
+				// captioned value would put a caption in front of nothing — which
+				// reads as a coordinate the author failed to supply rather than one
+				// that does not apply.
+				if d.ContributorScope != "" {
+					details = append(details, constraint.Captioned(
+						derivedNameScopeCaption(d.ContributorKind), d.ContributorScope))
+				}
+				details = append(details,
 					constraint.Captioned("provider", s.ProviderName()),
 					constraint.Captioned("dispatch path", s.AssemblyPath()),
-				))
+				)
+				out = append(out, s.RaiseWith(ErrDerivedKeyCollision(), details...))
 			}
 		}
 		return out

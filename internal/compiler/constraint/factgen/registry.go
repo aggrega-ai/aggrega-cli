@@ -198,7 +198,7 @@ var records = []recordDecl{
 		Name: "DerivedNameDeclaration",
 		Doc: "DerivedNameDeclaration is one contributor's declaration that it " +
 			"derived one name into one of its own key spaces: the space, the " +
-			"name, the contributor and what kind of contributor it is, and " +
+			"name, every coordinate that identifies the contributor, and " +
 			"whether a single one of that contributor's declarations carried " +
 			"the name more than once within that space.\n\nIt is one fact " +
 			"rather than several because no half of it answers anything alone. " +
@@ -218,6 +218,7 @@ var records = []recordDecl{
 			{Name: "DerivedName", Type: "string", Doc: "DerivedName is the name derived into that space, an opaque string the contributor derived."},
 			{Name: "Contributor", Type: "string", Doc: "Contributor is the authoring-level name of whatever derived the name: a component instance, or a feature instance attached to a boundary."},
 			{Name: "ContributorKind", Type: "string", Doc: "ContributorKind is what that contributor is in authoring terms, either a component or a feature, which is what says where its name is written."},
+			{Name: "ContributorScope", Type: "string", Doc: "ContributorScope is the further authored coordinate that completes the contributor's identity within what its kind names: the attachment key a component carries, or the path of the boundary a feature is attached at. It is empty where the kind's own name identifies the contributor on its own, which is the case for a component's own render. It is carried apart from Contributor rather than run together with it because the pair is compared as well as read: two contributors differing only in this coordinate have to arrive as two, and one joined string could fold them into one — leaving a name two of them derived compared against nothing."},
 			{Name: "RepeatedWithinOneDeclaration", Type: "bool", Doc: "RepeatedWithinOneDeclaration reports whether a single one of that contributor's declarations carried this name more than once inside this space, which is a failure of that contributor's own derivation rather than a meeting between two of them."},
 		},
 	},

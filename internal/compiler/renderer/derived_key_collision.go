@@ -21,6 +21,65 @@ import (
 // none of their files.
 const componentIDKeySpace = "component-id"
 
+// The two kinds of contributor a dispatch group has, in the author's own terms.
+// The kind is what says where a contributor's name is written — a component's
+// under the components the aggregate declares, a feature's under the features of
+// whatever it is attached to — so it is the word the halt leads with.
+const (
+	producerKindComponent = "component"
+	producerKindFeature   = "feature"
+)
+
+// derivedKeyProducer identifies one contributor to a dispatch group by every
+// coordinate an author wrote for it.
+//
+// 🔴 A producer label must carry every coordinate the derived value carries,
+// because the value is what gets compared and the producer is what decides
+// whether two values are compared at all. A coordinate the label drops does not
+// merely make a diagnostic vaguer: two contributors differing only in that
+// coordinate arrive under one label, the grouping reads one declarer where there
+// are two, and the two names it exists to compare are never compared. The check
+// then reports nothing, which is exactly what a build with no collision reports.
+//
+// The coordinates are held apart rather than run together into one string, and
+// that is the property rather than a matter of taste. A label built by joining
+// folds the same way any joined name does — a feature named `a@b` attached at
+// `c` and one named `a` attached at `b@c` reach one string — so a joined label
+// would reintroduce, one layer up, precisely the defect the composed identity
+// below it removes. Held apart, two producers are equal only where every
+// coordinate is, which is injective by construction and needs no encoding.
+//
+// name is the authoring-level name the halt reports for this kind of
+// contributor, and scope is the further coordinate that completes it: the
+// attachment key a component carries, or the path of the boundary a feature is
+// attached at. It is empty where the kind's own name identifies the contributor
+// on its own, which is the case for a component's own render.
+type derivedKeyProducer struct {
+	kind  string
+	name  string
+	scope string
+}
+
+// derivedKeyProducerFor composes the label identifying one contributor from the
+// coordinates an author wrote.
+//
+// It is the single home of that composition, and both sites that record a
+// declaration reach it rather than assembling a label of their own. A second
+// assembly would agree with this one on the day it was written and drift
+// afterwards — and a drifted producer label does not fail loudly, it simply
+// stops comparing two things that should have been compared, which is invisible
+// from every green build.
+//
+// The coordinates are taken as arguments rather than recovered from a node
+// identity the compiler built for its own routing. Reading them back out of such
+// a marker is what dropped one of them: the marker joins its parts with
+// characters that are also legal inside a part, so cutting it apart again cannot
+// return what went in. Every caller holds the parts already, so composing from
+// them is both exact and cheaper.
+func derivedKeyProducerFor(kind, name, scope string) derivedKeyProducer {
+	return derivedKeyProducer{kind: kind, name: name, scope: scope}
+}
+
 // declareDerivedKey records that the compiler itself derived one name into one
 // key space, folding it into an accumulator through the same merge a guest's
 // declaration takes.
@@ -45,20 +104,18 @@ func declareDerivedKey(into *types.OrderedMap[[]string], space, key string) []de
 }
 
 // derivedKeyDeclaration is one contributor's declaration that it derived one
-// name into one of its own key spaces: the space, the name, and the
-// authoring-level name of whatever derived it together with what kind of thing
-// that is.
+// name into one of its own key spaces: the space, the name, and the label
+// identifying whatever derived it.
 //
-// The kind and the name are held apart rather than as one composed label. A
-// reader spelling them into a sentence needs the kind as a word and the name as
-// a value it quotes itself, and a label carrying its own quotes would be quoted
-// again. Both come from the one classifier the render uses everywhere it names a
-// contributor.
+// The producer's coordinates stay inside the label rather than being flattened
+// here. A reader spelling them into a sentence needs each one as a value it
+// quotes itself, and a coordinate carrying its own quotes would be quoted again;
+// the comparison upstream needs them apart for the sharper reason given on
+// [derivedKeyProducer].
 type derivedKeyDeclaration struct {
-	space        string
-	key          string
-	producer     string
-	producerKind string
+	space    string
+	key      string
+	producer derivedKeyProducer
 }
 
 // derivedKeyRepeat is one name a single declaration carried more than once
@@ -132,12 +189,12 @@ type derivedKeySet struct {
 	repeats []derivedKeyDeclaration
 }
 
-// put records that producer, a contributor of kind producerKind, declared key in
-// space. Whether that declaration collides with another is not decided here: the
-// set answers what was declared and the rule declared over the grouping decides.
-func (s *derivedKeySet) put(space, key, producerKind, producer string) {
+// put records that producer declared key in space. Whether that declaration
+// collides with another is not decided here: the set answers what was declared
+// and the rule declared over the grouping decides.
+func (s *derivedKeySet) put(space, key string, producer derivedKeyProducer) {
 	s.entries = append(s.entries, derivedKeyDeclaration{
-		space: space, key: key, producer: producer, producerKind: producerKind,
+		space: space, key: key, producer: producer,
 	})
 }
 
@@ -158,16 +215,16 @@ func (s *derivedKeySet) put(space, key, producerKind, producer string) {
 func (s *derivedKeySet) putAll(
 	declared types.OrderedMap[[]string],
 	repeated []derivedKeyRepeat,
-	producerKind, producer string,
+	producer derivedKeyProducer,
 ) {
 	for space, keys := range declared.All() {
 		for _, key := range keys {
-			s.put(space, key, producerKind, producer)
+			s.put(space, key, producer)
 		}
 	}
 	for _, r := range repeated {
 		s.repeats = append(s.repeats, derivedKeyDeclaration{
-			space: r.space, key: r.key, producer: producer, producerKind: producerKind,
+			space: r.space, key: r.key, producer: producer,
 		})
 	}
 }
@@ -220,6 +277,80 @@ func mergeDerivedKeys(into *types.OrderedMap[[]string], declared types.OrderedMa
 	return repeated
 }
 
+// derivedKeyLedger accumulates the derived names one node is answerable for,
+// keeping each declaration under the producer within that node that made it.
+//
+// 🔴 A node is not one contributor. Its own render is one, and every feature
+// attachment it carries is another: an attachment has its own FeatureRecipe, its
+// own render crossings and its own derived names, and the author wrote it under a
+// key of its own. Accumulating all of them under the node alone puts a coordinate
+// the derived names carry outside the label they are compared by — and two
+// attachments on one component then become indistinguishable from one contributor
+// restating a name across two of its own crossings, which the group check rules
+// legitimate and passes over in silence. The ledger exists so the producer is
+// attached where its coordinates are still in hand rather than recovered later
+// from a node identity that never held them.
+//
+// It is a slice rather than a map, for two reasons of which the second is the
+// stronger. A node carries few contributors, so the scan costs nothing. And the
+// ledger is drained in the order its producers first declared, which is fixed by
+// the render order rather than by Go's map iteration — so what reaches the group
+// is a function of the input.
+type derivedKeyLedger struct {
+	entries []derivedKeyLedgerEntry
+}
+
+// derivedKeyLedgerEntry is everything one producer within a node has declared:
+// the names merged across that producer's several render crossings, and the
+// names one of its single declarations carried more than once.
+type derivedKeyLedgerEntry struct {
+	producer derivedKeyProducer
+	declared types.OrderedMap[[]string]
+	repeats  []derivedKeyRepeat
+}
+
+// declare folds one render crossing's declaration into the accumulation for the
+// producer that made it, and keeps whatever that declaration repeated inside one
+// of its own spaces.
+//
+// Merging rather than replacing is the argument mergeDerivedKeys makes for a
+// node, applied one level finer: a single producer renders across more than one
+// crossing and each returns its own declaration.
+func (l *derivedKeyLedger) declare(producer derivedKeyProducer, declared types.OrderedMap[[]string]) {
+	e := l.entryFor(producer)
+	e.repeats = append(e.repeats, mergeDerivedKeys(&e.declared, declared)...)
+}
+
+// declareDerived records one name the compiler itself derived for a producer,
+// through the same merge a guest's declaration takes, so the two kinds of
+// declaration answer to one rule inside one space.
+func (l *derivedKeyLedger) declareDerived(producer derivedKeyProducer, space, key string) {
+	e := l.entryFor(producer)
+	e.repeats = append(e.repeats, declareDerivedKey(&e.declared, space, key)...)
+}
+
+// entryFor returns the accumulation for one producer, opening one the first time
+// that producer declares. Two producers are the same producer here exactly when
+// every coordinate of their labels agrees, which is the whole property this type
+// exists to preserve.
+func (l *derivedKeyLedger) entryFor(producer derivedKeyProducer) *derivedKeyLedgerEntry {
+	for i := range l.entries {
+		if l.entries[i].producer == producer {
+			return &l.entries[i]
+		}
+	}
+	l.entries = append(l.entries, derivedKeyLedgerEntry{producer: producer})
+	return &l.entries[len(l.entries)-1]
+}
+
+// into moves everything this node's producers declared into the set its dispatch
+// group is checked from, each under its own label.
+func (l *derivedKeyLedger) into(s *derivedKeySet) {
+	for _, e := range l.entries {
+		s.putAll(e.declared, e.repeats, e.producer)
+	}
+}
+
 // declarations is every declaration this group's contributors made, one entry
 // per contributor per name per space, each carrying whether one of that
 // contributor's own declarations held the name more than once.
@@ -246,23 +377,36 @@ func mergeDerivedKeys(into *types.OrderedMap[[]string], declared types.OrderedMa
 // does not arise today; reading the union rather than assuming it keeps the
 // answer from depending on that.
 //
-// The order is space, then name, then contributor kind, then contributor — a
-// total order derived from the declared strings alone. The walks that feed the
-// accumulator are not all fixed by the input: a boundary-scope feature's
-// declarations are reached through a plain Go map, whose iteration order is
-// randomised per run, so answering in arrival order would give identical input a
-// different sequence on different runs. Nothing here reaches rendered output, so
-// the ordered-map type would buy nothing and sorted order is the meaning wanted.
+// The order is space, then name, then the producer's coordinates in the order
+// they are declared on the label — a total order derived from the declared
+// strings alone. The walks that feed the accumulator are not all fixed by the
+// input: a boundary-scope feature's declarations are reached through a plain Go
+// map, whose iteration order is randomised per run, so answering in arrival
+// order would give identical input a different sequence on different runs.
+// Nothing here reaches rendered output, so the ordered-map type would buy
+// nothing and sorted order is the meaning wanted.
+//
+// 🔴 Two contributors are one contributor here exactly when every coordinate of
+// their labels agrees, which is what makes the grouping sound: the producer
+// travels as a value with its coordinates apart, so a pair differing in any one
+// of them cannot arrive as a single entry. A label flattened to one string on
+// the way in would put that soundness at the mercy of the flattening, and a
+// flattening that folded would silently merge two declarers into one — leaving
+// the rule below reading one contributor for a name that two derived, and
+// reporting nothing.
 //
 // Nothing here reads a name. A space is an opaque string its declarer chose, a
 // name is an opaque string its declarer derived, and this copies them out
 // unexamined — no format is recognised, no provider is named, and no name is
 // ever derived here.
 func (s *derivedKeySet) declarations() []constraint.DerivedNameDeclaration {
-	type entryKey struct{ space, key, kind, producer string }
+	type entryKey struct {
+		space, key string
+		producer   derivedKeyProducer
+	}
 	repeated := make(map[entryKey]bool, len(s.repeats))
 	for _, e := range s.repeats {
-		repeated[entryKey{space: e.space, key: e.key, kind: e.producerKind, producer: e.producer}] = true
+		repeated[entryKey{space: e.space, key: e.key, producer: e.producer}] = true
 	}
 
 	seen := make(map[entryKey]bool, len(s.entries)+len(s.repeats))
@@ -275,7 +419,7 @@ func (s *derivedKeySet) declarations() []constraint.DerivedNameDeclaration {
 		keys = append(keys, k)
 	}
 	for _, e := range s.entries {
-		record(entryKey{space: e.space, key: e.key, kind: e.producerKind, producer: e.producer})
+		record(entryKey{space: e.space, key: e.key, producer: e.producer})
 	}
 	for k := range repeated {
 		record(k)
@@ -291,10 +435,13 @@ func (s *derivedKeySet) declarations() []constraint.DerivedNameDeclaration {
 		if keys[i].key != keys[j].key {
 			return keys[i].key < keys[j].key
 		}
-		if keys[i].kind != keys[j].kind {
-			return keys[i].kind < keys[j].kind
+		if keys[i].producer.kind != keys[j].producer.kind {
+			return keys[i].producer.kind < keys[j].producer.kind
 		}
-		return keys[i].producer < keys[j].producer
+		if keys[i].producer.name != keys[j].producer.name {
+			return keys[i].producer.name < keys[j].producer.name
+		}
+		return keys[i].producer.scope < keys[j].producer.scope
 	})
 
 	out := make([]constraint.DerivedNameDeclaration, 0, len(keys))
@@ -302,8 +449,9 @@ func (s *derivedKeySet) declarations() []constraint.DerivedNameDeclaration {
 		out = append(out, constraint.DerivedNameDeclaration{
 			KeySpace:                     k.space,
 			DerivedName:                  k.key,
-			Contributor:                  k.producer,
-			ContributorKind:              k.kind,
+			Contributor:                  k.producer.name,
+			ContributorKind:              k.producer.kind,
+			ContributorScope:             k.producer.scope,
 			RepeatedWithinOneDeclaration: repeated[k],
 		})
 	}

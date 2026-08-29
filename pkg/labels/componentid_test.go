@@ -226,8 +226,11 @@ func TestBoundaryFeatureComponentID_ShorteningReservesAFixedRunAndKeepsTheHead(t
 	if boundaryFeatureInstanceReserve != 12 {
 		t.Errorf("the instance reserve is %d, and the derivation is documented as twelve", boundaryFeatureInstanceReserve)
 	}
-	if want := k8sLabelValueMaxLength - 3 - 3*2 - 12 - 3 - 6; boundaryFeatureContextReserve != want {
-		t.Errorf("the boundary-path budget is %d, want %d", boundaryFeatureContextReserve, want)
+	// Four regions is what a feature carrying a boundary path assembles — prefix,
+	// path, instance, digest — so three joins is what its budget pays for.
+	shippedBudget := boundaryFeatureContextReserve(4)
+	if want := k8sLabelValueMaxLength - 3 - 3*2 - 12 - 3 - 6; shippedBudget != want {
+		t.Errorf("the boundary-path budget is %d, want %d", shippedBudget, want)
 	}
 
 	instance := strings.Repeat("i", 40) + "TAIL"
@@ -243,8 +246,8 @@ func TestBoundaryFeatureComponentID_ShorteningReservesAFixedRunAndKeepsTheHead(t
 	if regions[0] != boundaryFeatureIDPrefix {
 		t.Errorf("the value opens with %q, want the prefix %q", regions[0], boundaryFeatureIDPrefix)
 	}
-	if want := strings.Repeat("c", boundaryFeatureContextReserve); regions[1] != want {
-		t.Errorf("the boundary-path region is %q, want the first %d written characters %q", regions[1], boundaryFeatureContextReserve, want)
+	if want := strings.Repeat("c", shippedBudget); regions[1] != want {
+		t.Errorf("the boundary-path region is %q, want the first %d written characters %q", regions[1], shippedBudget, want)
 	}
 	if want := strings.Repeat("i", boundaryFeatureInstanceReserve); regions[2] != want {
 		t.Errorf("the instance region is %q, want the first %d written characters %q", regions[2], boundaryFeatureInstanceReserve, want)
@@ -260,9 +263,66 @@ func TestBoundaryFeatureComponentID_ShorteningReservesAFixedRunAndKeepsTheHead(t
 	if len(shortRegions) != 4 {
 		t.Fatalf("%q split into %d regions, want four", short, len(shortRegions))
 	}
-	if len(shortRegions[1]) != boundaryFeatureContextReserve {
+	if len(shortRegions[1]) != shippedBudget {
 		t.Errorf("with a two-character instance the boundary-path region is %d characters, want the same %d as with a long one",
-			len(shortRegions[1]), boundaryFeatureContextReserve)
+			len(shortRegions[1]), shippedBudget)
+	}
+}
+
+// TestBoundaryFeatureContextReserve_DerivesItsJoinTermFromTheRegionsPassed is the
+// proof that the budget's join term is a function of what is being assembled
+// rather than a constant correct for one caller.
+//
+// The shipped composition assembles three regions or four, so the shape it never
+// exercises is a fifth and beyond — which is exactly the shape a second caller
+// would bring, and exactly where a fixed multiple silently stops being right. The
+// failure that arithmetic produces is not a less readable name: it is a value
+// LONGER than the target accepts, because the budget hands the flexible region
+// characters that the joins have already spent.
+//
+// The worst case at each arity is assembled by hand rather than driven through
+// the composition, because the composition has no way to assemble a fifth region
+// — which is the point. Every region carries its own reserve at full length: the
+// flexible one filled to its budget, the instance to its reserve, the prefix and
+// the digest as they stand, and any further region empty, since an empty region
+// still costs the join in front of it and so is the worst case for the term under
+// test.
+func TestBoundaryFeatureContextReserve_DerivesItsJoinTermFromTheRegionsPassed(t *testing.T) {
+	t.Parallel()
+
+	join := len(boundaryFeatureIDJoin)
+
+	// One more region costs exactly one more join, and nothing else moves.
+	for regions := 1; regions <= 8; regions++ {
+		got, next := boundaryFeatureContextReserve(regions), boundaryFeatureContextReserve(regions+1)
+		if got-next != join {
+			t.Errorf("going from %d regions to %d changes the budget by %d, want one join width %d",
+				regions, regions+1, got-next, join)
+		}
+	}
+
+	// The worst case an assembly of n regions can produce still fits the limit, at
+	// every arity including the ones no caller uses today.
+	//
+	// Four is where the budget starts being spent: three regions is the shipped
+	// shape for a feature attached at the top, which carries no flexible region at
+	// all and so cannot overrun whatever the budget says.
+	for regions := 4; regions <= 8; regions++ {
+		assembled := make([]string, 0, regions)
+		assembled = append(assembled, boundaryFeatureIDEncoding.Segment(boundaryFeatureIDPrefix))
+		assembled = append(assembled, strings.Repeat("c", boundaryFeatureContextReserve(regions)))
+		assembled = append(assembled, strings.Repeat("i", boundaryFeatureInstanceReserve))
+		for len(assembled) < regions-1 {
+			assembled = append(assembled, "")
+		}
+		assembled = append(assembled,
+			boundaryFeatureIDAbsentMark+strings.Repeat("f", boundaryFeatureDigestLength))
+
+		got := strings.Join(assembled, boundaryFeatureIDJoin)
+		if len(got) > k8sLabelValueMaxLength {
+			t.Errorf("an identity assembled from %d regions is %d characters, over the %d-character limit: %q",
+				regions, len(got), k8sLabelValueMaxLength, got)
+		}
 	}
 }
 
