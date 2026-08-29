@@ -199,6 +199,7 @@ spec:
               main:
                 infra:
                   storage_class: fast
+        db: {}
 `,
 			wantHalt: false,
 		},
@@ -218,6 +219,7 @@ spec:
               spare:
                 infra:
                   storage_class: fast
+        db: {}
 `,
 			wantHalt: true,
 		},
@@ -237,6 +239,8 @@ spec:
               main:
                 infra:
                   storage_class: fast
+        api: {}
+        db: {}
 `,
 			wantHalt: true,
 		},
@@ -257,6 +261,7 @@ spec:
                 target: db
                 infra:
                   storage_class: fast
+        db: {}
 `,
 			wantHalt: false,
 		},
@@ -274,6 +279,7 @@ spec:
           spare:
             infra:
               storage_class: fast
+    db: {}
 `,
 			wantHalt: true,
 		},
@@ -291,6 +297,7 @@ spec:
           main:
             infra:
               storage_class: fast
+    db: {}
 `,
 			wantHalt: false,
 		},
@@ -350,6 +357,7 @@ spec:
               main:
                 infra:
                   storage_class: fast
+        db: {}
 `
 	if err := buildWith(t, aggYAML, relYAML, ""); err != nil {
 		t.Fatalf("an entry on a switched-off component must be accepted; got %v", err)

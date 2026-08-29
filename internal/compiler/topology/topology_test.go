@@ -301,6 +301,7 @@ spec:
       components:
         x: {}
         y: {}
+        shared-cache: {}
 `
 	var agg types.Aggregate
 	if err := yaml.Unmarshal([]byte(aggYAML), &agg); err != nil {
@@ -315,8 +316,9 @@ spec:
 			Aggregate: &agg,
 			Release:   &rel,
 			BoundaryInfra: map[string]*resolver.BoundaryInfra{
-				"x": {BoundaryPath: "cluster"},
-				"y": {BoundaryPath: "cluster"},
+				"x":            {BoundaryPath: "cluster"},
+				"y":            {BoundaryPath: "cluster"},
+				"shared-cache": {BoundaryPath: "cluster"},
 			},
 		},
 	})

@@ -13,6 +13,6 @@ spec:
       annotations:
         aggrega.ai/namespace: "data-zone"
       components:
-        data.reader: {}
-        data.writer: {}
-        data.admin: {}
+        reader: {}
+        writer: {}
+        admin: {}

@@ -130,6 +130,19 @@ func integrationCatalog() resolver.CatalogLookup {
 // such a module's components render outside every declared boundary, so the shape
 // is one no real deployment can have and one no test should assert against.
 //
+// The boundary names every component the Aggregate declares at its top level for
+// that same reason, one level further in. A component the deployment places nowhere
+// draws its output location, sync wave, annotations and per-component
+// infrastructure from nowhere exactly as an unplaced module's components do, and
+// a Release leaving one unplaced is refused too. Deriving both surfaces from the
+// Aggregate is what keeps a fixture that gains a component or a module from
+// owing a matching edit here.
+//
+// An Aggregate grouping its components into subsystems is not derived from,
+// because no fixture in this file declares one. The omission is loud rather than
+// silent: such a fixture's components would be placed by nothing and the build
+// would halt naming each of them.
+//
 // The boundary context is wired by the resolver's own walk rather than
 // hand-assigned. A hand-built map would be a second derivation of what a resolve
 // computes, and the two would agree only for as long as nobody changed either —
@@ -139,6 +152,9 @@ func buildResolveResult(agg *types.Aggregate) *resolver.ResolveResult {
 	if agg != nil {
 		for module := range agg.Spec.Aggregates.All() {
 			local.Aggregates.Set(module, types.AggregateRouting{})
+		}
+		for component := range agg.Spec.Components.All() {
+			local.Components.Set(component, types.BoundaryComponent{})
 		}
 	}
 	boundaries := types.OrderedMap[types.Boundary]{}

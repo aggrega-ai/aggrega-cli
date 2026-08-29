@@ -801,6 +801,24 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 				Violations: placementErrs,
 			}
 		}
+
+		// The same rule one coordinate in, asked of every component the
+		// composition holds. It reads the placement written above, so this is the
+		// earliest point at which it can be asked of a routed component at all;
+		// and it is asked over the whole node set rather than the
+		// module-contributed part, which is why it is not folded into the
+		// sub-aggregate guard above.
+		componentErrs, err := guardComponentPlacement(ctx.Err, cfg, stageView)
+		if err != nil {
+			return nil, err
+		}
+		if len(componentErrs) > 0 {
+			return result, &resolver.MultiResolverError{
+				Entity:     "component placement",
+				Summary:    fmt.Sprintf("%d component placement violation(s)", len(componentErrs)),
+				Violations: componentErrs,
+			}
+		}
 	}
 
 	return result, nil

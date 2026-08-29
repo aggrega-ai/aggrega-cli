@@ -312,6 +312,32 @@ spec:
                 target: db
         db: {}
 `
+	// releaseBindingTheSocketBesideASibling is the same binding for the
+	// application that declares a second consumer. It is a fixture of its own
+	// rather than a widening of the one above, because that one is shared with an
+	// application declaring no sibling, and naming a component that application
+	// does not declare would replace the fault under test with a different one.
+	//
+	// It places every component its application declares, so the composition the
+	// rule is asked about is one a deployment could really produce: a component
+	// belonging to no boundary halts before any rule about sockets is reached.
+	releaseBindingTheSocketBesideASibling = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      directory: ./out
+      components:
+        api:
+          uses:
+            databases:
+              wired:
+                target: db
+        sibling: {}
+        db: {}
+`
 	// releaseConfiguringWithoutATarget writes an entry that names no target, so
 	// it configures a connection that must already exist rather than creating
 	// one.
@@ -479,7 +505,7 @@ func TestTheRequiredSocketRuleReadsEverySurfaceThatCanPopulateASocket(t *testing
 		{
 			name:     "the deployment binds the socket on a sibling component",
 			agg:      twoConsumersOneBound,
-			release:  releaseBindingTheSocket,
+			release:  releaseBindingTheSocketBesideASibling,
 			locators: []string{".spec.components.sibling.uses.databases"},
 		},
 	}

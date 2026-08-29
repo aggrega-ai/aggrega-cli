@@ -330,9 +330,12 @@ func TestBuild_ReleaseInfraMergesOntoExistingEdge(t *testing.T) {
 	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Infra: relInfra}))
 
 	rr := &resolver.ResolveResult{
-		Aggregate:     agg,
-		Release:       rel,
-		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+		Aggregate: agg,
+		Release:   rel,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{
+			"api": {BoundaryPath: "prod"},
+			"db":  {BoundaryPath: "prod"},
+		},
 	}
 	result, err := Build(BuildConfig{ResolveResult: rr})
 	if err != nil {
@@ -364,9 +367,12 @@ func TestBuild_ReleaseCreatesEdgeForUnmatchedSocket(t *testing.T) {
 
 	rel := mkReleaseUses("api", relSocketAlias("caches", "primary", types.ReleaseUsesEntry{Target: "cache"}))
 	rr := &resolver.ResolveResult{
-		Aggregate:     agg,
-		Release:       rel,
-		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+		Aggregate: agg,
+		Release:   rel,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{
+			"api":   {BoundaryPath: "prod"},
+			"cache": {BoundaryPath: "prod"},
+		},
 	}
 	result, err := Build(BuildConfig{ResolveResult: rr})
 	if err != nil {
@@ -399,9 +405,13 @@ func TestBuild_ReleaseConflictingTargetHalts(t *testing.T) {
 
 	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Target: "other"}))
 	rr := &resolver.ResolveResult{
-		Aggregate:     agg,
-		Release:       rel,
-		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+		Aggregate: agg,
+		Release:   rel,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{
+			"api":   {BoundaryPath: "prod"},
+			"db":    {BoundaryPath: "prod"},
+			"other": {BoundaryPath: "prod"},
+		},
 	}
 	_, err := Build(BuildConfig{ResolveResult: rr})
 	if !errors.Is(err, ErrReleaseEdgeRetarget()) {
@@ -424,9 +434,12 @@ func TestBuild_ReleaseSameTargetConfigures(t *testing.T) {
 	relInfra.Set("x", 1)
 	rel := mkReleaseUses("api", relSocketAlias("databases", "db", types.ReleaseUsesEntry{Target: "db", Infra: relInfra}))
 	rr := &resolver.ResolveResult{
-		Aggregate:     agg,
-		Release:       rel,
-		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+		Aggregate: agg,
+		Release:   rel,
+		BoundaryInfra: map[string]*resolver.BoundaryInfra{
+			"api": {BoundaryPath: "prod"},
+			"db":  {BoundaryPath: "prod"},
+		},
 	}
 	result, err := Build(BuildConfig{ResolveResult: rr})
 	if err != nil {
@@ -504,9 +517,14 @@ func TestBuild_ReleaseEdgeSliceDeterministic(t *testing.T) {
 		rel := mkReleaseUses("api", ru)
 
 		rr := &resolver.ResolveResult{
-			Aggregate:     agg,
-			Release:       rel,
-			BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
+			Aggregate: agg,
+			Release:   rel,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{
+				"api":   {BoundaryPath: "prod"},
+				"db":    {BoundaryPath: "prod"},
+				"cache": {BoundaryPath: "prod"},
+				"queue": {BoundaryPath: "prod"},
+			},
 		}
 		result, err := Build(BuildConfig{ResolveResult: rr})
 		if err != nil {

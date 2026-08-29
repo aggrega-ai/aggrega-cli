@@ -219,3 +219,28 @@ var errUnplacedSubModule = cerrors.Register("compiler-topology/unplaced-sub-modu
 	ShortCode: "E0076",
 	Message:   "sub-module placed in no boundary: route it into a boundary under `aggregates`, or name its components there under `components`",
 })
+
+// ErrUnplacedComponent fires when a component the composition holds is placed in
+// no boundary at all. A Release places a component two ways and both count:
+// naming it under a boundary's `components`, under the id it carries once the
+// composition is flattened, or routing the sub-module that contributes it in
+// under `aggregates`, which places every component that module contains. A
+// component reaching neither is rendered outside every boundary the deployment
+// declared, so its output location, sync wave, annotations and per-component
+// infrastructure all come from nowhere.
+//
+// It halts rather than warning for the reason its sub-module counterpart does:
+// the alternative is a silent one, where the build succeeds, the artifacts are
+// emitted, and nothing says the operator's boundary configuration was never
+// applied to them (Invariant 4). Two components split across that line render
+// into separate outputs and lose the ordering they carry when placed together.
+//
+// A Release that declares top-level `components` rather than named boundaries
+// does not fire it. Normalizing such a Release gives it a boundary of its own
+// holding exactly those components, so every component it names is placed.
+func ErrUnplacedComponent() error { return errUnplacedComponent }
+
+var errUnplacedComponent = cerrors.Register("compiler-topology/unplaced-component", cerrors.Meta{
+	ShortCode: "E0260",
+	Message:   "component placed in no boundary: name it under a boundary's `components`, or place the sub-module that contributes it under `aggregates`",
+})

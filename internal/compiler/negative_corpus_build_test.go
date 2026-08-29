@@ -80,6 +80,36 @@ spec:
 `
 }
 
+// dictatingCorpusRelease places BOTH components the dictating Aggregate declares.
+//
+// The base Release names only `api`, and a component the deployment places in no
+// boundary is refused during topology construction — ahead of the edge pass whose
+// verdict the rows below exist to pin. A row pairing the dictating Aggregate with
+// the base Release would therefore carry a second, incidental fault and would
+// halt on that one instead, so it would keep failing while covering nothing.
+func dictatingCorpusRelease() string {
+	return `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: corpus-rel
+  environment: dev
+  version: "1.0.0"
+spec:
+  aggregate: corpus-app
+  manifest: corpus-manifest
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        api:
+          infra:
+            replicas: 1
+        api2:
+          infra:
+            replicas: 1
+`
+}
+
 // minimal workspace documents — a single api Component on the compose
 // provider, wired through a one-line Aggregate / Manifest / Release. The
 // base builds green (proven by the positive control below).
@@ -242,6 +272,7 @@ func TestNegativeCorpusBuild_UsesInjectWithinAllowlistBuilds(t *testing.T) {
 	wf := baseWorkspaceFiles()
 	wf.component = socketedCorpusComponent("      inject: [env]\n")
 	wf.aggregate = dictatingCorpusAggregate("env")
+	wf.release = dictatingCorpusRelease()
 	if _, err := pipelinetest.BuildE(t, writeMinimalWorkspace(t, wf)); err != nil {
 		t.Fatalf("an edge dictating a mechanism the socket allowlists must build; got: %v", err)
 	}
@@ -297,6 +328,12 @@ spec:
 		// Default-scopes mutual exclusivity (Aggregate side, symmetric to the
 		// Release XOR): top-level components AND named subsystems both non-empty
 		// is rejected at the envelope gate's not/allOf. No new sentinel.
+		//
+		// The subsystem's `worker` is deliberately left out of the Release's
+		// boundary. This document is rejected as it loads, so no topology is ever
+		// built from it and no rule over a component's placement is ever asked
+		// about it; naming `worker` in a boundary would assert a deployment for a
+		// reading of the document the product never forms.
 		{name: "aggregate-components-and-subsystems-both", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -354,12 +391,14 @@ spec: {}
 			// `fil` is `file` less one character: a mechanism an author could plausibly
 			// mistype, not a string no allowlist would ever hold.
 			wf.aggregate = dictatingCorpusAggregate("fil")
+			wf.release = dictatingCorpusRelease()
 		}},
 		{name: "uses-inject-on-black-box-socket", want: ir.ErrUsesInjectForbidden(), mutate: func(wf *workspaceFiles) {
 			// No `inject:` on the socket at all — the Black-Box declaration, which
 			// permits no dictation rather than permitting every mechanism.
 			wf.component = socketedCorpusComponent("")
 			wf.aggregate = dictatingCorpusAggregate("env")
+			wf.release = dictatingCorpusRelease()
 		}},
 		// Default-scopes mutual exclusivity: a Release declaring BOTH a
 		// top-level components surface AND named boundaries is rejected at the

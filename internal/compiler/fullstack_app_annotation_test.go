@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -109,17 +110,69 @@ func TestFullstackApp_AnnotationRecursiveBoundary(t *testing.T) {
 	)
 }
 
+// assertBoundaryReachedTheOutput proves the boundary a Release declares actually
+// applied to what the pair rendered: every file lands under the boundary's
+// declared directory, and each carries the boundary's own annotation.
+//
+// It exists because byte-identity between the two halves of a pair does not
+// establish it. A boundary whose `components` keys name nothing places nothing,
+// and a component nothing placed renders outside every boundary — with no
+// directory, no annotation, and an empty boundary path. Two Releases in that
+// state still agree with each other byte for byte, so the pair assertion passes
+// over output that carries none of what the Releases declare. This asserts the
+// declaration reached the artifacts, which is the part agreement cannot show.
+func assertBoundaryReachedTheOutput(t *testing.T, r *fullstackAppResult, dir, annotated string) {
+	t.Helper()
+	if len(r.Files) == 0 {
+		t.Fatalf("the variant rendered no files; there is nothing for the boundary to have reached")
+	}
+	paths := make([]string, 0, len(r.Files))
+	for p := range r.Files {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		if !strings.HasPrefix(p, dir+"/") {
+			t.Fatalf("every artifact must render under the boundary's declared directory %q; %q does not (all: %v)", dir, p, paths)
+		}
+		if !bytes.Contains(r.Files[p], []byte(annotated)) {
+			t.Fatalf("artifact %q must carry what the boundary annotates (%q); it does not:\n%s",
+				p, annotated, headBytes(r.Files[p], 400))
+		}
+	}
+}
+
+// runPlacedAnnotationVariant is runPairedAnnotationVariant for a pair whose
+// Releases declare a boundary, adding the assertion that the boundary reached
+// the output on both halves.
+func runPlacedAnnotationVariant(t *testing.T, explicitRelease, annotationRelease, dir, annotated string) {
+	t.Helper()
+	explicit := runFullstackAppVariant(t, variantFixture{
+		name:        "helm-synthesized",
+		releasePath: explicitRelease,
+	})
+	annotation := runFullstackAppVariant(t, variantFixture{
+		name:        "helm-synthesized",
+		releasePath: annotationRelease,
+	})
+	assertBoundaryReachedTheOutput(t, explicit, dir, annotated)
+	assertBoundaryReachedTheOutput(t, annotation, dir, annotated)
+	assertPairedDistByteIdentical(t, explicit, annotation)
+}
+
 func TestFullstackApp_AnnotationAggregateSubsystem(t *testing.T) {
-	runPairedAnnotationVariant(t,
+	runPlacedAnnotationVariant(t,
 		"testdata/fullstack-app/releases/annotation-aggregate-subsystem.yaml",
 		"testdata/fullstack-app/releases/annotation-aggregate-subsystem-annotation.yaml",
+		"dist/data", "namespace: data-zone",
 	)
 }
 
 func TestFullstackApp_AnnotationAggregateComponentOverride(t *testing.T) {
-	runPairedAnnotationVariant(t,
+	runPlacedAnnotationVariant(t,
 		"testdata/fullstack-app/releases/annotation-aggregate-override.yaml",
 		"testdata/fullstack-app/releases/annotation-aggregate-override-annotation.yaml",
+		"dist/data", "namespace: data-zone",
 	)
 }
 

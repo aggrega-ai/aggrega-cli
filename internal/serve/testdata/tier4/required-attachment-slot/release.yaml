@@ -12,4 +12,5 @@ spec:
       directory: ./dist/main
       components:
         unbound: {}
+        bound: {}
         overreaching: {}

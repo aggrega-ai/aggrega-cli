@@ -372,3 +372,159 @@ spec:
 		}
 	})
 }
+
+// TestPlacementRulesDivideTheGroundAndEachReportsOnce proves the two placement
+// rules cover the ground between them without either reporting what the other
+// already reported.
+//
+// The case that separates a correct pair from a naive one is a module the
+// deployment placed nowhere: it is one authoring fault with one remedy at one
+// key, and a component rule that did not pass a module's own components would
+// report it once for the module and again for every component the module
+// contributed. The first row pins that it is reported once.
+//
+// The second row is the ground the module rule does not cover at all — a
+// component of the application's own document, which belongs to no module and so
+// is reported by nothing until the component rule exists.
+//
+// The third row is the exclusion's own cost, asserted rather than left implied:
+// a module the deployment placed only in part passes both rules, because the
+// module rule reads the module as placed and the component rule passes every
+// component a module contributed. Both rules staying silent here is the
+// behaviour, not an oversight.
+func TestPlacementRulesDivideTheGroundAndEachReportsOnce(t *testing.T) {
+	t.Parallel()
+
+	const rootWithModule = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: demo
+spec:
+  aggregates:
+    mod:
+      type: ./mod.yaml
+`
+	// Two components, so a rule reporting per component rather than per module
+	// would report twice where one report is right.
+	const twoComponentModule = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: mod
+spec:
+  components:
+    consumer:
+      type: app/svc:1.0.0
+      uses:
+        databases:
+          main:
+            target: store
+    store:
+      type: app/db:1.0.0
+`
+	// No module at all: both components are the application's own, and the
+	// boundary names one of them.
+	const rootWithOwnComponents = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: demo
+spec:
+  components:
+    api:
+      type: app/svc:1.0.0
+      uses:
+        databases:
+          main:
+            target: db
+    db:
+      type: app/db:1.0.0
+`
+	const boundaryPlacingNothing = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      directory: ./out
+`
+	const boundaryNamingOnlyTheConsumer = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      directory: ./out
+      components:
+        api: {}
+`
+	const boundaryNamingOneModuleComponent = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: demo-prod
+spec:
+  boundaries:
+    prod:
+      directory: ./out
+      components:
+        mod.store: {}
+`
+
+	cases := []struct {
+		name       string
+		root       string
+		module     string
+		release    string
+		sentinel   error
+		wantFields []string
+	}{
+		{
+			name:       "a module placed nowhere is reported once, at the module and not per component",
+			root:       rootWithModule,
+			module:     twoComponentModule,
+			release:    boundaryPlacingNothing,
+			sentinel:   ErrUnplacedSubModule(),
+			wantFields: []string{".spec.aggregates.mod"},
+		},
+		{
+			name:       "a component of the application's own document is reported once, by the component rule",
+			root:       rootWithOwnComponents,
+			release:    boundaryNamingOnlyTheConsumer,
+			sentinel:   ErrUnplacedComponent(),
+			wantFields: []string{".spec.components.db"},
+		},
+		{
+			name:    "a module placed in part is passed by both rules",
+			root:    rootWithModule,
+			module:  twoComponentModule,
+			release: boundaryNamingOneModuleComponent,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := buildWith(t, tc.root, tc.release, tc.module)
+			if tc.sentinel == nil {
+				if err != nil {
+					t.Fatalf("both rules must pass this shape; got %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.sentinel) {
+				t.Fatalf("the halt must carry the named rule; got %v", err)
+			}
+			var multi *resolver.MultiResolverError
+			if !errors.As(err, &multi) {
+				t.Fatalf("the halt must carry its violations; got %T", err)
+			}
+			got := make([]string, 0, len(multi.Violations))
+			for _, v := range multi.Violations {
+				got = append(got, v.Field)
+			}
+			if !slices.Equal(got, tc.wantFields) {
+				t.Fatalf("one fault must be reported once, at the key its author edits; want %v, got %v", tc.wantFields, got)
+			}
+		})
+	}
+}
