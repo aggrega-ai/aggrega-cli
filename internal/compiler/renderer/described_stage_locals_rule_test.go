@@ -671,3 +671,167 @@ func TestTheDescribedPresentationAnswersTheTwoAuthoredLocalsFacts(t *testing.T) 
 		t.Errorf("a key the Recipe does not declare answers %q, want empty", got)
 	}
 }
+
+// TestOneSharedBlocksFaultNamesEveryComponentItWasReachedThrough is the proof for
+// the caption that tells repeated findings apart.
+//
+// # What it measures
+//
+// One authored locals block, bound by several components, carrying one offending
+// entry. Every component that binds it yields a finding, so the criterion is that
+// the findings are as many as the components, that each names a different one, and
+// that between them they name every component — a set difference rather than a
+// count, since two sides short by one still agree on a count.
+//
+// # Why the messages are compared with the component removed
+//
+// The load-bearing property is not that the component appears somewhere: it is
+// that the component is the ONLY thing separating these findings. They are about
+// one authored entry in one document, so they share a position and every other
+// value. Cutting each message at the caption and requiring the remainders to be
+// identical states exactly that, and it is a claim the comparison can contradict —
+// a rule that varied anything else would leave the remainders differing.
+func TestOneSharedBlocksFaultNamesEveryComponentItWasReachedThrough(t *testing.T) {
+	t.Parallel()
+
+	nodes := []string{"alpha", "bravo", "charlie"}
+	const offending, legal = "first", "second"
+	// "first" reads "second", which the block declares BELOW it — one offender per
+	// component, and the same authored text for every one of them, which is what
+	// makes this the shared-document case rather than several documents.
+	byKey := map[string]string{}
+	for _, node := range nodes {
+		byKey[node+"/"+offending] = "{{ .locals." + legal + " }}"
+		byKey[node+"/"+legal] = "static"
+	}
+	axes := localsAxis{nodes: nodes, keys: []string{offending, legal}, file: "shared-recipe"}
+
+	reads := 0
+	err := runAuthoredLocalsRule(
+		context.Background(),
+		constraint.DescribedView(authoredLocalsFacts{
+			declared: []string{offending, legal}, byKey: byKey, reads: &reads,
+		}),
+		axes,
+	)
+	if err == nil {
+		t.Fatal("the walk admitted a block whose every component carries a refused entry")
+	}
+	leaves := haltLeafMessages(err)
+	if len(leaves) != len(nodes) {
+		t.Fatalf("the walk produced %d finding(s) for %d component(s) binding one faulty block; "+
+			"a count that is not one per component means they were folded or the walk reached fewer",
+			len(leaves), len(nodes))
+	}
+
+	// Which component each finding names, and the remainder once that is cut away.
+	const caption = `reached through the component "`
+	named := map[string]bool{}
+	remainders := map[string][]string{}
+	for _, msg := range leaves {
+		at := strings.Index(msg, caption)
+		if at < 0 {
+			t.Fatalf("a finding does not name the component it was reached through: %s", msg)
+		}
+		rest := msg[at+len(caption):]
+		end := strings.Index(rest, `"`)
+		if end < 0 {
+			t.Fatalf("the component caption is not closed: %s", msg)
+		}
+		component := rest[:end]
+		if named[component] {
+			t.Errorf("two findings name the same component %q; they cannot be told apart", component)
+		}
+		named[component] = true
+		stripped := msg[:at] + msg[at+len(caption)+end+1:]
+		remainders[stripped] = append(remainders[stripped], component)
+	}
+	for _, node := range nodes {
+		if !named[node] {
+			t.Errorf("no finding names the component %q, so its author is not told it is affected", node)
+		}
+	}
+	// The component is the only difference: one remainder, shared by every finding.
+	if len(remainders) != 1 {
+		t.Errorf("the findings differ in %d way(s) besides the component; the caption is supposed to be "+
+			"the whole of what separates them: %v", len(remainders), remainders)
+	}
+	for _, msg := range leaves {
+		t.Logf("FINDING %s", msg)
+	}
+}
+
+// TestBothNodeLocalsRulesWordTheComponentCaptionIdentically holds the two
+// conditions to one wording, which is the half of single-sourcing a test can
+// observe.
+//
+// The two rules report different faults and compose their own details, so a copy
+// of the caption in either would be invisible from any message assertion that only
+// looked for the component. Comparing the wording the two produce fails the moment
+// one is reworded and the other is not.
+//
+// # What this deliberately does NOT establish
+//
+// Agreement is what a copy also produces on the day it is written, so this cannot
+// show the caption has one home. That is established off the code instead: the
+// wording occurs once outside the tests, and every rule rendering it resolves to
+// the one function composing it.
+//
+// The two rules keyed at a boundary are absent here, and their absence is enforced
+// by the compiler rather than by this test: such a block is written once against a
+// boundary and reaches every component the boundary holds, so it has no repeated
+// finding to separate and no single component it could name.
+func TestBothNodeLocalsRulesWordTheComponentCaptionIdentically(t *testing.T) {
+	t.Parallel()
+
+	const node = "alpha"
+	byKey := map[string]string{
+		node + "/forward": "{{ .locals.later }}",
+		node + "/later":   "static",
+		node + "/unknown": "{{ .locals.absent }}",
+	}
+	// captionOf returns the words the rule put in front of the quoted component,
+	// taken from the finding rather than typed here — a hand-typed expectation
+	// would be the very copy the shared composition exists to prevent.
+	captionOf := func(t *testing.T, keys []string) string {
+		t.Helper()
+		reads := 0
+		err := runAuthoredLocalsRule(
+			context.Background(),
+			constraint.DescribedView(authoredLocalsFacts{
+				declared: []string{"forward", "later", "unknown"}, byKey: byKey, reads: &reads,
+			}),
+			localsAxis{nodes: []string{node}, keys: keys, file: "shared-recipe"},
+		)
+		if err == nil {
+			t.Fatal("the rule admitted the offending entry, so nothing here is measured")
+		}
+		leaves := haltLeafMessages(err)
+		if len(leaves) != 1 {
+			t.Fatalf("the fixture produced %d finding(s); want exactly one", len(leaves))
+		}
+		quoted := `"` + node + `"`
+		at := strings.LastIndex(leaves[0], quoted)
+		if at < 0 {
+			t.Fatalf("the finding does not name the component at all: %s", leaves[0])
+		}
+		// Back up to the separator the composition puts between detail values, so
+		// what is compared is this value's own caption and not the whole message.
+		head := leaves[0][:at]
+		if sep := strings.LastIndex(head, ", "); sep >= 0 {
+			head = head[sep+2:]
+		}
+		return strings.TrimSpace(head)
+	}
+
+	ordering := captionOf(t, []string{"forward", "later"})
+	naming := captionOf(t, []string{"unknown"})
+	if ordering == "" {
+		t.Fatal("the component was raised with no caption at all; a bare identifier in a captioned list reads as noise")
+	}
+	if ordering != naming {
+		t.Errorf("the two rules word the component caption differently, so one of them carries its own copy:\n"+
+			"  ordering rule: %q\n  naming rule:   %q", ordering, naming)
+	}
+	t.Logf("both rules caption the component as %q", ordering)
+}

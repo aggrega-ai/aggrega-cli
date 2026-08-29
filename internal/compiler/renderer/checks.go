@@ -860,6 +860,47 @@ func localsResolvedAt(declared []string, key string) []string {
 	return declared[:at]
 }
 
+// boundThroughComponent is the part of a subject the caption below reads, and
+// declaring it as an interface rather than taking each kind in turn is what makes
+// one caption serve every rule that can carry it.
+//
+// A kind carrying no component cannot be passed here at all, so a rule that must
+// not caption a component is excluded by the compiler rather than by a convention
+// somebody has to keep. That exclusion has one member and it is deliberate: the
+// two rules over a locals block a boundary-scope attachment declares are keyed by
+// the boundary, because such a block is written once and reaches every component
+// the boundary holds. One authored block is asked about once there, so those two
+// have no repeated finding to tell apart and no single component to name — and a
+// caption naming one would be false for every other component the boundary holds.
+type boundThroughComponent interface{ NodeID() string }
+
+// componentReachedThrough is the captioned detail naming the component a finding
+// was reached through.
+//
+// # Why one function rather than the caption written at each rule
+//
+// The rules that carry it compose their details at their own raise, so writing
+// the caption at each one would be several copies agreeing on the day they were
+// written, with nothing comparing the wording afterwards. Composed here, the
+// words and the decision to say them at all have one home, and a reword reaches
+// every rule that calls it or none of them.
+//
+// # Why the finding needs it
+//
+// One document can be bound by many components, so one authored mistake in it is
+// reported once per component that binds it — and every one of those findings
+// carries the same position, because they are all about the same authored entry
+// in the same document. Without this the reader gets that message repeated with
+// nothing to tell the copies apart, and cannot say which of their components are
+// affected. The position answers where the mistake is; this answers which
+// component each finding is about.
+//
+// The value is the component's own identifier, which is what the author writes
+// in the Aggregate and what a Release addresses it by.
+func componentReachedThrough(s boundThroughComponent) constraint.DetailValue {
+	return constraint.Captioned("reached through the component", s.NodeID())
+}
+
 // LocalsEntryReadsNoLaterSibling reports each local whose template reads a sibling
 // the same block declares BELOW it.
 //
@@ -892,9 +933,20 @@ func localsResolvedAt(declared []string, key string) []string {
 // that applies to every other occurrence is wrong for exactly that one. A registered
 // sentence would state the wrong remedy at whichever class it did not describe.
 //
-// The node and the key are not in the detail, because the locator carries both: the
-// finding is positioned at the Recipe's own locals entry, which is what an author
-// edits.
+// The key is not in the detail, because the locator carries it: the finding is
+// positioned at the Recipe's own locals entry, which is what an author edits. The
+// component is not in the locator and is captioned instead, which is what the
+// caption below exists for.
+//
+// # One authored mistake, one finding per component, and why they are not merged
+//
+// The rule is invoked once per component that binds the block, so one mistake in a
+// Recipe several components share is reported once for each of them. That is not a
+// duplicate to be filtered out: each finding stands for a different component, and
+// merging them would tell the reader that something is wrong without saying which
+// of their components it reaches. The findings share a position because they share
+// an authored entry; the caption is what tells them apart. Anything added here to
+// collapse them would take that back.
 var LocalsEntryReadsNoLaterSibling = constraint.Check[
 	constraint.DescribedView,
 	constraint.NodeLocalsKeySubject,
@@ -922,6 +974,7 @@ var LocalsEntryReadsNoLaterSibling = constraint.Check[
 			constraint.Captioned("the key it names is", ref.Key),
 			constraint.Captioned("resolved at this point",
 				gotmpl.LocalsReadablePhrase(localsResolvedAt(declared, s.LocalsKey()))),
+			componentReachedThrough(s),
 		)}
 	},
 }
@@ -946,7 +999,10 @@ var LocalsEntryReadsNoLaterSibling = constraint.Check[
 //
 // Its detail names the offending expression bare, and captions the key that does
 // not exist and the keys the block does declare — so the correction is readable
-// from the finding, which is the whole of what a naming fault needs.
+// from the finding, which is the whole of what a naming fault needs. It captions
+// the component last, for the reason the ordering rule above states: one mistake
+// in a shared block is reported once per component that binds it, and nothing
+// else in the message separates those findings.
 var LocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
 	constraint.DescribedView,
 	constraint.NodeLocalsKeySubject,
@@ -968,6 +1024,7 @@ var LocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
 			constraint.Uncaptioned(ref.Path),
 			constraint.Captioned("the missing key is", ref.Key),
 			constraint.Captioned("the block declares", gotmpl.LocalsDeclaredList(declared)),
+			componentReachedThrough(s),
 		)}
 	},
 }
@@ -994,9 +1051,12 @@ var LocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
 // the naming rule beside this one reports.
 //
 // Its detail carries what the node's own form carries and for the same reasons: the
-// offending expression bare, the key it names captioned, and the locals readable at
-// this point captioned. The remedy travels with the occurrence because a
-// self-reference is this same condition and no reordering fixes that one.
+// offending expression bare, the key it names captioned, the locals readable at
+// this point captioned, and the component the attachment sits on captioned last —
+// one FeatureRecipe is bound by attachments on many components, so the repetition
+// this last one separates is the same repetition, one document further out. The
+// remedy travels with the occurrence because a self-reference is this same
+// condition and no reordering fixes that one.
 var AttachmentLocalsEntryReadsNoLaterSibling = constraint.Check[
 	constraint.DescribedView,
 	constraint.NodeAttachmentLocalsKeySubject,
@@ -1020,6 +1080,7 @@ var AttachmentLocalsEntryReadsNoLaterSibling = constraint.Check[
 			constraint.Captioned("the key it names is", ref.Key),
 			constraint.Captioned("resolved at this point",
 				gotmpl.LocalsReadablePhrase(localsResolvedAt(declared, s.LocalsKey()))),
+			componentReachedThrough(s),
 		)}
 	},
 }
@@ -1058,6 +1119,7 @@ var AttachmentLocalsEntryReadsOnlyDeclaredSiblings = constraint.Check[
 			constraint.Uncaptioned(ref.Path),
 			constraint.Captioned("the missing key is", ref.Key),
 			constraint.Captioned("the block declares", gotmpl.LocalsDeclaredList(declared)),
+			componentReachedThrough(s),
 		)}
 	},
 }
