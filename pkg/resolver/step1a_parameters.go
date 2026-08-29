@@ -10,10 +10,12 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"text/template/parse"
 
 	"github.com/Masterminds/sprig/v3"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -660,10 +662,53 @@ func enumMatches(allowed []any, value any) bool {
 	return false
 }
 
+// predicateValueRoot is the one name a validate: predicate reaches the value
+// under validation through. It spells the key the predicate context delivers AND
+// the reference that context admits, so what a predicate is handed and what it
+// may name cannot come to disagree.
+const predicateValueRoot = "value"
+
+// refusePredicateUnknownRoot halts a validate: predicate that names something the
+// predicate context does not define, before the predicate runs.
+//
+// Without it such a predicate does not fail in a way that names the mistake. The
+// template layer resolves an undefined name to nothing, and what the author is
+// then told depends on where that nothing lands: it may surface as a predicate
+// that rendered neither true nor false, and it may instead render "false" and be
+// reported as the VALUE failing validation — which tells an author their data is
+// wrong when it is their predicate that is. Naming the reference, and the set it
+// was measured against, is what separates the two.
+//
+// References come from the shared reference walk, which attributes a reference to
+// the context root conservatively. That is the only polarity an allow-list may
+// use: a reference the walk does not attribute is simply not checked, whereas
+// attributing one wrongly refuses legal authoring — a field read inside a range
+// body over the value, or the trailing key of a chained fallback, is not a
+// reference to a root and must not be treated as one.
+//
+// Only the ROOT is checked. What sits beneath .value is authored data whose shape
+// the parameter contract does not declare, so a key under it has no declared set
+// to be measured against and is left to the evaluation.
+func refusePredicateUnknownRoot(tree parse.Node) error {
+	for _, ref := range gotmpl.CollectRootRefs(tree) {
+		if ref.Segs[0] == predicateValueRoot {
+			continue
+		}
+		return fmt.Errorf(
+			"references %q, which a validate: predicate does not define; it defines .%s",
+			ref.Path, predicateValueRoot)
+	}
+	return nil
+}
+
 // evalValidatePredicate compiles the validate template against the value
 // (bound as .value) and Sprig functions. The template must render to one
 // of the truthy/falsy literals "true" / "false" — anything else returns an
 // error from the predicate evaluator.
+//
+// A predicate naming anything other than .value is refused before it runs, so a
+// mistyped reference is reported as the naming mistake it is rather than through
+// whatever its empty resolution happens to produce.
 func evalValidatePredicate(predicate string, value any) (bool, error) {
 	tmpl, err := template.New("validate").
 		Funcs(sprig.FuncMap()).
@@ -671,8 +716,11 @@ func evalValidatePredicate(predicate string, value any) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("parse: %w", err)
 	}
+	if err := refusePredicateUnknownRoot(tmpl.Tree.Root); err != nil {
+		return false, err
+	}
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, map[string]any{"value": value}); err != nil {
+	if err := tmpl.Execute(&buf, map[string]any{predicateValueRoot: value}); err != nil {
 		return false, fmt.Errorf("execute: %w", err)
 	}
 	switch buf.String() {
