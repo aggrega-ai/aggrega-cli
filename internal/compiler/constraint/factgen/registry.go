@@ -2022,10 +2022,14 @@ var facts = []factDecl{
 			"the other.\n\nThe second result is what a rule over placement " +
 			"turns on, and it is not a convenience. A component nothing placed " +
 			"is emitted outside every boundary the deployment declared, which " +
-			"is a defect the build otherwise reports nowhere; distinguishing it " +
-			"from a component placed in a boundary whose own path happens to be " +
-			"empty is what lets the rule name the first and pass the " +
-			"second.\n\nThe path is the boundary's own nesting path rather than " +
+			"is a defect the build otherwise reports nowhere, so a rule needs to " +
+			"be able to name it.\n\nAn empty boundary path reports as unplaced " +
+			"rather than as a placement carrying no path, and the two are " +
+			"deliberately one answer: a component whose boundary path is empty " +
+			"renders in the position an unplaced one does, taking its output " +
+			"location, sync wave and annotations from the same nowhere, and earns " +
+			"the same report. A caller wanting to tell the two apart cannot do it " +
+			"from this fact.\n\nThe path is the boundary's own nesting path rather than " +
 			"one authored key, because boundaries nest and two boundaries at " +
 			"different depths may carry one name.",
 	},
