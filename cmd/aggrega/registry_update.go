@@ -189,7 +189,15 @@ and digest are unchanged, so an unchanged registry costs a round of cheap digest
 resolves rather than a full re-read of every repository's manifest and referrers.
 Use --upgrade to ignore the cached validators and re-read every repository — this
 picks up a change a conditional refresh skips, such as a deprecation marker added
-to an existing version whose digest did not change.`,
+to an existing version whose digest did not change.
+
+Each published version's deprecation markers are read as the walk goes, and the ones
+whose own signature verifies are recorded into the index. Every marker met is
+reported, whether or not it was recorded, and each registry reports how many markers
+its index now records — including when that number is zero. Where signature
+verification is disabled for a registry, the walk reports that its markers were not
+examined rather than a count, so a registry that published nothing is never confused
+with one this run had no basis to judge.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())
@@ -324,7 +332,23 @@ func updateHostIndex(ctx context.Context, cfg workspaceconfig.Config, root, cach
 	if err := writeHostIndex(root, cacheDir, idx, now().UTC()); err != nil {
 		return 0, err
 	}
+	reportDeprecationScan(out, cfg, policy, host, idx)
 	return len(idx.Records), nil
+}
+
+// reportDeprecationScan states the outcome of the host's deprecation-marker scan,
+// which the per-marker notices alone cannot: they are written only when there is a
+// marker to write about, so on their own an empty walk and a walk that never looked
+// produce the same silence. The two are different facts — one says the registry
+// published no honored marker, the other says this run had no trust basis to judge
+// one — and an operator who attached a marker and sees neither notice needs to know
+// which of them happened.
+func reportDeprecationScan(out io.Writer, cfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig, host string, idx RegistryIndex) {
+	if !deprecationScanEnabled(cfg, policy) {
+		fmt.Fprintf(out, "Deprecation markers not examined for %s: signature verification is disabled for this registry\n", host)
+		return
+	}
+	fmt.Fprintf(out, "Recorded %d deprecation markers from %s\n", countRecordedDeprecations(idx), host)
 }
 
 // loadPriorRecords loads the previous per-host index records keyed by URI, so a
@@ -561,6 +585,12 @@ func equalStrings(a, b []string) bool {
 // index with no withdrawal, having attached one, and nothing would say why. The note
 // mirrors the closure discovery pass, which reports the same condition in the same
 // words.
+//
+// A marker that IS honored is noted on the same footing, in the same shape, naming
+// the severity value the marker's author recorded. Reporting only the failures would
+// invert which outcome is audible: recording many markers would pass in silence while
+// declining one would announce itself, and an operator watching the walk could not
+// tell a registry that published no marker from a run that recorded a dozen.
 func collectVersionDeprecations(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -570,7 +600,7 @@ func collectVersionDeprecations(
 	versions []string,
 	out io.Writer,
 ) []VersionDeprecation {
-	if wsCfg.SkipSignatureVerification || policy.SkipSignatureVerification {
+	if !deprecationScanEnabled(wsCfg, policy) {
 		return nil
 	}
 	var deprecations []VersionDeprecation
@@ -593,9 +623,34 @@ func collectVersionDeprecations(
 			fmt.Fprintf(out, "  deprecation: %s:%s: marker present but not honored (%v); not recorded\n", repo, version, err)
 			continue
 		}
+		fmt.Fprintf(out, "  deprecation: %s:%s: marker present and honored (%s); recorded\n", repo, version, marker.Severity)
 		deprecations = append(deprecations, VersionDeprecation{Version: version, Marker: marker, Signer: signer})
 	}
 	return deprecations
+}
+
+// deprecationScanEnabled reports whether this run examines a host's published
+// versions for deprecation markers at all. Verification switched off — globally or
+// for this one registry — means there is no trust basis on which a marker could be
+// recorded, so the walk does not look.
+//
+// It is the single definition of that condition. The scan reads it to decide whether
+// to look, and the walk's summary reads the same function to decide which of the two
+// outcomes it is reporting, so "no marker was recorded" and "no version was examined"
+// cannot come to disagree about which of them happened.
+func deprecationScanEnabled(wsCfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) bool {
+	return !wsCfg.SkipSignatureVerification && !policy.SkipSignatureVerification
+}
+
+// countRecordedDeprecations totals the deprecation markers a host's assembled index
+// records across every repository, so the walk can state the outcome of its scan
+// rather than leaving the operator to infer it from the absence of notices.
+func countRecordedDeprecations(idx RegistryIndex) int {
+	n := 0
+	for _, rec := range idx.Records {
+		n += len(rec.Deprecations)
+	}
+	return n
 }
 
 // recordFromAnnotations assembles an IndexRecord from a repository's latest

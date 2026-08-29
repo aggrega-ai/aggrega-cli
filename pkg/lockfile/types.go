@@ -123,23 +123,32 @@ type DeprecationRecord struct {
 //
 // Field declaration order is alphabetical to drive yaml.v3's canonical
 // key emission, matching the Lockfile-wide discipline.
+//
+// It is the one signature-fact shape, and it is encoded into two documents
+// rather than one: the lockfile, as YAML in the snake_case that document uses
+// throughout, and the local registry index, as JSON in the lowerCamel that
+// document uses throughout. Both encodings are declared here, on the single
+// type, so the two cannot come to describe the same recorded fact under
+// different key names. Each field's optionality is decided once and expressed
+// identically in both: an empty identity or issuer — the keyed case — is
+// omitted from either encoding rather than written as an empty value.
 type VerifiedSignature struct {
 	// BundleDigest is the SHA-256 (sha256:...) of the cached signature
 	// bundle blob stored in the closure. It both names the cache blob and
 	// is the integrity gate for an air-gapped re-verify.
-	BundleDigest string `yaml:"bundle_digest"`
+	BundleDigest string `yaml:"bundle_digest" json:"bundleDigest"`
 	// Identity is the verified signer of the signature: the certificate
 	// subject for a keyless signature, or a stable fingerprint of the
 	// pinned public key for a keyed signature. It records which signer
 	// matched, and is the value the same-signer check compares across a
 	// plugin's entity and its .wasm artifact.
-	Identity string `yaml:"identity,omitempty"`
+	Identity string `yaml:"identity,omitempty" json:"identity,omitempty"`
 	// Issuer is the verified OIDC issuer for a keyless signature (empty
 	// for keyed).
-	Issuer string `yaml:"issuer,omitempty"`
+	Issuer string `yaml:"issuer,omitempty" json:"issuer,omitempty"`
 	// Mode is "keyless" or "keyed" — the verification mode that admitted
 	// the signature.
-	Mode string `yaml:"mode"`
+	Mode string `yaml:"mode" json:"mode"`
 }
 
 // ExternalInput pins one remote input a render consumed: the URL requested
