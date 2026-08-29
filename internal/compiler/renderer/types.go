@@ -246,8 +246,10 @@ type ProvidesContext struct {
 	// AttachmentName is the attachment instance name, populated for every
 	// attachment FeatureRecipe's provides evaluation so its provides templates
 	// may name the instance they are resolving for. Empty for a base Recipe's
-	// provides, whose self-containment check declares this root a narrowing of
-	// this type (a base provides referencing the attachment name still halts).
+	// provides, which declares this root a narrowing of this type: both the rule
+	// over the entry as authored and the evaluation that renders it read that one
+	// narrowing, so a base provides referencing the attachment name halts from
+	// either of them rather than from whichever runs first.
 	//
 	// The template key mirrors the field name: it is the published spelling
 	// catalog FeatureRecipes read in their `provides` templates, and the two

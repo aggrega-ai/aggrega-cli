@@ -13,21 +13,26 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// providesScope is the reference set a provides template is checked against, and
-// the rule declared over a base Recipe's provides entries is what evaluates it.
+// providesScope is the reference set a base Recipe's provides template is checked
+// against, and both surfaces over that authored text read it: the rule declared
+// over the entry as written, and the evaluation that renders it. One statement of
+// what the surface admits, consulted by both, is what keeps them from agreeing
+// only for as long as one of them keeps running first.
+//
 // The universe is ProvidesContext — the same type the provides pass evaluates
 // against — so the roots the scope admits are exactly the surface that pass
 // exposes, and .context is gated one level down by ProvidesContextBlock's own
 // fields rather than by a second list beside it. A field added to that block
 // therefore becomes reachable from a provides template with no edit here.
 //
-// One root the type defines is excluded, and the reason is ordering rather than
-// taste: attachment_name. No attachment is being resolved during a base Recipe's
-// provides pass, so the name would render empty. The exclusion is deliberately
-// kept a narrowing — the type carries the field because the attachment
-// FeatureRecipe path populates it, and this surface refuses it because its own
-// pass cannot. Removing it from the exclude set would reopen a silent-empty
-// render rather than simplify anything.
+// One root the type defines is excluded, and the reason is stage ordering rather
+// than taste: attachment_name. No attachment is being resolved during a
+// base Recipe's provides pass, so the reference has no name to resolve to and
+// would reach the emitted artifact as a value nobody authored. The exclusion is
+// deliberately kept a narrowing — the type carries the field because the
+// attachment FeatureRecipe path populates it, and this surface refuses it
+// because its own pass cannot. Removing it from the exclude set would reopen
+// that render rather than simplify anything.
 //
 // .locals is admitted, and admitting it is also an ordering property: a node's
 // locals are resolved in the pass preamble, ahead of that node's provides, so a
@@ -56,7 +61,9 @@ var providesScope = templateScope{
 // resolved so far, so a local may read an earlier sibling; a provides template
 // receives the same node-local data plus the node's whole resolved .locals. A
 // provides template naming a local the block does not declare halts rather than
-// rendering empty. Returns
+// rendering empty, and one naming a root this surface does not admit halts here
+// as well as at the rule declared over the same authored text — so the refusal
+// holds whichever of the two a build reaches first. Returns
 // the resolved provides and the resolved locals per node — the locals travel out of
 // this pass rather than being recomputed downstream, so the render passes and the
 // assertion pass read one evaluation.
@@ -117,10 +124,15 @@ func EvaluateAllProvides(
 			Locals:  nodeLocals,
 		}
 
-		// Evaluate each provides template in author order
+		// Evaluate each provides template in author order, against the scope this
+		// surface declares rather than against the context type alone. It is the
+		// same scope the rule declared over the same authored text reads, so what
+		// the surface admits is one statement both of them consult rather than two
+		// that agree while one of them happens to run first.
 		resolved := types.OrderedMap[string]{}
 		for key, tmplText := range recipe.Spec.Provides.All() {
-			val, err := evalTemplateString(tmplText, pCtx, fmt.Sprintf("provides[%q]", key))
+			val, err := evalValueTemplate(
+				fmt.Sprintf("provides[%q]", key), tmplText, providesScope.with(pCtx), "{{", "}}")
 			if err != nil {
 				return nil, nil, cerrors.Wrap(ErrProvidesEvaluation(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 					cerrors.ComposeMessage(ErrProvidesEvaluation(), []string{
@@ -136,12 +148,6 @@ func EvaluateAllProvides(
 	}
 
 	return allProvides, allLocals, nil
-}
-
-// evalTemplateString evaluates a Go template string with Sprig functions.
-// Uses toLowercaseMap for consistent lowercase field names in templates.
-func evalTemplateString(tmplText string, data any, name string) (string, error) {
-	return EvalTemplate(name, tmplText, data)
 }
 
 // flattenOrderedStringMap copies an OrderedMap[string] into a plain
