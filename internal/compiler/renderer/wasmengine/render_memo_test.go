@@ -72,7 +72,7 @@ func mustResolve(t *testing.T, lookup pluginpath.Lookup, uri string) pluginpath.
 func minimalSynthWorkload() *types.Workload {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Ports.Set("web", 8080)
+	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
 	svc := types.ServiceSpec{Type: "ClusterIP"}
 	svc.Ports.Set("web", 8080)
