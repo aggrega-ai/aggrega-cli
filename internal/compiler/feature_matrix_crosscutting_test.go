@@ -305,11 +305,49 @@ func TestFeatureMatrix_CrossCutting(t *testing.T) {
 	})
 }
 
+// collisionEnvelopeOf finds the categorised frame a grouping rule builds when it
+// raises more than one finding: the frame whose wrapped value is a join of the
+// findings themselves. It walks to that frame rather than taking the outermost
+// one, so an assertion stays about the condition's own shape and does not move
+// when a caller wraps the halt in a frame naming the step that was running.
+//
+// It returns a nil frame and no findings where the chain carries no such frame,
+// which is what a single-finding halt looks like — a caller distinguishes the
+// two rather than being handed an empty set that reads like a satisfied rule.
+func collisionEnvelopeOf(err error) (*cerrors.CompilerError, []error) {
+	for cur := err; cur != nil; cur = stderrors.Unwrap(cur) {
+		frame, isFrame := cur.(*cerrors.CompilerError)
+		if !isFrame || frame == nil {
+			continue
+		}
+		if joined, isJoin := frame.Wrap.(interface{ Unwrap() []error }); isJoin {
+			return frame, joined.Unwrap()
+		}
+	}
+	return nil, nil
+}
+
 // testSentinelPathCollision exercises the dispatch-path uniqueness check
-// at orchestrator.go: two boundaries with distinct providers (helm +
-// compose) both override `subDirectory: merged` so their evaluated
-// dispatch paths converge on `dist/shared/merged`. The assembler refuses
-// to silently overwrite one provider's output with another's.
+// against a real two-provider collision: the api-net and db-net boundaries both
+// declare `directory: ./dist/shared` and `subDirectory: merged`, so their
+// evaluated dispatch paths converge on `dist/shared/merged` while one routes
+// through helm and the other through compose. The build refuses to let one
+// provider's output silently displace the other's.
+//
+// It asserts the SHAPE of the halt and not only its identity, because
+// aggrega-docs/language-reference/errors/fatal-halts.md quotes this condition's
+// report sentence, one of its findings, and a transcript of a build that trips
+// it — and nothing else holds that page to what a build emits.
+//
+// Three properties carry the quotation. The halt is a report over a set of
+// findings rather than one bare diagnostic: the rule fires only where more than
+// one provider reached one path, it is invoked once per provider at that path,
+// and every firing invocation raises at least one finding, so a collision that
+// halts at all produces at least two findings and can never take the
+// single-finding shape. Each finding names its own boundary and provider, so
+// the set names both sides of the collision rather than one of them. And the
+// findings arrive in one order for one input, which is what lets a page quote a
+// transcript at all — a change here is a change to what that page must say.
 func testSentinelPathCollision(t *testing.T) {
 	t.Parallel()
 	res, err := tryRunFeatureMatrixVariant(t, featureMatrixVariant{
@@ -320,7 +358,38 @@ func testSentinelPathCollision(t *testing.T) {
 		t.Fatalf("expected ErrPathCollision; got %d files rendered", len(res.Files))
 	}
 	if !stderrors.Is(err, renderer.ErrPathCollision()) {
-		t.Errorf("expected errors.Is(err, ErrPathCollision); got: %s", joinErrorChain(err))
+		t.Fatalf("expected errors.Is(err, ErrPathCollision); got: %s", joinErrorChain(err))
+	}
+
+	report, findings := collisionEnvelopeOf(err)
+	if report == nil {
+		t.Fatalf("expected a report frame wrapping a set of findings; got: %s", joinErrorChain(err))
+	}
+	const wantReport = "assembly paths reached by more than one provider"
+	if report.Message != wantReport {
+		t.Errorf("report message = %q; want %q", report.Message, wantReport)
+	}
+	if report.Category != cerrors.OpsError {
+		t.Errorf("report category = %q; want %q", report.Category, cerrors.OpsError)
+	}
+
+	want := []string{
+		`dispatch path produced multiple provider outputs ("dist/shared/merged", boundary "db-net", provider "compose")`,
+		`dispatch path produced multiple provider outputs ("dist/shared/merged", boundary "api-net", provider "helm")`,
+	}
+	if len(findings) != len(want) {
+		t.Fatalf("findings = %d; want %d (one per contributing boundary, at least two): %s",
+			len(findings), len(want), joinErrorChain(err))
+	}
+	for i, finding := range findings {
+		var frame *cerrors.CompilerError
+		if !stderrors.As(finding, &frame) {
+			t.Errorf("finding %d is not a categorised diagnostic: %s", i, joinErrorChain(finding))
+			continue
+		}
+		if frame.Message != want[i] {
+			t.Errorf("finding %d = %q; want %q", i, frame.Message, want[i])
+		}
 	}
 }
 
