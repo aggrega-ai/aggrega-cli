@@ -94,6 +94,15 @@ var newRepoDeprecationLookup = func(rw *workspaceconfig.ResolvedWorkspace, host 
 // with the version string as the deterministic tiebreak when two versions share
 // an issuedOn (the higher version wins), so the view is stable regardless of the
 // stored order. It reports the view and whether any marker was present.
+//
+// A record carrying no verified signature is not a candidate at all: the trust
+// test is honoredRecord, the same one the selection screen applies, so a report
+// and a refusal cannot come to disagree about whether a record may be acted on.
+// EVERY severity survives that test. A display and a screen differ on severity by
+// design — an advisory deprecation is exactly what a reader browsing an entity
+// wants to be told and exactly what must not change which version a build takes —
+// so mirroring the screen's severity filter here would hide the advisory
+// severities and report only the strongest one.
 func latestDeprecationView(deps []VersionDeprecation) (deprecationView, bool) {
 	var (
 		best     deprecation.Marker
@@ -103,6 +112,9 @@ func latestDeprecationView(deps []VersionDeprecation) (deprecationView, bool) {
 		found    bool
 	)
 	for _, d := range deps {
+		if !honoredRecord(d) {
+			continue
+		}
 		t, has := d.Marker.IssuedOnTime()
 		if !found || laterMarker(has, t, d.Version, bestHas, bestTime, bestVer) {
 			best, bestVer, bestTime, bestHas, found = d.Marker, d.Version, t, has, true
@@ -120,18 +132,38 @@ func latestDeprecationView(deps []VersionDeprecation) (deprecationView, bool) {
 	}, true
 }
 
-// lookupComponentDeprecation resolves the latest recorded deprecation marker for
-// a catalog Component from the local discovery index, best-effort. It returns
-// (zero, false) when the advisory is disabled (no local index or no registry) or
-// when no marker is recorded. The repository path derives from the single
-// OCI-location rule so it matches where the component publishes. It is a
-// package-level seam so inspect tests exercise the surfacing without a cache.
-var lookupComponentDeprecation = func(rw *workspaceconfig.ResolvedWorkspace, componentName string) (deprecationView, bool) {
+// lookupEntityDeprecation resolves the latest recorded deprecation marker for a
+// catalog entity of ANY kind from the local discovery index, best-effort. It
+// returns (zero, false) when the advisory is disabled (no local index or no
+// registry) or when no honored marker is recorded. It is a package-level seam so
+// inspect tests exercise the surfacing without a cache.
+//
+// The three arguments are the entity's identity as the location rule takes it: the
+// kind, the scope segment kinds that carry one contribute (a recipe's capability,
+// a plugin's pluginType) and the rest leave empty, and the bare identity name. They
+// are read from the RESOLVED entity rather than from the identifier a person typed,
+// because catalog resolution accepts a version-pinned identifier: deriving the
+// location from the typed string would produce a repository path carrying a version
+// suffix, which no index holds. That miss is indistinguishable from "not withdrawn"
+// — the surface would report nothing and look correct — so the derivation takes the
+// entity's own identity, which carries no version.
+//
+// The path itself comes from the single OCI-location rule, the same one push
+// publishes through and a registry-backed pull binds through, so the advisory reads
+// the repository the entity actually publishes to for every kind.
+//
+// The registry is the workspace's default one, which is the whole of where a bare
+// catalog identity resolves from: every entity-pull entrypoint binds a bare
+// identity through the configured default registry, so the default registry's index
+// is the index for the artifact this identity names. Reading a second registry's
+// index would report a marker recorded against a different artifact that merely
+// shares a repository path.
+var lookupEntityDeprecation = func(rw *workspaceconfig.ResolvedWorkspace, kind, provider, name string) (deprecationView, bool) {
 	lookup := newRepoDeprecationLookup(rw, rw.Config().DefaultRegistry)
 	if lookup == nil {
 		return deprecationView{}, false
 	}
-	return lookup(catalog.OCILocation("Component", "", componentName))
+	return lookup(catalog.OCILocation(kind, provider, name))
 }
 
 // renderDeprecationBlock writes a multi-line deprecation notice for an inspected

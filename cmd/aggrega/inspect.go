@@ -298,7 +298,7 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 // SchemaLibrary, MappingLibrary, WorkloadLibrary, ArtifactsLibrary — returning the first identity match.
 //
 // A Component match keeps its dedicated render path: the merged schema +
-// usesSchema view plus a best-effort deprecation advisory. Every other kind is
+// usesSchema view. Every other kind is
 // handed to the same per-kind inspector the file-path branch uses (via the
 // kindRenderers table), so a bare identifier and a standalone file of the same
 // entity render identically. For the pure-unmarshal kinds the matched in-memory
@@ -308,6 +308,13 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 // byte source uniformly across kinds. Aggregate is the exception: its inspector
 // runs the topology pass over the entity read from its source file, so it
 // receives the retained source path and authored bytes rather than a re-marshal.
+//
+// Every kind carries the same best-effort withdrawal advisory, read from the
+// local registry index at the location that kind publishes to. It is reported
+// after the entity itself, for every kind this function resolves, so a withdrawn
+// artifact never presents as an ordinary one — the advisory follows from
+// resolving, not from the kind. A missing or unreadable index shows nothing:
+// inspect never fails on the advisory.
 //
 // No match in any kind is a clear not-found naming the identifier and stating it
 // matched no catalog entity of any kind — the bare identifier is not assumed to
@@ -338,69 +345,151 @@ func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier stri
 	}
 	lookup := cat.CatalogLookup()
 
-	// Component is first and keeps its render path exactly: the structured
-	// schema view plus the best-effort deprecation probe. A probe failure
-	// degrades to showing nothing — inspect never fails on the deprecation probe.
+	// Component is first and keeps its own render path: the structured schema
+	// view. Its withdrawal advisory is the shared one every other kind gets.
 	if comp, found := lookup.Component(identifier); found {
 		if err := renderComponentStructured(comp, identifier, opts); err != nil {
 			return err
 		}
-		if v, ok := lookupComponentDeprecation(rw, identifier); ok {
-			renderDeprecationBlock(opts.out, v)
-		}
+		reportEntityWithdrawal(rw, entityIdentity{kind: "Component", name: comp.Metadata.Name}, opts)
 		return nil
 	}
 
 	// Remaining kinds resolve through the version-aware catalog accessors; the
-	// first match wins in the fixed precedence below.
+	// first match wins in the fixed precedence below. Each names the identity the
+	// withdrawal advisory is looked up by — read from the resolved entity, never
+	// from the typed identifier, which may carry a version the location has none.
 	if p, ok := lookup.Plugin(identifier); ok {
-		return renderCatalogMatch(rw, "Plugin", identifier, p, catalogDirs, opts)
+		return renderCatalogMatch(rw, entityIdentity{"Plugin", p.Metadata.PluginType, p.Metadata.Name}, identifier, p, catalogDirs, opts)
 	}
 	if f, ok := lookup.Feature(identifier); ok {
-		return renderCatalogMatch(rw, "Feature", identifier, f, catalogDirs, opts)
+		return renderCatalogMatch(rw, entityIdentity{kind: "Feature", name: f.Metadata.Name}, identifier, f, catalogDirs, opts)
 	}
 	if r, ok := cat.RecipeByURI(identifier); ok {
-		return renderCatalogMatch(rw, "Recipe", identifier, r, catalogDirs, opts)
+		return renderCatalogMatch(rw, entityIdentity{"Recipe", r.Spec.Capability, r.Metadata.Name}, identifier, r, catalogDirs, opts)
 	}
 	if fr, ok := cat.FeatureRecipeByURI(identifier); ok {
-		return renderCatalogMatch(rw, "FeatureRecipe", identifier, fr, catalogDirs, opts)
+		return renderCatalogMatch(rw, entityIdentity{"FeatureRecipe", fr.Spec.Capability, fr.Metadata.Name}, identifier, fr, catalogDirs, opts)
 	}
 	// Aggregate is a resolved-instance kind: its inspector reads the entity from
 	// a filesystem path to run the topology pass, unlike the pure-unmarshal
 	// renderers that read the passed bytes. The catalog-resolved match carries
 	// the retained source path and authored bytes, so it is dispatched directly
 	// rather than through a re-marshal.
+	//
+	// The catalog records that path relative to the workspace root, because a
+	// machine-stable provenance string is what the IR wants. The inspector opens
+	// it as a filesystem path, which resolves against the process working
+	// directory — so the relative form only finds the file when the command is
+	// run from the workspace root, and fails from any subdirectory of the same
+	// workspace. Anchoring it here, at the site that knows the root the path is
+	// relative TO, is what makes a bare Aggregate identifier resolve from
+	// anywhere in the workspace, as every other kind already does.
 	if ra, ok := cat.AggregateLookup()(identifier); ok {
-		return kindRenderers["Aggregate"](rw, ra.Path, ra.Bytes, catalogDirs, opts)
+		if err := kindRenderers["Aggregate"](rw, workspaceAnchoredPath(wsRoot, ra.Path), ra.Bytes, catalogDirs, opts); err != nil {
+			return err
+		}
+		reportEntityWithdrawal(rw, entityIdentity{kind: "Aggregate", name: ra.Aggregate.Metadata.Name}, opts)
+		return nil
 	}
 	if lib, ok := cat.SchemaLibraries[identifier]; ok {
-		return renderCatalogMatch(rw, "SchemaLibrary", identifier, lib, catalogDirs, opts)
+		return renderCatalogMatch(rw, entityIdentity{kind: "SchemaLibrary", name: lib.Metadata.Name}, identifier, lib, catalogDirs, opts)
 	}
 	if lib, ok := cat.MappingLibraries[identifier]; ok {
-		return renderCatalogMatch(rw, "MappingLibrary", identifier, lib, catalogDirs, opts)
+		return renderCatalogMatch(rw, entityIdentity{kind: "MappingLibrary", name: lib.Metadata.Name}, identifier, lib, catalogDirs, opts)
 	}
 	if lib, ok := cat.WorkloadLibraries[identifier]; ok {
-		return renderCatalogMatch(rw, "WorkloadLibrary", identifier, lib, catalogDirs, opts)
+		return renderCatalogMatch(rw, entityIdentity{kind: "WorkloadLibrary", name: lib.Metadata.Name}, identifier, lib, catalogDirs, opts)
 	}
 	if lib, ok := cat.ArtifactsLibraries[identifier]; ok {
-		return renderCatalogMatch(rw, "ArtifactsLibrary", identifier, lib, catalogDirs, opts)
+		return renderCatalogMatch(rw, entityIdentity{kind: "ArtifactsLibrary", name: lib.Metadata.Name}, identifier, lib, catalogDirs, opts)
 	}
 	return fmt.Errorf("%q matched no catalog entity of any kind", identifier)
 }
 
-// renderCatalogMatch re-marshals a catalog-resolved entity to YAML and
-// dispatches it through the kind's file-path inspector, which re-unmarshals into
-// the same typed struct. It is the bare-name analogue of inspectPath for the
-// pure-unmarshal kinds: the render logic is shared with the file branch, so a
-// bare identifier and a standalone file of the same entity render identically.
-// The identifier stands in for the file path (used only in the inspectors'
-// error strings and YAML round-trip diagnostics, never read from disk).
-func renderCatalogMatch(rw *workspaceconfig.ResolvedWorkspace, kind, identifier string, entity any, catalogDirs []string, opts inspectOptions) error {
+// workspaceAnchoredPath resolves a catalog-recorded source path — which the
+// catalog stores relative to the workspace root — into a path a filesystem read
+// resolves the same way from anywhere. An already-absolute path is returned
+// unchanged, and so is one carried on an empty root, since neither has a root to
+// be anchored against.
+//
+// It is the inverse of the relative rendering the catalog applies on the way in,
+// and it exists because the two forms answer different questions: the relative one
+// is a machine-stable provenance string, while a read needs a locatable path. A
+// consumer that reads the provenance string as though it were the second gets a
+// file-not-found whose cause is the working directory rather than the file.
+func workspaceAnchoredPath(workspaceRoot, path string) string {
+	if path == "" || workspaceRoot == "" || filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(workspaceRoot, path)
+}
+
+// entityIdentity is a resolved catalog entity's identity in the form the OCI
+// location rule takes it: the kind, the scope segment (a Recipe's or
+// FeatureRecipe's capability, a Plugin's pluginType — empty for every kind that
+// carries none), and the bare identity name.
+//
+// It exists so the per-kind derivation is stated once per kind, at the branch that
+// resolved the entity and therefore holds the typed value to read it from. The
+// alternative — re-deriving the scope segment further down from the identifier a
+// person typed — cannot work: a Recipe identifier is capability-scoped and
+// version-pinnable, so re-parsing it would rebuild by hand what the resolver
+// already decided, and would rebuild it differently for the kinds whose identifier
+// shape and identity shape differ.
+type entityIdentity struct {
+	kind     string
+	provider string
+	name     string
+}
+
+// reportEntityWithdrawal writes the withdrawal advisory for a resolved entity, or
+// nothing when no honored marker is recorded against it. It is best-effort by
+// construction: the lookup degrades to reporting nothing on an absent or unreadable
+// index, so inspect never fails on the advisory.
+//
+// It is the one place the catalog-identity branch reports a withdrawal, so every
+// kind reports on identical grounds. A kind added to the resolution ladder without
+// one of these calls would render its entity and stay silent about a recorded
+// withdrawal — the exact silence this exists to remove — which is why the shared
+// dispatch below carries the call rather than leaving it to each branch.
+//
+// The machine-readable emission carries no advisory. Under --output yaml the
+// subject is a YAML document a consumer parses; a text block appended after it
+// would break that parse, and folding the advisory into the document would assert
+// a field the entity does not have. The advisory belongs to the text surface,
+// where it is read by a person.
+func reportEntityWithdrawal(rw *workspaceconfig.ResolvedWorkspace, id entityIdentity, opts inspectOptions) {
+	if opts.output == outputYAML {
+		return
+	}
+	if v, ok := lookupEntityDeprecation(rw, id.kind, id.provider, id.name); ok {
+		renderDeprecationBlock(opts.out, v)
+	}
+}
+
+// renderCatalogMatch re-marshals a catalog-resolved entity to YAML, dispatches it
+// through the kind's file-path inspector (which re-unmarshals into the same typed
+// struct), and reports any withdrawal recorded against the entity's published
+// location. It is the bare-name analogue of inspectPath for the pure-unmarshal
+// kinds: the render logic is shared with the file branch, so a bare identifier and
+// a standalone file of the same entity render identically. The identifier stands
+// in for the file path (used only in the inspectors' error strings and YAML
+// round-trip diagnostics, never read from disk).
+//
+// The withdrawal report is here rather than at each branch because this is the one
+// funnel every pure-unmarshal kind passes through: a kind reaches the advisory by
+// resolving, not by remembering to ask for it.
+func renderCatalogMatch(rw *workspaceconfig.ResolvedWorkspace, id entityIdentity, identifier string, entity any, catalogDirs []string, opts inspectOptions) error {
 	data, err := yaml.Marshal(entity)
 	if err != nil {
-		return fmt.Errorf("marshal %s %q: %w", kind, identifier, err)
+		return fmt.Errorf("marshal %s %q: %w", id.kind, identifier, err)
 	}
-	return kindRenderers[kind](rw, identifier, data, catalogDirs, opts)
+	if err := kindRenderers[id.kind](rw, identifier, data, catalogDirs, opts); err != nil {
+		return err
+	}
+	reportEntityWithdrawal(rw, id, opts)
+	return nil
 }
 
 // inspectReleaseFile loads a Release plus its referenced Aggregate and

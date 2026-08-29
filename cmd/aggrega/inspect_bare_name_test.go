@@ -115,6 +115,53 @@ func TestInspectBareName_Feature(t *testing.T) {
 	}
 }
 
+// bareNameAggregateFixture is a minimal catalog Aggregate whose single component
+// names the Component fixture above, so the topology pass its inspector runs has
+// a resolvable reference.
+const bareNameAggregateFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: storefront
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/api-server
+`
+
+// TestInspectBareName_Aggregate_ResolvesAwayFromTheWorkspaceRoot pins that a bare
+// Aggregate name resolves wherever the command is run from.
+//
+// The Aggregate branch is the one kind whose inspector reads a filesystem path
+// rather than the bytes it was handed, and the catalog records that path relative
+// to the workspace root — a machine-stable provenance string, not a locatable
+// path. Read as though it were locatable it resolves against the process working
+// directory, so it finds the file only when that directory IS the workspace root.
+//
+// The test process runs in the package directory while the workspace is a
+// temporary one elsewhere, so simply resolving the name here is the off-root case.
+// That is deliberate: it needs no process-wide directory change, which would reach
+// every test running concurrently.
+func TestInspectBareName_Aggregate_ResolvesAwayFromTheWorkspaceRoot(t *testing.T) {
+	t.Parallel()
+	catDir := writeBareNameCatalog(t, map[string]string{
+		"component.yaml": bareNameComponentFixture,
+		"aggregate.yaml": bareNameAggregateFixture,
+	})
+
+	var buf bytes.Buffer
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "storefront", []string{catDir}, testInspectOptions(&buf)); err != nil {
+		t.Fatalf("a bare Aggregate name should resolve from outside the workspace root; got: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Aggregate: storefront:1.0.0") {
+		t.Errorf("output missing the Aggregate header; got:\n%s", out)
+	}
+	if !strings.Contains(out, "core/api-server") {
+		t.Errorf("output missing the resolved component; got:\n%s", out)
+	}
+}
+
 // TestInspectBareName_Unresolvable pins the no-match failure mode: against a
 // catalog that loads cleanly, an identifier that names no catalog entity of any
 // kind returns a clear error naming the identifier — not a Component-only

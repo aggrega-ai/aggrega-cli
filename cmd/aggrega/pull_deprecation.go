@@ -545,18 +545,40 @@ type retractionScreen struct {
 	out        io.Writer
 }
 
+// honoredRecord reports whether a recorded deprecation entry rests on a verified
+// signature, and is therefore something a surface may act on at all.
+//
+// It is the one home of the trustworthiness half of the honored-withdrawal rule,
+// and it is separate from the severity half deliberately. A display and a
+// selection screen may legitimately differ on SEVERITY — an advisory deprecation
+// belongs on a surface a reader is browsing and not in a screen that decides what
+// a build resolves to — but they must not differ on whether a record is
+// trustworthy. Keeping the trust test in one place is what makes the second half
+// of that statement structural rather than a convention two call sites are asked
+// to remember.
+//
+// The record type is what makes the test necessary. The index writer records a
+// marker only once the marker's own signature verifies, so a freshly written
+// record always carries a signer — but the signer is a pointer precisely so a
+// record written before verification existed decodes without one. An unsigned
+// record can then only fail to act rather than act on unauthenticated evidence,
+// which is the safe direction on both surfaces.
+func honoredRecord(d VersionDeprecation) bool {
+	return d.Signer != nil
+}
+
 // withdrawnVersions reduces one artifact's recorded deprecations to the versions a
 // screen must exclude, mapped to the reason recorded against each.
 //
-// It is the one home of the honored-withdrawal rule, so every screen — whichever
-// source supplied its facts — excludes on exactly the same grounds. A softer
-// severity warns without changing what is selected, and an unverified record is not
-// a trust decision; both are skipped, and the second is why an unsigned record can
-// only ever fail to exclude rather than exclude on unauthenticated evidence.
+// It is the one home of the severity half of the honored-withdrawal rule, so every
+// screen — whichever source supplied its facts — excludes on exactly the same
+// grounds. A softer severity warns without changing what is selected. The trust
+// half is honoredRecord above, shared with the surfaces that report a record
+// rather than act on it.
 func withdrawnVersions(deps []VersionDeprecation) map[string]string {
 	var withdrawn map[string]string
 	for _, d := range deps {
-		if d.Signer == nil || d.Marker.Severity != deprecation.SeverityRetracted {
+		if !honoredRecord(d) || d.Marker.Severity != deprecation.SeverityRetracted {
 			continue
 		}
 		if withdrawn == nil {

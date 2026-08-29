@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -224,12 +225,21 @@ func (s *tagListingStore) Tags(_ context.Context, _ string, fn func([]string) er
 	return fn(s.tags)
 }
 
+// verifiedIndexSigner is the recorded signature a written index record carries.
+// The index writer records a marker only once the marker's own signature
+// verifies, so every freshly written record has one; a test fixture that omits it
+// is modelling a record written before verification existed, which is the case
+// the display must decline.
+func verifiedIndexSigner() *lockfile.VerifiedSignature {
+	return &lockfile.VerifiedSignature{Mode: "keyed", Identity: "release-key", BundleDigest: "sha256:feed"}
+}
+
 // TestLatestDeprecationView_NewestWins proves the index-served advisory selects
 // the recorded marker with the newest issuedOn across a repository's versions.
 func TestLatestDeprecationView_NewestWins(t *testing.T) {
 	deps := []VersionDeprecation{
-		{Version: "1.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "older", IssuedOn: "2026-01-01T00:00:00Z"}},
-		{Version: "2.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "newer", IssuedOn: "2026-06-01T00:00:00Z"}},
+		{Version: "1.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "older", IssuedOn: "2026-01-01T00:00:00Z"}, Signer: verifiedIndexSigner()},
+		{Version: "2.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "newer", IssuedOn: "2026-06-01T00:00:00Z"}, Signer: verifiedIndexSigner()},
 	}
 	v, ok := latestDeprecationView(deps)
 	if !ok {
@@ -240,11 +250,78 @@ func TestLatestDeprecationView_NewestWins(t *testing.T) {
 	}
 }
 
-// TestLookupComponentDeprecation_IndexServedOffline proves the deprecation
+// TestLatestDeprecationView_TrustAndSeverity pins the two halves of what the
+// display acts on, against each other: a record with no verified signature is
+// declined whatever its severity, and every severity that IS verified is
+// reported.
+//
+// The pairing is the point. A display and a selection screen may differ on
+// severity — an advisory deprecation belongs on a surface a reader is browsing
+// and not in a screen deciding what a build resolves to — and must not differ on
+// trustworthiness. Asserting only the first half would pass on a display that
+// mirrored the screen's severity filter wholesale, which would hide the two
+// advisory severities.
+func TestLatestDeprecationView_TrustAndSeverity(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		severity deprecation.Severity
+		signed   bool
+		want     bool
+	}{
+		{"verified retraction is reported", deprecation.SeverityRetracted, true, true},
+		{"verified error is reported", deprecation.SeverityError, true, true},
+		{"verified warning is reported", deprecation.SeverityWarning, true, true},
+		{"unverified retraction is declined", deprecation.SeverityRetracted, false, false},
+		{"unverified error is declined", deprecation.SeverityError, false, false},
+		{"unverified warning is declined", deprecation.SeverityWarning, false, false},
+	}
+	for _, c := range cases {
+		entry := VersionDeprecation{
+			Version: "1.0.0",
+			Marker:  deprecation.Marker{Severity: c.severity, Reason: "why", IssuedOn: "2026-01-01T00:00:00Z"},
+		}
+		if c.signed {
+			entry.Signer = verifiedIndexSigner()
+		}
+		v, ok := latestDeprecationView([]VersionDeprecation{entry})
+		if ok != c.want {
+			t.Errorf("%s: reported = %v, want %v (view %+v)", c.name, ok, c.want, v)
+			continue
+		}
+		if ok && v.Severity != string(c.severity) {
+			t.Errorf("%s: reported severity %q, want the recorded %q", c.name, v.Severity, c.severity)
+		}
+	}
+}
+
+// TestLatestDeprecationView_UnverifiedNeverOutranks proves the trust test runs
+// before the newest-wins ordering rather than after it: an unverified record
+// carrying the newest issuedOn must not displace an older verified one.
+//
+// A filter applied after selection would pass every row of the table above and
+// still fail here, reporting nothing for a repository that holds a perfectly good
+// verified marker.
+func TestLatestDeprecationView_UnverifiedNeverOutranks(t *testing.T) {
+	t.Parallel()
+	deps := []VersionDeprecation{
+		{Version: "1.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "verified", IssuedOn: "2026-01-01T00:00:00Z"}, Signer: verifiedIndexSigner()},
+		{Version: "2.0.0", Marker: deprecation.Marker{Severity: "retracted", Reason: "unverified", IssuedOn: "2026-06-01T00:00:00Z"}},
+	}
+	v, ok := latestDeprecationView(deps)
+	if !ok {
+		t.Fatal("the verified record should still be reported")
+	}
+	if v.Reason != "verified" || v.Tag != "1.0.0" {
+		t.Errorf("view = %+v; the newer unverified record must not outrank the older verified one", v)
+	}
+}
+
+// TestLookupEntityDeprecation_IndexServedOffline proves the deprecation
 // advisory is served from the local index and issues no network call: an offline
 // workspace with a built index carrying a per-version marker surfaces the
-// advisory (where the old live probe returned blank offline).
-func TestLookupComponentDeprecation_IndexServedOffline(t *testing.T) {
+// advisory without reaching a registry.
+func TestLookupEntityDeprecation_IndexServedOffline(t *testing.T) {
 	const host = "hub.aggrega.ai"
 	const componentName = "core/compute/api-server"
 	dir := t.TempDir()
@@ -268,11 +345,12 @@ func TestLookupComponentDeprecation_IndexServedOffline(t *testing.T) {
 			Deprecations: []VersionDeprecation{{
 				Version: "1.0.0",
 				Marker:  deprecation.Marker{Severity: "warning", Reason: "old", IssuedOn: "2026-01-01T00:00:00Z"},
+				Signer:  verifiedIndexSigner(),
 			}},
 		}},
 	}, "2026-01-01T00:00:00Z\n")
 
-	v, ok := lookupComponentDeprecation(rw, componentName)
+	v, ok := lookupEntityDeprecation(rw, "Component", "", componentName)
 	if !ok {
 		t.Fatalf("offline workspace with a built index should surface the recorded advisory")
 	}
@@ -281,21 +359,68 @@ func TestLookupComponentDeprecation_IndexServedOffline(t *testing.T) {
 	}
 }
 
+// TestLookupEntityDeprecation_VersionPinnedIdentifierIsNotTheName pins the
+// derivation input: the location is built from the entity's identity name, never
+// from the identifier a person typed.
+//
+// Catalog resolution accepts a version-pinned identifier, so a lookup keyed on the
+// typed string would ask the index for a repository path carrying a `:version`
+// suffix. No index holds one, so the miss is silent and indistinguishable from
+// "not withdrawn" — the surface would report nothing and read as correct. This
+// drives the identity name against the same fixture and asserts the record is
+// found, and drives the pinned spelling as the name to show that spelling misses.
+func TestLookupEntityDeprecation_VersionPinnedIdentifierIsNotTheName(t *testing.T) {
+	const host = "hub.aggrega.ai"
+	const componentName = "core/compute/api-server"
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, workspaceconfig.ConfigFilename)
+	if err := os.WriteFile(cfgPath, []byte("workspace: {}\ndefault_registry: "+host+"\noffline: true\n"), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	rw, err := workspaceconfig.Resolve(dir, "")
+	if err != nil {
+		t.Fatalf("resolve workspace: %v", err)
+	}
+
+	repoPath := catalog.OCILocation("Component", "", componentName)
+	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host, RegistryIndex{
+		Host: host,
+		Records: []IndexRecord{{
+			URI:     "oci://" + host + "/" + repoPath,
+			Name:    repoPath,
+			Version: "1.0.0",
+			Kind:    "Component",
+			Deprecations: []VersionDeprecation{{
+				Version: "1.0.0",
+				Marker:  deprecation.Marker{Severity: "retracted", Reason: "withdrawn", IssuedOn: "2026-01-01T00:00:00Z"},
+				Signer:  verifiedIndexSigner(),
+			}},
+		}},
+	}, "2026-01-01T00:00:00Z\n")
+
+	if _, ok := lookupEntityDeprecation(rw, "Component", "", componentName); !ok {
+		t.Error("the identity name must find the recorded withdrawal")
+	}
+	if _, ok := lookupEntityDeprecation(rw, "Component", "", componentName+":1.0.0"); ok {
+		t.Error("a version-pinned spelling addresses a repository no index holds; it must not resolve to the record")
+	}
+}
+
 // TestInspect_CatalogComponent_SurfacesDeprecation drives the catalog-name
 // inspect path over a temp catalog with the live deprecation lookup stubbed, and
 // proves the rendered output carries both the component header and the
 // deprecation block.
 func TestInspect_CatalogComponent_SurfacesDeprecation(t *testing.T) {
-	// Not parallel: mutates the process-global lookupComponentDeprecation seam other tests read.
+	// Not parallel: mutates the process-global lookupEntityDeprecation seam other tests read.
 	const componentName = "core/compute/api-server"
-	prev := lookupComponentDeprecation
-	lookupComponentDeprecation = func(_ *workspaceconfig.ResolvedWorkspace, name string) (deprecationView, bool) {
-		if name == componentName {
+	prev := lookupEntityDeprecation
+	lookupEntityDeprecation = func(_ *workspaceconfig.ResolvedWorkspace, kind, _, name string) (deprecationView, bool) {
+		if kind == "Component" && name == componentName {
 			return deprecationView{Severity: "retracted", Reason: "withdrawn for a defect", Replacement: "core/compute/api-server:2", IssuedOn: "2026-01-02T03:04:05Z", Tag: "1.0.0"}, true
 		}
 		return deprecationView{}, false
 	}
-	t.Cleanup(func() { lookupComponentDeprecation = prev })
+	t.Cleanup(func() { lookupEntityDeprecation = prev })
 
 	var buf bytes.Buffer
 	if err := inspectCatalogEntity(resolveTempWorkspace(t, tempWorkspaceOptions{}), componentName, []string{fullstackAppInspectCatalog}, testInspectOptions(&buf)); err != nil {
