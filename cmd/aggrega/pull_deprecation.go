@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -582,8 +583,29 @@ func newRetractionScreen(rw *workspaceconfig.ResolvedWorkspace, host string, out
 	if err != nil {
 		return nil
 	}
+	return newRecordedRetractionScreen(loaded.Records, indexProvenance(loaded.LastUpdated, loaded.HasTimestamp), out)
+}
+
+// newRecordedRetractionScreen builds a withdrawal screen from index records the
+// caller already holds, or returns nil when no screen can be formed: no writer to
+// announce a skip on, or no verified withdrawal among the records.
+//
+// It is the one place a set of index records becomes a screen. A caller that has
+// just loaded an index reaches it through newRetractionScreen; a caller already
+// holding the records reaches it directly rather than re-reading them off disk.
+// Both therefore judge a version withdrawn on exactly the same grounds, because the
+// honored-withdrawal rule is applied here once and nowhere else.
+//
+// provenance is the clause the screen's notices end in, naming where these records
+// came from and how current they are. It is supplied rather than derived because
+// the caller is what knows: the same records mean one thing read from a snapshot
+// and another read from the registry moments ago.
+func newRecordedRetractionScreen(records []IndexRecord, provenance string, out io.Writer) catalog.RetractionScreen {
+	if out == nil {
+		return nil
+	}
 	withdrawnByURI := map[string]map[string]string{}
-	for _, rec := range loaded.Records {
+	for _, rec := range records {
 		if withdrawn := withdrawnVersions(rec.Deprecations); withdrawn != nil {
 			withdrawnByURI[rec.URI] = withdrawn
 		}
@@ -593,7 +615,7 @@ func newRetractionScreen(rw *workspaceconfig.ResolvedWorkspace, host string, out
 	}
 	return &retractionScreen{
 		withdrawnByURI: withdrawnByURI,
-		provenance:     indexProvenance(loaded.LastUpdated, loaded.HasTimestamp),
+		provenance:     provenance,
 		out:            out,
 	}
 }
@@ -734,6 +756,14 @@ func (s *retractionScreen) asOfSuffix() string {
 // from the other here keeps the single mapping out of every call site.
 func indexURIForReference(reference string) string {
 	return "oci://" + reference
+}
+
+// referenceForIndexURI is the inverse: it maps an artifact URI the local index
+// keys its records by back to the bound OCI repository reference the screen is
+// addressed with. It sits beside its inverse so the one mapping between the two
+// forms is stated in a single place and cannot come to disagree with itself.
+func referenceForIndexURI(uri string) string {
+	return strings.TrimPrefix(uri, "oci://")
 }
 
 // deprecationSignerLabel renders a recorded marker signer for a diagnostic

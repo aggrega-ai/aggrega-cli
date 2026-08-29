@@ -4,15 +4,18 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -72,7 +75,19 @@ category is the label component.aggrega.ai/category, so
 
 With no --registry, every configured registry's index is searched and the
 results are merged. With --registry (a host or a friendly alias), only that
-registry's index is searched.`,
+registry's index is searched.
+
+The version reported for an entity is the one a resolution would take: a
+version a publisher has retracted, where the retraction carries a signature
+this workspace's trust policy verifies, is not reported. Such an entity is
+still listed, and the versions left out are named in a NOTES column, so an
+entity whose every published version is retracted is reported as existing with
+no version to take rather than disappearing from the result. Pass
+--include-retracted to report the highest published version whatever its
+retraction status; the NOTES column names the retracted versions either way.
+The same holds for 'aggrega search -o json', where the 'version' field carries
+the version a resolution would take and a 'retracted' array names the versions
+left out.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())
@@ -92,6 +107,7 @@ registry's index is searched.`,
 	c.Flags().StringVar(&opts.Registry, "registry", "", "Search only this registry, addressed by host or friendly alias. Default searches every configured registry.")
 	c.Flags().IntVar(&opts.Limit, "limit", 0, "Cap the number of results (0 means no cap).")
 	c.Flags().StringVarP(&opts.Output, "output", "o", "table", "Output format: table|json|names.")
+	c.Flags().BoolVar(&opts.IncludeRetracted, "include-retracted", false, "Report the highest published version even where a verified marker retracts it. By default the reported version is one a resolution would take.")
 	return c
 }
 
@@ -110,6 +126,11 @@ type searchOptions struct {
 	Limit int
 	// Output is the result format: table, json, or names.
 	Output string
+	// IncludeRetracted reports the highest published version whatever its
+	// retraction status, rather than the version a resolution would take. It
+	// changes only the reported version: the retracted versions are named in the
+	// result either way.
+	IncludeRetracted bool
 }
 
 // searchRun resolves the target registry host set, loads each host's local
@@ -195,10 +216,7 @@ func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opt
 		fmt.Fprintln(errOut, "One or more indexes are stale; run 'aggrega registry update' to refresh.")
 	}
 
-	var records []IndexRecord
-	for _, li := range loaded {
-		records = append(records, li.Records...)
-	}
+	records, screening := screenIndexRecords(loaded, opts.IncludeRetracted, errOut)
 	sortIndexRecords(records)
 
 	matched, err := filterRecords(records, searchFilter{
@@ -218,31 +236,172 @@ func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opt
 
 	switch opts.Output {
 	case "json":
-		return writeSearchJSON(out, byHost, matched)
+		return writeSearchJSON(out, byHost, matched, screening)
 	case "names":
 		for _, rec := range matched {
 			fmt.Fprintln(out, rec.URI)
 		}
 		return nil
 	default:
-		return writeSearchTable(out, matched)
+		return writeSearchTable(out, matched, screening)
 	}
+}
+
+// searchScreening is what one entity's recorded withdrawals mean for the version
+// search reports: the versions screened out of selection, ascending, and the
+// version a resolution would take once they are removed. Selected is empty when
+// every published version was screened, which is the case the result must state
+// rather than present as an ordinary row.
+type searchScreening struct {
+	Retracted []string
+	Selected  string
+}
+
+// screenIndexRecords applies each host's own recorded withdrawals to that host's
+// records, and returns the merged record set together with, per artifact URI, what
+// the screening found. A host recording no verified withdrawal forms no screen and
+// its records pass through untouched, so a result that meets no withdrawal is the
+// result the unscreened path produced.
+//
+// The withdrawal judgement is not made here. The screen comes from the one
+// constructor that turns index records into a screen, which is the same one the
+// pull and plugin-attach paths reach when they build a screen from a loaded index
+// — so a version is withdrawn on identical grounds, a verified signature and the
+// withdrawal severity, whichever surface is asking. This function only decides what
+// to do with the answer.
+//
+// The screen is addressed with the reference form of each record's URI and asked
+// about that record's published versions, then the reported version is re-selected
+// from what survives with the same selection primitive the index build used to
+// choose the headline in the first place. That is what makes the reported version
+// mean "the version a resolution would take" rather than "the headline the index
+// happened to record".
+//
+// includeRetracted keeps the recorded headline instead. It changes only the
+// reported version: the screening result is returned either way, so the versions
+// left out are named in the result whichever question the reader is asking.
+//
+// A record carrying no published-version list yields no exclusions and passes
+// through unchanged, which is the honest outcome — with nothing to screen there is
+// no basis to alter what the record reports.
+func screenIndexRecords(indexes []loadedIndex, includeRetracted bool, errOut io.Writer) ([]IndexRecord, map[string]searchScreening) {
+	var records []IndexRecord
+	screening := map[string]searchScreening{}
+	for _, li := range indexes {
+		screen := newRecordedRetractionScreen(li.Records, indexProvenance(li.LastUpdated, li.HasTimestamp), errOut)
+		for _, rec := range li.Records {
+			if screen != nil {
+				eligible, excluded := screen.ScreenVersions(referenceForIndexURI(rec.URI), rec.Versions)
+				if len(excluded) > 0 {
+					retracted := make([]string, 0, len(excluded))
+					for _, x := range excluded {
+						retracted = append(retracted, x.Version)
+					}
+					selected := oci.SelectLatestVersion(eligible, false /* includePreRelease */)
+					screening[rec.URI] = searchScreening{Retracted: retracted, Selected: selected}
+					if !includeRetracted {
+						rec.Version = selected
+					}
+				}
+			}
+			records = append(records, rec)
+		}
+	}
+	return records, screening
+}
+
+// retractionNote renders the cell naming what a record's screening found, or the
+// empty string when it found nothing. It is the one home of that wording, so the
+// same finding cannot be described two ways.
+//
+// The note names the retracted versions whichever version is being reported, and
+// says outright when nothing is left to take — an entity that exists and holds no
+// selectable version has to be reported as exactly that, because a result which
+// merely omitted it would be indistinguishable from the entity not existing.
+func retractionNote(s searchScreening) string {
+	if len(s.Retracted) == 0 {
+		return ""
+	}
+	note := "retracted: " + strings.Join(s.Retracted, ", ")
+	if s.Selected == "" {
+		note += " (no version remains)"
+	}
+	return note
+}
+
+// reportedVersionCell renders the version cell, naming the absence explicitly when
+// screening is what emptied it. A record that carries no version for any other
+// reason is rendered exactly as it was before, so a result meeting no withdrawal is
+// untouched.
+func reportedVersionCell(version string, s searchScreening) string {
+	if version == "" && len(s.Retracted) > 0 {
+		return "(none)"
+	}
+	return version
 }
 
 // writeSearchTable writes the matched records as a deterministic aligned table.
 // A zero-match search prints an explicit "(no matches)" line rather than a bare
 // blank, so the operator can tell a completed empty search from a silent failure.
-func writeSearchTable(out io.Writer, records []IndexRecord) error {
+//
+// The NOTES column appears only when some matched record has something to report,
+// which keeps a result that meets no withdrawal byte-identical to the result the
+// unscreened path produced. It is deliberately not a permanent column: adding one
+// unconditionally would change every existing invocation's output to carry a
+// column that is empty on almost all of them.
+func writeSearchTable(out io.Writer, records []IndexRecord, screening map[string]searchScreening) error {
 	if len(records) == 0 {
 		fmt.Fprintln(out, "(no matches)")
 		return nil
 	}
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "URI\tKIND\tVERSION\tCATEGORY")
-	for _, rec := range records {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", rec.URI, rec.Kind, rec.Version, rec.Category)
+	notes := make([]string, len(records))
+	anyNote := false
+	for i, rec := range records {
+		notes[i] = retractionNote(screening[rec.URI])
+		if notes[i] != "" {
+			anyNote = true
+		}
 	}
-	return w.Flush()
+	var buf bytes.Buffer
+	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
+	header := "URI\tKIND\tVERSION\tCATEGORY"
+	if anyNote {
+		header += "\tNOTES"
+	}
+	fmt.Fprintln(w, header)
+	for i, rec := range records {
+		row := fmt.Sprintf("%s\t%s\t%s\t%s", rec.URI, rec.Kind, reportedVersionCell(rec.Version, screening[rec.URI]), rec.Category)
+		if anyNote {
+			row += "\t" + notes[i]
+		}
+		fmt.Fprintln(w, row)
+	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	// A row with nothing to report still opens the notes cell, and the column
+	// before an opened cell is padded — so such a row would end in padding it has
+	// no content for. Trimming it keeps every row free of trailing whitespace. It
+	// is a no-op on a result with no notes column, where the last cell already ends
+	// the line unpadded.
+	for _, line := range strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n") {
+		fmt.Fprintln(out, strings.TrimRight(line, " "))
+	}
+	return nil
+}
+
+// searchRecord is one matched entity as the machine-readable result reports it:
+// the index record, plus the versions screened out of selection.
+//
+// The record is embedded rather than nested, so every field it carries is emitted
+// exactly where it was before and a result meeting no withdrawal is byte-identical.
+// Retracted is emitted only when there is something to report, and it names the
+// versions a resolution would refuse — so a consumer reads the product's own
+// verdict rather than re-deriving one from the raw deprecation entries, which is
+// the derivation that would be free to disagree.
+type searchRecord struct {
+	IndexRecord
+	Retracted []string `json:"retracted,omitempty"`
 }
 
 // searchJSON is the machine-readable search result: the freshness timestamp per
@@ -251,22 +410,28 @@ func writeSearchTable(out io.Writer, records []IndexRecord) error {
 // object is byte-stable across runs of the same input.
 type searchJSON struct {
 	Updated map[string]string `json:"updated"`
-	Records []IndexRecord     `json:"records"`
+	Records []searchRecord    `json:"records"`
 }
 
 // writeSearchJSON writes the matched records and the per-host freshness map as a
 // single indented JSON object with a trailing newline. A host whose index
 // carries no timestamp is omitted from the updated map rather than emitted with a
 // zero time.
-func writeSearchJSON(out io.Writer, indexes []loadedIndex, records []IndexRecord) error {
+//
+// The version each record carries is the version a resolution would take, which is
+// the machine-readable half of the same contract the table states: an entity whose
+// every published version is retracted carries an empty version alongside the
+// retracted list, rather than being dropped from the result.
+func writeSearchJSON(out io.Writer, indexes []loadedIndex, records []IndexRecord, screening map[string]searchScreening) error {
 	updated := make(map[string]string, len(indexes))
 	for _, li := range indexes {
 		if li.HasTimestamp {
 			updated[li.Host] = li.LastUpdated.Format(time.RFC3339)
 		}
 	}
-	if records == nil {
-		records = []IndexRecord{}
+	reported := make([]searchRecord, 0, len(records))
+	for _, rec := range records {
+		reported = append(reported, searchRecord{IndexRecord: rec, Retracted: screening[rec.URI].Retracted})
 	}
-	return writeStructured(out, "search", searchJSON{Updated: updated, Records: records})
+	return writeStructured(out, "search", searchJSON{Updated: updated, Records: reported})
 }

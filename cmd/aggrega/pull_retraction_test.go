@@ -31,17 +31,32 @@ const retractionScreenReference = retractionScreenHost + "/" + retractionScreenR
 // proven end-to-end against a real in-process registry in the integration test.
 func buildScreenIndex(t *testing.T, markers map[string]deprecation.Severity, signMarker bool) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
+	byVersion := make(map[string]deprecation.Marker, len(markers))
+	for version, severity := range markers {
+		byVersion[version] = deprecation.Marker{
+			Severity: severity,
+			Reason:   "withdrawn in favour of a successor",
+			IssuedOn: "2026-05-01T00:00:00Z",
+		}
+	}
+	return buildMarkedScreenIndex(t, byVersion, signMarker)
+}
+
+// buildMarkedScreenIndex is buildScreenIndex over whole markers rather than bare
+// severities, for a case that needs two versions marked differently.
+//
+// A marker payload is content-addressed, so two versions carrying byte-identical
+// markers push the same blob twice — which an in-memory store rejects as already
+// present. Supplying the markers lets such a case give each version its own reason,
+// which is what a publisher retracting two versions would write anyway.
+func buildMarkedScreenIndex(t *testing.T, markers map[string]deprecation.Marker, signMarker bool) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
 	ctx := context.Background()
 	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
 	target := seedComponentRepo(t, []string{"1.0.0", "2.0.0"}, meta)
 
 	signer, content := keyedMarkerSigner(t)
-	for version, severity := range markers {
-		marker := deprecation.Marker{
-			Severity: severity,
-			Reason:   "withdrawn in favour of a successor",
-			IssuedOn: "2026-05-01T00:00:00Z",
-		}
+	for version, marker := range markers {
 		if signMarker {
 			attachSignedMarkerToTag(t, target.Store, version, marker, signer)
 			continue
