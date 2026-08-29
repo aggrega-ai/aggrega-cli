@@ -268,7 +268,7 @@ func TestHealthDegrade_PerContainerCoordinate(t *testing.T) {
 
 	// A second degrading container.
 	agent := types.ContainerSpec{Image: "agent:1.0"}
-	agent.Ports.Set("metrics", 9090)
+	agent.Ports.Set("metrics", types.PortSpec{Port: 9090})
 	agent.Health = &types.HealthSpec{
 		Ready:   &types.ProbeSpec{HTTP: "/readyz"},
 		Startup: &types.ProbeSpec{HTTP: "/startupz"},
@@ -277,14 +277,14 @@ func TestHealthDegrade_PerContainerCoordinate(t *testing.T) {
 
 	// A cleanly-translating container beside them: it must contribute nothing.
 	quiet := types.ContainerSpec{Image: "quiet:1.0"}
-	quiet.Ports.Set("http", 8081)
+	quiet.Ports.Set("http", types.PortSpec{Port: 8081})
 	quiet.Health = &types.HealthSpec{Ready: &types.ProbeSpec{HTTP: "/healthz"}}
 	w.Containers.Set("quiet", quiet)
 
 	// Deliberately unnamed: a positional init entry need not carry a name, so a
 	// coordinate read off the container's name would be hollow here.
 	migrate := types.ContainerSpec{Image: "migrate:1.0"}
-	migrate.Ports.Set("admin", 7000)
+	migrate.Ports.Set("admin", types.PortSpec{Port: 7000})
 	migrate.Health = &types.HealthSpec{
 		Ready: &types.ProbeSpec{HTTP: "/readyz"},
 		Live:  &types.ProbeSpec{HTTP: "/livez"},

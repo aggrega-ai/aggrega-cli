@@ -72,7 +72,7 @@ func TestValidateWorkload_PortOutOfRange_Fails(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()
 	main, _ := w.Containers.Get("main")
-	main.Ports.Set("web", 70000) // > 65535
+	main.Ports.Set("web", types.PortSpec{Port: 70000}) // > 65535
 	w.Containers.Set("main", main)
 	err := validator.ValidateWorkload(w, "", "", "")
 	if !errors.Is(err, validator.ErrWorkloadValidation()) {
@@ -84,11 +84,54 @@ func TestValidateWorkload_PortZero_Fails(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()
 	main, _ := w.Containers.Get("main")
-	main.Ports.Set("web", 0) // < 1
+	main.Ports.Set("web", types.PortSpec{Port: 0}) // < 1
 	w.Containers.Set("main", main)
 	err := validator.ValidateWorkload(w, "", "", "")
 	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
+	}
+}
+
+// The expanded port form adds two constraint classes the bare-number rows above
+// cannot reach, because a port carrying no transport marshals as a plain integer
+// and never enters the object branch of the union at all. Each row carries one
+// fault, and the positive row beneath them keeps the pair honest: without it, a
+// union that rejected the expanded form outright would pass every negative row
+// here while refusing every legal document.
+
+func TestValidateWorkload_PortWithTransportOutOfRange_Fails(t *testing.T) {
+	t.Parallel()
+	w := minimalWorkload()
+	main, _ := w.Containers.Get("main")
+	main.Ports.Set("dns", types.PortSpec{Port: 70000, Protocol: "UDP"}) // > 65535
+	w.Containers.Set("main", main)
+	err := validator.ValidateWorkload(w, "", "", "")
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
+		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
+	}
+}
+
+func TestValidateWorkload_UnknownTransport_Fails(t *testing.T) {
+	t.Parallel()
+	w := minimalWorkload()
+	main, _ := w.Containers.Get("main")
+	main.Ports.Set("web", types.PortSpec{Port: 8080, Protocol: "QUIC"}) // outside the enum
+	w.Containers.Set("main", main)
+	err := validator.ValidateWorkload(w, "", "", "")
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
+		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
+	}
+}
+
+func TestValidateWorkload_PortWithTransport_Passes(t *testing.T) {
+	t.Parallel()
+	w := minimalWorkload()
+	main, _ := w.Containers.Get("main")
+	main.Ports.Set("dns", types.PortSpec{Port: 53, Protocol: "UDP"})
+	main.Ports.Set("web", types.PortSpec{Port: 8080})
+	w.Containers.Set("main", main)
+	if err := validator.ValidateWorkload(w, "", "", ""); err != nil {
+		t.Fatalf("both authored port forms must validate, got %v", err)
 	}
 }
 

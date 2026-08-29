@@ -727,7 +727,7 @@ func volumeMountEntry(vm types.VolumeMount, spec types.VolumeSpec, nodeID string
 // locate the partial-support warning that reports the dropped slots by name; it
 // never affects the rendered bytes. Returns no diagnostic when nothing is
 // dropped, which is every health block declaring a single probe slot.
-func translateHealthcheck(h *types.HealthSpec, ports types.OrderedMap[int], healthPath string) (*Healthcheck, []renderctx.Diagnostic, error) {
+func translateHealthcheck(h *types.HealthSpec, ports types.OrderedMap[types.PortSpec], healthPath string) (*Healthcheck, []renderctx.Diagnostic, error) {
 	probe, selected := pickPrimaryProbe(h)
 	if probe == nil {
 		return nil, nil, nil
@@ -812,7 +812,7 @@ func describeDroppedSlots(names []string) string {
 }
 
 // probeToHealthcheck translates a single ProbeSpec to a compose Healthcheck.
-func probeToHealthcheck(p *types.ProbeSpec, ports types.OrderedMap[int]) (*Healthcheck, error) {
+func probeToHealthcheck(p *types.ProbeSpec, ports types.OrderedMap[types.PortSpec]) (*Healthcheck, error) {
 	hc := &Healthcheck{}
 
 	switch {
@@ -855,7 +855,7 @@ func probeToHealthcheck(p *types.ProbeSpec, ports types.OrderedMap[int]) (*Healt
 // resolveHTTPProbePort returns the first container port number in
 // alphabetical-by-name order, suitable for building a curl URL. Returns an
 // error if no ports are declared.
-func resolveHTTPProbePort(ports types.OrderedMap[int]) (int, error) {
+func resolveHTTPProbePort(ports types.OrderedMap[types.PortSpec]) (int, error) {
 	if ports.Len() == 0 {
 		return 0, ErrTranslationProbeNoPort()
 	}
@@ -865,7 +865,7 @@ func resolveHTTPProbePort(ports types.OrderedMap[int]) (int, error) {
 	}
 	sort.Strings(names)
 	port, _ := ports.Get(names[0])
-	return port, nil
+	return port.Port, nil
 }
 
 // applyContainerSecurityContext maps the Workload security context to compose
@@ -1003,6 +1003,11 @@ func applyPodUser(svc *Service, w *types.Workload) {
 // single ports list on the main service. Aggregation is by service.type:
 // any entry with type NodePort or LoadBalancer triggers publishing for ALL
 // of its ports (the most-publishing wins per port).
+//
+// A published port carries the transport declared on the container port its
+// name resolves to, as compose's `/protocol` suffix. A port with no declared
+// transport publishes as it always has, with no suffix, so compose's own
+// default stays in force. A transport compose cannot spell halts.
 func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainServiceName string) error {
 	main, ok := frag.Services[mainServiceName]
 	if !ok {
@@ -1011,12 +1016,15 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 		return nil
 	}
 
+	containerPorts := w.ContainerPortsByName()
+
 	// Collect (port, container-port) pairs from publishing service entries.
 	// Iterate Workload.Services in author order for determinism on inputs;
 	// dedup keyed by container port number.
 	type publishedPort struct {
-		host int
-		ctr  int
+		host  int
+		ctr   int
+		proto string
 	}
 	publishedByCtr := map[int]publishedPort{}
 
@@ -1025,11 +1033,20 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 			continue
 		}
 		for portName, portNum := range svc.Ports.All() {
-			_ = portName
+			// The transport belongs to the container port this entry names,
+			// which is the port's one declaration site. An entry naming no
+			// declared container port resolves to the zero value, whose
+			// protocol is empty — the same no-suffix publish as before, and
+			// the missing-name condition itself is reported by the helm side's
+			// own resolution rather than invented here.
+			suffix, err := composePortProtocolSuffix(containerPorts[portName].Protocol)
+			if err != nil {
+				return err
+			}
 			// Compose maps host:container 1:1: the same number is used on
 			// both sides. An explicit per-port host-port authoring field is
 			// not implemented.
-			publishedByCtr[portNum] = publishedPort{host: portNum, ctr: portNum}
+			publishedByCtr[portNum] = publishedPort{host: portNum, ctr: portNum, proto: suffix}
 		}
 	}
 
@@ -1045,11 +1062,28 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 	sort.Ints(keys)
 	for _, k := range keys {
 		p := publishedByCtr[k]
-		main.Ports = append(main.Ports, fmt.Sprintf("%d:%d", p.host, p.ctr))
+		main.Ports = append(main.Ports, fmt.Sprintf("%d:%d%s", p.host, p.ctr, p.proto))
 	}
 
 	frag.Services[mainServiceName] = main
 	return nil
+}
+
+// composePortProtocolSuffix maps a declared transport to the suffix a compose
+// published port carries, and returns the empty string when nothing was
+// declared so the entry publishes exactly as it did before ports could carry a
+// transport at all. A transport outside compose's tcp/udp vocabulary halts.
+func composePortProtocolSuffix(protocol string) (string, error) {
+	switch protocol {
+	case "":
+		return "", nil
+	case "TCP":
+		return "/tcp", nil
+	case "UDP":
+		return "/udp", nil
+	default:
+		return "", ErrUnsupportedComposePortProtocol()
+	}
 }
 
 // volumeNameEncoding is the segment encoding a compose volume name is built

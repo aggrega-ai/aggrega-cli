@@ -86,13 +86,214 @@ type ContainerSpec struct {
 	Variables       OrderedMap[string]        `json:"variables,omitempty,omitzero" yaml:"variables,omitempty"`
 	Attachments     OrderedMap[AttachmentRef] `json:"attachments,omitempty,omitzero" yaml:"attachments,omitempty"`
 	EnvFrom         []EnvFromSource           `json:"envFrom,omitempty" yaml:"envFrom,omitempty"`
-	Ports           OrderedMap[int]           `json:"ports,omitempty,omitzero" yaml:"ports,omitempty"`
+	Ports           OrderedMap[PortSpec]      `json:"ports,omitempty,omitzero" yaml:"ports,omitempty"`
 	Resources       *ResourceSpec             `json:"resources,omitempty" yaml:"resources,omitempty"`
 	Health          *HealthSpec               `json:"health,omitempty" yaml:"health,omitempty"`
 	VolumeMounts    []VolumeMount             `json:"volumeMounts,omitempty" yaml:"volumeMounts,omitempty"`
 	RestartPolicy   string                    `json:"restartPolicy,omitempty" yaml:"restartPolicy,omitempty"`
 	Lifecycle       *LifecycleSpec            `json:"lifecycle,omitempty" yaml:"lifecycle,omitempty"`
 	SecurityContext *ContainerSecurityContext `json:"securityContext,omitempty" yaml:"securityContext,omitempty"`
+}
+
+// PortSpec is one named container port: the port number, and the transport
+// protocol the port carries where the author declared one.
+//
+// It is authored in either of two equivalent forms — the bare port number, or a
+// mapping carrying the number under port and the transport under protocol — and
+// an empty Protocol means the author declared none, never that the port carries
+// a particular transport. Nothing in the compiler reads a protocol out of a
+// port's name or checks the declared value against what the process behind the
+// port speaks; the value is data an author declares and a synthesizing engine
+// emits.
+//
+// The custom yaml and json codecs are load-bearing, for the reason ResourceList
+// states: a workload crosses two decode surfaces — a yaml.Unmarshal at recipe
+// parse and an encoding/json round-trip when the render payload carries the
+// workload projection — so a shape accepted on one and not the other would be
+// dropped on the crossing. Both are handled explicitly here.
+//
+// The marshal side emits the bare number whenever Protocol is empty. That is
+// what makes the mapping form additive: a port authored with no protocol
+// produces the same bytes on both surfaces as the plain integer it replaced.
+type PortSpec struct {
+	Port     int    `json:"port" yaml:"port"`
+	Protocol string `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+}
+
+// ContainerPortsByName returns every container port the Workload declares,
+// keyed by its authored name, across the main containers and the init
+// containers.
+//
+// The name space is flat and shared: a services entry names a port and the
+// declaration it resolves to may sit on any container, which is what the
+// schema's "port names must match keys in containers.<any>.ports" describes. A
+// name declared on more than one container resolves to the last declaration in
+// author order.
+//
+// It lives on the Workload rather than in a synthesizing engine because the
+// mapping is a property of the declaration, not of any target: every engine
+// resolving a service port to the port it names needs the same answer, and two
+// engines computing it separately could disagree about a workload neither of
+// them authored.
+func (w *Workload) ContainerPortsByName() map[string]PortSpec {
+	out := map[string]PortSpec{}
+	if w == nil {
+		return out
+	}
+	for _, c := range w.Containers.All() {
+		for name, port := range c.Ports.All() {
+			out[name] = port
+		}
+	}
+	for _, c := range w.InitContainers {
+		for name, port := range c.Ports.All() {
+			out[name] = port
+		}
+	}
+	return out
+}
+
+// UnmarshalYAML accepts either a scalar port number or a mapping carrying port
+// and protocol. Any other node kind, and any key the mapping form does not
+// declare, is an error rather than a silent drop — the schema refuses both, and
+// a codec that accepted what the schema refuses would make the typed entry
+// point disagree with the authored one.
+func (p *PortSpec) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		var n int
+		if err := node.Decode(&n); err != nil {
+			return fmt.Errorf("PortSpec: decoding port number at line %d: %w", node.Line, err)
+		}
+		p.Port = n
+		return nil
+	case yaml.MappingNode:
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode, valNode := node.Content[i], node.Content[i+1]
+			var key string
+			if err := keyNode.Decode(&key); err != nil {
+				return fmt.Errorf("PortSpec: decoding key at line %d: %w", keyNode.Line, err)
+			}
+			switch key {
+			case "port":
+				var n int
+				if err := valNode.Decode(&n); err != nil {
+					return fmt.Errorf("PortSpec.port at line %d: %w", valNode.Line, err)
+				}
+				p.Port = n
+			case "protocol":
+				var s string
+				if err := valNode.Decode(&s); err != nil {
+					return fmt.Errorf("PortSpec.protocol at line %d: %w", valNode.Line, err)
+				}
+				p.Protocol = s
+			default:
+				return fmt.Errorf("PortSpec: unexpected key %q at line %d; a port is a number, or a mapping of port and protocol", key, keyNode.Line)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("PortSpec: expected a port number or a mapping of port and protocol, got node kind %d at line %d", node.Kind, node.Line)
+	}
+}
+
+// UnmarshalJSON mirrors UnmarshalYAML on the render-payload crossing: a JSON
+// number decodes to the port, a JSON object to the port and its protocol.
+func (p *PortSpec) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return fmt.Errorf("PortSpec: empty JSON value")
+	}
+	if trimmed[0] != '{' {
+		var n int
+		if err := json.Unmarshal(trimmed, &n); err != nil {
+			return fmt.Errorf("PortSpec: decoding port number: %w", err)
+		}
+		p.Port = n
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	tok, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("PortSpec: reading JSON opening token: %w", err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
+		return fmt.Errorf("PortSpec: expected JSON object, got token %v", tok)
+	}
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("PortSpec: reading JSON key: %w", err)
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return fmt.Errorf("PortSpec: expected string key, got token %v", keyTok)
+		}
+		switch key {
+		case "port":
+			var n int
+			if err := dec.Decode(&n); err != nil {
+				return fmt.Errorf("PortSpec.port: %w", err)
+			}
+			p.Port = n
+		case "protocol":
+			var s string
+			if err := dec.Decode(&s); err != nil {
+				return fmt.Errorf("PortSpec.protocol: %w", err)
+			}
+			p.Protocol = s
+		default:
+			return fmt.Errorf("PortSpec: unexpected key %q; a port is a number, or an object of port and protocol", key)
+		}
+	}
+	if _, err := dec.Token(); err != nil && err != io.EOF {
+		return fmt.Errorf("PortSpec: reading JSON closing token: %w", err)
+	}
+	return nil
+}
+
+// MarshalYAML emits the bare port number when no protocol is declared and a
+// port/protocol mapping when one is. Value receiver matches OrderedMap's
+// dispatch rationale — yaml.v3 sees value-receiver methods regardless of
+// addressability, and a port lives as an OrderedMap value.
+func (p PortSpec) MarshalYAML() (any, error) {
+	if p.Protocol == "" {
+		return p.Port, nil
+	}
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	portVal := &yaml.Node{}
+	if err := portVal.Encode(p.Port); err != nil {
+		return nil, fmt.Errorf("PortSpec: encoding port number: %w", err)
+	}
+	protoVal := &yaml.Node{}
+	if err := protoVal.Encode(p.Protocol); err != nil {
+		return nil, fmt.Errorf("PortSpec: encoding protocol: %w", err)
+	}
+	out.Content = append(out.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "port"}, portVal,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "protocol"}, protoVal,
+	)
+	return out, nil
+}
+
+// MarshalJSON emits the same two shapes MarshalYAML does, so the render payload
+// carrying a workload is byte-identical to what it was before the protocol
+// existed for every port authored without one.
+func (p PortSpec) MarshalJSON() ([]byte, error) {
+	if p.Protocol == "" {
+		return json.Marshal(p.Port)
+	}
+	proto, err := json.Marshal(p.Protocol)
+	if err != nil {
+		return nil, fmt.Errorf("PortSpec: encoding protocol: %w", err)
+	}
+	var buf bytes.Buffer
+	buf.WriteString(`{"port":`)
+	buf.WriteString(fmt.Sprintf("%d", p.Port))
+	buf.WriteString(`,"protocol":`)
+	buf.Write(proto)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }
 
 // EnvFromSource imports a whole ConfigMap or Secret source as environment

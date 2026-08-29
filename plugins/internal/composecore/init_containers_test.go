@@ -25,7 +25,7 @@ func twoInitContainerWorkload() *types.Workload {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 
 	main := types.ContainerSpec{Image: "platform:1.0"}
-	main.Ports.Set("http", 5678)
+	main.Ports.Set("http", types.PortSpec{Port: 5678})
 	main.VolumeMounts = []types.VolumeMount{{Name: "data", Path: "/home/node/.n8n"}}
 	w.Containers.Set("main", main)
 
@@ -461,7 +461,7 @@ func TestComposeAssemble_InitChainAndEdgeDependency(t *testing.T) {
 
 	db := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	dc := types.ContainerSpec{Image: "postgres:15"}
-	dc.Ports.Set("pg", 5432)
+	dc.Ports.Set("pg", types.PortSpec{Port: 5432})
 	db.Containers.Set("main", dc)
 	dbSvc := types.ServiceSpec{Type: "ClusterIP"}
 	dbSvc.Ports.Set("pg", 5432)

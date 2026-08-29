@@ -18,7 +18,7 @@ import (
 func configMapVolumeWorkload() *types.Workload {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Ports.Set("http", 8080)
+	c.Ports.Set("http", types.PortSpec{Port: 8080})
 	c.VolumeMounts = []types.VolumeMount{
 		{Name: "settings", Path: "/etc/app", ReadOnly: true},
 		{Name: "state", Path: "/var/lib/app"},

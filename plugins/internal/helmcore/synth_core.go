@@ -443,11 +443,13 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string, attac
 	}
 
 	// Container ports (named) — preserves Workload.Containers.<n>.Ports
-	// author order.
-	for portName, portNum := range c.Ports.All() {
+	// author order. A declared transport is emitted verbatim; an undeclared one
+	// emits no protocol key, leaving the cluster's own default in force.
+	for portName, port := range c.Ports.All() {
 		out.Ports = append(out.Ports, ContainerPort{
 			Name:          portName,
-			ContainerPort: int32(portNum),
+			ContainerPort: int32(port.Port),
+			Protocol:      port.Protocol,
 		})
 	}
 
@@ -858,7 +860,7 @@ func buildPVCSpec(size, class string, accessModes []string) PersistentVolumeClai
 func translateServices(w *types.Workload, nodeID, namespace string, selectorLabels, resourceLabels map[string]string, resourceAnnotations map[string]string) ([]Service, error) {
 	var out []Service
 
-	containerPortMap := buildContainerPortNameMap(w)
+	containerPortMap := w.ContainerPortsByName()
 
 	for svcName, svcSpec := range w.Services.All() {
 		ports := []ServicePort{}
@@ -867,13 +869,18 @@ func translateServices(w *types.Workload, nodeID, namespace string, selectorLabe
 			if !ok {
 				return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("service %q port %q has no matching container port name", svcName, portName), nil, nil)
 			}
-			_ = targetPort // present for forward compatibility (numeric backref);
+			_ = targetPort.Port // present for forward compatibility (numeric backref);
 			// today targetPort uses the named-port string, which K8s
 			// resolves at runtime to the matching containerPort.
+			//
+			// The transport comes from the container port this entry names,
+			// which is the port's one declaration site, so a service exposure
+			// cannot disagree with the port the container opened.
 			ports = append(ports, ServicePort{
 				Name:       portName,
 				Port:       int32(portNum),
 				TargetPort: portName,
+				Protocol:   targetPort.Protocol,
 			})
 		}
 
@@ -898,24 +905,6 @@ func translateServices(w *types.Workload, nodeID, namespace string, selectorLabe
 		out = append(out, svc)
 	}
 	return out, nil
-}
-
-// buildContainerPortNameMap collects every container port name → container
-// port number across all containers (and init containers). Used to resolve
-// service.targetPort references.
-func buildContainerPortNameMap(w *types.Workload) map[string]int {
-	out := map[string]int{}
-	for _, c := range w.Containers.All() {
-		for portName, portNum := range c.Ports.All() {
-			out[portName] = portNum
-		}
-	}
-	for _, c := range w.InitContainers {
-		for portName, portNum := range c.Ports.All() {
-			out[portName] = portNum
-		}
-	}
-	return out
 }
 
 // translateServiceType maps Workload Service.Type to K8s Service type.

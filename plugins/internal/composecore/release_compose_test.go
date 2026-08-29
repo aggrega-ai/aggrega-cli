@@ -63,7 +63,7 @@ func TestComposeAssemble_SingleBoundary(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Ports.Set("web", 8080)
+	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
 	pub := types.ServiceSpec{Type: "NodePort"}
 	pub.Ports.Set("web", 8080)
@@ -104,7 +104,7 @@ func TestComposeAssemble_MergedPath(t *testing.T) {
 
 	frontW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	fc := types.ContainerSpec{Image: "frontend:1.0"}
-	fc.Ports.Set("http", 80)
+	fc.Ports.Set("http", types.PortSpec{Port: 80})
 	frontW.Containers.Set("main", fc)
 	fSvc := types.ServiceSpec{Type: "LoadBalancer"}
 	fSvc.Ports.Set("http", 80)
@@ -112,7 +112,7 @@ func TestComposeAssemble_MergedPath(t *testing.T) {
 
 	backW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	bc := types.ContainerSpec{Image: "backend:1.0"}
-	bc.Ports.Set("rpc", 50051)
+	bc.Ports.Set("rpc", types.PortSpec{Port: 50051})
 	backW.Containers.Set("main", bc)
 	bSvc := types.ServiceSpec{Type: "ClusterIP"}
 	bSvc.Ports.Set("rpc", 50051)
@@ -145,7 +145,7 @@ func TestComposeAssemble_DependsOnFromUsesEdges(t *testing.T) {
 
 	apiW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	ac := types.ContainerSpec{Image: "api:1.0"}
-	ac.Ports.Set("http", 8080)
+	ac.Ports.Set("http", types.PortSpec{Port: 8080})
 	apiW.Containers.Set("main", ac)
 	apiSvc := types.ServiceSpec{Type: "ClusterIP"}
 	apiSvc.Ports.Set("http", 8080)
@@ -153,7 +153,7 @@ func TestComposeAssemble_DependsOnFromUsesEdges(t *testing.T) {
 
 	dbW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	dc := types.ContainerSpec{Image: "postgres:15"}
-	dc.Ports.Set("pg", 5432)
+	dc.Ports.Set("pg", types.PortSpec{Port: 5432})
 	dbW.Containers.Set("main", dc)
 	dbSvc := types.ServiceSpec{Type: "ClusterIP"}
 	dbSvc.Ports.Set("pg", 5432)
@@ -227,7 +227,7 @@ func TestComposeAssemble_NoNamespaceAnnotation_FallsBackToBoundaryPath(t *testin
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "x:1.0"}
-	c.Ports.Set("p", 80)
+	c.Ports.Set("p", types.PortSpec{Port: 80})
 	w.Containers.Set("main", c)
 	s := types.ServiceSpec{Type: "ClusterIP"}
 	s.Ports.Set("p", 80)
@@ -388,7 +388,7 @@ func mapKeys(m map[string][]byte) []string {
 func waveWorkload(image string, port int, withHealth bool) *types.Workload {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: image}
-	c.Ports.Set("p", port)
+	c.Ports.Set("p", types.PortSpec{Port: port})
 	if withHealth {
 		c.Health = &types.HealthSpec{Live: &types.ProbeSpec{TCP: port}}
 	}

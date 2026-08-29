@@ -58,7 +58,7 @@ func nodeCtxFor(nodeID string) renderer.NodeRenderContext {
 func minimalWorkload() *types.Workload {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Ports.Set("web", 8080)
+	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
 
 	svc := types.ServiceSpec{Type: "ClusterIP"}
@@ -78,7 +78,7 @@ func TestSynthesizeWorkload_GPUFieldsDegrade(t *testing.T) {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	w.RuntimeClassName = "nvidia"
 	c := types.ContainerSpec{Image: "vllm:latest"}
-	c.Ports.Set("http", 8000)
+	c.Ports.Set("http", types.PortSpec{Port: 8000})
 	limits := &types.ResourceList{CPU: "4", Memory: "16Gi"}
 	limits.Extended.Set("nvidia.com/gpu", "1")
 	requests := &types.ResourceList{}
@@ -110,7 +110,7 @@ func TestSynthesizeWorkload_ImageRegistryAnnotation(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "docker.io/library/postgres:16"}
-	c.Ports.Set("db", 5432)
+	c.Ports.Set("db", types.PortSpec{Port: 5432})
 	w.Containers.Set("main", c)
 
 	plainFiles, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("db"))
@@ -157,7 +157,7 @@ func TestSynthesizeWorkload_MultiContainerMainAndSidecar(t *testing.T) {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 
 	main := types.ContainerSpec{Image: "api:2.0"}
-	main.Ports.Set("http", 8080)
+	main.Ports.Set("http", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", main)
 
 	sidecar := types.ContainerSpec{Image: "logger:1.0"}
@@ -183,7 +183,7 @@ func TestSynthesizeWorkload_AllVolumeVariants(t *testing.T) {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
 
 	c := types.ContainerSpec{Image: "store:1.0"}
-	c.Ports.Set("api", 9000)
+	c.Ports.Set("api", types.PortSpec{Port: 9000})
 	c.VolumeMounts = []types.VolumeMount{
 		{Name: "scratch", Path: "/tmp/scratch"},
 		{Name: "config", Path: "/etc/config"},
@@ -223,7 +223,7 @@ func TestSynthesizeWorkload_AllProbeShapes(t *testing.T) {
 	startSecs := 30
 
 	httpC := types.ContainerSpec{Image: "http-probe:1.0"}
-	httpC.Ports.Set("http", 8080)
+	httpC.Ports.Set("http", types.PortSpec{Port: 8080})
 	httpC.Health = &types.HealthSpec{
 		Live: &types.ProbeSpec{
 			HTTP:                "/healthz",
@@ -236,7 +236,7 @@ func TestSynthesizeWorkload_AllProbeShapes(t *testing.T) {
 	w.Containers.Set("main", httpC)
 
 	tcpC := types.ContainerSpec{Image: "tcp-probe:1.0"}
-	tcpC.Ports.Set("rpc", 50051)
+	tcpC.Ports.Set("rpc", types.PortSpec{Port: 50051})
 	tcpC.Health = &types.HealthSpec{Live: &types.ProbeSpec{TCP: 50051}}
 	w.Containers.Set("tcp-side", tcpC)
 
@@ -285,7 +285,7 @@ func TestSynthesizeWorkload_SecretsAsEnvAndFile(t *testing.T) {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Ports.Set("web", 8080)
+	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	c.Attachments.Set("DB_PASSWORD", types.AttachmentRef{From: "db-credentials", As: "env"})
 	c.Attachments.Set("tls-cert", types.AttachmentRef{From: "tls-cert", As: "file", Path: "/etc/tls/server.crt"})
 	w.Containers.Set("main", c)
@@ -335,7 +335,7 @@ func TestSynthesizeWorkload_CommandAndArgs(t *testing.T) {
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Command = []string{"/bin/server", "--config"}
 	c.Args = []string{"/etc/app/config.yaml", "--verbose"}
-	c.Ports.Set("web", 8080)
+	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
 
 	svc := types.ServiceSpec{Type: "ClusterIP"}
@@ -375,8 +375,8 @@ func TestSynthesizeWorkload_ServiceTypeNodePort_PublishesPorts(t *testing.T) {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 
 	c := types.ContainerSpec{Image: "web:1.0"}
-	c.Ports.Set("http", 8080)
-	c.Ports.Set("metrics", 9090)
+	c.Ports.Set("http", types.PortSpec{Port: 8080})
+	c.Ports.Set("metrics", types.PortSpec{Port: 9090})
 	w.Containers.Set("main", c)
 
 	pub := types.ServiceSpec{Type: "NodePort"}
@@ -400,7 +400,7 @@ func TestSynthesizeWorkload_FormStatefulRendersService(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "db:1.0"}
-	c.Ports.Set("db", 5432)
+	c.Ports.Set("db", types.PortSpec{Port: 5432})
 	c.VolumeMounts = []types.VolumeMount{{Name: "data", Path: "/var/lib/db"}}
 	w.Containers.Set("main", c)
 	w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
@@ -462,7 +462,7 @@ func TestSynthesizeWorkload_ContainerResources(t *testing.T) {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Ports.Set("web", 8080)
+	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	c.Resources = &types.ResourceSpec{
 		Requests: &types.ResourceList{CPU: "250m", Memory: "128Mi"},
 		Limits:   &types.ResourceList{CPU: "1", Memory: "256Mi"},
@@ -537,7 +537,7 @@ func TestSynthesizeWorkload_ImagePullPolicy(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0", ImagePullPolicy: "IfNotPresent"}
-	c.Ports.Set("web", 8080)
+	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
 
 	svc := types.ServiceSpec{Type: "ClusterIP"}
@@ -588,7 +588,7 @@ func TestSynthesizeWorkload_PodLevelFields(t *testing.T) {
 		},
 	}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Ports.Set("web", 8080)
+	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
 	svc := types.ServiceSpec{Type: "ClusterIP"}
 	svc.Ports.Set("web", 8080)

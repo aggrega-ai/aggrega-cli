@@ -329,7 +329,7 @@ func maximalWorkloadCompute() types.Workload {
 				{ConfigMap: "api-settings", Prefix: "CFG_"},
 				{Secret: "db", Prefix: "DB_"},
 			},
-			Ports: om[int]("http", 8080),
+			Ports: om[types.PortSpec]("http", types.PortSpec{Port: 8080}),
 			Resources: &types.ResourceSpec{
 				Requests: &types.ResourceList{CPU: "100m", Memory: "128Mi", Extended: om[string]("nvidia.com/gpu", "1")},
 				Limits:   &types.ResourceList{CPU: "500m", Memory: "512Mi"},

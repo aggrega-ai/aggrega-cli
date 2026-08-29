@@ -181,7 +181,7 @@ func TestTranslateContainer_VolumeMountsAndSecretsBranches(t *testing.T) {
 		Command: []string{"sh"},
 		Args:    []string{"-c", "ok"},
 	}
-	c.Ports.Set("http", 8080)
+	c.Ports.Set("http", types.PortSpec{Port: 8080})
 	c.Variables.Set("ENV1", "v1")
 	c.Attachments.Set("API_TOKEN", types.AttachmentRef{From: "creds", As: "env"})
 	c.Attachments.Set("tls-key", types.AttachmentRef{From: "tls", As: "file", Path: "/tls/key"})

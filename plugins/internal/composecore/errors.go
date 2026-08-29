@@ -80,6 +80,22 @@ var errUnsupportedComposeEnvFrom = cerrors.Register("compiler-renderer-compose/u
 	Message:   "TRANSLATION_ERROR: compose has no env-from-object primitive; container declares envFrom",
 })
 
+// ErrUnsupportedComposePortProtocol is emitted when a published port declares a
+// transport protocol compose's port syntax cannot express. A compose published
+// port carries its transport as a `/protocol` suffix whose vocabulary is tcp and
+// udp; a workload port declaring anything else has no compose spelling.
+//
+// It halts rather than dropping the suffix, because a published port that
+// silently falls back to the default transport comes up carrying traffic its
+// clients cannot reach — the failure this whole surface exists to make
+// declarable, reintroduced at the point of translation.
+func ErrUnsupportedComposePortProtocol() error { return errUnsupportedComposePortProtocol }
+
+var errUnsupportedComposePortProtocol = cerrors.Register("compiler-renderer-compose/unsupported-compose-port-protocol", cerrors.Meta{
+	ShortCode: "E0258",
+	Message:   "TRANSLATION_ERROR: compose publishes a port's transport as a tcp or udp suffix; this port declares a transport compose cannot express",
+})
+
 // ErrUnconvertibleComposeQuantity is emitted when a container resources quantity
 // (cpu or memory) cannot be converted to the compose deploy.resources form
 // without loss — for example a fractional memory quantity or an unrecognized

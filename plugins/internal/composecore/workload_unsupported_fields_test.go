@@ -20,7 +20,7 @@ import (
 func baseDegradeWorkload() *types.Workload {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Ports.Set("http", 8080)
+	c.Ports.Set("http", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
 	svc := types.ServiceSpec{Type: "ClusterIP"}
 	svc.Ports.Set("http", 8080)
@@ -259,7 +259,7 @@ func TestUnsupportedField_PersistentTemplatePartial(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "store:1.0"}
-	c.Ports.Set("api", 9000)
+	c.Ports.Set("api", types.PortSpec{Port: 9000})
 	c.VolumeMounts = []types.VolumeMount{{Name: "session", Path: "/var/session"}}
 	w.Containers.Set("main", c)
 	w.Volumes.Set("session", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "1Gi"}})
