@@ -541,6 +541,100 @@ func runAuthoredTemplateFieldRule(
 	return objectionsAsHalt(raised, "template fields that reach outside the context they are evaluated against")
 }
 
+// authoredPathTemplateAxes is the axis pair the rules over an authored path
+// template are invoked once per: the boundary set a deployment declares, and the
+// path fields each of those boundaries writes.
+//
+// It is a fifth set beside the four above rather than more members of any of
+// them, for the reason the locals, provides and template-field sets are their
+// own: these rules read text an author wrote, which is there whether a plugin was
+// ever loaded or not, so folding them into the plugin-report set would put them
+// behind that set's resolution guard — and a rule skipped by a guard reports
+// exactly what a rule that ran and approved reports. It is separate from the
+// template-field set because the axes are separate: that one enumerates the
+// template fields of a FeatureRecipe an attachment binds, this one the path
+// fields of the scope itself, and a value satisfying one does not satisfy the
+// other.
+//
+// Naming both axes together is what makes the inner one un-skippable: a value
+// supplying boundaries but no field enumeration does not compile here, so these
+// rules cannot be invoked over an empty subject set by a caller that merely
+// forgot one axis.
+type authoredPathTemplateAxes interface {
+	constraint.BoundaryEnumerator
+	constraint.BoundaryPathTemplateFieldEnumerator
+}
+
+// runAuthoredPathTemplateRule invokes the rules declared over the path templates
+// each boundary of a deployment writes, and returns what they raised as the
+// render's halt.
+//
+// It runs before anything is evaluated, which is what the rules read for: a
+// reference these rules refuse is one whose value is never produced, so the
+// authored text is the only input that can carry the question. It carries no
+// plugin-resolution guard, for the reason the three authored-text readings above
+// carry none.
+//
+// # One declaration per field, one rule per fault
+//
+// The rules are invoked once per path template, so a deployment reaching outside
+// what a scope may name in both of its fields raises two objections and an
+// operator corrects both from one build. That is wider than the evaluation-time
+// refusal beneath this, which stops at the first template it reaches — and each
+// objection carries its own position, the scope's own key inside the deployment
+// document, which is why they are not folded into one message: a position is
+// something an operator navigates to, and a single message naming several can be
+// navigated to none.
+//
+// Both rules over the axis are asked, because they are separate findings with
+// separate remedies: one names a variable this surface does not offer, which the
+// operator rewrites against the ones it does; the other names a key beneath a
+// variable that is offered, which is a typo. A field declining the first is
+// reported by the second and never by neither.
+//
+// # What this does NOT reach, stated because an unstated bound reads as coverage
+//
+// The axis is the boundaries the deployment declares. The per-component field is
+// authored beneath a component inside a scope, at a coordinate no boundary key
+// enumerates, so the rules are not invoked over it; and the default this package
+// supplies where a scope writes nothing is not authored text at all, so it is not
+// enumerated. Both carriers keep the refusal the render makes when it evaluates
+// the template, which is retained for exactly this reason and shares these rules'
+// decision rather than re-implementing it.
+//
+// So what the declaration adds is a position and a breadth on one carrier, never
+// a refusal the build did not already make.
+//
+// The cancellation signal is the caller's own, so a long walk over a large
+// deployment stops within one boundary of the caller asking it to.
+func runAuthoredPathTemplateRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates authoredPathTemplateAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	raised, err := constraint.RunOnBoundaryPathTemplateFields(
+		ctx.Err, coordinates, coordinates, view,
+		BoundaryPathTemplateReadsOnlyAdmittedFields,
+	)
+	if err != nil {
+		return err
+	}
+
+	objections, err := constraint.RunOnBoundaryPathTemplateFields(
+		ctx.Err, coordinates, coordinates, view,
+		BoundaryPathTemplateReadsOnlyDefinedKeys,
+	)
+	if err != nil {
+		return err
+	}
+	raised = append(raised, objections...)
+
+	return objectionsAsHalt(raised, "path templates that reach outside the context they are evaluated against")
+}
+
 // crossBoundaryLinkAxis is the axis the rule over a connection's two rendering
 // providers is invoked once per: the connection set the finalised graph carries.
 //

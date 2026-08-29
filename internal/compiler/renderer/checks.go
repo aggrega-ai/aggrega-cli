@@ -1257,6 +1257,112 @@ var BoundaryAttachmentTemplateReadsOnlyDefinedReferences = constraint.Check[
 	},
 }
 
+// BoundaryPathTemplateReadsOnlyAdmittedFields reports each path template a
+// boundary declares that names a variable this surface does not offer.
+//
+// # One rule over a whole family of authored fields
+//
+// It is invoked once per path template the boundary writes, with the authored
+// field as the innermost coordinate, so one declaration covers every one of them
+// and a field the deployment surface gains later is covered with nothing here
+// moving. The alternative — a rule per path-bearing field — puts the field
+// identity in structure, and a field whose declaration somebody forgot is then
+// silently ungated with nothing able to report the omission.
+//
+// # One rule serves both fields even though their reference sets differ
+//
+// This carrier is the family's degenerate case: the two fields are checked
+// against two different admitted sets, because a whole-boundary template is
+// evaluated once for the scope while a per-component segment is evaluated once
+// for each component placed in it. That does not fork the rule, because the rule
+// does not hold a set — it hands the authored text and the field to the shared
+// classification, which selects the set the render itself would apply. What the
+// family buys on this carrier is therefore enumerable coverage rather than a
+// reference set shared across fields, and saying so is what keeps the shape from
+// being reached for where it pays less than it looks.
+//
+// Its detail carries the offending reference bare, the field it was written in
+// captioned, and the set this surface defines captioned. The last two are derived
+// from the admission itself rather than restated, so what the build refuses and
+// what the author is told cannot disagree. The field is named in the detail as
+// well as positioned because a boundary writes more than one, and a locator
+// naming the scope alone would not say which.
+var BoundaryPathTemplateReadsOnlyAdmittedFields = constraint.Check[
+	constraint.DescribedView,
+	constraint.BoundaryPathTemplateFieldSubject,
+]{
+	Sentinel: ErrPathTemplateInvalidField(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.BoundaryPathTemplateFieldSubject,
+	) []constraint.Objection {
+		ref := classifyPathTemplate(s.PathTemplateField(), v.BoundaryAuthoredPathTemplateText(
+			s.BoundaryPath(), s.PathTemplateField(),
+		))
+		if ref.Fault != pathTemplateInvalidField {
+			return nil
+		}
+		caption, phrase := templateAdmittedSetPhrase(ref.Violation)
+		return []constraint.Objection{s.RaiseWith(
+			ErrPathTemplateInvalidField(),
+			constraint.Uncaptioned(ref.Violation.Ref.Path),
+			constraint.Captioned("written in", s.PathTemplateField()),
+			constraint.Captioned(caption, phrase),
+		)}
+	},
+}
+
+// BoundaryPathTemplateReadsOnlyDefinedKeys reports each path template a boundary
+// declares that names a key the variable it reads through does not define.
+//
+// It is a separate identity from the rule above for the reason the locals pair
+// are separate: the two describe different mistakes. That one names a VARIABLE
+// this surface does not offer — one the context does not carry at all, or the
+// component's own id in a template evaluated once for the whole scope, where a
+// single component's id would make the emitted path depend on which component was
+// placed first. This one names a key beneath a variable that IS offered, which is
+// a mistyped key rather than a wrong variable, and which would otherwise render as
+// an empty path segment an operator only discovers in the emitted layout. The two
+// share their whole body and differ in which fault they report, so a field carries
+// at most one of them.
+//
+// The identity it raises is the unknown-reference halt every template surface
+// reports for a mistyped key, which is what the evaluation beneath it already
+// raises for the same text — so the declaration adds a position and a breadth,
+// never a second name for one mistake.
+//
+// Its detail names the offending reference bare, the field it was written in
+// captioned for the reason the rule above states, and the set that was consulted
+// captioned — which for a refused key is that key's own variable rather than the
+// context, the distinction the author needs since the two refusals read
+// identically otherwise.
+var BoundaryPathTemplateReadsOnlyDefinedKeys = constraint.Check[
+	constraint.DescribedView,
+	constraint.BoundaryPathTemplateFieldSubject,
+]{
+	Sentinel: ErrTemplateUnknownRoot(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.BoundaryPathTemplateFieldSubject,
+	) []constraint.Objection {
+		ref := classifyPathTemplate(s.PathTemplateField(), v.BoundaryAuthoredPathTemplateText(
+			s.BoundaryPath(), s.PathTemplateField(),
+		))
+		if ref.Fault != pathTemplateUnknownKey {
+			return nil
+		}
+		caption, phrase := templateAdmittedSetPhrase(ref.Violation)
+		return []constraint.Objection{s.RaiseWith(
+			ErrTemplateUnknownRoot(),
+			constraint.Uncaptioned(ref.Violation.Ref.Path),
+			constraint.Captioned("written in", s.PathTemplateField()),
+			constraint.Captioned(caption, phrase),
+		)}
+	},
+}
+
 // RecipePublishesEveryDeclaredProvidesKey reports each key a component type's
 // output contract declares that the Recipe bound to the node resolved no value
 // for.

@@ -415,13 +415,20 @@ var coordinateAccessors = map[string][]string{
 	// the coordinate is not one authored key: it labels a whole template-bearing
 	// field, which for a keyed block carries the entry's own key inside the label.
 	"template-field": {"TemplateField"},
-	"boundary":       {"BoundaryPath"},
-	"subsystem":      {"SubsystemPath"},
-	"module":         {"ModulePath"},
-	"provider":       {"ProviderName"},
-	"assembly-path":  {"AssemblyPath"},
-	"path":           {"EmittedPath"},
-	"artifact":       {"ArtifactName"},
+	// A separate row from the one above rather than a second use of it, because
+	// the two axes are not the same axis reached differently. This one labels the
+	// path fields a deployment scope writes, whose admitted reference set differs
+	// per field, where that one labels the template fields of a document whose
+	// fields share one set. The accessor spells the distinction so a check cannot
+	// be written against the wrong axis and still compile.
+	"path-template-field": {"PathTemplateField"},
+	"boundary":            {"BoundaryPath"},
+	"subsystem":           {"SubsystemPath"},
+	"module":              {"ModulePath"},
+	"provider":            {"ProviderName"},
+	"assembly-path":       {"AssemblyPath"},
+	"path":                {"EmittedPath"},
+	"artifact":            {"ArtifactName"},
 }
 
 // subjectContractAccessors names the accessors [Subject] itself supplies, so a
@@ -1025,6 +1032,13 @@ var subjectKindBindings = map[SubjectKind]struct {
 		make: func(f string) Subject {
 			return newBoundaryAttachmentTemplateFieldSubject(f, "prod", "shared-db", "provides[dsn]",
 				"spec", "provides", "dsn")
+		},
+	},
+	SubjectBoundaryPathTemplateField: {
+		iface: reflect.TypeOf((*BoundaryPathTemplateFieldSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newBoundaryPathTemplateFieldSubject(f, "prod/edge", "directory",
+				"spec", "boundaries", "prod", "boundaries", "edge", "directory")
 		},
 	},
 	SubjectNodeProvidesKey: {

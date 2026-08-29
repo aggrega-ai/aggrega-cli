@@ -85,6 +85,14 @@ type traversalFixture struct {
 	// label. The authored keys therefore arrive from the enumerator.
 	boundaryAttachFields map[string][]TemplateFieldCoordinate
 
+	// boundaryPathFields carries bare names where the axis above carries a
+	// coordinate, and the difference is the carrier's rather than an
+	// inconsistency: a path field's name IS its authored key, one segment at the
+	// scope's own level, and it is written in the same document as the scope — so
+	// the traversal spells the locator from the name and takes the file from the
+	// scope.
+	boundaryPathFields map[string][]string
+
 	attachEmittedPaths         map[string][]AuthoredCoordinate
 	boundaryAttachEmittedPaths map[string][]AuthoredCoordinate
 }
@@ -152,6 +160,10 @@ func (f traversalFixture) BoundaryAttachmentTemplateFields(
 	boundary, attachment string,
 ) []TemplateFieldCoordinate {
 	return f.boundaryAttachFields[fixtureKey(boundary, attachment)]
+}
+
+func (f traversalFixture) BoundaryPathTemplateFields(boundary string) []string {
+	return f.boundaryPathFields[fixtureKey(boundary)]
 }
 
 func (f traversalFixture) ProvidesKeys(node string) []AuthoredCoordinate {
@@ -556,6 +568,13 @@ func newTraversalFixture() traversalFixture {
 				},
 			},
 		},
+		// The path fields the same scope writes. Both are carried because the two
+		// are separate subjects over one scope, which is what shows the axis is
+		// keyed by the field and not by the scope — a traversal invoking once per
+		// scope would report one record here and pass every count-shaped check.
+		boundaryPathFields: map[string][]string{
+			fixtureKey("prod/edge"): {"directory", "subDirectory"},
+		},
 
 		// The SAME emitted name under two attachments on one node, for the reason the
 		// artifact axis above gives: two FeatureRecipes may each place a file under one
@@ -849,6 +868,23 @@ func traversalCases() []traversalCase {
 				"featurerecipes/shared-db.yaml|.spec.valuesMapping",
 				"featurerecipes/shared-db.yaml|.spec.provides.dsn",
 				"featurerecipes/shared-db.yaml|.spec.artifacts",
+			},
+		},
+		{
+			// The path-template axis over the same scope. Both records position
+			// INSIDE the deployment document, under the scope's own key with the
+			// container's key repeated for the nesting — which is the half the
+			// axis above deliberately does not do, because its field is written in
+			// a different document from the scope that reaches it. Two records for
+			// one scope is what shows the traversal is invoked per field.
+			kind: SubjectBoundaryPathTemplateField,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryPathTemplateFields(cancelled, f, f, v,
+					raisingCheck[BoundaryPathTemplateFieldSubject]())
+			},
+			want: []string{
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.directory",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.subDirectory",
 			},
 		},
 		{
@@ -1608,6 +1644,21 @@ func coordinateFlowCases() []coordinateFlowCase {
 				"prod/edge|shared-db|valuesMapping",
 				"prod/edge|shared-db|provides[dsn]",
 				"prod/edge|shared-db|artifacts[cm.yaml]",
+			},
+		},
+		{
+			kind: SubjectBoundaryPathTemplateField,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, BoundaryPathTemplateFieldSubject]) ([]Objection, error) {
+					return RunOnBoundaryPathTemplateFields(nil, f, f, traversalView{}, c)
+				}, func(s BoundaryPathTemplateFieldSubject) string {
+					return s.BoundaryPath() + "|" + s.PathTemplateField()
+				})
+			},
+			want: []string{
+				"prod/edge|directory",
+				"prod/edge|subDirectory",
 			},
 		},
 		{

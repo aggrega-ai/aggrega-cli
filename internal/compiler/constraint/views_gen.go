@@ -2634,6 +2634,46 @@ type DescribedView interface {
 	// renderer.BoundaryScopeFRTemplateFields(fr).
 	BoundaryAttachmentAuthoredTemplateText(boundary string, attachment string, field string) string
 
+	// BoundaryAuthoredPathTemplateText is the template text one boundary of a
+	// deployment writes for one of its path fields, as written and before
+	// anything is evaluated.
+	//
+	// The field is a coordinate rather than part of this fact's name, and that
+	// is the whole shape rather than a detail of it. A boundary writes several
+	// path templates and may gain more; naming each in its own fact would put
+	// the field identity in structure, so a field added later would need a
+	// fact, a coordinate, a traversal entry and a declaration of its own —
+	// and would be silently ungated if any of the four were forgotten. Keyed
+	// by the field, the axis is data: one more name is enumerated and nothing
+	// else moves.
+	//
+	// One fact serves every field even though the reference sets differ, and
+	// that is worth stating because it is the reverse of the carrier this
+	// shape was first built on. There, one set served the whole carrier and
+	// the fact carried the question whole. Here the two fields are checked
+	// against two different admitted sets over one context type — a
+	// whole-boundary template is evaluated once for the scope, so a single
+	// component's id would make the emitted path depend on evaluation order,
+	// while a per-component segment is evaluated once for each component
+	// placed. The fact stays one because it hands over TEXT: which set applies
+	// follows from the field, which the reader already has as a coordinate.
+	//
+	// The fact is the text and not an analysis of it, on the reading every
+	// authored-text fact carries: a collected reference set is a judgement
+	// whose direction decides which rules may read it, and handing over the
+	// text leaves that direction to the rule that needs it.
+	//
+	// It covers what the SCOPE declares and says so rather than leaving the
+	// bound implied. The same field may be overridden on a component inside
+	// the scope, which no boundary key enumerates, so that text is not
+	// answered here; and a field the operator left empty carries nothing,
+	// because what the render evaluates in its place is a default this
+	// compiler supplies rather than anything anybody authored.
+	//
+	// Keyed by (boundary, path-template-field); read from
+	// renderer.BoundaryPathTemplateFields(b).
+	BoundaryAuthoredPathTemplateText(boundary string, field string) string
+
 	// ProviderArtifactTemplateDelimiters is the delimiter pair the provider
 	// rendering a node's documents declares its artifact entries are read
 	// with, so that a target syntax colliding with the usual pair is left

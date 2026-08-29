@@ -148,6 +148,11 @@ spec:
 		// "prod/edge", and the document spells it as "edge" inside "prod" under the
 		// container's own key — the two levels a single spliced segment would lose.
 		//
+		// The inner scope carries both path fields, because the path-template axis
+		// positions a finding at the scope's own key inside this document and a
+		// scope writing neither would leave that locator unresolved against any
+		// real file.
+		//
 		// It is the boundaried one of the deployment's two component-routing forms.
 		// The other is below, and the two are separate documents because the schema
 		// refuses one document carrying both: a deployment either names boundaries
@@ -163,6 +168,8 @@ spec:
     prod:
       boundaries:
         edge:
+          directory: "regions/{{ .boundary_name }}"
+          subDirectory: "{{ .component_id }}"
           features:
             shared-db: {}
             audit: {}

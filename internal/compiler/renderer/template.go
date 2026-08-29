@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // templateMissingKey is text/template's missing-key policy for one surface.
@@ -223,6 +224,163 @@ var pathTemplateSubDirectoryScope = templateScope{
 	data: PathTemplateContext{},
 }
 
+// pathTemplateSubDirectoryField is the authored key a `subDirectory:` template is
+// written under, and the string the evaluation selects that surface's scope by.
+//
+// One constant because the two are one thing rather than two that agree: the
+// field a rule is invoked for and the surface an evaluation resolves against are
+// the same authored key, and spelling it twice would let a rule read one surface
+// while the render evaluated the other.
+const pathTemplateSubDirectoryField = "subDirectory"
+
+// pathTemplateDirectoryField is the authored key a `directory:` template is
+// written under, for the reason the constant above states.
+const pathTemplateDirectoryField = "directory"
+
+// pathTemplateScopeFor is the reference set one path-template surface admits,
+// selected by the authored field the template was written under.
+//
+// It is the ONE home of that selection, and both surfaces route through it: the
+// evaluation the render performs when it reaches a template, and the rules
+// declared over the same authored text. Two readings of which surface a field
+// belongs to would be free to check a template against a set the render never
+// applies to it, and the disagreement would surface as a build refusing something
+// it then rendered — or rendering something it claimed to refuse.
+//
+// Anything other than the sub-directory field selects the directory scope, which
+// is the narrower of the two. A caller naming a surface this function does not
+// know is therefore held to the stricter set rather than the looser one, so an
+// unrecognised name cannot widen what a template may reach.
+func pathTemplateScopeFor(field string) templateScope {
+	if field == pathTemplateSubDirectoryField {
+		return pathTemplateSubDirectoryScope
+	}
+	return pathTemplateDirectoryScope
+}
+
+// BoundaryPathTemplateField is one authored path template on a boundary: the
+// field it was written under, and the text as written.
+//
+// The two travel together because a surface deriving one from the other would be
+// free to differ from this one. The field is what a diagnostic quotes, what
+// positions a finding inside the deployment document, and what selects the
+// reference set the text is checked against; the text is what that check parses.
+type BoundaryPathTemplateField struct {
+	// Field is the authored key the template was written under, which is also the
+	// label an author reads it back by. It is a single key at the boundary's own
+	// level rather than a composed label, so it spells its own locator segment.
+	Field string
+
+	// Text is the template as written, before anything is evaluated.
+	Text string
+}
+
+// BoundaryPathTemplateFields presents every path template one boundary declares,
+// as the one enumeration of that set.
+//
+// It is one home because three surfaces need the same answer: the axis a declared
+// rule over these fields is invoked along, the presentation that hands one field's
+// authored text to such a rule, and any caller asking which fields a boundary
+// wrote. Two enumerations would be free to differ on which fields they carry, and
+// a field either of them omitted would be silently unchecked with nothing
+// reporting it.
+//
+// A field the boundary leaves empty contributes nothing, which is the honest
+// reading rather than a filter: the operator authored no template there, and what
+// the render evaluates in its place is a default this package supplies. A rule
+// invoked over a compiler-supplied default would report a fault against text
+// nobody wrote.
+//
+// The order is fixed — the whole-boundary field before the per-component one —
+// so a caller reporting the first offending field reports the same field on every
+// run.
+func BoundaryPathTemplateFields(b types.Boundary) []BoundaryPathTemplateField {
+	var out []BoundaryPathTemplateField
+	if b.Directory != "" {
+		out = append(out, BoundaryPathTemplateField{Field: pathTemplateDirectoryField, Text: b.Directory})
+	}
+	if b.SubDirectory != "" {
+		out = append(out, BoundaryPathTemplateField{Field: pathTemplateSubDirectoryField, Text: b.SubDirectory})
+	}
+	return out
+}
+
+// pathTemplateFault names what one authored path template is refused for, or
+// records that every reference it makes is admitted.
+type pathTemplateFault int
+
+const (
+	// pathTemplateAdmitted is a template the surface admits every reference of.
+	pathTemplateAdmitted pathTemplateFault = iota
+
+	// pathTemplateUnparsed is text that is not a template at all. It is a failure
+	// to READ the field rather than a verdict on what it says, which is why it is
+	// a class of its own: naming a refused reference for one would describe the
+	// author's mistake wrongly.
+	pathTemplateUnparsed
+
+	// pathTemplateInvalidField is a template naming a variable this surface does
+	// not admit at the root: one the context type does not define at all, or
+	// .component_id in a `directory:` template, where a single component's id
+	// would make the emitted path depend on evaluation order.
+	pathTemplateInvalidField
+
+	// pathTemplateUnknownKey is a template naming a key the referenced variable's
+	// own type does not define — a mistyped key beneath a closed variable, which
+	// would otherwise render as an empty path segment.
+	pathTemplateUnknownKey
+)
+
+// pathTemplateRef is one field's classification: the fault it carries, the
+// refused reference where there is one, and the parse failure where the text
+// could not be read at all.
+type pathTemplateRef struct {
+	Fault     pathTemplateFault
+	Violation *templateScopeViolation
+	ParseErr  error
+}
+
+// pathTemplateFaultOf is the ONE mapping from a refused path-template reference
+// to the fault that describes it.
+//
+// Both surfaces route through it: the halt the evaluation raises when it reaches
+// a template, and the rules declared over the same authored text. Two readings of
+// this split would be free to disagree about which identity describes one
+// refusal, and the disagreement would surface as one author being told two
+// different things about one template depending on which surface caught it.
+//
+// The split is on the nesting the refusal happened at, because that is what the
+// two identities genuinely distinguish: a refused ROOT is a variable this surface
+// does not offer, which the path-template halt is published for, while a refused
+// KEY beneath an admitted variable is the general unknown-reference halt every
+// template surface reports for a mistyped key.
+func pathTemplateFaultOf(v *templateScopeViolation) pathTemplateFault {
+	if v.Level == scopeLevelKey {
+		return pathTemplateUnknownKey
+	}
+	return pathTemplateInvalidField
+}
+
+// classifyPathTemplate decides what one authored path template is refused for,
+// against the reference set the field's own surface admits.
+//
+// It parses the text where the evaluation shares one walk between its admission
+// check and the data it seeds — the same rule over the same collection, differing
+// only in who performed the walk. Both route the verdict through
+// [pathTemplateFaultOf], so what the two can disagree about is only which fields
+// they were asked over.
+func classifyPathTemplate(field, text string) pathTemplateRef {
+	tree, err := gotmpl.ParseTree(text, "{{", "}}")
+	if err != nil {
+		return pathTemplateRef{Fault: pathTemplateUnparsed, ParseErr: err}
+	}
+	v := pathTemplateScopeFor(field).check(tree)
+	if v == nil {
+		return pathTemplateRef{Fault: pathTemplateAdmitted}
+	}
+	return pathTemplateRef{Fault: pathTemplateFaultOf(v), Violation: v}
+}
+
 // EvalPathTemplate evaluates a Release.spec.boundaries[].directory or
 // subDirectory template. Differs from EvalTemplate in two load-bearing ways:
 //
@@ -241,10 +399,7 @@ var pathTemplateSubDirectoryScope = templateScope{
 // boundaryName is named in the diagnostic when a reference is refused, so the
 // operator can locate the offending template without searching the Release file.
 func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data PathTemplateContext) (string, error) {
-	scope := pathTemplateDirectoryScope
-	if contextKind == "subDirectory" {
-		scope = pathTemplateSubDirectoryScope
-	}
+	scope := pathTemplateScopeFor(contextKind)
 	return templateEval{
 		name:       name,
 		text:       tmplText,
@@ -268,10 +423,26 @@ func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data Pat
 // unknown-reference halt instead, the same one every other template surface
 // reports for a mistyped key, so neither diagnostic tells the author their
 // reference is something it is not.
+//
+// Which of the two a refusal is routes through [pathTemplateFaultOf], the same
+// mapping the rules declared over these templates read, so the identity an author
+// is told cannot depend on which surface caught the reference.
 func pathTemplateRefusedErr(boundaryName string, v *templateScopeViolation) error {
-	if v.Level == scopeLevelKey {
+	if pathTemplateFaultOf(v) == pathTemplateUnknownKey {
 		return templateUnknownRootErr(cerrors.CatalogError, boundaryName, v)
 	}
+	return pathTemplateInvalidFieldErr(boundaryName, v)
+}
+
+// pathTemplateInvalidFieldErr states the halt for a path template naming a
+// variable this surface does not admit, in the terms that describe it.
+//
+// It is one home because two surfaces state it: the halt the evaluation raises,
+// and the detail the rule declared over the same admission carries. The rule
+// raises an objection rather than this error, so what the two share is the
+// wording and the identity rather than the value — which is why the reference and
+// the boundary are the only things it is given.
+func pathTemplateInvalidFieldErr(boundaryName string, v *templateScopeViolation) error {
 	inner := fmt.Errorf("%w: boundary %q references unknown field %s; allowlist: see aggrega-docs/language-reference/path-template-variables.md",
 		ErrPathTemplateInvalidField(), boundaryName, v.Ref.Path)
 	return cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{}, inner.Error())

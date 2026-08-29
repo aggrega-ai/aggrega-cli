@@ -1008,6 +1008,73 @@ func newBoundaryAttachmentTemplateFieldSubject(
 	}
 }
 
+// BoundaryPathTemplateFieldSubject is the subject of a check invoked once per
+// path template one boundary of a deployment declares.
+//
+// The innermost coordinate is the AUTHORED FIELD the template was written under,
+// which is what makes the kind a family rather than one kind per path-bearing
+// field. A boundary writes several such fields and may gain more; a kind per
+// field would put the field identity in structure, so a field added later would
+// need its own kind, fact, traversal entry and declaration — and would be
+// silently ungated if any of the four were forgotten. Keyed by the field, the
+// axis is data, and what a check covers is enumerable rather than a count of how
+// many declarations somebody remembered to write.
+//
+// # This carrier is the family's degenerate case, and saying so is the point
+//
+// The shape pays most where ONE reference set serves a whole carrier. Here it
+// does not: the two fields are evaluated against one context type through two
+// different admitted sets, because a whole-boundary template is evaluated once
+// for the scope while a per-component segment is evaluated once for each
+// component placed in it. So the mapping is necessarily keyed per field, and what
+// the family buys on this carrier is enumerable coverage alone. The innermost
+// coordinate is named for the path templates specifically rather than for
+// template fields generally, so that difference is legible on the enumeration a
+// reader reads coverage off.
+//
+// It is rooted at a boundary because that is where such a template is declared:
+// it is written once on the scope and reaches every component the scope holds, so
+// a node-rooted walk would present one authored field once per component and not
+// at all for a boundary holding none.
+type BoundaryPathTemplateFieldSubject interface {
+	Subject
+
+	// BoundaryPath is the boundary the template was declared on, as every keyed
+	// fact takes it. It is the scope's path from the document's own scope set
+	// rather than a bare name, because boundaries nest and two scopes at
+	// different depths may carry one name.
+	BoundaryPath() string
+
+	// PathTemplateField is the authored field the check was invoked for, spelled
+	// the way the deployment document writes it.
+	PathTemplateField() string
+
+	boundaryPathTemplateField()
+}
+
+type boundaryPathTemplateFieldSubject struct {
+	provenance
+	boundary string
+	field    string
+}
+
+func (boundaryPathTemplateFieldSubject) boundaryPathTemplateField() {}
+
+func (s boundaryPathTemplateFieldSubject) BoundaryPath() string { return s.boundary }
+
+func (s boundaryPathTemplateFieldSubject) PathTemplateField() string { return s.field }
+
+func newBoundaryPathTemplateFieldSubject(
+	sourceFile, boundary, field string,
+	segments ...string,
+) BoundaryPathTemplateFieldSubject {
+	return boundaryPathTemplateFieldSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		boundary:   boundary,
+		field:      field,
+	}
+}
+
 // NodeProvidesKeySubject is the subject of a check invoked once per key a node's
 // Recipe provides.
 type NodeProvidesKeySubject interface {

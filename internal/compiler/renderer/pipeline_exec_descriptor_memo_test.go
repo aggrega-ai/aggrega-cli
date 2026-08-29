@@ -207,7 +207,7 @@ func TestStepDescriptorRetentionSpansTheWholeRender(t *testing.T) {
 			}
 			view := newDescribedView(
 				context.Background(), &types.IRGraph{}, stubGraphFacts{},
-				recipes, RecipeLookup{}, retention, counted, nil,
+				recipes, RecipeLookup{}, nil, retention, counted, nil,
 			)
 			if view == nil {
 				t.Fatal("the presentation was not built; there is nothing to read")

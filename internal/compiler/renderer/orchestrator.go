@@ -625,7 +625,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// loaded when a reader first asks about it and never because this
 	// presentation exists.
 	result.DescribedView = newDescribedView(
-		ctx, graph, input.GraphView, nodeRecipes, recipeLookup,
+		ctx, graph, input.GraphView, nodeRecipes, recipeLookup, releaseOf(input.ResolveResult),
 		input.stepDescriptors, input.PluginPathLookup, engineFactory,
 	)
 
@@ -685,6 +685,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// into an empty value in emitted output. Asking before evaluation is the
 		// whole reason a rule reads authored text.
 		if err := runAuthoredTemplateFieldRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
+		// The rules over the path templates each boundary of the deployment
+		// writes, asked against the same presentation and the same enumeration.
+		//
+		// They are asked here, ahead of the boundary directory walk and the node
+		// placement that follow, because that is where those templates are
+		// evaluated: a reference the surface does not admit would otherwise reach
+		// the walk and halt from it, reported against the scope's name with no
+		// position inside the document and only for the first template reached.
+		// Asking before evaluation is the whole reason a rule reads authored text.
+		if err := runAuthoredPathTemplateRule(ctx, result.DescribedView, describedAxes); err != nil {
 			return nil, err
 		}
 

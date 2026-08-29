@@ -105,6 +105,14 @@ type describedView struct {
 	// attachment names the document the render actually bound.
 	recipeLookup RecipeLookup
 
+	// release is the deployment document, read only for the text an operator
+	// authored on a boundary. It is held rather than reached for through the
+	// graph, because the graph's projection of a boundary records one only once
+	// something is attached at it — so a scope carrying a path template and
+	// nothing else would be absent, and the fact would answer empty for text the
+	// operator did write.
+	release *types.Release
+
 	// describe reads one step's plugin self-report through the render's retention,
 	// so a plugin several steps or several nodes name is described once for the
 	// whole render.
@@ -148,12 +156,19 @@ type describedView struct {
 // absent. A presentation missing any of them would answer a whole class of facts
 // from nothing, and a presentation that answers emptily is worse than an absent
 // one, because a rule reading it cannot tell an empty answer from a real one.
+//
+// The deployment document is taken but is NOT among the products whose absence
+// returns nil, and the asymmetry is deliberate. The graph, the earlier
+// presentation and the retention key whole classes of fact; the deployment
+// document keys one, and a render given none enumerates no boundary at all — so a
+// rule over that fact is invoked zero times rather than being answered emptily.
 func newDescribedView(
 	ctx context.Context,
 	graph *types.IRGraph,
 	earlier constraint.GraphView,
 	recipes map[string]*types.Recipe,
 	recipeLookup RecipeLookup,
+	release *types.Release,
 	descriptors *stepDescriptorMemo,
 	lookup pluginpath.Lookup,
 	engineFactory EngineFactory,
@@ -167,6 +182,7 @@ func newDescribedView(
 		graph:         graph,
 		recipes:       recipes,
 		recipeLookup:  recipeLookup,
+		release:       release,
 		describe:      stepDescriberOver(descriptors, lookup),
 		lookup:        lookup,
 		engineFactory: engineFactory,
@@ -470,6 +486,34 @@ func (v *describedView) BoundaryAttachmentAuthoredTemplateText(
 	}
 	for _, entry := range BoundaryScopeFRTemplateFields(fr) {
 		if entry.Label == field {
+			return entry.Text
+		}
+	}
+	return ""
+}
+
+// BoundaryAuthoredPathTemplateText returns the template text one boundary of a
+// deployment writes for one of its path fields, as written and before anything is
+// evaluated.
+//
+// It is answered from the same enumeration the field axis is built from, so a
+// field that axis presents is a field this can answer. Reading the field out of
+// the boundary by name here instead would be a second reading of which fields
+// exist, and a field the two disagreed about would be enumerated with no text or
+// carry text nothing was invoked for.
+//
+// The boundary is located through the same walk the axis names scopes by, so a
+// path that axis produced is a path this resolves. A field the enumeration does
+// not carry answers empty, which is the honest reading: the field is enumerated
+// rather than looked up, so a name reaching here that the document does not write
+// names nothing.
+func (v *describedView) BoundaryAuthoredPathTemplateText(boundary string, field string) string {
+	b, held := boundaryAtPath(v.release, boundary)
+	if !held {
+		return ""
+	}
+	for _, entry := range BoundaryPathTemplateFields(b) {
+		if entry.Field == field {
 			return entry.Text
 		}
 	}

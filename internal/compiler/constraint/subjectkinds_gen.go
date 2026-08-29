@@ -121,6 +121,9 @@ const (
 	// SubjectBoundaryAttachmentTemplateField is the subject kind (boundary, attachment, template-field), keyed by 1 declared fact.
 	SubjectBoundaryAttachmentTemplateField SubjectKind = "(boundary, attachment, template-field)"
 
+	// SubjectBoundaryPathTemplateField is the subject kind (boundary, path-template-field), keyed by 1 declared fact.
+	SubjectBoundaryPathTemplateField SubjectKind = "(boundary, path-template-field)"
+
 	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 4 declared facts.
 	SubjectNodeArtifact SubjectKind = "(node, artifact)"
 
@@ -178,6 +181,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeAttachmentLocalsKey, Coordinates: []string{"node", "attachment", "locals-key"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentLocalsKey, Coordinates: []string{"boundary", "attachment", "locals-key"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentTemplateField, Coordinates: []string{"boundary", "attachment", "template-field"}, Traversal: TraversalPull},
+	{Kind: SubjectBoundaryPathTemplateField, Coordinates: []string{"boundary", "path-template-field"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeArtifact, Coordinates: []string{"node", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentArtifact, Coordinates: []string{"node", "attachment", "artifact"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentArtifact, Coordinates: []string{"boundary", "attachment", "artifact"}, Traversal: TraversalPull},

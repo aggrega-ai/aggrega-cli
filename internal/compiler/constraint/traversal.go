@@ -1062,6 +1062,55 @@ func RunOnBoundaryAttachmentTemplateFields[V View](
 		})
 }
 
+// RunOnBoundaryPathTemplateFields invokes check once per path template each
+// boundary of a deployment declares, in boundary order and then in the order that
+// boundary's fields are enumerated in.
+//
+// The locator is .spec.boundaries.<boundary>.<field>, with the container's key
+// repeated for each level of a nested boundary, which is the site the operator
+// wrote. The boundary DOES contribute segments here, where a boundary-rooted kind
+// whose locator names a FeatureRecipe contributes none: the difference is which
+// document the finding is positioned at. A path template is authored in the
+// deployment document itself, under the scope's own key, so the scope path is
+// exactly what walks the reader to it — and the file is the scope's own for the
+// same reason, rather than something the field enumerator restates.
+//
+// # The field is enumerated, which is what makes coverage assertable
+//
+// The innermost coordinate is the authored field, so a boundary gaining a path
+// template gains a subject with no kind, fact, traversal entry or declaration
+// moving. That is the property the family is for: what a rule over this kind
+// covers is read off the enumeration rather than counted from how many
+// declarations somebody remembered to write.
+//
+// # What this axis does NOT reach, stated because an unstated bound reads as coverage
+//
+// The scope set is the boundaries the deployment declares. A per-component
+// override of the same field — written under a component inside a scope rather
+// than on the scope — is authored at a coordinate no boundary key enumerates, so
+// a rule over this kind is not invoked over it. That carrier keeps the refusal
+// the render makes when it evaluates the template.
+func RunOnBoundaryPathTemplateFields[V View](
+	cancelled Cancellation,
+	boundaries BoundaryEnumerator,
+	fields BoundaryPathTemplateFieldEnumerator,
+	view V,
+	check Check[V, BoundaryPathTemplateFieldSubject],
+) ([]Objection, error) {
+	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
+		func(boundary AuthoredCoordinate) []BoundaryPathTemplateFieldSubject {
+			names := fields.BoundaryPathTemplateFields(boundary.Value)
+			out := make([]BoundaryPathTemplateFieldSubject, 0, len(names))
+			for _, field := range names {
+				out = append(out, newBoundaryPathTemplateFieldSubject(
+					boundary.SourceFile, boundary.Value, field,
+					nestedScopeSegments(boundaryNesting, boundary.Value, field)...,
+				))
+			}
+			return out
+		})
+}
+
 // RunOnNodeProvidesKeys invokes check once per key each node's Recipe provides,
 // in node order and then provides order.
 //

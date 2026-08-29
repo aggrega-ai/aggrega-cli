@@ -108,11 +108,24 @@ func newDescribedStageCoordinates(
 		recipes:          recipes,
 		recipeLookup:     recipeLookup,
 	}
-	if resolved != nil {
-		c.release = resolved.Release
-	}
+	c.release = releaseOf(resolved)
 	c.releaseFile = releaseFileOf(resolved)
 	return c
+}
+
+// releaseOf is the deployment document a render was given, nil when it was given
+// no resolve result.
+//
+// One home because two consumers need it: the boundary axes this file derives,
+// and the presentation that answers a fact keyed by a boundary. They must read
+// the same document — a rule invoked over a scope the axis found has to be
+// answerable by the presentation — and two readings of the absent case would be
+// free to differ, one substituting an empty document where the other left nil.
+func releaseOf(resolved *resolver.ResolveResult) *types.Release {
+	if resolved == nil {
+		return nil
+	}
+	return resolved.Release
 }
 
 // releaseFileOf is the deployment document a boundary coordinate is positioned
@@ -369,13 +382,63 @@ func (c *describedStageCoordinates) BoundaryAttachmentTemplateFields(
 	return out
 }
 
+// BoundaryPathTemplateFields returns the authored fields one boundary writes a
+// path template under, in the fixed order the enumeration declares.
+//
+// The enumeration is [BoundaryPathTemplateFields] — the same one the render's own
+// refusal is driven from — so a field presented here is a field that refusal
+// reaches, and a field added to the set arrives on both surfaces at once.
+// Reproducing the set here would let the axis and the refusal cover different
+// fields, and the field whichever of them omitted would be unchecked with nothing
+// reporting it.
+//
+// A field the operator left empty contributes nothing, which is what the shared
+// enumeration decides rather than a filter applied here: the render evaluates a
+// default this package supplies in its place, and a rule invoked over that
+// default would report a fault against text nobody wrote.
+//
+// The coordinates carry no file of their own, because the field is written in the
+// same document as the scope that holds it — so the traversal positions a finding
+// from the scope's own file and a second reading of it here could only disagree.
+func (c *describedStageCoordinates) BoundaryPathTemplateFields(boundary string) []string {
+	b, held := boundaryAtPath(c.release, boundary)
+	if !held {
+		return nil
+	}
+	fields := BoundaryPathTemplateFields(b)
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, field.Field)
+	}
+	return out
+}
+
 // walkBoundaries visits every declared boundary with the path it is named by,
 // descending into nested scopes, in the deployment's own order.
 func (c *describedStageCoordinates) walkBoundaries(visit func(path string, b types.Boundary)) {
-	if c.release == nil {
+	walkReleaseBoundaries(c.release, visit)
+}
+
+// walkReleaseBoundaries visits every boundary a deployment declares with the path
+// it is named by, descending into nested scopes, in the document's own order.
+//
+// A scope normalization synthesized is not visited: the operator declared no such
+// scope, so a coordinate naming one would name a key the document does not
+// contain. Its children are still descended into, from the empty path, so a
+// component placed beneath it is reached by the path the document would spell.
+//
+// One home because two surfaces walk it — the axes this stage supplies, and the
+// presentation that answers a fact keyed by a boundary. Two walks would be free
+// to differ on which scopes they visit or on the path they name one by, and a
+// rule would then be invoked at a coordinate the presentation could not answer.
+func walkReleaseBoundaries(release *types.Release, visit func(path string, b types.Boundary)) {
+	if release == nil {
 		return
 	}
-	rel := types.NormalizeRelease(c.release).Release()
+	rel := types.NormalizeRelease(release).Release()
 	if rel == nil {
 		return
 	}
@@ -399,6 +462,21 @@ func (c *describedStageCoordinates) walkBoundaries(visit func(path string, b typ
 		}
 		walk(start, b)
 	}
+}
+
+// boundaryAtPath returns the boundary a deployment declares at one path.
+//
+// It walks rather than indexing, through the one walk above, so the path it
+// matches is spelled exactly as the axis that produced the coordinate spelled it.
+func boundaryAtPath(release *types.Release, path string) (types.Boundary, bool) {
+	var found types.Boundary
+	var held bool
+	walkReleaseBoundaries(release, func(p string, b types.Boundary) {
+		if p == path {
+			found, held = b, true
+		}
+	})
+	return found, held
 }
 
 // attachmentFeatureRecipe resolves the FeatureRecipe one attachment binds on a
@@ -479,4 +557,5 @@ var (
 	_ constraint.BoundaryEnumerator                       = (*describedStageCoordinates)(nil)
 	_ constraint.BoundaryAttachmentEnumerator             = (*describedStageCoordinates)(nil)
 	_ constraint.BoundaryAttachmentPipelineStepEnumerator = (*describedStageCoordinates)(nil)
+	_ constraint.BoundaryPathTemplateFieldEnumerator      = (*describedStageCoordinates)(nil)
 )

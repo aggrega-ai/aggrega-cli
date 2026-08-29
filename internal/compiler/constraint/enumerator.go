@@ -703,6 +703,38 @@ type BoundaryAttachmentTemplateFieldEnumerator interface {
 	BoundaryAttachmentTemplateFields(boundary string, attachment string) []TemplateFieldCoordinate
 }
 
+// BoundaryPathTemplateFieldEnumerator supplies the path templates one boundary of
+// a deployment declares.
+//
+// The axis is keyed per boundary and not per node for the reason the boundary's
+// own attachment axis is: such a template is written once on the scope and
+// reaches every component the scope holds, so enumerating it per component would
+// present one authored field many times over, and not at all for a scope holding
+// none.
+//
+// It yields bare names, where the template-field axis beside it yields a
+// coordinate carrying a file and its own authored keys, and both differences are
+// properties of this carrier rather than an inconsistency. That axis needs the
+// keys because a template field there is not named by one key — its label spells
+// a keyed block whose own key travels inside the label — and it needs the file
+// because the field is authored in a FeatureRecipe rather than in the document
+// the scope was declared in. Here the name IS the authored key, one segment at
+// the scope's own level, and it is written in the same document as the scope, so
+// both extra fields would be copies of something the scope coordinate already
+// carries. This is the shape the boundary's own attachment axis takes, for the
+// same two reasons.
+//
+// It enumerates what the DOCUMENT declares and never what some rule is about. An
+// implementation narrowing the set to the fields one rule cares for would make
+// the axis mean that rule rather than the document, and the coverage a caller
+// reads off the axis would then be a claim about the rule's own selection — which
+// is the unenumerable shape a field-keyed axis exists to remove.
+type BoundaryPathTemplateFieldEnumerator interface {
+	// BoundaryPathTemplateFields returns the authored fields one boundary writes a
+	// path template under, in a deterministic order the implementation declares.
+	BoundaryPathTemplateFields(boundary string) []string
+}
+
 // ProvidesKeyEnumerator supplies the keys one node's Recipe provides.
 type ProvidesKeyEnumerator interface {
 	// ProvidesKeys returns a node's provides keys, in a deterministic order the
