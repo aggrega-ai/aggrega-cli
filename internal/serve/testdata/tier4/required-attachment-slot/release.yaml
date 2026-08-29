@@ -13,4 +13,3 @@ spec:
       components:
         unbound: {}
         bound: {}
-        overreaching: {}

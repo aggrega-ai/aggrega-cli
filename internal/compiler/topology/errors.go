@@ -244,3 +244,42 @@ var errUnplacedComponent = cerrors.Register("compiler-topology/unplaced-componen
 	ShortCode: "E0260",
 	Message:   "component placed in no boundary: name it under a boundary's `components`, or place the sub-module that contributes it under `aggregates`",
 })
+
+// ErrUnresolvedBoundaryComponent fires when a boundary names a component the
+// composition does not hold. The boundary's `directory`, `subDirectory`,
+// `syncWave`, annotations and per-component `infra` are then written for a
+// component that is not there: nothing renders under them, and the entry places
+// nothing.
+//
+// A boundary names a component two ways and both fire it. Naming one under
+// `components` addresses it by the id it carries once the composition is
+// flattened, so a component a sub-module contributes is written with that
+// module's dotted prefix ahead of its own name. Naming one inside an `aggregates`
+// routing entry addresses it by the local name it carries inside that module,
+// which the compiler resolves to the same qualified id. The diagnostic names the
+// id the entry addressed, which is the value to compare against the composition
+// — for a routed entry that is not the name in the file, because the file spells
+// the local half and the module supplies the rest.
+//
+// It halts rather than warning for the reason its placement counterparts do: the
+// alternative is silent. The build succeeds, the artifacts are emitted, and
+// nothing says that an entry the operator wrote configured nothing at all
+// (Invariant 4). It is the over-naming counterpart of the under-placement rules
+// beside it — those ask of a component whether anything placed it, this asks of
+// an entry whether anything answers to it — and either fault can occur without
+// the other.
+//
+// A subsystem contributes nothing to the id a component carries, so a component
+// the application declares inside a subsystem is addressed by its bare name. An
+// entry naming it under the subsystem instead addresses nothing and fires this.
+//
+// A component switched off by a false `active` toggle does not fire it. Such a
+// component is declared and deliberately removed, so an entry naming it is not a
+// mistake, and refusing it would make the toggle unusable while any Release
+// configured the component.
+func ErrUnresolvedBoundaryComponent() error { return errUnresolvedBoundaryComponent }
+
+var errUnresolvedBoundaryComponent = cerrors.Register("compiler-topology/unresolved-boundary-component", cerrors.Meta{
+	ShortCode: "E0261",
+	Message:   "boundary names a component the composition does not hold: correct the name, or remove the entry",
+})

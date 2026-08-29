@@ -819,6 +819,31 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 				Violations: componentErrs,
 			}
 		}
+
+		// The same relation read from its other end, asked of every component
+		// entry the deployment wrote: those two ask whether anything placed a
+		// component, this asks whether anything answers to an entry. It reads the
+		// flattened node set, so it could not be asked before the composition was
+		// flattened either.
+		//
+		// It is asked after them rather than before, and the order is a decision
+		// rather than an accident. A document carrying both faults is one an
+		// author fixes at the placement end, so reporting placement first leaves
+		// every such document halting exactly as it did before this rule existed;
+		// asking this one first would re-identify those halts without changing
+		// which documents halt.
+		referenceErrs, err := guardBoundaryComponentResolution(ctx.Err, cfg, stageView)
+		if err != nil {
+			return nil, err
+		}
+		if len(referenceErrs) > 0 {
+			return result, &resolver.MultiResolverError{
+				Entity: "boundary component resolution",
+				Summary: fmt.Sprintf(
+					"%d unresolved boundary component reference(s)", len(referenceErrs)),
+				Violations: referenceErrs,
+			}
+		}
 	}
 
 	return result, nil

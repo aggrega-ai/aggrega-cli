@@ -1896,6 +1896,73 @@ type TopologyView interface {
 	//
 	// Keyed by module; read from topology.TopologyNode.SourceAggregate.
 	ModuleContributedNodes(module string) []string
+
+	// ComponentDeactivated reports whether the composition removed a component
+	// because its activation toggle read false.
+	//
+	// It is the distinction the fact naming a flattened node's type declines
+	// to draw, and it is declared separately for that reason rather than
+	// folded into it. That fact reports membership of the flattened set and
+	// nothing finer, so a name absent from it was never contributed OR was
+	// contributed and then removed — two findings a rule may need to treat
+	// oppositely. The composition keeps the removed names, so the distinction
+	// survives flattening and is answerable here.
+	//
+	// The two are asked together by any rule that would otherwise refuse a
+	// document an author deliberately wrote. Switching a component off is an
+	// authoring act, and the deployment that configures it is not expected to
+	// be rewritten in the same edit — so a rule refusing a reference to a
+	// component that is not in the flattened set has to pass a deactivated
+	// one, or the toggle would be unusable while any deployment named the
+	// component.
+	//
+	// A name the composition never held answers false, exactly as a live
+	// component does. The two are distinguished by the flattened-set fact
+	// beside this one and never by this one alone, which reports removal and
+	// never existence.
+	//
+	// Keyed by node; read from topology.TopologyResult.Pruned.
+	ComponentDeactivated(node string) bool
+
+	// BoundaryDeclaredComponentReferences are the components the deployment's
+	// boundaries name, by the id each entry addresses in the flattened
+	// composition, in the order the deployment declares them — a boundary's
+	// own entries before the sub-modules it routes, and an enclosing boundary
+	// before the boundaries nested inside it.
+	//
+	// A boundary names a component on two axes and this answers for both,
+	// which is what makes it a reading of what the deployment declared rather
+	// than of one spelling. One axis names a component under the id it carries
+	// once the composition is flattened; the other routes a sub-module and
+	// names a component inside it under the local name it carries within that
+	// module, because inside the module that is the only name it has. The
+	// second is resolved to the same id the first writes, so a reader cannot
+	// be written against one axis and quietly ignore the other, and a reader
+	// that took a routed entry's local name as an id would refuse every
+	// module-routed deployment that names components.
+	//
+	// It reports what the deployment ASKED FOR and never what the composition
+	// holds, and the two are separate on purpose. An entry addressing an id
+	// the composition does not hold appears here exactly as one that resolves
+	// does: the deployment wrote it either way, and whether anything answers
+	// to it is a different question, asked of the flattened set by the fact
+	// keyed per node. A reader needing both asks both.
+	//
+	// It is keyed per reference because that is where the question is asked
+	// — a rule over an entry is invoked once per entry the deployment wrote
+	// — and read with no key because the set is the axis itself. The id
+	// identifies the entry across the whole deployment rather than within one
+	// boundary: one id declared twice is refused when the Release loads, so no
+	// two entries share one.
+	//
+	// An entry the deployment wrote at its own top level appears here like any
+	// other. Normalizing such a document gives it a boundary of its own
+	// holding exactly those entries, so the axis covers that authoring form
+	// without a reader knowing the form exists.
+	//
+	// Keyed by boundary-component-reference; read from
+	// types.Boundary.Components.
+	BoundaryDeclaredComponentReferences() []string
 }
 
 // GraphView exposes the facts complete at the graph stage: the finalised

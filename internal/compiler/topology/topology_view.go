@@ -54,9 +54,24 @@ type topologyView struct {
 	// flattening recorded them.
 	modules []ModuleDeclaration
 
+	// pruned is every node a false activation toggle removed from the
+	// composition. Only ever stores true, so presence is membership.
+	pruned types.OrderedMap[bool]
+
 	// contributed is the nodes each module contributed, keyed by the module's
 	// dotted prefix and including the nodes its nested modules contributed.
 	contributed map[string][]string
+
+	// references is every component entry the deployment's boundaries declare,
+	// on both of the axes a boundary names components on, in the order the
+	// deployment declares them.
+	//
+	// It is what the deployment asked for and is deliberately not reconciled
+	// against the node set above: an entry addressing an id nothing answers to
+	// is exactly the entry a rule over this axis exists to be asked about, so
+	// folding the two together here would remove the subject before any rule saw
+	// it.
+	references []constraint.BoundaryComponentReferenceInstance
 }
 
 // newTopologyView presents the composition the build has just flattened.
@@ -69,13 +84,16 @@ func newTopologyView(
 	flat *flattenResult,
 	edges []NormalizedEdge,
 	earlier constraint.NormalizedView,
+	references []constraint.BoundaryComponentReferenceInstance,
 ) *topologyView {
 	v := &topologyView{
 		NormalizedView: earlier,
 		nodes:          flat.Nodes,
 		connections:    map[string]types.OrderedMap[int]{},
 		modules:        flat.Modules,
+		pruned:         flat.Pruned,
 		contributed:    map[string][]string{},
+		references:     references,
 	}
 
 	// A connection an attachment contributed is excluded, the same exclusion the
@@ -121,6 +139,13 @@ func (v *topologyView) FlattenedNodeComponentType(node string) (string, bool) {
 	return n.ComponentType, true
 }
 
+// ComponentDeactivated returns whether the composition removed a component
+// because its activation toggle read false.
+func (v *topologyView) ComponentDeactivated(node string) bool {
+	removed, recorded := v.pruned.Get(node)
+	return recorded && removed
+}
+
 // ResolvedParameter returns the value one parameter resolved to for a node, and
 // whether that node's context resolved the parameter at all.
 func (v *topologyView) ResolvedParameter(node string, name string) (any, bool) {
@@ -164,6 +189,110 @@ func (v *topologyView) NodeBoundaryPlacement(node string) (string, bool) {
 // nodes contributed by the modules nested inside it.
 func (v *topologyView) ModuleContributedNodes(module string) []string {
 	return v.contributed[module]
+}
+
+// BoundaryDeclaredComponentReferences returns the components the deployment's
+// boundaries name, by the id each entry addresses in the flattened composition,
+// in the order the deployment declares them.
+func (v *topologyView) BoundaryDeclaredComponentReferences() []string {
+	if len(v.references) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(v.references))
+	for _, reference := range v.references {
+		out = append(out, reference.ID)
+	}
+	return out
+}
+
+// BoundaryComponentReferences returns every component entry the deployment's
+// boundaries declare, in the order the deployment declares them: a boundary's own
+// entries before the sub-modules it routes, and an enclosing boundary before the
+// boundaries nested inside it.
+//
+// It hands back the same entries the fact beside it names, projected from the one
+// fold this value took rather than derived a second time, so the entry a rule is
+// invoked for and the set that fact reports cannot come to disagree.
+func (v *topologyView) BoundaryComponentReferences() []constraint.BoundaryComponentReferenceInstance {
+	return v.references
+}
+
+// boundaryComponentReferences folds the component entries a deployment's
+// boundaries declare into the shape a traversal over them enumerates.
+//
+// It walks the NORMALIZED deployment, so a document that declares its components
+// at the top level rather than under named boundaries is covered by the same
+// walk: normalization gives such a document a boundary of its own holding exactly
+// those entries, and that boundary contributes no scope level, so its entries are
+// named at the top-level shape their author wrote.
+//
+// The two axes a boundary names components on are reconciled by the one
+// traversal that reconciles them, which is what supplies both the id an entry
+// addresses and the keys the author typed to write it. Reading either map
+// directly would be a second reconciliation, free to disagree with the one the
+// placement itself was derived from — and a reader that took a routing entry's
+// local name for an id would report every module-routed deployment as addressing
+// components that do not exist.
+//
+// The order is the deployment's own at every level, so a rule invoked once per
+// entry reports in the order an author reads the document.
+func boundaryComponentReferences(rel *types.Release) []constraint.BoundaryComponentReferenceInstance {
+	normalized := types.NormalizeRelease(rel).Release()
+	if normalized == nil {
+		return nil
+	}
+	var out []constraint.BoundaryComponentReferenceInstance
+	var walk func(scopePath string, b types.Boundary)
+	walk = func(scopePath string, b types.Boundary) {
+		for _, decl := range types.BoundaryComponentDeclarations(b) {
+			out = append(out, referenceInstance(scopePath, decl))
+		}
+		for name, child := range b.Boundaries.All() {
+			walk(constraint.JoinBoundaryScope(scopePath, name, child.Synthesized), child)
+		}
+	}
+	for name, b := range normalized.Spec.Boundaries.All() {
+		walk(constraint.JoinBoundaryScope("", name, b.Synthesized), b)
+	}
+	return out
+}
+
+// referenceInstance presents one declaration as the site a locator is built
+// from.
+//
+// The ordinary shape is the second one, and it covers both axes a boundary
+// declares on without telling them apart: the reconciliation reports the keys the
+// author typed relative to the boundary, so a boundary's own entry contributes
+// its component container and its key while a routing entry contributes the
+// routing container, the module, the component container and the local name. The
+// site names the boundary and those keys follow it, which is one rule rather than
+// a branch per axis — and it is what keeps this from re-deriving which axis an
+// entry came from, a question the reconciliation has already answered and the
+// shape of an id cannot.
+//
+// The first shape exists for the one boundary an author did not write. A
+// deployment that names no boundaries has its entries folded into a boundary
+// normalization synthesized, which spells no level, so the keys relative to it
+// have nothing to be relative to and naming them alone would produce a path the
+// document does not contain. Those entries are named at the top-level site the
+// author did write instead. Such a boundary holds no routing entries at all — it
+// is built from the deployment's own component surface — so its declarations are
+// the direct ones and the component travels on the site.
+func referenceInstance(
+	scopePath string,
+	decl types.BoundaryComponentDeclaration,
+) constraint.BoundaryComponentReferenceInstance {
+	if scopePath == "" {
+		return constraint.BoundaryComponentReferenceInstance{
+			ID:   decl.ID,
+			Site: constraint.AuthoredSite{Component: decl.ID},
+		}
+	}
+	return constraint.BoundaryComponentReferenceInstance{
+		ID:         decl.ID,
+		Site:       constraint.AuthoredSite{ScopePath: scopePath},
+		RoutedKeys: decl.Locator,
+	}
 }
 
 // Nodes returns every component instance the flattened set holds, in the order
@@ -243,11 +372,12 @@ func (v *topologyView) Modules() []constraint.AuthoredCoordinate {
 // it: a signature drifting from the declared facts stops compiling here, and the
 // axis the module rule is keyed by is held the same way.
 var (
-	_ constraint.TopologyView         = (*topologyView)(nil)
-	_ constraint.ModuleEnumerator     = (*topologyView)(nil)
-	_ constraint.NodeEnumerator       = (*topologyView)(nil)
-	_ constraint.NodeSocketEnumerator = (*topologyView)(nil)
-	_ StageAxes                       = (*topologyView)(nil)
+	_ constraint.TopologyView                         = (*topologyView)(nil)
+	_ constraint.ModuleEnumerator                     = (*topologyView)(nil)
+	_ constraint.NodeEnumerator                       = (*topologyView)(nil)
+	_ constraint.NodeSocketEnumerator                 = (*topologyView)(nil)
+	_ constraint.BoundaryComponentReferenceEnumerator = (*topologyView)(nil)
+	_ StageAxes                                       = (*topologyView)(nil)
 )
 
 // newStageView builds the presentation of the composition this build produced,
@@ -264,5 +394,5 @@ func newStageView(cfg BuildConfig, flat *flattenResult, edges []NormalizedEdge) 
 	}
 	earlier := resolver.NewNormalizedView(
 		types.Normalize(rr.Aggregate), rr.Release, cfg.CatalogLookup, rr.Parameters)
-	return newTopologyView(flat, edges, earlier)
+	return newTopologyView(flat, edges, earlier, boundaryComponentReferences(rr.Release))
 }

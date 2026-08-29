@@ -1813,3 +1813,75 @@ func newModuleSubject(sourceFile, module string, segments ...string) ModuleSubje
 		modulePath: module,
 	}
 }
+
+// BoundaryComponentReferenceSubject is the subject of a check invoked once per
+// component entry the deployment's boundaries declare.
+//
+// The coordinate is the id the entry addresses in the flattened composition, and
+// it is one coordinate rather than an entry nested under its boundary because the
+// id is the entry's identity: one id declared twice is refused when the deployment
+// document loads, so an id names exactly one entry across the whole document. The
+// boundary reaches the locator as provenance and keys nothing, which is the
+// division the connection kinds already draw for the surface that drew a
+// connection.
+//
+// # What the coordinate is, and what it deliberately is not
+//
+// It is what the deployment ASKED FOR, never what the composition holds. A rule
+// over this kind is invoked for an entry addressing an id nothing answers to
+// exactly as it is for one that resolves, because the deployment wrote both — and
+// an axis carrying only the entries that resolve would never present such a rule
+// its own subject, the offending entry being by construction the one that is
+// absent from the resolved set.
+//
+// The two axes a boundary names components on are already reconciled in the
+// coordinate. One names the component under the id it carries once the
+// composition is flattened; the other routes a sub-module and names a component
+// inside it under the local name it carries there. Both arrive here as the id,
+// so a rule cannot be written against one axis and quietly ignore the other, and
+// none has to know a second axis exists.
+//
+// # The locator, and where the key reaches the author instead
+//
+// An entry the boundary names directly is located at the boundary's own component
+// block. The id the author typed there is the flattened one, which carries the
+// locator dialect's separator for any component a sub-module contributed — so the
+// locator names the block and stops, and the id reaches the author as the value
+// the rule raises. That is not a loss of the key: a locator is a position, and a
+// reader given the block is a reader who can find the entry inside it.
+//
+// An entry a routing entry declared is located at the local name the author typed
+// inside that entry, which carries no separator, so its locator spells the whole
+// path. A rule raising about such an entry owes the id in its detail all the same,
+// because the id is what the entry addresses and the local name alone does not say
+// what the composition was asked for.
+type BoundaryComponentReferenceSubject interface {
+	Subject
+
+	// ComponentReference is the id the entry addresses in the flattened
+	// composition, as every keyed fact takes it. For an entry a routing entry
+	// declared it is the local name resolved through the routed module's own
+	// prefix, and not the local name.
+	ComponentReference() string
+
+	boundaryComponentReference()
+}
+
+type boundaryComponentReferenceSubject struct {
+	provenance
+	reference string
+}
+
+func (boundaryComponentReferenceSubject) boundaryComponentReference() {}
+
+func (s boundaryComponentReferenceSubject) ComponentReference() string { return s.reference }
+
+func newBoundaryComponentReferenceSubject(
+	sourceFile, reference string,
+	segments ...string,
+) BoundaryComponentReferenceSubject {
+	return boundaryComponentReferenceSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		reference:  reference,
+	}
+}

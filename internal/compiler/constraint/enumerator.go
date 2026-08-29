@@ -369,6 +369,65 @@ type AttachmentLeaf struct {
 	Site AuthoredSite
 }
 
+// BoundaryComponentReferenceInstance is one component entry a deployment's
+// boundary declares: the id the entry addresses in the flattened composition,
+// and where the entry itself was written.
+//
+// The id is the identity rather than a nesting under a boundary, and that is a
+// property of the authoring surface rather than a simplification of it: one id
+// declared twice is refused when the deployment document loads, so no two entries
+// share one and the id names exactly one entry across the whole document. The
+// boundary therefore reaches the locator as provenance and keys nothing, the same
+// division [ConnectionCarrier] draws for a connection's carrier.
+//
+// # Why the entry's own keys travel with it
+//
+// A boundary names a component on two axes, and the key an author would edit is
+// spelled differently on each. One names the component under the id it carries
+// once the composition is flattened. The other routes a sub-module and names a
+// component inside it under the LOCAL name it carries within that module, because
+// inside the module that is the only name it has — so the id the entry addresses
+// appears nowhere in the file, and a locator built from the id alone would spell a
+// key the document does not contain.
+//
+// The keys are settled where the two axes are reconciled and cannot be recovered
+// from the id afterwards: an id qualified by a module prefix could have been
+// written either way, and guessing would send an author to a key that is not
+// there.
+type BoundaryComponentReferenceInstance struct {
+	// ID is the id the entry addresses in the flattened composition, which is
+	// the coordinate every fact keyed at this entry takes.
+	ID string
+
+	// SourceFile is the workspace-relative deployment document the entry was
+	// written in, empty when it has no single-file origin.
+	SourceFile string
+
+	// Site names the boundary the entry sits in, and the component key it was
+	// written under when the boundary named the component directly.
+	//
+	// An empty scope path is a boundary the compiler synthesized to hold the
+	// entries an author wrote at the document's top level. That is not a scope
+	// any file spells, so an entry under one names the top-level shape the
+	// author did write — the collapse [AuthoredSite] already declares.
+	//
+	// Component is empty for an entry written inside a routing entry, because
+	// such an entry is not keyed under a component of the boundary at all: it is
+	// keyed under the module, and [BoundaryComponentReferenceInstance.RoutedKeys]
+	// names the rest of the path.
+	Site AuthoredSite
+
+	// RoutedKeys are the authoring keys reaching the entry from inside its
+	// boundary when a routing entry declared it — the routing container, the
+	// module, the component container and the local name — and nothing at all
+	// when the boundary named the component directly.
+	//
+	// They are taken from the reconciliation that resolved the entry's id rather
+	// than derived beside it, so the id and the keys cannot come to disagree
+	// about which entry they describe.
+	RoutedKeys []string
+}
+
 // NodeEnumerator supplies the node set: every component instance in the
 // flattened set, a sub-aggregate's nodes included.
 //
@@ -416,6 +475,30 @@ type BoundaryEnumerator interface {
 	// Boundaries returns every boundary, in a deterministic order the
 	// implementation declares.
 	Boundaries() []AuthoredCoordinate
+}
+
+// BoundaryComponentReferenceEnumerator supplies the component entries the
+// deployment's boundaries declare: every entry, on both of the axes a boundary
+// names components on, each carrying the id it addresses and the site it was
+// written at.
+//
+// It is a flat axis rather than one nested under [BoundaryEnumerator], and the
+// reason is that the boundary is not part of the entry's identity: an id names
+// exactly one entry across the whole document, because one declared twice is
+// refused when the document loads. Nesting it under the boundary axis would key
+// the entries by something that does not distinguish them, and it would inherit
+// that axis's exclusion of the boundary the compiler synthesizes — which is where
+// every entry of a document written without named boundaries lives, so a whole
+// authoring form would go unenumerated with nothing saying so.
+//
+// The set is what the deployment ASKED FOR and not what the composition holds. An
+// entry addressing an id nothing answers to is enumerated exactly as one that
+// resolves is: a rule over such an entry is asked about it precisely because the
+// deployment wrote it.
+type BoundaryComponentReferenceEnumerator interface {
+	// BoundaryComponentReferences returns every component entry the deployment's
+	// boundaries declare, in a deterministic order the implementation declares.
+	BoundaryComponentReferences() []BoundaryComponentReferenceInstance
 }
 
 // SubsystemEnumerator supplies the subsystem set: every scope the application's

@@ -52,7 +52,7 @@ const (
 	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 2 declared facts.
 	SubjectDocumentAnnotationBinding SubjectKind = "(document, annotation-binding)"
 
-	// SubjectNode is the subject kind node, keyed by 21 declared facts.
+	// SubjectNode is the subject kind node, keyed by 22 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 13 declared facts.
@@ -90,6 +90,9 @@ const (
 
 	// SubjectModule is the subject kind module, keyed by 1 declared fact.
 	SubjectModule SubjectKind = "module"
+
+	// SubjectBoundaryComponentReference is the subject kind boundary-component-reference, keyed by 1 declared fact.
+	SubjectBoundaryComponentReference SubjectKind = "boundary-component-reference"
 
 	// SubjectNodeAttachmentPillarLeaf is the subject kind (node, attachment, pillar, leaf), keyed by 2 declared facts.
 	SubjectNodeAttachmentPillarLeaf SubjectKind = "(node, attachment, pillar, leaf)"
@@ -171,6 +174,7 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectBoundaryAttachment, Coordinates: []string{"boundary", "attachment"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeParameter, Coordinates: []string{"node", "parameter"}, Traversal: TraversalPull},
 	{Kind: SubjectModule, Coordinates: []string{"module"}, Traversal: TraversalPull},
+	{Kind: SubjectBoundaryComponentReference, Coordinates: []string{"boundary-component-reference"}, Traversal: TraversalPull},
 	{Kind: SubjectNodeAttachmentPillarLeaf, Coordinates: []string{"node", "attachment", "pillar", "leaf"}, Traversal: TraversalPull},
 	{Kind: SubjectCarriedConnection, Coordinates: []string{"carried-connection"}, Traversal: TraversalPull},
 	{Kind: SubjectNodePipelineStep, Coordinates: []string{"node", "pipeline-step"}, Traversal: TraversalPull},

@@ -42,6 +42,7 @@ type traversalFixture struct {
 	nodes         []NodeInstance
 	edges         []EdgeInstance
 	connections   []CarriedConnectionInstance
+	references    []BoundaryComponentReferenceInstance
 	boundaries    []AuthoredCoordinate
 	subsystems    []AuthoredCoordinate
 	modules       []AuthoredCoordinate
@@ -106,6 +107,10 @@ func (f traversalFixture) CarriedConnections() []CarriedConnectionInstance {
 	return f.connections
 }
 func (f traversalFixture) Boundaries() []AuthoredCoordinate { return f.boundaries }
+
+func (f traversalFixture) BoundaryComponentReferences() []BoundaryComponentReferenceInstance {
+	return f.references
+}
 
 func (f traversalFixture) AssemblyPaths() []AuthoredCoordinate { return f.assemblyPaths }
 
@@ -322,6 +327,40 @@ func newTraversalFixture() traversalFixture {
 					Document:   AuthoringDocumentAggregate,
 					SourceFile: "billing/aggregate.yaml",
 				},
+			},
+		},
+		// The component entries a deployment declares, covering the two axes a
+		// boundary names components on and the three locator shapes between them.
+		//
+		// The first is written directly under a nested boundary and names a
+		// component whose own id carries the composition's separator, so its
+		// locator stops at the component block the author would edit and the id
+		// survives only as a coordinate — the one shape where the two differ on the
+		// direct axis. The second is written inside a routing entry, so the keys
+		// the author typed reach the locator in full while the coordinate carries
+		// the local name under the routed module's prefix, which appears nowhere in
+		// the file. The third is written in the boundary the compiler synthesizes
+		// to hold what an author wrote at the document's top level, so it names the
+		// top-level shape and no boundary at all.
+		//
+		// Reverse-alphabetical by coordinate, so a sort anywhere in the traversal
+		// would be visible.
+		references: []BoundaryComponentReferenceInstance{
+			{
+				ID:         "data.reader",
+				SourceFile: "release.yaml",
+				Site:       AuthoredSite{ScopePath: "prod/edge", Component: "data.reader"},
+			},
+			{
+				ID:         "billing.api",
+				SourceFile: "release.yaml",
+				Site:       AuthoredSite{ScopePath: "prod/edge"},
+				RoutedKeys: []string{"aggregates", "billing", "components", "api"},
+			},
+			{
+				ID:         "web",
+				SourceFile: "release-flat.yaml",
+				Site:       AuthoredSite{Component: "web"},
 			},
 		},
 		// One nested scope and one top-level scope, reverse-alphabetical so a sort
@@ -703,6 +742,26 @@ func traversalCases() []traversalCase {
 				"billing/aggregate.yaml|.spec.subsystems.billing.subsystems.payments.features.tls.uses.issuer.ca",
 				"release.yaml|.spec.boundaries.prod.boundaries.edge.components.web.uses.zebra.spare",
 				"billing/aggregate.yaml|.spec.subsystems.billing.components.api.uses.db",
+			},
+		},
+		{
+			// The three locator shapes a deployment's component entries take. The
+			// first names a component whose id carries the composition's separator,
+			// so the locator stops at the block holding it — the id is legitimate as
+			// a coordinate and unaddressable as a segment. The second is written
+			// inside a routing entry, so its locator spells the routing keys the
+			// author typed and reaches the local name. The third sits in the
+			// boundary the compiler synthesizes, which spells no level, so it names
+			// the top-level shape the author actually wrote.
+			kind: SubjectBoundaryComponentReference,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryComponentReferences(
+					cancelled, f, v, raisingCheck[BoundaryComponentReferenceSubject]())
+			},
+			want: []string{
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.components",
+				"release.yaml|.spec.boundaries.prod.boundaries.edge.aggregates.billing.components.api",
+				"release-flat.yaml|.spec.components.web",
 			},
 		},
 		{
@@ -1837,6 +1896,26 @@ func coordinateFlowCases() []coordinateFlowCase {
 				"web|deployment||zebra|spare|cache-standby",
 				"billing.api|component||db|store|store",
 			},
+		},
+
+		{
+			// The kind whose coordinate and locator disagree on both of its axes, in
+			// opposite directions. On the direct axis the id is unaddressable as a
+			// segment, so the locator drops it and the coordinate is the only place
+			// it survives. On the routed axis the locator reaches the local name the
+			// author typed and the coordinate carries that name under the routed
+			// module's prefix, which appears in no file. A traversal that read the
+			// coordinate off the locator would be wrong in both directions, and the
+			// provenance transcript cannot see either.
+			kind: SubjectBoundaryComponentReference,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(
+					func(c Check[traversalView, BoundaryComponentReferenceSubject]) ([]Objection, error) {
+						return RunOnBoundaryComponentReferences(nil, f, traversalView{}, c)
+					}, func(s BoundaryComponentReferenceSubject) string { return s.ComponentReference() })
+			},
+			want: []string{"data.reader", "billing.api", "web"},
 		},
 
 		// The kind whose innermost coordinate contributes no locator segment, which is

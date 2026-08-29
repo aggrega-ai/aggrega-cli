@@ -173,6 +173,15 @@ spec:
           features:
             shared-db: {}
             audit: {}
+          # The routed one of a boundary's two component-naming axes. A whole
+          # sub-module is placed here, and a component inside it is named under
+          # the LOCAL name it carries within that module — so the id it addresses,
+          # "billing.api", appears nowhere in this file and the keys a locator
+          # names are these.
+          aggregates:
+            billing:
+              components:
+                api: {}
           components:
             # The deployment's own edge surface, wiring a socket the application
             # declared and left unbound. A connection drawn here is authored on
@@ -182,6 +191,12 @@ spec:
                 zebra:
                   spare:
                     target: cache-standby
+            # The direct axis naming a component a sub-module contributed, which
+            # this document has to spell with that module's dotted prefix. The
+            # key therefore carries the locator dialect's separator, so a locator
+            # over it names this block and stops — which is what the walk
+            # confirms, and why the entry sits here rather than being implied.
+            data.reader: {}
     dev:
       components:
         web: {}

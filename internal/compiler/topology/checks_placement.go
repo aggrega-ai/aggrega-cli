@@ -204,3 +204,97 @@ func guardComponentPlacement(
 	}
 	return resolver.FindingsFromObjections(objections, entity), nil
 }
+
+// boundaryComponentResolves reports each component entry the deployment's
+// boundaries declare that addresses nothing the composition holds.
+//
+// It is the over-naming counterpart of the two rules above and is a separate rule
+// rather than a branch of either, because it asks a different question of a
+// different subject. Those ask of a component the composition holds whether
+// anything placed it; this asks of an entry the deployment wrote whether anything
+// answers to it. Neither implies the other: a deployment can name a component that
+// does not exist while every component that does exist is properly placed, and it
+// can leave a real component unplaced while every entry it wrote resolves.
+//
+// It reads membership of the flattened set and never the shape of the name. The
+// entries this catches are subsystem-qualified in practice — a subsystem
+// contributes nothing to a component's id, so an entry written as though it did
+// addresses nothing — but a dotted name is not the fault and cannot be: a
+// sub-module's prefix legitimately carries a dot, and a rule refusing dotted names
+// would refuse the very spelling the routed axis is required to produce.
+//
+// Both axes a boundary names components on reach it as the id the entry
+// addresses, reconciled before the axis is enumerated, so the rule is written
+// once and neither axis can be quietly left out.
+//
+// A component the composition removed because its activation toggle read false
+// passes. Switching a component off is an authoring act, and the deployment that
+// configures it is not expected to be rewritten in the same edit — so refusing
+// the entry would make the toggle unusable while any deployment named the
+// component. The two questions are asked of two facts, because the fact naming a
+// flattened node's type reports membership and declines to say why a name is
+// absent.
+//
+// The detail is the id the entry addressed. That is the value to compare against
+// the composition, and on the routed axis it is not the name the file spells:
+// the file carries the component's local name inside a routing entry and the
+// module supplies the rest, so the id appears nowhere the author can read it off.
+var boundaryComponentResolves = constraint.Check[
+	constraint.TopologyView,
+	constraint.BoundaryComponentReferenceSubject,
+]{
+	Sentinel: ErrUnresolvedBoundaryComponent(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.TopologyView,
+		s constraint.BoundaryComponentReferenceSubject,
+	) []constraint.Objection {
+		reference := s.ComponentReference()
+		if _, held := v.FlattenedNodeComponentType(reference); held {
+			return nil
+		}
+		if v.ComponentDeactivated(reference) {
+			return nil
+		}
+		return []constraint.Objection{
+			s.Raise(ErrUnresolvedBoundaryComponent(), reference),
+		}
+	},
+}
+
+// guardBoundaryComponentResolution asks the resolution rule of every component
+// entry the deployment's boundaries declare.
+//
+// It runs where the placement rules beside it run, and for a related but distinct
+// reason: those need a node's placement, which is written once the composition is
+// flattened, while this needs the flattened node set itself. A sub-module's
+// components do not exist until its document is loaded, so an entry addressing one
+// of them would be reported as addressing nothing if the rule were asked any
+// earlier.
+//
+// The findings are rendered through the one conversion every rule reporting to a
+// resolve's callers goes through, so this rule's output is shaped like its
+// neighbours' rather than like a second opinion about what a diagnostic is.
+//
+// A build holding no deployment document asks nothing, for its neighbours'
+// reason: a build without one declares no boundary and therefore no entry, so
+// there is nothing to resolve.
+func guardBoundaryComponentResolution(
+	cancelled constraint.Cancellation,
+	cfg BuildConfig,
+	view *topologyView,
+) ([]*resolver.ResolverError, error) {
+	if view == nil || cfg.ResolveResult == nil || cfg.ResolveResult.Release == nil {
+		return nil, nil
+	}
+	objections, err := constraint.RunOnBoundaryComponentReferences(
+		cancelled, view, constraint.TopologyView(view), boundaryComponentResolves)
+	if err != nil {
+		return nil, err
+	}
+	entity := "Release"
+	if name := cfg.ResolveResult.Release.Metadata.Name; name != "" {
+		entity = "Release " + name
+	}
+	return resolver.FindingsFromObjections(objections, entity), nil
+}

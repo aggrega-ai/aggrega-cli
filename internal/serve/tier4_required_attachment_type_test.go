@@ -6,6 +6,7 @@ package serve
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,7 +65,7 @@ spec:
 
 	t.Run("an unmet mandate reaches the editor positioned on its instance", func(t *testing.T) {
 		t.Parallel()
-		diags, aggBytes := validateMandateFixture(t, unmetOnly)
+		diags, aggBytes := validateMandateFixture(t, unmetOnly, "unmonitored")
 
 		// The registered wording of the sentinel the rule carries, not a
 		// composed sentence: a discriminator on the sentinel's own text survives
@@ -93,7 +94,7 @@ spec:
 
 	t.Run("a malformed declaration reaches the editor positioned on its instance", func(t *testing.T) {
 		t.Parallel()
-		diags, aggBytes := validateMandateFixture(t, malformedOnly)
+		diags, aggBytes := validateMandateFixture(t, malformedOnly, "broken")
 
 		malformed := findDiagnostic(t, diags, "malformed attachment requirement")
 		if containsSubstring(malformed.Message, "missing required feature") {
@@ -121,14 +122,39 @@ spec:
 	})
 }
 
+// mandateRelease is the release each leg is validated through, with the one
+// component that leg's aggregate declares substituted into its boundary. It is
+// written per leg because a single release naming both components would, for
+// either leg, name one the aggregate does not declare — see
+// validateMandateFixture for why that is fatal here.
+const mandateRelease = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: tier4-required-attachment-type-release
+  environment: test
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        %s: {}
+`
+
 // validateMandateFixture copies the presence-mandate fixture into a temporary
-// workspace, replaces its aggregate with the supplied document, and drives the
-// daemon's validate over it.
+// workspace, replaces its aggregate with the supplied document and its release
+// with one placing the named component, and drives the daemon's validate over it.
 //
-// The catalog and the deployment come from the committed fixture so the entities
-// under test are the real ones; only the aggregate is substituted, because which
-// class a document can produce is decided by which component it declares.
-func validateMandateFixture(t *testing.T, aggregate string) ([]Diagnostic, string) {
+// The catalog comes from the committed fixture so the entities under test are the
+// real ones. The aggregate is substituted because which class a document can
+// produce is decided by which component it declares, and the release is
+// substituted in step with it because the two have to agree: a boundary entry
+// naming a component the aggregate does not declare places nothing, and that is
+// reported while the composition is assembled — earlier than any attachment
+// diagnostic, and it halts, so the class under assertion would never be reached.
+func validateMandateFixture(t *testing.T, aggregate, component string) ([]Diagnostic, string) {
 	t.Helper()
 	tmp := t.TempDir()
 	cwd, err := os.Getwd()
@@ -157,6 +183,10 @@ func validateMandateFixture(t *testing.T, aggregate string) ([]Diagnostic, strin
 	}
 	if err := os.WriteFile(filepath.Join(tmp, "aggregate.yaml"), []byte(aggregate), 0o644); err != nil {
 		t.Fatalf("write aggregate: %v", err)
+	}
+	releaseDoc := fmt.Sprintf(mandateRelease, component)
+	if err := os.WriteFile(filepath.Join(tmp, "release.yaml"), []byte(releaseDoc), 0o644); err != nil {
+		t.Fatalf("write release: %v", err)
 	}
 
 	releasePath := filepath.Join(tmp, "release.yaml")

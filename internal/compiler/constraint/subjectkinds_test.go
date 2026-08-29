@@ -423,12 +423,18 @@ var coordinateAccessors = map[string][]string{
 	// be written against the wrong axis and still compile.
 	"path-template-field": {"PathTemplateField"},
 	"boundary":            {"BoundaryPath"},
-	"subsystem":           {"SubsystemPath"},
-	"module":              {"ModulePath"},
-	"provider":            {"ProviderName"},
-	"assembly-path":       {"AssemblyPath"},
-	"path":                {"EmittedPath"},
-	"artifact":            {"ArtifactName"},
+	// The accessor says the value is a reference rather than a component id,
+	// because the axis is what a deployment ASKED FOR: an entry addressing an id
+	// nothing answers to is enumerated exactly as one that resolves is, and an
+	// accessor named for the component would tell a check reading it that the
+	// component is there.
+	"boundary-component-reference": {"ComponentReference"},
+	"subsystem":                    {"SubsystemPath"},
+	"module":                       {"ModulePath"},
+	"provider":                     {"ProviderName"},
+	"assembly-path":                {"AssemblyPath"},
+	"path":                         {"EmittedPath"},
+	"artifact":                     {"ArtifactName"},
 }
 
 // subjectContractAccessors names the accessors [Subject] itself supplies, so a
@@ -1151,6 +1157,17 @@ var subjectKindBindings = map[SubjectKind]struct {
 		// so the locator names only the level the declaring file spells.
 		make: func(f string) Subject {
 			return newModuleSubject(f, "data.inner", "spec", "aggregates", "inner")
+		},
+	},
+	SubjectBoundaryComponentReference: {
+		iface: reflect.TypeOf((*BoundaryComponentReferenceSubject)(nil)).Elem(),
+		// The routed case, because it is the one where the coordinate and the
+		// locator's last segment are different strings: the deployment writes the
+		// component's local name inside the routing entry, and the id it addresses
+		// is that name under the routed module's own prefix.
+		make: func(f string) Subject {
+			return newBoundaryComponentReferenceSubject(f, "data.reader",
+				"spec", "boundaries", "prod", "aggregates", "data", "components", "reader")
 		},
 	},
 }

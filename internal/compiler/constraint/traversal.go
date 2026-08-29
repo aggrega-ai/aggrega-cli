@@ -138,6 +138,34 @@ var (
 	moduleNesting    = scopeNesting{containerKey: authoredKeyAggregates, separator: "."}
 )
 
+// JoinBoundaryScope composes the scope path of one boundary from its parent's
+// path and its own name, in the spelling [AuthoredSite.ScopePath] takes on the
+// deployment's nesting axis.
+//
+// It is exported because an enumerator supplying a site on that axis has to
+// compose the path the locator assembly will split back apart, and the separator
+// belongs to the axis rather than to any one producer: a caller spelling it
+// itself would be free to pick a different character from the one this package
+// splits on, and nothing would compare the two.
+//
+// A boundary the compiler synthesized contributes no level and collapses the path
+// to empty, which is the rule [AuthoredSite.ScopePath] declares: such a boundary
+// is not a scope any file spells, so an entry inside one is named at the
+// top-level shape the author did write. That collapse is what makes this a
+// different question from the boundary path a deployment's OUTPUT is routed by,
+// which names the synthesized boundary like any other because it is routing
+// artifacts rather than naming a key. The two must be free to answer differently,
+// and they do.
+func JoinBoundaryScope(parentPath, name string, synthesized bool) string {
+	if synthesized {
+		return ""
+	}
+	if parentPath == "" {
+		return name
+	}
+	return parentPath + boundaryNesting.separator + name
+}
+
 // componentInnerSegments returns the segments naming an element authored inside
 // a component instance's block: the component's own segments followed by tail.
 //
@@ -1623,6 +1651,48 @@ func RunOnModules[V View](
 				moduleAuthoredSegments(module.Value)...,
 			)}
 		})
+}
+
+// RunOnBoundaryComponentReferences invokes check once per component entry the
+// deployment's boundaries declare, in the order the enumerator returns them.
+//
+// The axis is flat rather than nested under the boundary set, for the reason
+// [BoundaryComponentReferenceEnumerator] states: the id is the entry's identity,
+// so the boundary positions the finding and keys nothing.
+//
+// The locator is assembled through the shared authored-site rule rather than a
+// spelling of its own, and the two shapes it covers are exactly the two axes a
+// boundary names components on. An entry the boundary named directly carries its
+// component key on the site, so the site alone names it — .spec.components.<name>
+// for an entry in the boundary the compiler synthesized, and the boundary level by
+// level under its own key then the component for every other. An entry a routing
+// entry declared names no component of the boundary at all, so the site names the
+// boundary and the entry's own routing keys follow it.
+//
+// A rule over this kind owes the id in its detail whichever shape it was invoked
+// for. On the direct axis the id the author typed carries the locator dialect's
+// separator whenever a sub-module contributed the component, so the locator names
+// the component block and stops — the division [RunOnBoundaryProviderPaths] draws
+// for a value legitimate as a coordinate and refused as a segment. On the routed
+// axis the locator reaches the local name, which is not the id the entry
+// addresses, so the detail is the only place the id appears.
+func RunOnBoundaryComponentReferences[V View](
+	cancelled Cancellation,
+	references BoundaryComponentReferenceEnumerator,
+	view V,
+	check Check[V, BoundaryComponentReferenceSubject],
+) ([]Objection, error) {
+	var out []Objection
+	for _, reference := range references.BoundaryComponentReferences() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
+		out = append(out, check.Run(view, newBoundaryComponentReferenceSubject(
+			reference.SourceFile, reference.ID,
+			authoredSiteSegments(boundaryNesting, reference.Site, reference.RoutedKeys...)...,
+		))...)
+	}
+	return out, nil
 }
 
 // moduleAuthoredSegments returns the segments naming where a sub-module was
