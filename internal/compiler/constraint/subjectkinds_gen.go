@@ -124,13 +124,13 @@ const (
 	// SubjectBoundaryPathTemplateField is the subject kind (boundary, path-template-field), keyed by 1 declared fact.
 	SubjectBoundaryPathTemplateField SubjectKind = "(boundary, path-template-field)"
 
-	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 4 declared facts.
+	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 5 declared facts.
 	SubjectNodeArtifact SubjectKind = "(node, artifact)"
 
-	// SubjectNodeAttachmentArtifact is the subject kind (node, attachment, artifact), keyed by 2 declared facts.
+	// SubjectNodeAttachmentArtifact is the subject kind (node, attachment, artifact), keyed by 3 declared facts.
 	SubjectNodeAttachmentArtifact SubjectKind = "(node, attachment, artifact)"
 
-	// SubjectBoundaryAttachmentArtifact is the subject kind (boundary, attachment, artifact), keyed by 2 declared facts.
+	// SubjectBoundaryAttachmentArtifact is the subject kind (boundary, attachment, artifact), keyed by 3 declared facts.
 	SubjectBoundaryAttachmentArtifact SubjectKind = "(boundary, attachment, artifact)"
 
 	// SubjectNodePath is the subject kind (node, path), keyed by 1 declared fact.

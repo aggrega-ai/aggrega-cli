@@ -242,6 +242,28 @@ func (v *hydratedView) ArtifactRecordedContentPin(node string, artifact string) 
 	return p.ArtifactRecordedContentPin.Get(artifact)
 }
 
+// ArtifactImportedPath returns the file one of a node's artifacts was supplied
+// from, as the catalog resolved it — which is absolute.
+//
+// An artifact the retention does not hold answers empty, and that single answer
+// covers every case in which the entry names no file to open: an entry written
+// inline, an entry supplied by a library bundle, a node the render did not reach,
+// and an artifact of an attachment rather than of the node's own Recipe, which is
+// answered through that attachment's own carrier.
+//
+// There is no second result, because the value already carries the answer a
+// second one would give: the retention holds an entry only where the walk
+// resolved a non-empty import reference, so an empty answer and an absent entry
+// are the same state rather than two.
+func (v *hydratedView) ArtifactImportedPath(node string, artifact string) string {
+	p, ok := v.projections.projection(node)
+	if !ok {
+		return ""
+	}
+	path, _ := p.ArtifactImportedPath.Get(artifact)
+	return path
+}
+
 // AttachmentResolvedSourceDeclared reports whether the FeatureRecipe one
 // attachment binds on a node carries a source once source resolution has run.
 //
@@ -327,6 +349,28 @@ func (v *hydratedView) AttachmentArtifactRecordedContentPin(
 		return "", false
 	}
 	return p.AttachmentArtifactRecordedContentPin.Get(artifact)
+}
+
+// AttachmentArtifactImportedPath returns the file one artifact of the
+// FeatureRecipe one attachment binds on a node was supplied from, as the catalog
+// resolved it.
+//
+// It is answered from the attachment's own carrier and never from the node's, on
+// the reading the two accessors beside it state: the attachment's render walks
+// the same producer under the host component's node identity, so a node-keyed
+// answer would name whatever file the HOST's Recipe imported under the same
+// output name — a wrong file named confidently, which is worse than none.
+func (v *hydratedView) AttachmentArtifactImportedPath(
+	node string, attachment string, artifact string,
+) string {
+	p, ok := v.projections.nodeAttachmentProjectionOf(
+		nodeAttachmentKey{node: node, attachment: attachment},
+	)
+	if !ok {
+		return ""
+	}
+	path, _ := p.AttachmentArtifactImportedPath.Get(artifact)
+	return path
 }
 
 // AttachmentInjectMappingMechanisms returns the mechanisms the host component's
@@ -427,6 +471,27 @@ func (v *hydratedView) BoundaryAttachmentArtifactRecordedContentPin(
 		return "", false
 	}
 	return p.BoundaryAttachmentArtifactRecordedContentPin.Get(artifact)
+}
+
+// BoundaryAttachmentArtifactImportedPath returns the file one artifact of the
+// FeatureRecipe one boundary-scope attachment binds was supplied from, as the
+// catalog resolved it.
+//
+// It is rooted at the boundary for the reason the two accessors beside it are:
+// such an attachment is declared once on a boundary and reaches every component
+// that boundary holds, so a component-rooted key would answer one imported path
+// under as many keys as the boundary has members.
+func (v *hydratedView) BoundaryAttachmentArtifactImportedPath(
+	boundary string, attachment string, artifact string,
+) string {
+	p, ok := v.projections.boundaryAttachmentProjectionOf(
+		boundaryAttachmentKey{boundary: boundary, attachment: attachment},
+	)
+	if !ok {
+		return ""
+	}
+	path, _ := p.BoundaryAttachmentArtifactImportedPath.Get(artifact)
+	return path
 }
 
 var _ constraint.HydratedView = (*hydratedView)(nil)

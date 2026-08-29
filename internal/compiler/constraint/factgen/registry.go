@@ -3240,6 +3240,44 @@ var facts = []factDecl{
 			"authoring form gives.",
 	},
 	{
+		Name:        "artifact-imported-path",
+		Stage:       "hydrated",
+		SourceField: "types.RecipeSpec.Artifacts",
+		Subject:     []string{"node", "artifact"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "artifact", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "ArtifactImportedPath is the file one of a node's artifacts was " +
+			"supplied from, for the one authoring form supplied from a file at " +
+			"all.\n\nIt is the path as the catalog resolved it, which is absolute: " +
+			"a relative reference is rewritten against the document that authored " +
+			"it when that document is read, so this names a file a reader can open " +
+			"without first working out which entity the entry was written in. That " +
+			"is the whole of why the fact exists. An entry's coordinate is the " +
+			"output name it resolves to, which is chosen independently of the file " +
+			"and says nothing about where the content came from — so a reader " +
+			"holding the coordinate has to go and find the file, and every " +
+			"occurrence costs that search again.\n\nIt is a bare string with no " +
+			"second result, and the asymmetry with the recorded pin declared beside " +
+			"it is deliberate. A pin's VALUE may legitimately be empty, so presence " +
+			"there is a question the value cannot answer; a path's cannot be empty, " +
+			"because the only entries recorded are those whose import reference was " +
+			"non-empty. The empty string therefore already says an entry was not " +
+			"supplied from a file, and a second result would be a second answer to " +
+			"that one question, free to disagree with it.\n\nAn entry written " +
+			"inline answers empty, and so does one supplied by an entry of a " +
+			"library bundle: neither names a file of the workspace, and a bundle's " +
+			"own filename is a name inside a resolved artifact rather than a path " +
+			"to open. A node the render did not reach answers empty too, on the " +
+			"reading every fact of this stage carries.\n\nIt is declared beside " +
+			"the entry's template text and keyed the same way, because a rule with " +
+			"a reason to name what an entry holds has the same reason to name where " +
+			"the content came from — and the two are read together or the second is " +
+			"read for an entry the first never resolved.",
+	},
+	{
 		Name:        "attachment-resolved-source-declared",
 		Stage:       "hydrated",
 		SourceField: "types.FeatureRecipeSpec.Source",
@@ -3359,6 +3397,32 @@ var facts = []factDecl{
 			"independently, with nothing making their output names distinct.",
 	},
 	{
+		Name:        "attachment-artifact-imported-path",
+		Stage:       "hydrated",
+		SourceField: "types.FeatureRecipeSpec.Artifacts",
+		Subject:     []string{"node", "attachment", "artifact"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+			{Name: "artifact", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "AttachmentArtifactImportedPath is the file one artifact of the " +
+			"FeatureRecipe one attachment binds on a node was supplied from.\n\n" +
+			"Every reading the node-scoped form carries applies here over a " +
+			"different document: the value is the path the catalog resolved, which " +
+			"is absolute, and an entry written inline or supplied by a library " +
+			"bundle answers empty because neither names a file of the workspace.\n" +
+			"\nIt is keyed by the attachment as well as by the node for the reason " +
+			"the two facts declared beside it are: the attachment's render walks " +
+			"the same producer under the HOST component's node identity, so a key " +
+			"carrying only the node would answer with whatever file the host's own " +
+			"Recipe imported under the same output name — naming the wrong file on " +
+			"a finding about this FeatureRecipe's content, which is worse than " +
+			"naming none. Two attachments on one node import independently, with " +
+			"nothing making their output names distinct.",
+	},
+	{
 		Name:        "boundary-attachment-resolved-source-declared",
 		Stage:       "hydrated",
 		SourceField: "types.FeatureRecipeSpec.Source",
@@ -3471,6 +3535,29 @@ var facts = []factDecl{
 			"boundary holds, so a component-rooted key would hold one recorded pin " +
 			"under as many keys as the boundary has members and none at all for a " +
 			"boundary holding none.",
+	},
+	{
+		Name:        "boundary-attachment-artifact-imported-path",
+		Stage:       "hydrated",
+		SourceField: "types.FeatureRecipeSpec.Artifacts",
+		Subject:     []string{"boundary", "attachment", "artifact"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "attachment", Type: "string"},
+			{Name: "artifact", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "BoundaryAttachmentArtifactImportedPath is the file one artifact of " +
+			"the FeatureRecipe one boundary-scope attachment binds was supplied " +
+			"from.\n\nEvery reading the two node-rooted forms carry applies here: " +
+			"the value is the path the catalog resolved, which is absolute, and an " +
+			"entry written inline or supplied by a library bundle answers empty.\n" +
+			"\nIt is rooted at a boundary because that is where the attachment is " +
+			"declared, on the reading the two facts beside it give: such an " +
+			"attachment is written once and reaches every component the boundary " +
+			"holds, so a component-rooted key would hold one imported path under as " +
+			"many keys as the boundary has members and none at all for a boundary " +
+			"holding none.",
 	},
 
 	// ----------------------------------------------------------------- emitted

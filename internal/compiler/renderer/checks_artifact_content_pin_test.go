@@ -42,9 +42,18 @@ const (
 	// pinBodyDrifted is content the fixture records a DIFFERENT pin for, which is
 	// the state a file edited after resolution leaves.
 	pinBodyDrifted = "kind: NetworkPolicy\nmetadata:\n  name: allow-all\n"
+
+	// The files the fixture's entries were supplied from. They are absolute
+	// because that is what the catalog resolves an import reference to, and each
+	// carrier gets its OWN so that a value reading another carrier's fact names a
+	// file the assertion can tell apart — the same discriminator the crossed pins
+	// give for the digests.
+	nodeImportedPath               = "/ws/catalog/recipe/extras/node-policy.yaml"
+	attachmentImportedPath         = "/ws/catalog/feature-recipe/extras/attachment-policy.yaml"
+	boundaryAttachmentImportedPath = "/ws/catalog/feature-recipe/extras/boundary-policy.yaml"
 )
 
-// artifactContentPinFactStub answers the two facts the node-rooted value reads.
+// artifactContentPinFactStub answers the three facts the node-rooted value reads.
 type artifactContentPinFactStub struct {
 	constraint.HydratedView
 
@@ -53,6 +62,10 @@ type artifactContentPinFactStub struct {
 	// comparison is owed — which is why the map holds the pair rather than a bare
 	// string.
 	pin map[string]string
+	// path is keyed the same way again, and its absence is an ordinary empty
+	// answer rather than a second state: an entry that names no file to open and
+	// an entry the retention never held give the same answer.
+	path map[string]string
 }
 
 func (s artifactContentPinFactStub) ArtifactTemplateText(node, artifact string) string {
@@ -62,6 +75,10 @@ func (s artifactContentPinFactStub) ArtifactTemplateText(node, artifact string) 
 func (s artifactContentPinFactStub) ArtifactRecordedContentPin(node, artifact string) (string, bool) {
 	got, ok := s.pin[factKey(node, artifact)]
 	return got, ok
+}
+
+func (s artifactContentPinFactStub) ArtifactImportedPath(node, artifact string) string {
+	return s.path[factKey(node, artifact)]
 }
 
 // artifactContentPinSites implements the two enumerators the node-rooted artifact
@@ -131,6 +148,7 @@ func TestArtifactContentPinRuleOverANodesOwnRecipe(t *testing.T) {
 			stub := artifactContentPinFactStub{
 				text: map[string]string{factKey(node, "policy"): row.text},
 				pin:  map[string]string{},
+				path: map[string]string{factKey(node, "policy"): nodeImportedPath},
 			}
 			if row.pinned {
 				stub.pin[factKey(node, "policy")] = row.pin
@@ -165,6 +183,11 @@ func TestArtifactContentPinRuleOverANodesOwnRecipe(t *testing.T) {
 			for _, want := range []string{
 				ErrArtifactContentMismatch().Error(),
 				`"policy"`,
+				// The file on disk that drifted. The locator names the artifacts
+				// block the entry was authored in, and the output name is chosen
+				// independently of the file — so without this the reader is told
+				// which entry is wrong and has to go and find what it imported.
+				`imported file "` + nodeImportedPath + `"`,
 				`the recorded pin is "` + intactPin + `"`,
 				`its content digests to "` + digest.ContentDigest([]byte(row.text)) + `"`,
 			} {
@@ -222,20 +245,26 @@ func TestArtifactContentPinRuleReadsBothFactsAtTheSameEntry(t *testing.T) {
 	}
 }
 
-// artifactContentPinCarrierStub answers the two facts the carrier-rooted values
+// artifactContentPinCarrierStub answers the three facts the carrier-rooted values
 // read, for both carriers, so one fixture drives both.
 //
 // It answers the NODE-rooted accessors too, and deliberately answers them with a
-// pin that would disagree: a carrier-rooted value reading the node's accessors
-// instead of its own raises here, which is what makes the carrier keying provable
-// rather than asserted.
+// pin that would disagree and with a DIFFERENT imported path: a carrier-rooted
+// value reading the node's accessors instead of its own raises here, and one
+// reading the node's path names the host's file on a finding about the
+// attachment's content. Both are what make the carrier keying provable rather
+// than asserted — the second matters on its own, because a value that read the
+// right pin and the wrong path would raise correctly and point the author at a
+// file that never drifted.
 type artifactContentPinCarrierStub struct {
 	constraint.HydratedView
 
 	attachmentText map[string]string
 	attachmentPin  map[string]string
+	attachmentPath map[string]string
 	boundaryText   map[string]string
 	boundaryPin    map[string]string
+	boundaryPath   map[string]string
 }
 
 func (s artifactContentPinCarrierStub) ArtifactTemplateText(_, _ string) string {
@@ -244,6 +273,10 @@ func (s artifactContentPinCarrierStub) ArtifactTemplateText(_, _ string) string 
 
 func (s artifactContentPinCarrierStub) ArtifactRecordedContentPin(_, _ string) (string, bool) {
 	return digest.ContentDigest([]byte(pinBodyIntact)), true
+}
+
+func (s artifactContentPinCarrierStub) ArtifactImportedPath(_, _ string) string {
+	return nodeImportedPath
 }
 
 func (s artifactContentPinCarrierStub) AttachmentArtifactTemplateText(
@@ -259,6 +292,12 @@ func (s artifactContentPinCarrierStub) AttachmentArtifactRecordedContentPin(
 	return got, ok
 }
 
+func (s artifactContentPinCarrierStub) AttachmentArtifactImportedPath(
+	node, attachment, artifact string,
+) string {
+	return s.attachmentPath[factKey(node, attachment, artifact)]
+}
+
 func (s artifactContentPinCarrierStub) BoundaryAttachmentArtifactTemplateText(
 	boundary, attachment, artifact string,
 ) string {
@@ -270,6 +309,12 @@ func (s artifactContentPinCarrierStub) BoundaryAttachmentArtifactRecordedContent
 ) (string, bool) {
 	got, ok := s.boundaryPin[factKey(boundary, attachment, artifact)]
 	return got, ok
+}
+
+func (s artifactContentPinCarrierStub) BoundaryAttachmentArtifactImportedPath(
+	boundary, attachment, artifact string,
+) string {
+	return s.boundaryPath[factKey(boundary, attachment, artifact)]
 }
 
 // artifactContentPinCarrierSites implements the enumerators both carrier-rooted
@@ -356,6 +401,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 		var intact constraint.HydratedView = artifactContentPinCarrierStub{
 			attachmentText: map[string]string{key: pinBodyIntact},
 			attachmentPin:  map[string]string{key: intactPin},
+			attachmentPath: map[string]string{key: attachmentImportedPath},
 		}
 		raised, err := constraint.RunOnNodeAttachmentArtifacts(
 			nil, sites, sites, sites, intact, AttachmentArtifactContentMatchesItsRecordedPin,
@@ -373,6 +419,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 		var drifted constraint.HydratedView = artifactContentPinCarrierStub{
 			attachmentText: map[string]string{key: pinBodyDrifted},
 			attachmentPin:  map[string]string{key: intactPin},
+			attachmentPath: map[string]string{key: attachmentImportedPath},
 		}
 		raised, err = constraint.RunOnNodeAttachmentArtifacts(
 			nil, sites, sites, sites, drifted, AttachmentArtifactContentMatchesItsRecordedPin,
@@ -388,6 +435,18 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 			t.Errorf("the message does not name the attachment, which is what says which "+
 				"FeatureRecipe.\nfull message: %s", msg)
 		}
+		if !strings.Contains(msg, `imported file "`+attachmentImportedPath+`"`) {
+			t.Errorf("the message does not name the file THIS carrier's entry was supplied "+
+				"from.\nfull message: %s", msg)
+		}
+		if strings.Contains(msg, nodeImportedPath) {
+			t.Errorf("the message names the HOST Recipe's imported file on a finding about the "+
+				"attachment's content.\n"+
+				"INVARIANT: the path fact is keyed by the attachment as well as by the node, for "+
+				"the reason the pin is — the attachment's render walks the same producer under the "+
+				"host's node identity, so a node-keyed read names the wrong file confidently.\n"+
+				"full message: %s", msg)
+		}
 	})
 
 	t.Run("boundary-carried attachment: intact is silent, drifted raises", func(t *testing.T) {
@@ -397,6 +456,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 		var intact constraint.HydratedView = artifactContentPinCarrierStub{
 			boundaryText: map[string]string{key: pinBodyDrifted},
 			boundaryPin:  map[string]string{key: driftedPin},
+			boundaryPath: map[string]string{key: boundaryAttachmentImportedPath},
 		}
 		raised, err := constraint.RunOnBoundaryAttachmentArtifacts(
 			nil, sites, sites, sites, intact,
@@ -413,6 +473,7 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 		var drifted constraint.HydratedView = artifactContentPinCarrierStub{
 			boundaryText: map[string]string{key: pinBodyDrifted},
 			boundaryPin:  map[string]string{key: intactPin},
+			boundaryPath: map[string]string{key: boundaryAttachmentImportedPath},
 		}
 		raised, err = constraint.RunOnBoundaryAttachmentArtifacts(
 			nil, sites, sites, sites, drifted,
@@ -423,6 +484,17 @@ func TestArtifactContentPinRuleOverEachAttachmentCarrier(t *testing.T) {
 		}
 		if len(raised) != 1 {
 			t.Fatalf("raised %d objection(s) over drifted content, want exactly 1", len(raised))
+		}
+		msg := constraint.ObjectionMessage(raised[0])
+		if !strings.Contains(msg, `imported file "`+boundaryAttachmentImportedPath+`"`) {
+			t.Errorf("the message does not name the file THIS carrier's entry was supplied "+
+				"from.\nfull message: %s", msg)
+		}
+		if strings.Contains(msg, nodeImportedPath) {
+			t.Errorf("the message names the HOST Recipe's imported file on a finding about a "+
+				"boundary-scope attachment's content.\n"+
+				"INVARIANT: the path fact is rooted at the boundary, for the reason the pin is.\n"+
+				"full message: %s", msg)
 		}
 	})
 }

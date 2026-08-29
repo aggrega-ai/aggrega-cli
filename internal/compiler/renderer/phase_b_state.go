@@ -353,6 +353,29 @@ func (s *PhaseBState) recordArtifactContentPin(outputName, pin string) {
 	}
 }
 
+// recordArtifactImportedPath retains the file one artifact of the document this
+// render's artifacts belong to was supplied from, against whichever carrier the
+// state holds.
+//
+// It routes exactly as the two recordings above do, and for the same reason: the
+// walk records without knowing which carrier it is on, and the two arms are
+// exclusive by construction rather than by a test here.
+//
+// It is called only for an entry the walk resolved from an imported file, which
+// is the one authoring form naming a file to open. The gate sits at the call site
+// for the reason the pin's does — the walk is the only place that knows which
+// form it resolved — and it is the SAME branch, so an entry with a recorded pin
+// always has a recorded path.
+func (s *PhaseBState) recordArtifactImportedPath(outputName, path string) {
+	if s == nil {
+		return
+	}
+	s.hydrated.recordArtifactImportedPath(s.NodeID, outputName, path)
+	if s.attachmentHydrated != nil {
+		s.attachmentHydrated.recordArtifactImportedPath(outputName, path)
+	}
+}
+
 // recordAttachmentPillars reduces the mid-render state one attachment's render
 // reached to the projection that outlives it.
 //

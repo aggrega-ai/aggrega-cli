@@ -293,6 +293,20 @@ func buildArtifactsProjection(
 			origin := "inline"
 			if entry.Import != "" {
 				origin = "import"
+				// The file this entry was supplied from is retained in the same
+				// branch as the pin below, because this is the one branch that knows
+				// the entry's resolved form names a file at all. It is the resolved
+				// path, which is absolute: a finding about drifted content is about a
+				// file on disk, and the entry's output name is chosen independently of
+				// that file, so nothing else the finding carries can name it.
+				//
+				// It is retained for EVERY imported entry rather than only for one
+				// carrying a recorded pin, because the two are different questions:
+				// which file supplied this entry, and whether the document froze a
+				// digest for it. Gating the path on the pin would make the fact answer
+				// emptily for an unfrozen Recipe, whose entries name a file exactly as
+				// a frozen one's do.
+				state.recordArtifactImportedPath(name, entry.Import)
 				// The recorded pin is retained here rather than at the emit seam,
 				// because this is the one branch that knows the entry's resolved form
 				// is content supplied by an imported file — the only form a pin is

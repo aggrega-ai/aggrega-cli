@@ -114,6 +114,15 @@ type hydratedProjection struct {
 	// knows which form it resolved: an inline entry is pinned by whatever pins the
 	// entity, and a bundle-supplied one by the version the bundle resolved at.
 	ArtifactRecordedContentPin types.OrderedMap[string]
+
+	// ArtifactImportedPath is the file each of the node's artifacts was supplied
+	// from, keyed by the output name the entry resolves to.
+	//
+	// An entry is present only where the walk resolved content supplied by an
+	// imported file, so an absent entry says the content came from somewhere that
+	// names no file — written inline, or supplied by an entry of a library bundle.
+	// The value is the path the catalog resolved, which is absolute.
+	ArtifactImportedPath types.OrderedMap[string]
 }
 
 // An artifacts block is authored on the entity that carries it, and three
@@ -192,6 +201,11 @@ type nodeAttachmentProjection struct {
 	// on the reading the node's own field states.
 	AttachmentArtifactRecordedContentPin types.OrderedMap[string]
 
+	// AttachmentArtifactImportedPath is the file each of the attachment's
+	// artifacts was supplied from, keyed by the output name the entry resolves
+	// to, held on the reading the node's own field states.
+	AttachmentArtifactImportedPath types.OrderedMap[string]
+
 	// AttachmentInjectMappingMechanisms pairs each mechanism the host component's
 	// own injection block declares with whether this attachment's rendered
 	// injectMapping output named it, in the order the component declared them.
@@ -229,6 +243,11 @@ type boundaryAttachmentProjection struct {
 	// An entry is present only where the walk resolved a form that carries a pin,
 	// on the reading the node's own field states.
 	BoundaryAttachmentArtifactRecordedContentPin types.OrderedMap[string]
+
+	// BoundaryAttachmentArtifactImportedPath is the file each of the
+	// boundary-scope attachment's artifacts was supplied from, keyed by the output
+	// name the entry resolves to, held on the reading the node's own field states.
+	BoundaryAttachmentArtifactImportedPath types.OrderedMap[string]
 }
 
 // hydratedProjections is one render's retained set of those projections, keyed
@@ -381,6 +400,31 @@ func (h *hydratedProjections) recordArtifactContentPin(nodeID, outputName, pin s
 	p.ArtifactRecordedContentPin.Set(outputName, pin)
 }
 
+// recordArtifactImportedPath retains the file one of a node's artifacts was
+// supplied from, under the output name that entry resolves to.
+//
+// It is called from the artifacts walk beside the pin recording, and only for an
+// entry the walk resolved from an imported file. So an artifact absent from this
+// map is one that names no file to open: an inline entry is part of the entity
+// carrying it, and a bundle-supplied one is a name inside a resolved artifact
+// rather than a path.
+//
+// A nil set records nothing, which keeps the attachment-carried artifacts flowing
+// through the same walk out of a fact declared over a node's own Recipe.
+func (h *hydratedProjections) recordArtifactImportedPath(nodeID, outputName, path string) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p, ok := h.byNode[nodeID]
+	if !ok {
+		p = &hydratedProjection{}
+		h.byNode[nodeID] = p
+	}
+	p.ArtifactImportedPath.Set(outputName, path)
+}
+
 // recordNodeInjectDeliveries retains the attributed deliveries one node's
 // injection pipe carries.
 //
@@ -501,6 +545,14 @@ type attachmentCarrier interface {
 	// It is called only where the walk resolved a form that carries a pin, so a
 	// carrier reaching this at all is a carrier for which a comparison is owed.
 	recordArtifactContentPin(outputName, pin string)
+
+	// recordArtifactImportedPath retains the file one artifact of this
+	// attachment's FeatureRecipe was supplied from, under the output name that
+	// entry resolves to.
+	//
+	// It is called only where the walk resolved the entry from an imported file,
+	// so a carrier reaching this at all is one whose entry names a file to open.
+	recordArtifactImportedPath(outputName, path string)
 
 	// recordEmission reduces this attachment render's completed emitted file set to
 	// the projection that outlives it, under this carrier's own key.
@@ -808,6 +860,16 @@ func (r nodeAttachmentCarrier) recordArtifactContentPin(outputName, pin string) 
 	h.nodeAttachmentEntry(r.key).AttachmentArtifactRecordedContentPin.Set(outputName, pin)
 }
 
+func (r nodeAttachmentCarrier) recordArtifactImportedPath(outputName, path string) {
+	h := r.into
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.nodeAttachmentEntry(r.key).AttachmentArtifactImportedPath.Set(outputName, path)
+}
+
 func (r nodeAttachmentCarrier) recordEmission(state *PhaseBState) {
 	r.emittedInto.recordNodeAttachment(r.key, state)
 }
@@ -844,6 +906,16 @@ func (r boundaryAttachmentCarrier) recordArtifactContentPin(outputName, pin stri
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.boundaryAttachmentEntry(r.key).BoundaryAttachmentArtifactRecordedContentPin.Set(outputName, pin)
+}
+
+func (r boundaryAttachmentCarrier) recordArtifactImportedPath(outputName, path string) {
+	h := r.into
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.boundaryAttachmentEntry(r.key).BoundaryAttachmentArtifactImportedPath.Set(outputName, path)
 }
 
 func (r boundaryAttachmentCarrier) recordEmission(state *PhaseBState) {

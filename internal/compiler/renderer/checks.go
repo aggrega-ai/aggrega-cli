@@ -1783,20 +1783,42 @@ var BoundaryAttachmentArtifactPillarDeclared = constraint.Check[
 // freeze itself uses, so the value compared and the value recorded come from one
 // implementation.
 //
+// importedPath is the file the entry was supplied from, which the calling value
+// reads from its own carrier because the path and the pin are recorded in
+// different documents and one fact may name only one of them. It is a bare string
+// with no presence flag: an entry carrying a recorded pin was resolved from an
+// imported file by the same branch that recorded the path, so a pinned entry
+// always has one.
+//
 // carrierDetail is what the calling value adds after the digests — the attachment,
 // where the entry belongs to one — and is positional rather than variadic so a
 // value cannot omit it silently.
 //
+// # What the detail carries, and why the path is in it
+//
 // Its detail leaves the artifact bare, because the registered wording already says
 // imported artifact content is what the finding is about, and captions the two
-// digests, which are otherwise two hex strings a reader cannot tell apart. The
-// locator names the artifacts block in the document the entry was written in, which
-// is where the `$import` naming the drifted file is authored.
+// digests, which are otherwise two hex strings a reader cannot tell apart.
+//
+// The locator names the artifacts block in the document the entry was written in,
+// which is where the `$import` naming the drifted file is authored — so an author
+// reading the finding is put one line from the reference. That is not the same as
+// being told which file drifted, and the difference is a hop the author pays on
+// every occurrence: the artifact's output name is chosen independently of the file
+// it was supplied from, so nothing else the finding carries names the file. The
+// path is therefore reported beside the name, CAPTIONED, because an absolute path
+// standing bare beside a quoted output name is two quoted strings a reader cannot
+// tell apart — the bare slot is already taken by the artifact.
+//
+// It is spelled once here rather than at each calling value. Three copies would
+// agree the day they were written, and the agreement is what would hide the next
+// change to the caption or the order.
 func artifactContentPinObjections[S artifactPillarSubject](
 	s S,
 	templateText string,
 	pin string,
 	pinned bool,
+	importedPath string,
 	carrierDetail []constraint.DetailValue,
 ) []constraint.Objection {
 	if !pinned {
@@ -1808,6 +1830,7 @@ func artifactContentPinObjections[S artifactPillarSubject](
 	}
 	detail := []constraint.DetailValue{
 		constraint.Uncaptioned(s.ArtifactName()),
+		constraint.Captioned("imported file", importedPath),
 		constraint.Captioned("its content digests to", got),
 		constraint.Captioned("the recorded pin is", pin),
 	}
@@ -1853,7 +1876,9 @@ var ArtifactContentMatchesItsRecordedPin = constraint.Check[
 		return artifactContentPinObjections(
 			s,
 			v.ArtifactTemplateText(s.NodeID(), s.ArtifactName()),
-			pin, pinned, nil,
+			pin, pinned,
+			v.ArtifactImportedPath(s.NodeID(), s.ArtifactName()),
+			nil,
 		)
 	},
 }
@@ -1891,6 +1916,7 @@ var AttachmentArtifactContentMatchesItsRecordedPin = constraint.Check[
 			s,
 			v.AttachmentArtifactTemplateText(s.NodeID(), s.AttachmentName(), s.ArtifactName()),
 			pin, pinned,
+			v.AttachmentArtifactImportedPath(s.NodeID(), s.AttachmentName(), s.ArtifactName()),
 			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
 		)
 	},
@@ -1926,6 +1952,9 @@ var BoundaryAttachmentArtifactContentMatchesItsRecordedPin = constraint.Check[
 				s.BoundaryPath(), s.AttachmentName(), s.ArtifactName(),
 			),
 			pin, pinned,
+			v.BoundaryAttachmentArtifactImportedPath(
+				s.BoundaryPath(), s.AttachmentName(), s.ArtifactName(),
+			),
 			[]constraint.DetailValue{constraint.Captioned("attachment", s.AttachmentName())},
 		)
 	},

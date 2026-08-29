@@ -60,9 +60,19 @@ containers:
 // one imported entry with the given recorded pin, and the monitoring feature to a
 // FeatureRecipe carrying no artifacts at all — so any halt is attributable to the
 // host's own carrier.
+//
+// An empty pin builds a Recipe carrying NO artifactDigests block, which is the
+// state of a Recipe that was never frozen. It is spelled as an absent block rather
+// than as an entry with an empty digest because the two are different inputs: an
+// entry recording an empty digest is a recorded pin whose value is empty, which
+// the rule compares against and refuses.
 func pinHostLookup(importPath, pin string) renderer.RecipeLookup {
 	artifacts := types.OrderedMap[types.ArtifactEntry]{}
 	artifacts.Set("pin-host-policy.yaml", types.ArtifactEntry{Import: importPath})
+	var digests []types.ArtifactDigest
+	if pin != "" {
+		digests = []types.ArtifactDigest{{Name: "pin-host-policy.yaml", Digest: pin}}
+	}
 	return renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			if componentType != "core/compute/api-server" {
@@ -75,7 +85,7 @@ func pinHostLookup(importPath, pin string) renderer.RecipeLookup {
 					Implements:      "core/compute/api-server",
 					Workload:        types.WorkloadTemplate{Inline: pinWorkload},
 					Artifacts:       artifacts,
-					ArtifactDigests: []types.ArtifactDigest{{Name: "pin-host-policy.yaml", Digest: pin}},
+					ArtifactDigests: digests,
 				},
 			}, true
 		},
@@ -133,6 +143,33 @@ func pinFeatureLookup(importPath, pin string) renderer.RecipeLookup {
 	}
 }
 
+// TestAnImportedArtifactWithNoRecordedPinRendersWhateverItsContent holds the
+// branch the two directions above do not reach: an entry supplied by an imported
+// file whose Recipe records no pin for it.
+//
+// The render retains the file that entry was supplied from for EVERY imported
+// entry, not only for one carrying a pin, because which file supplied an entry
+// and whether a document froze a digest for it are different questions. So this
+// is the row that says the wider retention introduced no verdict: a Recipe that
+// was never frozen has nothing to compare, and content that would fail the
+// comparison if a pin existed renders here.
+//
+// It is driven at the render entry rather than at check level because a
+// check-level fixture supplies the facts by hand and would answer this question
+// with whatever the fixture was written to say.
+func TestAnImportedArtifactWithNoRecordedPinRendersWhateverItsContent(t *testing.T) {
+	t.Parallel()
+
+	driftedPath, _ := pinImportFile(t, pinImportDrifted)
+	if _, err := renderer.RenderAll(
+		context.Background(), pinPinnedInput(t),
+		pinHostLookup(driftedPath, ""), testHelmFactory(t),
+	); err != nil {
+		t.Fatalf("a Recipe that recorded no pin for its imported artifact must render "+
+			"whatever that file now holds: %v", err)
+	}
+}
+
 // TestTheArtifactContentPinRuleAdmitsAndRefusesOnANodesOwnRecipe drives the
 // node-rooted value through the production path in both directions.
 func TestTheArtifactContentPinRuleAdmitsAndRefusesOnANodesOwnRecipe(t *testing.T) {
@@ -157,12 +194,20 @@ func TestTheArtifactContentPinRuleAdmitsAndRefusesOnANodesOwnRecipe(t *testing.T
 	}
 
 	// The declared rule's own wording: the registered sentence, the bare artifact
-	// name, and the two captioned digests. A message carrying the registered
-	// sentence alone would not say which of the two readings produced the halt.
+	// name, the file the entry was supplied from, and the two captioned digests. A
+	// message carrying the registered sentence alone would not say which of the two
+	// readings produced the halt.
+	//
+	// The path is asserted here and not only at check level because it is the one
+	// detail whose value comes from a fact the production walk has to have recorded
+	// at the same coordinate the pin was recorded at. A check-level fixture supplies
+	// both by hand and cannot tell a walk that records neither from one that records
+	// them under crossed names.
 	msg := cerrors.CauseChain(err)
 	for _, want := range []string{
 		renderer.ErrArtifactContentMismatch().Error(),
 		`"pin-host-policy.yaml"`,
+		`imported file "` + driftedPath + `"`,
 		`the recorded pin is "` + intactPin + `"`,
 		`its content digests to "` + digest.ContentDigest([]byte(pinImportDrifted)) + `"`,
 	} {
@@ -205,6 +250,7 @@ func TestTheArtifactContentPinRuleAdmitsAndRefusesOnAnAttachmentsFeatureRecipe(t
 	for _, want := range []string{
 		renderer.ErrArtifactContentMismatch().Error(),
 		`"pin-feature-policy.yaml"`,
+		`imported file "` + driftedPath + `"`,
 		`attachment "mon"`,
 	} {
 		if !strings.Contains(msg, want) {
