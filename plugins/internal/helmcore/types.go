@@ -188,6 +188,7 @@ type PodSpec struct {
 	DNSPolicy                     string                 `yaml:"dnsPolicy,omitempty"`
 	DNSConfig                     *PodDNSConfig          `yaml:"dnsConfig,omitempty"`
 	HostAliases                   []HostAlias            `yaml:"hostAliases,omitempty"`
+	HostNetwork                   bool                   `yaml:"hostNetwork,omitempty"`
 	RestartPolicy                 string                 `yaml:"restartPolicy,omitempty"`
 }
 

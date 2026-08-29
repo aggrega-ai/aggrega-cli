@@ -173,10 +173,12 @@ func AssembleBoundaryCore(
 			boundaryByService[svcName] = networkName
 			waveByService[svcName] = nodeSyncWave[nid]
 
-			// Append the network to the service's networks list. Sidecars
-			// with network_mode: service:<main> keep network_mode (compose
-			// forbids combining networks: with network_mode:); the
-			// synthesizer never sets both.
+			// Append the network to the service's networks list. A service
+			// that already carries a network_mode keeps it instead, because
+			// compose forbids combining networks: with network_mode: and the
+			// synthesizer never sets both. Two shapes reach here that way: a
+			// sidecar sharing the main service's namespace, and a workload
+			// declaring it runs on the node's network.
 			if svc.NetworkMode == "" {
 				svc.Networks = appendUnique(svc.Networks, networkName)
 			}

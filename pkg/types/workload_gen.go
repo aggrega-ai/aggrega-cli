@@ -49,4 +49,6 @@ type Workload struct {
 	DNSConfig *DNSConfig `json:"dnsConfig,omitempty" yaml:"dnsConfig,omitempty"`
 	// HostAliases Static hostname-to-IP mappings injected into the pod's hosts file. helm emits pod.hostAliases; compose emits extra_hosts (one hostname:ip entry per hostname).
 	HostAliases []HostAlias `json:"hostAliases,omitempty" yaml:"hostAliases,omitempty"`
+	// HostNetwork Run the workload in the host node's own network namespace instead of an isolated one. The ports the workload opens are then reachable on the node's own addresses, and the workload sees the node's network interfaces. This chooses a network namespace and nothing else: it declares no ports, and every port the workload opens is still declared under containers.<name>.ports. helm emits pod.hostNetwork. compose emits network_mode: host on the workload's own service; a compose service in that mode is not attached to the boundary network, so its peers reach it on the node's addresses rather than by service name, and each init container's service joins the boundary network in its own right. Compute-only: not permitted on a reference workload.
+	HostNetwork bool `json:"hostNetwork,omitempty" yaml:"hostNetwork,omitempty"`
 }

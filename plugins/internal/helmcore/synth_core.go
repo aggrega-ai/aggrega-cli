@@ -984,6 +984,7 @@ func applyPodLevelFields(spec *PodSpec, w *types.Workload, saAnnotation, pullSec
 	for _, ha := range w.HostAliases {
 		spec.HostAliases = append(spec.HostAliases, HostAlias{IP: ha.IP, Hostnames: ha.Hostnames})
 	}
+	spec.HostNetwork = w.HostNetwork
 
 	// RestartPolicy: bubble up the first container's restartPolicy when
 	// it's OnFailure or Never (Always is the K8s default; emitting

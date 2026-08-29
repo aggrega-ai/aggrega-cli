@@ -48,6 +48,12 @@ import (
 // unsupported-field warnings emitted for authored Workload fields compose cannot honor.
 const composeTargetName = "compose"
 
+// networkModeHost is the compose network_mode value that puts a service in the
+// host node's own network namespace. It is one of the values compose's
+// network_mode accepts; the other one this core emits is the "service:<name>"
+// form a sidecar takes to share the main service's namespace.
+const networkModeHost = "host"
+
 // SynthesizeWorkloadCore translates a parsed Workload into a per-node compose
 // fragment for the compose provider. Returns one EmittedFile
 // (`<nodeID>.compose-fragment.yaml`, Intermediate=true); the boundary merger
@@ -909,6 +915,7 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 //
 //   - Workload.PodSecurityContext.RunAsUser → user (overridden by container
 //     SecurityContext.RunAsUser if set)
+//   - Workload.HostNetwork                 → network_mode: host
 //   - Workload.Scheduling                  → no compose equivalent (single-host)
 //   - Workload.ServiceAccount              → no compose equivalent
 //   - Workload.Replicas                    → no equivalent at the service
@@ -947,6 +954,14 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.D
 		}
 	}
 
+	// hostNetwork → network_mode: host. The boundary merger reads a set
+	// network_mode as the signal to leave the service off the boundary network,
+	// because compose refuses a service declaring both, so setting this here is
+	// the whole change: nothing else attaches the network.
+	if w.HostNetwork {
+		svc.NetworkMode = networkModeHost
+	}
+
 	var diags []renderctx.Diagnostic
 	if w.Scheduling != nil {
 		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "scheduling"))
@@ -971,6 +986,18 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.D
 	}
 	if w.DNSConfig != nil && len(w.DNSConfig.Options) > 0 {
 		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "dnsConfig.options"))
+	}
+	// An init container becomes its own service, and that service joins the
+	// boundary network in its own right rather than sharing this one's namespace
+	// — sharing it would make this service's wait on the init service circular.
+	// So the workload's own service runs on the node's network while its init
+	// services do not, which is narrower than the pod shape, and the difference
+	// is reported rather than left for the author to discover at run time.
+	// Reported only when both are authored: with no init containers there is no
+	// difference to report.
+	if w.HostNetwork && len(w.InitContainers) > 0 {
+		diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName, "hostNetwork",
+			"the workload's own service runs on the node's network while each init container's service joins the boundary network in its own right"))
 	}
 	return diags
 }
