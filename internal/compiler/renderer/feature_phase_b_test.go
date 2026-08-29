@@ -266,3 +266,105 @@ func TestIsResourceGeneratingFR(t *testing.T) {
 		})
 	}
 }
+
+// pipelineStepFixture is the one-step pipeline the admission cases below declare.
+// Nothing resolves it — the admission question is answered from the declaration
+// alone, before any plugin is looked up.
+func pipelineStepFixture() []types.PipelineStep {
+	return []types.PipelineStep{{ID: "patch", Plugin: "pipeline-step/host-patch:1.0.0", Function: "step"}}
+}
+
+// TestParticipatesInRenderSequence enumerates what admits an attachment to the
+// base-rendering sequence. Two disjoint reasons admit one and neither implies the
+// other, so the cases cover both singly and together, plus the two shapes that
+// declare neither.
+//
+// The pipeline-only row is the one that separates this predicate from
+// isResourceGeneratingFR: such a FeatureRecipe generates no resource, so the
+// resource predicate answers false for it, and it must still be admitted or its
+// pipeline never runs.
+func TestParticipatesInRenderSequence(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		fr          *types.FeatureRecipe
+		wantAdmit   bool
+		wantGenerat bool
+	}{
+		{"nil", nil, false, false},
+		{"pure-wiring (capability and implements only)", &types.FeatureRecipe{}, false, false},
+		{"inject-only (only injectMapping)", &types.FeatureRecipe{
+			Spec: types.FeatureRecipeSpec{InjectMapping: `{"env":{"X":"1"}}`},
+		}, false, false},
+		{"pipeline only, no render input", &types.FeatureRecipe{
+			Spec: types.FeatureRecipeSpec{Pipeline: pipelineStepFixture()},
+		}, true, false},
+		{"pipeline plus injectMapping, no render input", &types.FeatureRecipe{
+			Spec: types.FeatureRecipeSpec{
+				InjectMapping: `{"env":{"X":"1"}}`,
+				Pipeline:      pipelineStepFixture(),
+			},
+		}, true, false},
+		{"render input, no pipeline", &types.FeatureRecipe{
+			Spec: types.FeatureRecipeSpec{Source: "./charts/x"},
+		}, true, true},
+		{"render input and pipeline", &types.FeatureRecipe{
+			Spec: types.FeatureRecipeSpec{
+				Source:   "./charts/x",
+				Pipeline: pipelineStepFixture(),
+			},
+		}, true, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := participatesInRenderSequence(c.fr); got != c.wantAdmit {
+				t.Errorf("participatesInRenderSequence = %v, want %v", got, c.wantAdmit)
+			}
+			// The resource predicate keeps its own meaning: it is asserted on the
+			// same row so a widening of it — the change this admission predicate
+			// exists to avoid — fails here rather than passing silently.
+			if got := isResourceGeneratingFR(c.fr); got != c.wantGenerat {
+				t.Errorf("isResourceGeneratingFR = %v, want %v", got, c.wantGenerat)
+			}
+		})
+	}
+}
+
+// TestParticipatesInRenderSequenceAgreesWithTheLockTimeDescent pins the render
+// side of the pin-then-run pair. The lock-time descent walks every
+// spec.pipeline[] step of every FeatureRecipe in the closure and resolves the
+// plugin it names, with no render-input condition on it at all; a FeatureRecipe
+// whose pipeline that descent walks and whose pipeline the render path skips is a
+// plugin resolved for a step that never executes.
+//
+// So the render-side condition must be exactly "declares a pipeline", read off
+// the same field the descent reads: this asserts that a FeatureRecipe declaring
+// nothing but a pipeline is admitted, and that removing the pipeline is what
+// takes it back out. The lock side of the pair is asserted in the closure
+// package's descent tests.
+func TestParticipatesInRenderSequenceAgreesWithTheLockTimeDescent(t *testing.T) {
+	t.Parallel()
+
+	fr := &types.FeatureRecipe{
+		Spec: types.FeatureRecipeSpec{
+			Capability: "helm",
+			Implements: "feature.myco/guardrail",
+			Pipeline:   pipelineStepFixture(),
+		},
+	}
+	// The fixture declares no render input — the shape the descent pins a plugin
+	// for while the resource predicate answers false.
+	if isResourceGeneratingFR(fr) {
+		t.Fatalf("fixture is not pipeline-only: it declares a render input")
+	}
+	if !participatesInRenderSequence(fr) {
+		t.Errorf("a FeatureRecipe whose declared pipeline the lock-time descent walks is not admitted to the render sequence")
+	}
+
+	withoutPipeline := *fr
+	withoutPipeline.Spec.Pipeline = nil
+	if participatesInRenderSequence(&withoutPipeline) {
+		t.Errorf("a FeatureRecipe declaring neither a render input nor a pipeline is admitted; the descent walks no step for it either")
+	}
+}

@@ -353,19 +353,27 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 }
 
 // phaseB6 runs FeatureRecipe Resource Generation (chapter 16). It walks ONE
-// sequence of resource-generating attachments and renders every one of them
-// through the same path: derive the attachment-scoped context, evaluate the
-// FeatureRecipe's locals and valuesMapping against it, dispatch to the engine
-// named by the FR's own provider, run the FR's pipeline when it declares one,
-// and emit the FR's files under the attachment's output prefix.
+// sequence of attachments and renders every one of them through the same path:
+// derive the attachment-scoped context, evaluate the FeatureRecipe's locals and
+// valuesMapping against it, dispatch to the engine named by the FR's own
+// provider, run the FR's pipeline when it declares one, and emit the FR's files
+// under the attachment's output prefix.
 //
-// attachmentRenderSequence assembles that sequence from the node's two IR
-// attachment buckets — features in FeatureOrder, then credentials in author
-// order — applying the isResourceGeneratingFR guard uniformly: an inject-only
-// FeatureRecipe contributes through Phase A and emits nothing here, whichever
-// bucket it came from. What varies between attachments is DATA on the queued
-// item (its context pillars, the delivery pipe a credential populates, its
-// output prefix), never a second render path.
+// attachmentRenderSequence assembles that sequence from the node's single IR
+// attachment bucket, in the cascade order the IR recorded — every attachment the
+// node holds, credential-handling ones included — applying the
+// participatesInRenderSequence guard uniformly: an
+// attachment is admitted when its FeatureRecipe generates a resource of its own
+// or declares a pipeline, whichever bucket it came from. An attachment doing
+// neither emits nothing here — an inject-only FeatureRecipe contributes through
+// Phase A, a pure-wiring one through the uses-edge its Feature carries. What
+// varies between attachments is DATA on the queued item (its context pillars,
+// the delivery pipe a credential populates, its output prefix), never a second
+// render path.
+//
+// An attachment admitted for its pipeline alone renders no files of its own: it
+// carries no render input, so the render passes below emit nothing for it and
+// its pipeline's whole effect is what it patches or emits into the host.
 //
 // A FeatureRecipe declaring spec.executionScope: boundary takes the
 // boundary-scope dispatch instead: dedup by (boundary_path, fr_instance),
@@ -432,9 +440,9 @@ func phaseB6(
 	}
 
 	// ONE attachment render loop over ONE sequence. The sequence carries every
-	// resource-generating attachment the node holds; the per-attachment
-	// differences travel as data on the item, so the render path below exists
-	// exactly once.
+	// attachment the node holds that has work here — a resource of its own to
+	// generate, a pipeline to run, or both; the per-attachment differences travel
+	// as data on the item, so the render path below exists exactly once.
 	for seqIndex, item := range attachmentRenderSequence(tmplCtx, featureRefs, nodeAttachments, state.AttachmentProvides) {
 		fr := item.FR
 
@@ -605,9 +613,10 @@ func phaseB6(
 	return out, hostPatched, deferred, nil
 }
 
-// attachmentRenderItem is one resource-generating attachment queued for the
-// Phase B.6 render loop. Everything that differs between attachment families
-// is a field here, so the loop that consumes the sequence has one body:
+// attachmentRenderItem is one attachment queued for the Phase B.6 render loop —
+// one that generates a resource of its own, or one that declares a pipeline, or
+// both. Everything that differs between attachment families is a field here, so
+// the loop that consumes the sequence has one body:
 //
 //   - CtxValues / CtxInfra are the .values / .infra pillars the attachment's
 //     render context carries.
@@ -634,10 +643,13 @@ type attachmentRenderItem struct {
 }
 
 // attachmentRenderSequence assembles the one ordered sequence Phase B.6
-// renders: every attachment on the node whose bound FeatureRecipe is
-// resource-generating (it declares a source, a workload, artifacts or a
-// valuesMapping). An inject-only FeatureRecipe is excluded — Phase A owns its
-// inject merge and it has nothing to emit here.
+// renders: every attachment on the node whose bound FeatureRecipe has work here.
+// Two disjoint reasons admit one — it declares a render input, so it generates a
+// resource of its own; or it declares a pipeline, so it rewrites documents
+// already emitted — and participatesInRenderSequence holds that rule. A
+// FeatureRecipe declaring neither is excluded: an inject-only one because Phase A
+// owns its inject merge, a pure-wiring one because its effect is the uses-edge
+// its Feature carries. Neither has anything to do here.
 //
 // The order is the refs' order, which is the cascade order the IR recorded —
 // the same order Phase A walks — so both phases see one ordering rule and there
@@ -657,7 +669,7 @@ func attachmentRenderSequence(
 	seq := make([]attachmentRenderItem, 0, len(featureRefs))
 
 	for _, ref := range featureRefs {
-		if !isResourceGeneratingFR(ref.FeatureRecipe) {
+		if !participatesInRenderSequence(ref.FeatureRecipe) {
 			continue
 		}
 		item := attachmentRenderItem{

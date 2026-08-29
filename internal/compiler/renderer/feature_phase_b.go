@@ -215,8 +215,15 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 
 // isResourceGeneratingFR returns true if the FeatureRecipe declares a render
 // input kind — source, valuesMapping, workload, or artifacts — i.e., it
-// produces its own resources in Phase B. Inject-only FRs (only injectMapping)
-// return false — they're already handled by Phase A and render nothing.
+// produces its own resources in Phase B. A FeatureRecipe declaring none of them
+// generates no resource of its own: an inject-only one (only injectMapping)
+// contributes through Phase A, and a pure-wiring one (capability and implements
+// only) has its whole effect in the uses-edge the Feature it implements carries.
+//
+// It answers what its name asks and nothing else. It does NOT decide whether an
+// attachment takes part in the base-rendering sequence —
+// participatesInRenderSequence answers that, and a pipeline-declaring
+// FeatureRecipe takes part while generating no resource of its own.
 func isResourceGeneratingFR(fr *types.FeatureRecipe) bool {
 	if fr == nil {
 		return false
@@ -234,4 +241,27 @@ func isResourceGeneratingFR(fr *types.FeatureRecipe) bool {
 		return true
 	}
 	return false
+}
+
+// participatesInRenderSequence reports whether an attachment's FeatureRecipe has
+// work to do in the base-rendering attachment sequence. Two disjoint reasons put
+// it there, and they are different questions:
+//
+//   - it declares a render input, so it generates a resource of its own;
+//   - it declares a pipeline, so it rewrites documents the base Recipe or an
+//     earlier attachment in the sequence already emitted.
+//
+// The resource predicate above answers only the first. A pipeline generates no
+// resource — it patches what is already there — so widening that predicate to
+// return true on a declared pipeline would make its name assert something false.
+// The two questions stay separate, and this one gates admission.
+//
+// A FeatureRecipe declaring neither has nothing to do in the sequence and is
+// excluded: an inject-only one contributes through Phase A, and a pure-wiring
+// one through the uses-edge the Feature it implements carries.
+func participatesInRenderSequence(fr *types.FeatureRecipe) bool {
+	if fr == nil {
+		return false
+	}
+	return isResourceGeneratingFR(fr) || len(fr.Spec.Pipeline) > 0
 }

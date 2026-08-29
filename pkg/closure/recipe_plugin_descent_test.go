@@ -402,6 +402,65 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 	}
 }
 
+// TestPluginDescent_FeatureRecipePinnedWithNoRenderInput pins the lock side of the
+// pin-then-run pair for a FeatureRecipe that generates no resource of its own.
+//
+// The descent walks spec.pipeline[] for every FeatureRecipe in the closure and
+// resolves the plugin each step names, with no condition on whether the
+// FeatureRecipe declares a render input. A FeatureRecipe whose plugin is resolved
+// here and whose pipeline the render path skips is a plugin resolved for a step
+// that never executes — which is why the render path's admission condition must be
+// the same "declares a pipeline" this walk uses, asserted on the render side in
+// the renderer package.
+//
+// The fixture's shape is asserted rather than assumed: it must declare no source,
+// no valuesMapping, no workload and no artifacts, or the test stops proving
+// anything about the pipeline-only case.
+func TestPluginDescent_FeatureRecipePinnedWithNoRenderInput(t *testing.T) {
+	fr := featureRecipeWithPipelinePlugin(t, "cred", registryProvider, frPluginEntity)
+
+	if !sourceIsAbsent(fr.Spec.Source) || !fr.Spec.ValuesMapping.IsEmpty() ||
+		!fr.Spec.Workload.IsEmpty() || fr.Spec.Artifacts.Len() > 0 {
+		t.Fatalf("fixture is not pipeline-only: it declares a render input (source=%#v)", fr.Spec.Source)
+	}
+	if len(fr.Spec.Pipeline) == 0 {
+		t.Fatalf("fixture declares no pipeline; there is no descent target to assert on")
+	}
+
+	loader := &fakeRecipeLoader{
+		features: map[string]*types.FeatureRecipe{frRecipeURI: fr},
+		plugins:  map[string]*types.Plugin{frPluginEntity: pluginEntity(t, frPluginName, "pipeline-step")},
+	}
+	rel := loadRelease(t, providerDescentRelease)
+	man := loadManifest(t, featureRecipeDescentManifest)
+	lookup := featureRecipeDescentLookup()
+	cl, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, workspaceconfig.Config{}, lookup)
+	if err != nil {
+		t.Fatalf("ComputeClosure: %v", err)
+	}
+	if err := descendPlugins(&cl, loader, lookup, nil); err != nil {
+		t.Fatalf("plugin descent: %v", err)
+	}
+
+	if _, ok := entityByURI(cl, frPluginEntity); !ok {
+		t.Fatalf("pipeline plugin ENTITY %q of a FeatureRecipe with no render input not pinned", frPluginEntity)
+	}
+	if _, ok := pluginByURI(cl, frPluginArtifact); !ok {
+		t.Fatalf("pipeline plugin ARTIFACT %q of a FeatureRecipe with no render input not pinned", frPluginArtifact)
+	}
+}
+
+// sourceIsAbsent reports whether a FeatureRecipe's spec.source declares nothing —
+// a nil value, or an empty string. The descent reads no source at all, so this is
+// only the fixture-shape guard above.
+func sourceIsAbsent(src any) bool {
+	if src == nil {
+		return true
+	}
+	s, ok := src.(string)
+	return ok && s == ""
+}
+
 // TestPluginDescent_WorkspaceSocketEntityArtifactPinned proves a workspace plugin
 // socket — a Plugin entity ComputeClosure pinned on the entity axis — is descended
 // to its spec.plugin .wasm artifact at pull time even though no Recipe references it.

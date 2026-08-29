@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: pipeline-only-attachment-unattached-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-unattached.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        api:
+          infra:
+            replicas: 1

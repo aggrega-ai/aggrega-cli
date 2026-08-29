@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: guardrail-inert
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: "feature.myco/guardrail"
+  # Neither a render input nor a pipeline nor an injectMapping: a pure-wiring
+  # binding, which is a valid FeatureRecipe shape. It renders nothing and takes
+  # no part in feature rendering; its effect would be the uses-edge the Feature
+  # it implements carries, and this Feature carries none.

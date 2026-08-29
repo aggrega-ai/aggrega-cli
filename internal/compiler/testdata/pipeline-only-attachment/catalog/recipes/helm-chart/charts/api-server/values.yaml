@@ -1,0 +1,9 @@
+# Chart values for the api-server host component.
+# The attached FeatureRecipe generates no resource of its own; its pipeline
+# injects an env var into the environment block below, and that injection is the
+# only trace the attachment leaves in the rendered output.
+image: api-server:latest
+replicas: 1
+ports: []
+environment:
+  EXISTING_VAR: 'keep-me'

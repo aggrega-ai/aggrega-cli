@@ -147,8 +147,8 @@ type ProviderContract struct {
 //
 // How often the factory is called is not bounded by the provider set. Some
 // callers deliberately resolve each distinct provider once, but the render path
-// calls the factory at every crossing it dispatches — per node, per
-// resource-generating attachment, per boundary-scope FeatureRecipe, per codec
+// calls the factory at every crossing it dispatches — per node, per attachment
+// the render sequence admits, per boundary-scope FeatureRecipe, per codec
 // selection. So a factory that returns a fresh Provider per call yields one
 // Provider per crossing; a factory that memoizes on the identity it resolves
 // collapses that to one Provider per distinct provider identity.

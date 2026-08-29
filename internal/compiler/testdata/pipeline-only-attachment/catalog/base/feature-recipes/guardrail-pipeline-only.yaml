@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: guardrail-pipeline-only
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: "feature.myco/guardrail"
+  # No source, no valuesMapping, no workload, no artifacts: this FeatureRecipe
+  # generates no resource of its own. Its whole effect is the pipeline below,
+  # which rewrites a document the host component already emitted. An attachment
+  # of this shape takes part in feature rendering for its pipeline alone.
+  pipeline:
+    - id: inject_into_host
+      plugin: pipeline-step/host-patch:1.0.0
+      function: step
