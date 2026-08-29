@@ -6,6 +6,8 @@ package lockfile
 import (
 	"fmt"
 	"sort"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 )
 
 // DeprecationFinding reports one pinned reference carrying a recorded
@@ -41,9 +43,15 @@ type DeprecationFinding struct {
 // It carries no channel prefix and no policy clause. A front door supplies its
 // own prefix, because the prefix belongs to the surface — a terminal diagnostic
 // stream, an editor diagnostic, a structured tool payload — while this sentence
-// is the fact, which is the same on all of them.
+// is the fact, which is the same on all of them. The severity therefore has to
+// read correctly on its own, without the prefix completing it.
+//
+// The severity is stated through the shared wording rule rather than spelled
+// here, so this sentence and every other notice about a recorded severity
+// describe the same value the same way — and so a retraction is never reported as
+// merely deprecated, which would understate an exclusion as a discouragement.
 func (f DeprecationFinding) Notice() string {
-	return fmt.Sprintf("%s is deprecated (%s): %s%s", f.URI, f.Severity, f.Message, asOfSuffix(f.generatedAt))
+	return fmt.Sprintf("%s is %s: %s%s", f.URI, deprecation.Severity(f.Severity).StatedAs(), f.Message, asOfSuffix(f.generatedAt))
 }
 
 // DeprecationFindings reports every pinned reference in the lockfile carrying a

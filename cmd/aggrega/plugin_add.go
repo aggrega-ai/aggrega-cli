@@ -393,7 +393,10 @@ var pluginRepoWithdrawalLister = func(ctx context.Context, cfg workspaceconfig.C
 //
 // The failure is reported rather than swallowed. A caller told that markers could
 // not be read knows the selection was not screened, which is the difference between
-// a degraded result and a wrong one.
+// a degraded result and a wrong one. It reports on the exclusion channel rather than
+// the advisory one, because what it states is what happened to selection — the same
+// event the exclusion notices carry — and the two channels stay distinct precisely so
+// a reader can tell "you are being told something" from "you did not get something".
 func livePluginRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host, repoPath, reference string, tags []string, out io.Writer) catalog.RetractionScreen {
 	if out == nil {
 		return nil
@@ -404,7 +407,7 @@ func livePluginRetractionScreen(ctx context.Context, cfg workspaceconfig.Config,
 	}
 	deps, err := pluginRepoWithdrawalLister(ctx, cfg, host, repoPath, versions, out)
 	if err != nil {
-		fmt.Fprintf(out, "  deprecation: %s: withdrawal markers could not be read (%v); published versions were not checked for withdrawal\n",
+		fmt.Fprintf(out, "  retraction: %s: markers could not be read (%v); published versions were not screened for retraction\n",
 			repoPath, err)
 		return nil
 	}

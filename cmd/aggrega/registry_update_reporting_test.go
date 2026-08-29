@@ -187,7 +187,7 @@ func TestRegistryUpdateReportsScanOutcome(t *testing.T) {
 			name:       "records a marker",
 			withMarker: true,
 			wantLines: []string{
-				"deprecation: component/core/api-server:1.0.0: marker present and honored (retracted); recorded",
+				"deprecation: component/core/api-server:1.0.0: marker present and honored; recorded as retracted",
 				"Recorded 1 deprecation markers from hub.aggrega.ai",
 			},
 		},

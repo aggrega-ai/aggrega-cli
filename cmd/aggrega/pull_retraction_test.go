@@ -215,7 +215,7 @@ func TestRetractionScreenNoticesCarryTheObservationMoment(t *testing.T) {
 		screen.ReportSelection(retractionScreenReference, "1.0.0", excluded)
 		notice := diag.String()
 		for _, want := range []string{
-			"2.0.0 is withdrawn and was not selected",
+			"2.0.0 is retracted and was not selected",
 			"withdrawn in favour of a successor",
 			"resolved to 1.0.0 instead",
 			"as of 2026-01-02T03:04:05Z",
@@ -232,7 +232,7 @@ func TestRetractionScreenNoticesCarryTheObservationMoment(t *testing.T) {
 		screen := newRetractionScreen(rw, retractionScreenHost, &diag)
 		screen.ReportPinned(retractionScreenReference, "2.0.0")
 		notice := diag.String()
-		for _, want := range []string{"2.0.0 is withdrawn", "names it explicitly", "as of 2026-01-02T03:04:05Z"} {
+		for _, want := range []string{"2.0.0 is retracted", "names it explicitly", "as of 2026-01-02T03:04:05Z"} {
 			if !strings.Contains(notice, want) {
 				t.Errorf("pinned notice must contain %q; got:\n%s", want, notice)
 			}

@@ -166,7 +166,7 @@ func TestBuildWithNoThresholdAdvisesEverySeverity(t *testing.T) {
 	for _, want := range []string{
 		"components/a is deprecated (warning)",
 		"components/b is deprecated (error)",
-		"components/c is deprecated (retracted)",
+		"components/c is retracted",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the notice must cover every severity; missing %q:\n%s", want, got)
@@ -203,7 +203,7 @@ func TestBuildStrictThresholdStillReportsEveryEntity(t *testing.T) {
 	for _, want := range []string{
 		"components/a is deprecated (warning)",
 		"components/b is deprecated (error)",
-		"components/c is deprecated (retracted)",
+		"components/c is retracted",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("a configured halt must not cost a notice; missing %q:\n%s", want, got)
@@ -231,7 +231,7 @@ func TestBuildHaltRendersItsWholeMessageToTheTerminal(t *testing.T) {
 	rendered := formatCompilerError(err)
 	for _, want := range []string{
 		"components/api",
-		"(retracted)",
+		"is retracted",
 		"withdrawn: bad release",
 		"as of " + stamp,
 		"aggrega pull",

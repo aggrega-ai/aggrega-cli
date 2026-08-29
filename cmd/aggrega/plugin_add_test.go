@@ -448,7 +448,7 @@ func TestResolveLatestPluginVersion_WithdrawalScreening(t *testing.T) {
 		notice := out.String()
 		t.Logf("rendered announcement:\n%s", notice)
 		for _, want := range []string{
-			screenedIndexHost + "/" + screenedIndexRepo + ":2.0.0 is withdrawn and was not selected",
+			screenedIndexHost + "/" + screenedIndexRepo + ":2.0.0 is retracted and was not selected",
 			"withdrawn in favour of a successor",
 			"resolved to 1.0.0 instead",
 			"aggrega registry update",
@@ -666,7 +666,7 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		notice := out.String()
 		t.Logf("rendered announcement:\n%s", notice)
 		for _, want := range []string{
-			screenedIndexHost + "/" + screenedIndexRepo + ":2.0.0 is withdrawn and was not selected",
+			screenedIndexHost + "/" + screenedIndexRepo + ":2.0.0 is retracted and was not selected",
 			"withdrawn in favour of a successor",
 			"resolved to 1.0.0 instead",
 		} {
@@ -856,9 +856,9 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		notice := out.String()
 		t.Logf("rendered degrade notice:\n%s", notice)
 		for _, want := range []string{
-			"withdrawal markers could not be read",
+			"markers could not be read",
 			"registry unreachable",
-			"were not checked for withdrawal",
+			"were not screened for retraction",
 		} {
 			if !strings.Contains(notice, want) {
 				t.Errorf("the degrade must be stated and contain %q; rendered bytes were:\n%s", want, notice)

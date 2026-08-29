@@ -237,7 +237,7 @@ func TestIntegration_RetractionExcludesAtSelection(t *testing.T) {
 		notice := diag.String()
 		// The announcement is not decoration: a version the reference did not name
 		// was substituted on evidence absent from the author's own files.
-		if !strings.Contains(notice, "2.0.0 is withdrawn and was not selected") {
+		if !strings.Contains(notice, "2.0.0 is retracted and was not selected") {
 			t.Errorf("the exclusion must be announced; diagnostics were:\n%s", notice)
 		}
 		if !strings.Contains(notice, "withdrawn in favour of a successor") {
@@ -385,7 +385,7 @@ func TestIntegration_RetractionExcludesAtLibrarySelection(t *testing.T) {
 		}
 		notice := diag.String()
 		for _, want := range []string{
-			"2.0.0 is withdrawn and was not selected",
+			"2.0.0 is retracted and was not selected",
 			"withdrawn in favour of a successor",
 			"resolved to 1.0.0 instead",
 			"aggrega registry update",
@@ -466,7 +466,7 @@ func TestIntegration_RetractionExcludesAtAggregateSelection(t *testing.T) {
 		}
 		notice := diag.String()
 		for _, want := range []string{
-			"2.0.0 is withdrawn and was not selected",
+			"2.0.0 is retracted and was not selected",
 			"withdrawn in favour of a successor",
 			"resolved to 1.0.0 instead",
 			"aggrega registry update",

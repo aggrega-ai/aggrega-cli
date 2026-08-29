@@ -106,7 +106,7 @@ func TestBuildTool_DeprecatedPinRefusesUnderAConfiguredHalt(t *testing.T) {
 	// The refusal carries the whole report, not only the halting sentence: choosing
 	// a stricter threshold must never cost the caller a finding.
 	for _, want := range []string{
-		mcpDeprecatedURI, "is deprecated (retracted)", "withdrawn: unsound renderer",
+		mcpDeprecatedURI, "is retracted", "withdrawn: unsound renderer",
 		"as of " + mcpDeprecationStamp, "aggrega pull", `halt_on_deprecated_severity is "retracted"`,
 	} {
 		if !strings.Contains(text, want) {
@@ -137,7 +137,7 @@ func TestBuildTool_DeprecatedPinReportsAndBuildsWithNoConfiguredHalt(t *testing.
 		t.Fatalf("reporting is unconditional: a successful build must still carry the report; payload: %+v", payload)
 	}
 	joined := strings.Join(payload.Deprecations, "\n")
-	for _, want := range []string{mcpDeprecatedURI, "is deprecated (retracted)", "as of " + mcpDeprecationStamp} {
+	for _, want := range []string{mcpDeprecatedURI, "is retracted", "as of " + mcpDeprecationStamp} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("the report drops %q:\n%s", want, joined)
 		}

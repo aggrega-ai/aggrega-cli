@@ -149,7 +149,7 @@ func TestServeValidatePublishesADeprecatedPinAndKeepsItsOtherDiagnostics(t *test
 				t.Errorf("a recorded marker publishes as an advisory, not an assertion that the buffer is broken; "+
 					"severity was %q", d.Severity)
 			}
-			for _, want := range []string{"is deprecated (retracted)", "withdrawn: unsound renderer",
+			for _, want := range []string{"is retracted", "withdrawn: unsound renderer",
 				"as of " + deprecationStamp, "aggrega pull"} {
 				if !strings.Contains(d.Message, want) {
 					t.Errorf("the published notice drops %q:\n%s", want, d.Message)

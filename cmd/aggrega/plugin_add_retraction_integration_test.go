@@ -243,7 +243,7 @@ func TestIntegration_PluginAddExcludesWithdrawnAtSelection(t *testing.T) {
 		}
 		t.Logf("rendered command output:\n%s", out)
 		for _, want := range []string{
-			f.host + "/" + pluginRetractionRepoPath + ":2.0.0 is withdrawn and was not selected",
+			f.host + "/" + pluginRetractionRepoPath + ":2.0.0 is retracted and was not selected",
 			"withdrawn in favour of a successor",
 			"resolved to 1.0.0 instead",
 			"aggrega registry update",
@@ -352,7 +352,7 @@ func TestIntegration_PluginAddExcludesWithdrawnWithNoLocalIndex(t *testing.T) {
 		}
 		t.Logf("rendered command output:\n%s", out)
 		for _, want := range []string{
-			f.host + "/" + pluginRetractionRepoPath + ":2.0.0 is withdrawn and was not selected",
+			f.host + "/" + pluginRetractionRepoPath + ":2.0.0 is retracted and was not selected",
 			"withdrawn in favour of a successor",
 			"resolved to 1.0.0 instead",
 		} {

@@ -586,11 +586,16 @@ func equalStrings(a, b []string) bool {
 // mirrors the closure discovery pass, which reports the same condition in the same
 // words.
 //
-// A marker that IS honored is noted on the same footing, in the same shape, naming
-// the severity value the marker's author recorded. Reporting only the failures would
-// invert which outcome is audible: recording many markers would pass in silence while
-// declining one would announce itself, and an operator watching the walk could not
-// tell a registry that published no marker from a run that recorded a dozen.
+// A marker that IS honored is noted on the same footing, stating the severity
+// through the shared wording rule so this line and every other notice about a
+// recorded severity describe the same value the same way. The parenthesis is left
+// to the two failure lines, where it carries the fault; stating the severity in a
+// second parenthesis here would nest one inside the other for the advisory tiers,
+// whose wording names the tier as well as the value. Reporting only the failures
+// would invert which outcome is audible: recording many markers would pass in
+// silence while declining one would announce itself, and an operator watching the
+// walk could not tell a registry that published no marker from a run that recorded
+// a dozen.
 func collectVersionDeprecations(
 	ctx context.Context,
 	wsCfg workspaceconfig.Config,
@@ -623,7 +628,7 @@ func collectVersionDeprecations(
 			fmt.Fprintf(out, "  deprecation: %s:%s: marker present but not honored (%v); not recorded\n", repo, version, err)
 			continue
 		}
-		fmt.Fprintf(out, "  deprecation: %s:%s: marker present and honored (%s); recorded\n", repo, version, marker.Severity)
+		fmt.Fprintf(out, "  deprecation: %s:%s: marker present and honored; recorded as %s\n", repo, version, marker.Severity.StatedAs())
 		deprecations = append(deprecations, VersionDeprecation{Version: version, Marker: marker, Signer: signer})
 	}
 	return deprecations

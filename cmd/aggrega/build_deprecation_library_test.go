@@ -95,7 +95,7 @@ func TestBuildReportsAPinnedRetractedLibrary(t *testing.T) {
 
 	got := out.String()
 	for _, uri := range wantURIs {
-		if !strings.Contains(got, uri+" is deprecated (retracted)") {
+		if !strings.Contains(got, uri+" is retracted") {
 			t.Errorf("the build said nothing about the withdrawn library %q — a pinned reference "+
 				"bypasses selection, so this notice is the only place it is announced:\n%s", uri, got)
 		}
@@ -126,13 +126,13 @@ func TestBuildHaltsOnAPinnedRetractedLibrary(t *testing.T) {
 	// The FIRST halting reference in the sorted walk owns the error, so the halt is
 	// deterministic rather than dependent on closure order. "Bundles:1.4.0" sorts
 	// first among the four fixture URIs.
-	if !strings.Contains(err.Error(), "Bundles:1.4.0 is deprecated (retracted)") {
+	if !strings.Contains(err.Error(), "Bundles:1.4.0 is retracted") {
 		t.Errorf("the halt must name the first halting reference in the sorted walk:\n%v", err)
 	}
 	// A configured halt must not cost the reader a notice for a reference sorted
 	// after the halting one.
 	for _, uri := range []string{"Bundles:1.4.0", "Deployments:1.4.0", "HelmValues:1.4.0", "PortSpec:1.4.0"} {
-		if !strings.Contains(out.String(), uri+" is deprecated (retracted)") {
+		if !strings.Contains(out.String(), uri+" is retracted") {
 			t.Errorf("a configured halt must not cost a notice; missing %q:\n%s", uri, out.String())
 		}
 	}
@@ -161,7 +161,7 @@ func TestBuildReportsALibraryAlongsideAnEntity(t *testing.T) {
 		t.Fatalf("no configured threshold must halt on nothing; got: %v", err)
 	}
 	for _, uri := range []string{entityURI, libraryURI} {
-		if !strings.Contains(out.String(), uri+" is deprecated (retracted)") {
+		if !strings.Contains(out.String(), uri+" is retracted") {
 			t.Errorf("one gate must report both axes; missing %q:\n%s", uri, out.String())
 		}
 	}

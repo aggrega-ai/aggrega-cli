@@ -84,7 +84,7 @@ func discoverClosureDeprecations(
 		}
 		if rec != nil {
 			recordByURI[e.URI] = rec
-			fmt.Fprintf(diagOut, "  deprecation: %s deprecated (%s) by %s\n", e.URI, rec.Severity, deprecationSignerLabel(rec.Signer))
+			fmt.Fprintf(diagOut, "  deprecation: %s %s by %s\n", e.URI, deprecation.Severity(rec.Severity).StatedAs(), deprecationSignerLabel(rec.Signer))
 		}
 	}
 
@@ -259,7 +259,7 @@ func discoverVerdictPluginDeprecation(
 		return nil, honorDeprecationDiscoveryError(e, policy, configured, verr, diagOut)
 	}
 	if rec != nil {
-		fmt.Fprintf(diagOut, "  deprecation: %s deprecated (%s) by %s\n", e.URI, rec.Severity, deprecationSignerLabel(rec.Signer))
+		fmt.Fprintf(diagOut, "  deprecation: %s %s by %s\n", e.URI, deprecation.Severity(rec.Severity).StatedAs(), deprecationSignerLabel(rec.Signer))
 	}
 	return rec, nil
 }
@@ -734,10 +734,10 @@ func (s *retractionScreen) ScreenVersions(reference string, tags []string) ([]st
 func (s *retractionScreen) ReportSelection(reference, selected string, excluded []catalog.VersionExclusion) {
 	for _, x := range excluded {
 		if x.Reason == "" {
-			fmt.Fprintf(s.out, "  retraction: %s:%s is withdrawn and was not selected\n", reference, x.Version)
+			fmt.Fprintf(s.out, "  retraction: %s:%s is %s and was not selected\n", reference, x.Version, deprecation.SeverityRetracted.StatedAs())
 			continue
 		}
-		fmt.Fprintf(s.out, "  retraction: %s:%s is withdrawn and was not selected: %s\n", reference, x.Version, x.Reason)
+		fmt.Fprintf(s.out, "  retraction: %s:%s is %s and was not selected: %s\n", reference, x.Version, deprecation.SeverityRetracted.StatedAs(), x.Reason)
 	}
 	fmt.Fprintf(s.out, "  retraction: %s resolved to %s instead%s\n", reference, selected, s.asOfSuffix())
 }
@@ -756,12 +756,12 @@ func (s *retractionScreen) ReportPinned(reference, version string) {
 		return
 	}
 	if reason == "" {
-		fmt.Fprintf(s.out, "  retraction: %s:%s is withdrawn; resolving it because the reference names it explicitly%s\n",
-			reference, version, s.asOfSuffix())
+		fmt.Fprintf(s.out, "  retraction: %s:%s is %s; resolving it because the reference names it explicitly%s\n",
+			reference, version, deprecation.SeverityRetracted.StatedAs(), s.asOfSuffix())
 		return
 	}
-	fmt.Fprintf(s.out, "  retraction: %s:%s is withdrawn (%s); resolving it because the reference names it explicitly%s\n",
-		reference, version, reason, s.asOfSuffix())
+	fmt.Fprintf(s.out, "  retraction: %s:%s is %s (%s); resolving it because the reference names it explicitly%s\n",
+		reference, version, deprecation.SeverityRetracted.StatedAs(), reason, s.asOfSuffix())
 }
 
 // asOfSuffix renders where this screen's withdrawal facts came from and how current

@@ -139,7 +139,7 @@ func TestNoticeCarriesTheObservationMoment(t *testing.T) {
 	}
 	notice := findings[0].Notice()
 	for _, want := range []string{
-		"oci://reg.example/components/api is deprecated (retracted)",
+		"oci://reg.example/components/api is retracted",
 		"withdrawn: bad release",
 		"as of " + stamp,
 		"aggrega pull",
@@ -147,6 +147,40 @@ func TestNoticeCarriesTheObservationMoment(t *testing.T) {
 		if !strings.Contains(notice, want) {
 			t.Errorf("the notice drops %q:\n%s", want, notice)
 		}
+	}
+	// The discriminating half, stated as its own assertion rather than left to the
+	// substring above: an exclusion and a discouragement mean different things, so a
+	// retraction reported as "deprecated" understates what happened. The wording has
+	// one home; this pins that this producer reads it rather than spelling its own.
+	if strings.Contains(notice, "deprecated") {
+		t.Errorf("a retraction must not be reported as deprecated:\n%s", notice)
+	}
+}
+
+// TestNoticeReportsAnAdvisorySeverityAsDeprecated is the other side of the pair. The
+// advisory tiers ARE reported as deprecated and name which of the two they are, so a
+// producer that stated every severity as its bare value would pass the retracted
+// assertion above while telling a reader nothing about the tier.
+func TestNoticeReportsAnAdvisorySeverityAsDeprecated(t *testing.T) {
+	for _, tc := range []struct {
+		severity string
+		want     string
+	}{
+		{"warning", "api is deprecated (warning):"},
+		{"error", "api is deprecated (error):"},
+	} {
+		t.Run(tc.severity, func(t *testing.T) {
+			lf := &lockfile.Lockfile{
+				Entities: []lockfile.Entity{{URI: "api", Deprecation: markerFor(tc.severity, "superseded")}},
+			}
+			findings := lf.DeprecationFindings()
+			if len(findings) != 1 {
+				t.Fatalf("want one finding, got %+v", findings)
+			}
+			if notice := findings[0].Notice(); !strings.Contains(notice, tc.want) {
+				t.Errorf("the notice drops %q:\n%s", tc.want, notice)
+			}
+		})
 	}
 }
 

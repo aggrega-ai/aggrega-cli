@@ -66,7 +66,7 @@ func TestValidateReportsARetractedPinAndStaysGreen(t *testing.T) {
 
 	got := out.String()
 	for _, want := range []string{
-		"deprecation: oci://reg.example/components/api is deprecated (retracted)",
+		"deprecation: oci://reg.example/components/api is retracted",
 		"withdrawn: bad release",
 		"as of " + stamp,
 		"aggrega pull",
@@ -100,7 +100,7 @@ func TestValidateReportsARetractedPinBesideAGateThatRefusesFirst(t *testing.T) {
 	}
 
 	got := out.String()
-	if !strings.Contains(got, "deprecation: oci://reg.example/components/api is deprecated (retracted)") {
+	if !strings.Contains(got, "deprecation: oci://reg.example/components/api is retracted") {
 		t.Errorf("a gate refusing first must not cost the deprecation report:\n%s", got)
 	}
 	if !strings.Contains(got, "extends: dangling parent component-base") {

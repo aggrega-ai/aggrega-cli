@@ -81,7 +81,7 @@ func TestReleaseConventionsReportsARetractedPinAheadOfTheClosure(t *testing.T) {
 	got := diag.String()
 	for _, want := range []string{
 		"deprecation: " + lintDeprecatedURI,
-		"is deprecated (retracted)",
+		"is retracted",
 		"withdrawn: unsound renderer",
 		"as of " + lintDeprecationStamp,
 		"aggrega pull",
