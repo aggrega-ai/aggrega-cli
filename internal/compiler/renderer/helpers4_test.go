@@ -5,7 +5,6 @@ package renderer
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"testing"
 
@@ -304,68 +303,47 @@ func TestEvaluateBoundaryFRTemplates_LocalsError(t *testing.T) {
 	}
 }
 
-// TestValidateBoundaryScopeFRTemplate_AllBranches pins nil, parse-fail,
-// allowed-field, rejected-field paths.
-func TestValidateBoundaryScopeFRTemplate_AllBranches(t *testing.T) {
+// TestBoundaryScopeFRTemplateClassificationBranches pins the classification every
+// rule over a boundary-scope FeatureRecipe's inline template fields decides from:
+// an admitted field, a per-component pillar, a mistyped key beneath a closed
+// pillar, and a field that is not a template at all.
+//
+// It is asserted against the classification rather than against a refusal,
+// because the classification is what has one home. Which identity a given fault
+// commits, and what the resulting halt says, is the declared rules' own proof.
+func TestBoundaryScopeFRTemplateClassificationBranches(t *testing.T) {
 	t.Parallel()
-	if err := validateBoundaryScopeFRTemplate(nil); err != nil {
-		t.Errorf("nil fr: %v", err)
-	}
-	// FR with allowed fields.
-	fr := &types.FeatureRecipe{}
-	fr.Metadata.Name = "fr"
-	fr.Spec.ValuesMapping = types.ValuesMapping{Inline: "{{ .boundary.boundary_name }}"}
-	if err := validateBoundaryScopeFRTemplate(fr); err != nil {
-		t.Errorf("allowed fields should pass: %v", err)
-	}
-	// A key .boundary does not define is refused here rather than rendering as an
-	// empty value in the FR's output. The boundary pillar is a closed struct, so
-	// the admitted keys come from its own fields.
-	frTypo := &types.FeatureRecipe{}
-	frTypo.Metadata.Name = "frTypo"
-	frTypo.Spec.ValuesMapping = types.ValuesMapping{Inline: "{{ .boundary.name }}"}
-	if err := validateBoundaryScopeFRTemplate(frTypo); !errors.Is(err, ErrTemplateUnknownRoot()) {
-		t.Errorf("a mistyped key under .boundary must be refused, got: %v", err)
-	}
-	// FR with rejected fields (any per-component pillar reference).
-	fr2 := &types.FeatureRecipe{}
-	fr2.Metadata.Name = "fr2"
-	fr2.Spec.InjectMapping = "{{ .context.inject.env.K }}"
-	err := validateBoundaryScopeFRTemplate(fr2)
-	if err == nil {
-		t.Errorf("rejected field should fail")
-	}
-	// Parse failure must propagate, not skip. injectMapping is parsed only
-	// here for a boundary-scope FR (the dispatch never evaluates it), so a
-	// swallowed parse error would vanish silently.
-	fr3 := &types.FeatureRecipe{}
-	fr3.Metadata.Name = "fr3"
-	fr3.Spec.InjectMapping = "{{ .boundary.name " // unterminated action
-	if err := validateBoundaryScopeFRTemplate(fr3); err == nil {
-		t.Errorf("a malformed inline template must propagate a parse error, not be skipped")
-	}
-	// workload: and artifacts: inline templates are subject to the same
-	// boundary-scope allowlist. A workload referencing only .boundary.* passes.
-	frWL := &types.FeatureRecipe{}
-	frWL.Metadata.Name = "frWL"
-	frWL.Spec.Workload = types.WorkloadTemplate{Inline: "image: app:{{ .boundary.boundary_name }}"}
-	if err := validateBoundaryScopeFRTemplate(frWL); err != nil {
-		t.Errorf("boundary-scope workload with .boundary.* should pass: %v", err)
-	}
-	// A workload referencing a per-component-only field is rejected.
-	frWLBad := &types.FeatureRecipe{}
-	frWLBad.Metadata.Name = "frWLBad"
-	frWLBad.Spec.Workload = types.WorkloadTemplate{Inline: "image: app:{{ .context.instance_id }}"}
-	if err := validateBoundaryScopeFRTemplate(frWLBad); !errors.Is(err, ErrFRTemplateInvalidField()) {
-		t.Errorf("boundary-scope workload referencing .context.* must be rejected, got: %v", err)
-	}
-	// An inline artifact referencing a per-component-only field is rejected.
-	frArtBad := &types.FeatureRecipe{}
-	frArtBad.Metadata.Name = "frArtBad"
-	art := types.OrderedMap[types.ArtifactEntry]{}
-	art.Set("cm.yaml", types.ArtifactEntry{Inline: "data: {{ .attachment_name }}"})
-	frArtBad.Spec.Artifacts = art
-	if err := validateBoundaryScopeFRTemplate(frArtBad); !errors.Is(err, ErrFRTemplateInvalidField()) {
-		t.Errorf("boundary-scope artifact referencing .attachment_name must be rejected, got: %v", err)
+	for _, tc := range []struct {
+		name string
+		text string
+		want boundaryScopeFRTemplateFault
+	}{
+		{
+			name: "a reference this surface populates",
+			text: "{{ .boundary.boundary_name }}",
+			want: boundaryScopeFRTemplateAdmitted,
+		},
+		{
+			name: "a pillar carried for the per-component path",
+			text: "{{ .context.inject.env.K }}",
+			want: boundaryScopeFRTemplatePerComponentPillar,
+		},
+		{
+			// The boundary pillar is a closed struct, so the admitted keys come
+			// from its own fields and a typo beneath it is a reference that
+			// exists nowhere rather than one this surface excludes.
+			name: "a mistyped key beneath a closed pillar",
+			text: "{{ .boundary.name }}",
+			want: boundaryScopeFRTemplateUnknownRoot,
+		},
+		{
+			name: "a field that is not a template at all",
+			text: "{{ .boundary.name ", // unterminated action
+			want: boundaryScopeFRTemplateUnparsed,
+		},
+	} {
+		if got := classifyBoundaryScopeFRTemplate(tc.text).Fault; got != tc.want {
+			t.Errorf("%s classified as fault %d; want %d", tc.name, got, tc.want)
+		}
 	}
 }

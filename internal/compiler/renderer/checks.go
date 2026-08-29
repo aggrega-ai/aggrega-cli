@@ -2394,6 +2394,85 @@ var AttachmentPipelineStepOwnScopeHasAMergedTarget = constraint.Check[
 	},
 }
 
+// AttachmentBoundaryScopeHasADeclaringBoundary reports each attachment a node
+// carries whose FeatureRecipe generates once for a boundary, where no boundary
+// holding that node declares an attachment of the same name.
+//
+// # The fault it names, and the one it replaces
+//
+// A FeatureRecipe declaring the boundary scope generates once for the boundary
+// that holds its attachment, however many components that boundary holds. So the
+// boundary is the site the attachment has to be written at: an attachment of
+// that name written only against a component names no scope for the recipe to
+// generate for, and nothing decides which boundary it would run at, which values
+// it would read, or where its output would be written. The build already refuses
+// such a configuration, but it refuses it at the point the render reaches for a
+// boundary attachment and finds none — which names a missing projection rather
+// than the authoring mistake that produced it.
+//
+// # Why it walks the ancestors instead of reading one path
+//
+// An attachment written at a boundary reaches every component that boundary
+// holds, including the components of the scopes nested inside it, and it appears
+// in every one of their merged attachment sets — which is what this rule is
+// invoked over. So a component carrying the attachment is the ORDINARY shape,
+// and a rule refusing that would reject the very configuration boundary
+// attachments exist for. What separates the two is whether the attachment is
+// declared at the component's own scope or at one enclosing it, so the rule
+// walks from the node's placement toward the root and ends the moment a scope
+// declares the name.
+//
+// A component may also restate at itself an attachment its enclosing scope
+// already declares. That renders exactly as the scope-only form, so the walk
+// admits it for the same reason: the scope's declaration is what the build
+// generates from either way.
+//
+// The walk is the one the render's own dispatch uses to find the scope a
+// boundary-scope recipe generates for, so a coordinate this rule admits is a
+// coordinate that dispatch can resolve. Two walks would be free to differ, and
+// the difference would read as approval for a build that then halts.
+//
+// # Emptiness
+//
+// A component the deployment placed in no scope has no ancestor to walk, so a
+// boundary-scope attachment on it is reported here. That is the honest reading:
+// there is no scope such a recipe could generate for, which is the same fault
+// with the walk finding nothing rather than finding scopes that declare nothing.
+//
+// Its detail names the attachment, which the rule's registered sentence refers
+// to, and the scope the component sits in, captioned — the site an author writes
+// the declaration at. A component in no scope contributes no such value, so the
+// detail carries the attachment alone rather than an empty path.
+var AttachmentBoundaryScopeHasADeclaringBoundary = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentSubject,
+]{
+	Sentinel: ErrBoundaryScopeAttachmentNotDeclaredAtABoundary(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentSubject,
+	) []constraint.Objection {
+		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) != executionScopeBoundary {
+			return nil
+		}
+		placement, _ := v.NodeBoundaryPlacement(s.NodeID())
+		if _, declared := declaringAncestorBoundary(placement, func(candidate string) bool {
+			_, written := v.BoundaryAttachmentDeclaration(candidate, s.AttachmentName())
+			return written
+		}); declared {
+			return nil
+		}
+		detail := []constraint.DetailValue{constraint.Uncaptioned(s.AttachmentName())}
+		if placement != "" {
+			detail = append(detail, constraint.Captioned("on a component in boundary", placement))
+		}
+		return []constraint.Objection{s.RaiseWith(
+			ErrBoundaryScopeAttachmentNotDeclaredAtABoundary(), detail...,
+		)}
+	},
+}
+
 // BoundaryAttachmentPipelineStepProviderCompatible reports each step of the
 // pipeline a boundary-scope attachment's FeatureRecipe carries whose plugin does
 // not declare compatibility with the provider rendering the documents the step

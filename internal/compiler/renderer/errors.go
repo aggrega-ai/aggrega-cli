@@ -481,6 +481,38 @@ var errFRTemplateInvalidField = cerrors.Register("compiler-renderer/fr-template-
 	Message:   "FeatureRecipe template references a per-component-only field with executionScope: boundary",
 })
 
+// ErrBoundaryScopeAttachmentNotDeclaredAtABoundary fires when an attachment
+// binds a FeatureRecipe with spec.executionScope: boundary and no boundary
+// holding the component declares an attachment of that name.
+//
+// Such a FeatureRecipe generates once for a boundary rather than once for each
+// component, so the boundary is where the attachment has to be written:
+// .spec.boundaries.<scope>.features.<name> in the deployment document, at the
+// scope the component sits in or at one enclosing it. An attachment of that
+// name written only against a component names no scope for the recipe to
+// generate for, so nothing decides which boundary it would run at, which values
+// it would read, or where its output would be written.
+//
+// It does not fire on a component that carries such an attachment while a scope
+// enclosing it also declares one of that name. That is the ordinary shape of a
+// boundary attachment reaching a component, and the deployment renders exactly
+// as it does when only the scope declares it.
+//
+// The remedy is to declare the attachment on the boundary it should generate
+// for, or — where the intent was per-component generation — to bind a
+// FeatureRecipe that does not declare the boundary scope. Category:
+// CATALOG_ERROR.
+func ErrBoundaryScopeAttachmentNotDeclaredAtABoundary() error {
+	return errBoundaryScopeAttachmentNotDeclaredAtABoundary
+}
+
+var errBoundaryScopeAttachmentNotDeclaredAtABoundary = cerrors.Register(
+	"compiler-renderer/boundary-scope-attachment-not-declared-at-a-boundary", cerrors.Meta{
+		ShortCode: "E0259",
+		Message: "attachment binds a FeatureRecipe with executionScope: boundary " +
+			"and no boundary holding the component declares it",
+	})
+
 // ErrAssertionFailed wraps a build halt triggered by {{ fail "..." }}
 // invocation inside a Component / Feature / Recipe / FeatureRecipe
 // assertion template. Step 4b (Component/Feature, post-resolution,

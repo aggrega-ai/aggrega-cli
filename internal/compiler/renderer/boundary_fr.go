@@ -17,12 +17,12 @@
 //      - Compute the dedup key (boundary_path, fr_instance).
 //      - If state.Dedup[key] is set, skip — the FR already ran for this
 //        boundary.
-//      - Else: validate the FR's templates against the boundary-scope
-//        allowlist (see validateBoundaryScopeFRTemplate), build the
-//        boundary-scope TemplateContext (see buildBoundaryContext),
-//        evaluate FR locals + values + provides templates, dispatch to the
-//        FR's engine, classify emitted files by Intermediate flag, and
-//        record state.
+//      - Else: build the boundary-scope TemplateContext (see
+//        buildBoundaryContext), evaluate FR locals + values + provides
+//        templates, dispatch to the FR's engine, classify emitted files by
+//        Intermediate flag, and record state. What those templates may
+//        reference is decided ahead of the render by the rules declared over
+//        the FR's inline fields, so nothing in this file re-decides it.
 //   3. After the per-node loop completes, RenderAll routes boundary-scope
 //      FR Intermediate=true files into the per-(path, provider) dispatch
 //      group at the FR's evaluated path (using fr.Spec.Capability for the
@@ -88,15 +88,10 @@ type boundaryFRKey struct {
 // Files captures the boundary-scope FR's emitted output for routing at
 // finalization (Intermediate=true → per-(path, provider) BoundaryAssembler;
 // Intermediate=false → per-boundary features/<instance>/ disk write).
-//
-// ValidatedFRs caches FR-template-allowlist validation results so a given
-// FR is validated once per RenderAll invocation rather than once per
-// encountered (boundary, FR-instance) tuple.
 type BoundaryFRState struct {
-	Dedup        map[boundaryFRKey]bool
-	Provides     map[boundaryFRKey]map[string]any
-	Files        map[boundaryFRKey][]EmittedFile
-	ValidatedFRs map[string]error
+	Dedup    map[boundaryFRKey]bool
+	Provides map[boundaryFRKey]map[string]any
+	Files    map[boundaryFRKey][]EmittedFile
 
 	// DerivedKeys carries every derived name each boundary-scope FeatureRecipe is
 	// answerable for — the names its guest declares, plus the component identity
@@ -131,7 +126,6 @@ func NewBoundaryFRState() *BoundaryFRState {
 		Dedup:                map[boundaryFRKey]bool{},
 		Provides:             map[boundaryFRKey]map[string]any{},
 		Files:                map[boundaryFRKey][]EmittedFile{},
-		ValidatedFRs:         map[string]error{},
 		DerivedKeys:          map[boundaryFRKey]types.OrderedMap[[]string]{},
 		DerivedKeyRepeats:    map[boundaryFRKey][]derivedKeyRepeat{},
 		ConsumerEnvOverrides: map[string]map[string]string{},
@@ -156,10 +150,10 @@ func NewBoundaryFRState() *BoundaryFRState {
 //   - attachment_name, inject, inject_raw — per-attachment; a boundary
 //     attachment has no per-component delivery pipe.
 //
-// boundary-scope FRs reference .boundary.* pillars instead. The check runs at the
-// start of the boundary-scope dispatch, before any of the FR's templates are
-// evaluated and before the FR reaches its provider engine, so a shape mismatch is
-// named as an authoring error rather than surfacing as an engine failure.
+// boundary-scope FRs reference .boundary.* pillars instead. The rules declared
+// over these fields are asked before anything is evaluated and before any FR
+// reaches its provider engine, so a shape mismatch is named as an authoring error
+// rather than surfacing as an engine failure.
 var boundaryScopeFRScope = templateScope{
 	data:    &types.TemplateContext{},
 	exclude: []string{"context", "workload", "attachment_name", "inject", "inject_raw"},
@@ -270,23 +264,26 @@ const (
 )
 
 // boundaryScopeFRTemplateRef is one field's classification: the fault it carries,
-// the refused reference where there is one, and the parse failure where the field
-// could not be read at all.
+// and the refused reference where there is one.
+//
+// A field that could not be read at all carries its fault and no reference, and
+// the parse failure itself is not carried: a template that does not parse is
+// refused by the surface that evaluates the field, which reports the parse error
+// against that field. Carrying it here as well would give one authoring fault two
+// reporting sites that could disagree about which of them is the finding.
 type boundaryScopeFRTemplateRef struct {
 	Fault     boundaryScopeFRTemplateFault
 	Violation *templateScopeViolation
-	ParseErr  error
 }
 
 // classifyBoundaryScopeFRTemplate decides what one authored template field on a
 // boundary-scope FeatureRecipe is refused for.
 //
-// It is the ONE home of that decision, and both surfaces asking it route through
-// here: the refusal the render makes before it dispatches such a recipe, and the
-// rules declared over the same fields. Two readings of one admission would be
-// free to disagree about which reference offends and about which identity
-// describes it, and the disagreement would surface as one author being told two
-// different things about one template.
+// It is the ONE home of that decision, and both rules declared over these fields
+// route through here. Two readings of one admission would be free to disagree
+// about which reference offends and about which identity describes it, and the
+// disagreement would surface as one author being told two different things about
+// one template.
 //
 // The reference set is collected by the UNDER-collecting walk, through the scope
 // itself. That direction is the one an allow-list may use: it attributes a
@@ -296,7 +293,7 @@ type boundaryScopeFRTemplateRef struct {
 func classifyBoundaryScopeFRTemplate(text string) boundaryScopeFRTemplateRef {
 	tree, err := gotmpl.ParseTree(text, "{{", "}}")
 	if err != nil {
-		return boundaryScopeFRTemplateRef{Fault: boundaryScopeFRTemplateUnparsed, ParseErr: err}
+		return boundaryScopeFRTemplateRef{Fault: boundaryScopeFRTemplateUnparsed}
 	}
 	v := boundaryScopeFRScope.check(tree)
 	switch {
@@ -309,88 +306,25 @@ func classifyBoundaryScopeFRTemplate(text string) boundaryScopeFRTemplateRef {
 	}
 }
 
-// validateBoundaryScopeFRTemplate parses every inline template field on a FR with
-// spec.executionScope: boundary and checks each one against boundaryScopeFRScope.
-// Returns nil on pass; ErrFRTemplateInvalidField wrapped with the FR name and the
-// offending reference when a template names a per-component-only pillar
-// (.context.*, .workload, .attachment_name, .inject, .inject_raw);
-// ErrTemplateUnknownRoot when it names a reference the boundary-scope render
-// context does not define at all; or a CATALOG_ERROR if any inline template fails
-// to parse.
-//
-// Because the check is a positive scope over what the context type defines rather
-// than a list of refused names, a template that reaches for a pillar that does not
-// exist — or for a mistyped key under .boundary — is refused here too, instead of
-// rendering as an empty value in the FR's emitted output.
-//
-// Which fields are checked is [BoundaryScopeFRTemplateFields] and is not restated
-// here: an enumeration beside a caller is a second copy of the set, and the field
-// such a copy omitted would go unchecked with nothing reporting it. That set
-// covers the inline forms only — content imported from a file or a library is
-// loaded and parsed when the render reaches it. A parse failure propagates as a
-// CATALOG_ERROR rather than being skipped: this is the only surface that parses
-// injectMapping and pipeline `with` for a boundary-scope FR, the dispatch
-// evaluating only locals, valuesMapping and provides, so a skipped parse error
-// would drop silently for those fields.
-//
-// # Why this refusal is kept beside the rules declared over the same fields
-//
-// The rules run over the boundary an attachment was declared on. This runs
-// wherever such a recipe is dispatched, which includes an attachment declared on
-// a COMPONENT — a site no boundary-rooted axis reaches, because there is no
-// boundary key to enumerate it under. So the two are not one refusal expressed
-// twice: the rules add a position inside the document and report every offending
-// field, while this reaches a carrier they cannot see. Both route their decision
-// through classifyBoundaryScopeFRTemplate, so what they can disagree about is
-// only which fields they were asked over.
-func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
-	if fr == nil {
-		return nil
-	}
-	frName := fr.Metadata.Name
-	for _, field := range BoundaryScopeFRTemplateFields(fr) {
-		switch ref := classifyBoundaryScopeFRTemplate(field.Text); ref.Fault {
-		case boundaryScopeFRTemplateUnparsed:
-			return cerrors.Wrap(ref.ParseErr, cerrors.CatalogError, cerrors.SourceLocation{File: frName},
-				fmt.Sprintf("FeatureRecipe %q %s template failed to parse", frName, field.Label))
-		case boundaryScopeFRTemplatePerComponentPillar:
-			return boundaryScopeFRPerComponentPillarErr(frName, field.Label, ref.Violation)
-		case boundaryScopeFRTemplateUnknownRoot:
-			return templateUnknownRootErr(cerrors.CatalogError, fmt.Sprintf("%s %s", frName, field.Label), ref.Violation)
-		}
-	}
-	return nil
-}
-
-// boundaryScopeFRPerComponentPillarErr states the halt for a template naming a
-// pillar this surface excludes, in the terms that describe it: a field that exists
-// for the per-component path and carries nothing here. A reference the render
-// context does not define at all reports the unknown-reference halt instead, so
-// neither diagnostic tells the author their reference is something it is not.
-func boundaryScopeFRPerComponentPillarErr(frName, label string, v *templateScopeViolation) error {
-	inner := fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field %s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .attachment_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
-		ErrFRTemplateInvalidField(), frName, v.Ref.Path, label)
-	return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
-}
-
 // dispatchBoundaryScopeFR runs a boundary-scope FeatureRecipe once for a
 // given (boundary_path, fr_instance) tuple. The caller (phaseB6) gates on
 // state.Dedup[key]; this function assumes the dedup check passed.
 //
 // Steps:
 //
-//  1. Validate FR templates against the boundary-scope allowlist (cached
-//     per FR via state.ValidatedFRs).
-//  2. Build the boundary-scope TemplateContext via buildBoundaryContext.
-//  3. Read the boundary's BoundaryFeature attachment for the FR instance
+//  1. Build the boundary-scope TemplateContext via buildBoundaryContext.
+//  2. Read the boundary's BoundaryFeature attachment for the FR instance
 //     to populate .infra and .values.
-//  4. Evaluate FR locals + valuesMapping + provides against the boundary-
+//  3. Evaluate FR locals + valuesMapping + provides against the boundary-
 //     scope context.
-//  5. Dispatch to the FR's engine.Render with the resolved values.
-//  6. Classify emitted files by Intermediate flag; record into state.Files
+//  4. Dispatch to the FR's engine.Render with the resolved values.
+//  5. Classify emitted files by Intermediate flag; record into state.Files
 //     for routing at orchestrator finalization.
-//  7. Record provides into state.Provides for downstream consumer
+//  6. Record provides into state.Provides for downstream consumer
 //     resolution.
+//
+// What the recipe's own inline templates may reference is decided before any of
+// this, by the rules declared over those fields — so nothing here re-decides it.
 func dispatchBoundaryScopeFR(
 	ctx context.Context,
 	fr *types.FeatureRecipe,
@@ -406,21 +340,7 @@ func dispatchBoundaryScopeFR(
 	allProvides NodeProvides,
 	input RendererInput,
 ) error {
-	// 1. Validate FR templates (cached).
-	cacheKey := fr.Metadata.Name + ":" + fr.Metadata.Version
-	if cached, seen := boundaryFRState.ValidatedFRs[cacheKey]; seen {
-		if cached != nil {
-			return cached
-		}
-	} else {
-		validationErr := validateBoundaryScopeFRTemplate(fr)
-		boundaryFRState.ValidatedFRs[cacheKey] = validationErr
-		if validationErr != nil {
-			return validationErr
-		}
-	}
-
-	// 2-4. Build the FR-scoped TemplateContext (.boundary + .infra, .values
+	// 1-3. Build the FR-scoped TemplateContext (.boundary + .infra, .values
 	//       empty per the Release pillar-split). Shared with the pre-loop
 	//       provides pre-pass so both evaluate against an identical context.
 	feat, _ := lookupBoundaryFeatureAttachment(graph.Spec.BoundaryFeatures, key.BoundaryPath, frInstance)
@@ -522,11 +442,12 @@ func dispatchBoundaryScopeFR(
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q valuesMapping", frInstance))
 	}
 
-	// 6-7. Render via the SAME input-kind machinery the per-component FR sites
+	// 5-6. Render via the SAME input-kind machinery the per-component FR sites
 	// use — the central gate, then sourced engine.Render / synthesised workload
 	// synthesis / artifacts emission — against the boundary-scope context (frCtx
-	// carries .boundary.* pillars, never .context.*; the workload/artifacts
-	// templates were allowlist-checked at validateBoundaryScopeFRTemplate). The
+	// carries .boundary.* pillars, never .context.*; what the workload and
+	// artifacts templates may reference was decided by the rules over those
+	// fields, ahead of this render). The
 	// returned EmittedFiles already carry their Intermediate flag for boundary-
 	// assembler routing. instanceLabel is "" so the boundary-disambiguated
 	// LabelComponentID set above stays the resource-naming basis (a per-instance
@@ -668,18 +589,6 @@ func PrepopulateBoundaryScopeProvides(
 			fr, ok := recipeLookup.FeatureRecipe(instName, bf.Type)
 			if !ok || fr.Spec.ExecutionScope != executionScopeBoundary {
 				continue
-			}
-			cacheKey := fr.Metadata.Name + ":" + fr.Metadata.Version
-			if cached, seen := state.ValidatedFRs[cacheKey]; seen {
-				if cached != nil {
-					return cached
-				}
-			} else {
-				validationErr := validateBoundaryScopeFRTemplate(fr)
-				state.ValidatedFRs[cacheKey] = validationErr
-				if validationErr != nil {
-					return validationErr
-				}
 			}
 			key := boundaryFRKey{BoundaryPath: boundaryPath, FRInstance: instName}
 			frCtx, err := buildBoundaryFRTemplateContext(allProvides, fr, instName, key, graph, release, boundaryAnnotations)
@@ -1096,19 +1005,46 @@ func isInSubtree(candidate, boundaryPath string) bool {
 // attachment — the boundary-scope dispatch then surfaces a precise
 // "no BoundaryFeature attachment" error rather than silently misattributing.
 func findFRAttachmentBoundary(boundaryFeatures types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]], componentBoundaryPath, frInstance string) string {
-	if componentBoundaryPath == "" {
+	owning, held := declaringAncestorBoundary(componentBoundaryPath, func(candidate string) bool {
+		_, hasFeat := lookupBoundaryFeatureAttachment(boundaryFeatures, candidate, frInstance)
+		return hasFeat
+	})
+	if !held {
 		return componentBoundaryPath
 	}
-	parts := strings.Split(componentBoundaryPath, "/")
-	for i := len(parts); i >= 1; i-- {
-		candidatePath := strings.Join(parts[:i], "/")
-		if inner, ok := boundaryFeatures.Get(candidatePath); ok {
-			if _, hasFeat := inner.Get(frInstance); hasFeat {
-				return candidatePath
-			}
+	return owning
+}
+
+// declaringAncestorBoundary walks from the boundary a component sits in toward
+// the root and returns the first scope — that one, or one enclosing it — the
+// caller's predicate reports a declaration at, and whether any did.
+//
+// It is the ONE home of that walk, and both surfaces asking it route through
+// here: the dispatch above, which needs the scope a boundary-scope recipe
+// generates for, and the rule that refuses an attachment no scope declares. Two
+// walks would be free to differ on which ancestors they visit and on how a path
+// is split into them — and the disagreement would surface as a rule admitting a
+// coordinate the dispatch then cannot resolve, which reports approval for a
+// build that halts.
+//
+// The predicate is the caller's because the two read a declaration from
+// different products: the dispatch reads the finalised graph's projection, and a
+// rule reads the facts it is handed. What the two share is the walk, not the
+// lookup, so only the walk lives here.
+//
+// A component the deployment placed in no scope has no ancestor to walk, and the
+// empty path is reported as no scope rather than as a scope named by the empty
+// string — a boundary whose path is empty is one the compiler synthesized, which
+// the operator declared nothing at.
+func declaringAncestorBoundary(componentBoundaryPath string, declares func(boundary string) bool) (string, bool) {
+	segments := splitBoundaryPath(componentBoundaryPath)
+	for i := len(segments); i >= 1; i-- {
+		candidate := strings.Join(segments[:i], "/")
+		if declares(candidate) {
+			return candidate, true
 		}
 	}
-	return componentBoundaryPath
+	return "", false
 }
 
 // lookupBoundaryFeatureAttachment finds the BoundaryFeature with the given

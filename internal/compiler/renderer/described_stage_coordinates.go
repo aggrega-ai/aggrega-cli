@@ -544,6 +544,7 @@ func stepCoordinatesOf(steps []types.PipelineStep, sourceFile string) []constrai
 // the invocation that needed it.
 var (
 	_ describedStageAxes                                  = (*describedStageCoordinates)(nil)
+	_ boundaryScopeAttachmentAxes                         = (*describedStageCoordinates)(nil)
 	_ authoredProvidesAxes                                = (*describedStageCoordinates)(nil)
 	_ authoredLocalsAxes                                  = (*describedStageCoordinates)(nil)
 	_ crossBoundaryLinkAxis                               = (*describedStageCoordinates)(nil)

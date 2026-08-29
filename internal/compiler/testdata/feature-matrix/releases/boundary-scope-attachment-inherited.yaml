@@ -1,0 +1,41 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: feature-matrix-boundary-scope-inherited
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregate.yaml
+  manifest: feature-matrix-manifest-compose-sourced-with-bridge
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      features:
+        bridge:
+          type: core/compose-bridge:1.0.0
+          infra:
+            mappedPort: 13306
+            targetVar: "DB_HOST"
+      boundaries:
+        services-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/namespace: "services"
+          components:
+            api:
+              infra:
+                replicas: 1
+              # The same instance the enclosing scope already declares, restated
+              # against one component. The scope's declaration is what the build
+              # renders from, so this restatement changes no output.
+              features:
+                bridge:
+                  type: core/compose-bridge:1.0.0
+        data-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/namespace: "data"
+          components:
+            db:
+              infra:
+                replicas: 1

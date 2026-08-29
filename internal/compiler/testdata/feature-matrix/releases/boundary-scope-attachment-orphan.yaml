@@ -1,0 +1,38 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: feature-matrix-boundary-scope-orphan
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregate.yaml
+  manifest: feature-matrix-manifest-compose-sourced-with-bridge
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      boundaries:
+        services-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/namespace: "services"
+          components:
+            api:
+              infra:
+                replicas: 1
+              # A recipe that generates once for a scope, attached against one
+              # component and declared by no scope enclosing it. Nothing here
+              # names a scope the feature could run for.
+              features:
+                bridge:
+                  type: core/compose-bridge:1.0.0
+                  infra:
+                    mappedPort: 13306
+                    targetVar: "DB_HOST"
+        data-net:
+          directory: "{{ .parent_boundary.directory }}"
+          annotations:
+            aggrega.ai/namespace: "data"
+          components:
+            db:
+              infra:
+                replicas: 1

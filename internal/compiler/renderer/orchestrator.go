@@ -648,6 +648,23 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
+		// The rule over whether an attachment binding a FeatureRecipe that
+		// generates once for a boundary has a boundary to generate for, invoked
+		// against the same presentation and the same enumeration. It carries no
+		// plugin-resolution guard, so it also reaches a render wired with no
+		// plugin resolution, where the reading above is skipped entirely.
+		//
+		// It is asked ahead of the readings below because it is the coarsest of
+		// them: those ask what a template may say, this asks whether the document
+		// carrying those templates has a site to be evaluated at at all. It is
+		// also ahead of the boundary-scope provides pre-pass and the node walk,
+		// which are where such an attachment would otherwise be reached — and
+		// reported there as a boundary projection the render could not find,
+		// naming the consequence rather than the authoring mistake.
+		if err := runBoundaryScopeAttachmentRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
 		// The rule over what a Recipe wrote for each of its provides keys, invoked
 		// against the same presentation and the same enumeration. It is a separate
 		// call rather than a member of the reading above because it carries no

@@ -220,6 +220,73 @@ func describedStageHalt(objections []constraint.Objection) error {
 	return objectionsAsHalt(objections, "pipeline steps that cannot run as declared")
 }
 
+// boundaryScopeAttachmentAxes is the axis pair the rule over an attachment's
+// execution scope is invoked once per: the node set, and the attachments each
+// node carries.
+//
+// It is its own set beside the plugin-report one above rather than two more
+// members of it, and for the reason the authored-text sets below are their own:
+// both facts this rule reads are authored — the scope a FeatureRecipe declares
+// and the attachments a deployment writes at a boundary — and neither depends on
+// a plugin describing itself. Folding the axes together would put the rule
+// behind that set's resolution guard, and a rule skipped by a guard reports
+// exactly what a rule that ran and approved reports.
+//
+// Naming both axes together is what makes the inner one un-skippable: a value
+// supplying nodes but no attachment enumeration does not compile here.
+type boundaryScopeAttachmentAxes interface {
+	constraint.NodeEnumerator
+	constraint.AttachmentEnumerator
+}
+
+// runBoundaryScopeAttachmentRule invokes the rule declared over whether an
+// attachment binding a FeatureRecipe that generates once for a boundary has a
+// boundary to generate for, and returns what it raised as the render's halt.
+//
+// # Why it is asked first among the authored readings
+//
+// It is the coarsest of them. The readings beneath it ask what a template may
+// say; this asks whether the document carrying those templates has a site to be
+// evaluated at at all. An attachment with no boundary to generate for produces
+// no output anywhere, so a finding about a reference inside its templates would
+// describe text that is never evaluated where the author believes it is. The
+// order the build reports the two in follows the order they are decided.
+//
+// It carries no plugin-resolution guard, for the reason the authored-text
+// readings beneath it carry none: nothing it reads comes from a plugin
+// describing itself, so a render that resolved no plugin still owes this
+// refusal — which is also what keeps the refusal reaching a render wired with no
+// plugin resolution at all, where the rules above it are skipped entirely.
+//
+// # Every offending attachment is reported, not the first
+//
+// The rule is invoked once per attachment, so a deployment carrying three such
+// attachments raises three objections and an author corrects all three from one
+// build. Each objection carries its own position — the document the attachment
+// was written in, and the authored key inside it — which is why they are not
+// folded into one message: a position is something an author navigates to, and a
+// single message naming three of them can be navigated to none.
+//
+// The cancellation signal is the caller's own, so a long walk over a large graph
+// stops within one node of the caller asking it to.
+func runBoundaryScopeAttachmentRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates boundaryScopeAttachmentAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	raised, err := constraint.RunOnNodeAttachments(
+		ctx.Err, coordinates, coordinates, view,
+		AttachmentBoundaryScopeHasADeclaringBoundary,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(raised, "attachments that generate once for a boundary with no boundary declaring them")
+}
+
 // authoredProvidesAxes is the axis pair the rule over an authored provides
 // template is invoked once per: the node set, and the keys each node's Recipe
 // publishes.
