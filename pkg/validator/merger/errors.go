@@ -5,27 +5,10 @@ package merger
 
 import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
-// ErrCyclicExtension fires when ResolveChain detects a cycle in the
-// extends chain — the visited-set sees the same URI twice. Wrapped in
-// *MergeError carrying the offending URI and the partial chain that
-// led to the cycle.
-func ErrCyclicExtension() error { return errCyclicExtension }
-
-var errCyclicExtension = cerrors.Register("validator-merger/cyclic-extension", cerrors.Meta{
-	ShortCode: "E0219",
-	Message:   "merger: cyclic extends chain",
-})
-
-// ErrMaxDepth fires when ResolveChain walks a chain that exceeds 10
-// levels before terminating. Mirrors the existing validator inheritance
-// walker's depth bound. Wrapped in *MergeError carrying the terminal
-// URI and chain depth.
-func ErrMaxDepth() error { return errMaxDepth }
-
-var errMaxDepth = cerrors.Register("validator-merger/max-depth", cerrors.Meta{
-	ShortCode: "E0220",
-	Message:   "merger: extends chain exceeds maximum depth",
-})
+// This package declares no chain-structural conditions. It composes a chain it
+// is handed and does not walk one, so a cycle and a chain past the depth bound
+// are reported by the single extends walk in pkg/validator, under that
+// package's own conditions, before any schema reaches the combining step here.
 
 // ErrMergeInvalid fires on a structural merge failure that the per-
 // keyword rules cannot resolve — for example, an empty input chain

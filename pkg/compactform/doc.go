@@ -31,7 +31,10 @@
 // narrow type: or drop the constraint.
 //
 // The escape hatch $jsonschema: embeds full JSON Schema YAML at any node
-// for cases the compact form cannot express. The $mode: annotation
+// for cases the compact form cannot express. It widens the STRUCTURE a node
+// may carry and not the vocabulary: the body's keys are checked against the
+// same known-keyword set as any other node, so an unrecognised key inside an
+// escape is refused rather than carried through. The $mode: annotation
 // (compact / jsonschema) provides explicit dispatch for the rare edge
 // cases where content-shape dispatch is ambiguous.
 //

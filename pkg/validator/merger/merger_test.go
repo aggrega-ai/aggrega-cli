@@ -645,138 +645,6 @@ func TestMerge_Determinism(t *testing.T) {
 	assertDeterministicMerge(t, []*Schema{parent, child}, 25)
 }
 
-// TestResolveChain_NoExtends verifies a child with no
-// Extra["extends"] returns a single-element chain.
-func TestResolveChain_NoExtends(t *testing.T) {
-	t.Parallel()
-	child := mustSchema(t, `{"type": "string"}`, "child.yaml:1")
-	chain, err := ResolveChain(child, func(uri string) (*Schema, bool) {
-		t.Errorf("lookup should not be called when no extends; called with %q", uri)
-		return nil, false
-	})
-	if err != nil {
-		t.Fatalf("ResolveChain: %v", err)
-	}
-	if len(chain) != 1 || chain[0] != child {
-		t.Errorf("expected single-element chain [child]; got %v", chain)
-	}
-}
-
-// TestResolveChain_SingleParent verifies a child with extends to one
-// parent returns [parent, child].
-func TestResolveChain_SingleParent(t *testing.T) {
-	t.Parallel()
-	parent := mustSchema(t, `{"type": "object"}`, "parent.yaml:1")
-	child := mustSchema(t, `{"properties": {"a": {"type": "string"}}}`, "child.yaml:1")
-	child.Extra = map[string]any{"extends": "parent-uri"}
-
-	chain, err := ResolveChain(child, func(uri string) (*Schema, bool) {
-		if uri == "parent-uri" {
-			return parent, true
-		}
-		return nil, false
-	})
-	if err != nil {
-		t.Fatalf("ResolveChain: %v", err)
-	}
-	if len(chain) != 2 {
-		t.Fatalf("expected chain len=2; got %d", len(chain))
-	}
-	if chain[0] != parent || chain[1] != child {
-		t.Errorf("expected chain=[parent, child]; got [%v, %v]", chain[0], chain[1])
-	}
-}
-
-// TestResolveChain_CycleDetection verifies a circular extends chain
-// produces ErrCyclicExtension.
-func TestResolveChain_CycleDetection(t *testing.T) {
-	t.Parallel()
-	a := mustSchema(t, `{"type": "object"}`, "a-uri")
-	a.Extra = map[string]any{"extends": "b-uri"}
-	b := mustSchema(t, `{"type": "object"}`, "b-uri")
-	b.Extra = map[string]any{"extends": "a-uri"}
-
-	_, err := ResolveChain(a, func(uri string) (*Schema, bool) {
-		switch uri {
-		case "a-uri":
-			return a, true
-		case "b-uri":
-			return b, true
-		}
-		return nil, false
-	})
-	if err == nil {
-		t.Fatal("expected ErrCyclicExtension; got nil")
-	}
-	if !errors.Is(err, ErrCyclicExtension()) {
-		t.Errorf("expected ErrCyclicExtension; got %v", err)
-	}
-}
-
-// TestResolveChain_MaxDepth verifies an 11-level chain produces
-// ErrMaxDepth.
-func TestResolveChain_MaxDepth(t *testing.T) {
-	t.Parallel()
-	// Build 12 schemas where each extends the next via a unique URI.
-	// The walker exits with ErrMaxDepth at length 10.
-	const total = 12
-	schemas := make([]*Schema, total)
-	for i := 0; i < total; i++ {
-		s := mustSchema(t, `{"type": "object"}`, itoaTest(i))
-		if i < total-1 {
-			s.Extra = map[string]any{"extends": itoaTest(i + 1)}
-		}
-		schemas[i] = s
-	}
-	lookup := func(uri string) (*Schema, bool) {
-		for _, s := range schemas {
-			if s.Source == uri {
-				return s, true
-			}
-		}
-		return nil, false
-	}
-	_, err := ResolveChain(schemas[0], lookup)
-	if err == nil {
-		t.Fatal("expected ErrMaxDepth; got nil")
-	}
-	if !errors.Is(err, ErrMaxDepth()) {
-		t.Errorf("expected ErrMaxDepth; got %v", err)
-	}
-}
-
-// TestResolveChain_MissingParent verifies an extends URI that the
-// lookup callback cannot resolve produces a clear error.
-func TestResolveChain_MissingParent(t *testing.T) {
-	t.Parallel()
-	child := mustSchema(t, `{"type": "object"}`, "child.yaml:1")
-	child.Extra = map[string]any{"extends": "missing-uri"}
-
-	_, err := ResolveChain(child, func(uri string) (*Schema, bool) {
-		return nil, false
-	})
-	if err == nil {
-		t.Fatal("expected error on missing parent; got nil")
-	}
-	if !errors.Is(err, ErrMergeInvalid()) {
-		t.Errorf("expected ErrMergeInvalid; got %v", err)
-	}
-}
-
-// TestResolveChain_NilChild verifies the boundary on nil input.
-func TestResolveChain_NilChild(t *testing.T) {
-	t.Parallel()
-	_, err := ResolveChain(nil, func(uri string) (*Schema, bool) {
-		return nil, false
-	})
-	if err == nil {
-		t.Fatal("expected error on nil child; got nil")
-	}
-	if !errors.Is(err, ErrMergeInvalid()) {
-		t.Errorf("expected ErrMergeInvalid; got %v", err)
-	}
-}
-
 // TestMergedSchemaProvenanceIgnoredByValidator is a regression-guard
 // test against future changes to the validator's Extra-walking
 // behavior that would inadvertently process __source_origin as a
@@ -1156,43 +1024,6 @@ func TestMergeError_Format(t *testing.T) {
 	}
 }
 
-// TestResolveChain_NonStringExtends verifies a non-string
-// Extra["extends"] terminates the chain cleanly (single-element
-// chain returned).
-func TestResolveChain_NonStringExtends(t *testing.T) {
-	t.Parallel()
-	child := mustSchema(t, `{"type": "object"}`, "child.yaml:1")
-	child.Extra = map[string]any{"extends": 42} // non-string value
-	chain, err := ResolveChain(child, func(uri string) (*Schema, bool) {
-		t.Errorf("lookup should not be called when extends is non-string; called with %q", uri)
-		return nil, false
-	})
-	if err != nil {
-		t.Fatalf("ResolveChain: %v", err)
-	}
-	if len(chain) != 1 {
-		t.Errorf("expected single-element chain; got %v", chain)
-	}
-}
-
-// TestResolveChain_LookupReturnsNilParent verifies a lookup returning
-// (nil-schema, true) is treated as a missing-parent error rather
-// than silently succeeding.
-func TestResolveChain_LookupReturnsNilParent(t *testing.T) {
-	t.Parallel()
-	child := mustSchema(t, `{"type": "object"}`, "child.yaml:1")
-	child.Extra = map[string]any{"extends": "parent-uri"}
-	_, err := ResolveChain(child, func(uri string) (*Schema, bool) {
-		return nil, true // nil schema but "found"
-	})
-	if err == nil {
-		t.Fatal("expected error on nil-parent lookup; got nil")
-	}
-	if !errors.Is(err, ErrMergeInvalid()) {
-		t.Errorf("expected ErrMergeInvalid; got %v", err)
-	}
-}
-
 // TestMerge_ParentOnlyConstraintsPreserved exercises the parent-only
 // branches for every keyword family — when parent has a constraint
 // and child does not override, the value flows through to the merged
@@ -1438,12 +1269,6 @@ func extractProvenance(t *testing.T, s *jsonschema.Schema) map[string]string {
 	}
 }
 
-// itoaTest is a test-side int-to-string for chain URI generation
-// (avoids importing strconv at the test top level just for this).
-func itoaTest(n int) string {
-	return itoa(n)
-}
-
 // assertDeterministicMerge runs Merge(schemas) the given number of
 // trials and asserts every merged result marshals to the same JSON
 // bytes. Parallels assertDeterministicValidation in the validator
@@ -1494,13 +1319,13 @@ func TestMergeError_OpensWithItsConditionAndSaysThePrefixOnce(t *testing.T) {
 	}{
 		{
 			name:      "detail only",
-			err:       &MergeError{Detail: "extends chain revisits ./base.yaml", Err: ErrCyclicExtension()},
-			wantValue: "(extends chain revisits ./base.yaml)",
+			err:       &MergeError{Detail: "the input chain is empty", Err: ErrMergeInvalid()},
+			wantValue: "(the input chain is empty)",
 		},
 		{
 			name:      "path, detail and source",
-			err:       &MergeError{Path: "properties.port", Source: "./base.yaml:12", Detail: "chain depth 11 exceeds the maximum of 10", Err: ErrMaxDepth()},
-			wantValue: "(at properties.port, chain depth 11 exceeds the maximum of 10, from ./base.yaml:12)",
+			err:       &MergeError{Path: "properties.port", Source: "./base.yaml:12", Detail: "chain element 2 carries no schema", Err: ErrMergeInvalid()},
+			wantValue: "(at properties.port, chain element 2 carries no schema, from ./base.yaml:12)",
 		},
 		{
 			name:      "no occurrence detail at all",

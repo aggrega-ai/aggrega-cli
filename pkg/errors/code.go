@@ -532,6 +532,9 @@ var retiredShortCodes = []retirement{
 		"instance-name pattern, and no build reported it before the condition was withdrawn."},
 	{"E0217", "It named a schema-validation failure that could not be reported against a particular " +
 		"field, and no build reported it before the condition was withdrawn."},
+	{"E0219", "It named a cyclic `extends` chain, reported by a second chain walk the schema-merge " +
+		"library kept beside its combining step; one walk reports every cyclic chain now, and its " +
+		"code is `E0202`."},
 	{"E0234", "It named a Recipe source that is an empty string, reported while rendering through the " +
 		"compose provider; one condition covering every provider reports that now, and its code is `E0251`."},
 	{"E0242", "It named a Recipe source that is an empty string, reported while rendering through the " +

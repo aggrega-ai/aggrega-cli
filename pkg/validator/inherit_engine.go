@@ -4,16 +4,11 @@
 package validator
 
 import (
-	"fmt"
-
 	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/merger"
 )
-
-// maxInheritanceDepth prevents unbounded chains.
-const maxInheritanceDepth = 10
 
 // CatalogEntry identifies an entity in an extends chain and carries the
 // schema payload the chain composition reads. The caller populates it
@@ -59,11 +54,12 @@ type InheritanceResult struct {
 // ResolveInheritance walks the extends chain for an entity using the
 // provided catalog lookup, and does two things with the chain it walks.
 //
-// It gates the chain: a repeated URI (visited-set keyed by URI) reports
-// ErrCyclicExtension, a chain longer than the depth bound of 10 reports
-// ErrInheritanceMerge, and so does a parent the lookup cannot resolve.
-// Each halts the walk and returns the failure alone. Callers that only
-// need an extends chain validated read Errors and ignore the rest.
+// It gates the chain, through the shared walk in chain_walk.go: a chain that
+// returns to an entity already in it reports ErrCyclicExtension, one that ends
+// cleanly but runs past the depth bound reports ErrExtendsChainTooDeep, and a
+// parent the lookup cannot resolve reports ErrInheritanceMerge. Each halts the
+// walk and returns the failure alone. Callers that only need an extends chain
+// validated read Errors and ignore the rest.
 //
 // It composes the chain's schemas: when any chain entry supplies a
 // JSONSchema payload, the chain is merged root-ancestor-first through
@@ -73,48 +69,12 @@ type InheritanceResult struct {
 // Inherited labels and annotations are not merged here — that happens on
 // the typed entity in ResolveComponentExtends and ResolveFeatureExtends.
 func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntry, bool)) InheritanceResult {
-	chain := []CatalogEntry{entry}
-	visited := map[string]bool{entry.URI: true}
-	current := entry
-
-	for current.Extends != "" {
-		if len(chain) >= maxInheritanceDepth {
-			return InheritanceResult{
-				Errors: []*ValidationError{NewValidationError(entry.Kind, entry.URI, ValidationDetail{
-					FieldPath:  ".spec.extends",
-					Constraint: fmt.Sprintf("inheritance chain exceeds maximum depth of %d", maxInheritanceDepth),
-					Suggestion: "Reduce the inheritance chain length",
-					Err:        ErrInheritanceMerge(),
-				})},
-			}
-		}
-
-		if visited[current.Extends] {
-			return InheritanceResult{
-				Errors: []*ValidationError{NewValidationError(entry.Kind, entry.URI, ValidationDetail{
-					FieldPath:  ".spec.extends",
-					Constraint: fmt.Sprintf("circular extends detected: %s already in chain", current.Extends),
-					Suggestion: "Remove the circular extends reference",
-					Err:        ErrCyclicExtension(),
-				})},
-			}
-		}
-
-		parent, ok := lookup(current.Extends)
-		if !ok {
-			return InheritanceResult{
-				Errors: []*ValidationError{NewValidationError(entry.Kind, entry.URI, ValidationDetail{
-					FieldPath:  ".spec.extends",
-					Constraint: fmt.Sprintf("parent entity %q not found in catalog", current.Extends),
-					Suggestion: "Verify the extends URI points to an existing catalog entity",
-					Err:        ErrInheritanceMerge(),
-				})},
-			}
-		}
-
-		visited[current.Extends] = true
-		chain = append(chain, parent)
-		current = parent
+	chain, fault := walkExtendsChain(entry,
+		func(e CatalogEntry) string { return e.URI },
+		func(e CatalogEntry) string { return e.Extends },
+		lookup)
+	if fault != nil {
+		return InheritanceResult{Errors: []*ValidationError{chainFaultError(entry.Kind, entry.URI, fault)}}
 	}
 
 	var result InheritanceResult

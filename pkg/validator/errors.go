@@ -26,6 +26,23 @@ var errCyclicExtension = cerrors.Register("validator/cyclic-extension", cerrors.
 	Message:   "cyclic extends chain",
 })
 
+// ErrExtendsChainTooDeep fires when an extends chain terminates cleanly but
+// runs past the depth bound. It is separate from ErrInheritanceMerge so that
+// "this chain is longer than the bound allows" and "this chain names a parent
+// the catalog does not hold" stay two answers a reader can tell apart — the
+// remedies differ, and one identity covering both leaves a consumer matching on
+// it unable to say which it caught.
+//
+// It is deliberately NOT named for the bound alone. The bare name would sit
+// alongside a same-named condition in the topology walk, and a reader resolving
+// either from the name would have no way to tell which walk reported.
+func ErrExtendsChainTooDeep() error { return errExtendsChainTooDeep }
+
+var errExtendsChainTooDeep = cerrors.Register("validator/extends-chain-too-deep", cerrors.Meta{
+	ShortCode: "E0220",
+	Message:   "extends chain exceeds maximum depth",
+})
+
 func ErrAssertionNameCollision() error { return errAssertionNameCollision }
 
 var errAssertionNameCollision = cerrors.Register("validator/assertion-name-collision", cerrors.Meta{

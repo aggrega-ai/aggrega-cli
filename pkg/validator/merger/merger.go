@@ -67,7 +67,7 @@ type NarrowingViolation struct {
 // into a single merged Schema with provenance metadata and any
 // narrowing violations detected during pairwise composition. The
 // caller supplies the chain in author order; Merge does not walk
-// extends links (see ResolveChain for that).
+// extends links, which the single walk in pkg/validator does.
 //
 // Pairwise left-fold: schemas[0] merges with schemas[1], the result
 // merges with schemas[2], etc. Each pairwise step records per-

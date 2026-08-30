@@ -10,8 +10,7 @@
 // Merge takes a chain of schemas in author order (root-ancestor first,
 // child last). Each schema is a *Schema wrapper carrying the library
 // *jsonschema.Schema plus a Source string naming the file:line of
-// origin. The caller resolves the chain (via ResolveChain or its own
-// walker); Merge is the pure merge primitive.
+// origin. The caller resolves the chain; Merge is the pure merge primitive.
 //
 // # Merge semantics
 //
@@ -76,23 +75,17 @@
 // slice. The merger does NOT halt on narrowing — the slice is the
 // signal that the downstream policy plugin consumes for enforcement.
 //
-// # Extends-chain resolution
+// # Where the chain comes from
 //
-// ResolveChain walks an extends chain using the convention that
-// Schema.Extra["extends"] holds the parent URI as a string. The walker
-// uses visited-set cycle detection (ErrCyclicExtension) and a 10-level
-// max-depth bound (ErrMaxDepth) matching the existing inheritance
-// walker's discipline. ResolveChain is a convenience helper; callers
-// that need a different extends convention can compose Merge directly
-// with their own chain walker.
+// This package walks no chain. It is handed one, already assembled and already
+// gated, and composes it. The walk lives in pkg/validator, which follows the
+// parent each entity declares through its `extends` field, refuses a chain that
+// returns to an entity already in it, refuses one that runs past the depth
+// bound, and reports both under its own conditions — so a cycle or an over-deep
+// chain is refused before any schema reaches the combining step here.
 //
-// The compiler is such a caller: it assembles its chain from the parent
-// each entity declares and hands the result to Merge, so it neither
-// writes Schema.Extra["extends"] nor calls ResolveChain. ErrCyclicExtension
-// and ErrMaxDepth are therefore reachable only through ResolveChain, which
-// means only from a caller that adopts this package's extends convention.
-// A cycle or an over-deep chain in a compiled catalog is reported by
-// pkg/validator instead, under that package's own conditions.
+// Keeping the walk out of this package is what leaves one extends walk in the
+// compiler rather than two that agree until one is edited.
 //
 // # Determinism
 //

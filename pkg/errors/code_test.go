@@ -22,15 +22,15 @@ import (
 // Every code value in this file is distinct. The registry is process-wide, so a
 // repeated value would be a duplicate registration and would panic at init.
 const (
-	codeCyclicExtension       = "validator/cyclic-extension"
-	codeMergerCyclicExtension = "validator-merger/cyclic-extension"
-	codeDuplicate             = "resolver/duplicate-subject"
-	codeEmptyMessage          = "resolver/empty-message-subject"
-	codeEmptyShortCode        = "resolver/empty-short-code-subject"
-	codeMalformedShortCode    = "resolver/malformed-short-code-subject"
-	codeDuplicateShortCode    = "resolver/duplicate-short-code-subject"
-	codeBlankDeclaredAhead    = "resolver/blank-declared-ahead-subject"
-	codeSetDeclaredAhead      = "resolver/set-declared-ahead-subject"
+	codeCyclicExtension        = "validator/cyclic-extension-subject"
+	codeSiblingCyclicExtension = "topology/cyclic-extension-subject"
+	codeDuplicate              = "resolver/duplicate-subject"
+	codeEmptyMessage           = "resolver/empty-message-subject"
+	codeEmptyShortCode         = "resolver/empty-short-code-subject"
+	codeMalformedShortCode     = "resolver/malformed-short-code-subject"
+	codeDuplicateShortCode     = "resolver/duplicate-short-code-subject"
+	codeBlankDeclaredAhead     = "resolver/blank-declared-ahead-subject"
+	codeSetDeclaredAhead       = "resolver/set-declared-ahead-subject"
 )
 
 // The short codes this file registers, distinct for the same reason the codes
@@ -43,14 +43,14 @@ const (
 // its own — so a test value has to be distinct from its siblings here and from
 // nothing else.
 const (
-	shortCyclicExtension       = "E9211"
-	shortMergerCyclicExtension = "E9212"
-	shortDuplicate             = "E9213"
-	shortEmptyMessage          = "E9214"
-	shortMalformedSubject      = "E9215"
-	shortDuplicateSubject      = "E9216"
-	shortBlankDeclaredAhead    = "E9217"
-	shortSetDeclaredAhead      = "E9218"
+	shortCyclicExtension        = "E9211"
+	shortSiblingCyclicExtension = "E9212"
+	shortDuplicate              = "E9213"
+	shortEmptyMessage           = "E9214"
+	shortMalformedSubject       = "E9215"
+	shortDuplicateSubject       = "E9216"
+	shortBlankDeclaredAhead     = "E9217"
+	shortSetDeclaredAhead       = "E9218"
 )
 
 // The short code a malformed-value refusal is probed with, and the reason it is
@@ -60,26 +60,27 @@ const (
 // refusal was given rather than against a second copy of it.
 const malformedShortCode = "E42"
 
-// The two messages below are the real, distinct texts carried today by two
-// independently declared rules that share one exported name in two different
-// packages. They are reproduced verbatim because the property under test is
-// precisely that such a pair stays two identities with two messages.
+// The two messages below carry the SHAPE the property under test needs: two
+// rules that share one exported name across two packages stay two identities
+// with two messages. They reproduce no real declaration, deliberately — a copy
+// of a live message here would be a second home for that wording, and it would
+// go stale silently the day the real one moved, without anything failing.
 const (
-	messageCyclicExtension       = "cyclic extends chain"
-	messageMergerCyclicExtension = "merger: cyclic extends chain"
+	messageCyclicExtension        = "the first subject's cyclic-chain sentence"
+	messageSiblingCyclicExtension = "the second subject's cyclic-chain sentence"
 )
 
 var (
 	identityCyclicExtension = cerrors.Register(codeCyclicExtension,
 		cerrors.Meta{ShortCode: shortCyclicExtension, Message: messageCyclicExtension})
-	identityMergerCyclicExtension = cerrors.Register(codeMergerCyclicExtension,
-		cerrors.Meta{ShortCode: shortMergerCyclicExtension, Message: messageMergerCyclicExtension})
+	identitySiblingCyclicExtension = cerrors.Register(codeSiblingCyclicExtension,
+		cerrors.Meta{ShortCode: shortSiblingCyclicExtension, Message: messageSiblingCyclicExtension})
 	identityDuplicate = cerrors.Register(codeDuplicate,
 		cerrors.Meta{ShortCode: shortDuplicate, Message: "the first registration of this code"})
 )
 
-func errCyclicExtension() error       { return identityCyclicExtension }
-func errMergerCyclicExtension() error { return identityMergerCyclicExtension }
+func errCyclicExtension() error        { return identityCyclicExtension }
+func errSiblingCyclicExtension() error { return identitySiblingCyclicExtension }
 
 // The registered identity satisfies both the error interface a caller matches
 // against and the interface that reports the code. These assertions are the
@@ -112,7 +113,7 @@ func TestIdentity_IsMatchesThroughTwoWrapLayers(t *testing.T) {
 	if !stderrors.Is(outer, errCyclicExtension()) {
 		t.Errorf("errors.Is failed to match the identity through two wrap layers; chain: %v", outer)
 	}
-	if stderrors.Is(outer, errMergerCyclicExtension()) {
+	if stderrors.Is(outer, errSiblingCyclicExtension()) {
 		t.Errorf("errors.Is matched a different identity through the same chain; chain: %v", outer)
 	}
 
@@ -213,8 +214,8 @@ func TestIdentity_RegisteredSentenceIsReadableThroughWraps(t *testing.T) {
 
 	// Two identities sharing an exported accessor name in two packages carry two
 	// sentences, and the read must not collapse them.
-	if got, _ := cerrors.MessageOf(fmt.Errorf("merging: %w", errMergerCyclicExtension())); got != messageMergerCyclicExtension {
-		t.Errorf("MessageOf = %q; want the merger identity's own sentence %q", got, messageMergerCyclicExtension)
+	if got, _ := cerrors.MessageOf(fmt.Errorf("merging: %w", errSiblingCyclicExtension())); got != messageSiblingCyclicExtension {
+		t.Errorf("MessageOf = %q; want the merger identity's own sentence %q", got, messageSiblingCyclicExtension)
 	}
 
 	// A chain carrying no registered identity reports no sentence, the same fact
@@ -283,18 +284,18 @@ func TestIdentity_MessageIsNeverEmpty(t *testing.T) {
 func TestIdentity_SameRuleNameInTwoPackagesStaysTwoIdentities(t *testing.T) {
 	t.Parallel()
 
-	if errCyclicExtension() == errMergerCyclicExtension() {
+	if errCyclicExtension() == errSiblingCyclicExtension() {
 		t.Fatalf("the two accessors yield one identity, so they are one condition")
 	}
 	if got := errCyclicExtension().Error(); got != messageCyclicExtension {
 		t.Errorf("first identity Error() = %q; want %q", got, messageCyclicExtension)
 	}
-	if got := errMergerCyclicExtension().Error(); got != messageMergerCyclicExtension {
-		t.Errorf("second identity Error() = %q; want %q", got, messageMergerCyclicExtension)
+	if got := errSiblingCyclicExtension().Error(); got != messageSiblingCyclicExtension {
+		t.Errorf("second identity Error() = %q; want %q", got, messageSiblingCyclicExtension)
 	}
 
 	wrapped := fmt.Errorf("resolving the aggregate: %w", errCyclicExtension())
-	if stderrors.Is(wrapped, errMergerCyclicExtension()) {
+	if stderrors.Is(wrapped, errSiblingCyclicExtension()) {
 		t.Errorf("errors.Is matched across two distinct identities")
 	}
 }
@@ -483,8 +484,8 @@ func TestIdentity_ShortCodeIsReadableThroughWraps(t *testing.T) {
 
 	// Two identities sharing an exported accessor name in two packages carry two
 	// short codes, and the read must not collapse them.
-	if got, _ := cerrors.ShortCodeOf(fmt.Errorf("merging: %w", errMergerCyclicExtension())); got != shortMergerCyclicExtension {
-		t.Errorf("ShortCodeOf = %q; want the merger identity's own short code %q", got, shortMergerCyclicExtension)
+	if got, _ := cerrors.ShortCodeOf(fmt.Errorf("merging: %w", errSiblingCyclicExtension())); got != shortSiblingCyclicExtension {
+		t.Errorf("ShortCodeOf = %q; want the merger identity's own short code %q", got, shortSiblingCyclicExtension)
 	}
 
 	// A chain carrying no registered identity reports no short code — the same
@@ -546,7 +547,7 @@ func TestRegister_IsSafeUnderConcurrentUse(t *testing.T) {
 			defer wg.Done()
 			// Reads run against the registry while the writes above are in flight.
 			_ = errCyclicExtension().Error()
-			_ = errMergerCyclicExtension().Error()
+			_ = errSiblingCyclicExtension().Error()
 		}()
 	}
 	wg.Wait()

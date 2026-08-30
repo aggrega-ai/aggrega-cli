@@ -426,9 +426,18 @@ func emitJSONSchemaPassthrough(node *yaml.Node, path string, ctx *compileCtx) (S
 	return out, nil
 }
 
-// emitEscape embeds the `$jsonschema:` block content verbatim at this
-// node's position. The escape body is parsed as JSON Schema YAML; the
-// compiler does not validate the body's vocabulary beyond YAML parsing.
+// emitEscape embeds the `$jsonschema:` block content at this node's
+// position. The body is JSON Schema YAML and its structure is carried
+// through unchanged.
+//
+// "Verbatim" describes the STRUCTURE and not the vocabulary: every key in
+// the body is checked against the known-keyword set, on both of the two
+// routes below — a block-scalar body is parsed and run through compileNode,
+// a directly-nested mapping goes to emitJSONSchemaPassthrough, and each
+// rejects an unrecognised key with ErrUnknownKeyword. So the escape widens
+// what a node may CONTAIN, never which keywords it may name, and an
+// authored key outside the vocabulary is refused here rather than passed
+// through into the compiled schema.
 func emitEscape(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		k := node.Content[i]

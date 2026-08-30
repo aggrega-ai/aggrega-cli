@@ -43,21 +43,10 @@ func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (type
 		return comp, nil
 	}
 
-	catalogLookup := func(uri string) (CatalogEntry, bool) {
-		c, ok := lookup(uri)
-		if !ok {
-			return CatalogEntry{}, false
-		}
-		return CatalogEntry{Kind: envelope.KindComponent, URI: c.Metadata.Name, Extends: c.Spec.Extends}, true
-	}
-	entry := CatalogEntry{Kind: envelope.KindComponent, URI: comp.Metadata.Name, Extends: comp.Spec.Extends}
-
-	if result := ResolveInheritance(entry, catalogLookup); len(result.Errors) > 0 {
-		return comp, result.Errors
-	}
-
 	// Walk the chain child → root, collect *types.Component per ancestor, then
-	// fold-merge from root into child so child fields take precedence.
+	// fold-merge from root into child so child fields take precedence. The walk
+	// gates the chain as it builds it — one traversal, not a gate pass followed
+	// by a collection pass over the same edges.
 	chain, chainErrs := collectComponentChain(comp, lookup)
 	if len(chainErrs) > 0 {
 		return comp, chainErrs
@@ -82,19 +71,6 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 		return feat, nil
 	}
 
-	catalogLookup := func(uri string) (CatalogEntry, bool) {
-		f, ok := lookup(uri)
-		if !ok {
-			return CatalogEntry{}, false
-		}
-		return CatalogEntry{Kind: envelope.KindFeature, URI: f.Metadata.Name, Extends: f.Spec.Extends}, true
-	}
-	entry := CatalogEntry{Kind: envelope.KindFeature, URI: feat.Metadata.Name, Extends: feat.Spec.Extends}
-
-	if result := ResolveInheritance(entry, catalogLookup); len(result.Errors) > 0 {
-		return feat, result.Errors
-	}
-
 	chain, chainErrs := collectFeatureChain(feat, lookup)
 	if len(chainErrs) > 0 {
 		return feat, chainErrs
@@ -116,16 +92,14 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 // folds its merge over — exposed so a consumer that needs only "what does this
 // descend from" answers the question from the merge's own chain instead of
 // walking Spec.Extends again. It reports the same failures that collector does:
-// a circular chain yields ErrCyclicExtension and an unresolvable parent yields
-// ErrInheritanceMerge, in both cases rather than looping.
+// a circular chain yields ErrCyclicExtension, a chain past the depth bound
+// yields ErrExtendsChainTooDeep, and an unresolvable parent yields
+// ErrInheritanceMerge, in every case rather than looping.
 //
-// Sharing the collector is what makes the answer agree with the merge. Note
-// which walk is shared: ResolveComponentExtends runs two, calling
-// ResolveInheritance first to gate the chain and collectComponentChain second to
-// build the merge input, and it is the second that this function shares. So the
-// ancestry reported here is by construction the ancestry merged, while a chain
-// this function reports without complaint may still be one ResolveComponentExtends
-// refuses — the gate walk applies a depth bound that the collector does not.
+// Sharing the collector is what makes the answer agree with the merge, and the
+// agreement is total: the collector both gates the chain and builds it, so a
+// chain this function reports without complaint is exactly a chain
+// ResolveComponentExtends accepts.
 func ComponentAncestry(comp types.Component, lookup ComponentLookup) ([]types.Component, []*ValidationError) {
 	chain, errs := collectComponentChain(comp, lookup)
 	if len(errs) > 0 {
@@ -134,62 +108,31 @@ func ComponentAncestry(comp types.Component, lookup ComponentLookup) ([]types.Co
 	return chain[1:], nil
 }
 
-// collectComponentChain returns the chain [child, parent, grandparent, ...].
-// Relies on ResolveInheritance having already validated cycles/depth/missing-parent,
-// so errors here shouldn't normally occur — they're a safety net for concurrent edits.
+// collectComponentChain returns the chain [child, parent, grandparent, ...],
+// gated by the shared extends walk: a chain that returns to an entity already
+// in it, one that runs past the depth bound, and a parent the catalog does not
+// hold are each reported there, in the words every other entity path reports
+// them in.
 func collectComponentChain(child types.Component, lookup ComponentLookup) ([]types.Component, []*ValidationError) {
-	chain := []types.Component{child}
-	visited := map[string]bool{child.Metadata.Name: true}
-	current := child
-	for current.Spec.Extends != "" {
-		if visited[current.Spec.Extends] {
-			// Should have been caught by ResolveInheritance; defensive only.
-			return nil, []*ValidationError{NewValidationError(envelope.KindComponent, child.Metadata.Name, ValidationDetail{
-				FieldPath:  ".spec.extends",
-				Constraint: "circular extends detected while rebuilding chain",
-				Err:        ErrCyclicExtension(),
-			})}
-		}
-		parent, ok := lookup(current.Spec.Extends)
-		if !ok {
-			return nil, []*ValidationError{NewValidationError(envelope.KindComponent, child.Metadata.Name, ValidationDetail{
-				FieldPath:  ".spec.extends",
-				Constraint: "parent component not found while rebuilding chain",
-				Suggestion: "Verify the extends reference names a Component present in the catalog",
-				Err:        ErrInheritanceMerge(),
-			})}
-		}
-		visited[current.Spec.Extends] = true
-		chain = append(chain, parent)
-		current = parent
+	chain, fault := walkExtendsChain(child,
+		func(c types.Component) string { return c.Metadata.Name },
+		func(c types.Component) string { return c.Spec.Extends },
+		lookup)
+	if fault != nil {
+		return nil, []*ValidationError{chainFaultError(envelope.KindComponent, child.Metadata.Name, fault)}
 	}
 	return chain, nil
 }
 
+// collectFeatureChain is the Feature analogue of collectComponentChain, over
+// the same shared walk.
 func collectFeatureChain(child types.Feature, lookup FeatureLookup) ([]types.Feature, []*ValidationError) {
-	chain := []types.Feature{child}
-	visited := map[string]bool{child.Metadata.Name: true}
-	current := child
-	for current.Spec.Extends != "" {
-		if visited[current.Spec.Extends] {
-			return nil, []*ValidationError{NewValidationError(envelope.KindFeature, child.Metadata.Name, ValidationDetail{
-				FieldPath:  ".spec.extends",
-				Constraint: "circular extends detected while rebuilding chain",
-				Err:        ErrCyclicExtension(),
-			})}
-		}
-		parent, ok := lookup(current.Spec.Extends)
-		if !ok {
-			return nil, []*ValidationError{NewValidationError(envelope.KindFeature, child.Metadata.Name, ValidationDetail{
-				FieldPath:  ".spec.extends",
-				Constraint: "parent feature not found while rebuilding chain",
-				Suggestion: "Verify the extends reference names a Feature present in the catalog",
-				Err:        ErrInheritanceMerge(),
-			})}
-		}
-		visited[current.Spec.Extends] = true
-		chain = append(chain, parent)
-		current = parent
+	chain, fault := walkExtendsChain(child,
+		func(f types.Feature) string { return f.Metadata.Name },
+		func(f types.Feature) string { return f.Spec.Extends },
+		lookup)
+	if fault != nil {
+		return nil, []*ValidationError{chainFaultError(envelope.KindFeature, child.Metadata.Name, fault)}
 	}
 	return chain, nil
 }
