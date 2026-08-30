@@ -464,6 +464,14 @@ func (v *normalizedView) ManifestAnnotationBindingFeature(string, string) (strin
 		"annotation binding registry: present the Manifest to read a binding's Feature")
 }
 
+// ManifestAnnotationBindingRoutes refuses, for the reason above. An empty slice
+// would say the binding routes nowhere, which is a truthful answer for a binding
+// that does, so nothing downstream could tell that answer apart from this one.
+func (v *normalizedView) ManifestAnnotationBindingRoutes(string, string) []constraint.AnnotationBindingRoute {
+	panic("the normalized presentation holds the authoring documents, which declare no " +
+		"annotation binding registry: present the Manifest to read a binding's routes")
+}
+
 // ---------------------------------------------------------------- instance facts
 
 // InstanceComponentType returns the component type a named instance declares,

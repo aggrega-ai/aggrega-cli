@@ -419,65 +419,43 @@ func rejectReservedAnnotationBindings(man *types.Manifest, path string) error {
 	return errors.Join(joined...)
 }
 
-// rejectCrossBindingPathPillarCollision walks every annotation binding
-// on the Manifest and rejects the case where two bindings target the
-// same Feature with the same dotted-path subkey routing to the same
-// pillar. The collision case produces an ambiguous "which binding routes
-// this path?" question the expansion pipeline cannot resolve. A single
-// Feature may carry distinct bindings for distinct (path, pillar) pairs;
-// the rule rejects only the same-Feature same-(path, pillar) duplicate.
+// rejectCrossBindingPathPillarCollision asks the one-claim-per-routing-slot rule
+// of every annotation binding the Manifest at path declares, and refuses the load
+// when any of them claims a slot an earlier binding on the same Feature already
+// holds.
 //
-// First-violation-halt matches existing Manifest-load patterns for
-// shape-level rejections.
+// It presents the document and names the rule rather than walking the registry
+// itself, for the reason [rejectReservedAnnotationBindings] states: the rule is
+// declared in this package as a constraint, so where it runs follows from the
+// facts it reads, and the provenance its findings carry is supplied by the
+// framework rather than assembled here.
+//
+// 🔴 It reports EVERY binding that collides rather than the first. The rule is
+// invoked once per declared binding and the framework accumulates what each
+// invocation raised, so an author fixing a Manifest whose third and fourth
+// bindings both collide with its first sees both in one build instead of one per
+// build.
+//
+// The findings are joined, so a caller matching the refusal by identity keeps
+// matching however many bindings collided.
 func rejectCrossBindingPathPillarCollision(man *types.Manifest, path string) error {
-	type pillarTarget struct{ path, pillar string }
-
-	check := func(annotations *types.OrderedMap[types.AnnotationBinding]) error {
-		if annotations == nil {
-			return nil
-		}
-		// seen tracks, per Feature URI, the set of (path, pillar) pairs
-		// and the first annotation key that declared the pair.
-		seen := map[string]map[pillarTarget]string{}
-		for _, key := range annotations.Keys() {
-			binding, _ := annotations.Get(key)
-			featureMap, ok := seen[binding.Feature]
-			if !ok {
-				featureMap = map[pillarTarget]string{}
-				seen[binding.Feature] = featureMap
-			}
-			collect := func(paths []string, pillar string) error {
-				for _, p := range paths {
-					target := pillarTarget{path: p, pillar: pillar}
-					if priorKey, dup := featureMap[target]; dup {
-						return &ResolverError{
-							Entity: "Manifest",
-							Field:  path,
-							Message: fmt.Sprintf(
-								"annotation bindings %q and %q both target Feature %q with path %q routing to pillar %q; only one binding may declare a given (path, pillar) pair per Feature",
-								priorKey, key, binding.Feature, p, pillar,
-							),
-							Err: ErrManifestCrossBindingPillarCollision(),
-						}
-					}
-					featureMap[target] = key
-				}
-				return nil
-			}
-			if err := collect(binding.Maps.Infra, "infra"); err != nil {
-				return err
-			}
-			if err := collect(binding.Maps.Values, "values"); err != nil {
-				return err
-			}
-		}
+	var presented constraint.DocumentView = newManifestDocumentView(path, man)
+	findings := findingsAtTheirOwnDocument(
+		constraint.RunOnDocumentAnnotationBindings(
+			path,
+			presented.ManifestAnnotationBindingKeys(path),
+			presented,
+			annotationBindingRouteIsClaimedOnce,
+		),
+		"Manifest",
+		"Manifest",
+	)
+	if len(findings) == 0 {
 		return nil
 	}
-
-	if man.Spec.Mappings.Features != nil {
-		if err := check(man.Spec.Mappings.Features.Annotations); err != nil {
-			return err
-		}
+	joined := make([]error, 0, len(findings))
+	for _, f := range findings {
+		joined = append(joined, f)
 	}
-	return nil
+	return errors.Join(joined...)
 }

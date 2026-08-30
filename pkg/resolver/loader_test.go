@@ -482,6 +482,132 @@ spec:
 	}
 }
 
+// Every colliding binding is reported, not only the first.
+//
+// The rule is declared over the annotation-binding coordinate, so the framework
+// invokes it once per declared binding and accumulates what each invocation
+// raised. An author whose third and fourth bindings both collide with the first
+// sees both in one build rather than one per build.
+//
+// The clean binding in the fixture is what makes the count a verdict rather than
+// a constant: a rule raising on every binding regardless would report three, and
+// one raising on every binding after the first would report two for the wrong
+// reason. The first binding is the claimant rather than an offender, so it is not
+// reported either.
+func TestLoadManifest_CrossBindingCollisionNamesEveryCollidingBinding(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	yaml := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.myco/claimant:
+          feature: core/shared:1.0.0
+          maps:
+            infra:
+              - pool_size
+        feature.myco/clean:
+          feature: core/shared:1.0.0
+          maps:
+            values:
+              - db_name
+        feature.myco/second-claim:
+          feature: core/shared:1.0.0
+          maps:
+            infra:
+              - pool_size
+        feature.myco/third-claim:
+          feature: core/shared:1.0.0
+          maps:
+            infra:
+              - pool_size
+`
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	_, err := LoadManifest(f)
+	if err == nil {
+		t.Fatal("expected a refusal on the cross-binding collisions; got nil")
+	}
+
+	var joined interface{ Unwrap() []error }
+	if !errors.As(err, &joined) {
+		t.Fatalf("two colliding bindings should compose into a joined refusal; got %T: %v", err, err)
+	}
+	if got, want := len(joined.Unwrap()), 2; got != want {
+		t.Fatalf("findings: got %d, want %d — one per colliding binding, none for the claimant "+
+			"and none for the binding routing to a different slot", got, want)
+	}
+
+	msg := err.Error()
+	for _, key := range []string{"feature.myco/second-claim", "feature.myco/third-claim"} {
+		if !strings.Contains(msg, key) {
+			t.Errorf("refusal does not name the colliding binding %q; got: %s", key, msg)
+		}
+	}
+	if strings.Contains(msg, "feature.myco/clean") {
+		t.Errorf("refusal names the binding routing to its own slot, so the rule is raising on "+
+			"every binding rather than on the colliding ones; got: %s", msg)
+	}
+	// The claimant is named as what each collision met, so it appears — but as the
+	// earlier claim rather than as a finding of its own. Both findings name it,
+	// which is what tells the author which binding is already in effect.
+	if got, want := strings.Count(msg, "feature.myco/claimant"), 2; got != want {
+		t.Errorf("the claimant is named %d times, want %d — once as the earlier claim in each "+
+			"finding; got: %s", got, want, msg)
+	}
+	if !errors.Is(err, ErrManifestCrossBindingPillarCollision()) {
+		t.Errorf("the joined refusal should still match the sentinel by identity; got chain: %v", err)
+	}
+}
+
+// One binding claiming one slot twice is refused by the document envelope, not by
+// the collision rule — and this pins that, because it is the reason the rule
+// compares against earlier bindings only.
+//
+// Each pillar's path list is declared unique by the Manifest's own schema, and the
+// envelope runs strictly earlier in the same load. Were the rule to carry its own
+// arm for this shape, that arm would be a second home for a spelling the schema
+// already owns, and the two would agree until the day one of them changed.
+func TestLoadManifest_RepeatedRouteWithinOneBindingIsRefusedByTheEnvelope(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "manifest.yaml")
+	yaml := `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: test-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    features:
+      annotations:
+        feature.myco/only-binding:
+          feature: core/shared:1.0.0
+          maps:
+            infra:
+              - pool_size
+              - pool_size
+`
+	os.WriteFile(f, []byte(yaml), 0644)
+
+	_, err := LoadManifest(f)
+	if err == nil {
+		t.Fatal("expected a refusal on the repeated route; got nil")
+	}
+	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
+		t.Errorf("the repeated route should be refused by the document envelope, which is what "+
+			"lets the collision rule leave that shape alone; got chain: %v", err)
+	}
+	if errors.Is(err, ErrManifestCrossBindingPillarCollision()) {
+		t.Errorf("the collision rule refused a shape the envelope already refuses, which is the "+
+			"second home this rule's scope exists to avoid; got chain: %v", err)
+	}
+}
+
 func TestLoadManifest_AcceptsCrossBindingDifferentSubkeyOrPillar(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")

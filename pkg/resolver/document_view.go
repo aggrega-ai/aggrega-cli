@@ -101,6 +101,12 @@ func (v aggregateDocumentView) ManifestAnnotationBindingFeature(string, string) 
 		"registry: present the Manifest to read a binding's Feature")
 }
 
+// ManifestAnnotationBindingRoutes refuses, for the reason above.
+func (v aggregateDocumentView) ManifestAnnotationBindingRoutes(string, string) []constraint.AnnotationBindingRoute {
+	panic("aggregateDocumentView presents an Aggregate, which declares no annotation binding " +
+		"registry: present the Manifest to read a binding's routes")
+}
+
 // manifestDocumentView presents one authored Manifest to a check as named facts:
 // the annotation binding keys its registry declares, and the Feature each of
 // those bindings routes to.
@@ -169,6 +175,58 @@ func (v manifestDocumentView) ManifestAnnotationBindingFeature(
 	}
 	return declared.Feature, true
 }
+
+// ManifestAnnotationBindingRoutes returns the routing slots the named binding
+// claims on the Feature it targets, in author order with each pillar's own paths
+// in the order the binding declares them.
+//
+// A key the registry does not answer for yields no routes, which is the same
+// answer a binding routing nowhere gives. The two are not confused downstream
+// because whether the presented Manifest declares the key at all is what
+// ManifestAnnotationBindingFeature's second result says, so a rule needing to
+// tell them apart asks that one.
+//
+// The pillars are visited in a fixed order rather than the order the author
+// happened to write the two blocks in, because a Manifest's maps block is a
+// mapping with two named keys rather than a sequence: there is no author order
+// between them to carry, and a rule reporting in invocation order needs one that
+// does not move.
+func (v manifestDocumentView) ManifestAnnotationBindingRoutes(
+	document string,
+	binding string,
+) []constraint.AnnotationBindingRoute {
+	v.refuseOtherDocument(document, "ManifestAnnotationBindingRoutes")
+	declared, ok := v.bindings.Lookup(binding)
+	if !ok {
+		return nil
+	}
+	var routes []constraint.AnnotationBindingRoute
+	for _, pillar := range []struct {
+		name  string
+		paths []string
+	}{
+		{name: bindingRoutePillarInfra, paths: declared.Maps.Infra},
+		{name: bindingRoutePillarValues, paths: declared.Maps.Values},
+	} {
+		for _, path := range pillar.paths {
+			routes = append(routes, constraint.AnnotationBindingRoute{
+				Pillar: pillar.name,
+				Path:   path,
+			})
+		}
+	}
+	return routes
+}
+
+// The two pillars an annotation binding routes into, named once here so the
+// presentation and any rule reading a route agree on the spelling rather than
+// each writing its own literal. They are the names the binding's author writes
+// under maps, which is what makes them the right value to carry: a route is
+// reported back to the author in the words the author used.
+const (
+	bindingRoutePillarInfra  = "infra"
+	bindingRoutePillarValues = "values"
+)
 
 // RawAggregateText refuses: a Manifest is not an Aggregate, so this view holds no
 // Aggregate text to present.

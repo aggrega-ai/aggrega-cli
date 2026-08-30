@@ -198,6 +198,27 @@ type ArtifactTemplateDelimiters struct {
 	Right string
 }
 
+// AnnotationBindingRoute is one routing slot an annotation binding claims
+// on the Feature it targets: the pillar the value lands in and the dotted
+// path within that pillar.
+//
+// It is one fact rather than two because a path without its pillar has not
+// met itself. One Feature legitimately declares the same property name
+// under both pillars, so two bindings routing the same path to different
+// pillars claim different slots, and a reader holding the paths alone
+// would read those two as one. Splitting the pair into two accessors would
+// hand a rule two lists it has to re-pair by position, which is the
+// re-derivation declaring the fact exists to close.
+type AnnotationBindingRoute struct {
+	// Pillar is the configuration pillar the routed value lands in, as the
+	// binding's author wrote it.
+	Pillar string
+
+	// Path is the dotted path within that pillar the value is routed to, as
+	// the binding's author wrote it.
+	Path string
+}
+
 // View is the base every stage's view embeds. It declares no fact of its
 // own; it carries the contract every view shares.
 //
@@ -323,6 +344,25 @@ type DocumentView interface {
 	// Keyed by (document, annotation-binding); read from
 	// types.AnnotationBinding.Feature.
 	ManifestAnnotationBindingFeature(document string, binding string) (string, bool)
+
+	// ManifestAnnotationBindingRoutes are the routing slots one annotation
+	// binding claims on the Feature it targets, in author order with each
+	// pillar's own paths in the order the binding declares them.
+	//
+	// A binding routes an annotation's value into named fields of a Feature
+	// attachment, and each entry here is one such destination: the pillar it
+	// lands in and the dotted path within it. A binding declaring none routes
+	// nowhere, which is a different answer from a key nobody declared — that
+	// second question is what the binding's Feature answers, so a rule needing
+	// both asks both.
+	//
+	// The order is the author's and is carried rather than sorted, because a
+	// rule reporting on a route reports in the order it read them, and that
+	// order is the order the findings reach the reader.
+	//
+	// Keyed by (document, annotation-binding); read from
+	// types.AnnotationBinding.Maps.
+	ManifestAnnotationBindingRoutes(document string, binding string) []AnnotationBindingRoute
 }
 
 // NormalizedView exposes the facts complete at the normalized stage: both

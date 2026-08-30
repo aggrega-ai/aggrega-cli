@@ -285,6 +285,24 @@ var records = []recordDecl{
 			{Name: "Right", Type: "string", Doc: "Right is the closing delimiter."},
 		},
 	},
+	{
+		Name: "AnnotationBindingRoute",
+		Doc: "AnnotationBindingRoute is one routing slot an annotation binding " +
+			"claims on the Feature it targets: the pillar the value lands in " +
+			"and the dotted path within that pillar.\n\nIt is one fact rather " +
+			"than two because a path without its pillar has not met itself. " +
+			"One Feature legitimately declares the same property name under " +
+			"both pillars, so two bindings routing the same path to different " +
+			"pillars claim different slots, and a reader holding the paths " +
+			"alone would read those two as one. Splitting the pair into two " +
+			"accessors would hand a rule two lists it has to re-pair by " +
+			"position, which is the re-derivation declaring the fact exists " +
+			"to close.",
+		Fields: []recordField{
+			{Name: "Pillar", Type: "string", Doc: "Pillar is the configuration pillar the routed value lands in, as the binding's author wrote it."},
+			{Name: "Path", Type: "string", Doc: "Path is the dotted path within that pillar the value is routed to, as the binding's author wrote it."},
+		},
+	},
 }
 
 // declarationCompelsImplementation is the paragraph a fact carries when its
@@ -395,6 +413,30 @@ var facts = []factDecl{
 			"binding nobody declared and a declared binding naming the empty " +
 			"Feature are different findings, and a rule that cannot tell them " +
 			"apart reports the wrong one.",
+	},
+	{
+		Name:        "manifest-annotation-binding-routes",
+		Stage:       "document",
+		SourceField: "types.AnnotationBinding.Maps",
+		Subject:     []string{"document", "annotation-binding"},
+		Params: []paramDecl{
+			{Name: "document", Type: "string"},
+			{Name: "binding", Type: "string"},
+		},
+		Returns: "[]AnnotationBindingRoute",
+		Doc: "ManifestAnnotationBindingRoutes are the routing slots one " +
+			"annotation binding claims on the Feature it targets, in author " +
+			"order with each pillar's own paths in the order the binding " +
+			"declares them.\n\nA binding routes an annotation's value into " +
+			"named fields of a Feature attachment, and each entry here is one " +
+			"such destination: the pillar it lands in and the dotted path " +
+			"within it. A binding declaring none routes nowhere, which is a " +
+			"different answer from a key nobody declared — that second " +
+			"question is what the binding's Feature answers, so a rule " +
+			"needing both asks both.\n\nThe order is the author's and is " +
+			"carried rather than sorted, because a rule reporting on a route " +
+			"reports in the order it read them, and that order is the order " +
+			"the findings reach the reader.",
 	},
 
 	// -------------------------------------------------------------- normalized

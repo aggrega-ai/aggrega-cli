@@ -49,7 +49,7 @@ const (
 	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 1 declared fact.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
-	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 2 declared facts.
+	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 3 declared facts.
 	SubjectDocumentAnnotationBinding SubjectKind = "(document, annotation-binding)"
 
 	// SubjectNode is the subject kind node, keyed by 23 declared facts.
