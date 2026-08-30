@@ -14,10 +14,18 @@ import (
 // node — the sanitised LabelComponentID when set (FR-emitted resources whose
 // internal NodeID carries marker syntax such as `<boundary-fr>:bridge@cluster`
 // have it populated and sanitised), falling back to NodeID for ordinary
-// component nodes whose NodeID is already label-valid. It is the single source
-// of the app.kubernetes.io/name and aggrega.ai/component-id values across every
-// emitting surface, so an FR-emitted artifact never stamps a charset-invalid
-// component identity.
+// component nodes. It is the single source of the app.kubernetes.io/name and
+// aggrega.ai/component-id values across every emitting surface, so an FR-emitted
+// artifact never stamps a charset-invalid component identity.
+//
+// The fallback rests on a REFUSAL rather than on an assumption, and the
+// difference matters because nothing here could repair a NodeID that was not
+// label-valid: an ordinary component's identity is the deployed name of its
+// workload, so it reaches this point unmodified by design. A build whose
+// composition holds a node identity that could not be stamped — one that is not
+// a valid label value, or one opening as a composed identity does — halts before
+// any of this is reached. So by the time a NodeID arrives here it is a name the
+// target accepts, and one no reader can mistake for a composed one.
 func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 	if nodeCtx.LabelComponentID != "" {
 		return nodeCtx.LabelComponentID

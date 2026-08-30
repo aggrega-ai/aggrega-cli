@@ -50,6 +50,28 @@
 // reach exceeds its actual reach is how a blind spot comes to be treated as
 // covered.
 //
+// # The one shape that reads no fact and is still placed
+//
+// A predicate can have no fact to read. Where its whole input is a property of
+// the subject it is asked about — an identity, a locator, a name — the subject
+// carries that input and no view supplies it, so the check reads nothing from
+// its view and has nothing to narrow to. It still names a view, because that is
+// what fixes the point in the compilation it runs at.
+//
+// Such a check declares itself so, on the check's own subject-only field,
+// stating what it reads from its subject and why that is not a view fact. The
+// declaration is read back against the body rather than taken on trust: a
+// declaration on a predicate that does read a view fact is reported, and so is
+// one whose stated reason names nothing the predicate reads from its subject. So
+// the field admits the shape it names and cannot be spent on the defect this
+// package exists to find — a check reading facts while declaring a view later
+// than they require is reported exactly as it was before, declaration or not.
+//
+// It is a field rather than a flag for the same reason it is verified: a marking
+// applied by writing nothing is one a later author applies without deciding
+// anything, and at that point a check placed at nothing no longer looks
+// different from a check that meant it.
+//
 // # What it refuses to conclude
 //
 // A body this package cannot fully read is reported, never silently cleared.

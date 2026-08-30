@@ -44,7 +44,7 @@ var factPlacements = []struct {
 	{"ResolvedParameter", "TopologyView"},
 	{"PerLeafAttachmentProvenance", "GraphView"},
 	{"StepExportScope", "DescribedView"},
-	{"DeclaredLocalsKeys", "HydratedView"},
+	{"ResolvedNodeProvides", "HydratedView"},
 	{"EmittedFileOriginSet", "EmittedView"},
 	{"AssemblyGroupProviderSet", "DispatchedView"},
 	{"EmittedFilePathSet", "RenderedView"},

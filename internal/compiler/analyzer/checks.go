@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
 )
@@ -328,6 +329,94 @@ var AttachmentRequirementWellFormed = constraint.Check[
 			))
 		}
 		return out
+	},
+}
+
+// ComponentIdentityIsUsable reports each node whose identity cannot be the name
+// its emitted resources are stamped with.
+//
+// Every resource a node emits carries the node's identity, and for an ordinary
+// component that identity is the one its author wrote, carried through with
+// nothing done to it. So the target's rules for such a name are not something a
+// derivation can absorb: either the identity satisfies them or the build refuses
+// it. That asymmetry is deliberate — the identity is the deployed name of the
+// workload, so writing it into the target's alphabet would rename every resource
+// in every existing output for no gain.
+//
+// The identity it reads is the flattened one, which is the value actually
+// stamped. A component a module contributes carries an identity assembled from
+// the module's name and its own, so two names that are each acceptable alone can
+// join into one that is not, and only the flattened set holds the result. That
+// is why the rule reads the node identifier rather than the authored key, while
+// the subject's locator still points the author at the key they wrote.
+//
+// Two classes report here. An identity that is not a valid label value cannot be
+// stamped anywhere. An identity opening as a composed identity does could be
+// stamped, but would be indistinguishable from one the compiler built for a
+// boundary-attached feature — which is what makes those openings a reserved
+// namespace on the authoring surface rather than a convention. Both the rules of
+// the first and the openings of the second are read from the one place that
+// holds them, so neither is restated here and adding an opening there is enough
+// to make this rule refuse it.
+//
+// Each occurrence names the rule its identity failed. The registered sentence
+// carries the remedy, which is one remedy for both classes — rename the
+// component — and the occurrence carries which rule the new name has to satisfy,
+// because that is the half the classes differ on.
+//
+// It reads no fact from its view, which makes it the one rule here whose
+// declaration is not derived from what its predicate reads — and a reader must
+// not take its declared view as evidence of a fact dependency, because there is
+// none. Its whole input is the identity its subject carries, which is why the
+// declaration below states that in its own terms rather than leaving the empty
+// fact requirement to be read as an oversight.
+//
+// What places it is the enumeration it is invoked over. It has to be asked once
+// per node of the flattened composition, because that is the only point at which
+// a module-contributed component's qualified identity exists. Asked over an
+// earlier enumeration it would read authored keys and silently stop covering the
+// case it exists for: two names each acceptable alone that join into an identity
+// that is not.
+//
+// The view it declares is the stage it is invoked at rather than the earliest one
+// that would satisfy an empty fact requirement. With no facts read, every stage
+// satisfies the declaration equally, so the choice is between two true answers —
+// and this one keeps the framework's placement model reporting where the rule
+// actually runs. Declaring the earliest instead moves the package the model
+// treats as holding the earliest rule site, which reaches a generated table and
+// an unrelated coverage assertion; that is the worse answer, because it is wrong
+// about something a reader depends on.
+var ComponentIdentityIsUsable = constraint.Check[
+	constraint.TopologyView,
+	constraint.NodeSubject,
+]{
+	Sentinel: ErrUnusableComponentIdentity(),
+	Severity: constraint.SeverityFatal,
+	SubjectOnly: "reads NodeID, the flattened identity the subject carries. " +
+		"An identity belongs to the node itself rather than to any stage of the " +
+		"compilation, so no view produces it and there is no fact to narrow to.",
+	Run: func(_ constraint.TopologyView, s constraint.NodeSubject) []constraint.Objection {
+		identity := s.NodeID()
+		defect, opening := labels.InspectComponentIdentity(identity)
+		switch defect {
+		case labels.ComponentIdentityUsable:
+			return nil
+		case labels.ComponentIdentityReservedOpening:
+			// The opening is named rather than described. It is the only part of the
+			// identity the author has to change, and an author told that a name is
+			// reserved without being told how much of it is cannot act on that.
+			return []constraint.Objection{s.RaiseWith(
+				ErrUnusableComponentIdentity(),
+				constraint.Uncaptioned(identity),
+				constraint.Captioned("which must not open with the reserved", opening),
+			)}
+		default:
+			return []constraint.Objection{s.RaiseWith(
+				ErrUnusableComponentIdentity(),
+				constraint.Uncaptioned(identity),
+				constraint.Captioned("which must", defect.Requirement()),
+			)}
+		}
 	},
 }
 

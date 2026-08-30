@@ -68,6 +68,30 @@ type Check[V View, S Subject] struct {
 	// Severity is what a raised objection does to the build.
 	Severity Severity
 
+	// SubjectOnly, when non-empty, declares that this check's predicate draws
+	// its whole input from its subject, so V names no fact the check consumes.
+	//
+	// A predicate over the subject alone is a real shape rather than an
+	// oversight. An identity, a locator or a name is a property of the thing
+	// the check is asked about, carried by the subject and supplied by no view.
+	// Such a check still names a view, because V is what fixes the point in the
+	// compilation it runs at, and it names the point where the rule has to be
+	// asked rather than a point some fact placed it at.
+	//
+	// The value names what the predicate reads from its subject and why that is
+	// not a view fact. It is prose naming an accessor rather than a bare flag
+	// for two reasons that pull the same way: a flag is satisfiable by saying
+	// nothing, and a claim stated in terms of the body can be held against the
+	// body — a value naming something this predicate does not read is
+	// describing some other check.
+	//
+	// It says nothing about how wide V is. A predicate that does read a fact
+	// still declares the view its facts require, and this field does not excuse
+	// a view wider than they do.
+	//
+	// Leaving it empty is the ordinary case.
+	SubjectOnly string
+
 	// Run evaluates the rule against the facts and one subject instance, and
 	// returns one objection per violation it finds — nil when the input
 	// satisfies the rule.

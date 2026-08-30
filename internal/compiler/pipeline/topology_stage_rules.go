@@ -23,6 +23,23 @@ import (
 // would report a catalog fault as the deployment author's to fix.
 const topologyStageEntity = "Component"
 
+// The entity an identity finding from this stage is reported against, which is
+// deliberately not the one above.
+//
+// The kind decides the fault category a caller routes on, and these two rules
+// name two different faults. A broken presence mandate is declared on a catalog
+// Component, so the remedy is in the catalog and the kind says so. A component
+// whose identity cannot be stamped is a name its own author wrote in the
+// application they authored, so reporting it as a catalog fault would send that
+// author to a file holding nothing they can change — the failure a category
+// exists to prevent.
+//
+// The kind is named without an instance because this stage holds no aggregate
+// name to put after it: a composition carries the components a module tree
+// contributed and not the documents' own metadata. The locator is what positions
+// the finding, and it names the authored key either way.
+const topologyStageIdentityEntity = "Aggregate"
+
 // runTopologyStageRules invokes the rules declared over the flattened
 // composition and returns what they raised as a halt.
 //
@@ -82,6 +99,30 @@ func runTopologyStageRules(
 		return err
 	}
 
+	// Every node's identity can be the name its emitted resources are stamped
+	// with. The identity read is the flattened one, which is the value actually
+	// stamped and the only form in which two acceptable authored names can join
+	// into an unacceptable identity — so the rule is asked here, where the
+	// composition has produced it, rather than over the authored keys, which
+	// complete earlier and are not what reaches an output.
+	//
+	// 🔴 Unlike the two rules around it, this one reads no fact from the view it is
+	// handed: its whole input is the identity its subject carries. So what places it
+	// is the ENUMERATION rather than the declaration — this stage's coordinates,
+	// which are the flattened composition's nodes and the only enumeration carrying
+	// a module-contributed component's qualified identity. Moving this call to a
+	// stage whose coordinates are the authored keys would leave the rule invoked,
+	// green, and silently blind to the case it exists for.
+	identityObjections, err := constraint.RunOnNodes(
+		ctx.Err,
+		topoResult.StageCoordinates,
+		topoResult.StageView,
+		analyzer.ComponentIdentityIsUsable,
+	)
+	if err != nil {
+		return err
+	}
+
 	// Every dependency socket a component type declares as one that must carry a
 	// connection does carry one. Three surfaces can populate such a socket and
 	// the rule reads all three; the last of them is the connection set the
@@ -101,15 +142,16 @@ func runTopologyStageRules(
 		return err
 	}
 
-	// One halt carrying both rules' findings, rule by rule. A document offending
-	// against both is reported for both rather than for whichever rule ran first:
-	// the two are asked at one stage, so there is no later pass that would report
-	// the second, and halting on the first would make the author fix one fault to
-	// discover the other.
-	violations := append(
-		resolver.FindingsFromObjections(objections, topologyStageEntity),
-		resolver.FindingsFromObjections(socketObjections, topologyStageEntity)...,
-	)
+	// One halt carrying every rule's findings, rule by rule. A document offending
+	// against more than one is reported for all of them rather than for whichever
+	// rule ran first: they are asked at one stage, so there is no later pass that
+	// would report the rest, and halting on the first would make the author fix
+	// one fault to discover the next.
+	violations := resolver.FindingsFromObjections(objections, topologyStageEntity)
+	violations = append(violations,
+		resolver.FindingsFromObjections(identityObjections, topologyStageIdentityEntity)...)
+	violations = append(violations,
+		resolver.FindingsFromObjections(socketObjections, topologyStageEntity)...)
 	if len(violations) == 0 {
 		return nil
 	}

@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/token"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -39,6 +40,18 @@ const (
 	// The narrowest sufficient view cannot be computed from a fact the chain
 	// does not carry.
 	UnknownFact Kind = "unknown-fact"
+
+	// SubjectOnlyUnsupported is a check declaring that its input comes from its
+	// subject where the body does not bear that declaration out: it reads a
+	// view fact after all, it reads nothing from its subject either, or the
+	// reason it states names nothing the predicate reads.
+	//
+	// The declaration is the one way a check reading no fact is cleared here,
+	// so it is read back against the body rather than taken on trust. A
+	// declaration nothing checks is one a later author applies by habit, and
+	// then a check placed at nothing is indistinguishable from a check that
+	// meant it.
+	SubjectOnlyUnsupported Kind = "subject-only-unsupported"
 )
 
 // Finding is one thing read about one check.
@@ -50,7 +63,8 @@ const (
 // be computed — so an empty NarrowestView means no verdict was drawn rather than
 // that the innermost stage was the answer. Facts are the accessor names its body
 // was read to call, sorted. Detail carries whatever the kind needs beyond the two
-// views: the facts no view declares, or how the view left the body.
+// views: the facts no view declares, how the view left the body, or the way a
+// subject-only declaration failed to hold against the body.
 type Finding struct {
 	Kind          Kind
 	File          string
@@ -84,6 +98,8 @@ func (f Finding) String() string {
 	case UnknownFact:
 		fmt.Fprintf(&b, " declares %s and reads %s, which no view on the chain declares",
 			f.DeclaredView, f.Detail)
+	case SubjectOnlyUnsupported:
+		fmt.Fprintf(&b, " declares that its input comes from its subject, but %s", f.Detail)
 	}
 	if len(f.Facts) > 0 {
 		fmt.Fprintf(&b, " (reads: %s)", strings.Join(f.Facts, ", "))
@@ -192,7 +208,59 @@ func analyzeCheck(chain Chain, lit *ast.CompositeLit, name string) (Finding, boo
 		return finding, true
 	}
 
-	viewIdent := firstParamName(predicate)
+	subjectOnly, declaredSubjectOnly := subjectOnlyReason(lit)
+
+	params := paramNames(predicate)
+	viewIdent := paramAt(params, 0)
+
+	// A predicate that cannot name its view reads no fact from it, so the reading
+	// below is skipped rather than run against an identifier no body mentions.
+	var facts []string
+	var escape string
+	if viewIdent != "" {
+		facts, escape = readViewUse(predicate.Body, viewIdent)
+	}
+	finding.Facts = facts
+
+	if declaredSubjectOnly {
+		// The declaration is verified against the body rather than believed.
+		// It clears exactly one shape — a predicate reading nothing from its
+		// view and something from its subject — and it is never a way to
+		// excuse a view wider than the facts a body does read.
+		if escape != "" {
+			finding.Kind = Unreadable
+			finding.Detail = escape
+			return finding, true
+		}
+		finding.Kind = SubjectOnlyUnsupported
+		switch {
+		case len(facts) > 0:
+			finding.Detail = fmt.Sprintf("its predicate reads %s from %s, so its input is not its subject alone",
+				strings.Join(facts, ", "), viewIdent)
+			return finding, true
+		case subjectOnly == "":
+			finding.Detail = "it states no reason, and a declaration satisfiable by saying nothing says nothing"
+			return finding, true
+		}
+
+		subjectIdent := paramAt(params, 1)
+		if subjectIdent == "" {
+			finding.Detail = "its predicate does not name its subject, so it reads nothing from one"
+			return finding, true
+		}
+		reads := selectorsOn(predicate.Body, subjectIdent)
+		if len(reads) == 0 {
+			finding.Detail = fmt.Sprintf("its predicate reads nothing from %s either, so no input is accounted for", subjectIdent)
+			return finding, true
+		}
+		if !namesOneOf(subjectOnly, reads) {
+			finding.Detail = fmt.Sprintf("its reason names none of what the predicate reads from %s (%s), so it describes some other check",
+				subjectIdent, strings.Join(reads, ", "))
+			return finding, true
+		}
+		return Finding{}, false
+	}
+
 	if viewIdent == "" {
 		// The predicate cannot name its view, so its body cannot read a fact
 		// from it. That is the no-fact case rather than an unreadable one.
@@ -200,9 +268,6 @@ func analyzeCheck(chain Chain, lit *ast.CompositeLit, name string) (Finding, boo
 		finding.NarrowestView = chain.stages[0].Name
 		return finding, true
 	}
-
-	facts, escape := readViewUse(predicate.Body, viewIdent)
-	finding.Facts = facts
 	if escape != "" {
 		finding.Kind = Unreadable
 		finding.Detail = escape
@@ -287,15 +352,158 @@ func predicateLiteral(lit *ast.CompositeLit) (*ast.FuncLit, bool) {
 // predicateFieldName is the check field carrying the rule itself.
 const predicateFieldName = "Run"
 
-func firstParamName(fn *ast.FuncLit) string {
-	if fn.Type.Params == nil || len(fn.Type.Params.List) == 0 {
+// subjectOnlyFieldName is the check field on which a predicate declares that its
+// whole input comes from its subject, together with the reason.
+const subjectOnlyFieldName = "SubjectOnly"
+
+// subjectOnlyReason is the reason a check states for reading no view fact, and
+// whether it declared one at all.
+//
+// A declaration written as anything other than a string literal in place reports
+// as declared with an empty reason. Following a constant to its declaration would
+// mean resolving a reference across files, and one reason shared by two checks is
+// exactly the habitual application this field exists to prevent: the reason has
+// to be about this check, so it is written at this check.
+func subjectOnlyReason(lit *ast.CompositeLit) (reason string, declared bool) {
+	for _, element := range lit.Elts {
+		kv, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok || key.Name != subjectOnlyFieldName {
+			continue
+		}
+		text, ok := stringLiteral(kv.Value)
+		if !ok {
+			return "", true
+		}
+		return text, true
+	}
+	return "", false
+}
+
+// stringLiteral is the text of a string literal, including one written as
+// several literals concatenated, which is how a reason long enough to be one
+// wraps across lines.
+func stringLiteral(expr ast.Expr) (string, bool) {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		if e.Kind != token.STRING {
+			return "", false
+		}
+		text, err := strconv.Unquote(e.Value)
+		if err != nil {
+			return "", false
+		}
+		return text, true
+	case *ast.BinaryExpr:
+		if e.Op != token.ADD {
+			return "", false
+		}
+		left, ok := stringLiteral(e.X)
+		if !ok {
+			return "", false
+		}
+		right, ok := stringLiteral(e.Y)
+		if !ok {
+			return "", false
+		}
+		return left + right, true
+	case *ast.ParenExpr:
+		return stringLiteral(e.X)
+	}
+	return "", false
+}
+
+// paramNames are the predicate's parameter names in order, with a blank or
+// absent name reported as empty so a caller can tell a named parameter from one
+// the body cannot reach.
+func paramNames(fn *ast.FuncLit) []string {
+	var out []string
+	if fn.Type.Params == nil {
+		return out
+	}
+	for _, field := range fn.Type.Params.List {
+		// A field with no names is an unnamed parameter, which the body cannot
+		// reach; several names share one type declaration.
+		if len(field.Names) == 0 {
+			out = append(out, "")
+			continue
+		}
+		for _, name := range field.Names {
+			if name.Name == "_" {
+				out = append(out, "")
+				continue
+			}
+			out = append(out, name.Name)
+		}
+	}
+	return out
+}
+
+func paramAt(names []string, index int) string {
+	if index >= len(names) {
 		return ""
 	}
-	names := fn.Type.Params.List[0].Names
-	if len(names) == 0 || names[0].Name == "_" {
-		return ""
+	return names[index]
+}
+
+// selectorsOn collects the accessor names a body reads from one identifier,
+// sorted and deduplicated.
+//
+// It differs from readViewUse in refusing to draw a conclusion from the
+// identifier escaping: what a check does with its subject beyond reading from it
+// — raising an objection through it, handing it on — is ordinary, and only the
+// names read from it are wanted here.
+func selectorsOn(body *ast.BlockStmt, ident string) []string {
+	var out []string
+	ast.Inspect(body, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if base, ok := selector.X.(*ast.Ident); ok && base.Name == ident {
+			out = append(out, selector.Sel.Name)
+		}
+		return true
+	})
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// namesOneOf reports whether text names at least one of the accessors, matched
+// as a whole word so that a name is not satisfied by appearing inside a longer
+// one.
+func namesOneOf(text string, accessors []string) bool {
+	for _, accessor := range accessors {
+		for at := 0; ; {
+			i := strings.Index(text[at:], accessor)
+			if i < 0 {
+				break
+			}
+			start := at + i
+			end := start + len(accessor)
+			if !isIdentRune(text, start-1) && !isIdentRune(text, end) {
+				return true
+			}
+			at = start + 1
+		}
 	}
-	return names[0].Name
+	return false
+}
+
+// isIdentRune reports whether the byte at index continues a Go identifier, and
+// false where the index is outside the text.
+func isIdentRune(text string, index int) bool {
+	if index < 0 || index >= len(text) {
+		return false
+	}
+	c := text[index]
+	return c == '_' ||
+		('0' <= c && c <= '9') ||
+		('a' <= c && c <= 'z') ||
+		('A' <= c && c <= 'Z')
 }
 
 // readViewUse collects the facts a body reads from the view, and reports the

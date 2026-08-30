@@ -175,3 +175,144 @@ var plantedCheck = constraint.Check[constraint.RenderedView, constraint.NodeSubj
 		t.Fatalf("the read names the planted check %q, want %q", findings[0].Check, "plantedCheck")
 	}
 }
+
+// TestTheGateStillRefusesAnOverDeclaredViewAndAnUnsupportedSubjectOnlyDeclaration
+// is the calibration for the admitted shape: a check may declare that its input
+// comes from its subject, and that declaration must buy exactly that shape and
+// nothing else.
+//
+// The rows are the cells of the pair of conditions rather than their margins.
+// Whether the predicate reads a view fact and whether it declares itself
+// subject-only are independent, so the interesting cases are the combinations —
+// above all a declaration sitting on a predicate that does read a fact, which is
+// the shape that would let the declaration launder the very defect the read
+// exists to find. Testing the two conditions separately would leave that cell
+// unstated while every row passed.
+//
+// The declaration's reason is checked against the body here for the same reason
+// it is checked at all: a reason nothing reads is a reason nobody has to mean.
+func TestTheGateStillRefusesAnOverDeclaredViewAndAnUnsupportedSubjectOnlyDeclaration(t *testing.T) {
+	t.Parallel()
+
+	chain, err := viewnarrowing.ReadChain(constraintPackageDir)
+	if err != nil {
+		t.Fatalf("read the view chain from %s: %v", constraintPackageDir, err)
+	}
+
+	const header = `package planted
+
+import "github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+
+`
+
+	for _, row := range []struct {
+		name string
+		body string
+		want viewnarrowing.Kind // empty means the read must report nothing
+	}{
+		{
+			name: "a view later than the facts require is still refused",
+			body: `var plantedCheck = constraint.Check[constraint.RenderedView, constraint.NodeSubject]{
+	Run: func(v constraint.RenderedView, s constraint.NodeSubject) []constraint.Objection {
+		_ = v.RawAggregateText("aggregate.yaml")
+		return nil
+	},
+}`,
+			want: viewnarrowing.OverDeclared,
+		},
+		{
+			name: "declaring the input comes from the subject does not excuse a later view",
+			body: `var plantedCheck = constraint.Check[constraint.RenderedView, constraint.NodeSubject]{
+	SubjectOnly: "reads NodeID, the identity the subject carries.",
+	Run: func(v constraint.RenderedView, s constraint.NodeSubject) []constraint.Objection {
+		_ = v.RawAggregateText("aggregate.yaml")
+		_ = s.NodeID()
+		return nil
+	},
+}`,
+			want: viewnarrowing.SubjectOnlyUnsupported,
+		},
+		{
+			name: "a declaration stating no reason is refused",
+			body: `var plantedCheck = constraint.Check[constraint.RenderedView, constraint.NodeSubject]{
+	SubjectOnly: "",
+	Run: func(_ constraint.RenderedView, s constraint.NodeSubject) []constraint.Objection {
+		_ = s.NodeID()
+		return nil
+	},
+}`,
+			want: viewnarrowing.SubjectOnlyUnsupported,
+		},
+		{
+			name: "a reason naming nothing the predicate reads is refused",
+			body: `var plantedCheck = constraint.Check[constraint.RenderedView, constraint.NodeSubject]{
+	SubjectOnly: "it has nothing to narrow to.",
+	Run: func(_ constraint.RenderedView, s constraint.NodeSubject) []constraint.Objection {
+		_ = s.NodeID()
+		return nil
+	},
+}`,
+			want: viewnarrowing.SubjectOnlyUnsupported,
+		},
+		{
+			name: "a declaration on a predicate reading nothing at all is refused",
+			body: `var plantedCheck = constraint.Check[constraint.RenderedView, constraint.NodeSubject]{
+	SubjectOnly: "reads NodeID, the identity the subject carries.",
+	Run: func(_ constraint.RenderedView, _ constraint.NodeSubject) []constraint.Objection {
+		return nil
+	},
+}`,
+			want: viewnarrowing.SubjectOnlyUnsupported,
+		},
+		{
+			name: "reading no fact without declaring why is still refused",
+			body: `var plantedCheck = constraint.Check[constraint.RenderedView, constraint.NodeSubject]{
+	Run: func(_ constraint.RenderedView, s constraint.NodeSubject) []constraint.Objection {
+		_ = s.NodeID()
+		return nil
+	},
+}`,
+			want: viewnarrowing.NoFactRead,
+		},
+		{
+			name: "a grounded declaration over a subject-only predicate is cleared",
+			body: `var plantedCheck = constraint.Check[constraint.RenderedView, constraint.NodeSubject]{
+	SubjectOnly: "reads NodeID, the identity the subject carries, which no view produces.",
+	Run: func(_ constraint.RenderedView, s constraint.NodeSubject) []constraint.Objection {
+		_ = s.NodeID()
+		return nil
+	},
+}`,
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+
+			planted := t.TempDir()
+			if err := os.WriteFile(filepath.Join(planted, "planted.go"), []byte(header+row.body+"\n"), 0o600); err != nil {
+				t.Fatalf("write the planted declaration: %v", err)
+			}
+
+			findings, err := viewnarrowing.Analyze(chain, planted)
+			if err != nil {
+				t.Fatalf("run the narrowing read over the planted declaration: %v", err)
+			}
+
+			if row.want == "" {
+				if len(findings) != 0 {
+					t.Fatalf("the read reports %d finding(s) for a declaration it should clear:\n%s",
+						len(findings), viewnarrowing.Report(findings))
+				}
+				return
+			}
+			if len(findings) != 1 {
+				t.Fatalf("the read reports %d finding(s) for one planted declaration, want 1:\n%s",
+					len(findings), viewnarrowing.Report(findings))
+			}
+			if got := findings[0].Kind; got != row.want {
+				t.Fatalf("the read calls the planted declaration %q, want %q:\n%s",
+					got, row.want, viewnarrowing.Report(findings))
+			}
+		})
+	}
+}

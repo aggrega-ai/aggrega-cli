@@ -154,6 +154,41 @@ var errOverriddenAnnotation = cerrors.Register("compiler-analyzer/overridden-ann
 	Message:   "annotation contribution overridden by an explicit value",
 })
 
+// ErrUnusableComponentIdentity is the ABI-stable sentinel for a component whose
+// identity cannot be the name its emitted resources are stamped with.
+//
+// An ordinary component's identity reaches its output unmodified — it is the
+// deployed name of the workload, so nothing rewrites it into the target's own
+// alphabet, and there is no encoding step that could absorb a name the target
+// refuses. Refusal is therefore the only way the identity can be held to the
+// rules the name has to satisfy, which is why this condition exists at all.
+//
+// It has one emission site, [ComponentIdentityIsUsable], which raises it through
+// the framework over the presentation of the flattened composition. The stage is
+// what makes the rule cover what it claims to: a component a module contributes
+// carries a qualified identity assembled from the module's name and its own, and
+// only the flattened set holds the identity that is actually stamped.
+//
+// Two classes report under this one identity. One is an identity that is not a
+// valid label value — too long, carrying a character the target does not admit,
+// or not opening and closing on a letter or a digit. The other is an identity
+// opening exactly as a composed identity does, which would leave an authored
+// name indistinguishable from one the compiler built for a boundary-attached
+// feature.
+//
+// One sentinel covers both because the remedy is one remedy: rename the
+// component. What differs between the classes is only which rule the new name
+// has to satisfy, and that travels as the occurrence's own detail rather than as
+// a second registered sentence — so the registered wording states the remedy
+// that is true for every occurrence and states no rule it would be wrong about.
+func ErrUnusableComponentIdentity() error { return errUnusableComponentIdentity }
+
+var errUnusableComponentIdentity = cerrors.Register("compiler-analyzer/unusable-component-identity", cerrors.Meta{
+	ShortCode: "E0262",
+	Message: "component identity cannot be the name its emitted resources are stamped with: " +
+		"rename the component",
+})
+
 // ErrCatalogLookup is the ABI-stable sentinel reserved for catalog
 // lookups that fail during analyzer-phase evaluation. Today a catalog
 // miss during this stage's evaluation ends the reading silently rather

@@ -18,6 +18,15 @@ import (
 // So the field set is asserted exactly rather than by absence of particular
 // names: a guard listing forbidden names would pass the next field somebody
 // invents.
+//
+// SubjectOnly is on the admitted side of that line, and the reason it is not an
+// exception to the invariant is worth stating where the list is. It asserts
+// nothing a computation also derives: it records that the predicate's input
+// comes from the subject, which is a property of the body and is read back out
+// of the body, so a declaration disagreeing with the code is caught rather than
+// believed. Stage, caller list and traversal are forbidden because each would
+// assert something already computed elsewhere and neither answer could be
+// preferred; this one has a single answer that source reading settles.
 func TestCheckCarriesNoStageNoCallerListAndNoTraversal(t *testing.T) {
 	t.Parallel()
 
@@ -27,7 +36,7 @@ func TestCheckCarriesNoStageNoCallerListAndNoTraversal(t *testing.T) {
 	for i := range typ.NumField() {
 		got = append(got, typ.Field(i).Name)
 	}
-	want := []string{"Sentinel", "Severity", "Run"}
+	want := []string{"Sentinel", "Severity", "SubjectOnly", "Run"}
 
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Check's fields are %v; want exactly %v.\n"+
