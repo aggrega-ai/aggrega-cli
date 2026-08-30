@@ -516,8 +516,18 @@ func firstPathSegment(path string) string {
 // pathReachesWithheld reports whether one referenced path within a pillar is
 // equal to, an ancestor of, or a descendant of any declared path in that pillar.
 //
-// The declared set is a set and is walked to a boolean, so the walk's order
-// cannot reach any displayed byte.
+// It is deliberately WIDER than the question a display asks, and the two halves
+// are kept visibly apart because only one of them is shared. The
+// covered-by-a-declaration half — the path itself, or any object containing it
+// — is the same question every display surface asks, so it is asked of the one
+// home for it rather than restated here. The ancestor half is this reading's
+// own: a template that reads a whole object reaches every declared leaf beneath
+// it, which is what makes `range .values.creds` and `index .values $k`
+// conservative rather than invisible. No display needs that half, because a
+// display shows a leaf at a time.
+//
+// The declared set is walked to a boolean and never iterated for emission, so
+// the walk's order cannot reach any displayed byte.
 func pathReachesWithheld(path string, declared map[string]bool) bool {
 	if len(declared) == 0 {
 		return false
@@ -526,10 +536,11 @@ func pathReachesWithheld(path string, declared map[string]bool) bool {
 		// A read of the whole pillar reaches every declared leaf under it.
 		return true
 	}
+	if types.PathCoveredBy(path, declared) {
+		return true
+	}
 	for d := range declared {
-		if d == path ||
-			strings.HasPrefix(d, path+".") ||
-			strings.HasPrefix(path, d+".") {
+		if strings.HasPrefix(d, path+".") {
 			return true
 		}
 	}

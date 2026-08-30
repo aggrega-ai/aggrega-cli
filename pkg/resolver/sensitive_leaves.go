@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // sensitiveExtensionKeyword is the compiled-schema spelling a schema leaf
@@ -33,6 +34,37 @@ type SensitiveLeaves struct {
 // so no caller has to decide which pillars that question spans.
 func (s SensitiveLeaves) Any() bool {
 	return len(s.Values) > 0 || len(s.Infra) > 0 || len(s.Provides) > 0
+}
+
+// Covers reports whether a pillar-leaf coordinate — the "values.<path>" /
+// "infra.<path>" spelling a display prints and the graph carries — names data
+// this entity's schema declares sensitive. A declaration on the coordinate
+// itself covers it, and so does a declaration on any object containing it.
+//
+// It is the one home for "is this authored datum withheld", so every surface
+// that shows a values-or-infra leaf asks the same question of the same
+// declarations and cannot come to a different answer. The two halves it
+// composes each have a home of their own: the coordinate spelling and the
+// covering rule are both read from the shared leaf-coordinate primitives, so
+// neither is restated here.
+//
+// A coordinate under any other pillar reports false rather than guessing which
+// set was meant. That is not a narrowing of the axis: a provides key is
+// governed by the declarations of the entity that PUBLISHES it, so it is asked
+// through the edge that carries it rather than against the consumer's own
+// declarations.
+func (s SensitiveLeaves) Covers(coordinate string) bool {
+	pillar, path, ok := types.SplitPillarCoordinate(coordinate)
+	if !ok {
+		return false
+	}
+	switch pillar {
+	case "values":
+		return types.PathCoveredBy(path, s.Values)
+	case "infra":
+		return types.PathCoveredBy(path, s.Infra)
+	}
+	return false
 }
 
 // DeclaredSensitiveLeaves reads the sensitivity declarations out of an entity's
@@ -78,10 +110,10 @@ func (s SensitiveLeaves) Any() bool {
 // resolves. A pointer no enclosing node resolves collects the referring
 // property's own path instead of being skipped: what the target declares is
 // unknown, so naming the referring property is the most precise declaration
-// available, and the only one that cannot under-report. How far that reaches is a
-// property of the consumer rather than of this reader — a consumer that treats a
-// declared path as covering everything beneath it withholds the whole subtree,
-// while one that matches a leaf path exactly withholds nothing for it. A pointer
+// available, and the only one that cannot under-report. That is enough on its
+// own, because a declared path COVERS everything beneath it wherever this
+// reader's output is consumed — Covers is the one home for that question — so
+// naming the referring property withholds the whole subtree it stands for. A pointer
 // that revisits a target already in flight stops rather than recursing forever,
 // and collects the referring path only when that target declares sensitivity
 // somewhere — a recursive schema declaring none stays readable, because a path is

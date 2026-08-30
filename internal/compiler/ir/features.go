@@ -168,21 +168,19 @@ const (
 // ambiguous: a Feature may declare `password` in values and again in infra and
 // mean different data.
 //
-// Derived from the pillar names above rather than spelled out, because the
-// pillar name is the part that could drift and it already has exactly one home
-// here; the separator is coordinate punctuation, not a name.
+// The prefix is read from the shared leaf-coordinate primitives rather than
+// spelled here, because the coordinate it builds is the one a display prints
+// and a consumer parses back, and a writer holding its own copy of the prefix
+// would agree with the reader on the day it was written. That shared home is
+// the same package this one already depends on for the leaf paths themselves,
+// so reaching it costs no dependency.
 //
-// The render side carries its own pair for the same purpose — a values root and
-// a declared-slot root — and the near-duplication is deliberate rather than an
-// oversight. The two pairs describe different declaring blocks (the slot
-// declaration is a render-stage join and has no counterpart here; the infra
-// pillar has none there), they sit in packages with no import edge between them,
-// and each derives its shared member from its own package's pillar name. Do not
-// consolidate them into one home: that would mean adding a dependency, or a
-// package, to share a separator.
+// The render side keeps a declared-slot root of its own, and that one is NOT a
+// duplicate: it names a schema block rather than a pillar, so it has no
+// counterpart here and nothing to share.
 const (
-	sensitiveLeafRootValues = pillarValues + "."
-	sensitiveLeafRootInfra  = pillarInfra + "."
+	sensitiveLeafRootValues = types.PillarRootValues
+	sensitiveLeafRootInfra  = types.PillarRootInfra
 )
 
 // attachmentScope is the authoring scope one attachment contribution came

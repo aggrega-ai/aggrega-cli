@@ -488,42 +488,18 @@ func pillarConformanceFindings(
 // validated through this entry, and an unrecognised pillar reports false rather
 // than guessing.
 //
-// The walk up the containing objects matters as much as the leaf itself: a
-// declaration on an object withholds everything beneath it, so without the walk
-// a constraint failing two levels down would print material an author asked to
-// be withheld. Nothing about the value is examined — a path is sensitive
-// because the schema says so.
+// Whether a declaration covers the leaf is asked of the declarations
+// themselves, through the one home for that question, so this surface cannot
+// come to a different answer from the displays that show the same leaf. What
+// this function adds is the pillar GUARD: a finding is measured against the
+// pillar being validated, so a path leading with another pillar's name reports
+// false even when that other pillar declares it. Nothing about the value is
+// examined — a path is sensitive because the schema says so.
 func findingOnSensitiveLeaf(declared SensitiveLeaves, pillar, fieldPath string) bool {
-	var paths map[string]bool
-	switch pillar {
-	case "values":
-		paths = declared.Values
-	case "infra":
-		paths = declared.Infra
-	}
-	if len(paths) == 0 {
+	if !strings.HasPrefix(fieldPath, pillar+".") {
 		return false
 	}
-	prefix := pillar + "."
-	if !strings.HasPrefix(fieldPath, prefix) {
-		return false
-	}
-	for leaf := strings.TrimPrefix(fieldPath, prefix); leaf != ""; leaf = containingLeafPath(leaf) {
-		if paths[leaf] {
-			return true
-		}
-	}
-	return false
-}
-
-// containingLeafPath returns the dotted path of the object containing the named
-// leaf, and the empty string when the leaf sits at the pillar root.
-func containingLeafPath(path string) string {
-	i := strings.LastIndex(path, ".")
-	if i < 0 {
-		return ""
-	}
-	return path[:i]
+	return declared.Covers(fieldPath)
 }
 
 // leafmostFindings returns the findings whose FieldPath is NOT a strict

@@ -617,10 +617,14 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 // diverges across leaves, the function expands into per-leaf lines —
 // one bracket per leaf the attachment populates — so the rendered
 // output surfaces the divergence that consumers would otherwise miss.
-// declared names which of the attached Feature's leaves its schema declares
-// sensitive; each such leaf prints the redaction placeholder in place of its
-// value while keeping its key, its pillar prefix and its provenance bracket.
-// Only a declared leaf is hidden: the per-attachment sensitivity roll-up says
+// declared carries what the attached Feature's schema declares sensitive; a
+// leaf it covers prints the redaction placeholder in place of its value while
+// keeping its key, its pillar prefix and its provenance bracket. A declaration
+// covers the leaf it names and every leaf beneath it, so a value authored
+// inside an object the schema declares sensitive is hidden too — that leaf IS
+// named by the declaration the author wrote.
+//
+// Only a covered leaf is hidden: the per-attachment sensitivity roll-up says
 // the attachment handles secret material, not which of its leaves do, and
 // hiding all of them would print the placeholder over a referenceable
 // credential's name and key — public locators an author left unmarked.
@@ -642,26 +646,17 @@ func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRF
 	}
 	fmt.Fprintf(out, "    - %s%s\n", featureLabel(instanceName, entry), facts)
 	for _, leaf := range walkLeavesInOrder(entry) {
-		if leafDeclaredSensitive(declared, leaf.path) {
+		// walkLeavesInOrder emits the pillar-prefixed coordinate, which is what
+		// the declarations answer about, so the question is asked of them
+		// directly rather than re-derived here. A declaration on an object
+		// covers every leaf beneath it, so a value authored inside one prints
+		// the placeholder exactly as a directly declared leaf does.
+		if declared.Covers(leaf.path) {
 			fmt.Fprintf(out, "        %s: %s    %s\n", leaf.path, redact.Placeholder(), perLeafBracket(leaf.provenance))
 			continue
 		}
 		fmt.Fprintf(out, "        %s: %v    %s\n", leaf.path, leaf.value, perLeafBracket(leaf.provenance))
 	}
-}
-
-// leafDeclaredSensitive answers the pillar-prefixed question walkLeavesInOrder
-// asks. Its input path carries the `values.` / `infra.` prefix the renderer
-// prints; the declared sets are keyed from each pillar's own root, so the
-// prefix is what selects the set and the remainder is the key.
-func leafDeclaredSensitive(declared resolver.SensitiveLeaves, prefixedPath string) bool {
-	if rest, ok := strings.CutPrefix(prefixedPath, "values."); ok {
-		return declared.Values[rest]
-	}
-	if rest, ok := strings.CutPrefix(prefixedPath, "infra."); ok {
-		return declared.Infra[rest]
-	}
-	return false
 }
 
 // declaredFeatureLeaves reads which leaves an attached Feature's schema
@@ -827,11 +822,11 @@ func walkLeavesInOrder(entry types.IRFeatureEntry) []leafRecord {
 	out := make([]leafRecord, 0, entry.ValuesProvenance.Len()+entry.InfraProvenance.Len())
 	for _, p := range types.FlattenLeaves(entry.Values) {
 		prov, _ := entry.ValuesProvenance.Get(p.Path)
-		out = append(out, leafRecord{path: "values." + p.Path, value: p.Value, provenance: prov})
+		out = append(out, leafRecord{path: types.PillarRootValues + p.Path, value: p.Value, provenance: prov})
 	}
 	for _, p := range types.FlattenLeaves(entry.Infra) {
 		prov, _ := entry.InfraProvenance.Get(p.Path)
-		out = append(out, leafRecord{path: "infra." + p.Path, value: p.Value, provenance: prov})
+		out = append(out, leafRecord{path: types.PillarRootInfra + p.Path, value: p.Value, provenance: prov})
 	}
 	return out
 }

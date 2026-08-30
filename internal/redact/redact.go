@@ -220,15 +220,22 @@ func (k Keys) Empty() bool {
 // and the applier cannot disagree about it.
 const WholeSourceKey = ""
 
-// Leaf reports whether the named pillar leaf is declared sensitive. The path is
-// the flat-dotted chain from the pillar root, without the pillar prefix. An
+// Leaf reports whether the named pillar leaf is withheld. The path is the
+// flat-dotted chain from the pillar root, without the pillar prefix. An
 // unrecognised pillar name reports false rather than guessing.
+//
+// A leaf is withheld when a declaration names it OR names an object containing
+// it, which is asked through the one home for that rule rather than restated
+// here. Only the pillar SELECTION is local, and it has to be: this package sits
+// below the reader of authored declarations rather than beside it, so the
+// selection cannot be shared without inverting that dependency. The rule
+// itself — the part that could drift into a different answer — is shared.
 func (k Keys) Leaf(pillar, path string) bool {
 	switch pillar {
 	case "values":
-		return k.Values[path]
+		return types.PathCoveredBy(path, k.Values)
 	case "infra":
-		return k.Infra[path]
+		return types.PathCoveredBy(path, k.Infra)
 	}
 	return false
 }

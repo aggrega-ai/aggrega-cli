@@ -15,8 +15,13 @@ import (
 // share a name, so a consumer reading a bare `password` could not tell which
 // declaration it was pointed at. Both prefixes are the block's own authored
 // spelling, so the coordinate reads as the path the author typed.
+//
+// The pillar root is read from the shared leaf-coordinate primitives, which is
+// where every writer and reader of that spelling gets it. The slot root has no
+// such home and needs none: it names a schema block rather than a pillar, so it
+// is spelled once, here, at the only site that builds a slot coordinate.
 const (
-	declarationRootValues = "values."
+	declarationRootValues = types.PillarRootValues
 	declarationRootSlots  = "featuresSchema."
 )
 

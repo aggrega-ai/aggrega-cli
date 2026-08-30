@@ -175,7 +175,7 @@ func renderAggregateNodes(opts inspectOptions, topo *topology.TopologyResult, lo
 		fmt.Fprintf(opts.out, "%s%s  (type: %s)\n", indent, label, opts.colorize.uri(node.ComponentType))
 		body := indent + "  "
 		values := authored.applyTo(id, node.Values)
-		renderAggregateNodeValues(opts, body, values, declaredComponentLeaves(lookup, node.ComponentType).Values)
+		renderAggregateNodeValues(opts, body, values, declaredComponentLeaves(lookup, node.ComponentType))
 		renderAggregateNodeUses(opts, body, node.Uses)
 		renderAggregateNodeRequiredAttachments(opts, body, node.ComponentType, lookup)
 	}
@@ -204,19 +204,26 @@ func aggregateTreeLabel(id string) (label, indent string) {
 // node, or a `(none)` placeholder. Values are rendered as flat dotted leaves in
 // author order.
 //
-// sensitive names the leaf paths the node's Component schema declares
-// sensitive; each one prints its key and the redaction placeholder instead of
-// its value, so the reader still sees that the leaf is authored and that
-// something was withheld. The two path spellings join by construction: both
-// sides use the flat-dotted chain types.FlattenLeaves produces.
-func renderAggregateNodeValues(opts inspectOptions, indent string, values types.OrderedMap[any], sensitive map[string]bool) {
+// declared carries what the node's Component schema declares sensitive; a leaf
+// it covers prints its key and the redaction placeholder instead of its value,
+// so the reader still sees that the leaf is authored and that something was
+// withheld. The question is asked of the declarations through their one home,
+// so this display and every other one that shows the same leaf give the same
+// answer — including for a leaf authored inside an object the schema declares
+// sensitive, which the declaration covers just as it covers a leaf named
+// directly.
+//
+// The path spellings join by construction: the flat-dotted chain
+// types.FlattenLeaves produces is what a declared path is keyed by, and the
+// pillar root is read from its own home rather than spelled here.
+func renderAggregateNodeValues(opts inspectOptions, indent string, values types.OrderedMap[any], declared resolver.SensitiveLeaves) {
 	if values.Len() == 0 {
 		fmt.Fprintf(opts.out, "%sValues: (none)\n", indent)
 		return
 	}
 	fmt.Fprintf(opts.out, "%sValues:\n", indent)
 	for _, leaf := range types.FlattenLeaves(values) {
-		if sensitive[leaf.Path] {
+		if declared.Covers(types.PillarRootValues + leaf.Path) {
 			fmt.Fprintf(opts.out, "%s  %s: %s\n", indent, leaf.Path, redact.Placeholder())
 			continue
 		}
