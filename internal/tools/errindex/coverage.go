@@ -305,17 +305,17 @@ func reportGaps(w io.Writer, ids []Identity, covered map[string]bool, list bool)
 		return 0, origins
 	}
 	if !list {
-		fmt.Fprintf(w, "REFUSED: %d of %d declared halting conditions have no entry on %s (re-run with -gaps to list them)\n",
+		fmt.Fprintf(w, "WARN: %d of %d declared halting conditions have no entry on %s (re-run with -gaps to list them)\n",
 			len(gaps), origins, haltsRelPath)
 		return len(gaps), origins
 	}
 	// The message is printed beside the handle because a bare list of names is
 	// not actionable: writing a condition's entry means knowing what it reports,
 	// and the message is that description, already declared beside the identity.
-	fmt.Fprintf(w, "REFUSED: %d of %d declared halting conditions have no entry on %s:\n",
+	fmt.Fprintf(w, "WARN: %d of %d declared halting conditions have no entry on %s:\n",
 		len(gaps), origins, haltsRelPath)
 	for _, id := range gaps {
-		fmt.Fprintf(w, "REFUSED:   %s: %s\n", id.Handle(), id.Message)
+		fmt.Fprintf(w, "WARN:   %s: %s\n", id.Handle(), id.Message)
 	}
 	return len(gaps), origins
 }

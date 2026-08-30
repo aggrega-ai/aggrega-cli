@@ -566,7 +566,7 @@ func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
 
 	// Four origins; two are covered, so two remain — and the count in the
 	// header is derived from the same walk rather than written down.
-	if !strings.Contains(got, "REFUSED: 2 of 4 declared halting conditions have no entry") {
+	if !strings.Contains(got, "WARN: 2 of 4 declared halting conditions have no entry") {
 		t.Errorf("header does not report the derived counts:\n%s", got)
 	}
 	// The caller exits on these, so they are part of the contract rather than a
@@ -597,7 +597,7 @@ func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
 		t.Errorf("summary form returned %d, want 2 — the shortfall cannot depend on the enumeration", n)
 	}
 	s := summary.String()
-	if !strings.Contains(s, "REFUSED: 2 of 4 declared halting conditions have no entry") {
+	if !strings.Contains(s, "WARN: 2 of 4 declared halting conditions have no entry") {
 		t.Errorf("summary does not report the derived counts:\n%s", s)
 	}
 	if strings.Contains(s, "pkg/thing.ErrQuoted") {
@@ -608,7 +608,7 @@ func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
 	}
 }
 
-func TestReportGaps_RefusesAShortfallAndClearsACompleteSet(t *testing.T) {
+func TestReportGaps_ReportsAShortfallAndClearsACompleteSet(t *testing.T) {
 	t.Parallel()
 	ids := fixtureIdentities(t)
 	all := []string{"pkg/other.ErrPlain", "pkg/other.ErrOwn", "pkg/thing.ErrQuoted", "internal/hidden.ErrHidden"}
@@ -624,9 +624,11 @@ func TestReportGaps_RefusesAShortfallAndClearsACompleteSet(t *testing.T) {
 
 	// The complete set is established first, so each shortfall below is a planted
 	// defect against a baseline somebody looked at rather than a reading of a
-	// page whose state nobody fixed. A tier whose refusal has never been watched
-	// to fire is decoration: this is the pair that shows it fires on a hole and
-	// stays quiet without one.
+	// page whose state nobody fixed. A tier whose figure has never been watched to
+	// move is decoration: this is the pair that shows it moves on a hole and stays
+	// quiet without one. The tier reports rather than refusing, deliberately, and
+	// the assertion below that a clean run carries no refusal word is what keeps
+	// the two readable apart.
 	var clean strings.Builder
 	if n, considered := reportGaps(&clean, ids, pageCovering(t, all), false); n != 0 || considered != 4 {
 		t.Fatalf("a complete set returned (%d, %d), want (0, 4):\n%s", n, considered, clean.String())
