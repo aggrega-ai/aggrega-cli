@@ -13,11 +13,33 @@ import (
 	"github.com/Masterminds/semver/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
+
+// manifestCategory is the authoring domain a fault on a Manifest is reported
+// under. It is read from the one home of the kind-to-domain correspondence
+// rather than written out here: a category named at a raise site is a second
+// copy of that correspondence, and a copy agrees on the day it is written and
+// is free to disagree the day either side moves.
+//
+// It panics on an unmapped kind, for the reason the validator's own resolution
+// panics: the kind is a constant chosen in the compiler rather than read from
+// an authored document, so an unmappable one means the correspondence stopped
+// covering a kind that raises categorised faults. That is a mistake in the
+// compiler, not in anything a user wrote, and it would otherwise surface as a
+// fault quietly attributed to the wrong authoring domain.
+func manifestCategory() cerrors.Category {
+	category, ok := cerrors.ClassifyEntityKind(string(entitykind.Manifest))
+	if !ok {
+		panic("catalog: the Manifest kind belongs to no authoring domain, so a manifest-mapping " +
+			"fault cannot be attributed; extend the entity-kind category mapping to cover it")
+	}
+	return category
+}
 
 // ErrManifestImplementsMismatch fires when a Manifest mapping entry's
 // resolved Recipe (or FeatureRecipe) carries a spec.implements that
@@ -1016,11 +1038,11 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 			}
 			bases, aerr := ancestry(compType)
 			if aerr != nil {
-				errs = append(errs, cerrors.Wrap(aerr, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: the mapped component type's extends chain cannot be walked, so the mapping cannot be judged", compType, recipeURI)))
+				errs = append(errs, cerrors.Wrap(aerr, manifestCategory(), cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: the mapped component type's extends chain cannot be walked, so the mapping cannot be judged", compType, recipeURI)))
 				continue
 			}
 			if !manifestMappingSatisfiedByAncestry(r.Spec.Implements, bases) {
-				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath},
+				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), manifestCategory(), cerrors.SourceLocation{File: manifestPath},
 					cerrors.ComposeMessage(ErrManifestImplementsMismatch(), []string{
 						fmt.Sprintf("manifest mapping %q -> %q", compType, recipeURI),
 						fmt.Sprintf("recipe spec.implements is %q", r.Spec.Implements),
@@ -1037,7 +1059,7 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 				continue // missing featurerecipe → resolution path's concern
 			}
 			if !manifestMappingConsistent(fr.Spec.Implements, featType) {
-				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath},
+				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), manifestCategory(), cerrors.SourceLocation{File: manifestPath},
 					cerrors.ComposeMessage(ErrManifestImplementsMismatch(), []string{
 						fmt.Sprintf("manifest feature mapping %q -> %q", featType, frURI),
 						fmt.Sprintf("featurerecipe spec.implements is %q", fr.Spec.Implements),

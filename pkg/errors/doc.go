@@ -13,9 +13,9 @@
 // authoring artifact the operator must edit to fix the error, and two name
 // non-authoring faults:
 //   - DeveloperError: the Aggregate is at fault.
-//   - OpsError: the Release is at fault.
-//   - CatalogError: a Recipe, Component, Feature, FeatureRecipe, Plugin,
-//     or Manifest is at fault.
+//   - OpsError: the Release or the Manifest is at fault.
+//   - CatalogError: a Recipe, Component, Feature, FeatureRecipe, or
+//     Plugin is at fault.
 //   - TranslationError: the provider engine cannot express the requested
 //     synthesised output (no authoring fix; the developer or operator
 //     must change input shape).

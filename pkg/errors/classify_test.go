@@ -15,24 +15,32 @@ func TestClassifyEntityCategory_AggregateIsDeveloper(t *testing.T) {
 	}
 }
 
-// TestClassifyEntityCategory_ReleaseIsOps verifies the Release prefix
-// routes to OpsError. The Release is the operator's authoring surface.
-func TestClassifyEntityCategory_ReleaseIsOps(t *testing.T) {
-	got := ClassifyEntityCategory("Release prod")
-	if got != OpsError {
-		t.Errorf("ClassifyEntityCategory(\"Release prod\") = %v, want %v", got, OpsError)
+// TestClassifyEntityCategory_OperatorEntities verifies the operator's own
+// authoring surfaces route to OpsError. The Release declares the deployment
+// and the Manifest records which Recipe each type is deployed through; the
+// operator is who edits either file.
+func TestClassifyEntityCategory_OperatorEntities(t *testing.T) {
+	cases := []string{
+		"Release prod",
+		"Manifest prod-manifest",
+	}
+	for _, entity := range cases {
+		got := ClassifyEntityCategory(entity)
+		if got != OpsError {
+			t.Errorf("ClassifyEntityCategory(%q) = %v, want %v", entity, got, OpsError)
+		}
 	}
 }
 
-// TestClassifyEntityCategory_CatalogEntities verifies all five catalog
-// entity kinds route to CatalogError. Table-driven across the kinds.
+// TestClassifyEntityCategory_CatalogEntities verifies the catalog entity
+// kinds route to CatalogError. Table-driven across the kinds; the rows are
+// the statement of how many there are, so the count is not also written here.
 func TestClassifyEntityCategory_CatalogEntities(t *testing.T) {
 	cases := []string{
 		"Recipe my-recipe",
 		"Component core/api-server",
 		"Feature core/dns-resolver",
 		"FeatureRecipe core/dns-resolver-recipe",
-		"Manifest prod-manifest",
 	}
 	for _, entity := range cases {
 		got := ClassifyEntityCategory(entity)
@@ -49,11 +57,11 @@ func TestClassifyEntityKind_MapsEveryCoveredKind(t *testing.T) {
 	cases := map[string]Category{
 		"Aggregate":     DeveloperError,
 		"Release":       OpsError,
+		"Manifest":      OpsError,
 		"Recipe":        CatalogError,
 		"Component":     CatalogError,
 		"Feature":       CatalogError,
 		"FeatureRecipe": CatalogError,
-		"Manifest":      CatalogError,
 	}
 	for kind, want := range cases {
 		got, ok := ClassifyEntityKind(kind)

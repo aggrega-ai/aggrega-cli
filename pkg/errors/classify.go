@@ -25,12 +25,17 @@ import "strings"
 //   - "Aggregate" → DeveloperError. The Aggregate is the developer's
 //     authoring surface; field violations on it are developer-domain.
 //
-//   - "Release" → OpsError. The Release is the operator's authoring
-//     surface; field violations on it are ops-domain.
+//   - "Release", "Manifest" → OpsError. Both are the operator's authoring
+//     surface: the Release declares the deployment, and the Manifest records
+//     which Recipe each type is deployed through. A field violation on
+//     either is ops-domain, and the operator is who edits the file.
 //
-//   - "Recipe", "Component", "Feature", "FeatureRecipe",
-//     "Manifest" → CatalogError. All five entity kinds are catalog
-//     content; violations are catalog-author-domain.
+//   - "Recipe", "Component", "Feature", "FeatureRecipe" → CatalogError.
+//     Each is catalog content; violations are catalog-author-domain.
+//
+// The kinds behind each arm are deliberately not counted in this comment. The
+// switch below is the statement of how many there are, and a number written
+// beside it reads as current while lagging the set it counts.
 //
 // Every other kind, the empty kind included, reports false. Extend the
 // mapping when a new entity kind starts carrying categorised faults.
@@ -38,9 +43,9 @@ func ClassifyEntityKind(kind string) (Category, bool) {
 	switch kind {
 	case "Aggregate":
 		return DeveloperError, true
-	case "Release":
+	case "Release", "Manifest":
 		return OpsError, true
-	case "Recipe", "Component", "Feature", "FeatureRecipe", "Manifest":
+	case "Recipe", "Component", "Feature", "FeatureRecipe":
 		return CatalogError, true
 	}
 	return "", false

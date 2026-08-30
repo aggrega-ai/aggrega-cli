@@ -236,8 +236,10 @@ spec:
 	}
 }
 
-// The refusal is attributed to the catalog-authoring domain, and it is attributed
-// there structurally rather than by a category word typed into the message.
+// The refusal is attributed to the operator's authoring domain, and it is
+// attributed there structurally rather than by a category word typed into the
+// message. The offending binding is written in the Manifest, which is the
+// operator's deployment-target document, so the operator is who edits the file.
 //
 // The category is derived from the entity reference's leading kind word, so this
 // asserts the routing rather than the spelling: a finding whose entity reference
@@ -249,7 +251,7 @@ spec:
 // authored in. The refusal's locator names a key path inside that document rather
 // than the file, so a reader who lost the file from the reference would be handed
 // a path with no file to open it in.
-func TestLoadManifest_ReservedPrefixRefusalIsCatalogDomain(t *testing.T) {
+func TestLoadManifest_ReservedPrefixRefusalIsOpsDomain(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")
 	os.WriteFile(f, reservedPrefixManifestYAML("aggrega.ai/forbidden-binding"), 0644)
@@ -262,8 +264,9 @@ func TestLoadManifest_ReservedPrefixRefusalIsCatalogDomain(t *testing.T) {
 	if !errors.As(err, &finding) {
 		t.Fatalf("refusal should carry a *ResolverError so the boundary can route it; got %T", err)
 	}
-	if got, want := finding.ToCompilerError().Category, cerrors.CatalogError; got != want {
-		t.Errorf("category: got %q, want %q — a Manifest binding is catalog-authored content", got, want)
+	if got, want := finding.ToCompilerError().Category, cerrors.OpsError; got != want {
+		t.Errorf("category: got %q, want %q — the binding is written in the Manifest, "+
+			"which is the operator's document", got, want)
 	}
 	if !strings.HasPrefix(finding.Entity, "Manifest ") {
 		t.Errorf("entity reference %q should lead with the Manifest kind, which is what the "+
@@ -428,10 +431,11 @@ spec:
 	if !errors.As(err, &finding) {
 		t.Fatalf("refusal should carry a *ResolverError so the boundary can route it; got %T", err)
 	}
-	if got, want := finding.ToCompilerError().Category, cerrors.CatalogError; got != want {
-		t.Errorf("category: got %q, want %q — a Manifest binding is catalog-authored content", got, want)
+	if got, want := finding.ToCompilerError().Category, cerrors.OpsError; got != want {
+		t.Errorf("category: got %q, want %q — both colliding bindings are written in the "+
+			"Manifest, which is the operator's document", got, want)
 	}
-	if n := strings.Count(msg, string(cerrors.CatalogError)); n != 0 {
+	if n := strings.Count(msg, string(cerrors.OpsError)); n != 0 {
 		t.Errorf("the message names the category %d times, want 0 — the head carries it\nfull: %s", n, msg)
 	}
 	if !strings.Contains(msg, "first-binding") || !strings.Contains(msg, "second-binding") {

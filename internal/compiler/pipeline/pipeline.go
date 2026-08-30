@@ -1040,9 +1040,15 @@ func RunPipeline(
 		// Resolution-completeness — every component/feature instance must resolve
 		// to exactly one recipe before render. Skipped when the caller does not
 		// supply a verifier (IR-inspection paths that do not render).
+		// The domain is the operator's, because that is where the remedy the
+		// condition states is written: every arm of it asks for a mapping under
+		// the Manifest's own mapping table, and the Manifest is the operator's
+		// document. One arm — a type nothing implements — additionally needs a
+		// Recipe authored before any mapping can name it, but the reader still
+		// acts on the Manifest first, and a category names one document.
 		if opts.RecipeResolutionVerifier != nil {
 			if err := opts.RecipeResolutionVerifier(inputs.Manifest, graph); err != nil {
-				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "recipe resolution")
+				return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, "recipe resolution")
 			}
 		}
 

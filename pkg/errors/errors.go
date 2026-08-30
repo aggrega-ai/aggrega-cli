@@ -12,8 +12,8 @@ import (
 // Category names which authoring artifact is at fault for a given
 // CompilerError. The six values partition the compiler's error surface
 // by who must act to resolve the failure: developer (Aggregate), operator
-// (Release), catalog author (Recipe / Component / Feature / FeatureRecipe
-// / Manifest), provider engine (translation cannot express the requested
+// (Release / Manifest), catalog author (Recipe / Component / Feature /
+// FeatureRecipe / Plugin), provider engine (translation cannot express the requested
 // output), the remote registry / network layer (a fetch of a pinned
 // artifact failed at lock or build time), or an operator-attached
 // policy plugin (a governance verdict rejected the build — the

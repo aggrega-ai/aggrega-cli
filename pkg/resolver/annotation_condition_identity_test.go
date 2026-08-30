@@ -107,8 +107,8 @@ spec:
 	if !stderrors.As(err, &re) {
 		t.Fatalf("expected a locator-bearing finding; got %T", err)
 	}
-	if got := re.ToCompilerError().Category; got != cerrors.CatalogError {
-		t.Errorf("derived category = %v, want %v", got, cerrors.CatalogError)
+	if got := re.ToCompilerError().Category; got != cerrors.OpsError {
+		t.Errorf("derived category = %v, want %v", got, cerrors.OpsError)
 	}
 }
 
