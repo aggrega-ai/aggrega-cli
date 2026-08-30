@@ -560,6 +560,26 @@ var advisedUnrecorded sync.Map
 // The bound is worth stating rather than leaving to be discovered: a construction
 // that names the pin-free posture raises no advisory even where a digest could in
 // principle have been recorded for what it resolved.
+//
+// The rule holds on a long-running process that serves an editor, which resolves
+// plugins as a document is edited: it raises this advisory like any other caller,
+// and that is deliberate. Three properties let an advisory sit there where a
+// diagnostic could not, and all three belong to this function rather than to that
+// surface. advisedUnrecorded holds it to one line per plugin reference for the
+// life of the process, so it does not repeat at editing cadence. It is written to
+// unrecordedIdentityWriter, which is standard error, and to nothing else, so it
+// cannot enter the stream an editor reads its diagnostics from. And it returns
+// nothing and cannot fail, so a resolution — and the verdict any surface reaches
+// on it — is identical whether or not the advisory was raised. A diagnostic has
+// none of the three: it would re-render on every edit and would claim a place in
+// the editor's own report on the buffer.
+//
+// Silencing it for that one surface is therefore the wrong repair, and the reason
+// is the one that puts the rule at this single site rather than at each caller.
+// Honouring it where some plugins resolve and skipping it where others do leaves
+// the skipped resolutions looking covered: silence would then mean two things at
+// once — nothing went unrecorded, or this surface does not say — with no way for
+// a reader to tell which, and that is worse than raising nothing anywhere.
 func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
 	if !r.expectsRecordedIdentity || tier == TierEmbed || uri == "" {
 		return
