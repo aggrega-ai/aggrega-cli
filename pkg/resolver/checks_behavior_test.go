@@ -2730,11 +2730,11 @@ func conformanceSchemaNode(t *testing.T, body string) yaml.Node {
 // conformanceRuleCatalog holds entries for the two types above and for nothing
 // else.
 //
-// Every contract declares one REQUIRED key, and that is what makes the one place
-// the two component rules differ measurable rather than merely documented: a
-// payload written and left empty violates a required key, so on one input the
-// rule that measures an empty payload reports and the rule that ends before it
-// stays silent.
+// Every contract declares one REQUIRED key that carries no default, and that is
+// what makes the rules' treatment of an absent payload measurable rather than
+// merely documented: a payload nobody wrote is the maximal violation of such a
+// key, so a rule that measures absence reports on it and a rule that skipped it
+// would be silent on the one input the key was declared for.
 func conformanceRuleCatalog(t *testing.T) CatalogLookup {
 	t.Helper()
 
@@ -2919,7 +2919,12 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheDeploymentWrote(t *test
 		raised   []string
 	}{
 		{
-			name: "sizing violating the contract is reported; a component the deployment wrote no sizing for is not",
+			// The deployment writes a violating payload for one component and no
+			// sizing block at all for the other. Both are reported: the contract is
+			// opted into on the component type's side, so the component nobody wrote
+			// sizing for is measured against it exactly as its sibling is, and the
+			// required key it omits is the maximal violation of that contract.
+			name: "sizing violating the contract is reported, and so is the component the deployment wrote no sizing for",
 			components: []conformanceComponent{
 				{name: "api", typ: conformanceContractedType,
 					values: conformancePayload("replicas", 1)},
@@ -2934,7 +2939,10 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheDeploymentWrote(t *test
             size: 3
         api: {}
 `,
-			raised: []string{".spec.components.web.infra.size"},
+			raised: []string{
+				".spec.components.api.infra.size",
+				".spec.components.web.infra.size",
+			},
 		},
 		{
 			// The component sits inside a boundary nested in another, which is the
@@ -2956,11 +2964,12 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheDeploymentWrote(t *test
 			raised: []string{".spec.components.web.infra.size"},
 		},
 		{
-			// The counterpart of the empty-payload row on the configuration rule:
-			// there, written-and-empty is measured against a required key; here the
-			// same absence ends the rule. The positive control beside it is the
-			// component that does violate, so the row cannot pass over nothing.
-			name: "a component the deployment wrote an empty sizing block for is not reported, while its sibling that wrote a violating one is",
+			// The counterpart of the empty-payload row on the configuration rule, and
+			// it reads the same way there: written-and-empty is measured against a
+			// required key rather than passed over. The positive control beside it is
+			// the component that violates on written content, so the row cannot pass
+			// over nothing.
+			name: "a component the deployment wrote an empty sizing block for is reported, beside its sibling that wrote a violating one",
 			components: []conformanceComponent{
 				{name: "api", typ: conformanceContractedType,
 					values: conformancePayload("replicas", 1)},
@@ -2976,7 +2985,34 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheDeploymentWrote(t *test
         api:
           infra: {}
 `,
-			raised: []string{".spec.components.web.infra.size"},
+			raised: []string{
+				".spec.components.api.infra.size",
+				".spec.components.web.infra.size",
+			},
+		},
+		{
+			// Both legs of a required sizing key in one row: the component that wrote
+			// a payload satisfying it is silent, and the component beside it that
+			// wrote no sizing block is reported. The silent leg is what keeps the
+			// reporting leg from being a rule that objects to everything, and the
+			// reporting leg is what keeps the silent one from being a rule that
+			// objects to nothing.
+			name: "a conforming sizing payload is not reported, while the component beside it that wrote none is",
+			components: []conformanceComponent{
+				{name: "api", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+			},
+			deployed: `    prod:
+      directory: ./output
+      components:
+        web:
+          infra:
+            size: "3"
+        api: {}
+`,
+			raised: []string{".spec.components.api.infra.size"},
 		},
 		{
 			// A type whose catalog entry declares no contract over the sizing

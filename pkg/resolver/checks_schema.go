@@ -118,12 +118,14 @@ var componentValuesConformToTheType = constraint.Check[
 // operator sets must be one the component type declares, because that type's
 // contract is the correct home for every such key.
 //
-// A component whose deployment wrote no sizing at all ends the rule, which is
-// the one place these two rules differ. This pillar is opted into from both
-// sides — the type declares the contract and the deployment writes the payload
-// — so a component nobody wrote sizing for has no sizing to measure, where an
-// application that wrote no configuration has still been handed a contract to
-// answer to.
+// What is opted into is the component type's CONTRACT, never the deployment's
+// content, which is the same standing the pillar beside it has. Once the type
+// declares a contract for this pillar, the sizing written for every component of
+// that type is measured against it, including a deployment that wrote no sizing
+// at all: an empty payload is the maximal violation of a key the contract
+// declares required, not a case with nothing to check. A required key exists
+// precisely to catch the deployment that authored nothing, so a rule that
+// skipped that deployment would be inert in the one case it was declared for.
 var componentInfraConformsToTheType = constraint.Check[
 	constraint.NormalizedView,
 	constraint.NodeSubject,
@@ -134,10 +136,6 @@ var componentInfraConformsToTheType = constraint.Check[
 		v constraint.NormalizedView,
 		s constraint.NodeSubject,
 	) []constraint.Objection {
-		sizing := v.ReleaseComponentInfra(s.NodeID())
-		if sizing.Len() == 0 {
-			return nil
-		}
 		componentType, present := v.InstanceComponentType(s.NodeID())
 		if !present || !v.CatalogComponentPresent(componentType) {
 			return nil
@@ -146,7 +144,8 @@ var componentInfraConformsToTheType = constraint.Check[
 		if !resolved {
 			return nil
 		}
-		return pillarObjections(s, "infra", contract, sizing,
+		return pillarObjections(s, "infra", contract,
+			v.ReleaseComponentInfra(s.NodeID()),
 			v.ResolvedParameterContext(s.SourceFile()))
 	},
 }
