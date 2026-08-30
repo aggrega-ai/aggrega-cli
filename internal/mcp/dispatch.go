@@ -94,6 +94,11 @@ func (s *server) handleNotification(req *rpcRequest) {
 // should adopt. Malformed params are logged and the handshake proceeds
 // with the server's revision, since the negotiation can complete without
 // them.
+//
+// It is also where the documentation bundle is acquired, once per session and
+// ahead of any resource read, so that the read path stays offline: see
+// ensureDocsBundle, which reports its own outcome to the log stream and cannot
+// fail the handshake.
 func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 	var p initializeParams
 	if len(params) > 0 {
@@ -105,6 +110,7 @@ func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 		s.logf("mcp: initialize from client %q version %q (protocol %q)",
 			p.ClientInfo.Name, p.ClientInfo.Version, p.ProtocolVersion)
 	}
+	s.ensureDocsBundle()
 	return initializeResult{
 		ProtocolVersion: negotiateProtocolVersion(p.ProtocolVersion),
 		Capabilities: serverCapabilities{

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 )
 
 // Config carries the I/O streams the server reads from and writes to plus
@@ -57,6 +58,19 @@ type server struct {
 	// from the server's build identity. A test sets them to a fixture bundle.
 	docsBundleRef     string
 	docsBundleVersion string
+
+	// docsTarget resolves the OCI target the documentation bundle is pulled
+	// from at the session's first use. Nil reaches the registry through the
+	// workspace's egress gate. A test injects one to drive the acquisition
+	// without a registry; everything after the target — the pull, the
+	// media-type check, the cache write and the read — stays production.
+	docsTarget docsTargetFor
+
+	// docsBundleOnce holds that acquisition to a single attempt per session.
+	// A cold cache and an unreachable registry are the same case from here, so
+	// re-attempting would mean paying the connect timeout again on a
+	// re-handshake with nothing having changed.
+	docsBundleOnce sync.Once
 
 	// runGenCatalog runs the catalog-generation helper for the gen-catalog
 	// tool. Nil calls the in-process catalog-generation core. A test injects a

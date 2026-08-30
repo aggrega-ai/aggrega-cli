@@ -95,6 +95,28 @@ func DocsBundlesRoot(workspaceRoot, cacheDir string) string {
 	return filepath.Join(workspaceRoot, cacheDir, "docs-bundles")
 }
 
+// blobFile and manifestFile name the two files a cache slot holds: the bundle's
+// content blob and the OCI manifest it is verified against. They are spelled
+// once so the write, the presence probe and the read cannot disagree about which
+// files a populated slot contains.
+const (
+	blobFile     = "blob"
+	manifestFile = "manifest"
+)
+
+// Cached reports whether a documentation bundle for (ref, version) is already in
+// the local cache. It is the question an acquisition step asks before deciding
+// to fetch, answered from the same slot ReadPage reads, so the two can never
+// disagree about where a bundle lives.
+//
+// It reports presence and nothing more: a slot whose content is corrupt still
+// reports cached, because integrity is re-checked against the stored manifest on
+// every read and is that read's answer to give, not this probe's.
+func Cached(workspaceRoot, cacheDir, ref, version string) bool {
+	_, err := os.Stat(filepath.Join(slotPath(workspaceRoot, cacheDir, ref, version), blobFile))
+	return err == nil
+}
+
 // slotPath returns the cache slot for a documentation bundle addressed by
 // reference and version:
 //
@@ -148,10 +170,10 @@ func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, versi
 	if err := os.MkdirAll(slot, 0o755); err != nil {
 		return "", fmt.Errorf("docscache: cache mkdir %s: %w", slot, err)
 	}
-	if err := os.WriteFile(filepath.Join(slot, "blob"), pr.Bytes, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(slot, blobFile), pr.Bytes, 0o644); err != nil {
 		return "", fmt.Errorf("docscache: cache write blob for %s@%s: %w", ref, version, err)
 	}
-	if err := os.WriteFile(filepath.Join(slot, "manifest"), pr.ManifestBytes, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(slot, manifestFile), pr.ManifestBytes, 0o644); err != nil {
 		return "", fmt.Errorf("docscache: cache write manifest for %s@%s: %w", ref, version, err)
 	}
 	return slot, nil
@@ -170,14 +192,14 @@ func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, versi
 // valid bundle returns ErrPageNotFound.
 func ReadPage(workspaceRoot, cacheDir, ref, version, page string) ([]byte, string, error) {
 	slot := slotPath(workspaceRoot, cacheDir, ref, version)
-	blob, err := os.ReadFile(filepath.Join(slot, "blob"))
+	blob, err := os.ReadFile(filepath.Join(slot, blobFile))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, "", fmt.Errorf("docscache: no cached bundle for %s@%s: %w", ref, version, ErrFetchNotFound())
 		}
 		return nil, "", fmt.Errorf("docscache: read cached bundle %s@%s: %w", ref, version, err)
 	}
-	manifest, err := os.ReadFile(filepath.Join(slot, "manifest"))
+	manifest, err := os.ReadFile(filepath.Join(slot, manifestFile))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, "", fmt.Errorf("docscache: cached bundle %s@%s missing its manifest: %w", ref, version, ErrFetchNotFound())

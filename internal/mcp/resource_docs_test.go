@@ -34,14 +34,12 @@ const (
 	twoDotURI  = "langref://entities/component..draft.md"
 )
 
-// seedDocsWorkspace builds a fixture documentation bundle, resolves it into a
-// fresh workspace's local cache, and returns a server pointed at that workspace
-// and bundle. The server's resource reads then serve from the warm cache.
-func seedDocsWorkspace(t *testing.T) *server {
+// docsFixtureBundle builds the gzipped-tar documentation bundle every
+// documentation fixture in this package uses. One builder, so a warm-cache
+// fixture and a cold-workspace one can never disagree about what a bundle
+// contains — which is what lets a test assert the same page bytes on both.
+func docsFixtureBundle(t *testing.T) []byte {
 	t.Helper()
-	ws := t.TempDir()
-	cacheDir := workspaceconfig.Default().ResolvedArtifactCacheDir()
-
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
@@ -64,9 +62,19 @@ func seedDocsWorkspace(t *testing.T) *server {
 	if err := gz.Close(); err != nil {
 		t.Fatalf("gzip close: %v", err)
 	}
+	return buf.Bytes()
+}
+
+// seedDocsWorkspace builds a fixture documentation bundle, resolves it into a
+// fresh workspace's local cache, and returns a server pointed at that workspace
+// and bundle. The server's resource reads then serve from the warm cache.
+func seedDocsWorkspace(t *testing.T) *server {
+	t.Helper()
+	ws := t.TempDir()
+	cacheDir := workspaceconfig.Default().ResolvedArtifactCacheDir()
 
 	store := memory.New()
-	if _, err := oci.Push(context.Background(), store, docsTestVersion, oci.MediaTypeDocs, buf.Bytes(), nil); err != nil {
+	if _, err := oci.Push(context.Background(), store, docsTestVersion, oci.MediaTypeDocs, docsFixtureBundle(t), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	if _, err := docscache.ResolveAndCache(context.Background(), store, docsTestRef, docsTestVersion, ws, cacheDir, nil); err != nil {
