@@ -10,9 +10,9 @@ import (
 // assembledOutputFacts is the seam the presentation below answers the render's
 // own assembled-output facts through.
 //
-// It exists as a declared seam rather than as two method bodies reaching into the
+// It exists as a declared seam rather than as method bodies reaching into the
 // result for two reasons, and the second is the load-bearing one. The render
-// already retains what these two facts read — the attribution beside each
+// already retains what these facts read — the attribution beside each
 // assembled group — so a presentation deriving them again would give one fact two
 // producers, free to disagree with nothing comparing them; naming the seam is
 // what makes the delegation visible as delegation. And the seam's method set is
@@ -29,6 +29,10 @@ type assembledOutputFacts interface {
 	// AssembledFileContent is the bytes standing at one output path for one
 	// provider within one boundary.
 	AssembledFileContent(boundary string, provider string, path string) []byte
+
+	// AssembledFileProducerSet are the contributors that placed a file at one
+	// output path for one provider within one boundary, in producer order.
+	AssembledFileProducerSet(boundary string, provider string, path string) []string
 }
 
 // assembledOutput answers those two facts from the render's own assembly
@@ -63,6 +67,13 @@ func (a assembledOutput) AssembledFileContent(boundary string, provider string, 
 	return content
 }
 
+// AssembledFileProducerSet returns the contributors that placed a file at one
+// output path for one provider within one boundary, and nothing when that pair
+// wrote no such path.
+func (a assembledOutput) AssembledFileProducerSet(boundary string, provider string, path string) []string {
+	return a.result.AssembledFileProducers(boundary, provider, path)
+}
+
 // renderedView presents, as named facts, what a render produced: the output paths
 // each provider wrote within each boundary, the bytes standing at one of them,
 // the artifact names each node projected, and the bytes each of those artifacts
@@ -82,10 +93,11 @@ func (a assembledOutput) AssembledFileContent(boundary string, provider string, 
 // reading an earlier fact through this value reaches the same answer that
 // stage's own presentation gives.
 //
-// # Two facts come from the render's own retention and two from this stage's
+// # Some facts come from the render's own retention and the rest from this stage's
 //
-// The output-path set and the bytes at one path are read from the attribution the
-// assembly retains beside each group, through the seam above. The artifact name
+// The output-path set, the bytes at one path, and the contributors that placed a
+// file at one path are read from the attribution the assembly retains beside each
+// group, through the seam above. The artifact name
 // set and the bytes one artifact evaluated to are read from the retention the
 // artifacts walk fills, because the state those describe is a loop-local: it is
 // built for one node, used to render it, and dropped when that node's turn ends.

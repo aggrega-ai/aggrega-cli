@@ -33,32 +33,90 @@ type renderedStageAxes interface {
 // the flush records, so a reading placed before it would ask about output that
 // had not been attributed yet and would be answered with nothing.
 //
-// It also runs after the cross-boundary link pass, which is what the one rule
-// here needs: a resolved link replaces its own placeholder, so a reading taken
+// It also runs after the cross-boundary link pass, which is what the placeholder
+// rule here needs: a resolved link replaces its own placeholder, so a reading taken
 // before resolution would object to every marker the pass was about to remove.
 // The flush does not change bytes — it moves each group's files into the result
 // under their write prefix — so running after it observes exactly the
 // post-resolution bytes.
 //
-// # Why the halt is a translation fault and not a catalog one
+// # The two rules are asked in order, and the order is the reason
 //
-// A surviving placeholder is not something an author wrote. The host stamps the
-// marker and a provider's link resolution is supposed to replace it, so one left
-// standing means resolution never reached it — a fault on the translation side,
-// with nothing in any catalog document to correct. That is the category the
-// condition is declared with, and it is why this reading renders its objections
-// itself rather than through the shared catalog-category rendering: the wording
-// and the position are the same mechanic, and only the attribution differs.
+// The collision reading comes first and its halt is returned before the
+// placeholder reading is asked at all. Two contributors meeting on one path leave
+// one of their two files out of the assembly, and a placeholder standing in the
+// file that was left out is a consequence of the collision rather than a finding
+// of its own — so asking the placeholder rule first would report the symptom and
+// leave the cause unmentioned.
+//
+// # The two halts carry different attributions
+//
+// A collision is a fault in what two catalog documents declare: two Recipes chose
+// output names that meet, and the remedy is an edit to one of them. A surviving
+// placeholder is not something an author wrote — the host stamps the marker and a
+// provider's link resolution is supposed to replace it, so one left standing means
+// resolution never reached it, a fault on the translation side with nothing in any
+// catalog document to correct. So the two readings render through the two
+// category-bearing entries rather than through one: the wording and the position
+// are the same mechanic, and only the attribution differs.
+//
+// # The two absent-presentation conditions are DIFFERENT questions
+//
+// The collision reading HALTS, so it cannot treat an absent presentation as an
+// ordinary outcome the way an advisory can. The presentation it reads extends one
+// the render's CALLER supplies, and the chain is cumulative — so the two cases are
+// separated rather than collapsed.
+//
+// A caller that supplied NO presentation gets no reading. That caller assembled a
+// render's input directly, which is asking for a render rather than for a build.
+//
+// 🔴 That is a real bound and it is stated rather than implied: such a caller gets
+// no collision reading, so two contributors meeting on one output path assemble for
+// it instead of halting, and whichever of their two files sorts first by contributor
+// is the one it receives. The build path supplies the presentation, so the bound
+// does not reach a build; it reaches exactly the callers that assemble a render's
+// input themselves.
+//
+// A presentation absent BENEATH a present caller presentation is not an outcome, it
+// is a chain that broke inside this package: the attribution, the presentation and
+// the enumeration are completed together, unconditionally, at one site. It halts
+// rather than returning nothing, because the two are indistinguishable to any reader
+// downstream and silence is indistinguishable from approval. Its wording says the
+// fault is the compiler's rather than the author's, because no category attributes a
+// fault to the compiler reaching a check without its inputs.
 //
 // The cancellation signal is the caller's own, so a long walk over a large
 // output stops within one boundary of the caller asking it to.
 func runRenderedStageRules(
 	ctx context.Context,
+	callerPresentationSupplied bool,
 	view constraint.RenderedView,
 	coordinates renderedStageAxes,
 ) error {
-	if view == nil || coordinates == nil {
+	if coordinates == nil {
 		return nil
+	}
+	if view == nil {
+		if !callerPresentationSupplied {
+			return nil
+		}
+		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{},
+			"the assembled output could not be checked for two contributors writing one output "+
+				"path — internal error: the check's inputs were incomplete. This is a fault in the "+
+				"compiler rather than in the catalog, so there is nothing to correct in any document",
+			nil, nil)
+	}
+	collided, err := constraint.RunOnBoundaryProviderPaths(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		AssembledPathWrittenByOneContributor,
+	)
+	if err != nil {
+		return err
+	}
+	if halt := objectionsAsHalt(
+		collided, "assembled output paths written by more than one contributor",
+	); halt != nil {
+		return halt
 	}
 	raised, err := constraint.RunOnBoundaryProviderPaths(
 		ctx.Err, coordinates, coordinates, coordinates, view,

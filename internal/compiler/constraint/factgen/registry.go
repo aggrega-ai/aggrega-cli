@@ -4032,16 +4032,20 @@ var facts = []factDecl{
 			"is not a property of the input, so answering in that order would " +
 			"return a different sequence for identical input; path order is " +
 			"derived from something ordered and is therefore the same on every " +
-			"run.\n\nNo rule reads it yet, which is a real state rather than " +
-			"an oversight: a fact is declared from where its subject is " +
-			"produced, so it stands whether or not a rule has been placed on " +
-			"it. The rules it is declared for are collision rules over " +
-			"emitted paths — each asking, at its own point of assembly, " +
-			"whether one path is claimed more than once — and where in " +
-			"assembly each of them belongs is still open. When they are " +
-			"placed, they stay distinct rules over this one fact rather than " +
-			"becoming several facts, because what differs between them is the " +
-			"predicate and not the question.",
+			"run.\n\nNo rule reads it as a predicate, which is a real state " +
+			"rather than an oversight: a fact is declared from where its " +
+			"subject is produced, so it stands whether or not a rule has been " +
+			"placed on it. It is what a rule at this stage is invoked ONCE PER " +
+			"— the paths it answers are the third coordinate of every subject " +
+			"here — so the enumeration a rule is walked over and this fact are " +
+			"one reader rather than two.\n\nThe collision rule over assembled " +
+			"output is not its predicate reader, and the reason is the shape of " +
+			"the answer rather than where that rule sits. A path set says which " +
+			"paths were written and cannot say who wrote one, so a predicate " +
+			"over it could report that something collided and never which " +
+			"contributors met — and which two to separate is the whole of what " +
+			"an author needs. That rule reads the producer set declared beside " +
+			"this one, which carries the attribution this one does not.",
 	},
 	{
 		Name:        "assembled-file-content",
@@ -4064,6 +4068,52 @@ var facts = []factDecl{
 			"other.\n\nA rule scanning assembled output reads one path's " +
 			"bytes at a time rather than receiving the assembly, so no " +
 			"rule can walk from one path to another's content.",
+	},
+	{
+		Name:        "assembled-file-producer-set",
+		Stage:       "rendered",
+		SourceField: "renderer.AssemblyContribution.PathProducers",
+		Subject:     []string{"boundary", "provider", "path"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "provider", Type: "string"},
+			{Name: "path", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "AssembledFileProducerSet are the contributors that placed a file " +
+			"at one output path for one provider within one boundary, " +
+			"deduplicated, in producer order.\n\nSeveral contributors meet in " +
+			"one assembly — each component the group holds, each feature " +
+			"attached to a boundary the group serves, and the assembly's own " +
+			"merged output — and each chooses the names it writes under " +
+			"independently of the others. So more than one entry here means two " +
+			"of them landed on one output path, which is a state only the whole " +
+			"set makes visible: from either contributor alone the path looks " +
+			"unclaimed.\n\nOne entry is the ordinary answer, and the ordinary " +
+			"answer is not the empty one: a path no contributor placed is a path " +
+			"the group did not write, so the coordinate does not exist and no " +
+			"rule is invoked for it.\n\nIt is the contributors and not the " +
+			"bytes, and that is the whole of what this fact carries. What " +
+			"separates two contributors meeting on one path from one contributor " +
+			"writing it once is which contributors arrived, so a rule reading " +
+			"this needs no content — and a rule that could reach the bytes could " +
+			"compare them, which would let two contributors agreeing by accident " +
+			"pass as though the path had been claimed once.\n\nEach contributor " +
+			"is named in authoring terms: the kind of thing it is together with " +
+			"the name its author wrote. A rule reporting one therefore sends a " +
+			"reader to something they can find in their own input rather than to " +
+			"an identity the compilation assigned.\n\nThe order is stated rather " +
+			"than inherited. The order in which contributors place their files " +
+			"is not a property of the input, so answering in that order would " +
+			"return a different sequence for identical input; producer order is " +
+			"derived from something ordered and is therefore the same on every " +
+			"run.\n\nThe path is the one the file is written to, complete with " +
+			"the position an assembly nested it under. Two contributors emitting " +
+			"one filename that an assembly keeps apart write two paths and meet " +
+			"at neither, so a set keyed by the name a contributor emitted would " +
+			"report a collision the output does not have. The names each render " +
+			"emitted before anything was grouped are a separate fact at an " +
+			"earlier stage, and neither is derivable from the other.",
 	},
 	{
 		Name:        "artifact-projection-name-set",

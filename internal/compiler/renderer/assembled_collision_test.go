@@ -6,10 +6,12 @@ package renderer_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -67,6 +69,16 @@ func (e *collisionAssemblerEngine) AssembleBoundary(_ context.Context, _ rendere
 	return out, renderer.BoundaryNesting{PerNode: e.nest, Segment: e.nestSegment}, nil
 }
 
+// collisionGraphFacts stands in for the presentation the graph finalisation
+// produces, which the render's later presentations are built over.
+//
+// It is supplied because the presentation chain refuses to assemble with a hole
+// in it, and the rule refusing two contributors on one output path reads the
+// presentation of what the render assembled. A build without it exercises the
+// arm where a caller assembled a render's input directly and gets no reading —
+// which is a real bound of the rule, and not the arm these cases are about.
+type collisionGraphFacts struct{ constraint.GraphView }
+
 // runCollisionRender drives the full pipeline over the named component
 // instances, all in one boundary and all rendered by engine, and returns
 // whatever the pipeline produced. Every instance renders through the same
@@ -84,6 +96,7 @@ func runCollisionRender(instances []string, engine renderer.Provider) (*renderer
 				Provenance: types.IRProvenance{CompilerVersion: "test"},
 			},
 		},
+		GraphView:     collisionGraphFacts{},
 		FeatureOrder:  ir.FeatureOrder{},
 		ResolveResult: &resolver.ResolveResult{Aggregate: &types.Aggregate{}},
 	}
@@ -98,6 +111,34 @@ func runCollisionRender(instances []string, engine renderer.Provider) (*renderer
 	}
 	factory := func(_ string) (renderer.Provider, error) { return engine, nil }
 	return renderer.RenderAll(context.Background(), input, lookup, factory)
+}
+
+// collisionFindings returns each finding a halt carries, one per offending
+// output path.
+//
+// Findings are read out of the chain rather than out of the halt's own text
+// because the rule raises one positioned diagnostic per path and several are
+// joined under an envelope: the envelope's own sentence says what they have in
+// common and names none of them, so a test reading it alone would assert nothing
+// about what was found.
+func collisionFindings(err error) []string {
+	type multi interface{ Unwrap() []error }
+	type single interface{ Unwrap() error }
+	if m, ok := err.(multi); ok {
+		var out []string
+		for _, member := range m.Unwrap() {
+			out = append(out, collisionFindings(member)...)
+		}
+		return out
+	}
+	if s, ok := err.(single); ok {
+		if inner := s.Unwrap(); inner != nil {
+			if _, joined := inner.(multi); joined {
+				return collisionFindings(inner)
+			}
+		}
+	}
+	return []string{err.Error()}
 }
 
 // TestRenderAll_FlatContributorsOnOneOutputPathHalt is the end-to-end proof that
@@ -119,8 +160,11 @@ func TestRenderAll_FlatContributorsOnOneOutputPathHalt(t *testing.T) {
 	}
 	msg := err.Error()
 	for _, want := range []string{
-		`shared.yaml" is written by component "alpha" and component "beta"`,
-		"rename one of the colliding files so each output path is written once",
+		`output path "boundaries/default/collide/shared.yaml"`,
+		`written by "component alpha and component beta"`,
+		// The finding is positioned at the boundary the output was assembled
+		// within, which is a place an operator can open.
+		".spec.boundaries.default",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("diagnostic missing %q\ngot: %s", want, msg)
@@ -129,7 +173,7 @@ func TestRenderAll_FlatContributorsOnOneOutputPathHalt(t *testing.T) {
 }
 
 // TestRenderAll_CollisionDiagnosticIsOrderIndependent pins the property the
-// guard would otherwise break. The maps feeding a dispatch group are plain Go
+// rule would otherwise break. The maps feeding a dispatch group are plain Go
 // maps whose iteration order is randomised per run, so a diagnostic naming
 // "the first writer" would differ between runs of identical input. The message
 // must be a function of the input alone.
@@ -158,14 +202,15 @@ func TestRenderAll_CollisionDiagnosticIsOrderIndependent(t *testing.T) {
 	}
 	// Every contributor is named, in a fixed order, not just the two that
 	// happened to be walked first.
-	if !strings.Contains(first, `component "alpha", component "beta" and component "gamma"`) {
+	if !strings.Contains(first, `written by "component alpha, component beta and component gamma"`) {
 		t.Errorf("expected all three contributors named in order, got: %s", first)
 	}
 }
 
 // TestRenderAll_CollisionAcrossManyPathsIsOrderIndependent pins the same
-// property when more than one path collides: the paths are reported in a fixed
-// order, so the message does not depend on which collision was noticed first.
+// property when more than one path collides: one finding per colliding path,
+// reported in a fixed order, so neither the set of findings nor their sequence
+// depends on which collision was noticed first.
 func TestRenderAll_CollisionAcrossManyPathsIsOrderIndependent(t *testing.T) {
 	t.Parallel()
 
@@ -174,35 +219,35 @@ func TestRenderAll_CollisionAcrossManyPathsIsOrderIndependent(t *testing.T) {
 		{Path: "alpha.yaml", Content: []byte("a: 1\n")},
 		{Path: "mid.yaml", Content: []byte("m: 1\n")},
 	}}
-	var first string
+	var first []string
 	for i := 0; i < 40; i++ {
 		_, err := runCollisionRender([]string{"one", "two"}, engine)
 		if err == nil {
 			t.Fatalf("iteration %d: expected a halt", i)
 		}
+		findings := collisionFindings(err)
 		if i == 0 {
-			first = err.Error()
+			first = findings
 			continue
 		}
-		if err.Error() != first {
-			t.Fatalf("diagnostic changed between runs of identical input\nrun 0: %s\nrun %d: %s", first, i, err.Error())
+		if !slices.Equal(findings, first) {
+			t.Fatalf("findings changed between runs of identical input\nrun 0: %v\nrun %d: %v", first, i, findings)
 		}
 	}
-	alpha := strings.Index(first, "alpha.yaml")
-	mid := strings.Index(first, "mid.yaml")
-	zeta := strings.Index(first, "zeta.yaml")
-	if alpha < 0 || mid < 0 || zeta < 0 {
-		t.Fatalf("expected all three colliding paths reported, got: %s", first)
+	// One finding per colliding path, in path order.
+	if len(first) != 3 {
+		t.Fatalf("expected one finding per colliding path, got %d: %v", len(first), first)
 	}
-	if !(alpha < mid && mid < zeta) {
-		t.Errorf("expected colliding paths reported in path order, got: %s", first)
+	for i, want := range []string{"alpha.yaml", "mid.yaml", "zeta.yaml"} {
+		if !strings.Contains(first[i], want) {
+			t.Errorf("finding %d does not name %q; the paths are not reported in path order: %v", i, want, first)
+		}
 	}
 }
 
 // TestRenderAll_AssemblyAndContributorCollisionNamesBoth covers the collision
 // between an assembly's own output and a contributor's file nested beneath it,
-// and pins the declared format appearing when the two disagree about it — the
-// case where the format is the likeliest explanation of the mistake.
+// and pins the assembly being named as a contributor in its own right.
 func TestRenderAll_AssemblyAndContributorCollisionNamesBoth(t *testing.T) {
 	t.Parallel()
 
@@ -224,8 +269,8 @@ func TestRenderAll_AssemblyAndContributorCollisionNamesBoth(t *testing.T) {
 	}
 	msg := err.Error()
 	for _, want := range []string{
-		`component "solo" (no declared format)`,
-		`the "collide" assembly (declared format "yaml")`,
+		`output path "boundaries/default/collide/charts/solo/shared.yaml"`,
+		`written by "component solo and the collide assembly"`,
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("diagnostic missing %q\ngot: %s", want, msg)

@@ -2218,6 +2218,53 @@ var BoundaryAttachmentEmittedNameProducedByOneBlock = constraint.Check[
 	},
 }
 
+// AssembledPathWrittenByOneContributor reports each output path that more than one
+// contributor to an assembly placed a file at.
+//
+// The components a dispatch group holds, the features attached to a boundary it
+// serves, and the assembly's own merged output each choose the names they write
+// under independently of one another, and nothing declares those names distinct. Two
+// of them meeting on one path means one of the two files is not in the output the
+// author expected, and which one survives is a property of the order the contributing
+// maps happen to iterate in rather than of anything the author wrote — so the build
+// halts and names both contributors instead of shipping whichever won.
+//
+// It is a sibling of the rule refusing two blocks of one document meeting on one
+// name, not a widening of it, and the two ask about different things. That one is
+// about a single document's own emission, under the names that document chose,
+// before anything is grouped; this one is about several independently authored
+// contributors meeting once a group has placed their output — under paths an
+// assembly may have nested, so two contributors emitting one filename that an
+// assembly keeps apart are not reported here.
+//
+// It reads one fact and holds no traversal, because it is invoked once per path the
+// group wrote. Its detail names the path and the contributors that met, joined into
+// one value in the order the fact answered, which is producer order — so the sentence
+// is a function of the build rather than of the order the placements arrived in.
+var AssembledPathWrittenByOneContributor = constraint.Check[
+	constraint.RenderedView,
+	constraint.BoundaryProviderPathSubject,
+]{
+	Sentinel: ErrAssembledOutputCollision(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.RenderedView,
+		s constraint.BoundaryProviderPathSubject,
+	) []constraint.Objection {
+		producers := v.AssembledFileProducerSet(s.BoundaryPath(), s.ProviderName(), s.EmittedPath())
+		if len(producers) < 2 {
+			return nil
+		}
+		return []constraint.Objection{
+			s.RaiseWith(
+				ErrAssembledOutputCollision(),
+				constraint.Captioned("output path", s.EmittedPath()),
+				constraint.Captioned("written by", joinWithAnd(producers)),
+			),
+		}
+	},
+}
+
 // The provider-compatibility rule, declared once per pipeline the rule governs.
 //
 // One rule, three values, and the reason is the type rather than the rule: a

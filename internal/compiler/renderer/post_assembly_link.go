@@ -14,16 +14,23 @@ import (
 )
 
 // assembledGroup is one dispatch group's retained assembled output: the provider
-// that rendered it, the disk-write prefix reattached at the final flush, and the
+// that rendered it, the disk-write prefix reattached at the final flush, the
 // group-relative files (keyed without the prefix, by the name each provider
-// emitted). Each file record pairs the assembled bytes with the producer-declared
-// format (empty when the producer declared none). The post-assembly link pass
-// edits files in place before the flush; a link patch rewrites a file's bytes but
-// preserves its format, so the record stays valid across the pass.
+// emitted), and the contributors that placed a file at each of those paths. Each
+// file record pairs the assembled bytes with the producer-declared format (empty
+// when the producer declared none). The post-assembly link pass edits files in
+// place before the flush; a link patch rewrites a file's bytes but preserves its
+// format, so the record stays valid across the pass.
+//
+// producers is keyed like files and is filled at the same point, from the same
+// placements. It carries what the file map cannot: a path two contributors
+// placed at holds one record, so the attribution is the only thing that still
+// says both of them arrived.
 type assembledGroup struct {
-	provider string
-	prefix   string
-	files    map[string]AssembledFile
+	provider  string
+	prefix    string
+	files     map[string]AssembledFile
+	producers map[string][]string
 }
 
 // wireCrossBoundaryLinks wires the graph's cross-boundary uses edges — those

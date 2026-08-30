@@ -21,8 +21,9 @@ import (
 // placeholder is genuinely reached, that it reports every offending file rather
 // than the first, that the walk observes the caller's cancellation signal per
 // iteration, that the halt is attributed to the translation rather than to a
-// catalog document, and that the enumeration is built from the attribution the
-// assembly recorded.
+// catalog document, that the rule about two contributors writing one output path
+// is reached from the same site and attributed to a catalog document instead, and
+// that the enumeration is built from the attribution the assembly recorded.
 
 // The cancellation and counting fixture. Three boundaries, each with one provider
 // writing two files, so a walk stopped after the first boundary's turn is a
@@ -85,7 +86,7 @@ func orphanCrossBoundaryLinkHalt(t *testing.T, res *RenderResult) error {
 	if subjects == 0 {
 		t.Fatal("the enumeration presented no output path; a verdict from it would certify nothing")
 	}
-	return runRenderedStageRules(context.Background(), view, coordinates)
+	return runRenderedStageRules(context.Background(), true, view, coordinates)
 }
 
 // TestTheAssembledLinkPlaceholderRuleIsReachedFromTheRenderSite proves the
@@ -118,6 +119,60 @@ func TestTheAssembledLinkPlaceholderRuleIsReachedFromTheRenderSite(t *testing.T)
 	for _, want := range []string{"cloudformation", "prod/cloudformation-stack.json", ".spec.boundaries.prod"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the halt omits %q, so the offending file cannot be identified: %s", want, text)
+		}
+	}
+}
+
+// TestTheAssembledCollisionHaltIsACatalogFault pins the attribution of the other
+// rule this site invokes, and that the collision reading is reached at all.
+//
+// Two contributors meeting on one output path IS something authors wrote: two
+// documents chose output names that meet, and the remedy is an edit to one of
+// them. So the fault is a catalog one, where a surviving link placeholder — a
+// marker the host stamped and a provider failed to replace — is not. The category
+// is part of the condition's published identity, so it is asserted rather than
+// left to the shared rendering's default.
+func TestTheAssembledCollisionHaltIsACatalogFault(t *testing.T) {
+	t.Parallel()
+
+	res := assembledOutputHolding([]string{"prod"}, "cloudformation", map[string][]byte{
+		"stack.json": []byte(`{}`),
+	})
+	// CONTROL — the same attribution with one contributor per path admits, so a
+	// halt below cannot come from the fixture's shape.
+	res.Contributions[0].PathProducers = map[string][]string{
+		"prod/stack.json": {"component api"},
+	}
+	if err := orphanCrossBoundaryLinkHalt(t, res); err != nil {
+		t.Fatalf("the site refused output whose every path has one contributor: %v", err)
+	}
+
+	res.Contributions[0].PathProducers = map[string][]string{
+		"prod/stack.json": {"component api", "the cloudformation assembly"},
+	}
+	err := orphanCrossBoundaryLinkHalt(t, res)
+	if err == nil {
+		t.Fatal("the site admitted an output path two contributors wrote")
+	}
+	if !errors.Is(err, ErrAssembledOutputCollision()) {
+		t.Fatalf("halt condition = %v, want the assembled-output collision", err)
+	}
+	var diag *cerrors.CompilerError
+	if !errors.As(err, &diag) {
+		t.Fatalf("the halt is not a structured diagnostic: %v", err)
+	}
+	if diag.Category != cerrors.CatalogError {
+		t.Errorf("halt category = %q, want %q — two documents chose names that meet, and the remedy is an edit to one",
+			diag.Category, cerrors.CatalogError)
+	}
+	text := err.Error()
+	for _, want := range []string{
+		`output path "prod/stack.json"`,
+		`written by "component api and the cloudformation assembly"`,
+		".spec.boundaries.prod",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the halt omits %q, so the offending path cannot be identified: %s", want, text)
 		}
 	}
 }
@@ -262,6 +317,7 @@ func TestTheAssembledLinkPlaceholderWalkStopsOnTheIterationAfterTheSignalTurns(t
 	controlReads := 0
 	controlErr := runRenderedStageRules(
 		context.Background(),
+		true,
 		assembledContentReads{RenderedView: base, content: marked, reads: &controlReads},
 		coordinates,
 	)
@@ -279,6 +335,7 @@ func TestTheAssembledLinkPlaceholderWalkStopsOnTheIterationAfterTheSignalTurns(t
 	reads := 0
 	err := runRenderedStageRules(
 		ctx,
+		true,
 		assembledContentReads{
 			RenderedView: base, content: marked, reads: &reads, withdraw: cancel, triggerAt: 1,
 		},

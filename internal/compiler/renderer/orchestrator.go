@@ -231,6 +231,16 @@ type AssemblyContribution struct {
 	// OutputPaths are the output paths this group wrote, in path order. They are
 	// keys of RenderResult.Files, which holds the bytes.
 	OutputPaths []string
+	// PathProducers names, per output path, every contributor that placed a file
+	// there, in producer order. Its key set is OutputPaths.
+	//
+	// It is carried beside the paths rather than folded into them because the
+	// file map cannot hold it: that map has one record per path, so two
+	// contributors meeting on one path leave one record and no trace of the
+	// second. This is where the second survives, and it is what lets a rule about
+	// assembled output name the contributors that met rather than only report
+	// that something did.
+	PathProducers map[string][]string
 }
 
 // EmittedPaths returns the output paths written for one provider within one
@@ -251,6 +261,28 @@ func (r *RenderResult) EmittedPaths(boundary, provider string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// AssembledFileProducers returns the contributors that placed a file at one
+// output path for one provider within one boundary, in producer order.
+//
+// It answers for the boundary and the provider together, on the reading the
+// content lookup beside it follows: a path is looked up only among the paths the
+// named pair contributed to, so a caller asking about a boundary that wrote
+// nothing there is answered with nothing rather than with another boundary's
+// contributors. A boundary reaching more than one assembly path under one
+// provider is answered from whichever of its groups wrote the path, and only one
+// of them can have: the groups' path sets are disjoint.
+func (r *RenderResult) AssembledFileProducers(boundary, provider, path string) []string {
+	for _, c := range r.Contributions {
+		if c.Provider != provider || !slices.Contains(c.Boundaries, boundary) {
+			continue
+		}
+		if producers, wrote := c.PathProducers[path]; wrote {
+			return producers
+		}
+	}
+	return nil
 }
 
 // assemblyProviders returns the providers that assembled at one evaluated
@@ -431,22 +463,23 @@ type assembledFileEntry struct {
 }
 
 // assembledFileSet accumulates every file a dispatch group's producers place,
-// then resolves them into the group's path→file map.
+// then resolves them into the group's path→file map and the attribution beside
+// it.
 //
 // Placing a file into a group is one operation with one implementation: the
 // boundary assembler's merged documents and each node's own rendered files —
 // nested under their instance or written flat — all place through put. No
 // producer holds the resulting map, and the map does not exist until resolve
-// builds it, so a producer added later cannot place a file where the collision
-// check cannot see it.
+// builds it, so a producer added later cannot place a file whose attribution is
+// missing from what resolve returns.
 //
-// The check runs in resolve rather than in put deliberately. The maps the
-// producers iterate are plain Go maps, whose iteration order is randomised per
-// run; halting at the moment of the second placement would name whichever
-// producer happened to be walked first, so identical input would fail with a
-// different message on different runs. resolve sees every placement at once and
-// orders the diagnostic by path and by producer, making the message a function
-// of the input alone.
+// The attribution is returned rather than consumed here, and that is the whole
+// of why this value keeps every placement instead of folding them as they
+// arrive. The path→file map holds one record per key, so a second placement at
+// one path is folded away by the map's own construction and is unreadable from
+// the map afterwards; the per-path producer list is what survives that fold, and
+// the rule declared over a render's assembled output reads it once every group
+// has assembled.
 //
 // The scope is one dispatch group's assembled output — several independent
 // producers meeting on one path. A single Recipe naming one output filename
@@ -460,71 +493,53 @@ func (s *assembledFileSet) put(path string, file AssembledFile, producer string)
 	s.entries = append(s.entries, assembledFileEntry{path: path, file: file, producer: producer})
 }
 
-// resolve returns the group's path→file map, or halts when two producers placed
-// a file at the same path. prefix is the group's disk-write prefix, applied to
-// the reported paths so the diagnostic names the file as it would have been
-// written.
-func (s *assembledFileSet) resolve(prefix string) (map[string]AssembledFile, error) {
+// resolve returns the group's path→file map together with the contributors that
+// placed a file at each of those paths, in producer order.
+//
+// The two are built in one walk because they are two readings of one set of
+// placements: the map is what the group writes, and the attribution is who wrote
+// it. Deriving the second from the first is impossible — the map has already
+// folded a repeat away — and deriving it in a second walk over the same
+// placements would be a second answer to one question.
+//
+// The record kept for a path several producers placed at is the first in
+// producer order rather than the first placed. The maps the producers iterate
+// are plain Go maps whose iteration order is randomised per run, so keeping the
+// first placed would leave the retained bytes differing between runs of
+// identical input. Such a group is refused before its output is written, but
+// everything between here and the refusal reads the retained value, and a value
+// that is not a function of the input has no business being read at all.
+//
+// Producer order is likewise what makes the attribution a function of the input:
+// the order placements arrive in is the contributing maps' iteration order, and
+// a rule reporting the producers that met would otherwise name them differently
+// on different runs of one input.
+func (s *assembledFileSet) resolve() (map[string]AssembledFile, map[string][]string) {
 	byPath := make(map[string][]assembledFileEntry, len(s.entries))
 	for _, e := range s.entries {
 		byPath[e.path] = append(byPath[e.path], e)
 	}
-	var collided []string
-	for path, placements := range byPath {
-		if len(placements) > 1 {
-			collided = append(collided, path)
-		}
-	}
-	if len(collided) > 0 {
-		sort.Strings(collided)
-		clauses := make([]string, 0, len(collided))
-		for _, path := range collided {
-			clauses = append(clauses, collisionClause(prefix+path, byPath[path]))
-		}
-		inner := fmt.Errorf("%w: %s; rename one of the colliding files so each output path is written once",
-			ErrAssembledOutputCollision(), strings.Join(clauses, "; "))
-		return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: prefix + collided[0]}, inner.Error())
-	}
 	files := make(map[string]AssembledFile, len(byPath))
+	producers := make(map[string][]string, len(byPath))
 	for path, placements := range byPath {
-		files[path] = placements[0].file
-	}
-	return files, nil
-}
-
-// collisionClause reports one colliding output path and every producer that
-// wrote it, ordered by producer so the sentence does not depend on the order the
-// contributing maps happened to iterate in. The declared format is named only
-// when the producers disagree about it, where it is the likeliest explanation of
-// what went wrong.
-func collisionClause(outputPath string, placements []assembledFileEntry) string {
-	ordered := make([]assembledFileEntry, len(placements))
-	copy(ordered, placements)
-	sort.Slice(ordered, func(i, j int) bool {
-		if ordered[i].producer != ordered[j].producer {
-			return ordered[i].producer < ordered[j].producer
+		ordered := make([]assembledFileEntry, len(placements))
+		copy(ordered, placements)
+		sort.SliceStable(ordered, func(i, j int) bool {
+			if ordered[i].producer != ordered[j].producer {
+				return ordered[i].producer < ordered[j].producer
+			}
+			return ordered[i].file.Format < ordered[j].file.Format
+		})
+		files[path] = ordered[0].file
+		named := make([]string, 0, len(ordered))
+		for _, e := range ordered {
+			if !slices.Contains(named, e.producer) {
+				named = append(named, e.producer)
+			}
 		}
-		return ordered[i].file.Format < ordered[j].file.Format
-	})
-	nameFormats := false
-	for _, e := range ordered[1:] {
-		if e.file.Format != ordered[0].file.Format {
-			nameFormats = true
-			break
-		}
+		producers[path] = named
 	}
-	names := make([]string, 0, len(ordered))
-	for _, e := range ordered {
-		switch {
-		case !nameFormats:
-			names = append(names, e.producer)
-		case e.file.Format == "":
-			names = append(names, e.producer+" (no declared format)")
-		default:
-			names = append(names, fmt.Sprintf("%s (declared format %q)", e.producer, e.file.Format))
-		}
-	}
-	return fmt.Sprintf("%q is written by %s", outputPath, joinWithAnd(names))
+	return files, producers
 }
 
 // nodeProducerKind classifies a per-node contributor in authoring terms: what
@@ -533,14 +548,14 @@ func collisionClause(outputPath string, placements []assembledFileEntry) string 
 // The kind is the word an author reads, and it is what says where the name is
 // written — a component's under the components it declares, a boundary-scope
 // feature's under that boundary's features. The two are returned apart rather
-// than composed because they reach a reader two ways: one caller spells them
-// into a sentence it is building, and another hands them across a boundary that
-// quotes values for itself and would double-quote a pre-composed label.
+// than composed so that the composition is the caller's: a caller spelling them
+// into a sentence it is building and a caller handing them to a surface that
+// quotes what it is given need different shapes, and a pre-composed label serves
+// only the first.
 //
-// It is the single home of the classification. Both callers below read it rather
-// than testing the synthetic prefix again, so a further kind of contributor is
-// one edit here instead of a decision two sites make separately and agree on
-// until they do not.
+// It is the single home of the classification, so a further kind of contributor
+// is one edit here instead of a decision several sites make separately and agree
+// on until they do not.
 func nodeProducerKind(nodeID string) (kind, instance string) {
 	if instance, isFeature := strings.CutPrefix(nodeID, boundaryFRNodePrefix); isFeature {
 		return "feature", instance
@@ -549,10 +564,16 @@ func nodeProducerKind(nodeID string) (kind, instance string) {
 }
 
 // nodeProducerLabel names a per-node contributor in authoring terms, so a
-// collision points at something the author can find in their own input.
+// finding about what it wrote points at something the author can find in their
+// own input.
+//
+// The name is not quoted here. The label is retained as a contributor's
+// attribution and reaches a reader through a diagnostic surface that quotes each
+// value it is handed, so quoting at both ends would show the name inside two
+// layers of quotation.
 func nodeProducerLabel(nodeID string) string {
 	kind, instance := nodeProducerKind(nodeID)
-	return fmt.Sprintf("%s %q", kind, instance)
+	return kind + " " + instance
 }
 
 func joinWithAnd(items []string) string {
@@ -2171,7 +2192,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// producer-declared format; the record travels intact so the render-
 			// policy parser seam prefers the producer's format over the path
 			// extension (empty format falls through to extension selection).
-			assemblyProducer := fmt.Sprintf("the %q assembly", key.Provider)
+			assemblyProducer := "the " + key.Provider + " assembly"
 			for p, af := range boundaryFiles {
 				groupFiles.put(p, af, assemblyProducer)
 			}
@@ -2219,14 +2240,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 		}
 
-		files, err := groupFiles.resolve(dispatchPrefix)
-		if err != nil {
-			return nil, err
-		}
+		files, producers := groupFiles.resolve()
 		assembledByDispatch[key] = &assembledGroup{
-			provider: key.Provider,
-			prefix:   dispatchPrefix,
-			files:    files,
+			provider:  key.Provider,
+			prefix:    dispatchPrefix,
+			files:     files,
+			producers: producers,
 		}
 	}
 
@@ -2250,10 +2269,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// orderedDispatch order for a deterministic walk.
 	//
 	// The same walk completes each group's attribution, so the paths a group wrote
-	// join the boundaries and the provider already recorded for it and the whole
-	// coordinate set outlives the assembly that knew it. The file map alone is
-	// keyed by output path, which is the right key for a build's output and the
-	// wrong one for asking who produced it.
+	// and the contributors that wrote each of them join the boundaries and the
+	// provider already recorded for it, and the whole coordinate set outlives the
+	// assembly that knew it. The file map alone is keyed by output path, which is
+	// the right key for a build's output and the wrong one for asking who produced
+	// it.
+	//
+	// The per-path attribution is rekeyed onto the same full paths as it is
+	// carried over, so one key set serves both and a reader holding a path from
+	// one can ask the other about it. A path the link pass introduced carries no
+	// contributor, which is the truthful answer: it was written by that pass
+	// rather than placed by any producer.
 	//
 	// The records are indexed by position rather than searched for: they were
 	// appended in this same order, over this same key set, so the i-th record is
@@ -2261,13 +2287,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	for i, key := range orderedDispatch {
 		grp := assembledByDispatch[key]
 		outputPaths := make([]string, 0, len(grp.files))
+		pathProducers := make(map[string][]string, len(grp.files))
 		for p, af := range grp.files {
 			full := grp.prefix + p
 			result.Files[full] = af
 			outputPaths = append(outputPaths, full)
+			if producers, placed := grp.producers[p]; placed {
+				pathProducers[full] = producers
+			}
 		}
 		sort.Strings(outputPaths)
 		result.Contributions[i].OutputPaths = outputPaths
+		result.Contributions[i].PathProducers = pathProducers
 	}
 
 	// Present what this render produced, with the facts complete earlier answered
@@ -2294,7 +2325,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	if renderedAxes := newRenderedStageCoordinates(
 		result, releaseFileOf(input.ResolveResult),
 	); renderedAxes != nil {
-		if err := runRenderedStageRules(ctx, result.RenderedView, renderedAxes); err != nil {
+		if err := runRenderedStageRules(
+			ctx, input.GraphView != nil, result.RenderedView, renderedAxes,
+		); err != nil {
 			return nil, err
 		}
 	}
