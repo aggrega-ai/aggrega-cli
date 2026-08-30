@@ -147,9 +147,10 @@ func TestResolve_Integration(t *testing.T) {
 			},
 		},
 		{
-			// The document envelope owns dotted-name rejection on the loader
-			// path (the Aggregate schema's component key pattern); the
-			// instance-name validator still guards constructed inputs.
+			// The document envelope owns dotted-name rejection outright: the
+			// Aggregate schema constrains every instance-key surface to the
+			// authored-name spelling and closes each one to anything else, so
+			// a dotted key is refused before the typed value is built.
 			name:     "dot in instance name fails the document envelope",
 			fixtures: "bad-name",
 			wantErr:  envelope.ErrEntityEnvelope(),

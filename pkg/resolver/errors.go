@@ -31,16 +31,6 @@ var errParametersImportLoad = cerrors.Register("resolver/parameters-import-load"
 	Message:   "parameters $import: load failed",
 })
 
-// ErrInvalidInstanceName wraps a user-authored dictionary key (component,
-// feature, secret, subsystem, aggregate name) that does not match the
-// instance-name pattern.
-func ErrInvalidInstanceName() error { return errInvalidInstanceName }
-
-var errInvalidInstanceName = cerrors.Register("resolver/invalid-instance-name", cerrors.Meta{
-	ShortCode: "E0157",
-	Message:   "invalid instance name: names must match ^[a-zA-Z0-9_-]+$ (letters, digits, hyphen, underscore; no dots)",
-})
-
 // ErrYAMLLoad wraps a file-read or YAML-unmarshal failure for any of the
 // three source documents (Aggregate, Release, Manifest).
 func ErrYAMLLoad() error { return errYAMLLoad }

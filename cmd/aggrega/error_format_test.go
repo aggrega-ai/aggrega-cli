@@ -96,16 +96,16 @@ func TestFormatCompilerError_DeveloperCategory_RendersViaResolverError(t *testin
 	t.Parallel()
 	re := &resolver.ResolverError{
 		Entity:  "Aggregate my-app",
-		Field:   ".spec.components.bad-name",
-		Message: "invalid component name",
-		Err:     resolver.ErrInvalidInstanceName(),
+		Field:   ".spec.components.api.values.replicas",
+		Message: "replicas must be an integer",
+		Err:     resolver.ErrSchemaConformance(),
 	}
 	got := formatCompilerError(re)
 	for _, want := range []string{
-		headTag(t, cerrors.DeveloperError, resolver.ErrInvalidInstanceName()),
-		".spec.components.bad-name",
+		headTag(t, cerrors.DeveloperError, resolver.ErrSchemaConformance()),
+		".spec.components.api.values.replicas",
 		"Aggregate my-app",
-		"invalid component name",
+		"replicas must be an integer",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\n--- got ---\n%s", want, got)
@@ -363,7 +363,7 @@ func TestFormatCompilerError_LocatedFindings_DistinguishTwoComponentsOfOneType(t
 func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 	t.Parallel()
 	ce := cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "translation msg", nil, nil)
-	re := &resolver.ResolverError{Entity: "Aggregate my-app", Field: ".f", Message: "resolver msg", Err: resolver.ErrInvalidInstanceName()}
+	re := &resolver.ResolverError{Entity: "Aggregate my-app", Field: ".f", Message: "resolver msg", Err: resolver.ErrSchemaConformance()}
 	rve := validator.NewShapeRuleError(validator.ShapeRuleViolation{
 		Kind: envelope.KindRecipe,
 		Name: "r",
@@ -379,7 +379,7 @@ func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 	// diagnostic rather than continuing its neighbour's.
 	for _, want := range []string{
 		"[TRANSLATION_ERROR]",
-		headTag(t, cerrors.DeveloperError, resolver.ErrInvalidInstanceName()),
+		headTag(t, cerrors.DeveloperError, resolver.ErrSchemaConformance()),
 		headTag(t, cerrors.CatalogError, validator.ErrRecipeValuesMappingRequiresSource()),
 		"translation msg",
 		"resolver msg",

@@ -523,6 +523,11 @@ type retirement struct {
 // frees the number for reuse, and reuse is the one thing the numbering promises
 // cannot happen.
 var retiredShortCodes = []retirement{
+	{"E0157", "It named an Aggregate key — a component, feature, subsystem or nested-module " +
+		"instance name — that did not match the authored-name pattern. Every one of those key " +
+		"surfaces is constrained to that same spelling by the Aggregate schema, which refuses " +
+		"the document while validating its envelope and reports the offending key with a line " +
+		"and column; that condition's code is `E0215`."},
 	{"E0159", "It named a target reference whose dot-separated segments did not all match the " +
 		"instance-name pattern, and no build reported it before the condition was withdrawn."},
 	{"E0217", "It named a schema-validation failure that could not be reported against a particular " +

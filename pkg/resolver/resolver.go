@@ -287,12 +287,6 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 		fmt.Sprintf("Aggregate %s", agg.Metadata.Name),
 	)
 
-	// Validate instance names
-	nameErrs := ValidateInstanceNames(na)
-	if len(nameErrs) > 0 {
-		return nil, nameErrs[0]
-	}
-
 	// Wire boundary infra (per-component) plus the per-boundary annotations cascade
 	// and the per-routed-module placements. release is already normalized at load;
 	// NormalizeRelease here is the idempotent wrap producing the NormalizedRelease

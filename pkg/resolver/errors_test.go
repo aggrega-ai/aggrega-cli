@@ -19,9 +19,9 @@ import (
 func TestResolverError_ToCompilerError_AggregateRoutesToDeveloper(t *testing.T) {
 	re := &resolver.ResolverError{
 		Entity:  "Aggregate my-app",
-		Field:   ".spec.components.bad-name",
-		Message: "invalid component name",
-		Err:     resolver.ErrInvalidInstanceName(),
+		Field:   ".spec.components.api.values.replicas",
+		Message: "replicas must be an integer",
+		Err:     resolver.ErrSchemaConformance(),
 	}
 	ce := re.ToCompilerError()
 	if ce == nil {
@@ -30,13 +30,13 @@ func TestResolverError_ToCompilerError_AggregateRoutesToDeveloper(t *testing.T) 
 	if ce.Category != cerrors.DeveloperError {
 		t.Errorf("Category = %v, want %v", ce.Category, cerrors.DeveloperError)
 	}
-	if ce.Source.File != ".spec.components.bad-name" {
-		t.Errorf("Source.File = %q, want %q", ce.Source.File, ".spec.components.bad-name")
+	if ce.Source.File != ".spec.components.api.values.replicas" {
+		t.Errorf("Source.File = %q, want %q", ce.Source.File, ".spec.components.api.values.replicas")
 	}
 	// Inner error chain preserved: errors.Is against the resolver sentinel
 	// matches through the converted CompilerError.
-	if !stderrors.Is(ce, resolver.ErrInvalidInstanceName()) {
-		t.Errorf("errors.Is(ce, ErrInvalidInstanceName) = false, want true (chain preservation)")
+	if !stderrors.Is(ce, resolver.ErrSchemaConformance()) {
+		t.Errorf("errors.Is(ce, ErrSchemaConformance) = false, want true (chain preservation)")
 	}
 }
 
@@ -90,12 +90,12 @@ func TestResolverError_ToCompilerError_RecipeRoutesToCatalog(t *testing.T) {
 func TestResolverError_ComposesItsConditionsSentenceOnce(t *testing.T) {
 	t.Parallel()
 
-	registered := resolver.ErrInvalidInstanceName().Error()
+	registered := resolver.ErrSchemaConformance().Error()
 	re := &resolver.ResolverError{
 		Entity:  "Aggregate my-app",
-		Field:   ".spec.components.bad name",
-		Message: `component name "bad name" carries a space`,
-		Err:     resolver.ErrInvalidInstanceName(),
+		Field:   ".spec.components.api.values.replicas",
+		Message: `replicas: "two" is not an integer`,
+		Err:     resolver.ErrSchemaConformance(),
 	}
 
 	for _, row := range []struct {

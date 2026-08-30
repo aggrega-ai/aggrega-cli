@@ -234,61 +234,6 @@ func TestDeepMerge_AllBranches(t *testing.T) {
 	}
 }
 
-// TestValidateInstanceNames_InvalidNamesSurfaceAtSubsystemPath pins the
-// subsystem-name validator: invalid feature names, subsystem names, and component
-// names ALL surface as separate ResolverErrors with their correct dotted-path
-// locators. Recursive — an invalid name nested in a sub-subsystem surfaces with
-// the full path.
-//
-// The expected locators are asserted exactly rather than counted, because the
-// locator string is what a user reads and it must not drift.
-func TestValidateInstanceNames_InvalidNamesSurfaceAtSubsystemPath(t *testing.T) {
-	t.Parallel()
-	// Invalid feature instance name (contains dot) at this level.
-	feats := types.OrderedMap[types.FeatureInstance]{}
-	feats.Set("bad.feature", types.FeatureInstance{Type: "x"})
-	// Invalid subsystem child name (slash).
-	innerFeats := types.OrderedMap[types.FeatureInstance]{}
-	innerFeats.Set("inner-bad.name", types.FeatureInstance{Type: "y"})
-	inner := types.Subsystem{Features: innerFeats}
-	innerSubs := types.OrderedMap[types.Subsystem]{}
-	innerSubs.Set("bad/nested", inner)
-	// Invalid component name at the outer level.
-	comps := types.OrderedMap[types.ComponentInstance]{}
-	comps.Set("bad.comp", types.ComponentInstance{Type: "core/server"})
-	outer := types.OrderedMap[types.Subsystem]{}
-	outer.Set("outer", types.Subsystem{
-		Components: comps,
-		Features:   feats,
-		Subsystems: innerSubs,
-	})
-	agg := &types.Aggregate{}
-	agg.Metadata.Name = "app"
-	agg.Spec.Subsystems = outer
-
-	errs := ValidateInstanceNames(types.Normalize(agg))
-	got := make([]string, 0, len(errs))
-	for _, e := range errs {
-		got = append(got, e.Field)
-	}
-	// ValidateInstanceNames sorts by (Entity, Field), so the expectation is the
-	// sorted locator set.
-	want := []string{
-		`.spec.subsystems.outer.components["bad.comp"]`,
-		`.spec.subsystems.outer.features["bad.feature"]`,
-		`.spec.subsystems.outer.subsystems.bad/nested.features["inner-bad.name"]`,
-		`.spec.subsystems.outer.subsystems["bad/nested"]`,
-	}
-	if len(got) != len(want) {
-		t.Fatalf("got %d errors %v, want %d %v", len(got), got, len(want), want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("error %d field = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
 // TestSortResolverErrors_StableOrderByEntityThenField pins the
 // deterministic-output discipline: errors sort by Entity first, then
 // by Field. Same Entity + Field collisions stay in insertion order
@@ -384,26 +329,6 @@ func TestValidateAnnotationBindingTargets_CatalogMissErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "core/unknown") {
 		t.Errorf("error should name the missing Feature; got: %s", err.Error())
-	}
-}
-
-// TestValidateComponentInstanceNames_AttachmentNames pins the attachment-name
-// branch: every invalid attachment instance name produces one error, whatever
-// the attachment produces, because there is one attachment block to walk.
-func TestValidateComponentInstanceNames_AttachmentNames(t *testing.T) {
-	t.Parallel()
-	feats := types.OrderedMap[types.FeatureInstance]{}
-	feats.Set("bad.feature.name", types.FeatureInstance{Type: "x"})
-	feats.Set("bad/secret/name", types.FeatureInstance{Type: "y"})
-	comp := types.ComponentInstance{Features: feats}
-	errs := validateComponentInstanceNames("Aggregate", "api", comp)
-	if len(errs) != 2 {
-		t.Fatalf("expected 2 errors (one per invalid attachment name); got %d: %v", len(errs), errs)
-	}
-	for _, e := range errs {
-		if !strings.Contains(e.Field, ".features[") {
-			t.Errorf("attachment-name error must locate under .features[]; got %q", e.Field)
-		}
 	}
 }
 
