@@ -22,44 +22,23 @@ func effectiveComponentSchema(lookup resolver.CatalogLookup, componentType strin
 }
 
 // CompileFeatureSchema resolves one attachment Feature type to its compiled
-// whole-entity schema. It is the ONE home for that resolution, so every reader
-// of an attachment's declared schema — the pillar-conformance gate, the
-// sensitivity derivation, and the display surfaces that redact what a Feature
-// declares sensitive — sees the same schema for the same type and cannot
-// disagree about what the Feature declares.
+// whole-entity schema. It delegates to resolver.CompileFeatureSchema, which is
+// the one home for that resolution, so every reader of an attachment's declared
+// schema — the pillar-conformance gate, the sensitivity derivation, and the
+// display surfaces that redact what a Feature declares sensitive — sees the same
+// schema for the same type and cannot disagree about what the Feature declares.
 //
-// The composed effective schema wins for an extends-ing Feature, so an inherited
-// declaration reaches every reader exactly as an inherited constraint does; a
-// non-extends Feature compiles its authored schema, with the catalog's schema
-// libraries supplied so cross-library `$ref`s resolve the same way the validator
-// resolves them. An absent Feature, an absent schema, or content that fails to
-// compile yields (nil, false): a malformed schema surfaces through the validator,
-// not here.
+// It holds no resolution logic of its own and must not acquire any. A body here
+// that re-derived the answer would be a second copy agreeing on the day it was
+// written, and that agreement is exactly what would hide the divergence later.
+// What the resolution does with an extending Feature, with the catalog's schema
+// libraries, and with a Feature that is absent or whose declared schema does not
+// resolve is stated at that one home rather than restated here.
 //
 // Callers that resolve the same type repeatedly memoise around this function
 // rather than inside it, so the cache's lifetime stays the caller's decision.
 func CompileFeatureSchema(lookup resolver.CatalogLookup, featureType string) (compactform.Schema, bool) {
-	if lookup.EffectiveSchema != nil {
-		if eff, ok := lookup.EffectiveSchema(featureType); ok {
-			return eff, true
-		}
-	}
-	if lookup.Feature == nil || featureType == "" {
-		return nil, false
-	}
-	feat, ok := lookup.Feature(featureType)
-	if !ok || feat.Spec.Schema.Kind == 0 {
-		return nil, false
-	}
-	var opts []compactform.CompileOption
-	if len(lookup.SchemaLibraries) > 0 {
-		opts = append(opts, compactform.WithSchemaLibraries(lookup.SchemaLibraries))
-	}
-	compiled, err := compactform.Compile(&feat.Spec.Schema, opts...)
-	if err != nil {
-		return nil, false
-	}
-	return compiled, true
+	return resolver.CompileFeatureSchema(lookup, featureType)
 }
 
 // componentPillarDefaults compiles a Component's schema and returns the declared

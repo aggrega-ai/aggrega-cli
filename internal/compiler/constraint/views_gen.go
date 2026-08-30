@@ -1745,8 +1745,12 @@ type NormalizedView interface {
 	// a Feature type the catalog does not hold, and a contract that failed to
 	// resolve: all three arrive as the same negative, and whether the catalog
 	// holds the type at all is the separate fact beside this one. A contract
-	// that failed to resolve is reported where the resolving happens, once,
-	// rather than left to every rule reading a bare absence to infer.
+	// that failed to resolve is reported by whatever holds the resolution,
+	// once, rather than left to every rule reading a bare absence to infer —
+	// a presentation that resolves the bound Features up front keeps that
+	// failure and reports it, while one that resolves per call keeps nothing
+	// afterwards and reports nothing, which is why a rule over this fact is
+	// invoked on a presentation that holds the resolution.
 	//
 	// The resolved document holds no order. A rule selects from it by key,
 	// which iterates nothing; one that walked the whole document to build

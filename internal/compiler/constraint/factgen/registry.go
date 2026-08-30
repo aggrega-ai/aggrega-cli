@@ -1915,8 +1915,12 @@ var facts = []factDecl{
 			"a contract that failed to resolve: all three arrive as the same " +
 			"negative, and whether the catalog holds the type at all is the " +
 			"separate fact beside this one. A contract that failed to resolve is " +
-			"reported where the resolving happens, once, rather than left to every " +
-			"rule reading a bare absence to infer.\n\nThe resolved document holds " +
+			"reported by whatever holds the resolution, once, rather than left to " +
+			"every rule reading a bare absence to infer — a presentation that " +
+			"resolves the bound Features up front keeps that failure and reports " +
+			"it, while one that resolves per call keeps nothing afterwards and " +
+			"reports nothing, which is why a rule over this fact is invoked on a " +
+			"presentation that holds the resolution.\n\nThe resolved document holds " +
 			"no order. A rule selects from it by key, which iterates nothing; one " +
 			"that walked the whole document to build output would put a " +
 			"byte-identical result at the mercy of map iteration.",
