@@ -53,6 +53,23 @@ type Identity struct {
 	// will raise the condition, and is empty for every condition something
 	// already raises. Resolved through a re-export, like the message.
 	DeclaredAhead string
+
+	// Advisory reports whether a check declares this condition at warning
+	// severity — the declaration that makes a build report the finding and
+	// carry on rather than stop.
+	//
+	// 🔴 False is narrower than "halts", and reading it as the opposite of
+	// advisory would publish a claim no declaration supports. It says only that
+	// no check declares this condition at warning severity, which covers a
+	// condition that halts AND a condition raised outside the check framework,
+	// where there is no severity declared at all. The registration beside a
+	// condition declares wording and codes and never consequence, so the
+	// distinction cannot be recovered from it.
+	//
+	// Resolved through a re-export in both directions, like Raised: a re-export
+	// and the identity it forwards to are one value, so a check naming either
+	// declares the severity of both.
+	Advisory bool
 }
 
 // admitted reports whether the condition reaches the published reference.
@@ -264,14 +281,16 @@ type accessorTarget struct {
 // parsed, because an accessor may be written either side of the registration it
 // returns.
 //
-// It reads one further fact about each identity, from the same walk: whether
+// It reads two further facts about each identity, from the same walk: whether
 // production code anywhere in the module invokes the accessor, which is what
-// makes the condition reachable by a build. One walk answers both questions
-// because they are asked of the same files and the same parse — a second walk
-// would be a second recogniser of which files count, and two recognisers of one
-// population agree until the day a file takes a shape only one of them reads.
-// What counts as an invocation, and the two occurrences that are excluded, is
-// [collectRaiseSites].
+// makes the condition reachable by a build, and whether a check declares the
+// condition at warning severity, which is what makes it an advisory rather than
+// a halt. One walk answers all three questions because they are asked of the
+// same files and the same parse — a second walk would be a second recogniser of
+// which files count, and two recognisers of one population agree until the day a
+// file takes a shape only one of them reads. What counts as an invocation, and
+// the two occurrences that are excluded, is [collectRaiseSites]; what counts as
+// a severity declaration is [collectAdvisories].
 //
 // The cost is stated rather than hidden: a handle produced by anything other
 // than an accessor over a registration, or an accessor re-exporting one from
@@ -293,6 +312,7 @@ func scan(root, modulePath string) ([]Identity, error) {
 	accessors := []accessorDecl{}            // in discovery order, sorted later
 	seen := map[string]bool{}                // accessor handles already declared
 	raised := map[string]bool{}              // handles production code invokes
+	advisory := map[string]bool{}            // handles a check declares at warning severity
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -337,6 +357,13 @@ func scan(root, modulePath string) ([]Identity, error) {
 		// [collectRaiseSites] records why: a condition declared in a shared core
 		// and raised only from the guest beside it is raised.
 		collectRaiseSites(raised, file, pkgDir, imports)
+
+		// Check declarations are read from the same file set as raise sites, and
+		// for the same reason: a check is production code that runs, and where it
+		// sits decides nothing about the severity it declares.
+		if aerr := collectAdvisories(advisory, file, pkgDir, imports); aerr != nil {
+			return fmt.Errorf("%s: %w", path, aerr)
+		}
 
 		if guest {
 			return nil
@@ -424,6 +451,7 @@ func scan(root, modulePath string) ([]Identity, error) {
 		byHandle[acc.pkg+"."+acc.name] = &Identity{
 			Pkg: acc.pkg, Name: acc.name, Code: reg.code, ShortCode: reg.shortCode, Message: reg.message,
 			DeclaredAhead: reg.declaredAhead, Raised: raised[acc.pkg+"."+acc.name],
+			Advisory: advisory[acc.pkg+"."+acc.name],
 		}
 	}
 	// A re-export forwards to a DECLARING accessor and never to another
@@ -464,6 +492,13 @@ func scan(root, modulePath string) ([]Identity, error) {
 		if raised[acc.pkg+"."+acc.name] {
 			origin.Raised = true
 		}
+		// A check naming a re-export declares the severity of the one value both
+		// names reach, so the credit is propagated to the origin exactly as raise
+		// credit is — and before any re-exported identity is built, so the answer
+		// does not depend on which of them the walk reached first.
+		if advisory[acc.pkg+"."+acc.name] {
+			origin.Advisory = true
+		}
 	}
 	for _, acc := range accessors {
 		if acc.target.alias == "" {
@@ -474,6 +509,7 @@ func scan(root, modulePath string) ([]Identity, error) {
 			Pkg: acc.pkg, Name: acc.name, Code: origin.Code, ShortCode: origin.ShortCode,
 			Message: origin.Message, AliasOf: acc.target.alias,
 			DeclaredAhead: origin.DeclaredAhead, Raised: origin.Raised,
+			Advisory: origin.Advisory,
 		}
 	}
 	for _, acc := range accessors {

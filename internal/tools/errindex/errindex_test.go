@@ -2416,3 +2416,249 @@ func TestReportCrossrefs_ResolvesATitleToAHeadingAndRefusesOneThatNamesNothing(t
 		})
 	}
 }
+
+// advisoryRows returns the short code of every row in a rendered advisory
+// region, in the order the region carries them.
+//
+// It reads the first cell rather than matching a whole row, for the reason
+// [shortCodeRows] does: a test asserting coverage must not be satisfiable by a
+// row whose other cells moved. The cell count differs because the table does —
+// this region carries no third column, and a helper that tolerated either width
+// would stop noticing a column appearing or disappearing.
+func advisoryRows(t *testing.T, region string) []string {
+	t.Helper()
+	var out []string
+	for _, line := range strings.Split(region, "\n") {
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		cells := strings.Split(strings.Trim(line, "|"), " | ")
+		if len(cells) != 2 {
+			t.Fatalf("row does not carry two cells: %q", line)
+		}
+		for i, c := range cells {
+			if strings.TrimSpace(strings.Trim(strings.TrimSpace(c), "`")) == "" {
+				t.Errorf("row cell %d is empty: %q", i, line)
+			}
+		}
+		out = append(out, strings.Trim(strings.TrimSpace(cells[0]), "`"))
+	}
+	return out
+}
+
+// TestScan_ReadsSeverityFromTheCheckAndNotFromTheRegistration is the property the
+// advisory region rests on. A condition's registration declares its wording and
+// its two codes and says nothing about what a violation does to a build; the
+// check that raises it declares that, and names the condition in the same
+// literal. So the severity reaches an identity through the check or it does not
+// reach it at all.
+//
+// Every row states what would go wrong if the reader answered differently, since
+// each is a distinct way the extraction has to be wrong rather than a variation
+// on one.
+func TestScan_ReadsSeverityFromTheCheckAndNotFromTheRegistration(t *testing.T) {
+	t.Parallel()
+	got := scanFixture(t, "testdata/advisory", "example.test/advisory")
+
+	for _, tc := range []struct {
+		handle string
+		want   bool
+		why    string
+	}{
+		{
+			handle: "pkg/thing.ErrAdvised",
+			want:   true,
+			why:    "a check names it and declares warning severity, which is the whole declaration",
+		},
+		{
+			handle: "pkg/thing.ErrHalting",
+			want:   false,
+			why:    "a check names it and declares fatal severity, so a reader marking every check would be wrong here",
+		},
+		{
+			handle: "pkg/thing.ErrNestedAdvised",
+			want:   true,
+			why:    "the check is an element of a larger literal, which a reader of package-level declarations alone would miss",
+		},
+		{
+			handle: "pkg/thing.ErrOriginOnly",
+			want:   true,
+			why:    "the check names the re-export, and a re-export and its origin are one value, so the credit propagates to the origin",
+		},
+		{
+			handle: "pkg/other.ErrReexported",
+			want:   true,
+			why:    "the re-export reports the severity of the value it forwards to, as it reports the forwarded message",
+		},
+		{
+			handle: "pkg/thing.ErrUntouched",
+			want:   false,
+			why:    "no check names it, so it carries no severity declaration at all",
+		},
+		{
+			handle: "internal/compiler/constraint.ErrInPackage",
+			want:   true,
+			why:    "the check is written inside the constraint package, where the type and the severity are spelled unqualified",
+		},
+		{
+			handle: "pkg/decoy.ErrDecoy",
+			want:   false,
+			why:    "the literal naming it is an unrelated type that merely shares the name Check, in a package that imports no constraint package",
+		},
+	} {
+		id, ok := got[tc.handle]
+		if !ok {
+			t.Errorf("%s: not extracted", tc.handle)
+			continue
+		}
+		if id.Advisory != tc.want {
+			t.Errorf("%s: advisory = %v, want %v: %s", tc.handle, id.Advisory, tc.want, tc.why)
+		}
+	}
+
+	// The rows above read as "nothing is wrong" over an empty extraction, so the
+	// population is pinned. Eight conditions are declared across the fixture and
+	// all eight must survive.
+	if len(got) != 8 {
+		t.Errorf("extracted %d identities, want 8: %v", len(got), got)
+	}
+}
+
+// TestRenderAdvisoryRegion_CarriesTheDeclaredAdvisoriesInShortCodeOrder pins both
+// halves of the region's membership at once: which identities earn a row, and the
+// order they arrive in. Asserting the order separately would let a set-only test
+// pass over a region whose rows moved between runs, which is the failure the
+// deterministic-output contract exists to prevent.
+func TestRenderAdvisoryRegion_CarriesTheDeclaredAdvisoriesInShortCodeOrder(t *testing.T) {
+	t.Parallel()
+	region, err := renderAdvisoryRegion([]Identity{
+		{Pkg: "pkg/z", Name: "ErrLate", ShortCode: "E0300", Message: "declared last, advised", Advisory: true},
+		{Pkg: "pkg/a", Name: "ErrHalts", ShortCode: "E0100", Message: "declared first, halts"},
+		{Pkg: "pkg/m", Name: "ErrEarly", ShortCode: "E0200", Message: "advised", Advisory: true},
+		// A re-export reports the short code of the condition it forwards to, so
+		// admitting one would put two rows under a single key in the one table
+		// whose whole job is to resolve that key.
+		{Pkg: "pkg/n", Name: "ErrEarly", ShortCode: "E0200", Message: "advised", Advisory: true, AliasOf: "pkg/m.ErrEarly"},
+	})
+	if err != nil {
+		t.Fatalf("renderAdvisoryRegion: %v", err)
+	}
+
+	got := advisoryRows(t, region)
+	want := []string{"E0200", "E0300"}
+	if !slices.Equal(got, want) {
+		t.Errorf("rows = %v, want %v", got, want)
+	}
+	if strings.Contains(region, "halts") {
+		t.Errorf("the region carries a condition no check declares at warning severity:\n%s", region)
+	}
+}
+
+// TestRenderAdvisoryRegion_RefusesASetWithNoAdvisoryInIt holds the renderer to
+// reporting an instrument failure rather than serving an empty table. An empty
+// table reads as a compiler in which nothing advises, which is indistinguishable
+// from a reader that stopped recognising the check declaration — and the second
+// is what an empty result over this module would actually mean.
+func TestRenderAdvisoryRegion_RefusesASetWithNoAdvisoryInIt(t *testing.T) {
+	t.Parallel()
+	_, err := renderAdvisoryRegion([]Identity{
+		{Pkg: "pkg/a", Name: "ErrHalts", ShortCode: "E0100", Message: "halts"},
+	})
+	if err == nil {
+		t.Fatal("rendered a region from a set carrying no advisory; an empty table reads as a compiler in which nothing advises")
+	}
+	if !strings.Contains(err.Error(), "warning severity") {
+		t.Errorf("refusal does not name what stopped it: %v", err)
+	}
+}
+
+// TestRenderAdvisoryRegion_RefusesADuplicateShortCode covers the extraction
+// having gone wrong rather than the declaration: registration already refuses a
+// duplicate at package initialisation, so two rows under one key here mean the
+// reader produced them, and publishing an ambiguous lookup is worse than
+// refusing.
+func TestRenderAdvisoryRegion_RefusesADuplicateShortCode(t *testing.T) {
+	t.Parallel()
+	_, err := renderAdvisoryRegion([]Identity{
+		{Pkg: "pkg/a", Name: "ErrOne", ShortCode: "E0100", Message: "one", Advisory: true},
+		{Pkg: "pkg/b", Name: "ErrTwo", ShortCode: "E0100", Message: "two", Advisory: true},
+	})
+	if err == nil {
+		t.Fatal("rendered two rows under one short code; a lookup keyed on it then names no single condition")
+	}
+	if !strings.Contains(err.Error(), "E0100") {
+		t.Errorf("refusal does not name the ambiguous code: %v", err)
+	}
+}
+
+// TestRenderAdvisoryRegion_RefusesADeclaredStringCarryingATableSeparator holds
+// this region to the same refusal the other two carry. A separator inside a cell
+// renders as extra columns, so the row silently stops meaning what it says, and
+// no escaping fixes it.
+func TestRenderAdvisoryRegion_RefusesADeclaredStringCarryingATableSeparator(t *testing.T) {
+	t.Parallel()
+	_, err := renderAdvisoryRegion([]Identity{
+		{Pkg: "pkg/a", Name: "ErrPiped", ShortCode: "E0100", Message: "a message | with a separator", Advisory: true},
+	})
+	if err == nil {
+		t.Fatal("rendered a message carrying a table separator")
+	}
+	if !strings.Contains(err.Error(), "pkg/a.ErrPiped") {
+		t.Errorf("refusal does not name the declaration: %v", err)
+	}
+}
+
+// TestAdvisoriesIn_LiveModuleAdvisoriesAreAllRaised is the claim the generator
+// makes when it renders this region from the whole identity set rather than from
+// the admitted subset: a condition a check declares at warning severity IS raised
+// by that check, so the two corpora cannot disagree.
+//
+// It is asserted rather than assumed because it rests on the raise reader
+// counting the sentinel field's invocation, which is a property of that reader
+// and not of the check. If it ever stopped counting, this region would publish a
+// condition the reference itself excludes as unraisable, and nothing else would
+// say so.
+func TestAdvisoriesIn_LiveModuleAdvisoriesAreAllRaised(t *testing.T) {
+	t.Parallel()
+	modulePath, err := modulePathOf("../../..")
+	if err != nil {
+		t.Fatalf("module path: %v", err)
+	}
+	ids, err := scan("../../..", modulePath)
+	if err != nil {
+		t.Fatalf("scan module: %v", err)
+	}
+
+	advisories := advisoriesIn(ids)
+	// Calibration: every walk below reads as "nothing is wrong" over an empty
+	// set, so the input is proven non-empty before any verdict is believed.
+	if len(advisories) == 0 {
+		t.Fatal("the module declares no advisory; the check reader is broken, not the rule")
+	}
+
+	published, _ := admit(ids)
+	admitted := map[string]bool{}
+	for _, id := range published {
+		admitted[id.Handle()] = true
+	}
+	for _, id := range advisories {
+		if !id.Raised {
+			t.Errorf("%s is declared at warning severity and reads as raised by nothing; "+
+				"the check that declares it invokes its accessor, so the raise reader has stopped counting that invocation",
+				id.Handle())
+		}
+		if !admitted[id.Handle()] {
+			t.Errorf("%s is declared at warning severity and the admission rule excludes it, "+
+				"so the region would publish a condition the reference itself withholds", id.Handle())
+		}
+		if id.ShortCode == "" || id.Message == "" {
+			t.Errorf("%s carries no short code or no message, so its row would be empty in a cell", id.Handle())
+		}
+	}
+
+	// The advisory set is a strict subset of the declared set. Equality would mean
+	// the reader marked everything, which every assertion above passes over.
+	if len(advisories) >= len(ids) {
+		t.Errorf("%d advisories over %d declared handles; the reader is not discriminating", len(advisories), len(ids))
+	}
+}

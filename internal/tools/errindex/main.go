@@ -4,12 +4,13 @@
 // Command errindex reads the halting-condition identities this module declares
 // and serves them to the two consumers that need them.
 //
-// With -out it refreshes the generated regions of two published pages, so their
-// rows are a function of the declarations rather than a transcription of them:
-// the sentinel reference, which resolves any code a build prints, and the
+// With -out it refreshes the generated regions of three published pages, so
+// their rows are a function of the declarations rather than a transcription of
+// them: the sentinel reference, which resolves any code a build prints; the
 // halting-conditions page, whose region resolves a code to the entry that teaches
-// the authoring fix. With -index it prints the identity set as tab-separated
-// records for a consumer outside this module.
+// the authoring fix; and the advisory page, whose region carries the conditions a
+// build reports without stopping. With -index it prints the identity set as
+// tab-separated records for a consumer outside this module.
 //
 // Run it as:
 //
@@ -40,11 +41,25 @@
 // invisible by dropping off the reference — which would only move the problem the
 // rule exists to fix.
 //
-// Every -out run reports three sizes, so a caller can state what its verdict
+// Every -out run reports four sizes, so a caller can state what its verdict
 // covered instead of leaving the reader of a reassuring line to guess whether the
 // whole set was behind it or a fragment of one: the identity set it read, the
-// subset of that set the reference carries under the rule above, and the set the
-// halting-conditions page documents, which is what that page's region carries.
+// subset of that set the reference carries under the rule above, the set the
+// halting-conditions page documents, which is what that page's region carries,
+// and the set a check declares at warning severity, which is what the advisory
+// page's region carries.
+//
+// # Where the advisory set comes from, and why not from the registration
+//
+// A registration declares a condition's wording and its two codes and says
+// nothing about what a violation does to a build. Consequence belongs to the
+// rule that raises the condition rather than to the wording it renders, so it is
+// declared there: a check names the condition it raises and states whether a
+// violation halts the build or is reported and passed over. Reading both fields
+// off one declaration is what lets a severity be attributed to a condition at
+// all, and it is why the advisory corpus is narrower than the advisory surface —
+// a finding raised by a pass of its own, outside any declared check, carries no
+// severity for this to read.
 //
 // # What every -out run holds the published pages to
 //
@@ -119,14 +134,27 @@ import (
 //
 // Each is spliced by its own id, so the curated prose between and around them —
 // which introduces the table that follows it — survives every write untouched.
+// advisoryRegionID names the one generated region within the advisory page. It
+// is on a third page because it answers a third question: not which conditions
+// exist, and not which of them a page documents, but which of them a build
+// reports without stopping. That fact is declared beside the rule that raises a
+// condition rather than beside the condition, so it is the one of the three no
+// other region can carry.
 const (
 	regionID          = "error-identities"
 	shortCodeRegionID = "condition-short-codes"
 	haltRegionID      = "halt-condition-sentences"
+	advisoryRegionID  = "advisory-short-codes"
 )
 
 // pageRelPath is the sentinel reference, relative to the documentation tree root.
 const pageRelPath = "language-reference/errors/sentinels.md"
+
+// warningsRelPath is the advisory page, relative to the documentation tree root.
+// It teaches what each advisory means and what to do about it; the region
+// spliced into it is the lookup from the code a build prints to the sentence the
+// advisory opens with.
+const warningsRelPath = "language-reference/errors/warnings.md"
 
 func main() {
 	root := flag.String("root", ".", "path to the module root to read declarations from")
@@ -246,8 +274,18 @@ func main() {
 		fail(err)
 	}
 
+	// The advisory region is rendered from the same identity set the two
+	// reference regions are, narrowed by the severity a check declares rather
+	// than by the admission rule: a condition a check declares at warning
+	// severity is raised by that check, so the two corpora cannot disagree here.
+	advisoryRegion, err := renderAdvisoryRegion(ids)
+	if err != nil {
+		fail(err)
+	}
+
 	page := filepath.Join(*out, pageRelPath)
 	haltPage := filepath.Join(*out, haltsRelPath)
+	advisoryPage := filepath.Join(*out, warningsRelPath)
 
 	// The regions are spliced one at a time, each by its own id into the page
 	// that carries it, and a page is re-read before each splice so a later
@@ -259,6 +297,7 @@ func main() {
 		{page, regionID, region},
 		{page, shortCodeRegionID, shortCodeRegion},
 		{haltPage, haltRegionID, haltRegion},
+		{advisoryPage, advisoryRegionID, advisoryRegion},
 	} {
 		content, err := os.ReadFile(r.path)
 		if err != nil {
@@ -296,6 +335,14 @@ func main() {
 	// would leave a reader of either verdict unable to say what it covered.
 	fmt.Println("documented conditions", len(covered))
 
+	// The advisory region's size is reported separately and for the reason the
+	// sizes above are: it is a different set again — the conditions a check
+	// declares at warning severity — and one figure covering it and any of the
+	// others would leave a reader of either verdict unable to say what it
+	// covered. It is emitted from the same extraction that rendered the region,
+	// so the figure and the bytes it describes cannot disagree.
+	fmt.Println("advisory conditions", len(advisoriesIn(ids)))
+
 	// The size of the retirement record, reported for the reason the sizes above
 	// are and for one more that is specific to it: an absent record and a module
 	// that has retired nothing produce the same empty list, so a run that stopped
@@ -306,7 +353,7 @@ func main() {
 	// Every page is named, whether it moved or not. A run that writes one page
 	// and leaves the other current is the common case, and a single line reporting
 	// one of them reads as a run that only ever addressed one.
-	for _, p := range []string{page, haltPage} {
+	for _, p := range []string{page, haltPage, advisoryPage} {
 		if slices.Contains(updated, p) {
 			fmt.Println("updated", p)
 			continue
