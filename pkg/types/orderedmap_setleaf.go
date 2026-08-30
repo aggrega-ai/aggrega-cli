@@ -23,9 +23,11 @@ import "strings"
 //     the prior call produces { "ingress": { "host": v, "port": 443 } }.
 //
 // Intermediate shape handling. Nested intermediates may be stored
-// value-typed (the shape YAML unmarshalling nested objects produces
-// by default) or pointer-typed (the shape SetLeafAtPath itself
-// produces on first creation). Both shapes are descended through the
+// pointer-typed (the shape decoding produces for a nested mapping or
+// object inside an any-typed value, and the shape SetLeafAtPath
+// itself produces on first creation) or value-typed (the shape a tree
+// assembled in Go produces, such as the nested subtrees of a compiled
+// schema's declared defaults). Both shapes are descended through the
 // same switch; value-typed intermediates are upgraded to pointer-
 // typed in place — a local copy is taken, its pointer is written
 // back into the parent, and the walker descends into the upgraded

@@ -103,7 +103,7 @@ func MergeSchemaDefaults(author, defaults types.OrderedMap[any]) types.OrderedMa
 		v, _ := author.Get(k)
 		if def, hasDef := defaults.Get(k); hasDef {
 			if defOM, defNested := def.(types.OrderedMap[any]); defNested {
-				if curOM, curNested := v.(types.OrderedMap[any]); curNested {
+				if curOM, curNested := authoredNestedMap(v); curNested {
 					if curOM.Len() == 0 {
 						out.Set(k, v) // Case 2: explicit empty → keep empty
 					} else {
@@ -122,6 +122,40 @@ func MergeSchemaDefaults(author, defaults types.OrderedMap[any]) types.OrderedMa
 		}
 	}
 	return out
+}
+
+// authoredNestedMap reports whether an author-supplied value is a nested map,
+// accepting both storage forms a nested OrderedMap tree uses.
+//
+// The two forms are not interchangeable to a type assertion, and only one of
+// them is what an authored document actually arrives as. Decoding a nested YAML
+// mapping or JSON object inside an any-typed value yields *OrderedMap[any], and
+// so does creating an intermediate through SetLeafAtPath; a value-typed nested
+// map is what this package's own SchemaDefaults builds. Both therefore reach
+// this merge — the author side through a decoder, the defaults side from
+// SchemaDefaults — so testing the author side for one form alone silently
+// degrades a partially-authored group to wholesale replacement, dropping every
+// sibling default the author did not write.
+//
+// The dual-form switch mirrors the one SetLeafAtPath already applies when it
+// descends a nested tree, so both readers of these trees agree about what
+// counts as a nested node.
+//
+// A nil pointer is deliberately reported as not-nested. It carries no entries,
+// so the caller's remaining branch stores it unchanged — which is the same
+// outcome the empty-map case produces, and it reaches that outcome without
+// dereferencing.
+func authoredNestedMap(v any) (types.OrderedMap[any], bool) {
+	switch n := v.(type) {
+	case types.OrderedMap[any]:
+		return n, true
+	case *types.OrderedMap[any]:
+		if n == nil {
+			return types.OrderedMap[any]{}, false
+		}
+		return *n, true
+	}
+	return types.OrderedMap[any]{}, false
 }
 
 // defaultsMapAt returns node[key] as a map[string]any when present and of that shape.

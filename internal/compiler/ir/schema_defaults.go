@@ -68,8 +68,8 @@ func CompileFeatureSchema(lookup resolver.CatalogLookup, featureType string) (co
 // malformed schema surfaces through the validator, not here.
 //
 // The default extraction itself lives in pkg/compactform (PillarDefaults), the
-// single source of truth shared with the Step-1 schema-conformance gate, so
-// build-time materialisation and validate-time conformance interpret an
+// single source of truth shared with the schema-conformance gate at resolution,
+// so build-time materialisation and validate-time conformance interpret an
 // authored schema identically.
 func componentPillarDefaults(comp types.Component, libraries map[string]types.SchemaLibrary) (values, infra types.OrderedMap[any]) {
 	if comp.Spec.Schema.Kind == 0 {
@@ -96,8 +96,8 @@ func componentPillarDefaults(comp types.Component, libraries map[string]types.Sc
 // pillar and returns its declared defaults. The contract lives on the CONSUMING
 // component — the edge's source — under spec.usesSchema.<socket>.valueSchema
 // for the `values` pillar and spec.usesSchema.<socket>.infraSchema for the
-// `infra` pillar, which is the same place the Step-1 per-edge conformance guard
-// reads it from.
+// `infra` pillar, which is the same place the per-edge conformance guard at
+// resolution reads it from.
 //
 // An unknown component type, an undeclared socket, a socket declaring no
 // contract for the pillar, or content that fails to compile all yield an empty
