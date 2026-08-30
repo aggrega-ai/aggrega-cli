@@ -59,11 +59,17 @@
 // occurrence-shaped and are not a transcription of any declaration. So the count
 // keeps a subject the region cannot reach.
 //
-// Both are warn tiers: neither changes the exit code, because not every
-// condition needs a user-facing entry and an entry legitimately reframes the text
-// a condition registers. Add -gaps or -claims to name the members of either
-// count — the form to reach for when a count has moved and you want to know what
-// moved it.
+// The two carry different weight, and the difference is deliberate. The first
+// refuses: every declared halting condition earns an entry, so a run that finds
+// one without an entry writes the regions, names the shortfall and exits
+// non-zero. The second warns and leaves the exit code alone, because an entry
+// legitimately reframes the text a condition registers, so a comparison strict
+// enough to catch a drifted template also refuses prose that is perfectly good.
+// A condition with no entry has no such reading: it is a hole in the published
+// reference, and a coverage figure nobody has seen fail is decoration.
+//
+// Add -gaps or -claims to name the members of either count — the form to reach
+// for when a count has moved and you want to know what moved it.
 package main
 
 import (
@@ -287,11 +293,14 @@ func main() {
 		fmt.Println("unchanged", p)
 	}
 
-	// Both warn tiers report and neither fails, so they go to stderr and leave
-	// the exit code alone: a condition with no user-facing entry, and an entry
-	// that reframes the text its condition registers, are notes for whoever
-	// maintains that page rather than reasons to refuse the build.
-	reportGaps(os.Stderr, ids, covered, *gaps)
+	// Every tier reports before any of them decides the exit code, so a run that
+	// refuses on coverage still shows what the others found. Refusing where the
+	// shortfall is computed would let the first defect hide the rest, and a page
+	// with several would need as many runs to repair as it has defects.
+	//
+	// The claims tier warns and the admission tier warns; the coverage tier
+	// refuses, and the words each prints say which is which.
+	uncovered, considered := reportGaps(os.Stderr, ids, covered, *gaps)
 	reportClaims(os.Stderr, ids, entries, *claims)
 
 	// The admission tier names its members in full on every run rather than
@@ -299,6 +308,26 @@ func main() {
 	// being invisible in every place at once. A count would relocate that
 	// invisibility instead of removing it.
 	reportUnpublished(os.Stderr, ids, covered)
+
+	// The coverage refusal comes after the write above, and the ordering is
+	// load-bearing rather than incidental. The regions are what a missing entry
+	// is written AGAINST: the short-code row a reader arrives by is rendered
+	// there, and so is the sentence the entry has to quote. Refusing before the
+	// write would leave the page without the row for the very condition the
+	// refusal asks to be documented, so the repair would need a run the refusal
+	// itself prevents. Splicing is idempotent and touches only the marked
+	// regions, so a refused run leaves the tree exactly where a passing one
+	// would, minus the entry that is missing.
+	//
+	// The figure is repeated here rather than left on the tier's own line above,
+	// because the remaining tiers report between the two, and a verdict reading
+	// only as "something was refused" sends the reader back up through them.
+	if uncovered > 0 {
+		fail(fmt.Errorf("%d of the %d declared halting conditions have no entry on %s; "+
+			"every declared halting condition earns one, so an undocumented condition is a hole in the "+
+			"published reference rather than a note about it — write its entry and declare what that entry "+
+			"covers, or re-run with -gaps to name the conditions", uncovered, considered, haltsRelPath))
+	}
 }
 
 // rejectCoverageDisagreement refuses when the two derivations of the

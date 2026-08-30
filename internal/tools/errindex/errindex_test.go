@@ -561,13 +561,18 @@ func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
 		t.Fatalf("resolveCoverage: %v", err)
 	}
 	var b strings.Builder
-	reportGaps(&b, ids, covered, true)
+	uncovered, considered := reportGaps(&b, ids, covered, true)
 	got := b.String()
 
 	// Four origins; two are covered, so two remain — and the count in the
 	// header is derived from the same walk rather than written down.
-	if !strings.Contains(got, "WARN: 2 of 4 declared halting conditions have no entry") {
+	if !strings.Contains(got, "REFUSED: 2 of 4 declared halting conditions have no entry") {
 		t.Errorf("header does not report the derived counts:\n%s", got)
+	}
+	// The caller exits on these, so they are part of the contract rather than a
+	// convenience: a report the caller cannot act on leaves the tier warning.
+	if uncovered != 2 || considered != 4 {
+		t.Errorf("returned (%d, %d), want (2, 4)", uncovered, considered)
 	}
 	for _, want := range []string{"pkg/thing.ErrQuoted", "internal/hidden.ErrHidden"} {
 		if !strings.Contains(got, want) {
@@ -588,9 +593,11 @@ func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
 	// The summary form is what the routine build prints, so it carries the same
 	// counts and names no identity — the enumeration is what -gaps adds.
 	var summary strings.Builder
-	reportGaps(&summary, ids, covered, false)
+	if n, _ := reportGaps(&summary, ids, covered, false); n != 2 {
+		t.Errorf("summary form returned %d, want 2 — the shortfall cannot depend on the enumeration", n)
+	}
 	s := summary.String()
-	if !strings.Contains(s, "WARN: 2 of 4 declared halting conditions have no entry") {
+	if !strings.Contains(s, "REFUSED: 2 of 4 declared halting conditions have no entry") {
 		t.Errorf("summary does not report the derived counts:\n%s", s)
 	}
 	if strings.Contains(s, "pkg/thing.ErrQuoted") {
@@ -598,6 +605,72 @@ func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
 	}
 	if !strings.Contains(s, "-gaps") {
 		t.Errorf("summary does not say how to see the list:\n%s", s)
+	}
+}
+
+func TestReportGaps_RefusesAShortfallAndClearsACompleteSet(t *testing.T) {
+	t.Parallel()
+	ids := fixtureIdentities(t)
+	all := []string{"pkg/other.ErrPlain", "pkg/other.ErrOwn", "pkg/thing.ErrQuoted", "internal/hidden.ErrHidden"}
+	pageCovering := func(t *testing.T, handles []string) map[string]bool {
+		t.Helper()
+		root := haltsPageIn(t, "# Halts\n\n### Entry\n\n<!-- covers: "+strings.Join(handles, ", ")+" -->\n")
+		covered, err := resolveIn(t, ids, root)
+		if err != nil {
+			t.Fatalf("resolveCoverage: %v", err)
+		}
+		return covered
+	}
+
+	// The complete set is established first, so each shortfall below is a planted
+	// defect against a baseline somebody looked at rather than a reading of a
+	// page whose state nobody fixed. A tier whose refusal has never been watched
+	// to fire is decoration: this is the pair that shows it fires on a hole and
+	// stays quiet without one.
+	var clean strings.Builder
+	if n, considered := reportGaps(&clean, ids, pageCovering(t, all), false); n != 0 || considered != 4 {
+		t.Fatalf("a complete set returned (%d, %d), want (0, 4):\n%s", n, considered, clean.String())
+	}
+	if got := clean.String(); !strings.Contains(got, "coverage: all 4 declared halting conditions are named by an entry") {
+		t.Errorf("the passing line does not report the size of the set it cleared:\n%s", got)
+	}
+	// The passing line carries none of the word a refusal carries, so the two are
+	// told apart by reading either line rather than only by an exit code.
+	if strings.Contains(clean.String(), "REFUSED") {
+		t.Errorf("a complete set reports a refusal:\n%s", clean.String())
+	}
+
+	// One handle dropped at a time and nothing else changed, so every origin is
+	// shown to be individually load-bearing. Dropping a single handle and
+	// stopping there would leave three others able to carry the refusal, and a
+	// tier that only ever refused for one of its members would look identical.
+	//
+	// A declaration may name a re-export, which is the same condition under a
+	// name a caller was told to match, so the origin a dropped handle leaves
+	// uncovered is not always the handle itself. Each row names both.
+	for _, tc := range []struct{ dropped, uncovers string }{
+		{"pkg/other.ErrPlain", "pkg/thing.ErrPlain"},
+		{"pkg/other.ErrOwn", "pkg/other.ErrOwn"},
+		{"pkg/thing.ErrQuoted", "pkg/thing.ErrQuoted"},
+		{"internal/hidden.ErrHidden", "internal/hidden.ErrHidden"},
+	} {
+		t.Run("uncovered "+tc.uncovers, func(t *testing.T) {
+			t.Parallel()
+			kept := make([]string, 0, len(all)-1)
+			for _, h := range all {
+				if h != tc.dropped {
+					kept = append(kept, h)
+				}
+			}
+			var b strings.Builder
+			n, considered := reportGaps(&b, ids, pageCovering(t, kept), true)
+			if n != 1 || considered != 4 {
+				t.Fatalf("dropping %s returned (%d, %d), want (1, 4):\n%s", tc.dropped, n, considered, b.String())
+			}
+			if got := b.String(); !strings.Contains(got, tc.uncovers) {
+				t.Errorf("the refusal does not name the condition left uncovered:\n%s", got)
+			}
+		})
 	}
 }
 

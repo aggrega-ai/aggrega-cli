@@ -176,11 +176,16 @@ func wellFormedHandle(h string) bool {
 // resolveCoverage returns the set of identities the page's declarations name,
 // keyed by the handle of the identity that declares each.
 //
-// It fails on a declaration that resolves to nothing. That direction is graded
-// this way because a false correspondence is worse than a missing one: it reads
-// as verified, and nothing downstream can tell the two apart. The opposite
-// direction — an identity no entry names — is not a defect and is reported by
-// reportGaps instead.
+// It fails on a declaration that resolves to nothing, and it fails here, before
+// anything is written: a false correspondence is worse than a missing one
+// because it reads as verified and nothing downstream can tell the two apart, so
+// a page carrying one must not be rendered from at all.
+//
+// The opposite direction — an identity no entry names — is also refused, by
+// [reportGaps]. It is kept out of this function because the two refuse at
+// different moments and have to: an unresolvable handle poisons the render,
+// while an uncovered condition is repaired by writing an entry against a region
+// that has to be rendered first.
 func resolveCoverage(ids []Identity, entries []pageEntry, docsRoot string) (map[string]bool, error) {
 	// Zero declarations and declarations naming nothing are different failures:
 	// the first means the marker form moved, the second means every declaration
@@ -266,40 +271,53 @@ func gapsIn(ids []Identity, covered map[string]bool) (gaps []Identity, origins i
 	return gaps, origins
 }
 
-// reportGaps writes the gap tier to w: a count always, and the identities
-// themselves when list is set.
+// reportGaps writes the gap tier to w and returns how many declared halting
+// conditions no entry names, alongside how many were considered. A non-zero
+// shortfall is a refusal, and the caller exits non-zero on it.
 //
-// It never fails. Not every halting condition needs a user-facing entry, so
-// failing here would demand one per identity — and a gate that is red on the
-// day it ships stays red and gets switched off, which would cost the blocking
-// direction in resolveCoverage too.
+// Every declared halting condition earns an entry, so a condition with none is a
+// hole in the published reference rather than a note about it. A figure that
+// only reports leaves the set free to regrow such a hole one declaration at a
+// time, with every run of every gate green while it happens — and a coverage
+// figure nobody has seen fail is decoration.
+//
+// A blocking tier is safe to introduce only over a set that is already complete,
+// because a check that is red on the day it ships stays red and gets switched
+// off — which would cost the blocking direction in [resolveCoverage] along with
+// it. That is a constraint on the moment such a tier is turned on, not an
+// argument against turning it on: the shortfall is what says whether the
+// condition holds, and it is the caller's whole verdict here.
+//
+// The word on a shortfall line is not WARN, because the line stops the run. The
+// tier beside it does warn, and two tiers printing the same word while one of
+// them fails is how a reader learns to skim both.
 //
 // The enumeration is opt-in because this runs inside the routine build, where
 // printing every uncovered identity on every build produces a wall of output
 // that is scrolled past rather than read — which costs the count its meaning
 // too. The count is the signal that something moved; the list is what you ask
 // for once it has.
-func reportGaps(w io.Writer, ids []Identity, covered map[string]bool, list bool) {
+func reportGaps(w io.Writer, ids []Identity, covered map[string]bool, list bool) (uncovered, considered int) {
 	gaps, origins := gapsIn(ids, covered)
 	if len(gaps) == 0 {
-		fmt.Fprintf(w, "WARN: none — all %d declared halting conditions are named by an entry on %s\n",
+		fmt.Fprintf(w, "coverage: all %d declared halting conditions are named by an entry on %s\n",
 			origins, haltsRelPath)
-		return
+		return 0, origins
 	}
 	if !list {
-		fmt.Fprintf(w, "WARN: %d of %d declared halting conditions have no entry on %s (re-run with -gaps to list them)\n",
+		fmt.Fprintf(w, "REFUSED: %d of %d declared halting conditions have no entry on %s (re-run with -gaps to list them)\n",
 			len(gaps), origins, haltsRelPath)
-		return
+		return len(gaps), origins
 	}
 	// The message is printed beside the handle because a bare list of names is
-	// not actionable: deciding whether a condition wants a user-facing entry
-	// means knowing what it is, and the message is that description, already
-	// declared beside the identity.
-	fmt.Fprintf(w, "WARN: %d of %d declared halting conditions have no entry on %s:\n",
+	// not actionable: writing a condition's entry means knowing what it reports,
+	// and the message is that description, already declared beside the identity.
+	fmt.Fprintf(w, "REFUSED: %d of %d declared halting conditions have no entry on %s:\n",
 		len(gaps), origins, haltsRelPath)
 	for _, id := range gaps {
-		fmt.Fprintf(w, "WARN:   %s: %s\n", id.Handle(), id.Message)
+		fmt.Fprintf(w, "REFUSED:   %s: %s\n", id.Handle(), id.Message)
 	}
+	return len(gaps), origins
 }
 
 // entryClaim is one comparison the claims tier made and found wanting: the entry
@@ -421,16 +439,20 @@ func claimsIn(ids []Identity, entries []pageEntry) (unquoted []entryClaim, compa
 // a condition has an entry at all; this one asks whether the entry it has says
 // what the condition actually reports, which is the sentence a reader acts on.
 //
-// It never fails, for the reason reportGaps never fails, and the reason is
-// sharper here. An entry's message template legitimately paraphrases, reorders
-// and splits the text a condition registers, so a comparison strict enough to
-// catch a template that has drifted also refuses prose that is perfectly good.
-// Two classes therefore sit in this count permanently: a condition whose
-// registered text is generic because it carries a wrapped failure that the entry
-// documents in its place, and an entry that reframes the registered text across
-// several message forms. A check that is red on the day it ships stays red and
-// gets switched off, so what this reports is a count that moves when something
-// drifts, never a verdict on the page.
+// It never fails, and unlike the gap tier that is permanent rather than a
+// property of the page's current state. An entry's message template legitimately
+// paraphrases, reorders and splits the text a condition registers, so a
+// comparison strict enough to catch a template that has drifted also refuses
+// prose that is perfectly good. Two classes therefore sit in this count
+// permanently: a condition whose registered text is generic because it carries a
+// wrapped failure that the entry documents in its place, and an entry that
+// reframes the registered text across several message forms. A check that is red
+// on the day it ships stays red and gets switched off, so what this reports is a
+// count that moves when something drifts, never a verdict on the page.
+//
+// The gap tier asks a question with no such class: a condition either has an
+// entry or has none, and no legitimate authoring choice produces the second. That
+// is why one of the two refuses and this one does not.
 //
 // The enumeration is opt-in for the reason the gap tier's is: this runs inside
 // the routine build, where printing every entry on every build produces a wall
