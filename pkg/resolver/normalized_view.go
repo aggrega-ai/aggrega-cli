@@ -690,6 +690,13 @@ func (v *normalizedView) verboseEntry(node, socket, alias string) (types.Verbose
 
 // ---------------------------------------------------------------- deployment facts
 
+// ReleaseComponentEntryPresent reports whether the deployment wrote an entry
+// against one component, on either of the axes a boundary names components on.
+func (v *normalizedView) ReleaseComponentEntryPresent(node string) bool {
+	_, present := v.releaseComponents[node]
+	return present
+}
+
 // ReleaseComponentInfra returns the physical sizing the deployment wrote for one
 // component, in author order, empty when it wrote none.
 func (v *normalizedView) ReleaseComponentInfra(node string) types.OrderedMap[any] {

@@ -120,12 +120,27 @@ var componentValuesConformToTheType = constraint.Check[
 //
 // What is opted into is the component type's CONTRACT, never the deployment's
 // content, which is the same standing the pillar beside it has. Once the type
-// declares a contract for this pillar, the sizing written for every component of
-// that type is measured against it, including a deployment that wrote no sizing
-// at all: an empty payload is the maximal violation of a key the contract
-// declares required, not a case with nothing to check. A required key exists
-// precisely to catch the deployment that authored nothing, so a rule that
-// skipped that deployment would be inert in the one case it was declared for.
+// declares a contract for this pillar, the sizing is measured for every
+// component the deployment wrote an entry against, including an entry carrying
+// no sizing at all: an empty payload is the maximal violation of a key the
+// contract declares required, not a case with nothing to check. A required key
+// exists precisely to catch the entry that wrote nothing, so a rule that skipped
+// it would be inert in the one case it was declared for.
+//
+// The components it measures are the ones the deployment wrote entries against,
+// read as authorship rather than as content, which is the standing the per-edge
+// rule below has for the same reason. Every field of such an entry is optional,
+// so an entry with none set carries nothing at all and the sizing fact reads its
+// zero value for it — the same zero it reads for a component the deployment
+// wrote no entry against. The two need opposite treatment: an entry that writes
+// nothing is the maximal violation of a required key, while a component this
+// deployment never placed is not its to answer for. Measuring the second would
+// report a sizing fault against a document whose fault is placement, and it
+// would do so before the composition is flattened — displacing the report a
+// component nothing placed already earns, which names the two ways to place it
+// and is what its author can act on. It would also make which diagnostic that
+// author reads depend on whether the component's type happens to declare a
+// required sizing key, for one and the same authoring mistake.
 var componentInfraConformsToTheType = constraint.Check[
 	constraint.NormalizedView,
 	constraint.NodeSubject,
@@ -136,6 +151,9 @@ var componentInfraConformsToTheType = constraint.Check[
 		v constraint.NormalizedView,
 		s constraint.NodeSubject,
 	) []constraint.Objection {
+		if !v.ReleaseComponentEntryPresent(s.NodeID()) {
+			return nil
+		}
 		componentType, present := v.InstanceComponentType(s.NodeID())
 		if !present || !v.CatalogComponentPresent(componentType) {
 			return nil

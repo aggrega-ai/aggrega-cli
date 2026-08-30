@@ -3015,6 +3015,28 @@ func TestTheComponentSizingConformanceRuleMeasuresWhatTheDeploymentWrote(t *test
 			raised: []string{".spec.components.api.infra.size"},
 		},
 		{
+			// Authorship, which is the one thing separating the two components in
+			// this row: both read the same empty sizing, and only the one the
+			// deployment wrote an entry against is the deployment's to answer for.
+			// The other is placed nowhere, and a component placed nowhere is
+			// reported once the composition is flattened, at a key its author can
+			// act on — so measuring its absent sizing here would replace that
+			// report with one asking for a key under an entry that is not there.
+			name: "a component the deployment wrote no entry against is not reported, beside the one it named and left without sizing",
+			components: []conformanceComponent{
+				{name: "api", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+				{name: "web", typ: conformanceContractedType,
+					values: conformancePayload("replicas", 1)},
+			},
+			deployed: `    prod:
+      directory: ./output
+      components:
+        api: {}
+`,
+			raised: []string{".spec.components.api.infra.size"},
+		},
+		{
 			// A type whose catalog entry declares no contract over the sizing
 			// pillar is not measured, whatever the deployment wrote for it. The
 			// contracted sibling beside it keeps the silence attributable.

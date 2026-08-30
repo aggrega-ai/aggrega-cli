@@ -116,7 +116,30 @@ func splicedCatalog(t *testing.T, splices ...catalogSplice) string {
 // error instead of failing on it.
 func compileAgainst(t *testing.T, catalogPath string, dropTheDependencyBlock bool) error {
 	t.Helper()
-	rel, err := resolver.LoadRelease(invocationReleasePath)
+	aggregate, err := os.ReadFile(invocationAggregatePath)
+	if err != nil {
+		t.Fatalf("read the application document: %v", err)
+	}
+	if dropTheDependencyBlock {
+		if !bytes.Contains(aggregate, []byte(frontendDependencyBlock)) {
+			t.Fatal("the application fixture no longer carries the dependency block these proofs remove; the edit would be silently inert")
+		}
+		aggregate = bytes.Replace(aggregate, []byte(frontendDependencyBlock), nil, 1)
+	}
+	return compileDocuments(t, catalogPath, invocationReleasePath, aggregate)
+}
+
+// compileDocuments drives the whole pre-render pipeline over one catalog, one
+// deployment document and one application document, and hands back the error
+// instead of failing on it.
+//
+// It is the one place a proof in this package compiles a document set, so a
+// proof that varies the deployment and one that varies the application drive the
+// same path. A second assembly of these inputs would agree with this one until
+// one of them was edited, and nothing would compare them.
+func compileDocuments(t *testing.T, catalogPath, releasePath string, aggregate []byte) error {
+	t.Helper()
+	rel, err := resolver.LoadRelease(releasePath)
 	if err != nil {
 		t.Fatalf("load the deployment document: %v", err)
 	}
@@ -131,16 +154,6 @@ func compileAgainst(t *testing.T, catalogPath string, dropTheDependencyBlock boo
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		t.Fatalf("resolve catalog inheritance: %d error(s); first: %v", len(extErrs), extErrs[0])
 	}
-	aggregate, err := os.ReadFile(invocationAggregatePath)
-	if err != nil {
-		t.Fatalf("read the application document: %v", err)
-	}
-	if dropTheDependencyBlock {
-		if !bytes.Contains(aggregate, []byte(frontendDependencyBlock)) {
-			t.Fatal("the application fixture no longer carries the dependency block these proofs remove; the edit would be silently inert")
-		}
-		aggregate = bytes.Replace(aggregate, []byte(frontendDependencyBlock), nil, 1)
-	}
 	return runStepsOneToFour(
 		context.Background(),
 		Inputs{
@@ -148,7 +161,7 @@ func compileAgainst(t *testing.T, catalogPath string, dropTheDependencyBlock boo
 			Manifest:          manifest,
 			AggregateRawBytes: aggregate,
 			AggregatePath:     invocationAggregatePath,
-			ReleasePath:       invocationReleasePath,
+			ReleasePath:       releasePath,
 			WorkspaceConfig:   workspaceconfig.Default(),
 			CompilerVersion:   invocationVersion,
 		},

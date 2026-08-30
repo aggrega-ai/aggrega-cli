@@ -1439,6 +1439,46 @@ var facts = []factDecl{
 			"the other.",
 	},
 	{
+		Name:        "release-component-entry-present",
+		Stage:       "normalized",
+		SourceField: "types.Boundary.Components",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "bool",
+		Doc: "ReleaseComponentEntryPresent reports whether the deployment wrote " +
+			"an entry against one component at all.\n\nIt reports authorship and " +
+			"nothing else, and an entry appears here whether or not it carries " +
+			"any sizing. That rule is stated once for every surface an operator " +
+			"writes entries on, and the reason it is needed here is the one the " +
+			"per-connection authorship fact states: every field of such an entry " +
+			"is optional, so an entry written and left empty carries nothing at " +
+			"all, and the sizing fact declared beside this one reads its zero " +
+			"value for it — the same zero it reads for a component the deployment " +
+			"never wrote against. The two need opposite treatment. An entry that " +
+			"writes no sizing is the maximal violation of a key the component " +
+			"type's contract declares required, while a component this deployment " +
+			"never placed is not its to answer for: a component nothing placed is " +
+			"reported on its own once the composition is flattened, naming the " +
+			"ways to place it, and measuring its absent sizing instead would " +
+			"report a sizing fault against a document whose fault is " +
+			"placement.\n\nAuthorship is reported " +
+			"positively rather than inferred, and that is why the fact exists. " +
+			"Emptiness is the value both cases produce, so the inference has " +
+			"nothing to read.\n\nIt answers for both axes a boundary names a " +
+			"component on — an entry under the boundary's own components, and an " +
+			"entry naming a component inside a sub-module the boundary routes — " +
+			"because on both the deployment wrote against that component. A " +
+			"routing entry naming no component writes against none, so it " +
+			"contributes nothing here even though it places what the module " +
+			"contains: this reports what the deployment WROTE and never what it " +
+			"placed, and a rule wanting placement reads the fact that names " +
+			"it.\n\nA deployment declaring components at its own top level rather " +
+			"than under named boundaries answers here like any other. Normalizing " +
+			"such a document gives it a boundary of its own holding exactly those " +
+			"entries, so the fact covers that authoring form without a reader " +
+			"knowing the form exists.",
+	},
+	{
 		Name:        "release-component-infra",
 		Stage:       "normalized",
 		SourceField: "types.BoundaryComponent.Infra",
@@ -1457,10 +1497,14 @@ var facts = []factDecl{
 			"contributes the component's placement and its inherited metadata " +
 			"and contributes nothing to this payload, so the scope is not part " +
 			"of this fact's key.\n\nEmpty is the operator writing nothing, and " +
-			"a rule reading it as such has nothing to measure: the contract for " +
-			"this pillar is opt-in on the component type's side, and a " +
-			"component whose operator wrote no sizing has no sizing to " +
-			"check.\n\nThe developer's configuration for the same component is " +
+			"it is one value for two documents that need opposite treatment: an " +
+			"entry the deployment wrote and left without sizing, and a component " +
+			"the deployment wrote no entry against at all. This fact cannot " +
+			"separate them, so a rule that has to reads the authorship fact " +
+			"declared beside it. What empty never means is that there is nothing " +
+			"to measure — a key the component type's contract declares required " +
+			"is violated exactly by the sizing nobody wrote.\n\n" +
+			"The developer's configuration for the same component is " +
 			"a different fact on a different surface. The two are written on " +
 			"separate documents by separate hands, the component type declares " +
 			"a separate contract for each, and each is independently absent.\n" +
