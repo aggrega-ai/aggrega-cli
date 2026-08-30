@@ -493,7 +493,7 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 			rpt.append(Finding{
 				FieldPath: path,
 				Keyword:   "type",
-				Message:   "expected object, got " + jsonTypeName(instance),
+				Message:   "expected object, got " + JSONTypeName(instance),
 			})
 			return rpt
 		}

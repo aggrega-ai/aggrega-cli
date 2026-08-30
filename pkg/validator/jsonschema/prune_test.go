@@ -556,8 +556,8 @@ func TestJSONTypeNameUsesAuthoringVocabulary(t *testing.T) {
 		{struct{}{}, "value"},
 	}
 	for _, tc := range cases {
-		if got := jsonTypeName(tc.value); got != tc.want {
-			t.Errorf("jsonTypeName(%#v) = %q, want %q", tc.value, got, tc.want)
+		if got := JSONTypeName(tc.value); got != tc.want {
+			t.Errorf("JSONTypeName(%#v) = %q, want %q", tc.value, got, tc.want)
 		}
 	}
 }

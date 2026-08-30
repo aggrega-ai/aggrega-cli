@@ -196,7 +196,7 @@ func collectContainerRenderings(rv reflect.Value, out *[]containerRendering) {
 		value := rv.Interface()
 		*out = append(*out, containerRendering{
 			text:     fmt.Sprintf("%v", value),
-			jsonType: jsonTypeName(value),
+			jsonType: JSONTypeName(value),
 		})
 		for _, key := range rv.MapKeys() {
 			collectContainerRenderings(rv.MapIndex(key), out)
@@ -205,7 +205,7 @@ func collectContainerRenderings(rv reflect.Value, out *[]containerRendering) {
 		value := rv.Interface()
 		*out = append(*out, containerRendering{
 			text:     fmt.Sprintf("%v", value),
-			jsonType: jsonTypeName(value),
+			jsonType: JSONTypeName(value),
 		})
 		for i := 0; i < rv.Len(); i++ {
 			collectContainerRenderings(rv.Index(i), out)
@@ -213,7 +213,7 @@ func collectContainerRenderings(rv reflect.Value, out *[]containerRendering) {
 	}
 }
 
-// jsonTypeName names a decoded value's JSON type — the vocabulary a
+// JSONTypeName names a decoded value's JSON type — the vocabulary a
 // schema author writes in a `type:` keyword — rather than the Go type
 // holding it. A diagnostic saying an object was wanted where an array
 // was written is actionable; one naming the in-memory representation of
@@ -222,7 +222,13 @@ func collectContainerRenderings(rv reflect.Value, out *[]containerRendering) {
 // A value outside the JSON types (which a document decoded from YAML or
 // JSON cannot produce) reports "value", so no in-memory type name
 // reaches a terminal by way of an unforeseen input.
-func jsonTypeName(v any) string {
+//
+// It is exported because the question it answers — what did a document's
+// decoded value turn out to be — is asked outside this package too, by a
+// caller shaping advice for a value that arrived as the wrong shape. One
+// answer serves both, so a second switch over the same Go types cannot come
+// to disagree with this one about what a decoded value is called.
+func JSONTypeName(v any) string {
 	switch v.(type) {
 	case nil:
 		return "null"
