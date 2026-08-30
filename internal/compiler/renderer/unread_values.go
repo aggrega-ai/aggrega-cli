@@ -29,7 +29,8 @@ import (
 // other, and is read or unread on its own merits.
 //
 // A static walk cannot tell a deliberate don't-care from a mistake, which is why
-// the reading only ever advises. Two bounds follow from what can be read at all:
+// the reading only ever advises. The bounds that follow from what can be read at
+// all:
 //
 //   - Only an inline valuesMapping is read. A mapping the Recipe imports from a
 //     file or a library is not in hand here, so its references cannot be
@@ -37,6 +38,15 @@ import (
 //   - A mapping that fails to parse yields no reference set. Reporting every key
 //     as unread on a parse failure would bury the real diagnostic the evaluation
 //     raises for the same template, so nothing is reported instead.
+//   - The per-edge group is reported only where a reference names the literal
+//     path .context.uses.<alias>.values.<key>. A mapping that reaches the edge
+//     through an enclosing expression — iterating the uses map, indexing one edge
+//     out of it, or rebinding it — names only the enclosing path, and every key
+//     beneath it then counts as read. That enclosing form is the only one open to
+//     a mapping whose socket is optional, because the literal path evaluates
+//     against an absent edge when the socket is unwired and every guard that
+//     would prevent that is itself an enclosing read. So the per-connection
+//     values carried on an optional socket lie outside what this reading reports.
 //
 // Warnings come back in a fixed order — the node's values, then its infra, then
 // each uses alias in the order the edges were emitted, each group in the order
