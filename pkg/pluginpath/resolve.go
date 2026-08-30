@@ -39,9 +39,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -355,6 +357,15 @@ type Resolver struct {
 	// override is an explicit filesystem path that wins over the cascade
 	// entirely (the linter's --plugin flag). Returned as local-tier bytes.
 	override string
+
+	// expectsRecordedIdentity reports whether this construction consumes plugins a
+	// recorded digest is meant to govern, so a resolution that finds none for a
+	// reference is worth telling the reader about. It is set from the construction's
+	// declared pin posture and read only by the advisory — never by the cascade,
+	// which still treats a populated or empty pin map identically whatever the
+	// posture was. False for the pin-free base, whose two callers resolve something
+	// no record was ever going to stand at.
+	expectsRecordedIdentity bool
 }
 
 // Puller fetches a plugin artifact's bytes from a registry by URI. It is the
@@ -480,6 +491,17 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 // computed digest, and the pin. A cached-bundle mismatch halts with a wrapped
 // ErrPluginBundleDigestMismatch. With no pin and no bundle digest (the linter
 // path) the bytes pass through unchecked.
+//
+// This is the single site that decides whether a plugin's bytes are held to a
+// recorded identity, and it is therefore where the rule lives: honour a recorded
+// digest when one is reachable, and where none is, resolve anyway and say so. The
+// rule sits here rather than at each surface that runs a plugin because a plugin
+// can be loaded before the CLI knows which command it was asked for — the
+// configured extension commands are registered while the command tree is being
+// built, and registering one describes its guest on a cold describe cache. A rule
+// written per command cannot see that case at all; a rule at the moment bytes are
+// resolved sees every case, because every guest the compiler runs gets its bytes
+// from here.
 func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, error) {
 	if pin, ok := r.pins[uri]; ok && pin != "" {
 		if got := digest.ContentDigest(b); got != pin {
@@ -487,6 +509,8 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 				"plugin %q resolved from %s: content digest %s does not match lockfile pin %s: %w",
 				uri, tier.Source(), got, pin, oci.ErrFetchIntegrity())
 		}
+	} else {
+		r.noteUnrecordedIdentity(uri, tier)
 	}
 	if bundleDigest, ok := r.bundleDigests[uri]; ok && bundleDigest != "" {
 		if err := r.verifyCachedBundle(uri, tier, bundleDigest); err != nil {
@@ -494,6 +518,59 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 		}
 	}
 	return ResolvedPlugin{Bytes: b, Tier: tier, URI: uri, Version: r.pinVersions[uri]}, nil
+}
+
+// unrecordedIdentityWriter receives the advisory raised when a plugin resolves
+// with no recorded digest to check it against. It defaults to standard error —
+// the stream every other compile-time advisory is written to, and the one a
+// daemon redirects at the process boundary — and is redirected by tests to
+// observe the advisory.
+var unrecordedIdentityWriter io.Writer = os.Stderr
+
+// advisedUnrecorded remembers the plugin references already advised on in this
+// process, so the advisory is raised once per reference rather than once per
+// resolution. A render resolves the same provider for every node it renders, and
+// a long-running daemon resolves the same attachment on every request; the
+// condition is a property of the workspace rather than of any one resolution, so
+// repeating it per resolution would bury it.
+var advisedUnrecorded sync.Map
+
+// noteUnrecordedIdentity raises the advisory for a plugin whose resolved bytes no
+// recorded digest governs, naming the reference, where the bytes came from, and
+// what to run to record them. It never fails a resolution: a workspace that has
+// not been prepared yet is an ordinary state, and refusing to read a plugin for
+// want of a record would make every surface that only reports on a document
+// unusable until an operator prepared one.
+//
+// Two resolutions raise nothing, and each is a case where no record could exist
+// rather than one where a record is missing:
+//
+//   - Bytes that ship inside the compiler binary. Nothing the compiler records
+//     ever stands at a built-in's identity, because a resolution records what it
+//     acquired and there is nothing to acquire for bytes that are already here.
+//     The binary is those bytes' identity, so there is nothing an operator could
+//     run to improve it.
+//   - A resolution whose construction declares that no recorded digest
+//     participates (see PinPosture). Two constructions declare that deliberately
+//     and record why at the call: the explicit-artifact escape hatch, which points
+//     at a file rather than consuming a recorded one, and the surface that
+//     inspects the very artifact being checked, for which a record of the
+//     identities trusted for the checkers holds nothing addressed to it.
+//
+// The bound is worth stating rather than leaving to be discovered: a construction
+// that names the pin-free posture raises no advisory even where a digest could in
+// principle have been recorded for what it resolved.
+func (r Resolver) noteUnrecordedIdentity(uri string, tier Tier) {
+	if !r.expectsRecordedIdentity || tier == TierEmbed || uri == "" {
+		return
+	}
+	if _, seen := advisedUnrecorded.LoadOrStore(uri, struct{}{}); seen {
+		return
+	}
+	fmt.Fprintf(unrecordedIdentityWriter,
+		"warning: plugin %q resolved from %s with no recorded digest to check it against, "+
+			"so it runs unverified; run `aggrega pull --release <release>` to record it\n",
+		uri, tier.Source())
 }
 
 // verifyCachedBundle re-hashes the cached signature-bundle blob recorded for a

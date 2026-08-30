@@ -188,6 +188,20 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// through the pinned request view so every resolution verifies-on-read
 	// against this Release's pins. The daemon owns the diagnostic MAPPING below;
 	// the shared layer returns the raw outcome in gate order.
+	// No lockfile is supplied, and the omission is deliberate rather than an
+	// oversight — it is the same quiet-load posture the pin extraction above
+	// describes, carried through to the pipeline. This runs on every edit, and the
+	// two things a supplied record would add are both things this surface must not
+	// do at that cadence: hold the dispatched guests to their recorded digests,
+	// which republishes on every keystroke a condition the at-startup check and the
+	// graph handler already report once; and reconstruct the transform attachments
+	// from the record, which would swap the attachment set an author is editing for
+	// the one recorded at the last resolution, so the editor would stop reflecting
+	// the workspace configuration in front of them.
+	//
+	// Whether the editor should hold a per-edit validation to the record is a
+	// separate question from identity handling, and it is not settled here. Leave
+	// the field unset.
 	vr := compilerops.Validate(ctx, compilerops.ValidateInputs{
 		View:            view,
 		Closure:         resolved.Closure,

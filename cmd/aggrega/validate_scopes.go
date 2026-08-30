@@ -139,6 +139,14 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		return withSkipContext(cerr, lazyView.SkippedEntities())
 	}
 
+	// The record loaded above is threaded into the validation, not just into the
+	// closure resolution. The pipeline this verb runs dispatches the same
+	// operator-attached guests a build dispatches, so without the record those
+	// guests would run with nothing to check their identity against and — for the
+	// two that change the graph — with none of the pinned input the record carries
+	// for them. Both follow from the same omission, so both are repaired by passing
+	// it. A workspace with no record loads none here and validates as before, with
+	// the resolution saying which plugins it could not check.
 	vr := compilerops.Validate(context.Background(), compilerops.ValidateInputs{
 		View:            lazyView,
 		Closure:         resolved.Closure,
@@ -146,6 +154,7 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		ReleasePath:     releasePath,
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
+		Lockfile:        lf,
 		AggregatePath:   catalog.RelativeToWorkspace(wsRoot, resolved.AggregatePath),
 		WorkspaceConfig: wsCfg,
 		CompilerVersion: provenanceCompilerVersion(),

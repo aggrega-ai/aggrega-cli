@@ -552,6 +552,21 @@ func (s *Server) irGraphPipelineOptions() pipeline.Options {
 // well-formed IRGraph envelope. Per-handler dispatch is additionally
 // unit-tested via bytes.Buffer mocks in internal/serve/server_test.go;
 // the pipeline.RunPipeline call is covered by pipeline's own tests.
+//
+// # Why this one handler refuses where the others advise
+//
+// Every other surface that resolves a plugin without a recorded digest resolves
+// it anyway and says so, because reading a document is worth doing on a workspace
+// nobody has prepared yet. This handler is the exception, and it is named as one
+// rather than derived from a rule: an editor draws the graph a reader then
+// reasons about, and a graph built from bytes nothing vouches for would be drawn
+// exactly like one that was checked. An advisory alongside it is the wrong shape,
+// because the reader is looking at the picture rather than at the log. So the
+// gate below refuses before anything is resolved, and names what to run.
+//
+// The exemption belongs to this handler and to nothing else — not to a class of
+// handler, and not to a predicate a later reader could satisfy elsewhere and
+// inherit the refusal by accident.
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
 	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
 	if paramErr != nil {

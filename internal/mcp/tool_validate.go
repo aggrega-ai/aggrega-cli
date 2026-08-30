@@ -220,6 +220,12 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 			cerr, closureStageKind(cerr.Stage)))
 	}
 
+	// The record loaded at this tool's front door is threaded into the validation
+	// as well as into the closure resolution, so the guests this pipeline dispatches
+	// are held to the identities it records and the two that change the graph
+	// receive the inputs it pins for them. Both come of the same omission; passing
+	// it repairs both. A workspace with no record loads none and validates as
+	// before.
 	vr := compilerops.Validate(ctx, compilerops.ValidateInputs{
 		View:            view,
 		Closure:         resolved.Closure,
@@ -227,6 +233,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 		ReleasePath:     releasePath,
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
+		Lockfile:        lf,
 		AggregatePath:   resolved.AggregatePath,
 		WorkspaceConfig: tw.cfg,
 		CompilerVersion: s.serverVersion,

@@ -78,8 +78,32 @@ type ValidateInputs struct {
 	// unsupplied path is VerdictPluginTrust's, which is where the record's address is
 	// derived, so there is one refusal rather than a second guard here that could
 	// disagree with it.
-	ReleasePath     string
-	AggBytes        []byte
+	ReleasePath string
+	AggBytes    []byte
+	// Lockfile is the record of what this Release resolved to, and supplying it is
+	// what makes a validation run the pipeline on the same footing a build does. It
+	// does two things at once, because both have one cause — the pipeline reads the
+	// record for both and finds nothing when it is absent.
+	//
+	// It supplies the digests every plugin the pipeline dispatches is held to. This
+	// validation runs the same pre-render phases a build runs, and two of them
+	// dispatch operator-attached guests that CHANGE the graph, so a validation
+	// without the record executes exactly the attachments that can alter what is
+	// being validated, with nothing to check them against. A resolution that finds
+	// no digest for a reference says so rather than failing, so a workspace that has
+	// not been prepared yet still validates.
+	//
+	// And it supplies those attachments' own pinned inputs. A transform attachment's
+	// source files are carried in the record rather than read from the host, so an
+	// attachment reconstructed from it arrives with the content it was pinned to
+	// while one taken live arrives with none at all — the guest then runs on an empty
+	// input set and reports nothing, which reads exactly like a clean pass.
+	//
+	// A nil Lockfile is a legitimate value and keeps both of those off: the surface
+	// that validates at editing cadence supplies none deliberately, so that it neither
+	// re-derives the record on every keystroke nor republishes what the surfaces that
+	// do read it have already reported.
+	Lockfile        *lockfile.Lockfile
 	AggregatePath   string
 	WorkspaceConfig workspaceconfig.Config
 	CompilerVersion string
@@ -198,6 +222,7 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		AggregateRawBytes: in.AggBytes,
 		AggregatePath:     in.AggregatePath,
 		WorkspaceConfig:   in.WorkspaceConfig,
+		Lockfile:          in.Lockfile,
 		CompilerVersion:   in.CompilerVersion,
 	}
 	// The governance attachment list the pipeline dispatches and the digests
@@ -207,10 +232,11 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	// from becoming a second home for that assignment — an omitted one is an empty
 	// map, which is a legal value meaning nothing was recorded.
 	//
-	// This surface supplies no lockfile, so the composition's reconstruction half
-	// finds nothing to reconstruct from and the live attachment list stands as
-	// authored. That is the composition's documented no-lockfile behaviour rather
-	// than a special case here.
+	// Which of the composition's two halves fires depends on whether the caller
+	// supplied the record: with one, the transform attachments are reconstructed
+	// from it and arrive carrying their pinned inputs; without one there is nothing
+	// to reconstruct from and the live attachment list stands as authored. Both are
+	// the composition's own documented behaviour rather than a special case here.
 	if err := ApplyGovernanceComposition(&inputs, in.View, in.ReleasePath); err != nil {
 		r.VerdictTrustError = err
 		return r

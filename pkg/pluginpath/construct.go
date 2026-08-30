@@ -6,9 +6,17 @@ package pluginpath
 // PinPosture names how a construction site treats digest pins, so the posture is
 // legible at every call rather than inferred from which maps happen to be
 // populated. It is a construction-time legibility axis, not a resolution switch:
-// it governs only whether the pin maps are threaded into the Resolver, never how
-// the cascade behaves. Resolve reads no posture — it treats any resulting
-// populated Pins map identically.
+// it governs whether the pin maps are threaded into the Resolver, never how the
+// cascade behaves. Resolve reads no posture — it treats any resulting populated
+// Pins map identically, and the pin comparison, the cascade order and the
+// resolved bytes are the same under every posture.
+//
+// It carries one further meaning, and only for a resolution that finds no pin at
+// all: the posture is this package's record of whether a recorded digest was
+// meant to govern what the site resolves. A pinned posture that meets a reference
+// with no pin has found a gap worth telling the reader about; the pin-free base
+// has found the state it declared. That reading changes what is SAID and never
+// what is resolved.
 type PinPosture int
 
 const (
@@ -110,11 +118,15 @@ func NewResolver(rc ResolutionContext, posture PinPosture, pins PinMaps) Resolve
 		r.pins = pins.Pins
 		r.pinVersions = pins.PinVersions
 		r.bundleDigests = pins.BundleDigests
+		r.expectsRecordedIdentity = true
 	case PinPostureVerifyOnRead:
 		r.pins = pins.Pins
 		r.pinVersions = pins.PinVersions
+		r.expectsRecordedIdentity = true
 	case PinPostureNone:
-		// Pin-free base: no pins participate, whatever the caller passed.
+		// Pin-free base: no pins participate, whatever the caller passed, and a
+		// reference this site resolves without one has not lost anything — so it
+		// raises no unrecorded-identity advisory either.
 	}
 	return r
 }
