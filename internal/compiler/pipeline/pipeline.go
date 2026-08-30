@@ -605,7 +605,7 @@ func ResolveAndValidate(
 		if err := runAnnotationSocket(ctx, inputs, catalogLookup, resolveResult); err != nil {
 			return err
 		}
-		if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
+		if err := resolver.ValidateAnnotationBindingTargets(resolveResult, catalogLookup); err != nil {
 			return fmt.Errorf("annotation binding validation: %w", err)
 		}
 		// The binding-overlap lint is collected, never printed here: it joins the

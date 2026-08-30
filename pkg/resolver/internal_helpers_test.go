@@ -285,24 +285,24 @@ func TestLintAnnotationBindingMaps_NilAnnotationsTierSkipped(t *testing.T) {
 func TestValidateAnnotationBindingTargets_EveryEarlyReturn(t *testing.T) {
 	t.Parallel()
 	// (a) Nil manifest.
-	if err := ValidateAnnotationBindingTargets(nil, CatalogLookup{}); err != nil {
+	if err := validateBindingTargets(nil, CatalogLookup{}); err != nil {
 		t.Errorf("nil manifest: expected nil; got %v", err)
 	}
 	// (b) Manifest with no Features tier.
 	m := &types.Manifest{}
-	if err := ValidateAnnotationBindingTargets(m, CatalogLookup{}); err != nil {
+	if err := validateBindingTargets(m, CatalogLookup{}); err != nil {
 		t.Errorf("no Features tier: expected nil; got %v", err)
 	}
 	// (c) Features tier with nil Annotations.
 	m.Spec.Mappings.Features = &types.MappingTier{}
-	if err := ValidateAnnotationBindingTargets(m, CatalogLookup{}); err != nil {
+	if err := validateBindingTargets(m, CatalogLookup{}); err != nil {
 		t.Errorf("nil Annotations: expected nil; got %v", err)
 	}
 	// (d) Annotations present but nil catalog Feature lookup.
 	annotations := &types.OrderedMap[types.AnnotationBinding]{}
 	annotations.Set("feature.myco/x", types.AnnotationBinding{Feature: "core/x"})
 	m.Spec.Mappings.Features.Annotations = annotations
-	if err := ValidateAnnotationBindingTargets(m, CatalogLookup{}); err != nil {
+	if err := validateBindingTargets(m, CatalogLookup{}); err != nil {
 		t.Errorf("nil catalog Feature: expected nil; got %v", err)
 	}
 }
@@ -320,7 +320,7 @@ func TestValidateAnnotationBindingTargets_CatalogMissErrors(t *testing.T) {
 	cat := CatalogLookup{
 		Feature: func(string) (types.Feature, bool) { return types.Feature{}, false },
 	}
-	err := ValidateAnnotationBindingTargets(m, cat)
+	err := validateBindingTargets(m, cat)
 	if err == nil {
 		t.Fatal("expected a halt for the missing Feature; got nil")
 	}

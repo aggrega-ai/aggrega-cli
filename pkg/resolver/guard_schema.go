@@ -249,6 +249,60 @@ func CompileComponentSchema(catalog CatalogLookup, compType string) (compactform
 	return compiled, true
 }
 
+// CompileFeatureSchema resolves a Feature type's declared contract for
+// conformance reading. Returns (nil, false) when the catalog holds no such
+// Feature, the Feature declares no contract, or the contract does not resolve.
+//
+// It is the Feature-side counterpart of the component compile above and sits
+// beside it so the two cannot come to disagree about how a contract is reached.
+// The classifying form below is where the three outcomes are kept apart; this is
+// the reading for a caller that only needs to know whether there is a resolved
+// contract.
+func CompileFeatureSchema(catalog CatalogLookup, featureType string) (compactform.Schema, bool) {
+	compiled, declared, err := compileFeatureSchema(catalog, featureType)
+	if !declared || err != nil {
+		return nil, false
+	}
+	return compiled, true
+}
+
+// compileFeatureSchema is the classifying form of the Feature-contract resolve,
+// and the home of it. It separates a Feature declaring no contract from one whose
+// declared contract failed to resolve, for the reason its component-side sibling
+// records: only one of those two is correct to pass over silently, and the
+// bool-returning entry above reports them identically.
+//
+// Where the catalog composes an extending Feature onto its parent, the composed
+// contract is preferred over the authored one, and that is a difference from the
+// component side rather than an inconsistency with it. Extending a Component
+// copies the base's pillar block down verbatim, so the authored node already
+// carries an inherited constraint; a Feature's composition is resolved by the
+// catalog instead, so reading the authored node alone would report a pillar key
+// an attachment may legitimately carry as one the contract does not declare.
+//
+// The library set is not an option here, for the reason the component side
+// states: a caller that omitted it would resolve a contract whose cross-document
+// references cannot be followed, and the failure would arrive as the same
+// not-declared an absent contract returns.
+func compileFeatureSchema(
+	catalog CatalogLookup, featureType string,
+) (compactform.Schema, bool, error) {
+	if catalog.EffectiveSchema != nil {
+		if composed, ok := catalog.EffectiveSchema(featureType); ok {
+			return composed, true, nil
+		}
+	}
+	feature := lookupFeature(catalog, featureType)
+	if feature == nil || feature.Spec.Schema.Kind == 0 {
+		return nil, false, nil
+	}
+	compiled, err := compactform.Compile(&feature.Spec.Schema, schemaLibraryOptions(catalog)...)
+	if err != nil {
+		return nil, true, err
+	}
+	return compiled, true, nil
+}
+
 // compileComponentSchema is the classifying form of the component-contract
 // compile, and the home of it. It separates a type declaring no contract from
 // one whose declared contract failed to compile, for the reason its socket-side

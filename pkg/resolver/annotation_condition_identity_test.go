@@ -83,14 +83,18 @@ spec:
             values:
               - pool
 `)
-	err := ValidateAnnotationBindingTargets(manifest, mockCatalogLookup(map[string]types.Feature{}))
+	err := validateBindingTargets(manifest, mockCatalogLookup(map[string]types.Feature{}))
 	assertIdentity(t, err, ErrAnnotationBindingTargetUnresolved(),
 		"resolver/annotation-binding-target-unresolved", "E0253")
 
+	// The locator names the registry's block rather than the key inside it, and
+	// the key leads the detail instead. That is a property of the coordinate this
+	// rule is asked at rather than of the rule: an annotation key carries a period
+	// by convention, and the locator dialect stops at a segment containing one.
 	const want = `annotation binding does not resolve against its target Feature ` +
-		`(Manifest, at .spec.mappings.features.annotations.feature.myco/missing, ` +
-		`annotation binding "feature.myco/missing" targets Feature "core/missing:1.0.0", ` +
-		`but no such Feature is loaded in the catalog)`
+		`(Manifest, at .spec.mappings.features.annotations, ` +
+		`"feature.myco/missing", routes to Feature "core/missing:1.0.0", ` +
+		`which this build's catalog does not hold; correct or publish the Feature named under "feature")`
 	if got := err.Error(); got != want {
 		t.Errorf("rendered output\n got: %s\nwant: %s", got, want)
 	}
@@ -136,14 +140,15 @@ infra:
     type: string
 `),
 	})
-	err := ValidateAnnotationBindingTargets(manifest, catalog)
+	err := validateBindingTargets(manifest, catalog)
 	assertIdentity(t, err, ErrAnnotationBindingTargetUnresolved(),
 		"resolver/annotation-binding-target-unresolved", "E0253")
 
 	const want = `annotation binding does not resolve against its target Feature ` +
-		`(Manifest, at .spec.mappings.features.annotations.feature.myco/rewrite-host, ` +
-		`annotation binding "feature.myco/rewrite-host" routes through pillar "infra" at path "nonexistent" ` +
-		`on Feature "core/rewrite-host:1.0.0", but the Feature's spec.schema does not declare a property at that path)`
+		`(Manifest, at .spec.mappings.features.annotations, ` +
+		`"feature.myco/rewrite-host", routes to Feature "core/rewrite-host:1.0.0", ` +
+		`at pillar "infra", and path "nonexistent", ` +
+		`which that Feature does not declare a property for under "schema")`
 	if got := err.Error(); got != want {
 		t.Errorf("rendered output\n got: %s\nwant: %s", got, want)
 	}

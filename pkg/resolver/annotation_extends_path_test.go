@@ -114,14 +114,14 @@ func TestAnnotationPath_ExtendsFeature_BindingTarget(t *testing.T) {
 		Feature:         featureLookup,
 		EffectiveSchema: func(string) (compactform.Schema, bool) { return composed, true },
 	}
-	if err := ValidateAnnotationBindingTargets(manifest, composedLookup); err != nil {
+	if err := validateBindingTargets(manifest, composedLookup); err != nil {
 		t.Errorf("binding to the inherited values.threshold must be accepted against the composed schema; got %v", err)
 	}
 
 	// Structural-only (nil accessor, pre-fix): the child-only schema lacks
 	// threshold → the binding is rejected as routing through an undeclared path.
 	structuralLookup := CatalogLookup{Feature: featureLookup}
-	err := ValidateAnnotationBindingTargets(manifest, structuralLookup)
+	err := validateBindingTargets(manifest, structuralLookup)
 	if err == nil {
 		t.Fatal("structural child-only schema lacks the inherited threshold; binding must be rejected pre-fix")
 	}

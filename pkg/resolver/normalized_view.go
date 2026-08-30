@@ -1074,6 +1074,31 @@ func (v *normalizedView) CompiledComponentSchema(componentType string) (map[stri
 	return v.componentContracts[componentType].resolved()
 }
 
+// CompiledFeatureSchema returns the contract a Feature type declares over the
+// pillars an attachment of it may carry, resolved, and whether there was a
+// contract that resolved at all.
+//
+// It resolves when asked rather than when this value is built, which is the
+// opposite of what the component contracts beside it do, and the reason is that
+// the set is not knowable here. A component type's contracts are resolved up
+// front because the instances name every type in play; the Feature types a rule
+// over this fact asks about are named by an annotation binding registry, which is
+// a document this presentation does not hold. Resolving every Feature the catalog
+// carries instead would pay for contracts nothing reads.
+//
+// A Feature the catalog does not hold, one declaring no contract, and one whose
+// declared contract failed to resolve all answer the same way here, and the
+// resolution's own account of which it was is not kept: this presentation
+// resolves per call and holds nothing afterwards, so no failure is reported from
+// here. The presentation a rule over this fact is invoked on resolves the bound
+// Features up front instead and reports that failure once, which is where the
+// three outcomes are told apart. That is a difference from the component
+// contracts above rather than an inconsistency with them: those are resolved when
+// this value is built, so the failure has somewhere to live.
+func (v *normalizedView) CompiledFeatureSchema(featureType string) (map[string]any, bool) {
+	return CompileFeatureSchema(v.catalog, featureType)
+}
+
 // CompiledSocketValueSchema returns the contract a dependency socket declares
 // over the developer's configuration for one connection, resolved, and whether
 // there was a contract that resolved at all.

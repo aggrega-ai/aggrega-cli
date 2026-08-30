@@ -5,154 +5,140 @@ package resolver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
-// ValidateAnnotationBindingTargets verifies that every path declared in
-// the manifest's annotation bindings corresponds to a property the
-// target Feature's spec.schema actually declares at the named pillar.
+// ValidateAnnotationBindingTargets asks the target-resolution rule of every
+// annotation binding the resolve's Manifest declares, and refuses the build when
+// any of them routes to a Feature the catalog does not hold or to a pillar path
+// that Feature does not declare.
 //
-// For each binding in the manifest's
-// `mappings.features.annotations` map, the validator:
+// It presents the documents and names the rule rather than walking the registry
+// itself: the rule is declared in this package as a constraint, so where it runs
+// follows from the facts it reads, and the provenance its findings carry is
+// supplied by the framework rather than assembled here. The binding keys are read
+// back off the presentation rather than off the Manifest beside it — they are one
+// of the facts the presentation states, so reading them anywhere else would be
+// answering from a second source that happens to agree.
 //
-//  1. Resolves the target Feature via catalogLookup. A binding pointing
-//     at a Feature type the catalog does not carry returns a CATALOG_ERROR
-//     naming the binding key and the unknown Feature type.
-//  2. Compiles the Feature's spec.schema once via compactform.Compile to
-//     obtain the resolved JSON Schema 2020-12 form. Authors may declare
-//     spec.schema in compact form, JSON Schema YAML, or a mix; the
-//     compile step normalises both to a uniform property tree.
-//  3. For each path in binding.Maps.Infra, walks the compiled schema's
-//     `properties.infra.properties.<segment>...` chain; raises an
-//     OPS_ERROR when any segment is absent.
-//  4. For each path in binding.Maps.Values, symmetrically walks
-//     `properties.values.properties.<segment>...`.
+// It is asked here, before annotation expansion, and that position is load-bearing
+// rather than incidental. Expansion consumes the binding, so a binding naming a
+// Feature the catalog lacks reaches recipe selection and is reported there as a
+// missing recipe mapping, and a binding routing to an undeclared path is reported
+// against the annotation the operator wrote rather than against the binding that
+// is wrong. Both send a reader to the wrong document. Asking the rule first is
+// what keeps the diagnostic on the binding.
 //
-// Schema shapes that escape simple property-walk — $ref nodes,
-// patternProperties, oneOf/anyOf/allOf composition, additionalProperties
-// with a schema body — return a "skippable" signal from the walker.
-// The validator treats skippable as a soft no-op for that binding-path
-// pair and trusts downstream schema validation to catch any mismatch.
-// The discipline is default-to-skip: only halt when the walker is
-// certain the path is missing.
+// 🔴 It reports EVERY offending binding, and every offending route within one,
+// rather than the first. The rule is invoked once per declared binding and the
+// framework accumulates what each invocation raised, so an author fixing a
+// Manifest whose bindings offend several times sees them all in one build instead
+// of one per build.
 //
-// Returns nil when every binding's declared paths resolve (or skip
-// softly) against the target Feature's schema.
+// A Feature whose declared contract could not be resolved is reported ahead of
+// the rule's own findings, once, naming the resolution failure verbatim. That
+// order is the point: the rule reading such a Feature's contract sees the same
+// absence a Feature declaring no contract presents, so it passes the binding over
+// — and reporting the cause beneath findings the cause suppressed would put them
+// the wrong way round.
 //
-// The validator is the static cross-reference check between the manifest
-// authoring surface and the catalog's Feature schemas. It runs from the
-// orchestrator after Resolve but before ExpandAnnotations so that a
-// malformed binding surfaces with a clear "binding routes to nonexistent
-// path" error before the synthesized Feature reaches downstream schema
-// validation and produces a less informative "unknown property" error.
-func ValidateAnnotationBindingTargets(manifest *types.Manifest, catalogLookup CatalogLookup) error {
-	if manifest == nil {
+// The findings are joined, so a caller matching the refusal by identity keeps
+// matching however many bindings offended.
+func ValidateAnnotationBindingTargets(result *ResolveResult, catalogLookup CatalogLookup) error {
+	if result == nil || result.Manifest == nil {
 		return nil
 	}
-	if manifest.Spec.Mappings.Features == nil || manifest.Spec.Mappings.Features.Annotations == nil {
-		return nil
-	}
+	// Whether there is a catalog to consult at all is settled here rather than
+	// reported once per binding. The rule reads whether the catalog holds a
+	// Feature, and a build resolving against no catalog has no entry set to ask
+	// about — so asking anyway would report every binding in the document as
+	// routing to a Feature that is missing, when what is missing is the catalog.
 	if catalogLookup.Feature == nil {
 		return nil
 	}
+	presented := newManifestNormalizedView(
+		manifestDocumentOf(result), result.Manifest,
+		newNormalizedView(
+			normalizedAggregateOf(result), result.Release, catalogLookup, result.Parameters),
+		catalogLookup,
+	)
+	document := manifestDocumentOf(result)
 
-	for annotationKey, binding := range manifest.Spec.Mappings.Features.Annotations.All() {
-		feature, found := catalogLookup.Feature(binding.Feature)
-		if !found {
-			return &ResolverError{
-				Entity: "Manifest",
-				Field:  annotationBindingField(annotationKey),
-				Message: fmt.Sprintf(
-					"annotation binding %q targets Feature %q, but no such Feature is loaded in the catalog",
-					annotationKey, binding.Feature,
-				),
-				Err: ErrAnnotationBindingTargetUnresolved(),
-			}
-		}
-
-		// Supply the catalog's SchemaLibraries so a Feature schema that uses a
-		// cross-document $ref (e.g. the standard BaseComponents#/schemas/
-		// BaseFeatureParameter) compiles here exactly as it does on every other
-		// feature-schema compile path. Without them the $ref cannot resolve and
-		// validation halts spuriously. No-op for $ref-less schemas.
-		//
-		// Prefer the composed effective schema for an extends-ing Feature, so a
-		// binding mapping to a pillar key inherited from a parent is recognised
-		// (not rejected as undeclared on the child-only schema); fall back to
-		// compiling the authored schema when there is no composition.
-		var compiled compactform.Schema
-		if catalogLookup.EffectiveSchema != nil {
-			if eff, ok := catalogLookup.EffectiveSchema(binding.Feature); ok {
-				compiled = eff
-			}
-		}
-		if compiled == nil {
-			var opts []compactform.CompileOption
-			if len(catalogLookup.SchemaLibraries) > 0 {
-				opts = append(opts, compactform.WithSchemaLibraries(catalogLookup.SchemaLibraries))
-			}
-			c, err := compactform.Compile(&feature.Spec.Schema, opts...)
-			if err != nil {
-				// A Feature schema that fails to compile is a catalog-load
-				// error caught upstream; reaching here means it was not, so the
-				// binding cannot be resolved and the failure is reported under
-				// the same condition as every other unresolvable route.
-				//
-				// This is the one raise of the four that is a pass-through of
-				// another failure rather than an authoring fault located in the
-				// binding, so it keeps the compile failure in its chain rather
-				// than folding the cause into a locator-bearing finding: the
-				// reader needs the reason the schema did not compile, and that
-				// reason carries its own condition.
-				return fmt.Errorf(
-					"%w: annotation binding %q targets Feature %q whose spec.schema does not compile: %w",
-					ErrAnnotationBindingTargetUnresolved(), annotationKey, binding.Feature, err,
-				)
-			}
-			compiled = c
-		}
-
-		for _, path := range binding.Maps.Infra {
-			ok, skippable := schemaHasPropertyAtPath(compiled, "infra", path)
-			if skippable {
-				continue
-			}
-			if !ok {
-				return &ResolverError{
-					Entity: "Manifest",
-					Field:  annotationBindingField(annotationKey),
-					Message: fmt.Sprintf(
-						"annotation binding %q routes through pillar %q at path %q on Feature %q, but the Feature's spec.schema does not declare a property at that path",
-						annotationKey, "infra", path, binding.Feature,
-					),
-					Err: ErrAnnotationBindingTargetUnresolved(),
-				}
-			}
-		}
-		for _, path := range binding.Maps.Values {
-			ok, skippable := schemaHasPropertyAtPath(compiled, "values", path)
-			if skippable {
-				continue
-			}
-			if !ok {
-				return &ResolverError{
-					Entity: "Manifest",
-					Field:  annotationBindingField(annotationKey),
-					Message: fmt.Sprintf(
-						"annotation binding %q routes through pillar %q at path %q on Feature %q, but the Feature's spec.schema does not declare a property at that path",
-						annotationKey, "values", path, binding.Feature,
-					),
-					Err: ErrAnnotationBindingTargetUnresolved(),
-				}
-			}
-		}
+	findings := unresolvableTargetFindings(presented)
+	findings = append(findings, findingsAtTheirOwnDocument(
+		constraint.RunOnDocumentAnnotationBindings(
+			document,
+			presented.ManifestAnnotationBindingKeys(document),
+			constraint.NormalizedView(presented),
+			annotationBindingResolvesAgainstItsTargetFeature,
+		),
+		"Manifest",
+		"Manifest",
+	)...)
+	if len(findings) == 0 {
+		return nil
 	}
-	return nil
+	joined := make([]error, 0, len(findings))
+	for _, f := range findings {
+		joined = append(joined, f)
+	}
+	return errors.Join(joined...)
+}
+
+// manifestDocumentOf is the document coordinate the Manifest's facts are keyed
+// by. The resolve carries the Manifest itself but not the file it was read from,
+// so the coordinate is empty and the findings name the entity kind alone — which
+// is the attribution this refusal has always carried. A resolve that comes to
+// carry the path gains a located finding here with no other change.
+func manifestDocumentOf(*ResolveResult) string {
+	return ""
+}
+
+// normalizedAggregateOf is the application document the embedded presentation is
+// built from, normalized. A resolve holding none presents an empty one rather
+// than nothing: the facts the rule asked here reads are the Manifest's and the
+// catalog's, and an absent application declares no instance for the rest to be
+// wrong about.
+func normalizedAggregateOf(result *ResolveResult) types.NormalizedAggregate {
+	if result.Aggregate == nil {
+		return types.Normalize(&types.Aggregate{})
+	}
+	return types.Normalize(result.Aggregate)
+}
+
+// unresolvableTargetFindings renders every bound Feature whose declared contract
+// could not be resolved as a halting finding, in the order the resolution names
+// them.
+//
+// The message names the resolution failure verbatim. That text already carries
+// the offending key, the source line and the keyword, and re-deriving any of it
+// here would be a second answer to what went wrong. The finding is attributed to
+// the binding's own condition rather than to a condition of its own, because what
+// the author asked for is a binding that resolves and this is one of the ways it
+// does not.
+func unresolvableTargetFindings(v *manifestNormalizedView) []*ResolverError {
+	failures := v.unresolvableTargets()
+	if len(failures) == 0 {
+		return nil
+	}
+	out := make([]*ResolverError, 0, len(failures))
+	for _, f := range failures {
+		out = append(out, &ResolverError{
+			Entity: "Manifest",
+			Message: fmt.Sprintf(
+				"annotation binding routes to Feature %q, whose declared schema does not resolve: %v",
+				f.FeatureType, f.Err),
+			Err: ErrAnnotationBindingTargetUnresolved(),
+		})
+	}
+	return out
 }
 
 // schemaHasPropertyAtPath walks a compiled JSON Schema 2020-12 schema

@@ -1723,6 +1723,39 @@ type NormalizedView interface {
 	// "infra").
 	CompiledSocketInfraSchema(componentType string, socket string) (map[string]any, bool)
 
+	// CompiledFeatureSchema is the contract a Feature type declares over the
+	// pillars an attachment of it may carry, resolved: the authored document
+	// with every shorthand expanded and every cross-document reference
+	// followed, and whether there was a contract that resolved at all.
+	//
+	// It is the Feature's counterpart to a component type's resolved contract,
+	// and a separate fact rather than the same one over another key, for the
+	// reason the presence facts beside them are separate: the two are
+	// different catalog kinds reached through different lookups, so one fact
+	// spanning both would have to pick a kind and would answer for the wrong
+	// one wherever the other applied.
+	//
+	// Where a Feature composes onto a parent, the composed contract is what
+	// resolves, not the child's own text. An attachment inherits the parent's
+	// pillar keys, so a reader handed the child-only document would find a key
+	// absent that the attachment may legitimately carry.
+	//
+	// The second result reports whether there is a resolved contract to read,
+	// and nothing finer. It does not separate a Feature declaring no contract,
+	// a Feature type the catalog does not hold, and a contract that failed to
+	// resolve: all three arrive as the same negative, and whether the catalog
+	// holds the type at all is the separate fact beside this one. A contract
+	// that failed to resolve is reported where the resolving happens, once,
+	// rather than left to every rule reading a bare absence to infer.
+	//
+	// The resolved document holds no order. A rule selects from it by key,
+	// which iterates nothing; one that walked the whole document to build
+	// output would put a byte-identical result at the mercy of map iteration.
+	//
+	// Keyed by (document, annotation-binding); read from
+	// resolver.CompileFeatureSchema(catalog, featureType).
+	CompiledFeatureSchema(featureType string) (map[string]any, bool)
+
 	// DeclaredProvidesKeys are the names a component type's contract declares
 	// its realization will publish — the output half of that contract,
 	// resolved.
