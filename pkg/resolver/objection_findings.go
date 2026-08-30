@@ -62,7 +62,34 @@ func FindingsFromObjections(
 	objections []constraint.Objection,
 	entity string,
 ) []*ResolverError {
-	return findings(objections, func(constraint.Objection) string { return entity })
+	return findings(objections, func(o constraint.Objection) (string, string) {
+		return entity, o.Locator()
+	})
+}
+
+// findingsWithNoSubject renders what a check raised for a condition no authored
+// document is at fault for: no entity reference and no locator.
+//
+// It is the conversion for a rule whose subject is neither of the two documents a
+// resolve is about, and is not a third document either — a divergence inside the
+// compiler, which every author's file is equally uninvolved in. The other two
+// conversions choose WHICH document a finding names; this one is the case where
+// the honest answer is none, and naming one anyway would send a reader to a key
+// they have no reason to open and no way to change.
+//
+// The locator goes with the entity rather than surviving it. A locator is a path
+// INSIDE the document a finding names, so a finding naming no document cannot
+// carry one: the path would be read against whichever document the reader
+// assumed, which is the misdirection in its most confusing form rather than a
+// milder version of it.
+//
+// It shares the per-objection derivation with the other two conversions, so the
+// three differ in the subject they attach and in nothing else — the sentinel, the
+// message and the ordering are derived identically.
+func findingsWithNoSubject(objections []constraint.Objection) []*ResolverError {
+	return findings(objections, func(constraint.Objection) (string, string) {
+		return "", ""
+	})
 }
 
 // findingsAtTheirOwnDocument renders what a check raised into the finding shape,
@@ -88,29 +115,37 @@ func findingsAtTheirOwnDocument(
 	kind string,
 	fallback string,
 ) []*ResolverError {
-	return findings(objections, func(o constraint.Objection) string {
+	return findings(objections, func(o constraint.Objection) (string, string) {
 		if o.SourceFile() == "" {
-			return fallback
+			return fallback, o.Locator()
 		}
-		return kind + " " + o.SourceFile()
+		return kind + " " + o.SourceFile(), o.Locator()
 	})
 }
 
-// findings is the per-objection derivation both conversions above share: every
-// field of a finding read off the objection, with the entity supplied by the
-// caller's own rule for it.
+// findings is the per-objection derivation the conversions above share: every
+// field of a finding read off the objection, with the subject — the document the
+// finding names and the locator inside it — supplied by the caller's own rule for
+// it.
+//
+// The two travel together, in one function returning both, because they are one
+// decision: a locator is a path inside the document the entity names, so a
+// conversion that chose them separately could produce a path belonging to a
+// document the finding does not name. Returning them from one call makes that
+// pairing unspellable rather than merely discouraged.
 func findings(
 	objections []constraint.Objection,
-	entityOf func(constraint.Objection) string,
+	subjectOf func(constraint.Objection) (entity string, field string),
 ) []*ResolverError {
 	if len(objections) == 0 {
 		return nil
 	}
 	out := make([]*ResolverError, 0, len(objections))
 	for _, o := range objections {
+		entity, field := subjectOf(o)
 		out = append(out, &ResolverError{
-			Entity:  entityOf(o),
-			Field:   o.Locator(),
+			Entity:  entity,
+			Field:   field,
 			Message: strings.Join(o.RenderedDetail(), ", "),
 			Err:     o.Sentinel(),
 		})

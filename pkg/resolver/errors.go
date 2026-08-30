@@ -298,7 +298,7 @@ func ErrGuardEntityViewInconsistency() error { return errGuardEntityViewInconsis
 
 var errGuardEntityViewInconsistency = cerrors.Register("resolver/guard-entity-view-inconsistency", cerrors.Meta{
 	ShortCode: "E0154",
-	Message:   "guard catalog-entity view inconsistency",
+	Message:   "the compiler's own views of the catalog disagree",
 })
 
 // ErrMissingRequiredFeature wraps a component whose declared catalog type

@@ -910,7 +910,10 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		// tolerates the finding via the Step-1 sentinel filter; the build halts.
 		catComp, found := catalog.Component(node.ComponentType)
 		if !found {
-			if verr := resolver.GuardEntityViewInconsistency(entity, fmt.Sprintf(".%s", nodeID), node.ComponentType); verr != nil {
+			// The classifier takes the type alone: the finding it builds names no
+			// document and no node, because a divergence between the build's
+			// resolved set and this view is not something a node's author wrote.
+			if verr := resolver.GuardEntityViewInconsistency(node.ComponentType); verr != nil {
 				errs = append(errs, verr)
 			}
 			continue

@@ -276,6 +276,12 @@ func releaseDocumentName(release *types.Release) string {
 // reading the diagnostic is sent to the file they wrote in rather than to the
 // application's.
 //
+// A rule may also name NEITHER, and that third binding is not a special case of
+// the two: it is the answer for a rule reporting a divergence inside the
+// compiler, which no author wrote and no author can correct. Such a rule's
+// findings carry no document and no locator, because the only thing a subject
+// could do there is send a reader to a key that is not at fault.
+//
 // 🔴 Each traversal call NAMES its rule as a literal argument, and that is a
 // constraint of the framework rather than a style. Which rules a caller invokes
 // is derived by reading this module's source for a traversal entry called with a
@@ -309,9 +315,22 @@ func runDeclaredRules(
 	operatorRule := func(objections []constraint.Objection, err error) error {
 		return collect(operatorDocument, objections, err)
 	}
+	// The third binding, for a rule whose finding belongs to neither document.
+	// A rule reporting a divergence inside the compiler has no author to send a
+	// reader to, so its findings name no document and sit at no locator; binding
+	// it here rather than letting it take the developer document is what keeps
+	// the choice of subject beside the choice of rule, where a reader can see
+	// that one rule was bound differently and why.
+	compilerFaultRule := func(objections []constraint.Objection, err error) error {
+		if err != nil {
+			return err
+		}
+		errs = append(errs, findingsWithNoSubject(objections)...)
+		return nil
+	}
 
 	// Once per component.
-	if err := developerRule(constraint.RunOnNodes(
+	if err := compilerFaultRule(constraint.RunOnNodes(
 		cancelled, coordinates, facts, componentTypeResolvesToACatalogEntry)); err != nil {
 		return nil, err
 	}

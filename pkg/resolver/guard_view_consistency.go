@@ -25,8 +25,19 @@ import "fmt"
 // fault in an authored document — a reference nobody can resolve halts earlier,
 // at resolution — so the one thing the wording owes its reader is that their own
 // files are not where the correction goes.
-const catalogEntryAbsentCaption = "the catalog this build reads holds no entry for a component type it had " +
-	"already resolved, which nothing you authored can cause — the type is"
+//
+// Because no author can produce the condition, the wording names no author and
+// asks for a report instead: a reader who cannot correct it can still carry it
+// to someone who can, and the type the two views disagree on is the one fact
+// that makes the divergence reproducible. It follows the wording every other
+// compiler-fault halt uses — "internal error", then the fault named as the
+// compiler's rather than the document's, then what there is nothing to correct
+// in — so a reader meeting two of them reads one form twice rather than two
+// forms once.
+const catalogEntryAbsentCaption = "internal error: this build resolved a component type that the catalog it " +
+	"reads then held no entry for. This is a fault in the compiler rather than in an authored document, so " +
+	"there is nothing to correct in the Aggregate, the Release or the catalog. Please report it, naming the " +
+	"command that produced this build and the type the views disagree on:"
 
 // catalogEntryAbsentMessage renders the one wording above for a surface that
 // composes its own message text rather than raising an objection.
@@ -74,13 +85,25 @@ func catalogEntryAbsentMessage(typeRef string) string {
 // [catalogEntryAbsentCaption]. A parity test holds the two renderings byte-equal,
 // which is what keeps a shared wording from becoming two wordings that merely
 // agree today.
-func guardEntityViewInconsistency(entity, field, typeRef string) *ResolverError {
+//
+// # Why the finding names no document and no field
+//
+// It takes the type and nothing else, and the two subject fields it leaves empty
+// are the point rather than an omission. Every other finding carries the document
+// its reader must edit and the key inside it; this condition has no such document,
+// so a subject here would be a coordinate pointing into a file nobody has to open.
+// A reader sent to an authoring key for a fault their file cannot cause reads the
+// key as the accusation and the wording as boilerplate around it.
+//
+// Leaving both empty does not move the condition into another domain: an entity
+// reference whose leading word names no entity kind classifies to the developer
+// domain, which is the domain a reference naming the application already
+// classified to, so what the reader loses is the misdirection and not the filing.
+func guardEntityViewInconsistency(typeRef string) *ResolverError {
 	if isRelativePathRef(typeRef) {
 		return nil
 	}
 	return &ResolverError{
-		Entity:  entity,
-		Field:   field,
 		Message: catalogEntryAbsentMessage(typeRef),
 		Err:     ErrGuardEntityViewInconsistency(),
 	}
@@ -93,6 +116,11 @@ func guardEntityViewInconsistency(entity, field, typeRef string) *ResolverError 
 // guards: a Tier-1 relative-path type is a legitimate skip (nil); a bare catalog
 // reference absent from the guard's view is the loud
 // [ErrGuardEntityViewInconsistency] halt.
-func GuardEntityViewInconsistency(entity, field, typeRef string) *ResolverError {
-	return guardEntityViewInconsistency(entity, field, typeRef)
+//
+// It takes the type alone. A caller holding the document it was walking and the
+// node it was at has nothing to pass them to, which is deliberate: the finding
+// names no authoring subject, and a parameter for one would invite a caller to
+// supply the coordinate this condition exists not to name.
+func GuardEntityViewInconsistency(typeRef string) *ResolverError {
+	return guardEntityViewInconsistency(typeRef)
 }

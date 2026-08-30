@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -46,13 +47,13 @@ func oneBareComponent(typeRef string, inject *types.InjectBlock) *types.Aggregat
 // absent from the view is the loud halt.
 func TestGuardEntityViewInconsistency_Classifies(t *testing.T) {
 	t.Parallel()
-	if verr := guardEntityViewInconsistency("E", "F", "./local-variant"); verr != nil {
+	if verr := guardEntityViewInconsistency("./local-variant"); verr != nil {
 		t.Errorf("relative-path type must classify as a legitimate skip (nil); got %v", verr)
 	}
-	if verr := guardEntityViewInconsistency("E", "F", "../sibling"); verr != nil {
+	if verr := guardEntityViewInconsistency("../sibling"); verr != nil {
 		t.Errorf("parent-relative-path type must classify as a legitimate skip (nil); got %v", verr)
 	}
-	verr := guardEntityViewInconsistency("E", "F", "core/absent:1.0.0")
+	verr := guardEntityViewInconsistency("core/absent:1.0.0")
 	if verr == nil || !errors.Is(verr, ErrGuardEntityViewInconsistency()) {
 		t.Fatalf("bare catalog ref must halt with ErrGuardEntityViewInconsistency; got %v", verr)
 	}
@@ -119,16 +120,16 @@ func TestTheAbsentCatalogEntryReadsTheSameWhicheverSurfaceReportsIt(t *testing.T
 	t.Parallel()
 
 	const typeRef = "core/absent:1.0.0"
-	const entity = "Aggregate demo"
-	const locator = ".spec.components.svc"
 
 	objections := raiseOverOneBareComponent(t, typeRef)
 	if len(objections) != 1 {
 		t.Fatalf("the rule raised %d objection(s); want 1", len(objections))
 	}
-	raised := FindingsFromObjections(objections, entity)
+	// The conversion the declared-rule pass actually binds this rule to. Reading
+	// it through a different one would compare a rendering no build produces.
+	raised := findingsWithNoSubject(objections)
 
-	composed := guardEntityViewInconsistency(entity, locator, typeRef)
+	composed := guardEntityViewInconsistency(typeRef)
 	if composed == nil {
 		t.Fatalf("the composing guard read %q as a legitimate skip; a bare catalog reference is the loud case", typeRef)
 	}
@@ -153,6 +154,76 @@ func TestTheAbsentCatalogEntryReadsTheSameWhicheverSurfaceReportsIt(t *testing.T
 			"INVARIANT: the text says what went wrong, not only what it is about.\n"+
 			"CONSEQUENCE: the rule reports a bare type and the author is left to infer the fault.",
 			raised[0].Message)
+	}
+}
+
+// TestNeitherSurfaceSendsAReaderToAnAuthoredCoordinate holds the property that
+// distinguishes this condition from every other finding the resolve reports: it
+// names no authoring document and sits at no key inside one.
+//
+// A reader cannot correct this condition anywhere, so a document reference or a
+// field path would be read as the accusation and the wording as boilerplate
+// around it — which is exactly what the text spends its length denying. The
+// assertion is over the FINDING each surface produces rather than over the
+// objection the rule raises: the objection still carries the coordinate it was
+// raised at, because that is where the walk was, and the conversion is what
+// decides that the coordinate is not reported.
+//
+// 🔴 The category is asserted alongside, and it is asserted to be UNCHANGED. A
+// finding naming no document classifies to the developer domain by the documented
+// conservative default, which is the same domain a finding naming the application
+// classified to — so the domain is not what moved here, and a later change that
+// moved it would be a re-attribution wearing this repair's clothes. Reading that
+// as a defect to "fix" by inventing a domain for a fault that is nobody's is the
+// thing this assertion exists to catch.
+func TestNeitherSurfaceSendsAReaderToAnAuthoredCoordinate(t *testing.T) {
+	t.Parallel()
+
+	const typeRef = "core/absent:1.0.0"
+
+	objections := raiseOverOneBareComponent(t, typeRef)
+	if len(objections) != 1 {
+		t.Fatalf("the rule raised %d objection(s); want 1", len(objections))
+	}
+	if objections[0].Locator() == "" {
+		t.Fatal("the objection carries no locator, so this test can no longer show that " +
+			"the CONVERSION is what drops it rather than the walk never having one")
+	}
+
+	for surface, finding := range map[string]*ResolverError{
+		"the rule asked once per component": findingsWithNoSubject(objections)[0],
+		"the composing guard":               guardEntityViewInconsistency(typeRef),
+	} {
+		if finding == nil {
+			t.Fatalf("%s produced no finding for a bare catalog reference", surface)
+		}
+		if finding.Entity != "" {
+			t.Errorf("%s names the document %q.\n"+
+				"INVARIANT: a condition no authored document causes names no authored document.\n"+
+				"CONSEQUENCE: a reader is sent to a file that is not at fault and cannot be corrected.",
+				surface, finding.Entity)
+		}
+		if finding.Field != "" {
+			t.Errorf("%s positions the finding at %q.\n"+
+				"INVARIANT: a condition no authored document causes sits at no key inside one.\n"+
+				"CONSEQUENCE: an editor draws the diagnostic on an authoring key the author must not change.",
+				surface, finding.Field)
+		}
+		if got, want := finding.ToCompilerError().Category, cerrors.DeveloperError; got != want {
+			t.Errorf("%s files the condition under %v; want %v.\n"+
+				"INVARIANT: dropping the subject is a message change, not a re-attribution — the "+
+				"domain this condition is filed under does not move.\n"+
+				"CONSEQUENCE: a category change here is a behaviour change nobody asked for, and "+
+				"inventing a domain for a fault that is nobody's is out of scope by design.",
+				surface, got, want)
+		}
+		if !strings.Contains(finding.Message, typeRef) {
+			t.Errorf("%s does not name the type the two views disagree on.\n"+
+				"INVARIANT: with no coordinate to give, the type is the whole of what makes the "+
+				"divergence reproducible.\n"+
+				"CONSEQUENCE: the report the wording asks for cannot be acted on.",
+				surface)
+		}
 	}
 }
 
