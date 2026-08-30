@@ -86,6 +86,14 @@
 // that need a different extends convention can compose Merge directly
 // with their own chain walker.
 //
+// The compiler is such a caller: it assembles its chain from the parent
+// each entity declares and hands the result to Merge, so it neither
+// writes Schema.Extra["extends"] nor calls ResolveChain. ErrCyclicExtension
+// and ErrMaxDepth are therefore reachable only through ResolveChain, which
+// means only from a caller that adopts this package's extends convention.
+// A cycle or an over-deep chain in a compiled catalog is reported by
+// pkg/validator instead, under that package's own conditions.
+//
 // # Determinism
 //
 // Merge output is byte-identical across two runs of the same input.
