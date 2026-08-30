@@ -34,7 +34,13 @@ import (
 // can act on; the type alone would leave them looking for which component meant
 // it, and a type several components name would be reported once for all of them.
 //
-// The detail is the type as the component declared it.
+// The detail is the type as the component declared it, captioned with the wording
+// this condition reports under. That wording is not this rule's own: it is
+// [catalogEntryAbsentCaption], the single home the composing guard renders from
+// as well, so a reader meeting the condition at either surface is told the same
+// thing. The caption is carried rather than left off because a detail value on
+// its own says which type the finding is about and nothing about what is wrong
+// with it, which names the fault only for a reader who already knows the rule.
 var componentTypeResolvesToACatalogEntry = constraint.Check[
 	constraint.NormalizedView,
 	constraint.NodeSubject,
@@ -56,7 +62,10 @@ var componentTypeResolvesToACatalogEntry = constraint.Check[
 			return nil
 		}
 		return []constraint.Objection{
-			s.Raise(ErrGuardEntityViewInconsistency(), componentType),
+			s.RaiseWith(
+				ErrGuardEntityViewInconsistency(),
+				constraint.Captioned(catalogEntryAbsentCaption, componentType),
+			),
 		}
 	},
 }

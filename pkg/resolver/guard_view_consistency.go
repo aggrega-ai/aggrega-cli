@@ -5,6 +5,41 @@ package resolver
 
 import "fmt"
 
+// catalogEntryAbsentCaption is the words this condition reports with, ahead of
+// the type they are about. It is the ONE home for that wording: the rule asked
+// once per component raises it as the caption of its detail value, and the
+// sub-aggregate conformance guard renders it into the message it composes, so
+// the two surfaces cannot come to say different things about one condition.
+//
+// A second copy would agree on the day it was written, and the agreement is what
+// would hide the divergence the day either was edited. The failure mode is not
+// hypothetical for this condition in particular: one of its two surfaces
+// composes a message and the other raises an objection, so a wording held in
+// both places has nothing comparing them and no gate that could fail.
+//
+// It is spelled as the words that PRECEDE the type, because that is the form a
+// captioned detail value renders in, and rendering is what makes the two
+// surfaces byte-identical rather than merely similar.
+//
+// It says nothing a reader cannot observe or act on. The condition is not a
+// fault in an authored document — a reference nobody can resolve halts earlier,
+// at resolution — so the one thing the wording owes its reader is that their own
+// files are not where the correction goes.
+const catalogEntryAbsentCaption = "the catalog this build reads holds no entry for a component type it had " +
+	"already resolved, which nothing you authored can cause — the type is"
+
+// catalogEntryAbsentMessage renders the one wording above for a surface that
+// composes its own message text rather than raising an objection.
+//
+// The quoting matches what a captioned detail value renders to, so the message
+// this returns and the message the rule's objection becomes are the same bytes
+// for the same type. That equality is asserted rather than assumed; a rendering
+// that drifted would otherwise leave one condition reading two ways depending on
+// which surface met it.
+func catalogEntryAbsentMessage(typeRef string) string {
+	return fmt.Sprintf("%s %q", catalogEntryAbsentCaption, typeRef)
+}
+
 // guardEntityViewInconsistency classifies a guard's catalog-entity miss
 // (`found == false` for a component type) and returns the loud halt for the
 // inconsistent case, or nil for the legitimate skip.
@@ -30,6 +65,15 @@ import "fmt"
 // backing changes underneath. The callers are the statement of how many there
 // are; a number written here beside them would be a second copy that reads as
 // current while lagging the set it counts.
+//
+// The rule asked once per component — componentTypeResolvesToACatalogEntry —
+// reaches the same condition without reaching this function, because it is
+// expressed as a declared check and raises an objection rather than composing a
+// message. It shares what matters: the relative-path discriminator through the
+// fact the view publishes for it, and the wording through
+// [catalogEntryAbsentCaption]. A parity test holds the two renderings byte-equal,
+// which is what keeps a shared wording from becoming two wordings that merely
+// agree today.
 func guardEntityViewInconsistency(entity, field, typeRef string) *ResolverError {
 	if isRelativePathRef(typeRef) {
 		return nil
@@ -37,7 +81,7 @@ func guardEntityViewInconsistency(entity, field, typeRef string) *ResolverError 
 	return &ResolverError{
 		Entity:  entity,
 		Field:   field,
-		Message: fmt.Sprintf("type %q was resolved as a catalog reference but is absent from the guard's catalog view (build resolved-set / guard view divergence)", typeRef),
+		Message: catalogEntryAbsentMessage(typeRef),
 		Err:     ErrGuardEntityViewInconsistency(),
 	}
 }
