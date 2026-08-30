@@ -361,6 +361,100 @@ func proseWords(s string) []string {
 	return out
 }
 
+// entryText splits an entry's prose into the two texts the claims comparison
+// works over: the emitted-message blocks the entry quotes, and everything the
+// entry presents verbatim — those blocks together with the code spans in its
+// body.
+//
+// The heading is excluded from both, and that exclusion is the point of the
+// split rather than a detail of it. An entry's heading names the condition in
+// the author's words, and those words are frequently the registered sentence
+// itself, so a comparison able to see the heading is answered by it: neutralising
+// an entry's block leaves such a comparison passing, and only neutralising the
+// heading alongside the block makes it fail. A tier a heading can satisfy reports
+// whether the entry mentions the condition, never whether the output it quotes is
+// what a build prints — and the second is the question a reader acts on.
+//
+// Two texts rather than one, because they answer different questions. The block
+// is the transcript: what a build actually printed, quoted as a blockquote or
+// reproduced in a fenced text transcript. The wider text also admits an inline
+// code span, which is how an entry quotes a registered sentence no transcript can
+// contain — several conditions register a sentence whose emitted line interpolates
+// a position into the middle of it, so the fixed words appear contiguously in no
+// output at all, and the entry names the condition it is recorded under instead.
+//
+// Ordinary explanatory prose is in neither text. An entry that describes the
+// condition in its own words therefore satisfies nothing, which is what separates
+// this from a comparison against the entry at large.
+func entryText(prose string) (block, quoted []string) {
+	lines := strings.Split(prose, "\n")
+	// The heading opens the prose, so dropping the first line when it is one
+	// removes it without needing to know which entry this is.
+	if len(lines) > 0 && headingLevel(lines[0]) > 0 {
+		lines = lines[1:]
+	}
+
+	var blockText, spanText strings.Builder
+	fenced := false
+	transcript := false
+	for _, line := range lines {
+		if t := strings.TrimSpace(line); strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			if !fenced {
+				// Only a transcript fence carries emitted output. A fence
+				// carrying source in some other language is a code sample, and
+				// admitting one would let a snippet answer for a message.
+				info := strings.TrimLeft(strings.TrimLeft(t, "`~"), " \t")
+				transcript = info == "text"
+			} else {
+				transcript = false
+			}
+			fenced = !fenced
+			continue
+		}
+		if fenced {
+			if transcript {
+				blockText.WriteString(line)
+				blockText.WriteByte('\n')
+			}
+			continue
+		}
+		if t := strings.TrimSpace(line); strings.HasPrefix(t, ">") {
+			blockText.WriteString(strings.TrimPrefix(t, ">"))
+			blockText.WriteByte('\n')
+			continue
+		}
+		for _, span := range codeSpansIn(line) {
+			spanText.WriteString(span)
+			spanText.WriteByte('\n')
+		}
+	}
+
+	block = proseWords(blockText.String())
+	// The wider text is the block's words followed by the spans', and the two are
+	// separated by the newline each carries. proseWords treats a line break as a
+	// separator, so no run can straddle the join and read as quoted text that the
+	// entry never wrote contiguously.
+	quoted = proseWords(blockText.String() + "\n" + spanText.String())
+	return block, quoted
+}
+
+// codeSpansIn returns the backtick-delimited spans on one line.
+//
+// The spans are what an entry uses to present a string it is quoting rather than
+// describing, so they are read as the entry's own verbatim text. Splitting on the
+// backtick makes every odd segment a span, which handles a line carrying several
+// and a line carrying none without either being a special case.
+func codeSpansIn(line string) []string {
+	parts := strings.Split(line, "`")
+	var spans []string
+	for i := 1; i < len(parts); i += 2 {
+		if parts[i] != "" {
+			spans = append(spans, parts[i])
+		}
+	}
+	return spans
+}
+
 // quotesRun reports whether want appears as a contiguous run inside have.
 //
 // Contiguity is what makes the answer mean something. An unordered check — every
@@ -376,10 +470,14 @@ func quotesRun(have, want []string) bool {
 	return false
 }
 
-// claimsIn compares each declaration against the prose of the entry carrying it
-// and returns every entry whose prose does not quote the message the named
-// identity registers, how many comparisons were made, and every declaration
-// that could not be compared at all.
+// claimsIn compares each declaration against the text of the entry carrying it
+// and returns every entry that does not quote the message the named identity
+// registers, how many comparisons were made, how many of those passed on
+// something other than an emitted-message block, and every declaration that could
+// not be compared at all.
+//
+// The text compared is the entry's verbatim text rather than its prose — see
+// [entryText] for what that admits and, more importantly, for what it excludes.
 //
 // The unit is the (entry, declaration) pair and not the identity. Several
 // conditions are covered by more than one entry, each describing a different way
@@ -390,7 +488,7 @@ func quotesRun(have, want []string) bool {
 // A declaration naming a re-export needs no special handling: a re-export
 // carries the message of the identity it forwards to, so the text compared is
 // the same whichever of the two names the declaration used.
-func claimsIn(ids []Identity, entries []pageEntry) (unquoted []entryClaim, compared int, unreadable []string) {
+func claimsIn(ids []Identity, entries []pageEntry) (unquoted []entryClaim, compared, offBlock int, unreadable []string) {
 	byHandle := make(map[string]Identity, len(ids))
 	for _, id := range ids {
 		byHandle[id.Handle()] = id
@@ -399,11 +497,11 @@ func claimsIn(ids []Identity, entries []pageEntry) (unquoted []entryClaim, compa
 	// names its handles, so both the count and the enumeration are a function of
 	// the page rather than of a map's iteration.
 	for _, e := range entries {
-		prose := proseWords(e.Prose)
+		block, quoted := entryText(e.Prose)
 		for _, h := range e.Handles {
 			if e.Heading == "" {
 				unreadable = append(unreadable,
-					h+": no heading opens the entry that declares it, so there is no entry prose to compare against")
+					h+": no heading opens the entry that declares it, so there is no entry text to compare against")
 				continue
 			}
 			id, ok := byHandle[h]
@@ -423,42 +521,62 @@ func claimsIn(ids []Identity, entries []pageEntry) (unquoted []entryClaim, compa
 				continue
 			}
 			compared++
-			if quotesRun(prose, want) {
+			if quotesRun(block, want) {
+				continue
+			}
+			if quotesRun(quoted, want) {
+				// Passed on a code span rather than on a transcript. Counted
+				// because it is the residue that says how much of the page is
+				// held to what a build prints and how much to what the entry
+				// says it is recorded under — a figure that moves when the
+				// balance moves, rather than a verdict on either.
+				offBlock++
 				continue
 			}
 			unquoted = append(unquoted, entryClaim{Heading: e.Heading, Handle: h, Message: id.Message})
 		}
 	}
-	return unquoted, compared, unreadable
+	return unquoted, compared, offBlock, unreadable
 }
 
-// reportClaims writes the claims tier to w: a count always, and the entries
-// themselves when list is set.
+// reportClaims writes the claims tier to w and returns how many entry claims do
+// not quote the message their condition registers, alongside how many were
+// compared. A non-zero shortfall is a refusal, and the caller exits non-zero on
+// it. The entries themselves are named when list is set.
 //
 // This tier answers the question the gap tier cannot. The gap tier asks whether
-// a condition has an entry at all; this one asks whether the entry it has says
+// a condition has an entry at all; this one asks whether the entry it has quotes
 // what the condition actually reports, which is the sentence a reader acts on.
 //
-// It never fails, and unlike the gap tier that is permanent rather than a
-// property of the page's current state. An entry's message template legitimately
-// paraphrases, reorders and splits the text a condition registers, so a
-// comparison strict enough to catch a template that has drifted also refuses
-// prose that is perfectly good. Two classes therefore sit in this count
-// permanently: a condition whose registered text is generic because it carries a
-// wrapped failure that the entry documents in its place, and an entry that
-// reframes the registered text across several message forms. A check that is red
-// on the day it ships stays red and gets switched off, so what this reports is a
-// count that moves when something drifts, never a verdict on the page.
+// It refuses, and what makes refusing safe is the text it compares against
+// rather than any softening of the comparison. Compared against an entry at
+// large, the tier had to tolerate an entry legitimately paraphrasing, reordering
+// and splitting the registered text, so a comparison strict enough to catch a
+// drifted template also refused prose that was perfectly good — and a check that
+// is red on the day it ships stays red and gets switched off. Compared against
+// [entryText] — what the entry presents verbatim, its heading excluded — the two
+// classes that used to sit in the count permanently do not arise: a condition
+// whose registered sentence no emitted line contains contiguously is quoted by
+// the entry as the sentence it is recorded under, and that is a code span, which
+// the comparison reads.
 //
-// The gap tier asks a question with no such class: a condition either has an
-// entry or has none, and no legitimate authoring choice produces the second. That
-// is why one of the two refuses and this one does not.
+// The word on a shortfall line is not WARN, because the line stops the run, and
+// it names the wording cause rather than the coverage one: two refusing tiers
+// printing an indistinguishable line is how a reader comes to re-run a gate to
+// find out which of them failed.
+//
+// The residue figure beside the verdict is a count and never a verdict. It says
+// how many claims passed on a code span rather than on a transcript of emitted
+// output, which is what tells a reader how much of the page is held to what a
+// build prints. A page whose residue grows is drifting toward describing its
+// conditions instead of quoting them, and no threshold here could say when that
+// has gone too far — so the figure is reported and judged by whoever reads it.
 //
 // The enumeration is opt-in for the reason the gap tier's is: this runs inside
 // the routine build, where printing every entry on every build produces a wall
 // of output that is scrolled past rather than read.
-func reportClaims(w io.Writer, ids []Identity, entries []pageEntry, list bool) {
-	unquoted, compared, unreadable := claimsIn(ids, entries)
+func reportClaims(w io.Writer, ids []Identity, entries []pageEntry, list bool) (unquotedCount, compared int) {
+	unquoted, compared, offBlock, unreadable := claimsIn(ids, entries)
 	// A declaration that could not be compared prints whether or not the
 	// enumeration was asked for. It means the comparison did not happen, and a
 	// tier quietly comparing fewer claims than the page declares reads exactly
@@ -467,21 +585,23 @@ func reportClaims(w io.Writer, ids []Identity, entries []pageEntry, list bool) {
 		fmt.Fprintf(w, "WARN: %s could not be compared: %s\n", haltsRelPath, u)
 	}
 	if len(unquoted) == 0 {
-		fmt.Fprintf(w, "WARN: none — all %d entry claims on %s quote the message their condition registers\n",
-			compared, haltsRelPath)
-		return
+		fmt.Fprintf(w, "claims: all %d entry claims on %s quote the message their condition registers "+
+			"(%d of them from a code span naming the condition rather than from a quoted transcript)\n",
+			compared, haltsRelPath, offBlock)
+		return 0, compared
 	}
 	if !list {
-		fmt.Fprintf(w, "WARN: %d of %d entry claims on %s do not quote the message their condition registers "+
+		fmt.Fprintf(w, "REFUSED: %d of %d entry claims on %s do not quote the message their condition registers "+
 			"(re-run with -claims to list them)\n", len(unquoted), compared, haltsRelPath)
-		return
+		return len(unquoted), compared
 	}
-	fmt.Fprintf(w, "WARN: %d of %d entry claims on %s do not quote the message their condition registers:\n",
+	fmt.Fprintf(w, "REFUSED: %d of %d entry claims on %s do not quote the message their condition registers:\n",
 		len(unquoted), compared, haltsRelPath)
 	// The registered message is printed beside the entry because the report is
-	// not actionable without it: deciding whether an entry has drifted or is
-	// reframing means seeing the text it was meant to carry.
+	// not actionable without it: repairing an entry means seeing the text it was
+	// meant to carry.
 	for _, c := range unquoted {
-		fmt.Fprintf(w, "WARN:   %s under %q: %s\n", c.Handle, c.Heading, c.Message)
+		fmt.Fprintf(w, "REFUSED:   %s under %q: %s\n", c.Handle, c.Heading, c.Message)
 	}
+	return len(unquoted), compared
 }

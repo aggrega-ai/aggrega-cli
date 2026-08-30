@@ -742,7 +742,7 @@ func TestClaimsIn_CountsAnEntryWhoseProseDoesNotQuoteTheRegisteredMessage(t *tes
 		"<!-- covers: pkg/thing.ErrQuoted -->\n\n"+
 		"Emitted message:\n> thing: the block cannot be read\n")
 
-	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	unquoted, compared, _, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
 	if len(unreadable) != 0 {
 		t.Fatalf("comparisons that did not happen: %v", unreadable)
 	}
@@ -774,7 +774,7 @@ func TestClaimsIn_DoesNotPassAnEntryOnProseBelongingToAnother(t *testing.T) {
 		"<!-- covers: pkg/thing.ErrQuoted -->\n\n"+
 		"The merge produced something unreadable.\n")
 
-	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	unquoted, compared, _, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
 	if len(unreadable) != 0 {
 		t.Fatalf("comparisons that did not happen: %v", unreadable)
 	}
@@ -802,7 +802,7 @@ func TestClaimsIn_ReadsASubsectionAsAnEntryOfItsOwn(t *testing.T) {
 		"<!-- covers: pkg/thing.ErrQuoted -->\n\n"+
 		"Emitted message:\n> something else entirely\n")
 
-	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	unquoted, compared, _, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
 	if len(unreadable) != 0 {
 		t.Fatalf("comparisons that did not happen: %v", unreadable)
 	}
@@ -824,7 +824,7 @@ func TestClaimsIn_CreditsAReExportWithTheMessageItForwardsTo(t *testing.T) {
 		"<!-- covers: pkg/other.ErrPlain -->\n\n"+
 		"Emitted message:\n> a plain condition\n")
 
-	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	unquoted, compared, _, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
 	if len(unreadable) != 0 {
 		t.Fatalf("comparisons that did not happen: %v", unreadable)
 	}
@@ -842,7 +842,7 @@ func TestClaimsIn_ReportsADeclarationItCouldNotPlaceRatherThanSkippingIt(t *test
 	// like a page with nothing wrong.
 	root := haltsPageIn(t, "<!-- covers: pkg/thing.ErrPlain -->\n\n# Halts\n\nProse.\n")
 
-	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	unquoted, compared, _, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
 	if compared != 0 || len(unquoted) != 0 {
 		t.Errorf("a declaration with no entry was compared anyway: compared=%d counted=%+v", compared, unquoted)
 	}
@@ -877,7 +877,7 @@ func TestReportClaims_CountsAlwaysAndEnumeratesOnRequest(t *testing.T) {
 	var listed strings.Builder
 	reportClaims(&listed, ids, entries, true)
 	got := listed.String()
-	if !strings.Contains(got, "WARN: 1 of 2 entry claims") {
+	if !strings.Contains(got, "REFUSED: 1 of 2 entry claims") {
 		t.Errorf("header does not report the derived counts:\n%s", got)
 	}
 	if !strings.Contains(got, "pkg/thing.ErrQuoted") {
@@ -895,7 +895,7 @@ func TestReportClaims_CountsAlwaysAndEnumeratesOnRequest(t *testing.T) {
 	var summary strings.Builder
 	reportClaims(&summary, ids, entries, false)
 	s := summary.String()
-	if !strings.Contains(s, "WARN: 1 of 2 entry claims") {
+	if !strings.Contains(s, "REFUSED: 1 of 2 entry claims") {
 		t.Errorf("summary does not report the derived counts:\n%s", s)
 	}
 	if strings.Contains(s, "pkg/thing.ErrQuoted") {
@@ -916,7 +916,7 @@ func TestReportClaims_SaysSoWhenEveryEntryQuotesItsMessage(t *testing.T) {
 		"Emitted message:\n> A PLAIN CONDITION.\n")
 	var b strings.Builder
 	reportClaims(&b, fixtureIdentities(t), entriesIn(t, root), false)
-	if got := b.String(); !strings.Contains(got, "WARN: none — all 1 entry claims") {
+	if got := b.String(); !strings.Contains(got, "claims: all 1 entry claims") {
 		t.Errorf("a clean page does not report its own count:\n%s", got)
 	}
 }
@@ -953,7 +953,7 @@ func TestReadEntries_DoesNotReadAFencedSampleAsAHeading(t *testing.T) {
 		"```yaml\n# a comment, not a heading\nvalues: {}\n```\n\n"+
 		"Emitted message:\n> a plain condition\n")
 
-	unquoted, compared, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	unquoted, compared, _, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
 	if len(unreadable) != 0 {
 		t.Fatalf("comparisons that did not happen: %v", unreadable)
 	}
@@ -2047,5 +2047,372 @@ func TestRenderShortCodeRegion_OrdersRetiredCodesIndependentlyOfTheRecord(t *tes
 	// would make that a hazard the day it does.
 	if descending[0].ShortCode != "E0002" {
 		t.Error("the renderer reordered the caller's record in place")
+	}
+}
+
+// TestClaimsIn_DoesNotLetAnEntryHeadingAnswerForItsBlock pins the defect the
+// comparison was tightened to remove.
+//
+// The heading here carries the registered sentence word for word and the
+// emitted-message block carries something the module never registers. Compared
+// against the entry's prose, that page passes — which is what it used to do, and
+// which is why the tier reported whether an entry mentioned its condition rather
+// than whether the output it quotes is what a build prints.
+// Both rows carry a block the module never registers, so a passing entry could
+// only have passed on its heading. The rows differ in HOW the heading carries the
+// sentence, and the difference matters: the first is excluded because ordinary
+// prose is in neither compared text, and the second only because the heading
+// itself is dropped. A heading written entirely as a code span is a legal thing to
+// write, so without the drop it would answer for its entry through the very
+// mechanism that admits a code span in the body.
+func TestClaimsIn_DoesNotLetAnEntryHeadingAnswerForItsBlock(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		heading string
+	}{
+		{name: "a heading in ordinary words", heading: "### A plain condition"},
+		{name: "a heading written as a code span", heading: "### `a plain condition`"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := haltsPageIn(t, "# Halts\n\n"+
+				tc.heading+"\n\n"+
+				"<!-- covers: pkg/thing.ErrPlain -->\n\n"+
+				"Emitted message:\n> something the module never registers\n")
+
+			unquoted, compared, _, unreadable := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+			if len(unreadable) != 0 {
+				t.Fatalf("comparisons that did not happen: %v", unreadable)
+			}
+			if compared != 1 {
+				t.Errorf("compared %d claims, want 1", compared)
+			}
+			if len(unquoted) != 1 {
+				t.Fatalf("the heading answered for the block: counted %d, want 1: %+v", len(unquoted), unquoted)
+			}
+		})
+	}
+}
+
+// TestClaimsIn_DoesNotReadOrdinaryProseAsAQuotation holds the other side of the
+// same line. Explanatory prose describing the condition in the author's words is
+// not the entry quoting it, so it satisfies nothing — otherwise the tightening
+// would only have moved which prose the heading's job passes to.
+func TestClaimsIn_DoesNotReadOrdinaryProseAsAQuotation(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, "# Halts\n\n"+
+		"### Something went wrong\n\n"+
+		"<!-- covers: pkg/thing.ErrPlain -->\n\n"+
+		"The build reports a plain condition and stops.\n")
+
+	unquoted, _, _, _ := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	if len(unquoted) != 1 {
+		t.Fatalf("body prose was read as a quotation: %+v", unquoted)
+	}
+}
+
+// TestClaimsIn_ReadsACodeSpanNamingTheConditionAndCountsItApart covers the entries
+// no transcript can serve: a condition whose emitted line interpolates a position
+// into the middle of its registered sentence, so the fixed words appear
+// contiguously in no output at all and the entry names the condition it is
+// recorded under instead.
+//
+// It passes, and it is counted apart, because the two are different evidence: one
+// says a build prints this, the other says the module records it under this.
+func TestClaimsIn_ReadsACodeSpanNamingTheConditionAndCountsItApart(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, "# Halts\n\n"+
+		"### Something went wrong\n\n"+
+		"<!-- covers: pkg/thing.ErrPlain -->\n\n"+
+		"Emitted message:\n> thing at `<path>`:`<line>`: a plain, interpolated condition\n\n"+
+		"The condition it is recorded under is `a plain condition`.\n")
+
+	unquoted, compared, offBlock, _ := claimsIn(fixtureIdentities(t), entriesIn(t, root))
+	if len(unquoted) != 0 {
+		t.Fatalf("a code span naming the condition did not satisfy the claim: %+v", unquoted)
+	}
+	if compared != 1 || offBlock != 1 {
+		t.Errorf("compared=%d offBlock=%d, want 1 and 1 — the residue figure has to separate the two",
+			compared, offBlock)
+	}
+}
+
+// TestEntryText_ReadsATranscriptFenceAndNotACodeSample separates the two kinds of
+// fenced block. A text fence reproduces output; a fence carrying source in some
+// other language is a sample of something the reader writes, and admitting one
+// would let a snippet answer for a message.
+func TestEntryText_ReadsATranscriptFenceAndNotACodeSample(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		prose   string
+		inBlock bool
+	}{
+		{
+			name:    "a transcript fence is the emitted-message block",
+			prose:   "### H\n\n```text\na plain condition\n```\n",
+			inBlock: true,
+		},
+		{
+			name:    "a sample in another language is neither",
+			prose:   "### H\n\n```yaml\na plain condition\n```\n",
+			inBlock: false,
+		},
+		{
+			name:    "a blockquote is the emitted-message block",
+			prose:   "### H\n\n> a plain condition\n",
+			inBlock: true,
+		},
+		{
+			name:    "the heading is in neither text",
+			prose:   "### a plain condition\n\nProse.\n",
+			inBlock: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			block, quoted := entryText(tc.prose)
+			want := proseWords("a plain condition")
+			if got := quotesRun(block, want); got != tc.inBlock {
+				t.Errorf("in the emitted-message block = %v, want %v", got, tc.inBlock)
+			}
+			// The heading case is the one that must be absent from BOTH texts. A
+			// tightening that merely moved the heading out of the narrower text
+			// would leave it answering through the wider one.
+			if !tc.inBlock && quotesRun(quoted, want) && strings.HasPrefix(tc.prose, "### a plain") {
+				t.Error("the heading reached the wider text, which is the defect this excludes")
+			}
+		})
+	}
+}
+
+// transcriptsFor writes pages into a temporary documentation tree and returns the
+// reproductions of emitted output found across them.
+func transcriptsFor(t *testing.T, pages map[string]string) []transcript {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, errorsRelDir)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for name, body := range pages {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	ts, err := transcriptsIn(root)
+	if err != nil {
+		t.Fatalf("transcriptsIn: %v", err)
+	}
+	return ts
+}
+
+// TestReportTranscripts_HoldsAReproductionToWhatTheModuleRegisters walks the four
+// verdicts a reproduction can draw, because the exemption is what makes the tier
+// shippable and an exemption held from only one end is an exemption that spreads.
+func TestReportTranscripts_HoldsAReproductionToWhatTheModuleRegisters(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		page    string
+		faults  int
+		wantSay string
+	}{
+		{
+			name:    "a reproduction quoting a registered sentence is held",
+			page:    "# W\n\n```text\nLINT: a plain condition here\n```\n",
+			faults:  0,
+			wantSay: "1 of 1 reproductions",
+		},
+		{
+			name:    "a reproduction quoting nothing registered, and declaring nothing, is refused",
+			page:    "# W\n\n```text\nLINT: something nothing registers\n```\n",
+			faults:  1,
+			wantSay: "quotes no sentence any condition registers",
+		},
+		{
+			name: "a reproduction declaring the surface it reproduces is exempt",
+			page: "# W\n\n<!-- unregistered-output: lint text -->\n\n" +
+				"```text\nLINT: something nothing registers\n```\n",
+			faults:  0,
+			wantSay: "the other 1 declaring",
+		},
+		{
+			name: "a declaration on a reproduction that does quote a registered sentence is refused",
+			page: "# W\n\n<!-- unregistered-output: lint text -->\n\n" +
+				"```text\nLINT: a plain condition here\n```\n",
+			faults:  1,
+			wantSay: "drop the declaration",
+		},
+		{
+			name: "a declaration saying nothing is refused",
+			page: "# W\n\n<!-- unregistered-output: -->\n\n" +
+				"```text\nLINT: something nothing registers\n```\n",
+			faults:  1,
+			wantSay: "name the surface it reproduces",
+		},
+		{
+			name: "a declaration is cleared by intervening prose rather than binding to a later block",
+			page: "# W\n\n<!-- unregistered-output: lint text -->\n\nProse.\n\n" +
+				"```text\nLINT: something nothing registers\n```\n",
+			faults:  1,
+			wantSay: "declares no reason",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := transcriptsFor(t, map[string]string{"warnings.md": tc.page})
+			var b strings.Builder
+			faults, considered := reportTranscripts(&b, fixtureIdentities(t), ts, true)
+			if faults != tc.faults {
+				t.Errorf("faults = %d, want %d\n%s", faults, tc.faults, b.String())
+			}
+			if considered != 1 {
+				t.Errorf("read %d reproductions, want 1", considered)
+			}
+			if !strings.Contains(b.String(), tc.wantSay) {
+				t.Errorf("verdict does not say %q:\n%s", tc.wantSay, b.String())
+			}
+		})
+	}
+}
+
+// TestTranscriptsIn_WalksPastASampleWithoutLosingTheFenceState pins the state
+// machine. A fence carrying source in another language is walked past, but its
+// fence is still tracked — an unbalanced walk would read the prose between two
+// samples as though it were inside one, and every later block on the page with it.
+func TestTranscriptsIn_WalksPastASampleWithoutLosingTheFenceState(t *testing.T) {
+	t.Parallel()
+	ts := transcriptsFor(t, map[string]string{
+		"warnings.md": "# W\n\n```go\nfunc x() {}\n```\n\nProse.\n\n" +
+			"```text\nfirst transcript\n```\n\n```yaml\nk: v\n```\n\n" +
+			"```text\nsecond transcript\n```\n",
+	})
+	if len(ts) != 2 {
+		t.Fatalf("read %d reproductions, want 2: %+v", len(ts), ts)
+	}
+	if !strings.Contains(ts[0].Text, "first") || !strings.Contains(ts[1].Text, "second") {
+		t.Errorf("the walk collected the wrong bodies: %+v", ts)
+	}
+}
+
+// crossrefsFor writes a documentation tree and returns the references found in it
+// that touch the published error reference.
+func crossrefsFor(t *testing.T, files map[string]string) (string, []crossref) {
+	t.Helper()
+	root := t.TempDir()
+	for name, body := range files {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	refs, err := crossrefsIn(root)
+	if err != nil {
+		t.Fatalf("crossrefsIn: %v", err)
+	}
+	return root, refs
+}
+
+// TestReportCrossrefs_ResolvesATitleToAHeadingAndRefusesOneThatNamesNothing
+// covers the check in both directions of travel, because the failure runs both
+// ways: a title written on one of these pages goes stale when the page it names
+// is edited, and a title written elsewhere goes stale when a section here is
+// renamed — and the second is the one nothing else in the build could see.
+func TestReportCrossrefs_ResolvesATitleToAHeadingAndRefusesOneThatNamesNothing(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		files      map[string]string
+		refs       int
+		unresolved int
+	}{
+		{
+			name: "an outbound title resolving to a heading",
+			files: map[string]string{
+				errorsRelDir + "/warnings.md":              "# W\n\nsee [c](../entities/component.md) \"Ad-hoc sockets\"\n",
+				"language-reference/entities/component.md": "# C\n\n## Ad-hoc sockets\n",
+			},
+			refs: 1, unresolved: 0,
+		},
+		{
+			name: "an outbound title naming a heading that does not exist",
+			files: map[string]string{
+				errorsRelDir + "/warnings.md":              "# W\n\nsee [c](../entities/component.md) \"Ad-hoc sockets\"\n",
+				"language-reference/entities/component.md": "# C\n\n## Topology sockets\n",
+			},
+			refs: 1, unresolved: 1,
+		},
+		{
+			name: "an inbound title naming a section of the reference",
+			files: map[string]string{
+				errorsRelDir + "/fatal-halts.md":           "# H\n\n### A plain condition\n",
+				"language-reference/entities/component.md": "# C\n\nsee [h](../errors/fatal-halts.md) \"A plain condition\"\n",
+			},
+			refs: 1, unresolved: 0,
+		},
+		{
+			name: "an inbound title left behind by a rename",
+			files: map[string]string{
+				errorsRelDir + "/fatal-halts.md":           "# H\n\n### A renamed condition\n",
+				"language-reference/entities/component.md": "# C\n\nsee [h](../errors/fatal-halts.md) \"A plain condition\"\n",
+			},
+			refs: 1, unresolved: 1,
+		},
+		{
+			name: "the reverse order, joined by a word saying the title is inside the page",
+			files: map[string]string{
+				errorsRelDir + "/fatal-halts.md": "# H\n\n\"Binding lint\" in [w](./warnings.md)\n",
+				errorsRelDir + "/warnings.md":    "# W\n\n## Binding lint\n",
+			},
+			refs: 1, unresolved: 0,
+		},
+		{
+			name: "typography differing between the title and the heading is not a difference",
+			files: map[string]string{
+				errorsRelDir + "/warnings.md":              "# W\n\nsee [c](../entities/component.md) \"Topology Sockets: `usesSchema`\"\n",
+				"language-reference/entities/component.md": "# C\n\n## Topology Sockets: `usesSchema`\n",
+			},
+			refs: 1, unresolved: 0,
+		},
+		{
+			name: "a quoted value merely standing next to a link is not a section reference",
+			files: map[string]string{
+				errorsRelDir + "/warnings.md":              "# W\n\nthe value \"storage_size\" [c](../entities/component.md) follows\n",
+				"language-reference/entities/component.md": "# C\n\n## Topology sockets\n",
+			},
+			refs: 0, unresolved: 1, // no reference at all is an instrument failure, not a clean corpus
+		},
+		{
+			name: "a reference between two pages neither of which is the error reference",
+			files: map[string]string{
+				errorsRelDir + "/warnings.md":              "# W\n\nsee [x](./fatal-halts.md) \"H\"\n",
+				errorsRelDir + "/fatal-halts.md":           "# H\n",
+				"language-reference/entities/component.md": "# C\n\nsee [r](./recipe.md) \"Nowhere at all\"\n",
+				"language-reference/entities/recipe.md":    "# R\n",
+			},
+			// Only the errors-page reference is collected, and it resolves. The
+			// component-to-recipe one names a heading that does not exist and is
+			// still not reported, because a gate refusing on a page outside the
+			// surface it is named over surprises whoever edits that page.
+			refs: 1, unresolved: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, refs := crossrefsFor(t, tc.files)
+			if len(refs) != tc.refs {
+				t.Fatalf("collected %d references, want %d: %+v", len(refs), tc.refs, refs)
+			}
+			var b strings.Builder
+			unresolved, _ := reportCrossrefs(&b, root, refs, true)
+			if unresolved != tc.unresolved {
+				t.Errorf("unresolved = %d, want %d\n%s", unresolved, tc.unresolved, b.String())
+			}
+		})
 	}
 }

@@ -16,6 +16,9 @@
 //	go run ./internal/tools/errindex -out ../aggrega-docs
 //	go run ./internal/tools/errindex -out ../aggrega-docs -gaps
 //	go run ./internal/tools/errindex -out ../aggrega-docs -claims
+//	go run ./internal/tools/errindex -out ../aggrega-docs -transcripts
+//	go run ./internal/tools/errindex -out ../aggrega-docs -crossrefs
+//	go run ./internal/tools/errindex -out <copy> -refs ../aggrega-docs
 //	go run ./internal/tools/errindex -index
 //
 // The module's `make docs` target invokes the first form. It writes only inside
@@ -43,33 +46,48 @@
 // subset of that set the reference carries under the rule above, and the set the
 // halting-conditions page documents, which is what that page's region carries.
 //
-// Every -out run also reports two counts over the halting-conditions page: how
-// many declared halting conditions no entry names, and how many entries do not
-// quote the message the condition they cover registers. The first asks whether a
-// condition is documented at all; the second asks whether what its entry says
-// matches what the build actually reports, which is the sentence a reader acts
-// on.
+// # What every -out run holds the published pages to
 //
-// 🔴 The second count is not made redundant by that page's generated region, and
-// the reason is structural rather than a matter of degree. A splice writes only
-// inside its markers, so the curated prose around them is an input to BOTH sides
-// of any regenerate-and-compare check and can never produce a difference however
-// wrong it is. The region single-sources the sentence it carries; it says nothing
-// about the emitted-message forms the entries quote around it, which are
-// occurrence-shaped and are not a transcription of any declaration. So the count
-// keeps a subject the region cannot reach.
+// Four checks run beside the write, and each refuses. They are separate because
+// they fail for different reasons and are repaired differently, and each names
+// its own cause on its verdict line so a reader meeting a red does not have to
+// re-run anything to learn which of them stopped the run.
 //
-// The two carry different weight, and the difference is deliberate. The first
-// refuses: every declared halting condition earns an entry, so a run that finds
-// one without an entry writes the regions, names the shortfall and exits
-// non-zero. The second warns and leaves the exit code alone, because an entry
-// legitimately reframes the text a condition registers, so a comparison strict
-// enough to catch a drifted template also refuses prose that is perfectly good.
-// A condition with no entry has no such reading: it is a hole in the published
-// reference, and a coverage figure nobody has seen fail is decoration.
+//   - Coverage: every declared halting condition has an entry on the
+//     halting-conditions page. A condition with none is a hole in the published
+//     reference rather than a note about it.
+//   - Claims: every entry quotes the message the condition it covers registers.
+//     Compared against what the entry presents VERBATIM — the emitted-message
+//     blocks it quotes and the code spans in its body — never against the entry's
+//     prose at large, and never against its heading.
+//   - Transcripts: every reproduction of emitted output across the reference
+//     quotes text some condition registers, or declares which unregistered
+//     surface it reproduces.
+//   - Cross-references: every prose reference naming a section of the reference
+//     by its title resolves to a heading that exists.
 //
-// Add -gaps or -claims to name the members of either count — the form to reach
-// for when a count has moved and you want to know what moved it.
+// 🔴 None of the four is made redundant by the generated regions, and the reason
+// is structural rather than a matter of degree. A splice writes only inside its
+// markers, so every byte outside one — and every byte of a page carrying no
+// region at all — is an input to BOTH sides of any regenerate-and-compare check
+// and can never produce a difference however wrong it is. The regions
+// single-source the sentences they carry; they say nothing about the
+// emitted-message forms quoted around them, which are occurrence-shaped and are
+// a transcription of no declaration.
+//
+// 🔴 The claims comparison excludes the entry's heading, and the exclusion is what
+// makes the check mean anything. An entry's heading names the condition in the
+// author's words, and those words are frequently the registered sentence itself,
+// so a comparison able to see the heading was answered by it: neutralising an
+// entry's emitted-message block left the comparison passing, and only neutralising
+// the heading alongside the block made it fail. Do not widen the compared text
+// back to the entry's prose — that restores a tier reporting whether an entry
+// mentions its condition, in place of one reporting whether the output it quotes
+// is what a build prints.
+//
+// Add -gaps, -claims, -transcripts or -crossrefs to name the members of any of
+// the four — the form to reach for when a count has moved and you want to know
+// what moved it.
 package main
 
 import (
@@ -115,7 +133,10 @@ func main() {
 	out := flag.String("out", "", "path to the documentation tree whose generated error-reference regions to refresh")
 	index := flag.Bool("index", false, "print the identity index as tab-separated records and write nothing")
 	gaps := flag.Bool("gaps", false, "name every declared halting condition no entry on the halting-conditions page covers")
-	claims := flag.Bool("claims", false, "name every entry on the halting-conditions page whose prose does not quote the message the condition it covers registers")
+	claims := flag.Bool("claims", false, "name every entry on the halting-conditions page that does not quote the message the condition it covers registers")
+	transcripts := flag.Bool("transcripts", false, "name every reproduction of emitted output in the published error reference that carries no text a declared condition registers")
+	crossrefs := flag.Bool("crossrefs", false, "name every prose reference that names a section of the published error reference by a title no heading there matches")
+	refs := flag.String("refs", "", "path to the documentation tree to read prose references from; defaults to the -out tree")
 	flag.Parse()
 
 	if (*out == "") == !*index {
@@ -298,10 +319,43 @@ func main() {
 	// shortfall is computed would let the first defect hide the rest, and a page
 	// with several would need as many runs to repair as it has defects.
 	//
-	// The claims tier warns and the admission tier warns; the coverage tier
-	// refuses, and the words each prints say which is which.
+	// The admission tier warns; the coverage and claims tiers refuse, and each
+	// names its own cause on its verdict line so a reader meeting a red can tell
+	// a condition with no entry from an entry quoting the wrong text without
+	// re-running anything.
 	uncovered, considered := reportGaps(os.Stderr, ids, covered, *gaps)
-	reportClaims(os.Stderr, ids, entries, *claims)
+	unquoted, claimsCompared := reportClaims(os.Stderr, ids, entries, *claims)
+
+	// The transcript tier reads the whole published reference rather than the one
+	// page the tiers above read, because the shape it catches is on the pages
+	// that carry no generated region at all — where nothing else in the build
+	// looks.
+	reproductions, err := transcriptsIn(*out)
+	if err != nil {
+		fail(err)
+	}
+	unattributed, read := reportTranscripts(os.Stderr, ids, reproductions, *transcripts)
+
+	// The cross-reference tier reads the whole documentation tree rather than the
+	// error reference alone, because half of what it checks is written elsewhere:
+	// a page naming one of these sections by title goes stale when the section is
+	// renamed, and nothing on the renamed page records that anything named it.
+	//
+	// It therefore reads a root of its own where one is given, and the asymmetry
+	// is deliberate. A caller that regenerates into a throwaway copy copies only
+	// what this command writes, which is two pages; the tree the references live
+	// in is two orders of magnitude larger, and copying it in order to read it
+	// would cost more than every check here put together. Nothing is written
+	// through this root.
+	refsRoot := *out
+	if *refs != "" {
+		refsRoot = *refs
+	}
+	found, err := crossrefsIn(refsRoot)
+	if err != nil {
+		fail(err)
+	}
+	unresolved, resolved := reportCrossrefs(os.Stderr, refsRoot, found, *crossrefs)
 
 	// The admission tier names its members in full on every run rather than
 	// counting them behind a flag, because the defect it repairs is a condition
@@ -327,6 +381,34 @@ func main() {
 			"every declared halting condition earns one, so an undocumented condition is a hole in the "+
 			"published reference rather than a note about it — write its entry and declare what that entry "+
 			"covers, or re-run with -gaps to name the conditions", uncovered, considered, haltsRelPath))
+	}
+
+	// The wording refusal is separate from the coverage one above and is reached
+	// only once that has passed, because the two are repaired differently and a
+	// run reporting both at once tells a reader to write an entry for a condition
+	// whose entry is the very thing quoting the wrong text.
+	if unquoted > 0 {
+		fail(fmt.Errorf("%d of the %d entry claims on %s do not quote the message their condition registers; "+
+			"an entry teaches a reader which build output it explains, so one quoting text no build prints "+
+			"sends them looking for a line that does not exist — quote the registered sentence in the entry's "+
+			"emitted-message block, or, where no emitted line contains it contiguously, name it as the "+
+			"condition the entry is recorded under, or re-run with -claims to name the entries",
+			unquoted, claimsCompared, haltsRelPath))
+	}
+
+	if unattributed > 0 {
+		fail(fmt.Errorf("%d of the %d reproductions of emitted output under %s carry no text any declared "+
+			"condition registers; a reproduction is read as a transcript of what a build prints, so one "+
+			"carrying text the module never registers sends a reader searching their own output for a line "+
+			"that does not exist — correct the reproduction against what the build now prints, or re-run "+
+			"with -transcripts to name them", unattributed, read, errorsRelDir))
+	}
+
+	if unresolved > 0 {
+		fail(fmt.Errorf("%d of the %d prose references naming a section of %s by title resolve to no heading "+
+			"there; such a reference is prose rather than a link, so nothing else in the build sees it and a "+
+			"renamed section leaves it quoting a title that no longer exists — correct the title, or re-run "+
+			"with -crossrefs to name the references", unresolved, resolved, errorsRelDir))
 	}
 }
 
