@@ -25,8 +25,17 @@ type UsesSchemaEntry struct {
 	// the JSON Schema 2020-12 content an edge's `values` block (authored in
 	// the Aggregate) is validated against. InfraSchema is the operator-config
 	// counterpart for an edge's `infra` block (authored in the Release). Both
-	// accept the same three authoring modes as the entity-level Schema field
-	// (inline content / `$import` / `$ref`), dispatched by compactform.Compile.
+	// accept the same three authoring modes as the entity-level Schema field:
+	// inline content, `$import` of a file beside the entity, and `$ref` into a
+	// SchemaLibrary entry.
+	//
+	// The two indirections resolve at different points and are not one
+	// mechanism. An `$import` is substituted when the entity is read from the
+	// catalog, so by the time these fields are read they already hold the
+	// imported content and no consumer sees the directive. A `$ref` survives
+	// into the content and is expanded by compactform.Compile, against the
+	// SchemaLibrary map its caller supplies.
+	//
 	// Omission means the socket declares no per-edge contract for that pillar;
 	// any edge config for that pillar is then unvalidated (opt-in conformance).
 	// These contracts are per-edge and are not composed into the consuming

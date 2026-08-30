@@ -1070,15 +1070,32 @@ func (c *Catalog) claimIdentity(fullKey, desc, path string) error {
 	return nil
 }
 
+// ParseComponentEntity is the exported form of the shared per-entity Component
+// resolution, for a surface that holds one entity's bytes rather than a catalog
+// directory — `aggrega validate` on a single file. Such a surface routes here
+// rather than unmarshalling for itself, so it reads the same resolved entity a
+// build does; a second parse of its own would read an unresolved schema for the
+// one entity the caller actually asked about.
+func ParseComponentEntity(data []byte, path string) (types.Component, error) {
+	return parseComponentEntity(data, path)
+}
+
+// ParseFeatureEntity is the Feature counterpart of [ParseComponentEntity], and
+// exists for the same reason.
+func ParseFeatureEntity(data []byte, path string) (types.Feature, error) {
+	return parseFeatureEntity(data, path)
+}
+
 // parseComponentEntity is the single per-entity Component resolution shared by the
 // eager (catalog.Load, per file) and lazy (LazyLookup, per URI on cache miss)
-// catalog-access backings: full unmarshal, kind-check, and the static per-entity
-// load-time check. It is the SSOT for "what an authored Component resolves to" so
-// the two backings cannot drift in parse/validation. Extends-merge is applied
-// separately by each backing through validator.ResolveComponentExtends (eager in
-// ResolveAllExtends; lazy in Component()); library-dependent pillar validation
-// (validateSchemaPillarsPass) needs the complete SchemaLibraries map and is not a
-// per-entity step.
+// catalog-access backings: full unmarshal, kind-check, the static per-entity
+// load-time check, and the relative-`$import` schema substitution against the
+// entity file's own directory. It is the SSOT for "what an authored Component
+// resolves to" so the two backings cannot drift in parse/validation. Extends-merge
+// is applied separately by each backing through validator.ResolveComponentExtends
+// (eager in ResolveAllExtends; lazy in Component()); library-dependent pillar
+// validation (validateSchemaPillarsPass) needs the complete SchemaLibraries map and
+// is not a per-entity step.
 func parseComponentEntity(data []byte, path string) (types.Component, error) {
 	if _, err := envelope.ValidateBytes(envelope.KindComponent, data, path); err != nil {
 		return types.Component{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
@@ -1089,6 +1106,9 @@ func parseComponentEntity(data []byte, path string) (types.Component, error) {
 	}
 	if e.Kind != "Component" {
 		return types.Component{}, fmt.Errorf("expected kind Component, got %q", e.Kind)
+	}
+	if err := resolveEntitySchemaImports(path, &e.Spec.Schema, &e.Spec.UsesSchema); err != nil {
+		return types.Component{}, err
 	}
 	validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 	return e, nil
@@ -1105,6 +1125,9 @@ func parseFeatureEntity(data []byte, path string) (types.Feature, error) {
 	}
 	if e.Kind != "Feature" {
 		return types.Feature{}, fmt.Errorf("expected kind Feature, got %q", e.Kind)
+	}
+	if err := resolveEntitySchemaImports(path, &e.Spec.Schema, &e.Spec.UsesSchema); err != nil {
+		return types.Feature{}, err
 	}
 	validator.DiscourageDirectXAggregaInSchema(e.Metadata.Name, &e.Spec.Schema)
 	return e, nil

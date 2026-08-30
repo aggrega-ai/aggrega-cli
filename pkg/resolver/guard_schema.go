@@ -443,7 +443,16 @@ func pillarConformanceFindings(
 
 	v, err := newPillarValidator(wrapper)
 	if err != nil {
-		return nil // a genuinely uncompilable schema is surfaced at catalog load, not here
+		// A declared pillar schema that will not build a validator is passed over
+		// here, so the values it was meant to constrain go unmeasured and nothing
+		// reports that they were. No earlier stage catches it either: reading an
+		// entity compiles its pillar bodies but never builds a validator from
+		// them, so a body that compiles into something no validator accepts —
+		// a bare scalar where a property's schema belongs, say — reaches this
+		// point and is dropped. Whether such a contract should halt is a question
+		// about how strictly a declared-but-unusable contract is treated, and it
+		// is not settled here.
+		return nil
 	}
 
 	rpt, err := v.Validate(wrapped, &jsonvalidator.Context{Parameters: parameters, Surround: wrapped})

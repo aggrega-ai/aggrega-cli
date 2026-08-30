@@ -158,9 +158,16 @@ func loadResolvedCatalog(wsRoot, cacheDir string, dirs []string) (*catalog.Catal
 // validateComponentEntity runs the Component shape and pillar checks. The
 // pillar check needs the catalog's SchemaLibraries map for cross-document $ref
 // expansion, so the catalog is loaded to supply it.
+//
+// The entity is read through the shared per-entity resolve rather than
+// unmarshalled here. That is what makes this surface agree with a build about
+// what the file declares: the resolve is where an authored `$import:` on the
+// schema surface is substituted, so a parse of its own would judge the entity the
+// author asked about against a contract it had not read — the one entity where
+// that matters most, since it is the one they named.
 func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte) error {
-	var comp types.Component
-	if err := yaml.Unmarshal(data, &comp); err != nil {
+	comp, err := catalog.ParseComponentEntity(data, path)
+	if err != nil {
 		return fmt.Errorf("parse Component at %q: %w", path, err)
 	}
 	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs)
@@ -179,10 +186,11 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs []
 }
 
 // validateFeatureEntity runs the Feature pillar check, loading the catalog for
-// the SchemaLibraries map exactly as the Component path does.
+// the SchemaLibraries map exactly as the Component path does, and reading the
+// entity through the same shared per-entity resolve for the same reason.
 func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte) error {
-	var feat types.Feature
-	if err := yaml.Unmarshal(data, &feat); err != nil {
+	feat, err := catalog.ParseFeatureEntity(data, path)
+	if err != nil {
 		return fmt.Errorf("parse Feature at %q: %w", path, err)
 	}
 	cat, note, err := loadResolvedCatalog(wsRoot, cacheDir, dirs)
