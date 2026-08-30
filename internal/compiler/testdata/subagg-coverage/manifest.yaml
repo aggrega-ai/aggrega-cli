@@ -9,6 +9,7 @@ spec:
       type:
         cov/consumer: cov-consumer-recipe:1.0.0
         cov/store: cov-store-recipe:1.0.0
+        cov/sized: cov-sized-recipe:1.0.0
     features:
       type:
         cov/secret-value: cov-secret-value-fr:1.0.0

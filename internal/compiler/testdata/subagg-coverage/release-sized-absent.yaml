@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cov-release-sized-absent
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: cov-app-sized
+  manifest: cov-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        # Both components placed by name; the sizer's entry writes no infra at
+        # all, which is the one case its required key exists to catch.
+        data.sizer: {}
+        data.keeper: {}

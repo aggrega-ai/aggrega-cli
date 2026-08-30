@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cov-release-sized-routed
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: cov-app-sized
+  manifest: cov-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      # The module routed in whole. Every component it holds is placed here and
+      # nothing is said about any one of them, so the sizer's entry carries no
+      # infra by construction rather than by omission.
+      aggregates:
+        data: {}

@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cov-release-sized-present
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: cov-app-sized
+  manifest: cov-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        data.sizer:
+          infra:
+            region: eu-west-1
+        data.keeper: {}

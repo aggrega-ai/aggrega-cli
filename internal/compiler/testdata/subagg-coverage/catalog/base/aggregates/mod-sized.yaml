@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cov-mod-sized
+  version: "1.0.0"
+spec:
+  components:
+    # The component whose type declares a required sizing key.
+    sizer:
+      type: cov/sized
+    # A second component whose type declares no sizing contract at all. It is
+    # what lets a deployment place the module in part: naming this one and not
+    # the sizer leaves the sizer's fault as placement rather than sizing.
+    keeper:
+      type: cov/store

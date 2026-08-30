@@ -866,6 +866,13 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 // from. A rule asked of root components and not of these would make the coverage
 // of a check depend on how deep the author nested the component.
 //
+// Both component pillars are asked, and each names the document whose author
+// wrote it: the application for the configuration a component declares, the
+// deployment for the physical sizing placed against it. Asking one and not the
+// other would make which half of a component type's contract binds depend on how
+// deep the author nested the component, which is the same coverage-by-nesting
+// the paragraph above rules out.
+//
 // The node filter above is what bounds this pass, and it is why a rule whose
 // evidence is complete only once the composition is flattened does not belong
 // here: such a rule has to be asked of every node, and a pass reaching only the
@@ -951,13 +958,47 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 			}
 		}
 
-		// Component values — validated against the sub-aggregate's own resolved
-		// parameter context (carried on the node), so parameter-dependent
-		// predicates evaluate correctly rather than predicate-inert.
+		// The two component pillars, measured against the one contract that
+		// declares both. The contract is compiled once and read twice: the compile
+		// is uncached, so asking for it per pillar would compile the same type's
+		// schema twice per node for no difference in the answer.
 		if compiled, ok := resolver.CompileComponentSchema(catalog, node.ComponentType); ok {
+			// Component values — validated against the sub-aggregate's own resolved
+			// parameter context (carried on the node), so parameter-dependent
+			// predicates evaluate correctly rather than predicate-inert.
 			errs = append(errs, resolver.ValidatePillarConformance(
 				compiled, "values", node.Values, node.ResolvedParameters, entity,
 				fmt.Sprintf(".%s", nodeID), "the Component schema")...)
+
+			// Component infra — the operator-side pillar, over the other document.
+			// Its scope is the components the deployment PLACED, which is the same
+			// standing the rule over root components has and is reached here by the
+			// same reading: the placement map holds an entry for a node the
+			// deployment named and for a node the placement of a routed module
+			// covers, and that entry also carries the sizing. So the question of
+			// whether this deployment answers for the node, and the payload it
+			// answered with, come from one lookup and cannot disagree.
+			//
+			// An entry carrying no sizing is measured rather than skipped: every
+			// field of such an entry is optional, so an entry that writes nothing
+			// reads the same empty document as a component nothing placed, and the
+			// two need opposite treatment. An entry that writes nothing is the
+			// maximal violation of a key the contract declares required — that being
+			// the one case a required key exists to catch — while a component this
+			// deployment placed nowhere is not its to answer for and has a different
+			// fault, reported by the placement rule that runs after this pass.
+			//
+			// The finding names the deployment rather than the application, because
+			// that is the document whose author wrote the sizing and the one they
+			// edit to fix it.
+			if release != nil {
+				if placement, placed := cfg.ResolveResult.BoundaryInfra[nodeID]; placed && placement != nil {
+					errs = append(errs, resolver.ValidatePillarConformance(
+						compiled, "infra", placement.Infra, node.ResolvedParameters,
+						releaseEntityName(release), fmt.Sprintf(".%s", nodeID),
+						"the Component schema")...)
+				}
+			}
 		}
 
 		// Per-edge developer values authored on the node's uses. Projected through
@@ -997,6 +1038,22 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 
 	errs = append(errs, guardSubAggregateReleaseEdges(flat, release, catalog)...)
 	return errs
+}
+
+// releaseEntityName renders the deployment document a finding in this package
+// names. It is one home for the rendering because every rule here reporting
+// against the deployment needs the same string, and hand-written copies of it
+// are free to spell one document differently — a reader comparing two
+// diagnostics about the same file could not account for the difference, and
+// nothing compares them.
+//
+// A document whose name is empty is named by its kind alone, which keeps a
+// diagnostic from carrying a trailing space where a name should be.
+func releaseEntityName(release *types.Release) string {
+	if release == nil || release.Metadata.Name == "" {
+		return "Release"
+	}
+	return "Release " + release.Metadata.Name
 }
 
 // authoredAttachments re-projects the per-node attachment slice flattening
@@ -1125,7 +1182,7 @@ func guardSubAggregateReleaseEdges(
 	if release == nil {
 		return nil
 	}
-	entity := fmt.Sprintf("Release %s", release.Metadata.Name)
+	entity := releaseEntityName(release)
 
 	var errs []*resolver.ResolverError
 	for _, ref := range resolver.ReleaseEdgeEntries(release) {

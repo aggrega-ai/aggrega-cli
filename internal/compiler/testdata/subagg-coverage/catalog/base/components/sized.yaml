@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: cov/sized
+  version: "1.0.0"
+  labels:
+    # A type no selector in this catalog matches, so nothing wires an edge to
+    # this component: the fixture is about one component's own sizing contract
+    # and nothing else.
+    component.aggrega.ai/type: "worker"
+spec:
+  inject: ["env"]
+  schema:
+    # A required key with no default: the one shape a deployment cannot satisfy
+    # by writing nothing, and therefore the shape that tells an absent infra
+    # block apart from a measured one.
+    infra:
+      region: { type: string, required: true }

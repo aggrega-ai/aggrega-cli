@@ -187,11 +187,8 @@ func guardSubModulePlacement(
 	if err != nil {
 		return nil, err
 	}
-	entity := "Release"
-	if name := cfg.ResolveResult.Release.Metadata.Name; name != "" {
-		entity = "Release " + name
-	}
-	return resolver.FindingsFromObjections(objections, entity), nil
+	return resolver.FindingsFromObjections(
+		objections, releaseEntityName(cfg.ResolveResult.Release)), nil
 }
 
 // guardComponentPlacement asks the placement rule of every component the
@@ -230,11 +227,8 @@ func guardComponentPlacement(
 	if err != nil {
 		return nil, err
 	}
-	entity := "Release"
-	if name := cfg.ResolveResult.Release.Metadata.Name; name != "" {
-		entity = "Release " + name
-	}
-	return resolver.FindingsFromObjections(objections, entity), nil
+	return resolver.FindingsFromObjections(
+		objections, releaseEntityName(cfg.ResolveResult.Release)), nil
 }
 
 // boundaryComponentResolves reports each component entry the deployment's
@@ -324,9 +318,6 @@ func guardBoundaryComponentResolution(
 	if err != nil {
 		return nil, err
 	}
-	entity := "Release"
-	if name := cfg.ResolveResult.Release.Metadata.Name; name != "" {
-		entity = "Release " + name
-	}
-	return resolver.FindingsFromObjections(objections, entity), nil
+	return resolver.FindingsFromObjections(
+		objections, releaseEntityName(cfg.ResolveResult.Release)), nil
 }

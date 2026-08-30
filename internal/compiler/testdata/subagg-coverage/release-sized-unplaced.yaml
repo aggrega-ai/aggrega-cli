@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cov-release-sized-unplaced
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: cov-app-sized
+  manifest: cov-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        # The module is placed in part: the keeper is named and the sizer is
+        # not. The sizer's fault is placement, so the placement rule is the one
+        # that must speak — its sizing is not this deployment's to answer for.
+        data.keeper: {}
