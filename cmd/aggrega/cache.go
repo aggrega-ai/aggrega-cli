@@ -576,14 +576,14 @@ func newCachePruneCmd() *cobra.Command {
 retaining every referenced entry. The reference set is the union of the
 digests pinned across every lockfile (*.lock) in the workspace.
 
-Prune acts on the digest-mappable caches — the workspace artifact cache
-(entities, source artifacts, external inputs) and the plugin-describe cache —
-and on the compiled-module cache by reference: a compiled leaf attributed to a
-guest is reclaimed when no lockfile still references that guest, and the shared
-runtime kernel is reclaimed once its last referring guest is pruned. A compiled
-leaf whose attribution cannot be determined is retained rather than removed on a
-guess; that remainder is reclaimed by "aggrega cache evict" or "aggrega cache
-clear".
+Prune acts on the caches whose entries carry a content digest — the workspace
+artifact cache (entities, source artifacts, external inputs) and the
+plugin-describe cache — and on the compiled-module cache by reference: a compiled
+plugin module is reclaimed when no lockfile still references the plugin it
+belongs to, and the shared runtime module every plugin depends on is reclaimed
+once the last plugin referring to it is pruned. A compiled module that cannot be
+traced back to a plugin is retained rather than removed on a guess; that
+remainder is reclaimed by "aggrega cache evict" or "aggrega cache clear".
 
 Prune needs a pulled workspace: it fails when no lockfile is present.`,
 		Args: cobra.NoArgs,

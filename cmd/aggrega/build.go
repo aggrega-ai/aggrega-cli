@@ -78,8 +78,33 @@ func newBuildCmd() *cobra.Command {
 	opts := &buildFlags{}
 	c := &cobra.Command{
 		Use:   "build",
-		Short: "Compile Aggregate + Release into Helm artifacts via the 5-step pipeline",
-		Args:  cobra.NoArgs,
+		Short: "Compile an Aggregate and Release into provider-native artifacts",
+		Long: `Compile an Aggregate and Release pair into provider-native artifacts under each
+boundary's output directory.
+
+The Release is the single entry point: it names the Aggregate and the Manifest,
+declares the boundaries, and routes each component to a provider. What a
+provider emits is the provider's own shape — Helm manifests, a redistributable
+Helm chart, docker-compose YAML — so the output directory holds whatever the
+providers this Release routes to produce.
+
+Build is read-only by default and needs a lockfile. Run "aggrega pull" first to
+create one, or pass --auto-pull to fill it in-process for this build.
+
+Given identical input, build writes byte-identical output, which is what makes
+the rendered tree reviewable as a diff.`,
+		Example: `  # Build a Release that already has a lockfile
+  aggrega build --release releases/production.yaml
+
+  # First build in a fresh clone: fill the lockfile in-process, then build
+  aggrega build --release releases/production.yaml --auto-pull
+
+  # Build against a project-local catalog alongside the configured ones
+  aggrega build --release releases/production.yaml --catalog ./catalog
+
+  # Confirm the providers render deterministically
+  aggrega build --release releases/production.yaml --verify-determinism`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBuild(cmd, args, opts)
 		},

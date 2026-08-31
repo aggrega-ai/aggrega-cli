@@ -55,7 +55,7 @@ translation; import selects it, runs it, and writes what it produces.
 
 The source format selects how the importer reads the file. Pass --format to
 name it explicitly. When --format is omitted, import inspects the file's
-top-level shape to recognise the format; if the shape is not recognised, import
+top-level shape to recognize the format; if the shape is not recognized, import
 stops and asks for --format rather than guessing. Detection reads only the
 named file — no other files, no network.
 

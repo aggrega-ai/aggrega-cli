@@ -91,7 +91,7 @@ Arguments:
 
 What add writes depends on the type:
 
-  - A config type (governance, linter, importer) pins the latest published
+  - A socket type (governance, linter, importer) pins the latest published
     version and adds the bare plugin identity (<type>/<name>:<version>) to the
     plugins.<type> list. A governance entry also records its --role
     (label-transform, ir-verdict, or render-verdict).

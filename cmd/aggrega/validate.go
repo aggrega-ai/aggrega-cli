@@ -55,10 +55,10 @@ func newValidateCmd() *cobra.Command {
 			"conformance — the same correctness a build applies, scoped to that Release.\n\n" +
 			"With an entity path, validate checks one entity file. All kinds are schema-\n" +
 			"and shape-checked; a Component or Feature has its pillar structure checked;\n" +
-			"a Recipe is additionally driven through the real compilation pipeline around\n" +
-			"a synthesized minimal deployment (resolution and guards, then a real isolated\n" +
-			"render of its output); a Plugin is schema-checked only, as it has no pillar\n" +
-			"or render surface. The command writes nothing to disk.",
+			"a Recipe is additionally compiled end to end against a minimal generated\n" +
+			"deployment, so its resolution, its guards and a render of its output are all\n" +
+			"exercised; a Plugin is schema-checked only, as it has no pillar or render\n" +
+			"surface. The command writes nothing to disk.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := ""

@@ -31,6 +31,33 @@ func newPluginCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "plugin",
 		Short: "Inspect the Wasm plugins the CLI can resolve",
+		Long: `Work with the WebAssembly plugins this CLI can resolve.
+
+All of Aggrega's provider-specific and policy-specific behaviour lives in Wasm
+plugins rather than in the binary, so this is where you see which ones are
+reachable, add or remove a workspace binding, and check a guest before you
+publish it.
+
+Plugins reach the CLI two ways. Some are compiled into the binary and resolve
+with no filesystem, cache or network access. The rest are workspace bindings in
+.aggrega-config.yaml, resolved through the plugin cascade. "aggrega plugin list"
+shows both groups together.
+
+The subcommands below cover the whole life of a binding: list what is reachable,
+add and remove bindings, run a local guest export directly, sync the
+machine-owned records in a Plugin entity with its .wasm, and generate Plugin
+catalog entities from a guest's own metadata.`,
+		Example: `  # Everything this CLI can resolve, embedded and configured
+  aggrega plugin list
+
+  # The same, as structured output
+  aggrega plugin list -o json
+
+  # Add a provider plugin from a registry
+  aggrega plugin add --type provider
+
+  # Call one export of a local guest, without publishing it
+  aggrega plugin run-local ./build/my-provider.wasm describe`,
 	}
 	c.AddCommand(newPluginListCmd())
 	c.AddCommand(newPluginGenCatalogCmd())
@@ -55,13 +82,13 @@ access. Configured plugins are the workspace bindings — the provider and linte
 bindings and the CLI-extension commands — resolved through the plugin cascade.
 Each plugin's type appears in the TYPE column, so a CLI-extension command
 (type cli) is legible alongside the socket plugins; a CLI plugin also carries a
-readiness label — ready, unresolved, describe-failed, or digest-drift when its
-bytes changed since it was pinned at install.
+status of its own — ready, unresolved, describe-failed, or digest-drift when
+its bytes changed since it was pinned at install.
 
 The default output is a scannable table with one row per plugin, showing its
 type, name, served capabilities, and version. The output is read-only and
-deterministic. A plugin that fails to resolve or describe is listed with an
-abnormal-state label rather than halting the whole listing.
+deterministic. A plugin that fails to resolve or describe is listed with its
+failure status rather than halting the whole listing.
 
 With -o json, the output is a structured object carrying the full per-plugin
 detail — type, name, version, commit, capabilities, input kinds, boundary

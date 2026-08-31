@@ -103,7 +103,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		rawBlock, ok := ctx.InjectRaw.(*types.InjectBlock)
 		if !ok {
 			return nil, cerrors.Wrap(
-				fmt.Errorf("phase A: unexpected InjectRaw type %T (expected *types.InjectBlock)", ctx.InjectRaw),
+				fmt.Errorf("internal error while collecting the inject mechanisms an entity authored: the authored inject block arrived in an unexpected shape (%T)", ctx.InjectRaw),
 				cerrors.TranslationError,
 				cerrors.SourceLocation{},
 				"phase A: authored-mechanism collection",

@@ -493,7 +493,7 @@ func phaseB6(
 
 		frEngine, err := engineFactory(fr.Spec.Capability)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q engine factory", nodeID, item.Instance))
+			return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q: selecting its rendering plugin", nodeID, item.Instance))
 		}
 
 		frNodeCtx := nodeCtx

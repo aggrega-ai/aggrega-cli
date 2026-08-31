@@ -68,11 +68,14 @@ var errSlotSelectorUnsatisfied = cerrors.Register("compiler-analyzer/slot-select
 // post-cascade set can see both shapes, and the check is a name-presence
 // test over it — it never inspects what the fill means.
 //
-// A finding carries the component type declaring the slot and the slot's own
-// name, in that order. The pair rather than the type alone is what makes two
-// findings about two slots on one instance say which binding point each is
-// about, because the surfaces that render a finding as a sentence do not carry
-// the locator that would otherwise separate them.
+// A finding leads with the slot's own name — the value the registered sentence
+// already names — and carries the component type declaring it captioned after
+// that. The pair rather than the type alone is what makes two findings about two
+// slots on one instance say which binding point each is about, because the
+// surfaces that render a finding as a sentence do not carry the locator that
+// would otherwise separate them; and the caption is what tells a reader which of
+// the two quoted values is which, since a slot name and a component type are
+// both bare or dotted words.
 //
 // It is deliberately distinct from ErrMissingRequiredFeature, which reports
 // an unsatisfied presence mandate. A mandate demands that SOME attachment
@@ -119,8 +122,9 @@ var errPolicyViolation = cerrors.Register("compiler-analyzer/policy-violation", 
 // itself as broken rather than as unsatisfied.
 //
 // It has one emission site, [AttachmentRequirementWellFormed], which raises it
-// through the framework. Its detail carries the component type whose
-// declaration is broken, the annotation key, and why that key cannot be
+// through the framework. Its detail leads with the annotation key — the
+// declaration the registered sentence names — then carries, captioned, the
+// component type whose declaration is broken and why that key cannot be
 // evaluated: the type is what names the entity to correct, which the locator
 // cannot, since the locator names the component instance that uses the type.
 //

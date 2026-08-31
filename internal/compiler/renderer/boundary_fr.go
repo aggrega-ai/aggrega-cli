@@ -357,7 +357,7 @@ func dispatchBoundaryScopeFR(
 	// 6. Dispatch to FR's engine.
 	frEngine, err := engineFactory(fr.Spec.Capability)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q engine factory", frInstance))
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: selecting its rendering plugin", frInstance))
 	}
 
 	// Build the per-FR NodeRenderContext. Use the boundary's path as the
@@ -623,7 +623,7 @@ func PrepopulateBoundaryScopeProvides(
 			if engineFactory != nil && frCtx.Boundary != nil {
 				eng, engErr := engineFactory(fr.Spec.Capability)
 				if engErr != nil {
-					return cerrors.Wrap(engErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q engine factory", instName))
+					return cerrors.Wrap(engErr, cerrors.TranslationError, cerrors.SourceLocation{File: key.BoundaryPath}, fmt.Sprintf("boundary-scope FR %q: selecting its rendering plugin", instName))
 				}
 				if ov, ok := eng.(BoundaryEnvOverrider); ok {
 					overrides, ovErr := ov.BoundaryEnvOverrides(context.Background(), frCtx.Boundary.InternalUsesEdges, frCtx.Infra)
@@ -807,11 +807,11 @@ func buildBoundaryContext(
 	boundaryAnnotations map[string]types.OrderedMap[string],
 ) (*types.BoundaryContext, error) {
 	if release == nil {
-		return nil, cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "buildBoundaryContext: release is nil", nil, nil)
+		return nil, cerrors.New(cerrors.DeveloperError, cerrors.SourceLocation{}, "internal error while building a boundary render context: no Release was supplied", nil, nil)
 	}
 	parts := strings.Split(boundaryPath, "/")
 	if _, ok := findBoundaryAtPath(release.Spec.Boundaries, parts); !ok {
-		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: boundaryPath}, fmt.Sprintf("buildBoundaryContext: boundary %q not found in release", boundaryPath), nil, nil)
+		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: boundaryPath}, fmt.Sprintf("boundary %q is not declared in the Release", boundaryPath), nil, nil)
 	}
 
 	bc := &types.BoundaryContext{

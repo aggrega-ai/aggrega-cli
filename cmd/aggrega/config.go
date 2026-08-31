@@ -24,6 +24,30 @@ func newConfigCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "config",
 		Short: "Inspect and manage the workspace configuration",
+		Long: `Inspect and manage the configuration Aggrega reads.
+
+Configuration comes from a cascade rather than from one file: a global config,
+then every .aggrega-config.yaml from the workspace root down, then environment
+overrides. Later layers win over earlier ones. The workspace root is the nearest
+ancestor directory whose .aggrega-config.yaml carries a workspace: block.
+
+Because the effective configuration is assembled rather than written anywhere,
+"aggrega config show" is how you see what actually applies, and --origin is how
+you find out which layer each setting came from. "aggrega config init" seeds a
+working configuration, and "aggrega config capture" freezes the effective
+build-critical settings into this workspace so a build does not depend on a
+global file that is not committed.`,
+		Example: `  # What applies right now
+  aggrega config show
+
+  # Which layer each setting came from
+  aggrega config show --origin
+
+  # Seed a workspace configuration
+  aggrega config init
+
+  # Freeze the effective build-critical settings into this workspace
+  aggrega config capture`,
 	}
 	c.AddCommand(newConfigInitCmd())
 	c.AddCommand(newConfigCaptureCmd())
@@ -46,17 +70,24 @@ func newConfigShowCmd() *cobra.Command {
 By default it leads with the cascade of config files and environment overrides
 that contributed, lowest precedence first, then prints the effective merged
 configuration — the global config, the workspace-tree cascade, and any
-environment overlay combined into what applies right now.
+environment override combined into what applies right now.
 
 Pass --global or --workspace to print a single layer's own file bytes verbatim,
 preserving its comments and formatting; when that layer's file does not exist it
 says so rather than failing. The two are mutually exclusive.
 
 Pass --origin to annotate each effective setting with the layer it came from —
-a config file, an environment variable, or the built-in defaults — in the shape
-of a settings-with-source listing. Scalar settings are attributed per value;
-list and map settings are attributed as a whole to the layer that last changed
-them.`,
+a config file, an environment variable, or the built-in defaults. Scalar
+settings are attributed per value; list and map settings are attributed as a
+whole to the layer that last changed them.`,
+		Example: `  # What applies right now, with the contributing layers listed first
+  aggrega config show
+
+  # Where each setting came from
+  aggrega config show --origin
+
+  # This workspace's own config file, verbatim
+  aggrega config show --workspace`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())

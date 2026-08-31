@@ -5,6 +5,7 @@ package rendercore
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"sort"
 	"strings"
@@ -292,7 +293,7 @@ func injectProvenanceRoundTrip(filename, rendered string, labels, annotations ma
 		}
 		b, err := MarshalYAMLIndent(d, indent)
 		if err != nil {
-			return nil, artifactInjected, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, "artifact yaml marshal")
+			return nil, artifactInjected, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("could not serialise artifact %q as YAML", filename))
 		}
 		if i > 0 {
 			buf.WriteString("---\n")

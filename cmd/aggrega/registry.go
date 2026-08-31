@@ -29,6 +29,32 @@ func newRegistryCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "registry",
 		Short: "Manage registries and their signature trust policy",
+		Long: `Manage the OCI registries Aggrega publishes to and resolves from, together with
+the signature trust policy for each.
+
+A registry entry records where to reach the registry and what to require of the
+signatures on artifacts it serves — which identities are trusted, and whether a
+signature is required at all. That policy is what "aggrega pull" enforces when
+it verifies an artifact and what "aggrega push" honours when it decides whether
+to sign.
+
+"aggrega registry add" can fetch a registry's own advertised trust policy rather
+than having you write it out. "aggrega registry update" builds the local
+searchable index that "aggrega search" and "aggrega plugin add" read.
+
+Which config file an entry is written to follows the same rule as every other
+setting: the workspace file by default, the global file with --global.`,
+		Example: `  # Configured registries and their trust posture
+  aggrega registry list
+
+  # Register a registry, taking its advertised trust policy
+  aggrega registry add registry.example.com
+
+  # Refresh the local searchable index
+  aggrega registry update
+
+  # Remove an entry, by host or by alias
+  aggrega registry remove registry.example.com`,
 	}
 	c.AddCommand(newRegistryAddCmd())
 	c.AddCommand(newRegistryListCmd())
@@ -408,8 +434,13 @@ func newRegistryAddCmd() *cobra.Command {
 
 	c := &cobra.Command{
 		Use:   "add <host>",
-		Short: "Register a registry and its signature trust policy in the workspace config",
-		Long: `Register a registry host and its signature trust policy in the workspace config file.
+		Short: "Register a registry and its signature trust policy",
+		Long: `Register a registry host and its signature trust policy.
+
+The entry is written to the global config shared across every workspace, since a
+registry and the identities you trust on it are usually the same wherever you
+work. Pass --workspace to write it to this project's config file instead; the two
+flags are mutually exclusive.
 
 By default the registry's advertised trust policy is fetched once from the
 registry's own origin (https://<host>/.well-known/aggrega-trust) and pinned

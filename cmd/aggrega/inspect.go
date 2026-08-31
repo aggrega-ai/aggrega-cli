@@ -47,7 +47,38 @@ func newInspectCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "inspect [identifier]",
-		Short: "Inspect a catalog entity by name or an entity file (resolves by entity kind)",
+		Short: "Inspect a catalog entity by name, or an entity file by path",
+		Long: `Render a readable view of any Aggrega entity — a catalog entity by name, an
+authored entity file by path, or a fully-resolved Release.
+
+It answers "what does this entity actually resolve to?": which entities extend
+which bases, which Recipe maps to each type, which Features attach to each node,
+and where each Feature's contributions came from.
+
+A single argument routes by its shape. A path — anything starting with ./, ../
+or /, or ending in .yaml or .yml — is read as a file and inspected by its own
+kind: header. Anything else is looked up by name in the catalog search stack.
+
+Three verbosity levels apply to every kind: --list for identifiers only, the
+default for a structured overview, and --detail for full field bodies. --list
+and --detail are mutually exclusive. Resolution depth has its own pair, --raw
+for the entity exactly as authored and --resolved for the kind's full depth,
+also mutually exclusive.
+
+Note that --raw and --output yaml reproduce the file as written, so a value the
+author declared sensitive appears as authored. That is what as-authored means;
+handle such output as you would the entity file itself.`,
+		Example: `  # A catalog entity by name
+  aggrega inspect core/compute/api-server
+
+  # An authored file by path, identifiers only
+  aggrega inspect ./catalog/components/api-server.yaml --list
+
+  # A Release resolved end to end, with full field bodies
+  aggrega inspect ./releases/production.yaml --detail
+
+  # A Release exactly as authored, with no resolution
+  aggrega inspect ./releases/production.yaml --raw`,
 		// Arg-count contract enforced before RunE (so genuine misuse surfaces the
 		// Usage block): exactly one identifier in the normal path; zero when
 		// --plugin names a raw .wasm to derive host functions from.
@@ -118,7 +149,7 @@ func newInspectCmd() *cobra.Command {
 	c.Flags().StringVarP(&outputFlag, "output", "o", "text", "Output format: text|yaml.")
 	c.Flags().BoolVar(&showImplementsFlag, "show-implements", false, "For a Recipe or FeatureRecipe, resolve spec.implements against the catalog and render the bound Component or Feature.")
 	c.Flags().BoolVar(&flatFlag, "flat", false, "Render a tree-shaped entity (Aggregate, Release) as a flat list, each node prefixed with its full dotted path. No effect on tabular kinds.")
-	c.Flags().StringVar(&pluginFlag, "plugin", "", "Filesystem path to a raw .wasm artifact; derives and prints the host functions it imports (the pre-publish, not-yet-stamped view). Takes no identifier argument.")
+	c.Flags().StringVar(&pluginFlag, "plugin", "", "Filesystem path to a raw .wasm artifact; derives and prints the host functions it imports, before `aggrega plugin sync` records them in a Plugin entity. Takes no identifier argument.")
 	c.MarkFlagsMutuallyExclusive("list", "detail")
 	c.MarkFlagsMutuallyExclusive("raw", "resolved")
 	c.MarkFlagsMutuallyExclusive("color", "no-color")

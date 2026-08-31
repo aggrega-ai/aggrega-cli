@@ -53,7 +53,7 @@ func newDeprecateCmd() *cobra.Command {
 			"as flags; omit the content flags at an interactive terminal to be prompted for severity, reason, and " +
 			"replacement; or pass --from <file> to attach one marker per entry from a batch file. The marker itself " +
 			"is signed the same way artifacts are: its manifest digest is signed and the signature is attached as a " +
-			"referrer of the marker, so the marker is verifiable by the existing signature-verify machinery. With " +
+			"referrer of the marker, so the marker is verifiable the same way artifact signatures are. With " +
 			"--key the signature is produced offline from a held ECDSA P-256 key; without --key the keyless flow is " +
 			"used, which requires a live identity provider, Fulcio, and Rekor.",
 		// One positional reference in the normal path; none with --from, where the

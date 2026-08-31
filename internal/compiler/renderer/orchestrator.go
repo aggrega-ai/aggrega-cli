@@ -1309,7 +1309,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		engine, err := engineFactory(providerRef)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q engine factory", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q: selecting its rendering plugin", nodeID))
 		}
 
 		// Cross-boundary link placeholder stamp. For a consumer whose provider

@@ -117,14 +117,25 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 		}
 		match, err := selector.MatchString(labelConstraint, v.NodeLabels(target))
 		if err != nil {
-			return []constraint.Objection{s.Raise(
-				ErrSelectorViolation(), labelConstraint, target, err.Error(),
+			return []constraint.Objection{s.RaiseWithAdvice(
+				ErrSelectorViolation(),
+				"Correct the selector on the socket's declaration in the component type's usesSchema.",
+				constraint.Uncaptioned(labelConstraint),
+				constraint.Captioned("declared on socket", s.SocketName()),
+				constraint.Captioned("which could not be evaluated:", err.Error()),
 			)}
 		}
 		if match {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(ErrSelectorViolation(), labelConstraint, target)}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrSelectorViolation(),
+			"Add the labels the selector requires to the target's component type, "+
+				"or wire the socket to a component that already carries them.",
+			constraint.Uncaptioned(labelConstraint),
+			constraint.Captioned("declared on socket", s.SocketName()),
+			constraint.Captioned("not satisfied by the labels of", target),
+		)}
 	},
 }
 
@@ -158,14 +169,25 @@ var AttachmentSatisfiesFeatureApplicability = constraint.Check[
 		allHold, allErr := selector.MatchString(appliesTo, labels)
 		anyHolds, anyErr := selector.MatchAnyOf(v.FeatureAppliesToAnyOf(featureType), labels)
 		if unevaluable := firstNonNil(allErr, anyErr); unevaluable != nil {
-			return []constraint.Objection{s.Raise(
-				ErrSelectorViolation(), featureType, appliesTo, unevaluable.Error(),
+			return []constraint.Objection{s.RaiseWithAdvice(
+				ErrSelectorViolation(),
+				"Correct the appliesTo selector on the Feature's catalog entity.",
+				constraint.Uncaptioned(appliesTo),
+				constraint.Captioned("declared by Feature", featureType),
+				constraint.Captioned("which could not be evaluated:", unevaluable.Error()),
 			)}
 		}
 		if allHold && anyHolds {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(ErrSelectorViolation(), featureType, appliesTo)}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrSelectorViolation(),
+			"Add the labels the Feature's appliesTo requires to this component's type, "+
+				"or attach a Feature whose applicability the component already satisfies.",
+			constraint.Uncaptioned(appliesTo),
+			constraint.Captioned("declared by Feature", featureType),
+			constraint.Captioned("not satisfied by the labels of", s.NodeID()),
+		)}
 	},
 }
 
@@ -209,15 +231,24 @@ var SlotFillSatisfiesSlotSelector = constraint.Check[
 		}
 		match, err := selector.MatchString(labelConstraint, v.AttachmentFeatureLabels(fillType))
 		if err != nil {
-			return []constraint.Objection{s.Raise(
-				ErrSlotSelectorUnsatisfied(), labelConstraint, fillType, err.Error(),
+			return []constraint.Objection{s.RaiseWithAdvice(
+				ErrSlotSelectorUnsatisfied(),
+				"Correct the selector on the slot's declaration in the component's catalog entity.",
+				constraint.Uncaptioned(labelConstraint),
+				constraint.Captioned("declared on slot", s.SlotName()),
+				constraint.Captioned("which could not be evaluated:", err.Error()),
 			)}
 		}
 		if match {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(
-			ErrSlotSelectorUnsatisfied(), labelConstraint, fillType,
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrSlotSelectorUnsatisfied(),
+			"Add the labels the slot's selector requires to the Feature's labels, "+
+				"or fill the slot with a Feature that already carries them.",
+			constraint.Uncaptioned(labelConstraint),
+			constraint.Captioned("declared on slot", s.SlotName()),
+			constraint.Captioned("not satisfied by the labels of the Feature filling it,", fillType),
 		)}
 	},
 }
@@ -275,8 +306,11 @@ var RequiredAttachmentTypeAttached = constraint.Check[
 			if mandate.Malformed != "" || slices.Contains(attached, mandate.Type) {
 				continue
 			}
-			out = append(out, s.Raise(
-				resolver.ErrMissingRequiredFeature(), componentType, mandate.Type, mandate.Label,
+			out = append(out, s.RaiseWith(
+				resolver.ErrMissingRequiredFeature(),
+				constraint.Uncaptioned(mandate.Type),
+				constraint.Captioned("required by component type", componentType),
+				constraint.Captioned("under the requirement label", mandate.Label),
 			))
 		}
 		return out
@@ -324,8 +358,12 @@ var AttachmentRequirementWellFormed = constraint.Check[
 			if mandate.Malformed == "" {
 				continue
 			}
-			out = append(out, s.Raise(
-				ErrMalformedAttachmentRequirement(), componentType, mandate.Key, mandate.Malformed,
+			out = append(out, s.RaiseWithAdvice(
+				ErrMalformedAttachmentRequirement(),
+				"Correct that annotation on the component type's catalog entity.",
+				constraint.Uncaptioned(mandate.Key),
+				constraint.Captioned("declared by component type", componentType),
+				constraint.Captioned("which cannot be evaluated because", mandate.Malformed),
 			))
 		}
 		return out
@@ -464,7 +502,12 @@ var RequiredAttachmentSlotBound = constraint.Check[
 		if slices.Contains(v.MergedAttachmentNames(s.NodeID()), s.SlotName()) {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(ErrRequiredSlotUnfilled(), componentType, s.SlotName())}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrRequiredSlotUnfilled(),
+			"Attach a Feature at that name, on the component or at a scope above it.",
+			constraint.Uncaptioned(s.SlotName()),
+			constraint.Captioned("declared required by component type", componentType),
+		)}
 	},
 }
 

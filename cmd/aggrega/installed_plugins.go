@@ -145,7 +145,7 @@ func cliRegistrationsFromWorkspace(ctx context.Context, rw *workspaceconfig.Reso
 			d, derr := describeConfiguredCLI(ctx, ref, resolve)
 			if derr != nil {
 				fmt.Fprintf(pluginRegistrationWarnWriter,
-					"warning: configured CLI plugin %q is not registered: %v\n", ref.URI, derr)
+					"warning: CLI plugin %q was not added as a command: %v\n", ref.URI, derr)
 				continue
 			}
 			desc = d
@@ -205,15 +205,15 @@ func registerInstalledCLIPlugins(root *cobra.Command) {
 		switch {
 		case builtin[reg.name]:
 			fmt.Fprintf(pluginRegistrationWarnWriter,
-				"warning: configured CLI plugin %q is not registered: a built-in command with that name already exists\n", reg.name)
+				"warning: CLI plugin %q was not added as a command: a built-in command with that name already exists\n", reg.name)
 			continue
 		case reservedCommandNames[reg.name]:
 			fmt.Fprintf(pluginRegistrationWarnWriter,
-				"warning: configured CLI plugin %q is not registered: %q is a reserved command name\n", reg.name, reg.name)
+				"warning: CLI plugin %q was not added as a command: %q is a reserved command name\n", reg.name, reg.name)
 			continue
 		case added[reg.name]:
 			fmt.Fprintf(pluginRegistrationWarnWriter,
-				"warning: configured CLI plugin %q is not registered: the command %q is already contributed by another CLI plugin\n", reg.name, reg.name)
+				"warning: CLI plugin %q was not added as a command: the command %q is already contributed by another CLI plugin\n", reg.name, reg.name)
 			continue
 		}
 		added[reg.name] = true

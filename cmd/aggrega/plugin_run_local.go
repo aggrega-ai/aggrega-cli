@@ -83,8 +83,8 @@ describe() self-report must agree with, or the load is rejected before the
 guest runs; when omitted, no type expectation is imposed. In the entity form
 --type is rejected, because the entity's metadata.pluginType supplies the type.
 
-The guest's clean exit code becomes this command's exit status, so a non-zero
-exit is surfaced verbatim as $? rather than as a host error.`,
+The guest's clean exit code becomes this command's exit status, so a failure
+inside the plugin is distinguishable from a failure of aggrega itself.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

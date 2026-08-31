@@ -293,7 +293,7 @@ func projectSubCharts(subCharts []renderer.SubChartInfo) ([]renderer.SubChartPro
 				// No chart metadata at this source: the contributor is not a
 				// vendored chart, so it contributes none.
 			default:
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: s}, fmt.Sprintf("umbrella sourced: read %s in %q", subChartMetadataFileName, s))
+				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: s}, fmt.Sprintf("reading %s in %q", subChartMetadataFileName, s))
 			}
 		}
 		projs = append(projs, proj)

@@ -212,7 +212,7 @@ with one this run had no basis to judge.`,
 			})
 		},
 	}
-	c.Flags().BoolVar(&upgrade, "upgrade", false, "Re-read every repository from the registry, ignoring the cached revalidation validators (picks up changes a conditional refresh would skip)")
+	c.Flags().BoolVar(&upgrade, "upgrade", false, "Re-read every repository from the registry, ignoring what is already cached (picks up changes a conditional refresh would skip)")
 	return c
 }
 

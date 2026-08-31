@@ -136,13 +136,13 @@ func (c StockYAMLCodec) Reassemble(name string, body []byte, segs []frp.Unit, pa
 		sg, ok := byToken[pu.Token]
 		if !ok {
 			return nil, nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: name},
-				fmt.Sprintf("stock codec: patched token %q not found in %q", pu.Token, name), nil, nil)
+				fmt.Sprintf("pipeline PATCH names output unit %q, which is not present in %q", pu.Token, name), nil, nil)
 		}
 		docBody := body[sg.bodyStart:sg.bodyEnd]
 		edited, eerr := editDocumentBody(docBody, pu.Ops, c.indent)
 		if eerr != nil {
 			return nil, nil, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: name},
-				fmt.Sprintf("stock codec: surgical edit of unit %q", pu.Token))
+				fmt.Sprintf("applying a pipeline PATCH to output unit %q", pu.Token))
 		}
 		// Post-patch verification. A surgical edit that does not decode to its
 		// intended result self-heals via a full re-render (never a build
@@ -229,7 +229,7 @@ func planEdit(body []byte, op frp.JSONPatchOp, indent int) (byteEdit, error) {
 	case "remove":
 		return planRemove(body, doc, tokens, offs, bo)
 	default:
-		return byteEdit{}, &nonSurgicalOpError{op: op.Op, reason: "op kind not surgically supported by the stock codec"}
+		return byteEdit{}, &nonSurgicalOpError{op: op.Op, reason: "this op kind has no in-place form"}
 	}
 }
 
@@ -242,7 +242,7 @@ type nonSurgicalOpError struct {
 }
 
 func (e *nonSurgicalOpError) Error() string {
-	return fmt.Sprintf("stock codec: %s (op %q)", e.reason, e.op)
+	return fmt.Sprintf("pipeline PATCH op %q cannot be applied as an in-place YAML edit: %s", e.op, e.reason)
 }
 
 // planReplace edits the byte-span of the scalar value the path addresses. The
@@ -258,7 +258,7 @@ func planReplace(body []byte, doc *yaml.Node, tokens []string, value any, offs [
 		return byteEdit{}, err
 	}
 	if valNode.Kind != yaml.ScalarNode {
-		return byteEdit{}, &nonSurgicalOpError{op: "replace", reason: "stock codec replaces scalar values only; replacing a " + NodeKindName(valNode.Kind) + " is not surgically supported"}
+		return byteEdit{}, &nonSurgicalOpError{op: "replace", reason: "an in-place replace targets a scalar value; replacing a " + NodeKindName(valNode.Kind) + " has no in-place form"}
 	}
 	// A value whose parent collection is flow-style (a JSON object or array, or
 	// any inline `{...}`/`[...]`) sits on a line where the scalar's terminator
@@ -309,7 +309,7 @@ func planAdd(body []byte, doc *yaml.Node, tokens []string, value any, offs []int
 		parent = pn
 	}
 	if parent.Kind != yaml.MappingNode {
-		return byteEdit{}, &nonSurgicalOpError{op: "add", reason: "stock codec adds members to mappings only; adding to a " + NodeKindName(parent.Kind) + " is not surgically supported"}
+		return byteEdit{}, &nonSurgicalOpError{op: "add", reason: "an in-place add targets a mapping member; adding to a " + NodeKindName(parent.Kind) + " has no in-place form"}
 	}
 
 	// If the key already exists this is an upsert; RFC-6902 add replaces it.
@@ -371,7 +371,7 @@ func planRemove(body []byte, doc *yaml.Node, tokens []string, offs []int, bo fun
 		parent = pn
 	}
 	if parent.Kind != yaml.MappingNode || parent.Style&yaml.FlowStyle != 0 {
-		return byteEdit{}, &nonSurgicalOpError{op: "remove", reason: "stock codec removes block-mapping members only"}
+		return byteEdit{}, &nonSurgicalOpError{op: "remove", reason: "an in-place remove targets a block-mapping member"}
 	}
 	idx := -1
 	for i := 0; i+1 < len(parent.Content); i += 2 {
