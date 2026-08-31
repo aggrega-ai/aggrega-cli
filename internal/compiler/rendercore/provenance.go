@@ -109,6 +109,50 @@ func BuildAggregaProvenanceAnnotations(nodeCtx NodeRenderContext, recipeURI stri
 	return annotations
 }
 
+// KubernetesOnlyProvenanceKeys are the keys the shared builders emit that only a
+// Kubernetes runtime consumes: `app.kubernetes.io/name` is the Kubernetes
+// recommended label, and `argocd.argoproj.io/sync-wave` is a GitOps controller's
+// ordering hint. Neither names anything on a target that does not deploy through
+// Kubernetes, so a target of that kind drops both. The plain
+// `aggrega.ai/sync-wave` provenance entry is not among them and is retained: it
+// records the wave the node declared, which is provenance rather than an
+// instruction to a controller.
+var KubernetesOnlyProvenanceKeys = []string{
+	"app.kubernetes.io/name",
+	"argocd.argoproj.io/sync-wave",
+}
+
+// FoldProvenanceSet folds the Kubernetes-shaped provenance split — the label-safe
+// half from [BuildAggregaProvenanceLabels] and the charset-unsafe half from
+// [BuildAggregaProvenanceAnnotations] — into the single key/value set a target
+// with no charset constraint and no annotation concept carries, dropping
+// [KubernetesOnlyProvenanceKeys].
+//
+// The split exists because a Kubernetes label value is charset-constrained while
+// an annotation value is not. A target whose own metadata surface constrains
+// neither has nothing to split on, so it carries the union — and every such
+// target carries the same union, which is why the fold has one home rather than
+// one copy per provider. Adding a key to either shared builder therefore reaches
+// all of them at once.
+//
+// The result is a fresh map because a caller does not necessarily own its inputs:
+// an artifacts placer is handed the key sets the host computed for one projection
+// entry, and folding in place would leave one entry's stamp on the next entry of
+// the same node.
+func FoldProvenanceSet(labels, annotations map[string]string) map[string]string {
+	out := make(map[string]string, len(labels)+len(annotations))
+	for k, v := range labels {
+		out[k] = v
+	}
+	for k, v := range annotations {
+		out[k] = v
+	}
+	for _, k := range KubernetesOnlyProvenanceKeys {
+		delete(out, k)
+	}
+	return out
+}
+
 // FormatTerraformProvenanceComment renders a node's build provenance as a block
 // of HCL (`#`) comment lines suitable for prepending to a Terraform config file
 // or emitting as a standalone provenance file. It is the single provenance

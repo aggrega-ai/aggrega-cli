@@ -84,10 +84,20 @@
 // the stack would then not carry. Both live in the cfncore package with the rest
 // of CloudFormation's naming rules.
 //
-// CloudFormation output is JSON, which carries no comment syntax the host's build
-// provenance could ride in without corrupting the document, so this guest emits
-// no provenance comment; provenance for CloudFormation output is carried out of
-// band rather than spliced into the template.
+// Build provenance lands on each resource's Metadata attribute, under one
+// reserved-prefix key, on both input paths — the resources a sourced template
+// declares and the resources an artifact fragment contributes carry the same set
+// from the same source. The Metadata attribute is chosen because the template
+// language grants it to every resource whatever its type, so one placement rule
+// reaches every resource; a resource tag is a per-type property, absent from many
+// types and shaped differently across the types that have it, and a template
+// naming a property its type does not declare is refused whole at deploy time. A
+// resource's Metadata is readable back from the deployed stack, so provenance
+// stays reachable from the stack and not only from the file. CloudFormation output
+// is JSON and carries no comment syntax, so nothing rides as a comment. A template
+// declaring no resource has no site for provenance: it is emitted unchanged and
+// named in a warn-severity advisory, so unstamped and unreported never happen
+// together.
 //
 // The link_publish and link_resolve exports wire a cross-boundary uses edge
 // between two CloudFormation stacks. link_publish, on the consumed stack's side,
@@ -221,8 +231,26 @@ func renderNode() int32 {
 				pdk.SetError(err)
 				return 1
 			}
-			fragments = append(fragments, normalized)
-			out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: normalized})
+			// The entry's own provenance halves are read rather than the node
+			// context's, which is what keeps an attachment-carried artifact stamping
+			// the identity the host computed for that entry: recomputing from the
+			// node would substitute the consuming Recipe's identity for it.
+			//
+			// Stamped before the names are declared and the sections read, so every
+			// reader downstream holds the bytes the assembled stack will carry. The
+			// alternative leaves the declaration speaking for one set of bodies and
+			// the merge writing another.
+			stamped, warning, err := cfncore.StampResourceProvenance(
+				ent.Name, normalized, cfncore.ProvenanceSet(ent.Labels, ent.Annotations))
+			if err != nil {
+				pdk.SetError(err)
+				return 1
+			}
+			if warning != "" {
+				out.Diagnostics = append(out.Diagnostics, rendercore.ArtifactProvenanceSkippedDiagnostic(warning))
+			}
+			fragments = append(fragments, stamped)
+			out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: stamped})
 		}
 		declaredRes, declaredOut, err := cfncore.DeclaredNames(in.Node.ID, fragments)
 		if err != nil {
@@ -257,6 +285,20 @@ func renderNode() int32 {
 		if err != nil {
 			pdk.SetError(err)
 			return 1
+		}
+		// The same stamp the fragment path applies, over the templates a sourced
+		// selection carries. The payload carries no per-entry provenance halves here,
+		// so the set is derived from the node's own render context — through the same
+		// shared builders, so a sourced resource and an artifact-contributed one carry
+		// the same keys with the same values for one node.
+		normalized, provWarnings, err := cfncore.StampSourcedProvenance(
+			normalized, in.SourceListing.RootIsDir, cfncore.ProvenanceSetFromNodeContext(nodeCtxFromInput(in)))
+		if err != nil {
+			pdk.SetError(err)
+			return 1
+		}
+		for _, warning := range provWarnings {
+			out.Diagnostics = append(out.Diagnostics, rendercore.ArtifactProvenanceSkippedDiagnostic(warning))
 		}
 		resourceIDs, outputIDs, err = cfncore.DeclaredNamesSourced(in.Node.ID, normalized, in.SourceListing.RootIsDir)
 		if err != nil {
@@ -329,6 +371,35 @@ func validateNodeInput() int32 {
 	}
 	pdk.Output(encoded)
 	return 0
+}
+
+// nodeCtxFromInput reconstructs the render context from the wire input's node
+// projection — the identity and build provenance every emitted resource is
+// stamped with (component-id, provider identity, boundary path, deployment wave,
+// Recipe identity, the Recipe's own output labels, and build identity).
+//
+// It exists for the sourced path, where the payload carries the node's provenance
+// rather than the per-entry halves an artifacts projection computes per entry.
+// CloudFormation reads no values, annotations or source through this context: it
+// carries only what the shared provenance builders read, so the set a sourced
+// template is stamped with is the set the host computes for the same node.
+func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
+	return rendercore.NodeRenderContext{
+		NodeID:           in.Node.ID,
+		BoundaryPath:     in.Node.BoundaryPath,
+		SyncWave:         in.Node.SyncWave,
+		RecipeName:       in.Node.RecipeName,
+		RecipeVersion:    in.Node.RecipeVersion,
+		LabelComponentID: in.Node.LabelComponentID,
+		OutputLabels:     in.Node.OutputLabels,
+		ProviderName:     in.Node.Provenance.ProviderName,
+		ProviderVersion:  in.Node.Provenance.ProviderVersion,
+		Provenance: rendercore.ProvenanceContext{
+			CompilerVersion: in.Node.Provenance.CompilerVersion,
+			AggregateName:   in.Node.Provenance.AggregateName,
+			Environment:     in.Node.Provenance.Environment,
+		},
+	}
 }
 
 // sourcedFiles maps a packed source projection to the core's file shape, preserving

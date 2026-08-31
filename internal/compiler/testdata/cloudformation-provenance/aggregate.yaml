@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-provenance-app
+  version: "1.0.0"
+  description: >
+    One component whose Recipe declares both a sourced CloudFormation template
+    and an artifact fragment, so the assembled stack carries a source-derived
+    resource and an artifact-derived one side by side. Every resource in the
+    emitted stack has to carry the same build provenance whichever of the two
+    supplied it.
+spec:
+  components:
+    store:
+      type: core/store
+      values:
+        retention_days: "45"

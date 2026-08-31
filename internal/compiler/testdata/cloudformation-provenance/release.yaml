@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-provenance-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: cloudformation-provenance-app
+  manifest: cloudformation-provenance-manifest
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      components:
+        store: {}

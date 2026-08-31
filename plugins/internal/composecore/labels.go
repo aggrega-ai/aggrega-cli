@@ -7,20 +7,19 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
-// composeOmittedProvenanceKeys are the two provenance keys the shared
-// builders emit that compose deliberately does not carry. Compose has no
-// annotation concept and its service-label values are unconstrained, so it
-// folds the whole provenance set — labels plus annotations — into a single
-// labels map rather than splitting on the Kubernetes label-value charset.
-// The two Kubernetes-only keys are dropped: `app.kubernetes.io/name` is a
-// K8s recommended label with no compose meaning, and
-// `argocd.argoproj.io/sync-wave` is an Argo CD ordering hint that compose
-// does not honour. The plain `aggrega.ai/sync-wave` provenance entry is
+// composeOmittedProvenanceKeys are the provenance keys the shared builders emit
+// that compose deliberately does not carry. Compose has no annotation concept and
+// its service-label values are unconstrained, so it folds the whole provenance
+// set — labels plus annotations — into a single labels map rather than splitting
+// on the Kubernetes label-value charset, and drops the keys only a Kubernetes
+// runtime consumes. The plain `aggrega.ai/sync-wave` provenance entry is
 // retained.
-var composeOmittedProvenanceKeys = []string{
-	"app.kubernetes.io/name",
-	"argocd.argoproj.io/sync-wave",
-}
+//
+// The set itself is the shared one, because the question "which provenance keys
+// mean nothing off Kubernetes" has one answer for every such target rather than a
+// compose answer and a per-provider answer beside it. The name is kept here
+// because it is the vocabulary this package's own assertions read.
+var composeOmittedProvenanceKeys = rendercore.KubernetesOnlyProvenanceKeys
 
 // injectAggregaLabelsIntoServices walks the services: map of a YAML-
 // decoded compose document and stamps the canonical aggrega.ai/* label
@@ -148,25 +147,16 @@ func buildAggregaLabels(nodeCtx rendercore.NodeRenderContext) map[string]string 
 
 // foldComposeProvenanceSet folds a Kubernetes-shaped provenance split — the
 // label-safe half and the charset-unsafe half — into the single service-labels
-// map compose emits, dropping composeOmittedProvenanceKeys. It is the one home
-// for that fold, so the services this package synthesises and merges and the
-// services an artifact fragment contributes carry the same key set from the same
-// rule rather than from two agreeing copies of it.
+// map compose emits. Every compose surface reaches the fold through this one
+// function, so the services this package synthesises and merges and the services
+// an artifact fragment contributes carry the same key set from the same rule
+// rather than from two agreeing copies of it.
 //
-// The result is a fresh map because one caller does not own its inputs: the
-// artifact path is handed the key sets the host computed for a projection entry,
-// and folding in place would leave one entry's stamp on the next entry of the
-// same node.
+// The fold itself is the shared one ([rendercore.FoldProvenanceSet]), which every
+// target whose metadata surface constrains neither charset nor annotation concept
+// reads: the union of the two halves, minus the keys only a Kubernetes runtime
+// consumes. Compose adds nothing to it, so this is a name rather than a second
+// implementation.
 func foldComposeProvenanceSet(labels, annotations map[string]string) map[string]string {
-	out := make(map[string]string, len(labels)+len(annotations))
-	for k, v := range labels {
-		out[k] = v
-	}
-	for k, v := range annotations {
-		out[k] = v
-	}
-	for _, k := range composeOmittedProvenanceKeys {
-		delete(out, k)
-	}
-	return out
+	return rendercore.FoldProvenanceSet(labels, annotations)
 }

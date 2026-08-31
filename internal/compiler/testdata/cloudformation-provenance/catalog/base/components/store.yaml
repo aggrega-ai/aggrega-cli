@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/store
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "resource"
+spec:
+  schema:
+    values:
+      retention_days:
+        type: string
+        default: "30"
+        description: How long the store keeps an object before expiring it.

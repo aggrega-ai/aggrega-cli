@@ -2,6 +2,18 @@
   "AWSTemplateFormatVersion": "2010-09-09",
   "Resources": {
     "AppParameter": {
+      "Metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "cloudformation-sync-wave-app",
+          "aggrega.ai/boundary-path": "edge",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "app",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "cloudformation",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "app-recipe:1.0.0"
+        }
+      },
       "Properties": {
         "Name": "/app/store-name",
         "Type": "String",
@@ -12,6 +24,18 @@
       "Type": "AWS::SSM::Parameter"
     },
     "NetworkSubnet": {
+      "Metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "cloudformation-sync-wave-app",
+          "aggrega.ai/boundary-path": "foundation",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "network",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "cloudformation",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "network-recipe:1.0.0"
+        }
+      },
       "Properties": {
         "CidrBlock": "10.0.1.0/24",
         "VpcId": {
@@ -21,16 +45,52 @@
       "Type": "AWS::EC2::Subnet"
     },
     "NetworkVpc": {
+      "Metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "cloudformation-sync-wave-app",
+          "aggrega.ai/boundary-path": "foundation",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "network",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "cloudformation",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "network-recipe:1.0.0"
+        }
+      },
       "Properties": {
         "CidrBlock": "10.0.0.0/16"
       },
       "Type": "AWS::EC2::VPC"
     },
     "StoreBucket": {
+      "Metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "cloudformation-sync-wave-app",
+          "aggrega.ai/boundary-path": "data",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "store",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "cloudformation",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "store-recipe:1.0.0"
+        }
+      },
       "Type": "AWS::S3::Bucket"
     },
     "StorePolicy": {
       "DependsOn": "StoreBucket",
+      "Metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "cloudformation-sync-wave-app",
+          "aggrega.ai/boundary-path": "data",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "store",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "cloudformation",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "store-recipe:1.0.0"
+        }
+      },
       "Properties": {
         "Bucket": {
           "Ref": "StoreBucket"

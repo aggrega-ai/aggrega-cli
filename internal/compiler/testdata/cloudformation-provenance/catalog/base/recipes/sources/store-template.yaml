@@ -1,0 +1,20 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  StoreDocumentation:
+    Purpose: the bucket the application reads its catalog from
+Resources:
+  # The source-derived resource. It already carries a Metadata attribute of its
+  # own, so the build provenance has to land alongside what the author wrote
+  # rather than replacing it.
+  StoreBucket:
+    Type: AWS::S3::Bucket
+    Metadata:
+      StoreOwner: platform
+    Properties:
+      Tags:
+        - Key: tier
+          Value: data
+Outputs:
+  bucket_name:
+    Description: The name the store bucket was provisioned under.
+    Value: !Ref StoreBucket

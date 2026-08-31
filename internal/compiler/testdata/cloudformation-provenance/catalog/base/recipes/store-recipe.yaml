@@ -1,0 +1,54 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: store-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/store
+  # One Recipe declaring BOTH input kinds, so one node contributes a
+  # source-derived resource and an artifact-derived one to the same assembled
+  # stack. The two land side by side in one Resources map, which is what makes a
+  # difference between what the two origins carry readable in the emitted bytes
+  # rather than inferable across two builds.
+  source: ./sources/store-template.yaml
+  # Author-owned output labels ride the same rail the compiler-owned provenance
+  # does, so the fixture proves the rail rather than only the fixed keys.
+  outputLabels:
+    hosting: managed
+  outputComponentLabels:
+    - component.aggrega.ai/type
+  artifacts:
+    # The artifact-derived half. It carries a taggable resource and an untaggable
+    # one side by side: a queue accepts resource tags and a queue policy accepts
+    # none, so a placement that only reached taggable types would leave the
+    # policy unstamped and the fixture would see it.
+    store-queue.yaml: |
+      Resources:
+        StoreQueue:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "{{ .values.retention_days }}"
+        StoreQueuePolicy:
+          Type: AWS::SQS::QueuePolicy
+          Properties:
+            Queues:
+              - Ref: StoreQueue
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Principal:
+                    Service: s3.amazonaws.com
+                  Action: sqs:SendMessage
+                  Resource: "*"
+    # A fragment declaring no resource has no site for provenance, because a
+    # CloudFormation resource's Metadata attribute is where it lands. It is
+    # emitted unchanged and named in an advisory rather than passed through in
+    # silence.
+    store-parameters.yaml: |
+      Parameters:
+        StoreRetentionDays:
+          Type: String
+          Default: "{{ .values.retention_days }}"
+          Description: How long the store keeps an object before expiring it.
