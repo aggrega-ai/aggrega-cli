@@ -6,11 +6,12 @@ metadata:
 spec:
   capability: compose
   implements: core/raw/manifest
-  # The compose engine's Render() rejects bare values-only Recipes
-  # (engine.go: "must declare workload: or source:"). The minimal
-  # workload below satisfies the engine; the artifacts: block runs
-  # alongside it, emitting raw compose fragments for declarative
-  # network and volume topology.
+  # This Recipe is the artifacts-ALONGSIDE case: a workload and an
+  # artifacts: block in one Recipe, so the fixture covers a node whose
+  # output is the sum of two input kinds. The artifacts emit raw compose
+  # fragments for declarative network and volume topology; the workload
+  # is what makes this case distinct from an artifacts-only one, not a
+  # requirement the artifacts impose.
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload

@@ -88,7 +88,7 @@ func descriptor() aggrega.PluginDescriptor {
 			},
 		},
 		Contract: &aggrega.ProviderContract{
-			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: false},
+			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
 			BoundaryAssembly: "merge",
 			ReusableInstance: true,
 		},

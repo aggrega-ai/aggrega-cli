@@ -177,15 +177,96 @@ spec:
 	}
 }
 
+// TestRenderAll_ArtifactsOnlyRendersViaCompose is the end-to-end proof that the
+// compose provider renders an artifacts-only Recipe: a Recipe declaring only
+// artifacts: (no source:, no workload:) contributes the fragment it declares and
+// synthesises no service of its own. Compose assembles per dispatch group, so
+// the node's fragment is intermediate and the assembled docker-compose.yaml is
+// what a build writes — the assertions are therefore on the assembled document,
+// which is the surface an author sees.
+//
+// It is the positive half of the pair below: compose declares standalone
+// artifacts and renders here, helm-chart declines and halts there. Both run
+// through wasmEngineFactory(t), so each provider name resolves to its real
+// guest and the capabilities that guest declares.
+func TestRenderAll_ArtifactsOnlyRendersViaCompose(t *testing.T) {
+	t.Parallel()
+	art := types.OrderedMap[types.ArtifactEntry]{}
+	art.Set("overlay.yaml", types.ArtifactEntry{Inline: `services:
+  api-sidecar-{{ .values.port }}:
+    image: busybox:latest
+volumes:
+  api-data:
+    driver: local
+`})
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			if componentType == "core/compute/api-server" {
+				return &types.Recipe{
+					Metadata: types.RecipeMetadata{Name: "compose-artifacts-recipe"},
+					Spec: types.RecipeSpec{
+						Capability: "compose",
+						Implements: "core/compute/api-server",
+						Artifacts:  art,
+					},
+				}, true
+			}
+			return nil, false
+		},
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
+	}
+
+	result, err := renderer.RenderAll(context.Background(), testInput(), lookup, wasmEngineFactory(t))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var assembled string
+	for k := range result.Files {
+		if strings.Contains(k, "docker-compose.yaml") {
+			assembled = k
+		}
+	}
+	if assembled == "" {
+		t.Fatalf("expected an assembled compose document, got keys: %v", fileKeys(result.Files))
+	}
+	body := string(result.Files[assembled].Content)
+	// The artifact template was evaluated against the node context (.values.port).
+	if !strings.Contains(body, "api-sidecar-8080:") {
+		t.Errorf("artifact-declared service missing, or template not evaluated against node values (.values.port), got:\n%s", body)
+	}
+	if !strings.Contains(body, "api-data:") {
+		t.Errorf("artifact-declared volume did not reach the assembled volumes block, got:\n%s", body)
+	}
+	// Every service the fragment declares is provenance-stamped by the same
+	// compose splice that stamps an artifact riding alongside a source or a
+	// Workload — an artifact-supplied service is not an unstamped one.
+	if !strings.Contains(body, "aggrega.ai/component-id: api") {
+		t.Errorf("artifact-supplied service not provenance-stamped, got:\n%s", body)
+	}
+	// No ghost compute: the node declared no Workload, so the synthesiser's own
+	// service name for this node must not appear. The artifact's service starts
+	// with the same word, so the check is anchored on the whole mapping key.
+	if strings.Contains(body, "\n  api:\n") {
+		t.Errorf("artifacts-only node must not synthesise a service of its own, got:\n%s", body)
+	}
+}
+
 // TestRenderAll_ArtifactsOnlyDeclinedByIncapableProvider pins the decline end to
 // end: an artifacts-only Recipe on a provider that does not support standalone
-// artifacts (compose, helm-chart) halts at the central input-kind gate with the
-// uniform capability diagnostic — not a silent skip or a bespoke per-engine
-// message. Uses wasmEngineFactory(t) so each provider name resolves to its
-// real engine and its declared capabilities.
+// artifacts halts at the central input-kind gate with the uniform capability
+// diagnostic — not a silent skip or a bespoke per-engine message. Uses
+// wasmEngineFactory(t) so each provider name resolves to its real engine and its
+// declared capabilities.
+//
+// helm-chart is the provider that declines, and its decline is correct rather
+// than an omission: it places artifacts only into a chart it is rendering, which
+// an artifacts-only node does not supply. The table is kept as a table because
+// the property is per-provider — a provider added here is one whose decline is
+// deliberate, never one whose capability nobody got round to declaring.
 func TestRenderAll_ArtifactsOnlyDeclinedByIncapableProvider(t *testing.T) {
 	t.Parallel()
-	for _, provider := range []string{"compose", "helm-chart"} {
+	for _, provider := range []string{"helm-chart"} {
 		provider := provider
 		t.Run(provider, func(t *testing.T) {
 			t.Parallel()

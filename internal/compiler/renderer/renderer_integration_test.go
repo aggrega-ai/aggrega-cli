@@ -348,9 +348,10 @@ func (c *captureComposerEngine) Render(_ context.Context, _ map[string]any, _ re
 
 // Capabilities: permissive so the central gate admits this fake for the
 // artifact-routing test (which exercises Intermediate routing via the
-// BoundaryAssembler, not the input-kind gate). Real compose declining
-// artifacts-only is asserted in the provider-capability-matrix test against
-// the production engines.
+// BoundaryAssembler, not the input-kind gate). What each production engine
+// actually claims, and which provider still declines standalone artifacts, is
+// asserted against the real guests in the orchestrator's artifacts-only pair —
+// nothing here stands in for that.
 func (c *captureComposerEngine) Contract() renderer.ProviderContract {
 	return renderer.ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
