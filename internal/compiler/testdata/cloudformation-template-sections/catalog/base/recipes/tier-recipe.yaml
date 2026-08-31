@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: tier-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/tier
+  # One half of the collision pair. It declares the parameter SharedTier with a
+  # body the sibling Recipe below restates identically, so the merge folds the two
+  # into one entry.
+  artifacts:
+    template.yaml: |
+      Parameters:
+        SharedTier:
+          Type: String
+          Default: standard
+      Resources:
+        TierQueue:
+          Type: AWS::SQS::Queue

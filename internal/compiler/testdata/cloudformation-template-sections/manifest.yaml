@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: cloudformation-template-sections-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/network: network-recipe:1.0.0
+        core/store: store-recipe:1.0.0
+        core/tier: tier-recipe:1.0.0
+        core/tier-agreeing: tier-agreeing-recipe:1.0.0
+        core/tier-conflicting: tier-conflicting-recipe:1.0.0

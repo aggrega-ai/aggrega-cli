@@ -43,6 +43,15 @@
 // two bodies for one key it wrote itself, which every mechanism above would
 // otherwise be handed as a single entry.
 //
+// Every top-level section a template admits is accounted for, and the accounting
+// is written out as one list ([topLevelSections]) so a section cannot be left
+// undecided. The format version is stamped; the resources and outputs are folded
+// under names the merge derives or reads verbatim; five name-keyed sections are
+// carried under exactly the names their authors wrote ([carriedSections]); and the
+// two whose content is one statement about the whole template are carried by
+// neither contributor and reported out of band instead ([namedSections],
+// [SectionNotices]).
+//
 // The core carries no build constraint so it compiles for both the wasip1 guest
 // and the host test binary: the guest's exports call into it, and its behavior
 // is exercised directly by host tests without a Wasm runtime. Output is
@@ -278,6 +287,15 @@ func isTemplateFile(path string) bool {
 // outside the assembled stack is piped through as whatever intrinsic the fragment
 // authored.
 //
+// Each fragment's Parameters, Mappings, Conditions, Metadata and Rules are carried
+// into the assembled template under exactly the names the fragment authored, folded
+// across contributors by the same rule the resource and output spaces use — see
+// [carriedSections]. A section no contributor declared adds no key, so a dispatch
+// group declaring none of them assembles the bytes it assembled before any of them
+// were carried. A fragment's Description and Transform are carried by neither
+// contributor and reported out of band at render instead ([namedSections]), and the
+// format version is stamped rather than read from any contributor.
+//
 // Where the contributing nodes carry more than one deployment wave, the merge also
 // records that ordering as DependsOn between the assembled stack's resources — see
 // [applyWaveOrdering]. A group whose nodes all carry one wave records nothing, so a
@@ -287,7 +305,7 @@ func isTemplateFile(path string) bool {
 // declares each node's names ([DeclaredNames]) and the host halts on a duplicate
 // before any assembly runs. What still reaches it is one contributor authoring a
 // name twice across its own fragments, which the merge refuses itself — see
-// [insertEntry].
+// [assembledSpace.insert].
 //
 // Every fragment is read before anything is inserted, and that ordering is the
 // point rather than a convenience. The stack is the scope its Output names have
@@ -297,16 +315,15 @@ func isTemplateFile(path string) bool {
 // therefore refuse a collision without being able to say which two authored
 // entries produced it.
 func AssembleStack(nodes []NodeFragment) ([]byte, error) {
-	// One entry run per fragment, in the order the fragments were supplied, so
+	// One claim run per fragment, in the order the fragments were supplied, so
 	// the insert below walks them in exactly the order a single pass would have.
-	type fragmentEntrySet struct {
-		nodeID    string
-		wave      int
-		resources []stackEntry
-		outputs   []stackEntry
+	type fragmentClaimSet struct {
+		nodeID string
+		wave   int
+		claim  fragmentClaim
 	}
 	var mint outputNameLedger
-	sets := make([]fragmentEntrySet, 0, len(nodes))
+	sets := make([]fragmentClaimSet, 0, len(nodes))
 
 	for _, node := range nodes {
 		for _, raw := range node.Files {
@@ -318,11 +335,11 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 			if !ok {
 				return nil, fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", node.NodeID)
 			}
-			res, outs, err := fragmentEntries(node.NodeID, m, &mint)
+			claim, err := fragmentEntries(node.NodeID, m, &mint)
 			if err != nil {
 				return nil, err
 			}
-			sets = append(sets, fragmentEntrySet{nodeID: node.NodeID, wave: node.SyncWave, resources: res, outputs: outs})
+			sets = append(sets, fragmentClaimSet{nodeID: node.NodeID, wave: node.SyncWave, claim: claim})
 		}
 	}
 
@@ -330,39 +347,63 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 		return nil, err
 	}
 
-	resources := map[string]any{}
-	outputs := map[string]any{}
+	resources := newAssembledSpace(KeySpaceResourceLogicalIDs)
+	outputs := newAssembledSpace(KeySpaceOutputLogicalIDs)
+	// One space per carried section, built up front so the insert loop below reads
+	// them by section name without deciding whether a section has been seen yet.
+	// The space is named for the section as the author wrote it, because that is
+	// the scope those names have to be distinct in and the word the author can
+	// search their own files for.
+	carried := make(map[string]*assembledSpace, len(carriedSections))
+	for _, section := range carriedSections {
+		carried[section] = newAssembledSpace(section)
+	}
 	// waveByResource records the wave of the node that contributed each resource,
 	// so the ordering pass reads a resource's wave without re-walking the input. A
 	// node contributes every resource its fragments authored, so all of them share
 	// its wave.
 	waveByResource := map[string]int{}
 	for _, set := range sets {
-		for _, e := range set.resources {
-			if err := insertEntry(resources, KeySpaceResourceLogicalIDs, set.nodeID, e); err != nil {
+		for _, e := range set.claim.resources {
+			if err := resources.insert(set.nodeID, e); err != nil {
 				return nil, err
 			}
 			waveByResource[e.key] = set.wave
 		}
-		for _, e := range set.outputs {
-			if err := insertEntry(outputs, KeySpaceOutputLogicalIDs, set.nodeID, e); err != nil {
+		for _, e := range set.claim.outputs {
+			if err := outputs.insert(set.nodeID, e); err != nil {
 				return nil, err
+			}
+		}
+		for _, section := range carriedSections {
+			for _, e := range set.claim.sections[section] {
+				if err := carried[section].insert(set.nodeID, e); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
 
-	if len(resources) == 0 {
+	if len(resources.entries) == 0 {
 		return nil, fmt.Errorf("cloudformation-provider: assembled stack carries no Resources")
 	}
 
-	applyWaveOrdering(resources, waveByResource)
+	applyWaveOrdering(resources.entries, waveByResource)
 
 	stack := map[string]any{
-		"AWSTemplateFormatVersion": templateFormatVersion,
-		"Resources":                resources,
+		sectionAWSTemplateFormatVersion: templateFormatVersion,
+		sectionResources:                resources.entries,
 	}
-	if len(outputs) > 0 {
-		stack["Outputs"] = outputs
+	// A section no contributor declared adds no key, so a dispatch group whose
+	// contributors declare none of them assembles the same bytes it assembled
+	// before any of them were carried.
+	for _, section := range carriedSections {
+		if len(carried[section].entries) > 0 {
+			stack[section] = carried[section].entries
+		}
+	}
+	if len(outputs.entries) > 0 {
+		stack[sectionOutputs] = outputs.entries
 	}
 
 	out, err := json.MarshalIndent(stack, "", "  ")
@@ -383,15 +424,31 @@ type stackEntry struct {
 	value any
 }
 
+// fragmentClaim is what one fragment claims of the assembled stack, per key
+// space: its resources, its outputs, and the entries of each section carried
+// under the names the fragment authored.
+//
+// The three travel together because they come from one walk of one fragment.
+// Sections holds one entry run per carried section the fragment declared, keyed by
+// the section name as authored; a section the fragment did not declare is absent
+// rather than empty, so a reader distinguishes "declared nothing" from "declared
+// an empty block" without a second field.
+type fragmentClaim struct {
+	resources []stackEntry
+	outputs   []stackEntry
+	sections  map[string][]stackEntry
+}
+
 // fragmentEntries reads one decoded fragment and returns what the assembled
 // stack carries for it, per key space: its resources under the logical ids the
-// fragment authored, which this core reads and never rewrites, and its outputs —
-// an explicit Outputs block's entries, then the entries its provides keys
-// project to — each named for the contributing node and the entry together
-// ([OutputLogicalID]). A provides value that is an intrinsic referencing a
-// resource in the assembled stack rides through as its long-form intrinsic. A
-// fragment carrying none of the three sections yields nothing, which is a valid
-// answer rather than an error.
+// fragment authored, which this core reads and never rewrites; its outputs — an
+// explicit Outputs block's entries, then the entries its provides keys project to
+// — each named for the contributing node and the entry together
+// ([OutputLogicalID]); and the entries of each carried section
+// ([carriedSections]) under exactly the names the fragment authored. A provides
+// value that is an intrinsic referencing a resource in the assembled stack rides
+// through as its long-form intrinsic. A fragment carrying none of these sections
+// claims nothing, which is a valid answer rather than an error.
 //
 // This is the single derivation of which names a fragment claims. The merge
 // inserts these entries and [DeclaredNames] gathers them across a node's
@@ -401,15 +458,23 @@ type stackEntry struct {
 // duplicates while the merge wrote another — a divergence nothing would fail on,
 // because no comparison between the two exists to fail.
 //
+// The carried sections are part of the same derivation and are deliberately not
+// part of the declaration: the declaration is a name-only check the host performs
+// for spaces whose names must be globally distinct, and these are spaces where two
+// contributors declaring one name identically is a merge rather than a collision.
+// [carriedSections] states why that check cannot be the host's.
+//
 // A fragment reaches one key space through more than one section, so it can name
 // one key twice: an explicit Outputs block and the projected provides entries
 // both land in the outputs space. Those repeats are folded here, on the terms the
 // merge writes them ([collapseEntries]), which is what keeps the set exact rather
-// than merely overlapping.
+// than merely overlapping. A carried section is folded the same way, so a section
+// restating one name with one body claims it once.
 //
-// Each section's keys are walked in sorted order, and the explicit Outputs
-// entries precede the projected provides entries, so the returned entries are a
-// function of the fragment and the node id alone.
+// Each section's keys are walked in sorted order, the explicit Outputs entries
+// precede the projected provides entries, and the carried sections are walked in
+// their declared order, so the returned claim is a function of the fragment and
+// the node id alone.
 //
 // Every output name is built through the caller's ledger rather than by calling
 // [OutputLogicalID] directly, so the authored entry behind each name is recorded
@@ -418,38 +483,60 @@ type stackEntry struct {
 // once that scope is complete — a fragment cannot answer for a scope wider than
 // itself. Resource ids are not built from anything: they are the fragment's own
 // keys, read verbatim, so two distinct authored ids stay distinct and there is
-// nothing for a ledger to record.
-func fragmentEntries(nodeID string, frag map[string]any, mint *outputNameLedger) (resources, outputs []stackEntry, err error) {
-	if raw, present := frag["Resources"]; present {
+// nothing for a ledger to record. The carried sections' names are read verbatim
+// for the same reason, so they need no ledger either.
+func fragmentEntries(nodeID string, frag map[string]any, mint *outputNameLedger) (fragmentClaim, error) {
+	var claim fragmentClaim
+	if raw, present := frag[sectionResources]; present {
 		rmap, ok := raw.(map[string]any)
 		if !ok {
-			return nil, nil, fmt.Errorf("cloudformation-provider: Resources in node %q is not a mapping", nodeID)
+			return fragmentClaim{}, fmt.Errorf("cloudformation-provider: %s in node %q is not a mapping", sectionResources, nodeID)
 		}
 		for _, id := range sortedKeys(rmap) {
-			resources = append(resources, stackEntry{key: id, value: rmap[id]})
+			claim.resources = append(claim.resources, stackEntry{key: id, value: rmap[id]})
 		}
 	}
-	if raw, present := frag["Outputs"]; present {
+	if raw, present := frag[sectionOutputs]; present {
 		omap, ok := raw.(map[string]any)
 		if !ok {
-			return nil, nil, fmt.Errorf("cloudformation-provider: Outputs in node %q is not a mapping", nodeID)
+			return fragmentClaim{}, fmt.Errorf("cloudformation-provider: %s in node %q is not a mapping", sectionOutputs, nodeID)
 		}
 		for _, k := range sortedKeys(omap) {
 			name := mint.mint(authoredOutputEntry{component: nodeID, section: sectionExplicitOutputs, entry: k})
-			outputs = append(outputs, stackEntry{key: name, value: omap[k]})
+			claim.outputs = append(claim.outputs, stackEntry{key: name, value: omap[k]})
 		}
 	}
-	if raw, present := frag["provides"]; present {
+	if raw, present := frag[sectionProvides]; present {
 		pmap, ok := raw.(map[string]any)
 		if !ok {
-			return nil, nil, fmt.Errorf("cloudformation-provider: provides in node %q is not a mapping", nodeID)
+			return fragmentClaim{}, fmt.Errorf("cloudformation-provider: %s in node %q is not a mapping", sectionProvides, nodeID)
 		}
 		for _, k := range sortedKeys(pmap) {
 			name := mint.mint(authoredOutputEntry{component: nodeID, section: sectionProvides, entry: k})
-			outputs = append(outputs, stackEntry{key: name, value: map[string]any{"Value": pmap[k]}})
+			claim.outputs = append(claim.outputs, stackEntry{key: name, value: map[string]any{"Value": pmap[k]}})
 		}
 	}
-	return collapseEntries(resources), collapseEntries(outputs), nil
+	for _, section := range carriedSections {
+		raw, present := frag[section]
+		if !present {
+			continue
+		}
+		smap, ok := raw.(map[string]any)
+		if !ok {
+			return fragmentClaim{}, fmt.Errorf("cloudformation-provider: %s in node %q is not a mapping", section, nodeID)
+		}
+		entries := make([]stackEntry, 0, len(smap))
+		for _, k := range sortedKeys(smap) {
+			entries = append(entries, stackEntry{key: k, value: smap[k]})
+		}
+		if claim.sections == nil {
+			claim.sections = make(map[string][]stackEntry, len(carriedSections))
+		}
+		claim.sections[section] = collapseEntries(entries)
+	}
+	claim.resources = collapseEntries(claim.resources)
+	claim.outputs = collapseEntries(claim.outputs)
+	return claim, nil
 }
 
 // collapseEntries folds a name stated more than once with the same body into one
@@ -464,7 +551,7 @@ func fragmentEntries(nodeID string, frag map[string]any, mint *outputNameLedger)
 //
 // A repeat whose bodies differ is kept, and that is the whole reason the fold is
 // scoped by body rather than by name. The merge refuses such a contributor
-// ([insertEntry]) because one of the two bodies would be lost; the repeated name
+// ([assembledSpace.insert]) because one of the two bodies would be lost; the repeated name
 // is what makes that loss visible to anyone holding the names without the bodies.
 //
 // Applied at both the scopes a name can repeat at — within one fragment, where
@@ -502,16 +589,39 @@ func sameBody(a, b any) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-// insertEntry lands one entry in an assembled key space, refusing a name the
-// space already carries with different content.
+// assembledSpace is one key space of the assembled stack under construction: the
+// entry landing under each name, and the node that contributed it.
+//
+// The contributor is recorded alongside the entry so a refusal names both sides of
+// a collision. Holding only the entries would leave a refusal able to name the
+// contributor that arrived and not the one already there, which is half of what
+// the author has to look at to decide which of the two to rename.
+//
+// The space's own name is what a diagnostic calls the scope: for a space whose
+// names this core derives, the guest's name for that space; for a section carried
+// under the names an author wrote, the section itself, which is the word that
+// author can search their own files for.
+type assembledSpace struct {
+	name    string
+	entries map[string]any
+	byNode  map[string]string
+}
+
+// newAssembledSpace returns an empty key space under the given name.
+func newAssembledSpace(name string) *assembledSpace {
+	return &assembledSpace{name: name, entries: map[string]any{}, byNode: map[string]string{}}
+}
+
+// insert lands one entry in the space, refusing a name the space already carries
+// with different content.
 //
 // A name in one of these spaces addresses exactly one thing — a logical id names
-// one resource, an output name one output — so the space holds one value per
-// name. Writing a second, different value under a name already taken is not a
-// merge: it displaces what was there, and the displaced resource leaves the
-// stack with nothing said about it, so a deployment that declared it gets a
-// template that does not carry it. Refusing is what turns that into something
-// the author can see and fix.
+// one resource, an output name one output, a parameter name one parameter — so the
+// space holds one value per name. Writing a second, different value under a name
+// already taken is not a merge: it displaces what was there, and the displaced
+// resource leaves the stack with nothing said about it, so a deployment that
+// declared it gets a template that does not carry it. Refusing is what turns that
+// into something the author can see and fix.
 //
 // Restating a name with content identical to what the space already carries
 // displaces nothing, so it proceeds. Both bodies are decoded and in hand here,
@@ -530,14 +640,20 @@ func sameBody(a, b any) bool {
 // point the loss would happen — the write into the assembled map. It also holds
 // without any of them: the declaration is an optional part of what a provider
 // reports, so a caller assembling a boundary without having read one gets this
-// refusal and nothing else. Ordinary input never reaches it today, and it is kept
-// for what it covers when something upstream is narrowed rather than for what it
-// stops now.
-func insertEntry(dst map[string]any, space, nodeID string, e stackEntry) error {
-	if existing, taken := dst[e.key]; taken && !sameBody(existing, e.value) {
-		return fmt.Errorf("cloudformation-provider: in key space %q node %q contributes the name %q, which the assembled stack already carries with different content; change what one of them is named so each name addresses one thing", space, nodeID, e.key)
+// refusal and nothing else.
+//
+// For the resource and output spaces the host's own duplicate check over the names
+// a guest declares reaches a cross-node collision first, so this is their backstop.
+// For a carried section there is no such check and there cannot be one — a name
+// declared identically by two contributors is a merge, which a name-only comparison
+// cannot tell from a collision — so this is the whole of the refusal for those
+// spaces.
+func (s *assembledSpace) insert(nodeID string, e stackEntry) error {
+	if existing, taken := s.entries[e.key]; taken && !sameBody(existing, e.value) {
+		return fmt.Errorf("cloudformation-provider: in key space %q node %q contributes the name %q, which node %q already contributed with different content; change what one of them is named so each name addresses one thing", s.name, nodeID, e.key, s.byNode[e.key])
 	}
-	dst[e.key] = e.value
+	s.entries[e.key] = e.value
+	s.byNode[e.key] = nodeID
 	return nil
 }
 
@@ -840,7 +956,7 @@ type outputNameLedger struct {
 // checks: an entry restated — the same entry name written in a fragment's
 // Outputs block and in its provides block, or restated across two of a
 // component's fragments — is one thing the author named, and whether the
-// restatements agree about its body is the merge's question ([insertEntry]).
+// restatements agree about its body is the merge's question ([assembledSpace.insert]).
 // Whether two *different* things the author named collapsed into one name is this
 // ledger's, and only a repeat of the derived name from a different authored entry
 // answers yes to it.
@@ -984,6 +1100,13 @@ type nodeDeclaration struct {
 // Each fragment's outputs are ordered by name as they are gathered, and fragments
 // are gathered in the order the caller supplied, so what the node declares is a
 // function of its fragments and their order alone.
+//
+// It reads the same claim the merge inserts and keeps the two key spaces the guest
+// declares to the host, dropping the carried sections' entries on the floor. That
+// is deliberate rather than an omission: the host's check over a declaration
+// compares names and halts on a repeat, which is the wrong verdict for a space
+// where two contributors declaring one name identically is a merge — see
+// [carriedSections].
 func (d *nodeDeclaration) addFragment(nodeID string, fragment []byte) error {
 	v, err := decodeToValue(fragment)
 	if err != nil {
@@ -996,12 +1119,13 @@ func (d *nodeDeclaration) addFragment(nodeID string, fragment []byte) error {
 	if !ok {
 		return fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", nodeID)
 	}
-	resources, outputs, err := fragmentEntries(nodeID, m, &d.mint)
+	claim, err := fragmentEntries(nodeID, m, &d.mint)
 	if err != nil {
 		return err
 	}
+	outputs := claim.outputs
 	sort.SliceStable(outputs, func(i, j int) bool { return outputs[i].key < outputs[j].key })
-	d.resources = append(d.resources, resources...)
+	d.resources = append(d.resources, claim.resources...)
 	d.outputs = append(d.outputs, outputs...)
 	return nil
 }

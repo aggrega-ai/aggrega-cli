@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: tier-agreeing-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/tier-agreeing
+  # The agreeing half of the collision pair: the same parameter name with the same
+  # body. Nothing is displaced, so the merge folds it into one entry and proceeds.
+  artifacts:
+    template.yaml: |
+      Parameters:
+        SharedTier:
+          Type: String
+          Default: standard
+      Resources:
+        TierTopic:
+          Type: AWS::SNS::Topic

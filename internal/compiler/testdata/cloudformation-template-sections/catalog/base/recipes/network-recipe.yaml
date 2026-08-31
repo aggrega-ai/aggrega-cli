@@ -1,0 +1,49 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: network-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/network
+  # A template whose Resources and Outputs reference four sections declared
+  # alongside them: a parameter (Ref), a mapping (Fn::FindInMap), a condition (the
+  # Condition attribute) and a rule asserting over the parameter. Every reference
+  # points at a name this same document declares, so the assembled stack either
+  # carries all four sections or emits a template referring to names it does not
+  # declare.
+  artifacts:
+    template.yaml: |
+      Parameters:
+        DbInstanceClass:
+          Type: String
+          Default: db.t3.micro
+          Description: The instance class the data tier is provisioned at.
+      Mappings:
+        RegionCidr:
+          us-east-1:
+            Primary: 10.0.0.0/16
+      Conditions:
+        IsPrimaryRegion:
+          Fn::Equals:
+            - Ref: "AWS::Region"
+            - us-east-1
+      Rules:
+        InstanceClassIsOffered:
+          Assertions:
+            - Assert:
+                Fn::Contains:
+                  - - db.t3.micro
+                    - db.t3.small
+                  - Ref: DbInstanceClass
+              AssertDescription: the instance class must be one the platform offers
+      Resources:
+        NetworkVpc:
+          Type: AWS::EC2::VPC
+          Condition: IsPrimaryRegion
+          Properties:
+            CidrBlock: !FindInMap [RegionCidr, us-east-1, Primary]
+      Outputs:
+        instance_class:
+          Description: The instance class the data tier was provisioned at.
+          Value: !Ref DbInstanceClass

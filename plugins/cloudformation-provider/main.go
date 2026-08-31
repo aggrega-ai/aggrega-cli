@@ -34,14 +34,28 @@
 // pure-JSON long-form CloudFormation stack template: the fragments' Resources
 // merge into one Resources map under the logical ids their Recipes authored, and
 // each node's provides entries become stack Outputs named for the contributing
-// node and the entry together. Where the contributing nodes declare more than one
-// deployment wave, the merge also records that ordering as DependsOn between the
-// merged resources, so the earlier wave's resources are created before the later
-// wave's are begun and deleted after them; a group carrying one wave records
-// nothing. All CloudFormation domain logic — short-form intrinsic expansion,
-// resource merging, output naming, the provides-to-Outputs projection, and the
-// wave ordering — lives in the cfncore package the guest calls, so the Wasm host
-// stays blind to CloudFormation semantics.
+// node and the entry together. A fragment's Parameters, Mappings, Conditions,
+// Metadata and Rules are carried in under exactly the names it authored, so a
+// resource or output referencing one of those names meets the declaration it
+// refers to; two contributors declaring one name with one body merge, and with
+// different bodies the assembly halts naming the name and both of them. Where the
+// contributing nodes declare more than one deployment wave, the merge also records
+// that ordering as DependsOn between the merged resources, so the earlier wave's
+// resources are created before the later wave's are begun and deleted after them;
+// a group carrying one wave records nothing. All CloudFormation domain logic —
+// short-form intrinsic expansion, resource merging, output naming, the
+// provides-to-Outputs projection, the section carrying, and the wave ordering —
+// lives in the cfncore package the guest calls, so the Wasm host stays blind to
+// CloudFormation semantics.
+//
+// Two top-level sections state something about a whole template rather than
+// keying content by names an author chose — a template-wide description and a
+// template-wide transform — so a merge across contributors has no defensible
+// answer for either: two descriptions are two answers to one question, and
+// adopting one contributor's transform would change how every other
+// contributor's content is read. render_node reports each one a node authored as
+// a warn-severity diagnostic naming the node and the section, and the assembled
+// bytes are the same whether or not anything is listening.
 //
 // A logical id is unique within one template while several nodes assemble into
 // one stack, so render_node returns the names each node's fragments will be
@@ -216,6 +230,17 @@ func renderNode() int32 {
 			return 1
 		}
 		resourceIDs, outputIDs = declaredRes, declaredOut
+		// A section whose content is one statement about the whole template has no
+		// defensible merge across the contributors a dispatch group folds together,
+		// so the assembled stack carries neither and the author is told here, where
+		// the node that wrote it can be named. Out of band: the emitted bytes are
+		// the same whether or not anything is listening.
+		notices, err := cfncore.SectionNotices(fragments)
+		if err != nil {
+			pdk.SetError(err)
+			return 1
+		}
+		out.Diagnostics = append(out.Diagnostics, notices...)
 	case in.SourceListing != nil:
 		// Sourced path: normalize the acquired CloudFormation template to pure-JSON
 		// long-form intrinsics. The host has read no content; the guest asks it to
@@ -238,6 +263,14 @@ func renderNode() int32 {
 			pdk.SetError(err)
 			return 1
 		}
+		// The same out-of-band report the fragment path makes, over the templates a
+		// sourced selection carries.
+		notices, err := cfncore.SectionNoticesSourced(normalized, in.SourceListing.RootIsDir)
+		if err != nil {
+			pdk.SetError(err)
+			return 1
+		}
+		out.Diagnostics = append(out.Diagnostics, notices...)
 		out.Files = make([]rendercore.RenderedFile, 0, len(normalized))
 		for _, f := range normalized {
 			out.Files = append(out.Files, rendercore.RenderedFile{Path: f.Path, Content: f.Content})

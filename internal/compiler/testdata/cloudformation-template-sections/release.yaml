@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-template-sections-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: cloudformation-template-sections-app
+  manifest: cloudformation-template-sections-manifest
+  # One boundary, so both components' templates fold into a single stack — which
+  # is the scope every top-level section has to be reconciled in.
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      components:
+        network: {}
+        store: {}

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-template-sections-agreeing
+  version: "1.0.0"
+  description: >
+    Two components declaring the same parameter name with the same body. One
+    parameter reaches the assembled stack and nothing is displaced, so the build
+    proceeds.
+spec:
+  components:
+    tier:
+      type: core/tier
+    tier-twin:
+      type: core/tier-agreeing

@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: tier-conflicting-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/tier-conflicting
+  # The conflicting half of the collision pair: the same parameter name with a
+  # different default. One of the two bodies would be lost, so the merge halts and
+  # names the parameter and both contributors.
+  artifacts:
+    template.yaml: |
+      Parameters:
+        SharedTier:
+          Type: String
+          Default: premium
+      Resources:
+        TierTopic:
+          Type: AWS::SNS::Topic

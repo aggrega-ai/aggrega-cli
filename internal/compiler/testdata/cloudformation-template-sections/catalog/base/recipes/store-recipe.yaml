@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: store-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/store
+  # A template declaring the two sections a merge cannot fold — a template-wide
+  # Description and a template-wide Transform — alongside a Metadata block, which
+  # is name-keyed and folds like any other. The build must carry the Metadata and
+  # name the other two out of band rather than adopt one contributor's answer.
+  artifacts:
+    template.yaml: |
+      Description: The application data store and the policy that fronts it.
+      Transform: AWS::LanguageExtensions
+      Metadata:
+        StoreDocumentation:
+          Purpose: the bucket the application reads its catalog from
+      Resources:
+        StoreBucket:
+          Type: AWS::S3::Bucket

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-template-sections-conflicting
+  version: "1.0.0"
+  description: >
+    Two components declaring the same parameter name with different bodies. One
+    of the two defaults would be lost, so the build halts naming the parameter
+    and both components.
+spec:
+  components:
+    tier:
+      type: core/tier
+    tier-rival:
+      type: core/tier-conflicting

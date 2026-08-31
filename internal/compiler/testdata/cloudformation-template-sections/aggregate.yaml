@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-template-sections-app
+  version: "1.0.0"
+  description: >
+    Two components whose CloudFormation templates assemble into one stack. The
+    network declares a parameter, a mapping, a condition and a rule, and its
+    resources and outputs reference all four. The store declares a template-wide
+    description and transform alongside a name-keyed metadata block. Between them
+    the pair covers every top-level section the assembled stack has to account
+    for.
+spec:
+  components:
+    network:
+      type: core/network
+    store:
+      type: core/store
