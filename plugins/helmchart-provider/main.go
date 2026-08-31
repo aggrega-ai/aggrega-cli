@@ -80,6 +80,12 @@ func descriptor() aggrega.PluginDescriptor {
 				Description:  "assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml",
 			},
 			{
+				Name:         "name_bound",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "reports whether a proposed component identity yields a component-id label value this target accepts, and how short it would have to be",
+			},
+			{
 				Name:         "carve",
 				InputPattern: "b",
 				Stability:    "experimental",
@@ -377,6 +383,40 @@ func packSourcedChart(listing *rendercore.SourceListing) (*rendercore.SourceProj
 		proj.Files[i] = rendercore.SourceFile{Path: f.Path, Content: f.Content}
 	}
 	return proj, nil
+}
+
+// nameBound answers whether a proposed component identity yields names this
+// target accepts.
+//
+// One kind is reported, and the absence of a second is the point. This provider
+// copies a chart's own resources through rather than deriving a release name of
+// its own, so the only name it derives from a component identity is the
+// component-id label value it stamps on every resource it emits. It is judged
+// where that label is written rather than restated here, so the rule and the
+// write stay one thing.
+//
+// It answers at all — rather than declining the export and being asked nothing —
+// because declining would leave that label's own bound with no holder: the
+// compiler holds no target's limits, so a target that stamps a bounded name and
+// says nothing about it gets a name nobody bounded.
+//
+//go:wasmexport name_bound
+func nameBound() int32 {
+	var in rendercore.NameBoundInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	out := rendercore.NameBoundOutput{
+		Names: []rendercore.DerivedNameVerdict{rendercore.ComponentIDLabelVerdict(in.Proposed)},
+	}
+	encoded, err := out.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
 }
 
 func main() {}

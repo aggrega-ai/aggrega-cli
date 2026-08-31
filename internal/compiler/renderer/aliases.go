@@ -57,6 +57,9 @@ type (
 	BoundaryEnvOverridesOutput = rendercore.BoundaryEnvOverridesOutput
 	CarveInput                 = rendercore.CarveInput
 	CarveOutput                = rendercore.CarveOutput
+	DerivedNameVerdict         = rendercore.DerivedNameVerdict
+	NameBoundInput             = rendercore.NameBoundInput
+	NameBoundOutput            = rendercore.NameBoundOutput
 	IRNodeProjection           = rendercore.IRNodeProjection
 	LinkEndpoint               = rendercore.LinkEndpoint
 	LinkEdge                   = rendercore.LinkEdge

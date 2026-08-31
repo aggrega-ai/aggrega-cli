@@ -11,7 +11,7 @@
 // several parts.
 //
 // Where a value identifies something composed of several authored parts,
-// [BoundaryFeatureComponentID] COMPOSES it from those parts through an encoding
+// [ComposeComponentIdentity] COMPOSES it from those parts through an encoding
 // that writes out what the label alphabet refuses instead of folding it away —
 // so two identities differing at all reach two values, and the value reads back
 // into the parts it was built from.
@@ -48,15 +48,16 @@ import "strings"
 //
 // A caller that needs two distinct inputs to reach two distinct values must not
 // use this. Compose the value from its parts instead — which is what
-// [BoundaryFeatureComponentID] does, writing each refused character out rather
+// [ComposeComponentIdentity] does, writing each refused character out rather
 // than folding it onto a hyphen — or declare the result somewhere a duplicate
 // is refused.
 //
-// What is left here is the case the fold cannot damage: a label value carrying
-// a single authored name that is already unique within the document naming it,
-// where there are no parts to compose and nothing a separator could straddle.
-// A feature attachment's own instance name, stamped on the component it is
-// attached to, is that case.
+// The case the fold cannot damage is a label value carrying a single authored
+// name that is already unique within the document naming it, where there are no
+// parts to compose and nothing a separator could straddle. No component identity
+// is of that shape: an identity an author wrote is carried through unmodified
+// and held to the label rules by refusal, and every identity the compiler
+// derives is composed from its parts.
 //
 // Returns "" when s is empty or when sanitization removes every
 // character (e.g., a string of only invalid characters).

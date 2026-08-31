@@ -434,9 +434,17 @@ containers:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The synthesised FR Deployment lands under features/mon/, named for the
-	// feature instance ("mon") — not the host node ("api") — so it never
-	// collides with the host's own synthesised workload.
+	// The synthesised FR Deployment lands under features/mon/, and every name it
+	// carries — the output file key, metadata.name and the selector — is the
+	// identity composed for the attachment: the per-component scope, the host
+	// component ("api") and the instance ("mon"). The host is part of it so that
+	// the same instance name attached to another component reaches another
+	// identity, which is a shape an author may legitimately write.
+	//
+	// The identity is written out here rather than composed, so this asserts the
+	// spelling that actually reaches a cluster rather than agreeing with whatever
+	// the composition produced.
+	const frIdentity = "cfr--api--mon"
 	var frDep string
 	for k := range result.Files {
 		if strings.Contains(k, "features/mon/") && strings.Contains(k, "deployment.yaml") {
@@ -447,15 +455,142 @@ containers:
 	if frDep == "" {
 		t.Fatalf("missing synthesised FR deployment under features/mon/, keys: %v", fileKeys(result.Files))
 	}
-	if !strings.Contains(frDep, "features/mon/mon-") {
-		t.Errorf("FR deployment should be named for the instance (mon-*), got %q", frDep)
+	if !strings.Contains(frDep, "features/mon/"+frIdentity+"-") {
+		t.Errorf("FR deployment should be named for the composed identity (%s-*), got %q", frIdentity, frDep)
 	}
 	body := string(result.Files[frDep].Content)
 	if !strings.Contains(body, "prom/mon:v1") {
 		t.Errorf("FR deployment missing FR image, got:\n%s", body)
 	}
-	if !strings.Contains(body, "name: mon") {
-		t.Errorf("FR deployment metadata.name should be the instance (mon), got:\n%s", body)
+	if !strings.Contains(body, "name: "+frIdentity+"\n") {
+		t.Errorf("FR deployment metadata.name should be the composed identity (%s), got:\n%s", frIdentity, body)
+	}
+	// The selector is the half a rename cannot be walked back on, so it is
+	// asserted rather than left to metadata.name alone.
+	if !strings.Contains(body, "app: "+frIdentity+"\n") {
+		t.Errorf("FR deployment selector label should be the composed identity (%s), got:\n%s", frIdentity, body)
+	}
+	// The provenance label is the fourth consumer of the identity, beside the
+	// output key, the resource name and the selector. Asserting it here keeps all
+	// four pinned in one place, so a derivation change cannot move three of them
+	// and leave the fourth reading the old form.
+	if !strings.Contains(body, "aggrega.ai/component-id: "+frIdentity+"\n") {
+		t.Errorf("FR deployment provenance label should be the composed identity (%s), got:\n%s", frIdentity, body)
+	}
+}
+
+// TestRenderAll_OneAttachmentNameOnTwoComponentsSynthesisesTwoWorkloads is the
+// end-to-end proof, through the real provider guest, that one feature attached
+// under ONE name to two components in ONE boundary reaches two identities and
+// builds.
+//
+// That is ordinary authoring — and a cascade minting a single instance name
+// across many components by design leaves an author no way to write anything
+// else — so a build refusing it would be refusing input the author wrote
+// correctly. Both attachments land in one dispatch group, so their identities
+// are genuinely compared rather than kept apart by sitting in different groups.
+//
+// The identities are written out here rather than composed, so this asserts the
+// spelling that reaches a cluster.
+func TestRenderAll_OneAttachmentNameOnTwoComponentsSynthesisesTwoWorkloads(t *testing.T) {
+	t.Parallel()
+
+	const (
+		sharedInstance = "mon"
+		apiIdentity    = "cfr--api--mon"
+		workerIdentity = "cfr--worker--mon"
+	)
+
+	input := testInput()
+	// A second component beside the first, in the SAME boundary, so both its
+	// attachment and the first's assemble into one dispatch group.
+	componentLabels := types.OrderedMap[string]{}
+	componentLabels.Set("component.aggrega.ai/type", "server")
+	input.Graph.Spec.Nodes.Set("worker", types.IRNode{
+		Component: "core/compute/api-server", Labels: componentLabels,
+		ResolvedVersion: "1.0.0", BoundaryPath: "local/default",
+	})
+	input.Graph.Spec.ValuesMapping.Set("worker", json.RawMessage(`{"port":8080}`))
+
+	attach := func() types.OrderedMap[types.IRFeatureEntry] {
+		vals := types.OrderedMap[any]{}
+		vals.Set("scrape_port", float64(9090))
+		inner := types.OrderedMap[types.IRFeatureEntry]{}
+		inner.Set(sharedInstance, types.IRFeatureEntry{Type: "core/monitoring", Values: vals})
+		return inner
+	}
+	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	fvm.Set("api", attach())
+	fvm.Set("worker", attach())
+	input.Graph.Spec.FeatureValuesMapping = fvm
+	input.FeatureOrder = ir.FeatureOrder{"api": {sharedInstance}, "worker": {sharedInstance}}
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			if componentType != "core/compute/api-server" {
+				return nil, false
+			}
+			return &types.Recipe{
+				Metadata: types.RecipeMetadata{Name: "api-recipe"},
+				Spec: types.RecipeSpec{
+					Capability: "helm",
+					Implements: "core/compute/api-server",
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: myapp:latest
+    ports:
+      web: 8080
+`},
+				},
+			}, true
+		},
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			if featureType != "core/monitoring" {
+				return nil, false
+			}
+			return &types.FeatureRecipe{
+				Metadata: types.FeatureRecipeMetadata{Name: "mon"},
+				Spec: types.FeatureRecipeSpec{
+					Capability: "helm",
+					Implements: "core/monitoring",
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: prom/mon:v1
+    ports:
+      metrics: {{ .values.scrape_port }}
+`},
+				},
+			}, true
+		},
+	}
+
+	result, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
+	if err != nil {
+		t.Fatalf("one attachment name on two components must build, got: %v", err)
+	}
+
+	// Each attachment's synthesised workload carries the identity composed from
+	// ITS host, so the two never meet — in the output keys or in the cluster.
+	joined := strings.Join(fileKeys(result.Files), "\n")
+	for _, want := range []string{apiIdentity, workerIdentity} {
+		if !strings.Contains(joined, "features/"+sharedInstance+"/"+want+"-") {
+			t.Errorf("no output key carries the identity %q; the two attachments have not reached two identities\nkeys: %v",
+				want, fileKeys(result.Files))
+		}
+	}
+	var bodies strings.Builder
+	for _, f := range result.Files {
+		bodies.Write(f.Content)
+		bodies.WriteString("\n")
+	}
+	for _, want := range []string{"name: " + apiIdentity + "\n", "name: " + workerIdentity + "\n"} {
+		if !strings.Contains(bodies.String(), want) {
+			t.Errorf("no rendered resource is named %q", strings.TrimSpace(want))
+		}
 	}
 }
 

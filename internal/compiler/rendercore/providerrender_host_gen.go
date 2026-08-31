@@ -333,6 +333,34 @@ type BoundaryEnvOverridesOutput struct {
 	Overrides map[string]map[string]string `json:"overrides,omitempty" yaml:"overrides,omitempty" cbor:"overrides,omitempty"`
 }
 
+// NameBoundInput The payload a Provider guest receives on its optional name_bound export: one name the host proposes to use as a node's component identity, for the guest to judge against every name it would derive from that identity for its target. The guest answers with a constraint rather than with a name of its own — a derived name travelling back would put the host in the business of composing names for a target it knows nothing about, which is exactly what asking the question removes. A provider whose target bounds or restricts the names it accepts advertises the export; a provider whose target accepts any name omits it and is never asked, and its rendering is unchanged.
+type NameBoundInput struct {
+	// Proposed The name the host proposes as the node's component identity. The guest derives from it, in memory, each name it would emit for its target and reports whether every one of them is a name that target accepts.
+	Proposed string `json:"proposed" yaml:"proposed" cbor:"proposed"`
+	// Authored Whether the proposed name is one a person wrote rather than one the compiler composed from authored parts. It is carried so a guest can phrase its reason for the reader who is able to act on it. It does not decide what a refusal does: an authored name is refused and a composed one is shortened, and that decision is the host's.
+	Authored bool `json:"authored,omitempty" yaml:"authored,omitempty" cbor:"authored,omitempty"`
+}
+
+// DerivedNameVerdict One name kind's verdict on a proposed identity: whether the name the guest would derive for that kind is one its target accepts, and — where a shorter identity would be accepted — the greatest length that would be. It carries a constraint and a reason, never a name the guest built.
+type DerivedNameVerdict struct {
+	// Kind The guest's own name for the kind of name this verdict covers, written in the target's vocabulary rather than the compiler's — a chart installer's release name, a container orchestrator's service name. It reaches a reader verbatim in a refusal, so it is written for somebody who knows the target.
+	Kind string `json:"kind" yaml:"kind" cbor:"kind"`
+	// Usable Whether the name the guest would derive for this kind from the proposed identity is one the target accepts.
+	Usable bool `json:"usable" yaml:"usable" cbor:"usable"`
+	// Bound The greatest number of characters a proposed identity may carry for this kind's derived name to be one the target accepts. Present only on a refusal that a shorter identity would satisfy. ABSENT means length is not what the target objected to — either there is no length limit at all, or the objection is one no shortening repairs, such as a character the target's grammar refuses in the position it landed in. Absent is therefore distinct from a bound of zero, which does state a length: that no identity of any length yields an acceptable name of this kind. The host shortens to a present bound and asks again; on an absent bound it stops, because there is nothing left to try.
+	Bound *int `json:"bound,omitempty" yaml:"bound,omitempty" cbor:"bound,omitempty"`
+	// Reason Why the target does not accept the derived name, in the target's own terms, for a reader deciding what to write instead. Empty when the verdict is usable.
+	Reason string `json:"reason,omitempty" yaml:"reason,omitempty" cbor:"reason,omitempty"`
+}
+
+// NameBoundOutput The payload a Provider guest returns from its name_bound export: one verdict per kind of name it would derive from the proposed identity. A proposal is usable when every verdict is; where one is not, the host shortens the proposal to the smallest bound the refusing verdicts carry and asks again, and it stops when a refusing verdict carries no bound. An empty list of verdicts means the guest derives no name from a component identity, which is the same answer as accepting the proposal.
+type NameBoundOutput struct {
+	// Names One entry per kind of name the guest derives from a component identity, in the guest's own order. A guest reports every kind it would derive rather than only the kinds that refused, so a reader sees which names were judged and a host reading the entries needs no second call to learn the rest.
+	Names []DerivedNameVerdict `json:"names,omitempty" yaml:"names,omitempty" cbor:"names,omitempty"`
+	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from a refusing verdict: a verdict reports a name the target will not accept, while error reports that the question itself could not be answered. The host surfaces a present error as a failed plugin invocation.
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
+}
+
 // LinkEndpoint One endpoint of a cross-boundary link: the node, the boundary path its rendered output assembles into, and the provider that rendered it. The two endpoints of a link name the consuming and consumed ends of a uses edge whose ends assemble into different dispatch groups.
 type LinkEndpoint struct {
 	// Node The endpoint node's absolute id within the topology graph.
@@ -3899,6 +3927,300 @@ func (t *BoundaryEnvOverridesOutput) UnmarshalJSON(data []byte) error {
 // check reads the object's own keys and does not descend.
 func (t *BoundaryEnvOverridesOutput) UnmarshalJSONStrict(data []byte) error {
 	if err := refuseUndeclaredJSONKeys(data, "overrides"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
+// MarshalJSON encodes NameBoundInput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t NameBoundInput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"proposed\":")
+	writeJSONString(&buf, t.Proposed)
+	if t.Authored != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"authored\":")
+		if t.Authored {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes NameBoundInput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *NameBoundInput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "proposed":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Proposed = s
+			}
+		case "authored":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.Authored = v
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes NameBoundInput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *NameBoundInput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "proposed", "authored"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
+// MarshalJSON encodes DerivedNameVerdict in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t DerivedNameVerdict) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"kind\":")
+	writeJSONString(&buf, t.Kind)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"usable\":")
+	if t.Usable {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+	if t.Bound != nil {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"bound\":")
+		if enc, err := json.Marshal(t.Bound); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	if t.Reason != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"reason\":")
+		writeJSONString(&buf, t.Reason)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes DerivedNameVerdict with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *DerivedNameVerdict) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "kind":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Kind = s
+			}
+		case "usable":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.Usable = v
+			}
+		case "bound":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Bound); err != nil {
+					return err
+				}
+			}
+		case "reason":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Reason = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes DerivedNameVerdict exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *DerivedNameVerdict) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "kind", "usable", "bound", "reason"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
+// MarshalJSON encodes NameBoundOutput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t NameBoundOutput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if len(t.Names) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"names\":")
+		buf.WriteByte('[')
+		for i := range t.Names {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Names[i]
+			if enc, err := ev.MarshalJSON(); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes NameBoundOutput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *NameBoundOutput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "names":
+			t.Names = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem DerivedNameVerdict
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.Names = append(t.Names, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes NameBoundOutput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *NameBoundOutput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "names", "error"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -8337,6 +8659,281 @@ func (t *BoundaryEnvOverridesOutput) decodeCBOR(dec *cborDec) error {
 // check reads the map's own keys and does not descend.
 func (t *BoundaryEnvOverridesOutput) DecodeCBORStrict(data []byte) error {
 	if err := refuseUndeclaredCBORKeys(data, "overrides"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes NameBoundInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t NameBoundInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends NameBoundInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t NameBoundInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if t.Authored != false {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if t.Authored != false {
+		dst = appendCBORTextString(dst, "authored")
+		dst = appendCBORBool(dst, t.Authored)
+	}
+	dst = appendCBORTextString(dst, "proposed")
+	dst = appendCBORTextString(dst, t.Proposed)
+	return dst, nil
+}
+
+// DecodeCBOR decodes NameBoundInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *NameBoundInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *NameBoundInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "proposed":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Proposed = s
+			}
+		case "authored":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.Authored = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes NameBoundInput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *NameBoundInput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "proposed", "authored"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes DerivedNameVerdict as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t DerivedNameVerdict) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends DerivedNameVerdict's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t DerivedNameVerdict) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if t.Bound != nil {
+		n++
+	}
+	if t.Reason != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "kind")
+	dst = appendCBORTextString(dst, t.Kind)
+	if t.Bound != nil {
+		dst = appendCBORTextString(dst, "bound")
+		dst = appendCBORInt(dst, int64((*t.Bound)))
+	}
+	if t.Reason != "" {
+		dst = appendCBORTextString(dst, "reason")
+		dst = appendCBORTextString(dst, t.Reason)
+	}
+	dst = appendCBORTextString(dst, "usable")
+	dst = appendCBORBool(dst, t.Usable)
+	return dst, nil
+}
+
+// DecodeCBOR decodes DerivedNameVerdict from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *DerivedNameVerdict) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *DerivedNameVerdict) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "kind":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Kind = s
+			}
+		case "usable":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.Usable = v
+			}
+		case "bound":
+			{
+				var sv int
+				if v, err := dec.readInt(); err != nil {
+					return err
+				} else {
+					sv = int(v)
+				}
+				t.Bound = &sv
+			}
+		case "reason":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Reason = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes DerivedNameVerdict exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *DerivedNameVerdict) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "kind", "usable", "bound", "reason"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes NameBoundOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t NameBoundOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends NameBoundOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t NameBoundOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if t.Error != "" {
+		n++
+	}
+	if len(t.Names) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
+	if len(t.Names) != 0 {
+		dst = appendCBORTextString(dst, "names")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Names)))
+		for i := range t.Names {
+			ev := t.Names[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes NameBoundOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *NameBoundOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *NameBoundOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "names":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]DerivedNameVerdict, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev DerivedNameVerdict
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Names = s
+			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes NameBoundOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *NameBoundOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "names", "error"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

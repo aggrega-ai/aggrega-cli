@@ -382,7 +382,18 @@ func dispatchBoundaryScopeFR(
 	// parts are in hand right here, so composing from them is both cheaper and
 	// exact, and it is why this label's own prefix is a free choice rather than
 	// an echo of how the marker happens to be spelled.
-	frNodeCtx.LabelComponentID = labels.BoundaryFeatureComponentID(frInstance, splitBoundaryPath(key.BoundaryPath))
+	//
+	// How long that identity may be is the FR's own target's answer rather than a
+	// number the compiler holds, so the composition is settled against the engine
+	// this feature renders through: composed, put to the guest, shortened to
+	// whatever bound the guest returned, and put again until the guest accepts it.
+	// A guest that answers no such question accepts the composition as composed.
+	frComponentID, err := SettleComposedComponentIdentity(ctx, frEngine, labels.BoundaryFeatureScope,
+		fr.Spec.Capability, append(splitBoundaryPath(key.BoundaryPath), frInstance)...)
+	if err != nil {
+		return err
+	}
+	frNodeCtx.LabelComponentID = frComponentID
 	// That label value is a name the compiler derived, and it lands on every
 	// resource this feature's output carries — so it joins the injectivity check
 	// the names a guest declares go through. Two features whose identities reach
@@ -449,9 +460,11 @@ func dispatchBoundaryScopeFR(
 	// artifacts templates may reference was decided by the rules over those
 	// fields, ahead of this render). The
 	// returned EmittedFiles already carry their Intermediate flag for boundary-
-	// assembler routing. instanceLabel is "" so the boundary-disambiguated
-	// LabelComponentID set above stays the resource-naming basis (a per-instance
-	// label would collide across boundaries sharing an FR-instance name).
+	// assembler routing. The host and instance parts are both empty, so the
+	// identity composed above from the boundary path stays the resource-naming
+	// basis: a boundary-attached feature has no single host component to compose
+	// against, and an identity built from the instance alone would meet itself
+	// across two boundaries sharing one attachment name.
 	//
 	// The carrier is (this boundary, this attachment), passed as the two identities
 	// rather than derived from the synthetic node ID above: that string joins the
@@ -465,7 +478,7 @@ func dispatchBoundaryScopeFR(
 	// this render derives none, and the boundary-disambiguated value it carries
 	// was declared at the point it was minted above. Reading it here as well would
 	// declare one name twice for one derivation.
-	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "",
+	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "", "",
 		carrierProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 	if err != nil {

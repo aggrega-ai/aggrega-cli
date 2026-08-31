@@ -45,6 +45,15 @@ const ValidateNodeInputExport = "validate_node_input"
 // here, so the channel is a no-op for it and the host applies no overrides.
 const BoundaryEnvOverridesExport = "boundary_env_overrides"
 
+// NameBoundExport is the optional guest export this adapter drives to ask
+// whether a proposed component identity yields names the guest's target accepts.
+// A guest whose target bounds or restricts the names it accepts advertises it;
+// a guest whose describe() omits it is never invoked here, and every name the
+// host proposes is used as composed. It is deliberately absent from every
+// minimum-export rule: those are load-time requirements, and requiring this one
+// would refuse every provider plugin built before it existed.
+const NameBoundExport = "name_bound"
+
 // Engine renders one node through a provider Wasm guest, implementing the host
 // renderer.Provider and renderer.WorkloadSynthesizer interfaces. It resolves the
 // guest's bytes via lookup and loads them through the injected shared loader once
@@ -98,6 +107,7 @@ var (
 	_ renderer.WorkloadSynthesizer            = (*Engine)(nil)
 	_ renderer.ArtifactsEmitter               = (*Engine)(nil)
 	_ renderer.BoundaryEnvOverrider           = (*Engine)(nil)
+	_ renderer.NameBounder                    = (*Engine)(nil)
 	_ renderer.BoundaryAssemblyReporter       = (*Engine)(nil)
 	_ renderer.AssemblyNameAnnotationReporter = (*Engine)(nil)
 	_ renderer.CodecProvider                  = (*Engine)(nil)
@@ -740,6 +750,57 @@ func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []t
 		return nil, fmt.Errorf("wasmengine: decode boundary_env_overrides output: %w", err)
 	}
 	return out.Overrides, nil
+}
+
+// NameBound drives the guest's optional name_bound export to ask whether a
+// proposed component identity yields names its target accepts, returning the
+// guest's per-name-kind verdicts.
+//
+// It is advertised-only: a guest that does not declare the export in describe()
+// is never invoked, and this returns an empty output and no error — an empty
+// verdict list is an acceptance, so such a provider's names are settled exactly
+// as they were before the export existed. That guard is what makes the addition
+// a no-op for every shipped and third-party guest that has not implemented it,
+// and it is why the export must never join a minimum-export set: a minimum
+// export is a LOAD-time requirement, and requiring this one would stop every
+// existing provider plugin from loading at all.
+//
+// The guest answers with a constraint and never with a name it built. A name
+// travelling back across this boundary would put the host in the business of
+// carrying provider-specific names, which is the coupling asking the question
+// removes. AssemblerEngine embeds *Engine and inherits this method.
+func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (renderer.NameBoundOutput, error) {
+	desc, err := e.describe()
+	if err != nil {
+		return renderer.NameBoundOutput{}, err
+	}
+	if !advertisesExport(desc, NameBoundExport) {
+		return renderer.NameBoundOutput{}, nil
+	}
+
+	plugin, release, err := e.acquireInstance(ctx)
+	if err != nil {
+		return renderer.NameBoundOutput{}, err
+	}
+	defer release()
+
+	payload, err := in.MarshalJSON()
+	if err != nil {
+		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: marshal name_bound input: %w", err)
+	}
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, NameBoundExport, payload)
+	if err != nil {
+		return renderer.NameBoundOutput{}, err
+	}
+
+	var out renderer.NameBoundOutput
+	if err := out.UnmarshalJSON(raw); err != nil {
+		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: decode name_bound output: %w", err)
+	}
+	if err := wasm.GuestReturnedError(NameBoundExport, out.Error); err != nil {
+		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: %w", err)
+	}
+	return out, nil
 }
 
 // LinksCrossBoundary reports whether the guest advertises the cross-boundary

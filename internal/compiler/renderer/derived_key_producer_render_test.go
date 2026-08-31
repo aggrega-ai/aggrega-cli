@@ -227,69 +227,68 @@ func TestRenderAll_TwoBoundaryFeaturesWithNoSharedNameRender(t *testing.T) {
 	}
 }
 
-// TestRenderAll_TwoAttachmentsOnOneComponentDerivingOneIdentityHalts is the
-// per-component half. Two attachments on ONE component are two things the author
-// wrote under two keys, each with its own FeatureRecipe render and its own
-// generated resources — so where the identity derived for each is one string,
-// one attachment's resources are named after the other's and the merged output
-// carries one of the two.
+// TestRenderAll_TwoAttachmentsOnOneComponentDifferingInARefusedCharacterSeparate
+// is the per-component half. Two attachments on ONE component are two things the
+// author wrote under two keys, each with its own FeatureRecipe render and its own
+// generated resources — so each needs an identity of its own, or one attachment's
+// resources are named after the other's and the merged output carries one of the
+// two.
 //
 // The pair below differs only in a character a label value may not carry, which
-// is the reachable way to force it: the per-component identity is the attachment
-// key written into the label alphabet by substitution, and substitution is
-// many-to-one.
+// is where an identity written into the label alphabet by substitution ran two
+// keys together: substitution is many-to-one. The identity is now composed
+// through an encoding that writes such a character out instead of folding it onto
+// a hyphen, so the two keys reach two identities and the build completes.
 //
-// The halt has to name BOTH attachments, because the component they sit on is
-// the same one and says nothing about which two keys to separate.
-func TestRenderAll_TwoAttachmentsOnOneComponentDerivingOneIdentityHalts(t *testing.T) {
+// The expected identities are written out by hand rather than composed here: a
+// value the composition produced would agree with the composition whatever it
+// did.
+func TestRenderAll_TwoAttachmentsOnOneComponentDifferingInARefusedCharacterSeparate(t *testing.T) {
 	t.Parallel()
 
 	res, err := runHostLabelRenderMulti(map[string][]string{
-		"alpha": {hostFoldingInstanceA, hostFoldingInstanceB},
-	}, hostLabelArtifactsFR())
-	if err == nil {
-		t.Fatalf("expected a halt, got %d files", len(res.Files))
-	}
-	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
-		t.Fatalf("expected ErrDerivedKeyCollision, got: %v", err)
-	}
-	findings := derivedNameFindings(t, err)
-	if len(findings) != 2 {
-		t.Fatalf("expected one finding per contributing attachment, got %d: %v", len(findings), findings)
-	}
-	whole := strings.Join(findings, "\n")
-	for _, want := range []string{
-		`key space "` + hostComponentIDSpace + `"`,
-		`"` + hostFoldedComponentID + `"`,
-		`"` + hostFoldingInstanceA + `"`,
-		`"` + hostFoldingInstanceB + `"`,
-	} {
-		if !strings.Contains(whole, want) {
-			t.Errorf("the findings do not carry %q\ngot: %v", want, findings)
-		}
-	}
-}
-
-// TestRenderAll_TwoAttachmentsOnOneComponentOutsideTheFoldRender is that halt's
-// negative direction: two attachments on one component whose keys differ outside
-// the fold still render, so the case above is a collision being refused rather
-// than a second attachment being refused.
-func TestRenderAll_TwoAttachmentsOnOneComponentOutsideTheFoldRender(t *testing.T) {
-	t.Parallel()
-
-	res, err := runHostLabelRenderMulti(map[string][]string{
-		"alpha": {hostFoldingInstanceB, hostDistinctInstance},
+		"alpha": {hostRefusedCharInstance, hostPlainInstance},
 	}, hostLabelArtifactsFR())
 	if err != nil {
 		t.Fatalf("expected the build to complete, got: %v", err)
 	}
 	bodies := strings.Join(bodiesOf(res), "\n")
 	for _, want := range []string{
-		"component-id: " + hostFoldingInstanceB,
-		"component-id: " + hostDistinctInstance,
+		"component-id: " + hostIdentityAlphaRefusedChar,
+		"component-id: " + hostIdentityAlphaPlain,
 	} {
 		if !strings.Contains(bodies, want) {
-			t.Errorf("emitted output missing %q — the derived identity is not reaching the bytes, so the halt above would be checking a name nothing emits\n--- bodies ---\n%s", want, bodies)
+			t.Errorf("emitted output missing %q — the two keys have not reached two identities\n--- bodies ---\n%s", want, bodies)
+		}
+	}
+	// The value the pair ran together into must not be an identity any more:
+	// reaching it is the collision this composition removes rather than reports.
+	if strings.Contains(bodies, "component-id: "+hostSubstitutedComponentID+"\n") {
+		t.Errorf("emitted output still carries the run-together value %q as an identity\n--- bodies ---\n%s", hostSubstitutedComponentID, bodies)
+	}
+}
+
+// TestRenderAll_TwoAttachmentsOnOneComponentReachTwoIdentities is the ordinary
+// direction: two attachments on one component whose keys differ in a character
+// the alphabet admits reach two identities and render, so the case above is a
+// separation being demonstrated rather than a second attachment being admitted
+// by accident.
+func TestRenderAll_TwoAttachmentsOnOneComponentReachTwoIdentities(t *testing.T) {
+	t.Parallel()
+
+	res, err := runHostLabelRenderMulti(map[string][]string{
+		"alpha": {hostPlainInstance, hostDistinctInstance},
+	}, hostLabelArtifactsFR())
+	if err != nil {
+		t.Fatalf("expected the build to complete, got: %v", err)
+	}
+	bodies := strings.Join(bodiesOf(res), "\n")
+	for _, want := range []string{
+		"component-id: " + hostIdentityAlphaPlain,
+		"component-id: " + hostIdentityAlphaDistinct,
+	} {
+		if !strings.Contains(bodies, want) {
+			t.Errorf("emitted output missing %q — the composed identity is not reaching the bytes\n--- bodies ---\n%s", want, bodies)
 		}
 	}
 }

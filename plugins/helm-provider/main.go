@@ -65,6 +65,12 @@ func descriptor() aggrega.PluginDescriptor {
 				Stability:     "experimental",
 				Description:   "renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests",
 			},
+			{
+				Name:         "name_bound",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "reports whether a proposed component identity yields a release name and a component-id label value this target accepts, and how short it would have to be",
+			},
 		},
 		Contract: &aggrega.ProviderContract{
 			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
@@ -113,6 +119,28 @@ func renderNode() int32 {
 	}
 
 	encoded, err := out.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// nameBound answers whether a proposed component identity yields names this
+// target accepts. It reports a constraint — usable, or bounded to a shorter
+// length, with the target's own reason — and never a name of its own: a name
+// built here and returned would put the compiler back in the business of
+// carrying names for a target it knows nothing about.
+//
+//go:wasmexport name_bound
+func nameBound() int32 {
+	var in rendercore.NameBoundInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	encoded, err := helmcore.NameBoundOutput(in.Proposed).MarshalJSON()
 	if err != nil {
 		pdk.SetError(err)
 		return 1

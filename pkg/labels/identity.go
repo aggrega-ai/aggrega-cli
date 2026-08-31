@@ -4,23 +4,26 @@
 package labels
 
 import (
-	"fmt"
 	"strings"
 	"unicode/utf8"
 )
 
 // reservedScopePrefixes are the openings a composed identity is written behind,
-// listed once so that both the composition and whatever refuses an authored
-// identity read one set.
+// read from the scopes that write them so that both the composition and whatever
+// refuses an authored identity work from one set.
 //
-// The set exists rather than the single constant because it is the thing a
-// refusal has to read: a composed identity opens with one of these followed by
-// the encoding's join, and an authored identity spelling that opening would be
-// indistinguishable from a composed one. Naming the members here — rather than
-// letting a refusal spell them again — is what keeps the two sides from agreeing
-// on the day the refusal is written and drifting afterwards, which for an
-// identity space means an authored name silently taking a composed name's place.
-var reservedScopePrefixes = []string{boundaryFeatureIDPrefix}
+// The set exists rather than a single constant because it is the thing a refusal
+// has to read: a composed identity opens with one of these followed by the
+// encoding's join, and an authored identity spelling that opening would be
+// indistinguishable from a composed one. Reading the members off the scopes —
+// rather than letting a refusal spell them again — is what keeps the two sides
+// from agreeing on the day the refusal is written and drifting afterwards, which
+// for an identity space means an authored name silently taking a composed name's
+// place. A scope added to the composition is refused here in the same act.
+var reservedScopePrefixes = []string{
+	BoundaryFeatureScope.prefix,
+	AttachmentScope.prefix,
+}
 
 // ComponentIdentityDefect names what stops a string from serving as the
 // component identity every resource a node emits is stamped with.
@@ -35,9 +38,6 @@ type ComponentIdentityDefect int
 const (
 	// ComponentIdentityUsable is the absence of a defect.
 	ComponentIdentityUsable ComponentIdentityDefect = iota
-
-	// ComponentIdentityTooLong is an identity longer than a label value may be.
-	ComponentIdentityTooLong
 
 	// ComponentIdentityCharacterNotAdmitted is an identity carrying a character
 	// a label value does not admit.
@@ -60,12 +60,13 @@ const (
 // [ComponentIdentityReservedOpening], whose requirement names the opening that
 // was matched and so belongs to the occurrence rather than to the class.
 //
-// The length is read from the bound itself rather than typed out, so the
-// sentence cannot come to disagree with the rule it describes.
+// No requirement here states a LENGTH, and the absence is the design rather than
+// an omission. How long a name may be is a property of the target it is written
+// for, so it is answered by the guest that renders for that target and reported
+// with that target's own reason — not stated here, where a number would be one
+// target's limit imposed on every target.
 func (d ComponentIdentityDefect) Requirement() string {
 	switch d {
-	case ComponentIdentityTooLong:
-		return fmt.Sprintf("be at most %d characters", k8sLabelValueMaxLength)
 	case ComponentIdentityCharacterNotAdmitted:
 		return "use only letters, digits, '-', '_' and '.'"
 	case ComponentIdentityEdgeNotAlphanumeric:
@@ -107,18 +108,18 @@ func InspectComponentIdentity(identity string) (ComponentIdentityDefect, string)
 	return labelValueDefect(identity), ""
 }
 
-// labelValueDefect reports how identity fails the Kubernetes label-value rules,
-// or [ComponentIdentityUsable] where it fails none.
+// labelValueDefect reports how identity fails the alphabet and edge rules of a
+// label value, or [ComponentIdentityUsable] where it fails neither.
 //
-// The length is measured in bytes, which is what the target's own limit counts
-// and what [SanitizeForK8sLabelValue] truncates by, so a value this admits is a
-// value that function would have left alone.
+// It asks nothing about LENGTH. How long a name may be belongs to the target the
+// name is written for, and this package has no target: the answer travels from
+// the guest that renders for one, which is what keeps a single target's number
+// from being applied to every target. What is left here is the character set and
+// the edge rule, which are properties of the identity alphabet the composition
+// itself writes into.
 func labelValueDefect(identity string) ComponentIdentityDefect {
 	if identity == "" {
 		return ComponentIdentityUsable
-	}
-	if len(identity) > k8sLabelValueMaxLength {
-		return ComponentIdentityTooLong
 	}
 	for _, r := range identity {
 		if !isPermittedLabelChar(r) {
@@ -144,7 +145,7 @@ func labelValueDefect(identity string) ComponentIdentityDefect {
 // composition places between its parts.
 func reservedOpeningOf(identity string) (string, bool) {
 	for _, prefix := range reservedScopePrefixes {
-		opening := boundaryFeatureIDEncoding.Segment(prefix) + boundaryFeatureIDJoin
+		opening := componentIdentityEncoding.Segment(prefix) + componentIdentityJoin
 		if strings.HasPrefix(identity, opening) {
 			return opening, true
 		}

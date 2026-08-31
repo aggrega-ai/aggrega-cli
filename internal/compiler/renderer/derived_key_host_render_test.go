@@ -18,24 +18,30 @@ import (
 
 // The component-identity label value is a name the COMPILER derives rather than
 // one a provider guest declares, and these cases are its end-to-end proof: it
-// reaches the same injectivity check a declared name does, it halts naming both
-// identities, and the shapes that must NOT halt still render.
+// reaches the same injectivity check a declared name does, it reaches the
+// emitted bytes, and every attachment shape an author may legitimately write
+// arrives at an identity of its own.
 //
 // The attachment-instance pairs below differ only in a character the label
-// alphabet does not admit, which is what makes them fold onto one value — the
-// realistic shape, since an author picking `cache a` and `cache-a` for two
-// attachments has written two names they can tell apart and the target cannot.
+// alphabet does not admit — the realistic shape, since an author picking
+// `cache a` and `cache-a` for two attachments has written two names they can
+// tell apart and the target cannot.
 const (
-	hostFoldingInstanceA = "cache a"
-	hostFoldingInstanceB = "cache-a"
-	// The folded value both of the above reach. Written out by hand rather than
-	// computed from the sanitiser: a value the sanitiser produced would agree
-	// with the sanitiser whatever the sanitiser did.
-	hostFoldedComponentID = "cache-a"
-	// The near miss: one character apart from the pair above and outside the
-	// fold, so the negative direction is a real negative rather than a guard
-	// that refuses every attachment.
+	hostRefusedCharInstance = "cache a"
+	hostPlainInstance       = "cache-a"
+	// The value BOTH of the above once arrived at, kept as the value neither may
+	// arrive at now. Written out by hand rather than computed from any
+	// derivation: a value a derivation produced would agree with that derivation
+	// whatever it did.
+	hostSubstitutedComponentID = "cache-a"
+	// The near miss: one admitted character apart from the pair above, so a case
+	// asserting separation is a real separation rather than a guard refusing
+	// every attachment.
 	hostDistinctInstance = "cache-b"
+	// An attachment named exactly after the component hosting it. The identity
+	// composed for it has to be distinct from the host's own, which the host
+	// component's authored identity is carried through as.
+	hostSelfNamedInstance = "alpha"
 
 	hostLabelFeatureType = "core/observability/cache:1.0.0"
 
@@ -43,6 +49,25 @@ const (
 	// identity into, written out here rather than read from the compiler: a
 	// fixture reading the value under test agrees with it whatever it is.
 	hostComponentIDSpace = "component-id"
+)
+
+// The identities the attachment instances above reach on each host component,
+// written out by hand for the same reason every other expected value here is: a
+// value computed from the composition would agree with the composition whatever
+// it did.
+//
+// Each opens with the per-component scope and carries the identity of the
+// component the attachment sits on. The host is what separates one instance name
+// attached to two components, which is a shape an author may legitimately write
+// — and a cascade minting one instance name across many components by design
+// gives an author no way to write anything else.
+const (
+	hostIdentityAlphaRefusedChar = "cfr--alpha--cache-zx000020a"
+	hostIdentityAlphaPlain       = "cfr--alpha--cache-a"
+	hostIdentityAlphaDistinct    = "cfr--alpha--cache-b"
+	hostIdentityBetaPlain        = "cfr--beta--cache-a"
+	hostIdentityBetaDistinct     = "cfr--beta--cache-b"
+	hostIdentityAlphaSelfNamed   = "cfr--alpha--alpha"
 )
 
 // hostLabelEngine renders per-node output and places artifacts, and declares a
@@ -223,54 +248,97 @@ func hostLabelArtifactsFR() types.FeatureRecipeSpec {
 	}
 }
 
-// TestRenderAll_TwoAttachmentsDerivingOneComponentIDLabelHalt is the positive
-// direction, end to end. Two attachments on two different components carry
-// instance names that differ by one character the label alphabet does not admit,
-// so the identity the compiler derives for each is the same string — and the
-// resources each attachment's FeatureRecipe places are named and labelled from
-// it. The build halts naming the key space, the folded name and both components,
-// which is everything a reader needs to know which two things to rename.
-func TestRenderAll_TwoAttachmentsDerivingOneComponentIDLabelHalt(t *testing.T) {
+// TestRenderAll_OneAttachmentNameOnTwoComponentsStillCollidesOnTheOutputPath
+// records the one shape where a single instance name attached to two components
+// in ONE boundary does not build, and it records WHICH rule refuses it.
+//
+// The identity is no longer the obstacle: the two attachments reach two composed
+// identities, so the derived-name rule passes. What refuses them is a different
+// and older rule — an artifacts-bearing attachment places its files under
+// features/<instance>/ at the artifact's own author-resolved name, so two
+// components sharing an instance name write one output path. That path carries
+// no component identity and this derivation does not put one there.
+//
+// It is asserted rather than left to be rediscovered, because a case that merely
+// failed would read as this derivation not working. The assertion is on the
+// output-path rule specifically: were that the derived-name rule instead, the two
+// identities would have met and the composition would be wrong.
+//
+// The workload-bearing shape of the same authoring — one instance name on two
+// components — DOES build, because a synthesised workload's file names carry the
+// identity. That case is proven end to end through the real provider guest
+// beside the resource-generation case in the orchestrator suite.
+func TestRenderAll_OneAttachmentNameOnTwoComponentsStillCollidesOnTheOutputPath(t *testing.T) {
 	t.Parallel()
 
 	res, err := runHostLabelRender(map[string]string{
-		"alpha": hostFoldingInstanceA,
-		"beta":  hostFoldingInstanceB,
+		"alpha": hostPlainInstance,
+		"beta":  hostPlainInstance,
 	}, hostLabelArtifactsFR())
 	if err == nil {
-		t.Fatalf("expected a halt, got %d files", len(res.Files))
+		t.Fatalf("expected the output-path rule to refuse this pair, got %d files", len(res.Files))
 	}
-	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
-		t.Fatalf("expected ErrDerivedKeyCollision, got: %v", err)
+	if errors.Is(err, renderer.ErrDerivedKeyCollision()) {
+		t.Fatalf("the two attachments met on their derived identity, so the composition is not separating them: %v", err)
 	}
-	findings := derivedNameFindings(t, err)
-	if len(findings) != 2 {
-		t.Fatalf("expected one finding per contributor, got %d: %v", len(findings), findings)
-	}
-	whole := strings.Join(findings, "\n")
+	// The refusal names the shared output path and both contributors, which is
+	// what tells an author which two things to separate.
+	msg := err.Error()
 	for _, want := range []string{
-		`key space "component-id"`,
-		`"` + hostFoldedComponentID + `"`,
-		`derived by component "alpha"`,
-		`derived by component "beta"`,
+		"features/" + hostPlainInstance + "/",
+		"alpha",
+		"beta",
 	} {
-		if !strings.Contains(whole, want) {
-			t.Errorf("the findings do not carry %q\ngot: %v", want, findings)
+		if !strings.Contains(msg, want) {
+			t.Errorf("the refusal does not carry %q\ngot: %v", want, msg)
 		}
 	}
 }
 
-// TestRenderAll_TheSameAttachmentsWithoutTheFoldRender is that halt's negative
-// direction, and it carries the second half of the proof. The same pair of
-// components with attachment names one character apart and outside the fold
-// renders, and the emitted bytes carry BOTH derived identities — so the check is
-// over names that genuinely reach the output, and the green above is not a guard
-// refusing every attachment.
-func TestRenderAll_TheSameAttachmentsWithoutTheFoldRender(t *testing.T) {
+// TestRenderAll_AnAttachmentNamedAfterItsHostReachesItsOwnIdentity pins the case
+// the composition's own inputs exist to serve: an attachment named exactly after
+// the component hosting it.
+//
+// The host component's identity is the one its author wrote, carried through
+// unmodified; the attachment's is composed under a scope no authored identity may
+// open with. So the two can never meet however alike the names an author chose,
+// and both reach the emitted bytes.
+func TestRenderAll_AnAttachmentNamedAfterItsHostReachesItsOwnIdentity(t *testing.T) {
 	t.Parallel()
 
 	res, err := runHostLabelRender(map[string]string{
-		"alpha": hostFoldingInstanceB,
+		"alpha": hostSelfNamedInstance,
+	}, hostLabelArtifactsFR())
+	if err != nil {
+		t.Fatalf("expected the build to complete, got: %v", err)
+	}
+	bodies := strings.Join(bodiesOf(res), "\n")
+	for _, want := range []string{
+		// The host's own render stamps the identity its author wrote.
+		"component-id: alpha\n",
+		// The attachment's render stamps the composed one.
+		"component-id: " + hostIdentityAlphaSelfNamed + "\n",
+	} {
+		if !strings.Contains(bodies, want) {
+			t.Errorf("emitted output missing %q — an attachment named after its host has not reached an identity of its own\n--- bodies ---\n%s", want, bodies)
+		}
+	}
+	if hostIdentityAlphaSelfNamed == "alpha" {
+		t.Fatal("the fixture states the composed identity as the host's own, so this case asserts nothing")
+	}
+}
+
+// TestRenderAll_TwoComponentsWithDifferentAttachmentNamesReachTwoIdentities is
+// the ordinary shape, and it carries the second half of the proof: two
+// components with attachment names one admitted character apart render, and the
+// emitted bytes carry BOTH composed identities — so the derivation is over names
+// that genuinely reach the output rather than over an intermediate the build
+// discards.
+func TestRenderAll_TwoComponentsWithDifferentAttachmentNamesReachTwoIdentities(t *testing.T) {
+	t.Parallel()
+
+	res, err := runHostLabelRender(map[string]string{
+		"alpha": hostPlainInstance,
 		"beta":  hostDistinctInstance,
 	}, hostLabelArtifactsFR())
 	if err != nil {
@@ -278,30 +346,34 @@ func TestRenderAll_TheSameAttachmentsWithoutTheFoldRender(t *testing.T) {
 	}
 	bodies := strings.Join(bodiesOf(res), "\n")
 	for _, want := range []string{
-		"component-id: " + hostFoldingInstanceB,
-		"component-id: " + hostDistinctInstance,
+		"component-id: " + hostIdentityAlphaPlain,
+		"component-id: " + hostIdentityBetaDistinct,
 	} {
 		if !strings.Contains(bodies, want) {
-			t.Errorf("emitted output missing %q — the derived identity is not reaching the bytes, so the halt above would be checking a name nothing emits\n--- bodies ---\n%s", want, bodies)
+			t.Errorf("emitted output missing %q — the composed identity is not reaching the bytes\n--- bodies ---\n%s", want, bodies)
 		}
 	}
 }
 
 // TestRenderAll_SourceOnlyAttachmentsDerivingOneLabelRender pins the bound the
-// declaration is deliberately narrowed to. The same folding pair of attachment
-// names on a source-only FeatureRecipe renders: a sourced render reads the
-// unmodified node context, so the identity derived from the instance name lands
-// on nothing emitted, and refusing a build over a name in no output would be
-// refusing input the author wrote correctly.
+// declaration is deliberately narrowed to. A source-only FeatureRecipe renders:
+// a sourced render reads the unmodified node context, so the identity composed
+// for the attachment lands on nothing emitted, and refusing a build over a name
+// in no output would be refusing input the author wrote correctly.
 //
 // Remove the crossing condition on the declaration and this case halts, which is
 // what makes the narrowing asserted rather than assumed.
+//
+// The assertion names the COMPOSED identities rather than any earlier spelling,
+// because those are the values this render would stamp if the narrowing were
+// wrong — a check for a value nothing can produce would pass whatever the
+// narrowing did.
 func TestRenderAll_SourceOnlyAttachmentsDerivingOneLabelRender(t *testing.T) {
 	t.Parallel()
 
 	res, err := runHostLabelRender(map[string]string{
-		"alpha": hostFoldingInstanceA,
-		"beta":  hostFoldingInstanceB,
+		"alpha": hostRefusedCharInstance,
+		"beta":  hostPlainInstance,
 	}, types.FeatureRecipeSpec{
 		Capability: "hostlabel",
 		Implements: hostLabelFeatureType,
@@ -311,10 +383,16 @@ func TestRenderAll_SourceOnlyAttachmentsDerivingOneLabelRender(t *testing.T) {
 		t.Fatalf("expected the build to complete, got: %v", err)
 	}
 	// The host component's own identity is what a sourced attachment render
-	// stamps, which is the reading that makes the derived value irrelevant here.
+	// stamps, which is the reading that makes the composed value irrelevant here.
 	bodies := strings.Join(bodiesOf(res), "\n")
-	if strings.Contains(bodies, "component-id: "+hostFoldedComponentID) {
-		t.Errorf("a source-only attachment render stamped the derived identity; the narrowing this case pins is wrong\n--- bodies ---\n%s", bodies)
+	for _, unwanted := range []string{
+		hostIdentityAlphaRefusedChar,
+		hostIdentityBetaPlain,
+		hostSubstitutedComponentID + "\n",
+	} {
+		if strings.Contains(bodies, "component-id: "+unwanted) {
+			t.Errorf("a source-only attachment render stamped %q; the narrowing this case pins is wrong\n--- bodies ---\n%s", unwanted, bodies)
+		}
 	}
 }
 
@@ -328,14 +406,14 @@ func TestRenderAll_ComponentIDDeclarationDoesNotChangeRenderedBytes(t *testing.T
 	t.Parallel()
 
 	first, err := runHostLabelRender(map[string]string{
-		"alpha": hostFoldingInstanceB,
+		"alpha": hostPlainInstance,
 		"beta":  hostDistinctInstance,
 	}, hostLabelArtifactsFR())
 	if err != nil {
 		t.Fatalf("first render: %v", err)
 	}
 	second, err := runHostLabelRender(map[string]string{
-		"alpha": hostFoldingInstanceB,
+		"alpha": hostPlainInstance,
 		"beta":  hostDistinctInstance,
 	}, hostLabelArtifactsFR())
 	if err != nil {

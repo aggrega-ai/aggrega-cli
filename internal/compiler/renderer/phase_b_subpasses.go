@@ -525,7 +525,7 @@ func phaseB6(
 		// nothing makes one's output names distinct from the other's or from the
 		// node's own. It carries this render's presentation too, so the rule declared
 		// over the carrier's facts can be asked inside the walk that records them.
-		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Instance,
+		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, nodeID, item.Instance,
 			carrierProductsOf(state).attachmentOnNode(nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 		if err != nil {
@@ -781,8 +781,18 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // component callers flatten them under features/<instance>/, while the
 // boundary-scope caller routes them by the Intermediate flag.
 //
+// hostComponentID and instanceLabel are the two parts a per-component
+// attachment's identity is composed from: the identity of the component the
+// feature is attached to, and the name it is attached under. Both are needed,
+// and the host is the one that separates a single instance name attached to
+// several components — those attachments emit different resources, so they need
+// different identities, and an author who names them alike has written nothing
+// wrong. A boundary-scope caller supplies neither, because the identity its
+// render carries is composed from the boundary path instead and is set on the
+// context before this is reached.
+//
 // The second return value is the component-identity label value this render
-// derived from instanceLabel, for the caller to declare into its own
+// composed from those parts, for the caller to declare into its own
 // derived-name accumulator — the caller holds that accumulator and this function
 // does not, and the value is reported rather than re-derived at the caller so
 // the derivation itself stays at one site. It is empty for a render that derived
@@ -805,6 +815,7 @@ func renderFeatureRecipeFiles(
 	frNodeCtx NodeRenderContext,
 	frValues map[string]any,
 	resolvedSrc any,
+	hostComponentID string,
 	instanceLabel string,
 	hydrated attachmentCarrier,
 	slots types.OrderedMap[types.AttachmentSlot],
@@ -854,10 +865,30 @@ func renderFeatureRecipeFiles(
 	// reads the unmodified context above, so the value derived here reaches
 	// nothing emitted, and offering it would invite a refusal over a name in no
 	// output.
+	//
+	// The identity is COMPOSED from the host component and the instance rather
+	// than written out of the instance alone, and the host is what makes it an
+	// identity of the attachment rather than of the name it was attached under.
+	// One name attached to several components is a shape an author may write —
+	// and a cascade that mints one instance name across many components by design
+	// gives an author no way to write anything else — so the host has to be part
+	// of what separates them. It also separates an attachment named exactly after
+	// the component hosting it, which composes under a scope no authored identity
+	// may open with and so cannot meet the host's own.
+	// How long that identity may be is the target's answer rather than a number
+	// the compiler holds, so the composition is settled against the engine this
+	// attachment renders through: composed, put to the guest, shortened to whatever
+	// bound the guest returned, and put again until the guest accepts it. A guest
+	// that answers no such question accepts the composition as composed.
 	synthNodeCtx := frNodeCtx
 	derivedComponentID := ""
 	if instanceLabel != "" {
-		synthNodeCtx.LabelComponentID = labels.SanitizeForK8sLabelValue(instanceLabel)
+		settled, err := SettleComposedComponentIdentity(ctx, frEngine, labels.AttachmentScope,
+			fr.Spec.Capability, hostComponentID, instanceLabel)
+		if err != nil {
+			return nil, "", err
+		}
+		synthNodeCtx.LabelComponentID = settled
 		if hasWorkload || hasArtifacts {
 			derivedComponentID = synthNodeCtx.LabelComponentID
 		}

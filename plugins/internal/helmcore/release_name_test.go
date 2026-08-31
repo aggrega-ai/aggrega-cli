@@ -156,8 +156,12 @@ func TestReleaseNameIsRecoverable(t *testing.T) {
 func TestReleaseNameForFeatureEmittedNode(t *testing.T) {
 	t.Parallel()
 	nodeCtx := rendercore.NodeRenderContext{
-		NodeID:           "<boundary-fr>:bridge@cluster",
-		LabelComponentID: labels.BoundaryFeatureComponentID("bridge", []string{"cluster"}),
+		NodeID: "<boundary-fr>:bridge@cluster",
+		// The bound is the one this target's own answer carries for a component-id
+		// label value, stated by the caller because the composition holds no bound of
+		// its own: how long an identity may be belongs to the target, and the compiler
+		// learns it by asking rather than by holding a number.
+		LabelComponentID: labels.ComposeComponentIdentity(labels.BoundaryFeatureScope, 63, "cluster", "bridge"),
 	}
 	if got, want := releaseName(nodeCtx), "bfr-zh-cluster-zh-bridge"; got != want {
 		t.Errorf("release name %q, want %q", got, want)

@@ -1424,6 +1424,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				nodeCtx.UnsupportedFieldSink)
 		}
 
+		// Advertised-only refusal of an authored identity the node's target will
+		// not accept. This node's identity is the one its author wrote, so it is
+		// refused rather than shortened: it is the deployed name of the workload,
+		// and the person able to change it is the person who wrote it. The refusal
+		// therefore names the Aggregate field they wrote, and carries the target's
+		// own reason for refusing, which only the guest knows. A provider whose
+		// guest answers no such question accepts every name, exactly as before.
+		if err := SettleAuthoredComponentIdentity(ctx, engine, nodeID,
+			fmt.Sprintf("spec.components.%s", nodeID)); err != nil {
+			return nil, err
+		}
+
 		// Advertised-only per-node input validation. When the resolved provider's
 		// guest declares the optional input-validation export, run it once here —
 		// after the capability gate, before any Phase B render pass — so a provider

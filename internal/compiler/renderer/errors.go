@@ -837,3 +837,55 @@ var errArtifactsLibraryFileEscapesKey = cerrors.Register("compiler-renderer/arti
 	ShortCode: "E0252",
 	Message:   "artifacts-library bundle file name leaves the artifacts key its output is nested under",
 })
+
+// ErrComponentIdentityTargetRefuses is the Loud Guardrail halt raised when a
+// component identity an AUTHOR wrote yields a name the target it renders for
+// will not accept, and no shorter name would help either.
+//
+// It is the refusal half of the split between a name a person wrote and a name
+// the compiler composed. A composed identity is shortened until the target
+// accepts it, because its parts come from several authoring domains and no
+// single author can see the length it reaches. An authored identity is not
+// shortened: it is the deployed name of the workload, so rewriting it would
+// rename every resource in every existing output, and the person who can fix it
+// is the person who wrote it. So this halt names the field they wrote and the
+// target's own reason for refusing, and leaves the name alone.
+//
+// The reason and the kind of name it covers both come from the guest that
+// renders for the target, verbatim: what a target accepts is that target's
+// knowledge, and restating it here would put a second copy of it in the
+// compiler, where it would drift from the check that actually refuses.
+// Category: CATALOG_ERROR — the offending value is a name in an authored
+// document. Match with errors.Is(err, ErrComponentIdentityTargetRefuses()).
+func ErrComponentIdentityTargetRefuses() error { return errComponentIdentityTargetRefuses }
+
+var errComponentIdentityTargetRefuses = cerrors.Register("compiler-renderer/component-identity-target-refuses", cerrors.Meta{
+	ShortCode: "E0263",
+	Message:   "the target will not accept a name derived from this component's authored identity: rename the component",
+})
+
+// ErrNameBoundNotConverging is the Loud Guardrail halt raised when a provider
+// guest keeps refusing the names the host composes for it and never accepts one.
+//
+// Shortening and refusal converge by design: the host proposes an identity, the
+// guest bounds it, the host composes a shorter one, and the guest is asked
+// again. A second refusal is the MECHANISM rather than a fault — shortening to a
+// length can land on a character the target's grammar refuses in the position it
+// landed in, and the guest saying so with a smaller bound is how host-generic
+// shortening and target-specific grammar agree without the host learning the
+// grammar. What is a fault is a guest that never stops: one that returns a bound
+// it then refuses, or that walks a bound down by nothing.
+//
+// The build halts and names the guest rather than truncating the name to
+// something the guest never accepted. A silently truncated name would be a name
+// no target agreed to, stamped on real resources, with nothing in the output
+// recording that the agreement failed — and the defect would then be found at
+// apply time, in the deployment, rather than here in the build that produced it.
+// Category: TRANSLATION_ERROR — the fault is in the plugin's answer, not in
+// anything an author wrote. Match with errors.Is(err, ErrNameBoundNotConverging()).
+func ErrNameBoundNotConverging() error { return errNameBoundNotConverging }
+
+var errNameBoundNotConverging = cerrors.Register("compiler-renderer/name-bound-not-converging", cerrors.Meta{
+	ShortCode: "E0264",
+	Message:   "provider guest never accepted a component identity the compiler composed for it",
+})

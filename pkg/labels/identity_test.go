@@ -25,10 +25,15 @@ func TestInspectComponentIdentity_ReportsEachRuleAnIdentityCanFail(t *testing.T)
 		{"a single character", "a", ComponentIdentityUsable},
 		{"a digit", "0", ComponentIdentityUsable},
 		{"the empty string, which a label value may be", "", ComponentIdentityUsable},
-		{"exactly at the length bound", strings.Repeat("a", k8sLabelValueMaxLength), ComponentIdentityUsable},
 
-		{"one character over the bound", strings.Repeat("a", k8sLabelValueMaxLength+1), ComponentIdentityTooLong},
-		{"far over the bound", strings.Repeat("a", 200), ComponentIdentityTooLong},
+		// Length is asked of the TARGET, not here. An identity of any length is
+		// usable as far as this predicate is concerned, because how long a name may
+		// be belongs to the target it is written for and reaches the compiler as a
+		// guest's answer. These two rows pin that: a name well past any target's
+		// limit is not refused here, so a length rule reintroduced into this package
+		// fails them rather than passing unnoticed.
+		{"far longer than any target admits", strings.Repeat("a", 200), ComponentIdentityUsable},
+		{"long and carrying a refused character", strings.Repeat("a", 200) + ":1", ComponentIdentityCharacterNotAdmitted},
 
 		{"a character the target does not admit", "web:1", ComponentIdentityCharacterNotAdmitted},
 		{"a path separator", "a/b", ComponentIdentityCharacterNotAdmitted},
@@ -50,7 +55,7 @@ func TestInspectComponentIdentity_ReportsEachRuleAnIdentityCanFail(t *testing.T)
 		// these breaks a label rule as well, and reporting that rule instead would
 		// send the author to make an edit that cannot save the name.
 		{"reserved and closing on a hyphen", "bfr--web-", ComponentIdentityReservedOpening},
-		{"reserved and over the length bound", "bfr--" + strings.Repeat("a", 200), ComponentIdentityReservedOpening},
+		{"reserved and very long", "bfr--" + strings.Repeat("a", 200), ComponentIdentityReservedOpening},
 		{"reserved and carrying a refused character", "bfr--web:1", ComponentIdentityReservedOpening},
 
 		// The prefix without the join is an ordinary name. Reserving the prefix on
@@ -92,31 +97,78 @@ func TestInspectComponentIdentity_ReportsEachRuleAnIdentityCanFail(t *testing.T)
 // TestInspectComponentIdentity_AdmitsEveryIdentityTheCompositionProduces is the
 // clause that catches a refusal written wider than the authoring surface.
 //
-// It runs the predicate over what [BoundaryFeatureComponentID] itself composes.
-// Every one of those is a valid label value by construction, so the label half
-// must admit all of them — and every one opens with the reserved sequence, so
-// the reserved half must refuse all of them. A predicate failing the first has
-// been written stricter than the target's rules; one failing the second would
-// leave the reservation unenforced against the very shape it exists for.
+// It runs the predicate over what [ComposeComponentIdentity] itself composes,
+// under EVERY scope it composes under. Every one of those is a valid label value
+// by construction, so the label half must admit all of them — and every one
+// opens with a reserved sequence, so the reserved half must refuse all of them.
+// A predicate failing the first has been written stricter than the composition;
+// one failing the second would leave the reservation unenforced against the very
+// shape it exists for.
+//
+// Running every scope is what keeps a scope added to the composition from
+// arriving unreserved: a scope whose opening the refusal does not read is a scope
+// an authored identity can impersonate, and covering one scope here would say
+// nothing about the others.
 func TestInspectComponentIdentity_AdmitsEveryIdentityTheCompositionProduces(t *testing.T) {
 	instances := []string{"bridge", "b", "a-b", "a_b", "a.b", strings.Repeat("i", 80), "Ünïcödé", "\xff\xfe"}
-	paths := [][]string{nil, {"cluster"}, {"cluster", "east"}, {strings.Repeat("p", 90)}, {"a/b", "c.d"}}
+	leading := [][]string{nil, {"cluster"}, {"cluster", "east"}, {strings.Repeat("p", 90)}, {"a/b", "c.d"}}
 
-	for _, instance := range instances {
-		for _, path := range paths {
-			composed := BoundaryFeatureComponentID(instance, path)
+	for _, scope := range []ComponentIdentityScope{BoundaryFeatureScope, AttachmentScope} {
+		for _, instance := range instances {
+			for _, lead := range leading {
+				parts := append(append([]string{}, lead...), instance)
+				composed := ComposeComponentIdentity(scope, testIdentityBound, parts...)
 
-			if defect := labelValueDefect(composed); defect != ComponentIdentityUsable {
-				t.Errorf("the composition produced %q for instance %q path %v, which the label half "+
-					"refuses as %v — the predicate is stricter than the composition", composed, instance, path, defect)
+				if defect := labelValueDefect(composed); defect != ComponentIdentityUsable {
+					t.Errorf("scope %q produced %q for parts %v, which the label half "+
+						"refuses as %v — the predicate is stricter than the composition", scope.prefix, composed, parts, defect)
+				}
+				got, opening := InspectComponentIdentity(composed)
+				if got != ComponentIdentityReservedOpening {
+					t.Errorf("InspectComponentIdentity(%q) = %v, want the reserved-opening outcome: a composed "+
+						"identity is exactly what an authored one must not be mistakable for", composed, got)
+				}
+				if opening == "" {
+					t.Errorf("InspectComponentIdentity(%q) named no opening", composed)
+				}
 			}
-			got, opening := InspectComponentIdentity(composed)
-			if got != ComponentIdentityReservedOpening {
-				t.Errorf("InspectComponentIdentity(%q) = %v, want the reserved-opening outcome: a composed "+
-					"identity is exactly what an authored one must not be mistakable for", composed, got)
+		}
+	}
+}
+
+// TestComposedIdentitiesAreDisjointAcrossScopes is the by-construction claim the
+// two scopes exist for: one set of parts composed under two scopes reaches two
+// identities, and no identity composed under one scope opens as another's does.
+//
+// Without it the two minting sites would share one identity space, and the only
+// thing keeping them apart would be that no site had yet produced a value the
+// other could also produce — a property of the inputs seen so far rather than of
+// the composition.
+func TestComposedIdentitiesAreDisjointAcrossScopes(t *testing.T) {
+	scopes := []ComponentIdentityScope{BoundaryFeatureScope, AttachmentScope}
+	partSets := [][]string{
+		{"cluster", "bridge"},
+		{"api", "api"},
+		{""},
+		{strings.Repeat("i", 200), strings.Repeat("c", 200)},
+		{"\xff", "a/b"},
+	}
+	for _, parts := range partSets {
+		seen := map[string]string{}
+		for _, scope := range scopes {
+			got := ComposeComponentIdentity(scope, testIdentityBound, parts...)
+			if prior, clash := seen[got]; clash {
+				t.Errorf("scopes %q and %q both compose %v into %q", prior, scope.prefix, parts, got)
 			}
-			if opening == "" {
-				t.Errorf("InspectComponentIdentity(%q) named no opening", composed)
+			seen[got] = scope.prefix
+			for _, other := range scopes {
+				if other.prefix == scope.prefix {
+					continue
+				}
+				opening := componentIdentityEncoding.Segment(other.prefix) + componentIdentityJoin
+				if strings.HasPrefix(got, opening) {
+					t.Errorf("scope %q composed %q, which opens as scope %q does", scope.prefix, got, other.prefix)
+				}
 			}
 		}
 	}
@@ -144,24 +196,34 @@ func TestInspectComponentIdentity_AgreesWithTheRepairBesideIt(t *testing.T) {
 	}
 }
 
-// TestComponentIdentityRequirement_ReadsTheBoundRatherThanRestatingIt asserts
-// the length sentence is generated from the bound, so the advice cannot come to
-// disagree with the rule it describes.
-func TestComponentIdentityRequirement_ReadsTheBoundRatherThanRestatingIt(t *testing.T) {
-	requirement := ComponentIdentityTooLong.Requirement()
-	if !strings.Contains(requirement, "63") {
-		t.Errorf("the length requirement reads %q and does not name the bound the rule enforces", requirement)
-	}
-	if k8sLabelValueMaxLength != 63 {
-		t.Fatalf("the bound moved to %d; this assertion pins the sentence to the bound and must be "+
-			"re-read, not merely updated", k8sLabelValueMaxLength)
+// TestComponentIdentityRequirement_StatesARemedyAndNoLength asserts every
+// defect this package reports names what a name has to do instead, and that
+// none of them names a LENGTH.
+//
+// The absence is the assertion that matters. A length here would be one target's
+// limit stated as though it held for every target, including the targets that
+// impose none — and it would be stated by the compiler, which renders for no
+// target and so has no standing to state it. A length reintroduced into any
+// requirement sentence fails this rather than reading as an improvement.
+func TestComponentIdentityRequirement_StatesARemedyAndNoLength(t *testing.T) {
+	for _, d := range []ComponentIdentityDefect{
+		ComponentIdentityUsable, ComponentIdentityCharacterNotAdmitted,
+		ComponentIdentityEdgeNotAlphanumeric, ComponentIdentityReservedOpening,
+	} {
+		for _, digit := range []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"} {
+			if strings.Contains(d.Requirement(), digit) {
+				t.Errorf("defect %v states the requirement %q, which names a number; a length belongs to the "+
+					"target a name is written for and reaches the compiler as that target's own answer",
+					d, d.Requirement())
+			}
+		}
 	}
 
 	// Every defect a build can report names what a name has to do instead. One
 	// that reported nothing would leave an author holding a refusal with no
 	// remedy in it.
 	for _, d := range []ComponentIdentityDefect{
-		ComponentIdentityTooLong, ComponentIdentityCharacterNotAdmitted, ComponentIdentityEdgeNotAlphanumeric,
+		ComponentIdentityCharacterNotAdmitted, ComponentIdentityEdgeNotAlphanumeric,
 	} {
 		if d.Requirement() == "" {
 			t.Errorf("defect %v states no requirement", d)
@@ -191,7 +253,7 @@ func TestReservedOpeningOf_ReadsTheSetAndTheJoinFromTheComposition(t *testing.T)
 		t.Fatal("the reserved set is empty, so the refusal enforces nothing")
 	}
 	for _, prefix := range reservedScopePrefixes {
-		expected := boundaryFeatureIDEncoding.Segment(prefix) + boundaryFeatureIDJoin
+		expected := componentIdentityEncoding.Segment(prefix) + componentIdentityJoin
 		opening, reserved := reservedOpeningOf(expected + "anything")
 		if !reserved {
 			t.Errorf("an identity opening with %q is not reported reserved, so the set member %q is not enforced",
@@ -202,7 +264,7 @@ func TestReservedOpeningOf_ReadsTheSetAndTheJoinFromTheComposition(t *testing.T)
 		}
 		// The prefix alone is not the opening: reserving it would refuse names an
 		// author may write.
-		if _, reserved := reservedOpeningOf(boundaryFeatureIDEncoding.Segment(prefix)); reserved {
+		if _, reserved := reservedOpeningOf(componentIdentityEncoding.Segment(prefix)); reserved {
 			t.Errorf("the prefix %q alone is reported reserved; only the prefix followed by the join is "+
 				"what a composed identity opens with", prefix)
 		}
