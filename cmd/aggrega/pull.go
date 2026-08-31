@@ -409,11 +409,19 @@ func pullRun(cfg pullConfig) error {
 	} else {
 		externals = lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
 	}
-	// The prior lockfile is read exactly once — by this one decision, which performs
-	// that read and hands the value back — and every later consumer reads what it
-	// returned rather than the file: the reuse verification handed to the closure
-	// lookup below, and the deprecation and external-input carry-forwards at the end
-	// of the pull. Which pins are honored, and whether the prior lockfile is read at
+	// The prior lockfile is read exactly once AS THE PRIOR PIN SOURCE — by this one
+	// decision, which performs that read and hands the value back — and every later
+	// consumer of those pins reads what it returned rather than the file: the reuse
+	// verification handed to the closure lookup below, and the deprecation and
+	// external-input carry-forwards at the end of the pull.
+	//
+	// The claim is scoped to that role and is not a claim about the command. The
+	// --verify branch loads the same path again further down, as the object under
+	// verification rather than as a pin source; that read answers a different
+	// question and is not a bypass of this one. Reading "exactly once" as
+	// whole-command would invite "fixing" either this comment or that read.
+	//
+	// Which pins are honored, and whether the prior lockfile is read at
 	// all, is that decision's to make: a bare --upgrade floats every pin and carries
 	// forward neither the recorded deprecations nor the external inputs, and holding
 	// the read together with the policy that governs it is what keeps the three

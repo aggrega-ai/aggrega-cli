@@ -132,7 +132,7 @@ func compactSchema(raw json.RawMessage) string {
 
 // renderPluginFile renders a Plugin authored as a standalone file. The
 // plugin's declared capability surface is shown first: the content-addressed
-// .wasm artifact reference, the socket type it implements, the ABI version
+// .wasm artifact reference, the plugin type it declares, the ABI version
 // it targets, and the targets it claims compatibility with. The
 // exports table names each entry point and its authored capability claim
 // (operates / scope / selector); the runtime block reports the execution

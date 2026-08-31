@@ -38,9 +38,9 @@ const OverrideFileName = "aggrega_override.tf.json"
 // It takes already-compact bytes rather than a value to encode so that the
 // caller keeps ownership of its own ordering: [SensitivityOverride] marshals its
 // variable names in the order the render wire fixed, and this step must not
-// disturb that. Splitting the two also keeps the indent and the trailing newline
-// in one place, so a second appended JSON document cannot drift away from the
-// first.
+// disturb that. Splitting the two is also what gives the indent and the trailing
+// newline one home: the emitted whitespace is decided here rather than at each
+// site that writes an appended JSON document.
 func IndentJSONDocument(compact []byte) ([]byte, error) {
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, compact, "", "  "); err != nil {

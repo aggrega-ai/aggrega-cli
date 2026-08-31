@@ -333,9 +333,12 @@ type Resolver struct {
 	// where nothing is pinned yet.
 	pins map[string]string
 
-	// pinVersions maps a plugin URI to its lockfile resolved version, used to
-	// address the versioned cache slot (Tier 2). Absent leaves the version
-	// empty, addressing the unversioned slot.
+	// pinVersions maps a plugin URI to its resolved version, used to address the
+	// versioned cache slot (Tier 2). Absent leaves the version empty, addressing
+	// the unversioned slot. The value is whatever the caller recorded as that
+	// URI's resolved version, and the lockfile is only one of the records it can
+	// come from: a record addressing a plugin by content digest supplies that
+	// digest, which for a .wasm artifact names the same content the version does.
 	pinVersions map[string]string
 
 	// bundleDigests maps a plugin URI to the recorded digest of its cached

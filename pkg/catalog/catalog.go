@@ -1478,23 +1478,6 @@ func parsePluginEntity(data []byte, path string) (types.Plugin, error) {
 	return e, nil
 }
 
-// DeprecationWarnings returns non-fatal notices about deprecated catalog
-// shapes — formatted as a string slice the caller is free to print, log,
-// or escalate to errors as fits its UX. The build command currently prints
-// each entry to stderr after catalog load; tooling that wants stricter
-// behaviour can match on the slice and exit non-zero.
-//
-// Contract. The function never returns an error and never mutates the
-// catalog. An empty slice means "no deprecated shapes detected"; the
-// presence of a warning never blocks Catalog use. Iteration is sorted by
-// entity name within each kind so the message stream is deterministic.
-//
-// Current scope. No deprecation rules are active. New deprecation rules
-// attach here: each rule reads its own catalog state, formats one
-// message per affected entity, and appends to the returned slice. The
-// function is the single point where "what counts as a deprecated
-// catalog shape" lives; rules living elsewhere risk drifting out of the
-// build command's warning stream.
 // LintWarnings returns non-fatal advisory diagnostics accumulated
 // during catalog load. Today's lint surface is schema-pillar-overlap:
 // a warning fires when a Component or Feature declares the same
@@ -1508,9 +1491,7 @@ func parsePluginEntity(data []byte, path string) (types.Plugin, error) {
 // served here too, after the pillar-overlap lines, which is the order the two
 // producing passes run in.
 //
-// Returns nil when no lint warnings fired. Build callers range the
-// returned slice and print each line to stderr alongside the existing
-// DeprecationWarnings output.
+// Returns nil when no lint warnings fired.
 //
 // Deliberately NOT de-duplicating: two identical lines from two different
 // entities are two findings, and collapsing them here would hide the second
@@ -1528,6 +1509,22 @@ func (c *Catalog) LintWarnings() []string {
 	return out
 }
 
+// DeprecationWarnings returns non-fatal notices about deprecated catalog shapes,
+// formatted as a string slice the caller is free to print, log, or escalate to an
+// error as fits its own output.
+//
+// It returns nil: no deprecation rule is active, so there is no catalog shape this
+// accessor reports on today.
+//
+// Contract. It never returns an error and never mutates the catalog, and an empty
+// result means no deprecated shape was detected rather than that detection was
+// skipped. A warning never blocks Catalog use. The order is deterministic, so a
+// caller may compare or golden the result.
+//
+// This accessor is where a catalog-shape deprecation rule attaches: a rule reads
+// its own catalog state, formats one message per affected entity, and appends to
+// the returned slice. Attaching one elsewhere puts a second answer to "what counts
+// as a deprecated catalog shape" in the tree.
 func (c *Catalog) DeprecationWarnings() []string {
 	return nil
 }

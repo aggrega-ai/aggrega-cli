@@ -565,9 +565,8 @@ func dropCatalogViewInconsistencies(errs []*resolver.ResolverError) []*resolver.
 // suite — against caller-supplied inputs, then invokes use with the resolved
 // per-component view (ResolveResult carrying per-component BoundaryInfra)
 // WITHOUT flattening topology. It is the single source of the build's
-// pre-topology validation: ResolveAndFlatten calls it then flattens, and a
-// validate-only caller (`aggrega lint --release`) calls it and stops, so the two
-// cannot diverge on what a Release's resolved values are validated against. The
+// pre-topology validation: ResolveAndFlatten runs it and then flattens, so what a
+// build validates before topology has one implementation rather than two. The
 // guard suite operates on the resolved (post-parameter-interpolation) aggregate,
 // so templated `{{ .parameters.* }}` values are validated as resolved.
 //

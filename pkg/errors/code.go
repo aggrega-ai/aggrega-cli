@@ -311,8 +311,12 @@ type Meta struct {
 	// The descriptive code says what the condition is; this one is short enough
 	// to print. A diagnostic wants its identifier at the head of the line, where
 	// the reader is already looking, and the descriptive code is too wide for
-	// that position: the longest in this module is 65 characters, which is most
-	// of a narrow terminal before the message has begun. Four digits fit
+	// that position: it is package-qualified and kebab-case, so the longest ones
+	// run to many tens of characters — most of a narrow terminal before the
+	// message has begun. The width is described rather than counted on purpose:
+	// a figure here is a second copy of what the declarations below already
+	// determine, and it would go stale the day a longer code is registered.
+	// Four digits fit
 	// anywhere and stay quotable — a user can read one out, type it into a
 	// search, or paste it into a report, which is the whole job.
 	//
@@ -638,7 +642,8 @@ func indexRetirements(record []retirement) map[string]string {
 //
 // Meta.ShortCode is the SHORT code — the letter E and four digits. It names the
 // same condition in a form narrow enough to print at the head of a diagnostic
-// line, where a descriptive code reaching 65 characters would not fit. It is
+// line, which a descriptive code's own width does not fit. The ShortCode field's
+// own documentation carries the width reasoning, so this does not restate it. It is
 // deliberately the one platform-defined identifier that is not kebab-case,
 // because its whole purpose is width at the head of every diagnostic, and it is
 // opaque as a consequence: it is readable only against the correspondence

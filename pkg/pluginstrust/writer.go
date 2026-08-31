@@ -13,8 +13,17 @@ import (
 
 // header is the comment block every written record opens with. It is part of the
 // file's canonical bytes, so editing this text shows up as a diff on the next
-// write — which is the intended behaviour for a committed file: the reader of a
-// pull request sees the explanation change alongside whatever else changed.
+// write that actually happens — which is the intended behaviour for a committed
+// file: the reader of a pull request sees the explanation change alongside
+// whatever else changed.
+//
+// That next write is not guaranteed to come. A pull writes only when it moves the
+// record's content, so a committed record whose entries never change keeps the
+// header it was written with, and two workspaces can hold different header text
+// for the same record version. No consumer reads the header, so the cost is
+// confined to the wording a reader sees; it is stated here because the
+// diff-on-next-write behaviour above otherwise reads as a promise that every
+// committed record catches up on its own.
 //
 // It states what the record carries, what it does not, where the rest lives, who
 // writes it and who reads it, and why committing it matters. Each of those is

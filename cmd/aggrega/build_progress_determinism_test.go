@@ -72,6 +72,12 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 		// Isolate each run's artifacts; the physical outDir does not appear in the
 		// stdout summary path we compare below because we hold it constant.
 		outDir := filepath.Join(root, "dist")
+		// The clean's error is checked here, where sibling sites in this package
+		// discard it, and the divergence is deliberate: every mode renders into this
+		// one directory, so a silently failed clean would leave the previous mode's
+		// artifacts in place and the comparison below would pass on a stale tree
+		// instead of on this mode's own output — which is the failure this test
+		// exists to catch. Discarding it to match the siblings reintroduces that.
 		if err := os.RemoveAll(outDir); err != nil {
 			t.Fatalf("%s: clean dist: %v", m.name, err)
 		}

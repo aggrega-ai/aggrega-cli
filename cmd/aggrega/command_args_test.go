@@ -90,6 +90,12 @@ func strayArgsFor(cmd *cobra.Command) []string {
 // a grouping command is turned into a failure. Driving cobra directly would step
 // over exactly the half this guards.
 //
+// Scope: the invocations carry no explicit help request, and the refusal this
+// asserts does not hold when one is present. A command that resolves arguments at
+// its own validator answers help instead of refusing, so "every command refuses a
+// stray positional" is true of this population and not of every invocation.
+// TestStrayPositionalBesideAnExplicitHelpRequest pins that interaction.
+//
 // 🔴 The invocations are real, so the ordering that keeps them harmless is
 // load-bearing and a later edit would break it silently. A command that refuses at
 // its validator never reaches its run body: that is what keeps build and acquire
@@ -163,6 +169,84 @@ func TestEveryCommandRefusesAStrayPositional(t *testing.T) {
 					"give it an argument validator, or a guard at the top of its run body where its "+
 					"positionals are conditionally meaningful\noutput:\n%s",
 					tc.path, len(tc.stray), buf.String())
+			}
+		})
+	}
+}
+
+// TestStrayPositionalBesideAnExplicitHelpRequest pins how an explicit help request
+// and an unusable positional resolve when both appear on one invocation. A scripted
+// caller can hit the combination, and the two answers differ in exit code, so the
+// order is a contract rather than an implementation detail.
+//
+// The resolved behaviour, and it turns on WHERE the positional is refused:
+//
+//   - A command that resolves its own arguments answers the help request and exits
+//     zero, leaving the positional unreported. The help request is resolved before
+//     the argument check runs, so the check never sees the positional. This holds
+//     whichever side of the positional the flag is written on, and for the short
+//     form, because flag parsing does not depend on token order.
+//   - A command that only groups subcommands, and the root, still exit non-zero.
+//     Their positional is refused centrally rather than at a validator, and that
+//     answer is reached whether or not help was asked for — so help text is printed
+//     AND the exit status reports the unusable argument.
+//
+// The consequence worth writing down: an exit status alone does not tell a caller
+// whether its help request was honoured, and a zero here does not mean the
+// positional was accepted as meaningful — it means it was never examined.
+func TestStrayPositionalBesideAnExplicitHelpRequest(t *testing.T) {
+	withCLIRegistrations(t, nil)
+
+	const stray = "stray-positional"
+	cases := []struct {
+		name     string
+		argv     []string
+		wantZero bool
+		why      string
+	}{
+		// Controls, so each expectation below is attributable to the interaction
+		// rather than to one of its halves.
+		{"control: help alone is answered", []string{"build", "--help"}, true,
+			"a help request on its own exits zero"},
+		{"control: a stray positional alone is refused", []string{"build", stray}, false,
+			"the refusal this pins the exception to must itself fire"},
+
+		{"own validator, flag first", []string{"build", "--help", stray}, true,
+			"help resolves before the argument check, so the positional is never examined"},
+		{"own validator, flag last", []string{"build", stray, "--help"}, true,
+			"flag parsing does not depend on token order"},
+		{"own validator, short form", []string{"build", "-h", stray}, true,
+			"the short form is the same help request"},
+		{"run-body guard", []string{"pull", "--help", stray}, true,
+			"a guard in the run body is not reached when help is answered"},
+
+		{"grouping command", []string{"cache", "--help", stray}, false,
+			"a grouping command's positional is refused centrally, not at a validator"},
+		{"the root", []string{"--help", stray}, false,
+			"the root refuses centrally for the same reason"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+			t.Setenv("HOME", t.TempDir())
+
+			root := newRootCmd()
+			var buf bytes.Buffer
+			root.SetOut(&buf)
+			root.SetErr(&buf)
+			root.SetIn(strings.NewReader(""))
+			root.SetArgs(tc.argv)
+
+			code := executeRoot(root)
+			if tc.wantZero && code != 0 {
+				t.Errorf("%v exited %d, want 0 — %s\noutput:\n%s",
+					tc.argv, code, tc.why, buf.String())
+			}
+			if !tc.wantZero && code == 0 {
+				t.Errorf("%v exited 0, want non-zero — %s\noutput:\n%s",
+					tc.argv, tc.why, buf.String())
 			}
 		})
 	}

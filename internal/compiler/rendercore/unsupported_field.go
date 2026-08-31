@@ -11,9 +11,10 @@ import (
 )
 
 // UnsupportedFieldCode is the stable, machine-matchable code carried by every
-// diagnostic reporting an authored input a render target cannot honor — a
-// Workload field the target cannot express, and a platform annotation the
-// resolved target does not act on for the node's input kind. Every constructor
+// diagnostic reporting an authored input a render target cannot honor — an
+// authored field the target cannot express, or can express only in a reduced
+// form, and a platform annotation the resolved target does not act on for the
+// node's input kind. Every constructor
 // in this class shares this one code so a single display filter can suppress the
 // whole class: an author silencing "things I authored that this target ignores"
 // silences them together rather than discovering one switch per kind of authored
@@ -68,9 +69,10 @@ func UnsupportedFieldDiagnostic(target, field string) renderctx.Diagnostic {
 }
 
 // PartialSupportDiagnostic builds the warning a render target emits when it
-// can express an authored Workload field only in a reduced form rather than
-// dropping it outright. target is the target's user-facing name; field is the
-// authored schema field name; reducedTo describes, in user-facing terms, what
+// can express an authored field only in a reduced form rather than dropping it
+// outright. target is the target's user-facing name; field is the authored field
+// named where the author wrote it — a Workload field, or a field authored on the
+// Release boundary that boundary assembly reduces; reducedTo describes what
 // the field becomes in the target (for example "per-replica volume templating is
 // not available and the volume degrades to a shared persistent volume"). It
 // shares UnsupportedFieldCode with the full-omission diagnostic so the same

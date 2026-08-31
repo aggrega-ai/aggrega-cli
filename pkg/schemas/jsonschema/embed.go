@@ -12,10 +12,6 @@ import (
 // from the aggrega-schemas Go module so this package's existing
 // consumer surface (the WorkloadJSONSchema identifier) remains
 // stable while the underlying source-of-truth lives in exactly one
-// place.
-//
-// Consumers (pkg/validator/workload_validate.go) unmarshal the
-// source into a *github.com/google/jsonschema-go/jsonschema.Schema
-// and build a validator via pkg/validator/jsonschema.New for
-// runtime checking during Workload parsing.
+// place. The package documentation states which validator consumes it,
+// so this declaration does not name a consumer of its own.
 var WorkloadJSONSchema = schemas.WorkloadV1alpha1

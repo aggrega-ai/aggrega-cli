@@ -258,9 +258,18 @@ type ComponentInstanceRef struct {
 // It is a method on [NormalizedAggregate] rather than a function over
 // *[Aggregate] so the iteration cannot be obtained without the normalization
 // guarantee. A normalized Aggregate holds an empty root component map, so a
-// subsystem-only descent is complete; a consumer reaching for the walk gets the
-// complete one by construction and cannot assemble a partial one that misses
-// subsystem components.
+// subsystem-only descent covers every component this Aggregate declares itself;
+// a consumer reaching for the walk gets that whole set by construction and
+// cannot assemble a partial one that misses subsystem components.
+//
+// Scope, and it bounds every guard built on this walk: the components of a
+// module imported under the spec's aggregates surface are NOT in the result. A
+// [SubAggregate] carries a type reference rather than the module's own
+// components, so those exist only once the referenced Aggregate is loaded, and
+// they reach the deployment when topology flattens the imports. A consumer that
+// must reason about every component a deployment renders therefore reads the
+// flattened topology as well as this walk; one that means "the components this
+// document declares" is served exactly by this walk.
 //
 // Author order is preserved and no sort is applied — the result feeds
 // byte-identical output paths. A consumer needing a different order sorts the

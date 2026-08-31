@@ -64,8 +64,8 @@ func newInspectCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			// --plugin <path> is the pre-publish authoring loop: derive the host
 			// functions from a raw .wasm not yet published or stamped, via the same
-			// derivation primitive publish stamps and the loader registers from. It
-			// takes no identifier argument.
+			// derivation primitive the record-sync tooling writes with and the loader
+			// registers from. It takes no identifier argument.
 			if pluginFlag != "" {
 				return inspectRawPlugin(out, pluginFlag)
 			}

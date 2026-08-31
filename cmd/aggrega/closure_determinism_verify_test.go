@@ -36,6 +36,12 @@ func TestClosureUnificationByteIdentical(t *testing.T) {
 	}
 
 	first := build()
+	// The clean's error is checked here, where sibling sites in this package discard
+	// it, and the divergence is deliberate: both builds render into this one
+	// directory, so a silently failed clean would leave the first build's artifacts
+	// in place and the byte-identity comparison below would compare a tree against
+	// itself — passing without ever exercising the second build. Discarding it to
+	// match the siblings reintroduces exactly that.
 	if err := os.RemoveAll(filepath.Join(root, "dist")); err != nil {
 		t.Fatalf("clean dist: %v", err)
 	}
