@@ -34,10 +34,15 @@
 //  4. Merge the loaded values with Release.spec.parameters inline content
 //     (single-source-only design — exactly one mode is populated).
 //  5. Read raw Aggregate YAML.
-//  6. Interpolate parameters into the raw bytes via Go template + Sprig.
-//  7. Unmarshal the interpolated bytes into a typed Aggregate.
-//  8. Validate instance names (returns the first violation only).
-//  9. Wire per-component boundary infra from Release boundaries.
+//  6. Apply parameter defaults, then validate the supplied parameters
+//     against the Aggregate's typed parameter contract.
+//  7. Interpolate parameters into the raw bytes via Go template + Sprig.
+//  8. Validate the interpolated document's envelope against its kind's
+//     schema — post-interpolation is the final authored shape, and this
+//     runs ahead of typed unmarshal. The envelope owns rejection of an
+//     instance name the schema refuses, such as a dotted component key.
+//  9. Unmarshal the interpolated bytes into a typed Aggregate.
+//  10. Wire per-component boundary infra from Release boundaries.
 //
 // The merged parameter map stays live for the whole resolve scope, because
 // operator-authored path templates read `.parameters.<key>` while artifact
