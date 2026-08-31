@@ -228,14 +228,46 @@ func schemaImportTarget(node *yaml.Node, where, entityPath string) (string, bool
 // quoteTarget renders an authored import target for a diagnostic.
 func quoteTarget(target string) string { return "\"" + target + "\"" }
 
+// ErrUnusableSchemaImport fires when an authored `$import:` on a schema surface
+// cannot be applied, so the surface would be left holding an unread pointer
+// instead of the contract the author meant to import.
+//
+// It covers every way the directive fails to yield content, because each of them
+// leaves the same surface unusable and gives the author the same thing to do —
+// correct the directive or the file it names. The condition's sentence therefore
+// states only that the import could not be applied, and each raise path supplies
+// its own clause saying which way: a directive sharing its mapping with another
+// key, a value that is not a file path, a value that addresses a registry or a
+// library entry rather than a file, a path that does not resolve, a file that
+// cannot be read or parsed, and content that is not a map of schema content.
+// Registering one sentence per way would put advice that is true at one raise
+// path into a sentence that leads at all seven.
+//
+// Category: CATALOG_ERROR — the fault is in an authored catalog document's
+// schema surface, or in the file beside it that the surface names. Match with
+// errors.Is(err, ErrUnusableSchemaImport()).
+func ErrUnusableSchemaImport() error { return errUnusableSchemaImport }
+
+var errUnusableSchemaImport = cerrors.Register("catalog/unusable-schema-import", cerrors.Meta{
+	ShortCode: "E0266",
+	Message:   "a schema `$import:` could not be applied",
+})
+
 // schemaImportError shapes one import failure as the catalog-load diagnostic the
 // rest of this package produces, located at the authored node.
+//
+// It composes through the condition's registered sentence rather than emitting
+// message alone, so the diagnostic opens with the sentence and carries the raise
+// path's own clause after it. Leading with the sentence is structural rather than
+// stylistic: the chain walk that renders a halt prints the outermost frame whose
+// text the output does not already carry, so a message that did not lead with it
+// would print the sentence a second time as a redundant continuation line.
 func schemaImportError(entityPath string, node *yaml.Node, message string) error {
-	return cerrors.New(
+	return cerrors.Wrap(
+		ErrUnusableSchemaImport(),
 		cerrors.CatalogError,
 		cerrors.SourceLocation{File: entityPath, Line: nodeLineOf(node)},
-		message,
-		nil, nil,
+		cerrors.ComposeMessage(ErrUnusableSchemaImport(), nil, message),
 	)
 }
 
