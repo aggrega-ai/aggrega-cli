@@ -1114,7 +1114,7 @@ func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyN
 
 		sensitive := declared.Any() || sensitiveSlots[name]
 		marked := deriveInjectSensitivity(entry.Inject, declared.Provides)
-		markedLeaves := deriveAuthoredSensitiveLeaves(entry, declared)
+		markedLeaves := deriveAuthoredSensitiveLeaves(entry.Values, entry.Infra, declared)
 		if sensitive || marked.Len() > 0 || len(markedLeaves) > 0 {
 			// A marked delivery key implies a sensitive provides declaration,
 			// and a marked leaf implies a sensitive values or infra
@@ -1199,48 +1199,69 @@ func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], 
 	return out
 }
 
-// deriveAuthoredSensitiveLeaves selects the leaves one merged attachment
-// authored a value at whose path the attachment's Feature declares sensitive,
-// returning each as its pillar-prefixed coordinate.
+// deriveAuthoredSensitiveLeaves selects the leaves one authored values/infra
+// pair holds whose path an entity's schema declares sensitive, returning each as
+// its pillar-prefixed coordinate.
 //
-// The join is exact: an authored leaf's flat-dotted path equal to a declared
-// path. Both sides are already spelled the same way — a declared path is the
-// dotted property chain from the pillar root, and the flattening below produces
-// the same chain over the merged payload — so no normalisation stands between
-// them and a match is a match rather than a resemblance. Nothing reads a path's
-// own text and no value is inspected: whether the author wrote the material
-// itself at a marked leaf or a pointer to it somewhere else is not knowable
-// here, and is not what the marking claims.
+// It is the ONE home for the per-authored-leaf marking, and its three subjects
+// are the three places the graph carries authored pillar data: a merged
+// attachment's own values and infra, a node's values and infra against its
+// Component's declarations, and a boundary attachment's infra against its
+// Feature's. Each caller supplies the payloads and the declarations; the rule
+// joining them lives only here, so a surface added later cannot come to mark on
+// a different reading from the surfaces already marked.
 //
-// The payload is FLATTENED rather than read at its top level, which is
+// The join asks [resolver.SensitiveLeaves.Covers], which is the one home for
+// "does this entity's declarations reach this authored datum" and is the same
+// question every withholding surface asks of the same declarations. A
+// declaration COVERS a leaf when it names that leaf or names an object
+// containing it, so a leaf beneath an object an author declared sensitive is
+// named by that declaration and marking it claims nothing the author did not
+// write. Matching is segment-wise, so a declaration at "db" reaches "db.password"
+// and not a sibling "dbPassword".
+//
+// The direction the covering rule is NOT allowed to slip into is worth naming
+// where the join is made. Marking may not claim more than an author declared,
+// because a marking becomes a refusal or a concealment downstream and there is
+// no cheap undo for calling public data secret. Covering a subtree an author
+// declared is not that: the over-claim would be marking a leaf no declaration
+// reaches, which this join cannot do because every input is a declaration.
+// Nothing reads a path's own text and no value is inspected — whether the author
+// wrote the material itself at a marked leaf or a pointer to it is not knowable
+// here and is not what the marking claims.
+//
+// Each payload is FLATTENED rather than read at its top level, which is
 // load-bearing. A pillar is a tree: a nested leaf lives inside a nested map, so
-// the pillar's own top-level keys name only the shallowest leaves. Comparing
-// declarations against those keys would match a top-level leaf and silently miss
-// every nested one, and silence is the wrong direction to fail in for this axis.
+// the pillar's own top-level keys name only the shallowest leaves. Walking those
+// keys alone would name a top-level leaf and silently miss every nested one, and
+// silence is the wrong direction to fail in for this axis.
 //
 // The two pillars are collected in declaration order, values before infra, and
-// each pillar's leaves arrive in the order the merged payload holds them. That
-// is author order throughout — the payload is an order-preserving container, so
-// no sort is needed and none is applied. Sorting would replace an author order a
+// each pillar's leaves arrive in the order the payload holds them. That is
+// author order throughout — the payloads are order-preserving containers, so no
+// sort is needed and none is applied. Sorting would replace an author order a
 // consumer can act on with one it cannot.
 //
-// Returns nil when the Feature declares no sensitive leaf in either pillar, or
-// when the attachment authored nothing at the ones it does. That is the honest
-// answer rather than an empty list: there is no marked leaf to name.
-func deriveAuthoredSensitiveLeaves(entry types.IRFeatureEntry, declared resolver.SensitiveLeaves) []string {
+// Returns nil when the entity declares no sensitive leaf in either pillar, when
+// it resolves to no schema at all, or when nothing is authored at the leaves it
+// does declare. That is the honest answer rather than an empty list: there is no
+// marked leaf to name. A caller with only one pillar to offer passes the zero
+// value for the other, which names nothing.
+func deriveAuthoredSensitiveLeaves(values, infra types.OrderedMap[any], declared resolver.SensitiveLeaves) []string {
 	var out []string
-	collect := func(pillar types.OrderedMap[any], declaredLeaves map[string]bool, root string) {
-		if pillar.Len() == 0 || len(declaredLeaves) == 0 {
+	collect := func(pillar types.OrderedMap[any], root string) {
+		if pillar.Len() == 0 {
 			return
 		}
 		for _, leaf := range types.FlattenLeaves(pillar) {
-			if declaredLeaves[leaf.Path] {
-				out = append(out, root+leaf.Path)
+			coordinate := root + leaf.Path
+			if declared.Covers(coordinate) {
+				out = append(out, coordinate)
 			}
 		}
 	}
-	collect(entry.Values, declared.Values, sensitiveLeafRootValues)
-	collect(entry.Infra, declared.Infra, sensitiveLeafRootInfra)
+	collect(values, sensitiveLeafRootValues)
+	collect(infra, sensitiveLeafRootInfra)
 	return out
 }
 
@@ -1433,8 +1454,40 @@ func collectCompFeaturesRecursive(
 // boundary-FR dispatch both read, so neither re-walks the Release. The per-node
 // Tier-4 fold into FeatureValuesMapping (collectBoundaryWideFeatures) is unchanged;
 // this projection is additive, for boundary-scope FR source identity + bf.Infra.
-func buildBoundaryFeaturesProjection(boundaries types.OrderedMap[types.Boundary]) types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]] {
+//
+// It also derives each attachment's per-authored-leaf sensitivity marking, from
+// the attached Feature's own declarations, through the one derivation every
+// marked surface shares. The catalog is taken as a parameter rather than reached
+// for inside, because that is what makes the marking a property of the
+// projection: an attachment reaches the graph through this walk or not at all,
+// so a boundary shape added later carries the marking without anyone having to
+// remember it. A caller with no catalog gets an unmarked projection, which is
+// the same answer a Feature declaring nothing gives.
+//
+// Only the infra pillar is offered to the derivation, because a boundary-level
+// attachment authors no values — the Release pillar-split forbids a values block
+// at boundary level, and [types.IRBoundaryFeature] has no field for one.
+func buildBoundaryFeaturesProjection(
+	boundaries types.OrderedMap[types.Boundary],
+	catalogLookup resolver.CatalogLookup,
+) types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]] {
 	out := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	// Memoised per Feature type across the whole walk: the schema compile is
+	// uncached, and two boundaries attaching one Feature type read the same
+	// answer. The memo's lifetime is this projection, so it cannot outlive the
+	// catalog it was read from.
+	declaredCache := map[string]resolver.SensitiveLeaves{}
+	declaredFor := func(featureType string) resolver.SensitiveLeaves {
+		if d, cached := declaredCache[featureType]; cached {
+			return d
+		}
+		var declared resolver.SensitiveLeaves
+		if compiled, ok := CompileFeatureSchema(catalogLookup, featureType); ok {
+			declared = resolver.DeclaredSensitiveLeaves(compiled)
+		}
+		declaredCache[featureType] = declared
+		return declared
+	}
 	var walk func(bs types.OrderedMap[types.Boundary], prefix string)
 	walk = func(bs types.OrderedMap[types.Boundary], prefix string) {
 		for name, boundary := range bs.All() {
@@ -1445,7 +1498,13 @@ func buildBoundaryFeaturesProjection(boundaries types.OrderedMap[types.Boundary]
 			if boundary.Features.Len() > 0 {
 				inner := types.OrderedMap[types.IRBoundaryFeature]{}
 				for fname, bf := range boundary.Features.All() {
-					inner.Set(fname, types.IRBoundaryFeature{Type: bf.Type, Infra: bf.Infra})
+					inner.Set(fname, types.IRBoundaryFeature{
+						Type:  bf.Type,
+						Infra: bf.Infra,
+						SensitiveAuthoredLeaves: deriveAuthoredSensitiveLeaves(
+							types.OrderedMap[any]{}, bf.Infra, declaredFor(bf.Type),
+						),
+					})
 				}
 				if inner.Len() > 0 {
 					out.Set(path, inner)

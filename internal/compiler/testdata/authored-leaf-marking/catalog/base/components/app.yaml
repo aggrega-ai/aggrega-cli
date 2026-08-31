@@ -1,0 +1,69 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: mark/app
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: ["env"]
+  featuresSchema:
+    # No `sensitive:` of its own. This fixture exercises the LEAF axis on the
+    # node's own pillars, so nothing here may contribute to what the node's
+    # marking names.
+    credentials:
+      required: false
+      inject: ["env"]
+  schema:
+    values:
+      # Public. A marking that named it would be claiming more than the author
+      # declared, which is the direction with no cheap undo.
+      appName: { type: string }
+      # Declared at the leaf. The exact case.
+      dbPassword: { type: string, sensitive: true }
+      # Declared on the OBJECT. Every leaf beneath it is named by this one
+      # declaration, which is what the covering rule means; a rule matching the
+      # authored path exactly would name neither child.
+      credentials:
+        type: object
+        sensitive: true
+        properties:
+          username: { type: string }
+          password: { type: string }
+      # A public object with a leaf beneath it, declared nowhere. It is the
+      # negative direction of the covering rule: descending into an undeclared
+      # object must reach nothing.
+      tuning:
+        type: object
+        properties:
+          poolSize: { type: integer }
+      # The segment-wise discriminator, and the reason it is here rather than in
+      # a unit test alone: its name carries `dbPassword` as a textual prefix, so
+      # a covering rule implemented by trimming characters rather than whole
+      # path segments would name it. Nothing declares it, so a marking that
+      # reaches it is over-marking arrived at through the wrong walk.
+      dbPasswordExtra: { type: string }
+      # Declared on an object nested one level deeper than `credentials`, so the
+      # walk from a leaf up to a declaration has to climb more than one segment
+      # to find it.
+      outer:
+        type: object
+        properties:
+          public: { type: string }
+          inner:
+            type: object
+            sensitive: true
+            properties:
+              secret: { type: string }
+    infra:
+      # The infra pillar carries the same two shapes, because a marking derived
+      # from the values pillar alone would look complete on every values-only
+      # fixture.
+      replicas: { type: integer }
+      backup:
+        type: object
+        sensitive: true
+        properties:
+          passphrase: { type: string }
+    provides:
+      host: { type: string, required: true }

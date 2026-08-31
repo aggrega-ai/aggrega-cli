@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: authored-leaf-marking-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        mark/app: mark-app-recipe:1.0.0
+    features:
+      type:
+        feature.mark/db-credential: mark-db-credential-compose:1.0.0
+        feature.mark/boundary-guard: mark-boundary-guard-compose:1.0.0

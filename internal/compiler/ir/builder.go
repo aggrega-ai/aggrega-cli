@@ -219,6 +219,29 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		featureSchemaCache[featureType] = compiled
 		return compiled, true
 	}
+
+	// Declared-sensitive leaves per Component type, memoised across the node walk
+	// for the reason the Feature compile above is: the schema compile is uncached
+	// and every node of one type reads the same answer. The memo's lifetime is
+	// this build, so a catalog edit between builds is never carried over. A
+	// catalog-less build supplies a lookup whose accessors are nil, and nothing
+	// is declared in that world, so the question is answered here rather than
+	// asked of a reader with no catalog to read.
+	declaredComponentCache := map[string]resolver.SensitiveLeaves{}
+	declaredComponentLeaves := func(componentType string) resolver.SensitiveLeaves {
+		if cfg.CatalogLookup.Component == nil || componentType == "" {
+			return resolver.SensitiveLeaves{}
+		}
+		if d, cached := declaredComponentCache[componentType]; cached {
+			return d
+		}
+		var declared resolver.SensitiveLeaves
+		if compiled, ok := resolver.CompileComponentSchema(cfg.CatalogLookup, componentType); ok {
+			declared = resolver.DeclaredSensitiveLeaves(compiled)
+		}
+		declaredComponentCache[componentType] = declared
+		return declared
+	}
 	var attachmentErrs []*resolver.ResolverError
 	var attachmentParams map[string]any
 	attachmentEntity := "Aggregate"
@@ -285,8 +308,6 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			irNode.SyncWave = bi.SyncWave
 		}
 
-		irNodes.Set(nodeID, irNode)
-
 		// 4. Values mapping — author values plus declared schema defaults for
 		// keys the Aggregate omitted (author values win).
 		filledValues := mergeSchemaDefaults(topoNode.Values, valueDefaults)
@@ -310,6 +331,20 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 				infraMapping.Set(nodeID, raw)
 			}
 		}
+
+		// The node's own per-authored-leaf sensitivity marking, over the SAME two
+		// payloads the two mappings above carry rather than over the authored
+		// blocks they were built from. A default the schema materialised at a
+		// declared-sensitive leaf is a datum the graph carries, so a marking read
+		// off the pre-merge blocks would leave it unnamed. The declarations come
+		// from the node's Component through the same compile-and-read pair every
+		// other consumer of a Component's declarations uses, so no surface can
+		// come to a different answer about what this Component declared.
+		irNode.SensitiveAuthoredLeaves = deriveAuthoredSensitiveLeaves(
+			filledValues, filledInfra, declaredComponentLeaves(topoNode.ComponentType),
+		)
+
+		irNodes.Set(nodeID, irNode)
 
 		// 3. Feature normalization (5-Tier Onion Model)
 		featResult, err := collectNodeFeatures(
@@ -433,7 +468,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	// boundary-FR dispatch read (no Release re-walk on either side).
 	var boundaryFeatures types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]
 	if res.Release != nil {
-		boundaryFeatures = buildBoundaryFeaturesProjection(res.Release.Spec.Boundaries)
+		boundaryFeatures = buildBoundaryFeaturesProjection(res.Release.Spec.Boundaries, cfg.CatalogLookup)
 	}
 
 	graph := &types.IRGraph{

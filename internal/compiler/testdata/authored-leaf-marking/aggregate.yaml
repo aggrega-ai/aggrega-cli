@@ -1,0 +1,46 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: authored-leaf-marking-app
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: mark/app
+      values:
+        # Public: the marking must not name it.
+        appName: demo
+        # Declared at the leaf.
+        dbPassword: hunter2-plaintext
+        # Beneath an object the Component declares sensitive. Both children are
+        # named by that one declaration.
+        credentials:
+          username: admin
+          password: nested-plaintext
+        # Beneath an object nothing declares. Neither is named.
+        tuning:
+          poolSize: 25
+        # Its name has `dbPassword` as a textual prefix and nothing declares it,
+        # so a marking that names it was built by trimming characters instead of
+        # whole path segments.
+        dbPasswordExtra: not-a-secret
+        # Two levels down from the declaration, with a public sibling beside the
+        # declared object.
+        outer:
+          public: visible
+          inner:
+            secret: deep-plaintext
+      features:
+        credentials:
+          type: feature.mark/db-credential
+          values:
+            secretName: db-creds
+            # Beneath an object the FEATURE declares sensitive. This is the
+            # attachment-side half of the same widening.
+            vault:
+              token: vault-token-plaintext
+              path: secret/data/db
+          inject:
+            env:
+              - in: DATABASE_PASSWORD
+                from: password

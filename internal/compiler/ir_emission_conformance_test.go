@@ -45,6 +45,13 @@ func TestEmittedIRConformsToSchema(t *testing.T) {
 		{"fullstack-helm-synthesized", "testdata/fullstack-app/releases/helm-synthesized.yaml", []string{"testdata/fullstack-app/catalog/base", "testdata/fullstack-app/catalog/recipes/helm-synthesized"}},
 		{"fullstack-compose-synthesized", "testdata/fullstack-app/releases/compose-synthesized.yaml", []string{"testdata/fullstack-app/catalog/base", "testdata/fullstack-app/catalog/recipes/compose-synthesized"}},
 		{"feature-matrix-compose-synthesized", "testdata/feature-matrix/releases/compose-synthesized.yaml", []string{"testdata/feature-matrix/catalog/base", "testdata/feature-matrix/catalog/recipes/compose-synthesized"}},
+		// The one fixture that authors a per-authored-leaf marking at all three
+		// of the units the graph carries one at — the node's own pillars, an
+		// attachment's payloads, and a boundary attachment's infra. Every one of
+		// those markings is omitted when empty, so a schema property no Go field
+		// fills, or a Go field the schema does not declare, would go unremarked
+		// on every other row here.
+		{"authored-leaf-marking", "testdata/authored-leaf-marking/release.yaml", []string{"testdata/authored-leaf-marking/catalog/base"}},
 	}
 	for _, c := range cases {
 		c := c

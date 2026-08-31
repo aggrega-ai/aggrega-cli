@@ -1,0 +1,35 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: authored-leaf-marking-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      # A boundary-level attachment, which is the third surface this fixture
+      # covers. Its infra is authored here because a Release may not declare
+      # values at boundary level, so infra is the only pillar this shape has.
+      features:
+        guard:
+          type: feature.mark/boundary-guard
+          infra:
+            # Public: the marking must not name it.
+            note: boundary-wide
+            # Declared at the leaf.
+            apiKey: ak-plaintext
+            # Beneath an object the Feature declares sensitive.
+            store:
+              token: store-token-plaintext
+      components:
+        app:
+          infra:
+            # Public.
+            replicas: 2
+            # Beneath an object the Component declares sensitive, so the node's
+            # own marking has to reach the infra pillar as well as values.
+            backup:
+              passphrase: backup-plaintext

@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: mark-boundary-guard-compose
+  version: "1.0.0"
+  description: >
+    Compose implementation of feature.mark/boundary-guard. Attached at a
+    boundary rather than against a named component, so it runs once for the
+    boundary however many components that boundary holds. It synthesizes a
+    workload rather than emitting standalone artifacts, because the compose
+    provider renders sourced and synthesized shapes only.
+spec:
+  capability: compose
+  implements: feature.mark/boundary-guard
+  executionScope: boundary
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      guard:
+        image: guard:1.0
+        variables:
+          BOUNDARY: '{{ .boundary.boundary_name }}'
+        ports:
+          p: 9090

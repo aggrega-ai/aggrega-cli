@@ -130,6 +130,29 @@ type IRSpec struct {
 type IRBoundaryFeature struct {
 	Type  string          `json:"type"`
 	Infra OrderedMap[any] `json:"infra,omitempty,omitzero"`
+	// SensitiveAuthoredLeaves names the leaves this boundary attachment
+	// authors a value at that the attached Feature declares sensitive, each
+	// as the pillar-prefixed dotted path the authored datum occupies. Only
+	// "infra.<path>" coordinates arise here, because the shape carries no
+	// values payload to author into — which is the ban above expressed in
+	// the marking rather than a narrowing of it.
+	//
+	// A leaf is named where a declaration COVERS it, on the same reading
+	// every consumer of the axis holds: the Feature's schema declares that
+	// leaf, or declares an object containing it. Matching is segment-wise
+	// over the dotted path, nothing is read out of the path's own text, and
+	// no value is inspected.
+	//
+	// Ordered as the boundary authored the leaves, which is the order Infra
+	// itself carries, so the wire bytes are identical across runs of
+	// identical input.
+	//
+	// Empty when the attachment authors no leaf its Feature declares
+	// sensitive, and equally when the Feature resolves to no schema this
+	// reader could read. Empty is not permission: it says the marking found
+	// nothing at this unit, never that the attachment's infra carries
+	// nothing sensitive.
+	SensitiveAuthoredLeaves []string `json:"sensitive_authored_leaves,omitempty"`
 }
 
 // IRNode is a single node in the IR graph. Purely topological — no opaque payload.
@@ -210,6 +233,39 @@ type IRNode struct {
 	// Empty for a node that authored no `uses` block, and omitted from the wire
 	// in that case.
 	Uses OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero"`
+	// SensitiveAuthoredLeaves names the leaves this node authors a value at
+	// that its Component declares sensitive, each as the pillar-prefixed
+	// dotted path the authored datum occupies — "values.<path>" or
+	// "infra.<path>". Its subject is the node's OWN data: the payloads
+	// [IRSpec.ValuesMapping] and [IRSpec.InfraMapping] carry under this
+	// node's id.
+	//
+	// It is a different fact from the same-named field on
+	// [IRFeatureEntry], not a finer or coarser view of one. That field
+	// reads what an attachment authored against its Feature's schema; this
+	// one reads what the node authored against its Component's. The two
+	// schemas are declared by different entities, so neither answer is
+	// recoverable from the other, and a node that attaches nothing still
+	// authors values.
+	//
+	// A leaf is named where a declaration COVERS it, on the same reading
+	// every consumer of the axis holds: the Component's schema declares
+	// that leaf, or declares an object containing it. Matching is
+	// segment-wise over the dotted path, nothing is read out of the path's
+	// own text, and no value is inspected.
+	//
+	// Ordered as the node authored the leaves, the values pillar's before
+	// the infra pillar's — the same author order the payloads themselves
+	// carry, and what makes the wire bytes identical across runs of
+	// identical input.
+	//
+	// Empty when the node authors no leaf its Component declares sensitive,
+	// and equally when the Component resolves to no schema this reader
+	// could read. Empty is not permission: it says the marking found
+	// nothing at this unit, never that the node's payloads carry nothing
+	// sensitive, and a consumer treating it as licence to display or emit a
+	// value in the clear has read it backwards.
+	SensitiveAuthoredLeaves []string `json:"sensitive_authored_leaves,omitempty"`
 }
 
 // CatalogMetadata is the Enterprise Metadata Suite extracted from a catalog entity.
@@ -466,12 +522,16 @@ type IRFeatureEntry struct {
 	// one deployment and not another; declining to intersect here would
 	// name leaves that carry nothing.
 	//
-	// The join is exact or it does not happen — an authored leaf path
-	// equal to a path the Feature's schema declares sensitive. Nothing is
-	// read out of the path's own text, no value is inspected, and the
-	// per-attachment roll-up is never spread across individual leaves,
-	// which would assert something false about a leaf an author left
-	// readable.
+	// A leaf is named where a declaration COVERS it: the Feature's schema
+	// declares that leaf, or declares an object containing it. A leaf
+	// beneath an object an author declared sensitive is named by that
+	// declaration, so covering it claims nothing the author did not write.
+	// Matching is segment-wise over the dotted path, so a declaration at
+	// "db" covers "db.password" and does not reach a sibling "dbPassword".
+	// Nothing is read out of the path's own text, no value is inspected,
+	// and the per-attachment roll-up is never spread across individual
+	// leaves, which would assert something false about a leaf an author
+	// left readable.
 	//
 	// Empty when the attachment authors no leaf its Feature declares
 	// sensitive. Empty is not permission: it says that no authored leaf

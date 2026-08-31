@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.mark/boundary-guard
+  version: "1.0.0"
+spec:
+  schema:
+    infra:
+      # Public, and the paired control for the boundary surface: a marking that
+      # named it would be marking a value the boundary author left readable.
+      note: { type: string }
+      # Declared at the leaf — the exact case on the boundary surface.
+      apiKey: { type: string, sensitive: true }
+      # Declared on the object, so the boundary attachment's marking has to
+      # cover a leaf the declaration does not name directly.
+      store:
+        type: object
+        sensitive: true
+        properties:
+          token: { type: string }
