@@ -25,11 +25,15 @@
 #       --marker <tag>, a git tag is advanced to HEAD on a fully successful,
 #       non-dry-run publish so the next run diffs from where this one finished.
 #
-# A guest's .wasm is paired to its entity by the entity's metadata.name identity:
-# the final path segment of metadata.name names the `<segment>.wasm` file looked
-# up in --wasm-dir (or beside the entity). A discovered YAML whose kind is not
-# Plugin is skipped with a notice — non-plugin catalog entities belong to the
+# A guest's .wasm is paired to its entity by the filename the entity's own
+# identity derives, looked up in --wasm-dir (or beside the entity). That
+# filename is derived by the shipped mapping and never spelled here; see the
+# guest-filename section below. A discovered YAML whose kind is not Plugin is
+# skipped with a notice — non-plugin catalog entities belong to the
 # catalog-entity publisher, not here — never guessed at.
+#
+# Deriving a guest filename needs the Go toolchain and this module's source, so
+# the script runs from a checkout rather than against a bare binary.
 #
 # Signing (--sign) is per item through `aggrega push --plugin --sign`, which signs
 # BOTH the entity and the .wasm under one signer. --key selects offline keyed
@@ -44,6 +48,8 @@
 #
 # Env: AGGREGA_BIN overrides the `aggrega` binary (e.g. a freshly-built one).
 set -euo pipefail
+
+CLI_ROOT="$(cd "$(dirname "$0")/.." && pwd)"   # aggrega-cli module root
 
 REGISTRY="127.0.0.1:5000"
 DRYRUN=""
@@ -106,41 +112,49 @@ peek_kind() {
   awk -F':[[:space:]]*' '/^kind:[[:space:]]/{print $2; exit}' "$1" | tr -d '\r'
 }
 
-# peek_metadata_name prints the entity's metadata.name identity (its full value,
-# slashes and all), or nothing. Only the `name:` nested directly under the
-# top-level `metadata:` block is read — a `name:` anywhere else (under spec, under
-# a nested block) is ignored — and surrounding quotes are stripped.
-peek_metadata_name() {
-  awk '
-    /^metadata:[[:space:]]*$/ { inmeta = 1; next }
-    /^[^[:space:]#]/          { inmeta = 0 }
-    inmeta && /^[[:space:]]+name:[[:space:]]/ {
-      sub(/^[[:space:]]*name:[[:space:]]*/, "")
-      gsub(/^"|"$/, "")
-      gsub(/^'\''|'\''$/, "")
-      print; exit
-    }' "$1" | tr -d '\r'
+# --- The guest filename ------------------------------------------------------
+# A guest's .wasm is named by the plugin's whole identity — its socket and its
+# bare name together, each encoded and then joined.
+#
+# That rule has ONE home: the pluginpath package, beside the resolver that reads
+# the file by it. It is asked for here and never spelled here. The tempting
+# shortcut — keep the last path segment of metadata.name — is LOSSY twice over:
+# it drops the socket, which the name alone does not carry, and where a name
+# carries a separator it discards everything before it. What it discards is the
+# plugin's location, a publisher or a namespace, and two publishers shipping a
+# same-named plugin are both perfectly legitimate. Distinct identities reach
+# distinct filenames because the shipped encoding guarantees it — no encoded
+# part can contain the sequence the parts are joined on, and a test over the
+# encoding asserts that — so the unambiguity here is inherited, not established
+# here and not enforced on anyone. Nothing in this script constrains what a
+# plugin may be named.
+#
+# guest_filename prints the filename an entity's guest is written under, derived
+# through that one mapping. The entity path is made absolute first, because the
+# derivation runs from the module root.
+guest_filename() {
+  local entity="$1"
+  case "$entity" in /*) : ;; *) entity="$PWD/$entity" ;; esac
+  (cd "$CLI_ROOT" && GOWORK=off go run ./internal/buildtools/pluginguestfile -entity "$entity")
 }
 
-# resolve_wasm prints the .wasm path paired with an entity: the file named by the
-# final path segment of metadata.name, looked up in --wasm-dir when given, else
-# beside the entity. Returns non-zero (with a diagnostic) when the identity or the
-# guest file is missing — a gap is surfaced, never guessed around.
+# resolve_wasm prints the .wasm path paired with an entity: the guest filename
+# the entity's identity derives, looked up in --wasm-dir when given, else beside
+# the entity. Returns non-zero (with a diagnostic) when the filename cannot be
+# derived or the guest file is missing — a gap is surfaced, never guessed around.
 resolve_wasm() {
-  local entity="$1" name leaf wasm
-  name="$(peek_metadata_name "$entity")"
-  if [ -z "$name" ]; then
-    echo "publish-plugins: no metadata.name identity in $entity" >&2
+  local entity="$1" leaf wasm
+  if ! leaf="$(guest_filename "$entity")"; then
+    echo "publish-plugins: cannot derive the guest filename for $entity" >&2
     return 1
   fi
-  leaf="${name##*/}"
   if [ -n "$WASM_DIR" ]; then
-    wasm="$WASM_DIR/$leaf.wasm"
+    wasm="$WASM_DIR/$leaf"
   else
-    wasm="$(dirname "$entity")/$leaf.wasm"
+    wasm="$(dirname "$entity")/$leaf"
   fi
   if [ ! -f "$wasm" ]; then
-    echo "publish-plugins: guest .wasm for $leaf not found at $wasm (set --wasm-dir or co-locate it)" >&2
+    echo "publish-plugins: guest .wasm for $entity not found at $wasm (set --wasm-dir or co-locate it)" >&2
     return 1
   fi
   printf '%s\n' "$wasm"
