@@ -13,7 +13,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
-	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 )
 
 // buildArgs is the build tool's argument shape.
@@ -102,81 +101,129 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
-		View:            view,
-		ReleasePath:     releasePath,
-		WorkspaceRoot:   tw.root,
-		WorkspaceConfig: tw.cfg,
-		Lockfile:        lf,
-		Augment:         true,
-	})
-	if cerr != nil {
-		return errorResult(explainToolError(
-			"The build could not resolve the Release closure.", cerr, closureStageKind(cerr.Stage)))
-	}
-	// This tool produces an artifact, so it reaches the same verdict the command
-	// line's build does on a Manifest the catalog contradicts: it refuses. The
-	// report-shaped tools beside it enumerate the same finding and carry on, which
-	// is the distinction — what the caller asked to be produced, not how the
-	// finding was reached.
-	if err := errors.Join(resolved.ManifestConsistencyFindings...); err != nil {
-		return errorResult(explainToolError(
-			"The build refused: the Manifest maps a type onto a recipe that does not implement it.",
-			err, "manifest"))
-	}
-
-	// The deprecation report over the lockfile's recorded markers, and this verb's
-	// verdict on it. The tool produces an artifact, so it reaches the same verdict
-	// the command line's build does: it reports every recorded marker and refuses
-	// where the workspace configured a halt at that severity, through the one shared
-	// halting rule. The dial is the build's own and is read here because this IS the
-	// build operation over a different transport — one key doing one job. The
-	// report-shaped tools beside it enumerate the same findings and carry on.
+	// This tool produces an artifact, so it runs the artifact posture of the one
+	// preview computation every rendering surface is a transport over: the
+	// integrity, closure-scoped validation, extends and axis-reconstruction gates
+	// all run, because an artifact rendered from a closure nothing checked is
+	// indistinguishable from one that was checked.
 	//
-	// The refusal carries EVERY notice rather than only the halting one, so choosing
-	// a stricter threshold never costs the caller a finding.
-	deprecations := lf.DeprecationFindings()
-	var deprecationHalt error
-	deprecationNotices := make([]string, 0, len(deprecations))
-	for _, f := range deprecations {
-		deprecationNotices = append(deprecationNotices, f.Notice())
-		if deprecationHalt == nil {
-			deprecationHalt = deprecation.HaltFor(
-				f.Notice(), deprecation.Severity(f.Severity), deprecation.Severity(tw.cfg.Build.HaltOnDeprecatedSeverity))
-		}
-	}
-	if deprecationHalt != nil {
-		return errorResult(explainToolError(
-			"The build refused: this Release pins a deprecated artifact at or above the configured halt severity. "+
-				"Every recorded marker in this Release:\n  "+strings.Join(deprecationNotices, "\n  "),
-			deprecationHalt, "release"))
-	}
+	// The drift verify is the one artifact-posture gate held off, and the reason is
+	// this surface's own lockfile posture rather than a view about drift: the tool
+	// renders a Release that has NO lockfile at all, resolving against whatever
+	// pins exist. Refusing a partial lockfile while rendering an absent one would
+	// make less pinning information the more permissive input, which is not a
+	// coherent contract to give a caller.
+	//
+	// The external-input service is absent here for the same reason it was before:
+	// attaching one changes rendered bytes and is its own change with its own
+	// proof.
+	policy := compilerops.ArtifactPolicy()
+	policy.VerifyLockfileDrift = false
 
-	// BuildToBuffer renders to in-memory buffers and performs no filesystem
-	// writes; the returned artifacts are returned to the caller and never
-	// persisted here, so the workspace is unchanged by a build tool call.
-	result, err := compilerops.BuildToBuffer(ctx, compilerops.BuildInputs{
-		View:                             view,
-		Resolved:                         resolved,
-		ReleasePath:                      releasePath,
-		WorkspaceConfig:                  tw.cfg,
-		WorkspaceRoot:                    tw.root,
-		Lockfile:                         lf,
-		CompilerVersion:                  s.serverVersion,
-		TolerateCatalogViewInconsistency: true,
-	}, pipeline.Options{})
+	preview, err := compilerops.Preview(
+		ctx,
+		compilerops.PreviewInputs{
+			View:            view,
+			ReleasePath:     releasePath,
+			WorkspaceRoot:   tw.root,
+			WorkspaceConfig: tw.cfg,
+			Lockfile:        lf,
+			CompilerVersion: s.serverVersion,
+		},
+		policy,
+		pipeline.Options{},
+	)
+
+	// Every recorded marker is reported whatever the outcome, so choosing a
+	// stricter threshold never costs the caller a finding.
+	deprecationNotices := previewDeprecationNotices(preview)
+
 	if err != nil {
 		return errorResult(explainToolError(
-			"The build failed during rendering; nothing was written to disk.", err, "release"))
+			previewFailureSummary(preview, deprecationNotices), err, previewFailureKind(preview, err)))
 	}
 
 	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
-	payload := buildResultPayload{Release: releasePath, Files: renderedFiles(result, detail)}
+	payload := buildResultPayload{Release: releasePath, Files: renderedFiles(preview.Pipeline, detail)}
 	if len(deprecationNotices) > 0 {
 		payload.Deprecations = deprecationNotices
 	}
 	text := renderBuildText(payload)
 	return textResult(text, payload)
+}
+
+// previewDeprecationNotices pulls the recorded-marker notices out of a preview's
+// warnings. They are reported whatever the outcome — on a success they ride in
+// the payload, and on a refusal they are quoted in the message — because
+// reporting is unconditional and only halting is configured, so raising the halt
+// threshold never reduces what the caller is told.
+func previewDeprecationNotices(preview *compilerops.PreviewResult) []string {
+	if preview == nil {
+		return nil
+	}
+	notices := make([]string, 0, len(preview.Warnings))
+	for _, w := range preview.Warnings {
+		if w.Class == compilerops.WarningDeprecation {
+			notices = append(notices, w.Text)
+		}
+	}
+	return notices
+}
+
+// previewFailureSummary is the caller-facing sentence for a refused build,
+// chosen by the gate that refused rather than by matching the failure's text.
+// Each one names what the build did and what the reader is looking at, because
+// an agent consuming this has only the sentence to route on.
+func previewFailureSummary(preview *compilerops.PreviewResult, deprecationNotices []string) string {
+	gate := compilerops.GateNone
+	if preview != nil {
+		gate = preview.FailedGate
+	}
+	switch gate {
+	case compilerops.GateManifestConsistency:
+		return "The build refused: the Manifest maps a type onto a recipe that does not implement it."
+	case compilerops.GateDeprecation:
+		return "The build refused: this Release pins a deprecated artifact at or above the configured halt severity. " +
+			"Every recorded marker in this Release:\n  " + strings.Join(deprecationNotices, "\n  ")
+	case compilerops.GatePinnedIntegrity:
+		return "The build refused: a pinned entry in the cache no longer matches the digest the lockfile records for it. " +
+			"Re-pull the Release to refill the cache from the registry."
+	case compilerops.GateLockfileDrift:
+		return "The build refused: the lockfile no longer matches the dependencies this Release resolves to."
+	case compilerops.GateClosurePillars:
+		return "The build refused: an entity this Release reaches does not satisfy its schema."
+	case compilerops.GateExtends:
+		return "The build refused: an entity this Release reaches inherits from a parent that could not be resolved."
+	case compilerops.GateAxisReconstruction:
+		return "The build could not reconstruct the Release's pinned dependency set from the lockfile."
+	case compilerops.GateRender:
+		return "The build failed during rendering; nothing was written to disk."
+	default:
+		return "The build could not resolve the Release closure."
+	}
+}
+
+// previewFailureKind names the document class a refusal is about, so the caller
+// is pointed at the file it has to edit. The closure-resolution case keeps the
+// per-stage attribution the resolution itself produces, which is finer than
+// anything this switch could reconstruct.
+func previewFailureKind(preview *compilerops.PreviewResult, err error) string {
+	gate := compilerops.GateNone
+	if preview != nil {
+		gate = preview.FailedGate
+	}
+	switch gate {
+	case compilerops.GateManifestConsistency:
+		return "manifest"
+	case compilerops.GateClosureResolution:
+		var cerr *compilerops.ClosureError
+		if errors.As(err, &cerr) {
+			return closureStageKind(cerr.Stage)
+		}
+		return "release"
+	default:
+		return "release"
+	}
 }
 
 // renderedFiles converts the pipeline's rendered artifact map into the ordered

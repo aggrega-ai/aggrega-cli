@@ -74,11 +74,20 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 		}
 	}
 
+	// The Aggregate's source path is rendered into the workspace coordinate
+	// system HERE rather than at each caller, because it is stamped onto every
+	// root-tier IR node as its SourceFile and the IR wire shape is required to be
+	// byte-identical across machines whose workspaces live at different absolute
+	// paths. A caller forwarding the resolved path verbatim would stamp absolute
+	// provenance, which is machine-specific by construction; converting at the one
+	// site every render passes through is what makes that unrepresentable. The
+	// helper returns an already-relative path unchanged, so a caller that had
+	// converted already is unaffected.
 	inputs := pipeline.Inputs{
 		Release:                          r.Release,
 		Manifest:                         r.Manifest,
 		AggregateRawBytes:                r.AggBytes,
-		AggregatePath:                    r.AggregatePath,
+		AggregatePath:                    catalog.RelativeToWorkspace(in.WorkspaceRoot, r.AggregatePath),
 		WorkspaceConfig:                  in.WorkspaceConfig,
 		Lockfile:                         in.Lockfile,
 		WorkspaceRoot:                    in.WorkspaceRoot,

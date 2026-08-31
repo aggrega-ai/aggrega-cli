@@ -620,56 +620,57 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	}
 	view := s.lazyCatalog.ForRequest(pins)
 
-	// 3. Resolve closure against the request view (factored helper — used here
-	//    AND by the drift check at startup). Bundles Release + Manifest +
-	//    Aggregate + raw aggregate bytes + computed closure into a single result
-	//    struct; step 4 verifies and step 5 feeds the pipeline.
-	resolved, envelope := s.resolveReleaseClosure(view, releasePath, lf)
-	if envelope != nil {
-		return irGraphResult{}, envelope
-	}
-
-	// 4. Drift verify. Reuses the closure computed in step 3.
-	//    Loads the lockfile fresh (catches the case where the
-	//    operator re-pulled between calls). On drift, publishes a
-	//    Warning diagnostic on the lockfile path AND fires the
-	//    aggrega/publishDiagnostics notification. Non-blocking —
-	//    irGraph still produces the IR graph; drift is a
-	//    Problems-panel signal, not a halt.
-	lf = s.verifyDriftAndPublish(ctx, lockfilePath, resolved.Closure)
-
-	// 5. Build the IR graph through the shared compiler-operations layer. Recipe
-	//    + sub-aggregate + mapping-library resolution all come from the request
-	//    view (no eager whole-catalog load). Resilient inspection: a resolved
-	//    catalog reference momentarily absent from the lazy view (a drifted cache
-	//    slot skipped on read) is a drift signal, not an authoring fault — the
-	//    graph builds with the entity skipped rather than halting, and drift
-	//    surfaces as a Problems-panel diagnostic via the verify step above. The
-	//    render-skip options mean irGraph returns the IR graph even when
-	//    resolution is incomplete; it does not run the render-time
-	//    resolution-completeness halt (that gate is the CLI build's).
-	result, err := compilerops.BuildToBuffer(
+	// 3. Run the one preview computation, in its inspection posture. It resolves
+	//    the closure itself, so this handler does not resolve one separately and
+	//    then render from a second resolution of the same Release. One resolution
+	//    serves both, which is what guarantees the graph and the drift verdict at
+	//    step 4 describe the same computed closure rather than two.
+	//
+	//    Recipe, sub-aggregate and mapping-library resolution all come from the
+	//    request view (no eager whole-catalog load). Resilient inspection: a
+	//    resolved catalog reference momentarily absent from the lazy view (a
+	//    drifted cache slot skipped on read) is a drift signal, not an authoring
+	//    fault — the graph builds with the entity skipped rather than halting, and
+	//    drift surfaces as a Problems-panel diagnostic at step 4. The render-skip
+	//    option means irGraph returns the IR graph even when resolution is
+	//    incomplete; it does not run the render-time resolution-completeness halt
+	//    (that gate belongs to the surfaces that emit an artifact).
+	preview, err := compilerops.Preview(
 		ctx,
-		compilerops.BuildInputs{
-			View:                             view,
-			Resolved:                         resolved,
-			ReleasePath:                      releasePath,
-			WorkspaceConfig:                  s.wsConfig,
-			WorkspaceRoot:                    s.workspaceRoot,
-			Lockfile:                         lf,
-			CompilerVersion:                  s.compilerVersion,
-			TolerateCatalogViewInconsistency: true,
+		compilerops.PreviewInputs{
+			View:            view,
+			ReleasePath:     releasePath,
+			WorkspaceRoot:   s.workspaceRoot,
+			WorkspaceConfig: s.wsConfig,
+			Lockfile:        lf,
+			CompilerVersion: s.compilerVersion,
+			// The daemon never fills a lockfile, so one it holds was on disk before
+			// the request. The drift verify is off under this posture regardless —
+			// drift reaches the reader through the Problems panel above, not as a
+			// refusal — and the flag states the fact rather than the consequence.
+			LockfilePreexisted: lf != nil,
 		},
+		// Inspection posture: the same computation the build runs, with the gates
+		// that would REFUSE left off. An editor that declines to draw the graph
+		// leaves the reader with nothing, where a build leaves them a diagnostic.
+		compilerops.InspectionPolicy(),
 		s.irGraphPipelineOptions(),
 	)
 	if err != nil {
-		return irGraphResult{}, &jsonRPCError{
-			Code:    jsonRPCInternalError,
-			Message: fmt.Sprintf("pipeline: %v", err),
-		}
+		return irGraphResult{}, s.previewFailureEnvelope(view, releasePath, preview, err)
 	}
+	resolved := preview.Resolved
+	result := preview.Pipeline
 
-	// 6. Render advisories to the Problems panel. The render step's coded
+	// 4. Drift verify, against the closure the preview computed. Loads the
+	//    lockfile fresh (catches the case where the operator re-pulled between
+	//    calls). On drift, publishes a Warning diagnostic on the lockfile path AND
+	//    fires the aggrega/publishDiagnostics notification. Non-blocking — irGraph
+	//    still produces the IR graph; drift is a Problems-panel signal, not a halt,
+	//    which is why it runs here rather than as one of the preview's own gates.
+	s.verifyDriftAndPublish(ctx, lockfilePath, resolved.Closure)
+
+	// 5. Render advisories to the Problems panel. The render step's coded
 	//    diagnostics — a target that cannot honor an authored field, an
 	//    attachment delivering a declared-sensitive datum as a literal — reach
 	//    the terminal on a CLI build and would otherwise reach nothing here, so

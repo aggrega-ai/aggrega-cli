@@ -4,6 +4,7 @@
 package serve
 
 import (
+	stderrors "errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -101,6 +102,55 @@ func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath str
 		}
 	}
 	return resolved, nil
+}
+
+// previewFailureEnvelope adapts a preview failure into the daemon's wire
+// envelope, preserving the distinction the handler's callers already depend on:
+// a failure to RESOLVE what the Release reaches is an entity-not-resolvable
+// envelope carrying the catalog-skip annotation, while a failure inside the
+// pipeline is an internal error. The two are told apart by the gate the preview
+// reports rather than by matching the failure's text, so the mapping cannot rot
+// when a message is reworded.
+//
+// The failure it was rendered from rides on the envelope as well as the rendered
+// text, because rendering is one-way and a caller that maps the envelope onto a
+// diagnostic needs the failure to report the condition behind it.
+func (s *Server) previewFailureEnvelope(view *catalog.LazyLookup, releasePath string, preview *compilerops.PreviewResult, err error) *jsonRPCError {
+	gate := compilerops.GateNone
+	if preview != nil {
+		gate = preview.FailedGate
+	}
+	switch gate {
+	case compilerops.GateClosureResolution:
+		// A closure-walk failure is annotated with the skips that could explain it;
+		// an earlier-stage failure names the Release document it was loading.
+		var cerr *compilerops.ClosureError
+		if stderrors.As(err, &cerr) && cerr.Stage != compilerops.ClosureStageComputeClosure {
+			return &jsonRPCError{
+				Code:    errEntityNotResolvable,
+				Message: cerr.Error(),
+				Data:    newErrorData(releasePath, 0, 0),
+				cause:   err,
+			}
+		}
+		return &jsonRPCError{
+			Code:    errEntityNotResolvable,
+			Message: s.skipContext(view, err.Error()),
+			cause:   err,
+		}
+	case compilerops.GateAxisReconstruction:
+		return &jsonRPCError{
+			Code:    errEntityNotResolvable,
+			Message: s.skipContext(view, err.Error()),
+			cause:   err,
+		}
+	default:
+		return &jsonRPCError{
+			Code:    jsonRPCInternalError,
+			Message: fmt.Sprintf("pipeline: %v", err),
+			cause:   err,
+		}
+	}
 }
 
 // reconstructClosureAxes augments the resolved closure's cross-document library

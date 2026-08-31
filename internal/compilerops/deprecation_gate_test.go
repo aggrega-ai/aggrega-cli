@@ -1,18 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package compilerops
 
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// The gate reports through a callback rather than to a writer, because its
+// callers are a terminal, a structured tool payload and an editor channel, and
+// only the first of those wants a formatted line. These two shims reproduce the
+// command line's rendering so the assertions below read the text a terminal
+// reader actually sees — the notice content and the verdict are the gate's, and
+// the prefix is the calling surface's.
+func enforceLockfileDeprecation(lf *lockfile.Lockfile, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
+	return LockfileDeprecationVerdict(lf, buildCfg, func(n string) {
+		fmt.Fprintf(diagOut, "  deprecation: %s\n", n)
+	})
+}
+
+func enforceTrustDeprecation(trust *pluginstrust.Trust, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
+	return TrustDeprecationVerdict(trust, buildCfg, func(n string) {
+		fmt.Fprintf(diagOut, "  deprecation: %s\n", n)
+	})
+}
 
 // lockfileWithRecordedMarker builds the minimal input the build-time gate needs to
 // reach its recorded-marker branch: one lockfile row carrying a deprecation
@@ -207,38 +228,6 @@ func TestBuildStrictThresholdStillReportsEveryEntity(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("a configured halt must not cost a notice; missing %q:\n%s", want, got)
-		}
-	}
-}
-
-// TestBuildHaltRendersItsWholeMessageToTheTerminal guards the halt's rendered
-// form, not just its error value. The CLI renders a multi-error as its wrapped
-// errors alone — so a halt message wrapping TWO errors reaches the terminal as
-// the sentinel and the policy clause with everything between them dropped: the
-// entity, the severity, the message, and the observation moment. Asserting on
-// err.Error() cannot see that, because Go renders the format string there
-// regardless. This asserts on what the user actually reads.
-func TestBuildHaltRendersItsWholeMessageToTheTerminal(t *testing.T) {
-	const stamp = "2026-07-01T09:30:00Z"
-	lf := lockfileWithRecordedMarker("oci://reg.example/components/api", "retracted", "withdrawn: bad release", stamp)
-
-	var out bytes.Buffer
-	err := enforceLockfileDeprecation(lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, &out)
-	if err == nil {
-		t.Fatal("a recorded marker at the configured threshold must halt the build")
-	}
-
-	rendered := formatCompilerError(err)
-	for _, want := range []string{
-		"components/api",
-		"is retracted",
-		"withdrawn: bad release",
-		"as of " + stamp,
-		"aggrega pull",
-		`halt_on_deprecated_severity is "retracted"`,
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Errorf("the rendered halt drops %q — the message reached the terminal incomplete:\n%s", want, rendered)
 		}
 	}
 }

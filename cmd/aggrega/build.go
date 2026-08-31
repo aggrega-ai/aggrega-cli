@@ -27,8 +27,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
@@ -345,222 +343,42 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// byte-identical from the lockfile.
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	lazyView.SetPins(catalog.PinsFromLockfile(lf))
-	// Loud integrity gate: a pinned cache slot that drifted from its lockfile pin
-	// halts here with the integrity diagnostic, before the closure walk — so a
-	// tampered/drifted cache surfaces as "re-pull", not a misleading downstream
-	// "not resolvable". (Serve keeps its resilient skip; the build, a deploy gate,
-	// halts.)
-	if err := lazyView.VerifyPinnedIntegrity(); err != nil {
-		return fmt.Errorf("lockfile integrity: %w", err)
-	}
 
-	// Shared Release→closure orchestration: load the Release, resolve + compose
-	// the Manifest, resolve the Aggregate, gate the external seed on a registry
-	// pin, and compute + augment the closure once. Every front door runs this same
-	// shared resolver, so the sequence cannot drift between them. The resolver runs
-	// the manifest-implements consistency gate itself, before the closure walk —
-	// the earliest loud point — and hands back its findings; the halt below is this
-	// command's verdict on them. Augment folds the cross-document library axes so
-	// the closure matches the one drift is verified against. An in-closure entity
-	// skipped at tolerant load surfaces as an unresolvable URI; withSkipContext
-	// replays WHY it was skipped so the failure is never a bare "not found".
-	progress.phase(phaseClosure)
-	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
-		View:            lazyView,
-		ReleasePath:     releasePath,
-		WorkspaceRoot:   wsRoot,
-		WorkspaceConfig: wsCfg,
-		Lockfile:        lf,
-		Augment:         true,
-	})
-	if cerr != nil {
-		return withSkipContext(cerr, skipped)
-	}
-	// A build emits a deployable artifact, so a mapping the catalog contradicts is
-	// a halt: rendering a component through a recipe that does not implement its
-	// type would produce an artifact nobody asked for. The findings are joined so
-	// every inconsistent mapping is reported at once rather than one per re-run.
-	if err := stderrors.Join(resolved.ManifestConsistencyFindings...); err != nil {
-		return err
-	}
-	rel := resolved.Release
-	manifest := resolved.Manifest
-	aggBytes := resolved.AggBytes
-	cl := resolved.Closure
-	progress.note("closure entities: %d", len(cl.Entities))
-	progress.note("schema libraries: %d, mapping libraries: %d, workload libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries), len(cl.WorkloadLibraries))
-
-	// Closure-scoped Pass-2: validate ONLY the entities the Release reaches against
-	// the closure's libraries (resolved through the lazy lookup). An in-closure
-	// entity that is schema-invalid — or whose $ref names a library skipped (broken)
-	// or missing — fails loudly here (the hard in-closure library reject); an
-	// out-of-closure break is never validated.
-	progress.phase(phaseValidate)
-	if err := lazyView.ValidateClosureScopedPillars(cl); err != nil {
-		return withSkipContext(err, skipped)
-	}
-
-	// Reconstruct the sub-aggregate and pipeline-plugin axes hermetically (the
-	// closure Lookup carries a nil OCIPuller, so no registry fetch) so the drift
-	// check below compares the lockfile against a closure carrying the same
-	// sub-aggregate and plugin entries the pull pinned — ComputeClosure leaves the
-	// plugin axis and the transitive sub-aggregate axis empty. Provider bindings
-	// resolve from the LOCKFILE, never the workspace config, so a plugins.providers
-	// change after the pull does not move the reconstructed closure. Phase B's
-	// re-fold shifts the lazy view's pin set to the augmented closure to make the
-	// just-pinned plugin entities visible; the pins are restored to the lockfile
-	// view afterward so the render path below resolves exactly as before.
-	closureLookup := resolved.Lookup
-	reconAggLoader, aggErr := closure.RequireAggregateLoader(closureLookup)
-	if aggErr != nil {
-		return withSkipContext(aggErr, skipped)
-	}
-	reconRecipeLoader, recipeErr := closure.RequireRecipeLoader(closureLookup)
-	if recipeErr != nil {
-		return withSkipContext(recipeErr, skipped)
-	}
-	reconBindings := lockfile.ProviderBindings(lf)
-	reconResolver := func(ref string) (types.Plugin, bool, error) {
-		return lazyView.ProviderPluginForTarget(ref, reconBindings)
-	}
-	reconRefold := func() (closure.RecipeLoader, error) {
-		lazyView.SetPins(catalog.PinsFromClosure(cl))
-		return lazyView.ClosureRecipeLoader(), nil
-	}
-	if err := closure.ReconstructClosureAxes(&cl, reconAggLoader, reconRecipeLoader, closureLookup, reconResolver, reconRefold); err != nil {
-		return withSkipContext(err, skipped)
-	}
-	lazyView.SetPins(catalog.PinsFromLockfile(lf))
-
-	// Reconstruct the output-shaping workspace-socket plugin entities and their
-	// .wasm from the LOCKFILE (provider bindings + mutator attachments), config-
-	// invariant: these sockets are pull-time choices recorded only in the lockfile,
-	// so ComputeClosure cannot re-derive them hermetically without re-reading config.
-	// The socket lookup honors the lockfile pins so a pinned socket .wasm resolves
-	// from the content-addressed cache offline; the entity + artifact are re-read
-	// (re-hashed) so a drifted or tampered pin still surfaces as drift.
-	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(lf)
-	if len(socketEntityURIs) > 0 {
-		socketLookup := lazyView.ClosureLookupWithPins(nil, wsRoot, cacheDir, nil, catalog.PinsFromLockfile(lf))
-		socketRecipeLoader, socketErr := closure.RequireRecipeLoader(socketLookup)
-		if socketErr != nil {
-			return withSkipContext(socketErr, skipped)
-		}
-		if err := closure.ReconstructWorkspaceSocketEntities(&cl, socketEntityURIs, socketRecipeLoader, socketLookup); err != nil {
-			return withSkipContext(err, skipped)
-		}
-	}
-
-	// Lockfile-drift verification against the freshly-computed closure. Only a
-	// pre-existing lockfile is verified; an auto-pulled one matches by construction.
-	if lockfilePreexisted {
-		if err := lockfile.Verify(lf, cl); err != nil {
-			return fmt.Errorf("%w; run `aggrega pull --upgrade --release %s` to refresh the lockfile against current catalog state",
-				err, releasePath)
-		}
-	}
-
-	// Resolve extends inheritance for the closure's Components and Features so the
-	// pipeline sees fully-merged entities. Closure-scoped: an out-of-closure broken
-	// extends never fails the build; an in-closure broken parent does.
-	progress.phase(phaseInheritance)
-	if extErrs := lazyView.ResolveClosureExtends(cl); len(extErrs) > 0 {
-		for _, e := range extErrs {
-			fmt.Fprintf(diagOut, "  extends: %s\n", e)
-		}
-		return withSkipContext(fmt.Errorf("catalog extends: %d resolution error(s)", len(extErrs)), skipped)
-	}
-
-	// Surface non-fatal deprecation notices about deprecated catalog shapes.
-	for _, w := range cat.DeprecationWarnings() {
-		fmt.Fprintf(diagOut, "  deprecation: %s\n", w)
-	}
-
-	// Deprecated-entity policy gate: report every pinned reference carrying a
-	// retroactive lockfile marker, halting or advising per the workspace build
-	// policy. The report is the shared one every surface reads; the verdict is this
-	// verb's, because a build produces an artifact. Reads only the lockfile — no
-	// registry access (the ahead-of-time boundary).
-	if err := enforceLockfileDeprecation(lf, wsCfg.Build, diagOut); err != nil {
-		return err
-	}
-
-	// The same gate over the other store. A plugin attached at a verdict role — a
-	// linter, or governance at ir-verdict / render-verdict — shapes no rendered byte,
-	// so it is recorded beside the lockfile rather than pinned in it and has no row
-	// the gate above could read. Without this, a withdrawn gate plugin is fetched,
-	// cached and run with nothing said. Reads only the record: no registry access.
-	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(releasePath))
-	if trustErr != nil {
-		return trustErr
-	}
-	if err := enforceTrustDeprecation(trustRecord, wsCfg.Build, diagOut); err != nil {
-		return err
-	}
-
-	// Surface non-fatal schema-pillar-overlap advisories for the build's closure
-	// entities (registry-pinned included) — the warning-level sibling of the
-	// closure-scoped pillar validation above, over the same closure-entity set.
-	for _, w := range lazyView.ClosureLintWarnings(cl) {
-		fmt.Fprintf(diagOut, "  notice: %s\n", w)
-	}
-
-	// Provider rendering routes through the pipeline's catalog-driven Wasm
-	// dispatch — the single path both the CLI build and the build-faithful test
-	// harness use, so a test renders through exactly the plugins a real build does.
-	progress.phase(phaseRender)
-	relAggPath := catalog.RelativeToWorkspace(wsRoot, resolved.AggregatePath)
-	buildLookup := lazyView.AsCatalogLookup()
-	// Provider resolution reads the resolved bindings from the LOCKFILE, never the
-	// workspace config — so build output is invariant to a plugins.providers change
-	// made after the pull (a change is adopted only on the next pull). A federated
-	// catalog with more than one plugin serving a target is disambiguated by the
-	// pinned binding; without a binding an ambiguous target halts loudly at render.
-	lockfileBindings := lockfile.ProviderBindings(lf)
-	buildLookup.ProviderPlugin = func(ref string) (types.Plugin, bool, error) {
-		return lazyView.ProviderPluginForTarget(ref, lockfileBindings)
-	}
-	// The pipeline context carries the external-input service to the
-	// renderer's plugin-load sites, where each loader picks it up as its
-	// fetch seam.
-	buildCtx := wasm.ContextWithExternalInputs(context.Background(), extInputs)
-	buildCtx = wasm.ContextWithDisablePluginCache(buildCtx, run.disablePluginCache)
+	// The preview computation itself — the gate sequence and the render — runs in
+	// the shared entry point every rendering surface is a transport over, so the
+	// command line, the editor's build tool and the daemon cannot come to disagree
+	// about which gates run or in what order. What stays here is what genuinely
+	// belongs to this verb: the flags, the progress surface, the diagnostic voice,
+	// and the writes.
+	//
+	// The context carries this command's own render knobs; the external-input seam
+	// is installed by the entry point, from the service handed to it below.
+	buildCtx := wasm.ContextWithDisablePluginCache(context.Background(), run.disablePluginCache)
 	buildCtx = wasm.ContextWithVerifyDeterminism(buildCtx, run.verifyDeterminism)
-	pipelineInputs := pipeline.Inputs{
-		Release:            rel,
-		Manifest:           manifest,
-		AggregateRawBytes:  aggBytes,
-		AggregatePath:      relAggPath,
-		WorkspaceConfig:    wsCfg,
-		Lockfile:           lf,
-		WorkspaceRoot:      wsRoot,
-		MappingLibraries:   lazyView.MappingLibraries(),
-		WorkloadLibraries:  lazyView.WorkloadLibraries(),
-		ArtifactsLibraries: lazyView.ArtifactsLibraries(),
-		CompilerVersion:    provenanceCompilerVersion(),
-	}
-	// Compose the governance attachment list the pipeline dispatches and the
-	// digests recorded as trusted for the verdict attachments, through the one
-	// composition every build surface calls — the command line here, and the
-	// daemon and the editor's build tool through BuildToBuffer. Both halves arrive
-	// together because a surface that composed the attachments and omitted the
-	// recorded digests would run every configured gate while holding none of them
-	// to the identity that was reviewed, and would do it silently: an unsupplied
-	// digest map is an empty one, and an empty one means nothing was recorded.
-	// ApplyGovernanceComposition documents what each half reconstructs and why.
-	if err := compilerops.ApplyGovernanceComposition(&pipelineInputs, lazyView, releasePath); err != nil {
-		return err
-	}
-	result, err := pipeline.RunPipeline(
+
+	preview, err := compilerops.Preview(
 		buildCtx,
-		pipelineInputs,
-		buildLookup,
-		lazyView.RecipeLookupWithManifest(manifest),
-		lazyView.SubAggregateLoader(),
+		compilerops.PreviewInputs{
+			View:               lazyView,
+			ReleasePath:        releasePath,
+			WorkspaceRoot:      wsRoot,
+			WorkspaceConfig:    wsCfg,
+			Lockfile:           lf,
+			CompilerVersion:    provenanceCompilerVersion(),
+			LockfilePreexisted: lockfilePreexisted,
+			ExternalInputs:     extInputs,
+			// The tolerant Pass-1 load's deprecation notices are this command's to
+			// produce (no other surface loads a whole catalog) and the entry point's
+			// to emit, so the advisory sequence has one order.
+			CatalogWarnings: cat.DeprecationWarnings(),
+			Phase:           func(p compilerops.PreviewPhase) { progress.phase(previewPhaseStep(p)) },
+		},
+		// A build emits a deployable artifact, so every gate is on and every
+		// divergence halts.
+		compilerops.ArtifactPolicy(),
 		pipeline.Options{
-			IncludeTrace:             traceEnabled,
-			TraceUnredacted:          run.traceUnredacted,
-			RecipeResolutionVerifier: lazyView.VerifyRecipeResolution,
+			IncludeTrace:    traceEnabled,
+			TraceUnredacted: run.traceUnredacted,
 			// Per-node render progress. The callback writes only to the progress
 			// reporter's diagnostic sink (stderr); stdout carries only the final
 			// summary, so rendered output stays byte-deterministic. A no-op
@@ -580,9 +398,24 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 			SuppressUnsupportedFieldWarnings: run.suppressUnsupportedFieldWarnings,
 		},
 	)
+	// The warnings are written before the failure is returned, because a gate that
+	// halted still found everything ahead of it and a reader who loses those
+	// findings has to re-run to see them.
+	writePreviewWarnings(preview, diagOut)
 	if err != nil {
+		// Only a resolution or validation failure can be explained by a file the
+		// tolerant load refused, so only those are annotated: a deprecation halt
+		// carrying a note about skipped catalog files would name bystanders as the
+		// cause.
+		if compilerops.IsResolutionFailure(err) {
+			return withSkipContext(err, skipped)
+		}
 		return err
 	}
+	cl := preview.Resolved.Closure
+	progress.note("closure entities: %d", len(cl.Entities))
+	progress.note("schema libraries: %d, mapping libraries: %d, workload libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries), len(cl.WorkloadLibraries))
+	result := preview.Pipeline
 
 	// Write output. Clean dist/boundaries/ first so stale files from a prior
 	// build of a different variant don't leak into this one (GitOps consumers
@@ -636,6 +469,49 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	fmt.Fprintf(out, "%s\n", formatTotalBuildTimeLine(formatPhaseElapsed(time.Since(buildStart))))
 	fmt.Fprintf(out, "Build completed: %d files written to %s/\n", len(result.Artifacts), outDir)
 	return nil
+}
+
+// previewPhaseStep maps a stage of the shared preview sequence onto this
+// command's progress spine. The two are deliberately separate vocabularies: the
+// spine also carries steps the preview knows nothing about (the catalog load and
+// the lockfile acquisition happen before the preview begins), so a shared
+// enumeration would have to name steps that only one side has.
+func previewPhaseStep(p compilerops.PreviewPhase) int {
+	switch p {
+	case compilerops.PhaseClosure:
+		return phaseClosure
+	case compilerops.PhaseValidate:
+		return phaseValidate
+	case compilerops.PhaseInheritance:
+		return phaseInheritance
+	case compilerops.PhaseRender:
+		return phaseRender
+	}
+	return phaseClosure
+}
+
+// writePreviewWarnings renders the preview's advisories in this command's voice,
+// in the order the preview raised them. Each class gets the prefix the terminal
+// reader already recognises for it; the classes exist so the rendering is a
+// choice made here rather than text the shared layer pre-formatted for one
+// surface's terminal.
+//
+// A nil result writes nothing: a preview that failed before it could raise
+// anything has nothing to say.
+func writePreviewWarnings(preview *compilerops.PreviewResult, diagOut io.Writer) {
+	if preview == nil {
+		return
+	}
+	for _, w := range preview.Warnings {
+		switch w.Class {
+		case compilerops.WarningExtends:
+			fmt.Fprintf(diagOut, "  extends: %s\n", w.Text)
+		case compilerops.WarningCatalogLint:
+			fmt.Fprintf(diagOut, "  notice: %s\n", w.Text)
+		default:
+			fmt.Fprintf(diagOut, "  deprecation: %s\n", w.Text)
+		}
+	}
 }
 
 // formatTotalBuildTimeLine renders the successful-build summary's total line with
