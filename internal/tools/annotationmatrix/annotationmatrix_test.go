@@ -161,12 +161,12 @@ func TestNodeScopedRegionProjectsEveryCell(t *testing.T) {
 	}
 }
 
-// TestCellDistinguishesNotHonouredFromNotRendered pins the distinction the grid
-// exists to carry. "the provider renders this path and reads nothing there" and
+// TestCellDistinguishesNotAppliedFromNotRendered pins the distinction the grid
+// exists to carry. "the provider renders this path and applies nothing there" and
 // "the provider does not render this path at all" are different answers, and
 // collapsing them would tell an author their annotation was ignored on a path
 // their node could never take.
-func TestCellDistinguishesNotHonouredFromNotRendered(t *testing.T) {
+func TestCellDistinguishesNotAppliedFromNotRendered(t *testing.T) {
 	p := provider{
 		Name:       "alpha",
 		InputKinds: types.PluginInputKinds{Sourced: true},
@@ -180,8 +180,8 @@ func TestCellDistinguishesNotHonouredFromNotRendered(t *testing.T) {
 		scope, key  string
 		want        string
 	}{
-		{"declared on a rendered path", true, types.WellKnownAnnotationScopeSourced, "aggrega.ai/first", honoured},
-		{"undeclared on a rendered path", true, types.WellKnownAnnotationScopeSourced, "aggrega.ai/other", notHonoured},
+		{"declared on a rendered path", true, types.WellKnownAnnotationScopeSourced, "aggrega.ai/first", applied},
+		{"undeclared on a rendered path", true, types.WellKnownAnnotationScopeSourced, "aggrega.ai/other", notApplied},
 		{"declared but the path is not rendered", false, types.WellKnownAnnotationScopeSynthesized, "aggrega.ai/first", notRendered},
 		{"undeclared and the path is not rendered", false, types.WellKnownAnnotationScopeSynthesized, "aggrega.ai/other", notRendered},
 	}

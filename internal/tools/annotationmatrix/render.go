@@ -12,15 +12,22 @@ import (
 
 // The three cell marks. The page's curated legend defines each by name, so they
 // are part of the contract between these regions and the prose around them.
+//
+// The vocabulary names the placement mechanism — whether the provider applies
+// the key when it composes this path's output — and deliberately says nothing
+// about where else the authored value travels. The value reaches the node's
+// render context whatever a cell says, so a mark phrased as the value shaping no
+// output at all would be a stronger claim than the declarations support.
 const (
-	// honoured says the provider reads the key on this path and the rendered
-	// output changes.
-	honoured = "honoured"
-	// notHonoured says no provider path reads the key here; the value travels
-	// through the build as an opaque string and shapes nothing.
-	notHonoured = "—"
+	// applied says the provider applies the key on this path and the rendered
+	// output changes as a result.
+	applied = "applied"
+	// notApplied says no provider applies the key here: the target has no render
+	// slot for it on this path, so the placement mechanism contributes nothing to
+	// what is rendered.
+	notApplied = "—"
 	// notRendered says the provider does not render this input kind at all, so
-	// there is no path for the key to be read on or missed on.
+	// there is no path for the key to be applied on or missed on.
 	notRendered = "n/a"
 )
 
@@ -94,9 +101,9 @@ func cell(p provider, kindClaimed bool, scope, key string) string {
 		return notRendered
 	}
 	if declaresKeyAt(p, key, scope) {
-		return honoured
+		return applied
 	}
-	return notHonoured
+	return notApplied
 }
 
 // renderBoundaryScopedRegion renders the keys that sit outside the grid: those a
@@ -107,7 +114,7 @@ func cell(p provider, kindClaimed bool, scope, key string) string {
 // their own rather than three more grid rows.
 func renderBoundaryScopedRegion(providers []provider) (string, error) {
 	var b strings.Builder
-	b.WriteString("| Annotation | Honoured by | Purpose | Default |\n")
+	b.WriteString("| Annotation | Applied by | Purpose | Default |\n")
 	b.WriteString("| --- | --- | --- | --- |\n")
 
 	rows := 0

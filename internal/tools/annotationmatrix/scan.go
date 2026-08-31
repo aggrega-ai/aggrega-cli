@@ -41,7 +41,7 @@ type provider struct {
 	Name string
 	// InputKinds is the provider's own render-behavior claim, read from its
 	// published entity. It fixes which rows are answerable at all: a key cannot
-	// be honoured on an input kind the provider does not render, and a cell for
+	// be applied on an input kind the provider does not render, and a cell for
 	// one is not a gap but an absence of a question.
 	InputKinds types.PluginInputKinds
 	// Annotations is the support claim as authored, in author order.
