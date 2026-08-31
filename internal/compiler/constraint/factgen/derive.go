@@ -87,6 +87,24 @@ type tupleShare struct {
 // rather than a convention: the language cannot tell an omitted slice from a
 // deliberately empty one, and a value converted into the power type from an
 // arbitrary string would otherwise reduce the closed set to a spelling.
+//
+// # The bound on what these refusals establish, and the coarseness is honest
+//
+// All four refusals are structural: each reads the declared relation and the
+// fact set and nothing else. The property that justifies a stage is not
+// structural but temporal — some set of facts is complete here and was not
+// complete before — and the registry records no moment at which anything
+// happens, so nothing here can evaluate it. A stage occupied by one genuine fact
+// and linearly related to its neighbour therefore derives cleanly even when that
+// fact completes at the very moment its predecessor's does.
+//
+// So what the derivation establishes is that the chain is well-formed, never
+// that each stage in it earns its place. Whether a stage earns its place is a
+// reader's judgement, and it is named as one here rather than left to the
+// silence: a derivation that refuses four shapes strictly, and with messages
+// that explain themselves, reads as having covered the question it is in fact
+// silent on. Well-formedness is the strongest claim this code supports, which is
+// why it is the claim made rather than a weaker one dressed up.
 func deriveChain() (chain, error) {
 	byName := make(map[string]stageDecl, len(stages))
 	for _, s := range stages {

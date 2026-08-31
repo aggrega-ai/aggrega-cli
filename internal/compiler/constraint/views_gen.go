@@ -238,6 +238,23 @@ type AnnotationBindingRoute struct {
 // reaching behind an accessor to the underlying document to compute a fact
 // the accessor does not name.
 //
+// The document that rule reaches is an authored ENTITY document, and it
+// stops there. An authored pillar's content is a fact like any other,
+// because the rule exists to stop a check re-deriving a fact that has
+// another home, and a pillar's content has none. That scope is what makes
+// the rule checkable at all: it governs what an accessor may RETURN, which
+// is a property of a signature, so a guard over the generated signatures
+// can decide it.
+//
+// What a check DOES with a value it legitimately received is a separate
+// axis, and the two are deliberately not one rule. Interpreting an
+// authored payload at the stage it was authored, when the resolved form of
+// that payload is a fact of a later stage — a template expression inside
+// a values pillar is the case that arises — yields an answer that can
+// differ from the one the renderer reaches. That hazard turns on what a
+// predicate computes rather than on what an accessor handed over, so no
+// rule over signatures observes it, and none here claims to.
+//
 // A fact's value is immutable to a check. A check reads what an accessor
 // returns; it never writes through it. This is stated once here rather
 // than on each view, because one policy per view would be several
