@@ -79,19 +79,39 @@ func ValidateCatalog(wsRoot, cacheDir string, dirs []string) (CatalogResult, err
 
 // InputKindCapabilityErrors reports each Recipe / FeatureRecipe that declares a
 // workload: block (synthesized mode) bound to a provider whose plugin cannot
-// synthesize — a guaranteed render-time halt, surfaced here at validation time. It
-// is an early, non-authoritative detector: the render-time central input-kind gate
-// remains the single enforcement chokepoint. The detector reads a provider's
-// input-kind support from the authoring-time capabilities claim on the
-// provider-rendering Plugin entity that serves it, resolved through providerPlugin
-// — the same provider→Plugin resolution the render route follows — and reuses the
-// gate's own message clause (renderer.UnsupportedInputKindMessage) so the early and
-// late diagnostics read identically. A provider whose serving Plugin does not
-// resolve in scope, or whose Plugin carries no capabilities claim (ContractFor
-// ok=false), is skipped: there is no capability claim to contradict and
-// forward-looking catalog scaffolding must not be flagged. The workload predicate
-// is the gate's own (!Spec.Workload.IsEmpty()), so presence is classified
-// identically.
+// synthesize — a guaranteed render-time halt, surfaced here at validation time.
+//
+// The workload is checked whatever else the same document declares. A Recipe
+// pairing a workload with a source or with artifacts still cannot have that
+// workload rendered, so another, honourable input kind alongside it does not
+// excuse the one the provider cannot honour.
+//
+// It is an early, non-authoritative detector, and non-authoritative carries two
+// consequences that decide what a clean result from it is worth.
+//
+// A build does not run it. It is reached from the validate path, the editor tier,
+// and the assistant-facing catalog and release scopes; no build command reaches
+// it. So a clean result here is not a prediction that a build will pass — and it
+// does not need to be, because a build refuses this same fault on its own at the
+// render-time central input-kind gate, which is the single enforcement chokepoint
+// and is reached identically from the Recipe and FeatureRecipe render paths.
+//
+// And it is silently skipped for any provider it cannot read a capability claim
+// for: one whose serving provider Plugin does not resolve in scope, whose
+// resolution errors, or whose resolved Plugin carries no contract: block
+// (ContractFor ok=false). Skipping is correct in each of those cases — there is no
+// capability claim to contradict, and forward-looking catalog scaffolding must not
+// be flagged — but a skip and a pass are indistinguishable in the output, so over a
+// catalog whose provider Plugin entities declare no contract this reports nothing
+// at all, and nothing in the result says so.
+//
+// The detector reads a provider's input-kind support from the authoring-time
+// capabilities claim on the provider-rendering Plugin entity that serves it,
+// resolved through providerPlugin — the same provider→Plugin resolution the render
+// route follows — and reuses the gate's own message clause
+// (renderer.UnsupportedInputKindMessage) so the early and late diagnostics read
+// identically. The workload predicate is the gate's own
+// (!Spec.Workload.IsEmpty()), so presence is classified identically.
 func InputKindCapabilityErrors(providerPlugin func(ref string) (types.Plugin, bool, error), recipes []types.Recipe, featureRecipes []types.FeatureRecipe) []error {
 	var errs []error
 	check := func(kind, identity, provider string, workload types.WorkloadTemplate) {

@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -299,5 +300,160 @@ func TestNodeInputKind_ClaimedBy(t *testing.T) {
 	}
 	if !artifacts.claimedBy(ProviderContract{ArtifactsStandalone: true}) {
 		t.Error("artifacts-only.claimedBy({ArtifactsStandalone:true}) = false, want true")
+	}
+}
+
+// contractEngine is a Provider whose only interesting behaviour is the contract it
+// reports and how many times it was asked for one. The read count is what makes the
+// gate's early return observable: reading a contract calls the guest's describe() in
+// production, so whether the gate consulted it is a behaviour worth asserting rather
+// than an implementation detail.
+type contractEngine struct {
+	noopEngine
+	caps  ProviderContract
+	reads int
+}
+
+func (e *contractEngine) Contract() ProviderContract {
+	e.reads++
+	return e.caps
+}
+
+// TestDeclaredNodeInputKinds_EveryCell enumerates the whole grid rather than a
+// selection of it. The enumeration is gated on three independent booleans, so its
+// behaviours form eight cells, and stating them one axis at a time would specify
+// the margins and leave the interior — where the artifacts-only bound lives —
+// unstated.
+//
+// Two properties are pinned per cell: WHICH kinds are enumerated, and in WHAT
+// order. The order is what decides which fault a multi-fault node reports, so it
+// is part of the contract rather than an incidental of the loop.
+func TestDeclaredNodeInputKinds_EveryCell(t *testing.T) {
+	for _, tc := range []struct {
+		name                              string
+		hasSource, hasWorkload, hasArtifs bool
+		want                              []string
+	}{
+		{"no input kind at all", false, false, false, nil},
+		{"source alone", true, false, false, []string{"sourced"}},
+		{"workload alone", false, true, false, []string{"synthesised"}},
+		{"artifacts alone is the only artifacts-only node", false, false, true, []string{"artifacts-only"}},
+		{"source and workload", true, true, false, []string{"sourced", "synthesised"}},
+		{"source and artifacts: the artifacts ride through", true, false, true, []string{"sourced"}},
+		{"workload and artifacts: the artifacts ride through", false, true, true, []string{"synthesised"}},
+		{"all three: the artifacts ride through", true, true, true, []string{"sourced", "synthesised"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := declaredNodeInputKinds(tc.hasSource, tc.hasWorkload, tc.hasArtifs)
+			names := make([]string, 0, len(got))
+			for _, k := range got {
+				names = append(names, k.Display)
+			}
+			if len(names) != len(tc.want) {
+				t.Fatalf("enumerated %v; want %v", names, tc.want)
+			}
+			for i := range names {
+				if names[i] != tc.want[i] {
+					t.Fatalf("enumerated %v; want %v (order is part of the contract)", names, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// TestDeclaredNodeInputKinds_NamesMatchTheSingleKindClassifier holds the plural
+// enumeration and the single-kind classifier to one vocabulary. Each is asked
+// about the same lone declaration, and the display name and the annotation scope
+// must agree — so a rename in the classifier cannot leave the gate reporting an
+// input kind by a name no other surface uses.
+func TestDeclaredNodeInputKinds_NamesMatchTheSingleKindClassifier(t *testing.T) {
+	for _, tc := range []struct{ s, w, a bool }{
+		{true, false, false},
+		{false, true, false},
+		{false, false, true},
+	} {
+		classified, ok := classifyNodeInputKind(tc.s, tc.w, tc.a)
+		if !ok {
+			t.Fatalf("classifier reported no kind for a lone declaration (%v,%v,%v)", tc.s, tc.w, tc.a)
+		}
+		enumerated := declaredNodeInputKinds(tc.s, tc.w, tc.a)
+		if len(enumerated) != 1 {
+			t.Fatalf("a lone declaration must enumerate exactly one kind; got %v", enumerated)
+		}
+		if enumerated[0] != classified {
+			t.Errorf("the enumeration and the classifier disagree for (%v,%v,%v): %+v vs %+v",
+				tc.s, tc.w, tc.a, enumerated[0], classified)
+		}
+	}
+}
+
+// TestGateInputKind_RefusesEveryDeclaredKind is the gate's own unit-level grid: a
+// provider claiming ONLY sourced is offered each combination, and every one
+// carrying a kind it does not claim is refused while every one whose kinds it does
+// claim passes. It is the cheap counterpart of the end-to-end proof, and it is what
+// makes the artifacts-ride-through cell observable at the gate rather than only in
+// the enumeration.
+func TestGateInputKind_RefusesEveryDeclaredKind(t *testing.T) {
+	sourcedOnly := ProviderContract{Sourced: true}
+
+	for _, tc := range []struct {
+		name                              string
+		hasSource, hasWorkload, hasArtifs bool
+		wantRefusedKind                   string // empty means the gate must pass it
+	}{
+		{"nothing declared", false, false, false, ""},
+		{"sourced, which it claims", true, false, false, ""},
+		{"workload, which it does not", false, true, false, "synthesised"},
+		{"artifacts alone, which it does not", false, false, true, "artifacts-only"},
+		{"source and workload: refused for the workload", true, true, false, "synthesised"},
+		{"source and artifacts: the artifacts ride through", true, false, true, ""},
+		{"workload and artifacts: refused for the workload", false, true, true, "synthesised"},
+		{"all three: refused for the workload, reported before artifacts", true, true, true, "synthesised"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := gateInputKind("node-1", "only-sourced", &contractEngine{caps: sourcedOnly},
+				tc.hasSource, tc.hasWorkload, tc.hasArtifs)
+
+			if tc.wantRefusedKind == "" {
+				if err != nil {
+					t.Fatalf("the gate must pass a node whose declared kinds the provider claims; got: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("the gate must refuse a node declaring %s against a provider that does not claim it", tc.wantRefusedKind)
+			}
+			if !errors.Is(err, ErrUnsupportedInputKind()) {
+				t.Fatalf("the refusal must carry the gate's own condition; got: %v", err)
+			}
+			if !strings.Contains(err.Error(), "does not support "+tc.wantRefusedKind+" recipes") {
+				t.Errorf("the refusal must name the %s kind; got: %v", tc.wantRefusedKind, err)
+			}
+		})
+	}
+}
+
+// TestGateInputKind_NoInputKindNeverReadsTheContract pins the early return as the
+// behaviour it is. Reading a provider's contract calls the guest's describe(), so a
+// node declaring no input kind — a pure-wiring or inject-only FeatureRecipe — must
+// be passed without the contract being consulted at all, or the gate would load a
+// guest for a node that renders nothing.
+func TestGateInputKind_NoInputKindNeverReadsTheContract(t *testing.T) {
+	engine := &contractEngine{caps: ProviderContract{Sourced: true}}
+
+	if err := gateInputKind("node-1", "p", engine, false, false, false); err != nil {
+		t.Fatalf("a node declaring no input kind must pass: %v", err)
+	}
+	if engine.reads != 0 {
+		t.Errorf("the gate read the provider contract %d time(s) for a node declaring no input kind; want 0", engine.reads)
+	}
+
+	// Positive control: a declared kind DOES read the contract, so the zero above
+	// is the early return rather than a counter that never increments.
+	if err := gateInputKind("node-1", "p", engine, true, false, false); err != nil {
+		t.Fatalf("a sourced node against a sourced-claiming provider must pass: %v", err)
+	}
+	if engine.reads != 1 {
+		t.Errorf("positive control: a declared kind must read the contract once; got %d", engine.reads)
 	}
 }

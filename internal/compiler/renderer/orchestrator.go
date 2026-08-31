@@ -1396,16 +1396,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		hasSource := sourceValueDeclared(nodeCtx.Source)
 		hasArtifacts := recipe != nil && recipe.Spec.Artifacts.Len() > 0
 
-		// Central input-kind gate (the describe()-fed seat). Classify the node's
-		// mode from its declared input kinds and confirm the resolved provider's
-		// engine supports it — once per node, BEFORE any Phase B dispatch
-		// (engine.Render, B.3 artifacts, B.4 synthesis), so an unsupported
-		// (mode, provider) halts loudly before emission. Source > workload >
-		// artifacts precedence: a node with a source: or workload: is
-		// sourced/synthesised even if it ALSO declares artifacts: (those ride
-		// through as composed artifacts and are NOT checked against
-		// ArtifactsStandalone); only a no-source/no-workload node is
-		// artifacts-only.
+		// Central input-kind gate (the describe()-fed seat), sited here because
+		// this is the last point before any Phase B dispatch — so a kind the
+		// resolved provider cannot honour is refused before anything is emitted
+		// and before any guest is handed input it cannot render. What the gate
+		// checks is stated on the gate itself rather than restated here.
 		if err := gateInputKind(nodeID, providerName, engine, hasSource, hasWorkload, hasArtifacts); err != nil {
 			return nil, err
 		}
@@ -2386,15 +2381,31 @@ func resolveFeatureRecipes(
 	return refs
 }
 
-// gateInputKind is the central input-kind capability gate. It classifies a
-// node's mode from its declared input kinds and confirms the resolved
-// provider's engine supports that mode — once per node, BEFORE any Phase B
-// dispatch (engine.Render, B.3 artifacts, B.4 synthesis), so an unsupported
-// (mode, provider) halts loudly before emission. Source > workload > artifacts
-// precedence: a node with source: or workload: is sourced/synthesised even if
-// it ALSO declares artifacts: (those ride through as composed artifacts and are
-// NOT checked against ArtifactsStandalone); only a no-source/no-workload node
-// is artifacts-only.
+// gateInputKind is the central input-kind capability gate. It confirms the
+// resolved provider's engine supports EVERY input kind the node declares — once
+// per node, BEFORE any Phase B dispatch (engine.Render, B.3 artifacts, B.4
+// synthesis), so a kind the provider cannot honour halts loudly before emission.
+//
+// Every declared kind, not one, and that is the whole of what it checks. A node
+// may declare a source, a workload and artifacts together; the kinds compose by
+// addition and their outputs are added together, so each one is separately
+// dispatched and each one separately needs a provider that can honour it. A gate
+// consulting only the kind a node's mode is NAMED after would be satisfied by a
+// node whose other declared kind reaches a guest that cannot render it — and the
+// guest would then refuse in its own words, as an internal mis-routing rather
+// than the authoring fault it is.
+//
+// Nothing here refuses a combination for BEING a combination. The declared kinds
+// are consulted independently and a node is refused only for a kind its provider
+// does not claim, so every combination a provider can honour passes. artifacts is
+// consulted against ArtifactsStandalone only when it is the node's sole declared
+// kind: alongside a source or a workload it rides through as composed artifacts,
+// which that capability does not govern. declaredNodeInputKinds is where that
+// bound and the source → workload → artifacts report order both live.
+//
+// The first unhonourable kind in that order is the one reported. A node with two
+// of them names one fault at a time, which keeps the diagnostic about a single
+// line of the document rather than a list.
 //
 // Both the component render path (RenderAll) and the FeatureRecipe render
 // sites call this, so a Recipe and a FeatureRecipe bound to the same provider
@@ -2409,19 +2420,28 @@ func resolveFeatureRecipes(
 // handed a kind its own report did not declare has been mis-routed — that is a
 // defect on this path, not something the author of the Recipe can fix.
 //
-// The classification itself lives in classifyNodeInputKind, which the
-// annotation-support advisory reads too, so the precedence and the input kind's
-// user-facing name are each stated once rather than once per reader.
+// The per-kind scope and user-facing name live in classifyNodeInputKind, which
+// the annotation-support advisory reads too, so an input kind's name is stated
+// once rather than once per reader.
+//
+// A node declaring no input kind at all is passed without the provider's contract
+// being read, and the early return is load-bearing rather than a micro-optimisation:
+// reading the contract calls the guest's describe(), so consulting it here would
+// load a guest for a node that renders nothing — a FeatureRecipe may legitimately
+// declare no input kind, being pure-wiring or inject-only.
 func gateInputKind(nodeID, providerName string, engine Provider, hasSource, hasWorkload, hasArtifacts bool) error {
-	kind, ok := classifyNodeInputKind(hasSource, hasWorkload, hasArtifacts)
-	if !ok {
+	declared := declaredNodeInputKinds(hasSource, hasWorkload, hasArtifacts)
+	if len(declared) == 0 {
 		return nil
 	}
 	caps := engine.Contract()
-	if kind.claimedBy(caps) {
-		return nil
+	for _, kind := range declared {
+		if kind.claimedBy(caps) {
+			continue
+		}
+		return unsupportedInputKindError(nodeID, providerName, kind.Display, caps)
 	}
-	return unsupportedInputKindError(nodeID, providerName, kind.Display, caps)
+	return nil
 }
 
 // routeNodeInputDiagnostics splits a provider's per-node input-validation

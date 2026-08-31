@@ -48,6 +48,38 @@ func classifyNodeInputKind(hasSource, hasWorkload, hasArtifacts bool) (nodeInput
 	return nodeInputKind{}, false
 }
 
+// declaredNodeInputKinds names every input kind a node's declared inputs commit
+// it to, in source → workload → artifacts order. It is the plural counterpart of
+// classifyNodeInputKind, and the two answer different questions: that one resolves
+// a node to the single kind its mode is NAMED after, for display and for the
+// annotation advisory, while this one enumerates every kind the node actually
+// declares, because a node's output is the sum of its declared kinds rather than
+// the one the precedence picked.
+//
+// artifacts contributes a kind only when it is the sole declaration. Alongside a
+// source or a workload it rides through as composed artifacts, which the
+// standalone-artifacts capability does not govern — the same bound the precedence
+// encodes, stated here as the condition it is.
+//
+// Each kind is obtained by asking classifyNodeInputKind what a node declaring
+// that input ALONE classifies to, rather than by naming the kinds directly. That
+// keeps the scope name and the user-facing word for an input kind in exactly one
+// place: a second set of literals here would agree on the day it was written and
+// would be free to drift from the classifier afterwards.
+func declaredNodeInputKinds(hasSource, hasWorkload, hasArtifacts bool) []nodeInputKind {
+	kinds := make([]nodeInputKind, 0, 3)
+	for _, alone := range [3][3]bool{
+		{hasSource, false, false},
+		{false, hasWorkload, false},
+		{false, false, hasArtifacts && !hasSource && !hasWorkload},
+	} {
+		if kind, ok := classifyNodeInputKind(alone[0], alone[1], alone[2]); ok {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds
+}
+
 // claimedBy reports whether a provider's render-behavior contract claims to
 // render this input kind. An input kind the contract does not name reports true,
 // so a kind this classification does not model never fabricates a refusal.
