@@ -4,10 +4,10 @@
 // Package compiler_test — coverage parity for components that exist only after
 // sub-aggregate flattening.
 //
-// Five rules were asked of root components and not of these, and every one failed
-// the same way: a check whose subject was not in view skipped in silence, which is
-// indistinguishable from a check that looked and approved. Measured before the
-// closures, all five of these fixtures BUILT:
+// Five rules reach root components, and each one has to reach these as well. The
+// failure class they share when a subject is out of view: the check skips in
+// silence, which is indistinguishable from a check that looked and approved.
+// Measured before the closures, all five of these fixtures BUILT:
 //
 //   - a required uses socket left unbound produced a graph with zero edges;
 //   - an inject block on a Black-Box slot rendered without complaint;

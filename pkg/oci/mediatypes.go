@@ -11,12 +11,13 @@
 // credential-helper delegation). No Aggrega-specific authentication
 // surface is exposed.
 //
-// The four fetch-error sentinels at errors.go are pure declarations
-// at this implementation: ErrFetchNotFound, ErrFetchUnauthorized,
-// ErrFetchNetworkUnreachable, ErrFetchIntegrity. The category
-// integration and call-site wrapping that bridge these sentinels
-// into the compiler's diagnostic surface land at a follow-up
-// implementation.
+// The four fetch-error sentinels at errors.go — ErrFetchNotFound,
+// ErrFetchUnauthorized, ErrFetchNetworkUnreachable and
+// ErrFetchIntegrity — are wrapped at their call sites with the URL and
+// a remediation hint, and a consumer matches one through errors.Is
+// rather than by string. RemediationFor maps a matched sentinel to its
+// operator-actionable hint, and the compiler's own diagnostic surface
+// classifies a fetch failure by the same errors.Is match.
 package oci
 
 import "sort"

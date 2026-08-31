@@ -52,20 +52,9 @@ package serve
 // reads one must not have to determine from the error code which of the
 // two it was handed.
 //
-// Cumulative shape across consecutive evolutions:
-//
-//	File           — initial shape (envelope's source-file label)
-//	Line           — initial shape (1-based, omitempty)
-//	Column         — initial shape (1-based, omitempty)
-//	CascadeAttempt — added for the release-not-resolved emission path
-//	EndLine        — added for wide diagnostic ranges (1-based, omitempty)
-//	EndColumn      — added for wide diagnostic ranges (1-based, omitempty)
-//	Release        — added for the lockfile-absent emission path
-//	Lockfile       — added so a lockfile-scoped emission names the
-//	                 lockfile in a field of its own
-//
-// All fields are additive and omitempty so older clients ignore
-// new fields and newer clients consume them when present.
+// Every field is additive and omitempty, so a client that does not
+// recognise a field ignores it and one that does consumes it when
+// present.
 //
 // Construct via newErrorData when a clean call-site one-liner is
 // preferable; use newErrorDataWithRange when both start and end

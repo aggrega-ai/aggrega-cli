@@ -13,10 +13,6 @@ import (
 // artifact at the requested URI + version. Call sites wrap this
 // sentinel with URL + remediation context; downstream consumers
 // detect the category via errors.Is.
-//
-// Category integration and call-site wrapping in the compiler's
-// diagnostic surface land at a follow-up implementation; this sentinel is
-// a pure declaration today.
 func ErrFetchNotFound() error { return errFetchNotFound }
 
 var errFetchNotFound = cerrors.Register("oci/fetch-not-found", cerrors.Meta{

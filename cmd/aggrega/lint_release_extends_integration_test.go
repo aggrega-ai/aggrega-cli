@@ -24,10 +24,10 @@ import (
 // the inheritance marker, and the standard catalog supplies the compose provider
 // the recipe targets.
 //
-// This test previously proved the opposite shape — a child REDECLARING its base's
-// constraint more loosely, surfaced as an advisory notice. That shape is no longer
-// authorable, because an extending Component cannot declare a pillar block at all,
-// so the advisory has no Component-side producer left to exercise.
+// The opposite shape — a child REDECLARING its base's constraint more loosely,
+// surfaced as an advisory notice — is not authorable: an extending Component
+// declares `schema: inherited` and authors no pillar content of its own, so that
+// advisory has no Component-side producer to exercise.
 func TestIntegration_LintRelease_ExtendsInheritsBaseConstraint(t *testing.T) {
 	std := standardCatalogDir(t)
 	ws := t.TempDir()

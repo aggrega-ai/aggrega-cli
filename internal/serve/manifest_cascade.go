@@ -55,9 +55,9 @@ type cascadeAttempt struct {
 
 	// SingleReleaseLoadError is non-nil when Step 3's single candidate
 	// was found but failed to load. Symmetric with the Step 1/2 load-
-	// error fields; before this capture Step 3's failure was dropped to
-	// stderr only, leaving the common one-Release workspace's
-	// found-but-invalid case with no structured record.
+	// error fields: the one-Release workspace's found-but-invalid case
+	// carries a structured record here as well as a stderr warning, so
+	// the common case is never reported on the console alone.
 	SingleReleaseLoadError error
 
 	// SingleReleaseCandidatePath is the path of Step 3's single

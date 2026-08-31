@@ -11,10 +11,10 @@ import (
 // from the resolved Manifest's `mappings.features.annotations` map. The
 // registry is consulted at annotation-expansion time to translate
 // Release-level annotations into synthetic Feature attachments. The
-// post-migration Manifest carries annotation bindings under the flat
-// features tier; provider determination at the component level flows
-// from each component's resolved Recipe `spec.capability` at orchestrator
-// time, so the binding-declaration registry itself is provider-agnostic.
+// Manifest carries annotation bindings under the features tier; provider
+// determination at the component level flows from each component's
+// resolved Recipe `spec.capability` at orchestrator time, so the
+// binding-declaration registry itself is provider-agnostic.
 type AnnotationRegistry struct {
 	bindings types.OrderedMap[types.AnnotationBinding]
 }
@@ -22,7 +22,7 @@ type AnnotationRegistry struct {
 // BuildAnnotationRegistry reads the flat features.annotations map from
 // the resolved Manifest and returns the registry consumed by
 // ExpandAnnotations. Returns an empty registry when the Manifest carries
-// no flat features tier or when the tier carries no annotation bindings;
+// no features tier or when the tier carries no annotation bindings;
 // callers can call Lookup on an empty registry safely.
 func BuildAnnotationRegistry(manifest *types.Manifest) *AnnotationRegistry {
 	r := &AnnotationRegistry{}

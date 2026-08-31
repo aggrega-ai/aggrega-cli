@@ -149,9 +149,9 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 	defer l.mu.Unlock()
 	// Resolve the SchemaLibrary set (once, cached) so cross-document $ref expansion
 	// sees the same libraries the eager backing does. Best-effort here: a library
-	// that fails validation is surfaced as a hard reject by the eager recipe-catalog
-	// load (serve's resolveRecipeCatalog) and by buildSchemaLibraries' returned
-	// error to a direct caller; AsCatalogLookup exposes the resolvable set.
+	// that fails validation is surfaced by buildSchemaLibraries' returned error to a
+	// caller that observes it; AsCatalogLookup discards that error and exposes the
+	// resolvable set.
 	_ = l.buildSchemaLibraries()
 	return resolver.CatalogLookup{
 		Component:       l.Component,
@@ -989,8 +989,7 @@ func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]string) {
 // accept a library the build rejects (reject-parity). Valid libraries are still
 // cached so a best-effort caller (AsCatalogLookup) sees the resolvable set; a
 // caller that must reject (the conformance test; a future serve gate) observes the
-// returned error. In the daemon, an invalid library is additionally caught as a
-// hard load failure by the eager recipe-catalog resolution before render.
+// returned error.
 func (l *LazyLookup) buildSchemaLibraries() error {
 	if l.schemaLibrariesBuilt {
 		return nil
@@ -1738,13 +1737,13 @@ func (l *LazyLookup) SkippedEntities() []SkippedEntity {
 // ValidateClosureScopedPillars runs closure-scoped pillar validation over the
 // LAZY backing: it resolves each closure Component/Feature through the cascade
 // and validates its schema pillars against the lazily-walked SchemaLibrary set —
-// the daemon's early-warning gate, replacing the whole-catalog pillar validation
-// the eager resolveRecipeCatalog load used to provide. A broken out-of-closure entity is
-// never resolved here, so it is never validated; an in-closure pillar error (a
-// schema-invalid Component/Feature, or a $ref to a skipped/missing library) is
-// surfaced. Sources come from the per-kind index (file paths) for error
-// provenance. The resolved entities are extends-merged (what the daemon renders);
-// build remains the authoritative pre-extends validator.
+// the daemon's early-warning gate, and narrower than a whole-catalog pillar
+// validation. A broken out-of-closure entity is never resolved here, so it is
+// never validated; an in-closure pillar error (a schema-invalid
+// Component/Feature, or a $ref to a skipped/missing library) is surfaced.
+// Sources come from the per-kind index (file paths) for error provenance. The
+// resolved entities are extends-merged (what the daemon renders); build remains
+// the authoritative pre-extends validator.
 func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()

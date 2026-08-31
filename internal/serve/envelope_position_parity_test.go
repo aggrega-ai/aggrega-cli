@@ -48,10 +48,9 @@ spec:
 // spot is covered by the wording pin below, and the two together are what make
 // "one document, one verdict" a claim about both halves of the message.
 //
-// This is the test that would have caught the defect. The two surfaces were
-// unequal: the editor squiggled the offending key while the terminal named
-// the key path and no position at all, so the same fault told a reader two
-// different amounts depending on where they read it.
+// The failure class it excludes: the editor squiggling the offending key while
+// the terminal names the key path and no position at all, so one fault tells a
+// reader two different amounts depending on where they read it.
 //
 // The document is deliberately ASCII. Column numbers legitimately differ
 // between position encodings, and the editor reports in whatever encoding
