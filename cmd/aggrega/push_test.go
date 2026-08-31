@@ -107,10 +107,13 @@ spec:
 	}
 }
 
-// TestPushSchemaLibraryHonoursPerVersionSubdir pins that a library
-// authored at the canonical per-version layout (<kind>/<namespace>/
-// <name>/<version>/library.yaml) with matching metadata.version
-// passes the per-version subdir gate inside pkg/oci.Bundle.
+// TestPushSchemaLibraryHonoursPerVersionSubdir pins that a library whose
+// entity file sits directly under a <version> directory matching its
+// metadata.version passes the per-version subdir gate inside
+// pkg/oci.Bundle. That parent-directory pairing is the whole of what the
+// gate reads; the segments above it are the authoring layout
+// (schemalibrary/<name>/<version>/library.yaml for a library kind, which
+// carries no publisher segment) and the gate does not check them.
 func TestPushSchemaLibraryHonoursPerVersionSubdir(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

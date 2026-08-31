@@ -137,13 +137,16 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 // validateEntityVersionPathSubdir enforces the catalog-side authoring
 // discipline for every publishable entity kind:
 //
-//	<kind>/<namespace>/<name>/<version>/<entity>.yaml
+//	<kind>/<publisher-or-provider>/.../<name>/<version>/<entity>.yaml
 //
-// where the path's <version> segment (the parent directory of the
-// entity file — component.yaml, recipe.yaml, library.yaml, …) MUST
-// equal the entity's metadata.version field. Mismatch returns
-// ErrEntityVersionPathMismatch wrapped with both values so the operator
-// can correct the path or the metadata as appropriate.
+// The segments between the kind and the name vary by kind — a Component
+// carries a category as well as a publisher, and a library kind carries
+// neither — so only the tail is fixed: the path's <version> segment (the
+// parent directory of the entity file — component.yaml, recipe.yaml,
+// library.yaml, …) MUST equal the entity's metadata.version field, and
+// that parent directory is the only path segment this function reads.
+// Mismatch returns ErrEntityVersionPathMismatch wrapped with both values
+// so the operator can correct the path or the metadata as appropriate.
 func validateEntityVersionPathSubdir(entityPath string) error {
 	parentVersion := filepath.Base(filepath.Dir(entityPath))
 

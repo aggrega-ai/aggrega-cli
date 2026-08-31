@@ -7,6 +7,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 )
 
 // These tests cover the two refusals that keep something an author wrote from
@@ -372,6 +374,168 @@ func TestDuplicateMappingKeyAdmitsOneKeyPerMapping(t *testing.T) {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("assembled stack is missing %s:\n%s", want, out)
 		}
+	}
+}
+
+// TestSourcedDuplicateMappingKeyRefused is the sourced-template half of the
+// guarantee TestDuplicateMappingKeyRefused pins for a rendered fragment, and it is
+// a separate test because the two input paths reach their refusal from different
+// places. A rendered fragment goes through this package's own conversion, which
+// refuses the repeat itself ([ErrDuplicateMappingKey]). A sourced template never
+// reaches that conversion: NormalizeSourced, NormalizeSourcedTemplate and
+// ValidateSourced hand the authored bytes to the intrinsics processor, and the
+// processor refuses the document before this package inspects a single key. The
+// property an author experiences is the same on both paths — the build halts, and
+// the halt names the repeated key and both lines it was written at — which is what
+// this test pins.
+//
+// Two things about the assertions are deliberate, against the convention stated at
+// the head of this file.
+//
+// It asserts the halt's text rather than a sentinel, and specifically does NOT
+// match [ErrDuplicateMappingKey]. Matching it would assert that this package holds
+// a guarantee it does not hold on this path; the assertion would pass for the wrong
+// reason, and it would keep passing if the processor's own check were ever the thing
+// that went away.
+//
+// And it is agnostic about which component delivers the refusal, because the
+// guarantee is the refusal rather than its author. The refusal presently arrives
+// from a dependency, so it is not covered by any test of the conversion this package
+// owns: a dependency upgrade that dropped the duplicate-key check would let the
+// template through with one of its two bodies silently gone, and normalizing to
+// long-form JSON collapses the repeat, so nothing downstream could see it either.
+// This test is what reports that.
+//
+// It runs serially, unlike every sibling in this file, and the reason is measured
+// rather than stylistic: the intrinsics processor keeps its tag resolvers in a
+// package-level map and rewrites that map on each call, so two goroutines inside it
+// abort the whole test binary with a concurrent map access — a runtime fatal error
+// no recover can catch and no assertion can attribute. This test enters it several
+// times per row, so marking it parallel is what turns it into an unattributable
+// flake. That is a hazard of driving the processor from the host test binary, where
+// the goroutines share one address space; the only production consumer is the
+// single-threaded Wasm guest, whose instances share no Go map. Do not add
+// t.Parallel here or to a sibling that reads a sourced template.
+func TestSourcedDuplicateMappingKeyRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// template is the authored bytes. Each fixture carries exactly one
+		// duplicated key so the row pins that fault and no other.
+		template string
+		wantKey  string
+		// wantLines are the two lines the key was written at. Both must appear,
+		// whichever component refuses, or the author cannot find the second body.
+		wantLines []string
+	}{
+		{
+			name:      "one resource logical id written twice",
+			template:  "Resources:\n  Bucket:\n    Type: AWS::S3::Bucket\n  Bucket:\n    Type: AWS::SQS::Queue\n",
+			wantKey:   "Bucket",
+			wantLines: []string{"line 2", "line 4"},
+		},
+		{
+			name:      "one Outputs entry written twice",
+			template:  "Resources:\n  A:\n    Type: AWS::S3::Bucket\nOutputs:\n  host:\n    Value: first\n  host:\n    Value: second\n",
+			wantKey:   "host",
+			wantLines: []string{"line 5", "line 7"},
+		},
+		{
+			name:      "one property written twice inside a resource",
+			template:  "Resources:\n  Bucket:\n    Type: AWS::S3::Bucket\n    Properties:\n      BucketName: first\n      BucketName: second\n",
+			wantKey:   "BucketName",
+			wantLines: []string{"line 5", "line 6"},
+		},
+		{
+			name:      "one top-level section written twice",
+			template:  "Resources:\n  A:\n    Type: AWS::S3::Bucket\nResources:\n  B:\n    Type: AWS::SQS::Queue\n",
+			wantKey:   "Resources",
+			wantLines: []string{"line 1", "line 4"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Every exported entry point that reads a sourced template's authored
+			// bytes. Two of them are what the guest reaches: render_node normalizes
+			// the packed source, and validate_node_input parses the same bytes ahead
+			// of render. A row has to hold at each, because a refusal present at one
+			// and absent at another is a path that renders a template the other
+			// rejected. NormalizeSourcedTemplate has no caller outside these tests,
+			// which is a reason to hold it to the same property rather than a reason
+			// to skip it. DeclaredNamesSourced is not among them: render_node hands
+			// it what normalization returned, so on this path it never sees authored
+			// bytes at all.
+			assertRefusal := func(where string, err error) {
+				t.Helper()
+				if err == nil {
+					t.Fatalf("%s accepted a template writing %q twice; one of the two bodies is gone", where, tc.wantKey)
+				}
+				msg := err.Error()
+				if !strings.Contains(msg, `"`+tc.wantKey+`"`) {
+					t.Errorf("%s halt does not name the repeated key: %s", where, msg)
+				}
+				for _, line := range tc.wantLines {
+					if !strings.Contains(msg, line) {
+						t.Errorf("%s halt does not report %s, so the author cannot find both: %s", where, line, msg)
+					}
+				}
+			}
+
+			_, err := NormalizeSourcedTemplate([]byte(tc.template))
+			assertRefusal("NormalizeSourcedTemplate", err)
+
+			_, err = NormalizeSourced([]SourcedFile{{Path: "template.yaml", Content: []byte(tc.template)}}, false)
+			assertRefusal("NormalizeSourced", err)
+
+			// A directory source, where the refusal has to name the file it came
+			// from as well: the non-template file beside it is vendored untouched
+			// and must not suppress the finding.
+			_, err = NormalizeSourced([]SourcedFile{
+				{Path: "README.md", Content: []byte("notes\n")},
+				{Path: "template.yaml", Content: []byte(tc.template)},
+			}, true)
+			assertRefusal("NormalizeSourced (directory source)", err)
+			if err != nil && !strings.Contains(err.Error(), "template.yaml") {
+				t.Errorf("NormalizeSourced (directory source) halt does not name the file: %s", err)
+			}
+
+			// validate_node_input reports through diagnostics rather than an error,
+			// so the same property is asserted against the halt-severity diagnostic
+			// the host gates on.
+			diags := ValidateSourced([]SourcedFile{{Path: "template.yaml", Content: []byte(tc.template)}}, false)
+			if len(diags) != 1 {
+				t.Fatalf("ValidateSourced produced %d diagnostics for a template writing %q twice; want exactly 1", len(diags), tc.wantKey)
+			}
+			if diags[0].Severity != abi.SeverityHalt {
+				t.Errorf("ValidateSourced diagnostic severity is %v, so the build would not halt", diags[0].Severity)
+			}
+			if diags[0].Code != templateParseCode {
+				t.Errorf("ValidateSourced diagnostic code is %q; a consumer matching %q would miss it", diags[0].Code, templateParseCode)
+			}
+			assertRefusal("ValidateSourced", errors.New(diags[0].Message))
+		})
+	}
+}
+
+// TestSourcedDuplicateMappingKeyAdmitsOneKeyPerMapping is the positive control for
+// the test above: the same key name at two different places in the tree is ordinary
+// CloudFormation and must pass on the sourced path too. Without it, a dependency
+// that started refusing every template would keep the negative rows green.
+//
+// Serial for the same measured reason as the test above.
+func TestSourcedDuplicateMappingKeyAdmitsOneKeyPerMapping(t *testing.T) {
+	// Type appears once per resource and Value once per output, so this mapping is
+	// well formed however often either name recurs in the document.
+	template := []byte("Resources:\n" +
+		"  Bucket:\n    Type: AWS::S3::Bucket\n    Properties:\n      Tags:\n        - Key: a\n          Value: 1\n        - Key: b\n          Value: 2\n" +
+		"  Queue:\n    Type: AWS::SQS::Queue\n" +
+		"Outputs:\n  first:\n    Value: a\n  second:\n    Value: b\n")
+	if _, err := NormalizeSourcedTemplate(template); err != nil {
+		t.Errorf("a template repeating a key name across separate mappings was refused: %v", err)
+	}
+	if _, err := NormalizeSourced([]SourcedFile{{Path: "template.yaml", Content: template}}, false); err != nil {
+		t.Errorf("NormalizeSourced refused a well-formed template: %v", err)
+	}
+	if diags := ValidateSourced([]SourcedFile{{Path: "template.yaml", Content: template}}, false); len(diags) != 0 {
+		t.Errorf("ValidateSourced reported %d diagnostics for a well-formed template: %v", len(diags), diags)
 	}
 }
 
