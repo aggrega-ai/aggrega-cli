@@ -50,6 +50,31 @@ var errAssertionNameCollision = cerrors.Register("validator/assertion-name-colli
 	Message:   "assertion name declared twice across the extends chain",
 })
 
+// ErrUnknownSchemaPillar fires when a Component or Feature writes a top-level
+// key in its schema block that names none of the data pillars, so the content
+// beneath that key is a contract nothing will ever read.
+//
+// The key set is closed for the same reason each pillar's own content is
+// validated closed: the block enumerates a legal surface, so a key outside it
+// is an authoring error rather than a permitted extension. Admitting one would
+// leave the author believing a contract is in force while every consumer of the
+// entity walks past it, which is the silent outcome a closed set removes.
+//
+// It is distinct from the condition raised when a pillar's authored content
+// fails the schema that pillar declares. That one judges what is INSIDE a
+// pillar; this one judges whether the key names a pillar at all, and the two
+// are reached from different surfaces at different moments — this at entity
+// load, the other once an instance's values are resolved against the contract.
+//
+// Category: CATALOG_ERROR — the fault is in an authored catalog document's
+// schema block. Match with errors.Is(err, ErrUnknownSchemaPillar()).
+func ErrUnknownSchemaPillar() error { return errUnknownSchemaPillar }
+
+var errUnknownSchemaPillar = cerrors.Register("validator/unknown-schema-pillar", cerrors.Meta{
+	ShortCode: "E0267",
+	Message:   "a schema block declares a key that names no data pillar",
+})
+
 // ValidationDetail describes a validation failure: which condition it
 // violates, where it was found, what was required there, what was found
 // instead, and what to do about it.

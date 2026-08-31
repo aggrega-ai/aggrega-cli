@@ -97,15 +97,33 @@ func ValidateSchemaPillars(
 		keyNode := node.Content[i]
 		valueNode := node.Content[i+1]
 		if !allowedSchemaPillars[keyNode.Value] {
-			return cerrors.New(
+			// The diagnostic composes through the condition's registered
+			// sentence rather than emitting the clause alone, so it opens with
+			// that sentence and carries the occurrence's clause after it.
+			// Leading with the sentence is structural rather than stylistic:
+			// the chain walk that renders a halt prints the outermost frame
+			// whose text the output does not already carry, so a message that
+			// did not lead with it would print the sentence a second time as a
+			// redundant continuation line.
+			//
+			// The clause names the pillar vocabulary a second time, after the
+			// sentence has already said the key names no pillar. That is a
+			// cost rather than an oversight, and it is the price of the split:
+			// the sentence is one static string per condition, so it can name
+			// neither the entity at fault, nor the key met, nor the keys the
+			// block admits, nor where the pillar set is documented — and every
+			// one of those is what an author acts on. Reducing the clause to
+			// the offending key alone would delete them from a diagnostic the
+			// sentence cannot carry them in.
+			return cerrors.Wrap(
+				ErrUnknownSchemaPillar(),
 				cerrors.CatalogError,
 				cerrors.SourceLocation{File: filePath, Line: keyNode.Line},
-				fmt.Sprintf(
+				cerrors.ComposeMessage(ErrUnknownSchemaPillar(), nil, fmt.Sprintf(
 					"%s %q: spec.schema unknown pillar key %q; allowed: values, infra, provides. "+
 						"See vocabulary/data-pillars.md for the canonical pillar set.",
 					entityKind, entityName, keyNode.Value,
-				),
-				nil, nil,
+				)),
 			)
 		}
 		opts := []compactform.CompileOption{
