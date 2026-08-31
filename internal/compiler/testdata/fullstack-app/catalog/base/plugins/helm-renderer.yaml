@@ -10,6 +10,45 @@ spec:
   provider:
     capabilities:
       - helm
+    # This provider's annotation support claim, matching what the published helm
+    # provider declares: the namespace reaches both render paths, while the other
+    # three have a render slot only where this provider builds the pod itself and
+    # are therefore synthesis-scoped. Declared here so a fixture build compares an
+    # authored annotation against a real claim — without it every key looks
+    # uncovered-by-silence, which is a different rule and would make an advisory
+    # test measure the wrong thing.
+    wellKnownAnnotations:
+      - key: aggrega.ai/namespace
+        purpose: Kubernetes namespace the boundary's resources render into.
+        defaultBehavior: No namespace field is injected; resources inherit the apply-time context namespace.
+        scope:
+          - sourced
+          - synthesized
+      - key: aggrega.ai/image-registry
+        purpose: Registry prefix prepended to container image references.
+        defaultBehavior: No prefix; images render with their authored references.
+        scope:
+          - synthesized
+      - key: aggrega.ai/image-pull-secret
+        purpose: Name of the Kubernetes imagePullSecrets entry attached to the pod template.
+        defaultBehavior: No imagePullSecrets entry is added.
+        scope:
+          - synthesized
+      - key: aggrega.ai/service-account
+        purpose: ServiceAccount the rendered pods run under.
+        defaultBehavior: default.
+        scope:
+          - synthesized
+    # The input kinds this provider renders, matching the published entity. A
+    # scope above naming an input kind this contract does not render is refused
+    # when the entity is read, so the two claims are declared together.
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: true
+        artifactsStandalone: true
+      boundaryAssembly: none
+      reusableInstance: true
   exports:
     - name: render_node
   runtime:

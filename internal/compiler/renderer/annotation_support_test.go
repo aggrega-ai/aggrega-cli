@@ -52,12 +52,12 @@ func TestWarnUnhonorableAnnotations_AdvisesOnUncoveredKey(t *testing.T) {
 		Key:   "aggrega.ai/image-registry",
 		Scope: []string{types.WellKnownAnnotationScopeSynthesized},
 	})
-	kind, ok := classifyNodeInputKind(true, false, false)
-	if !ok {
-		t.Fatal("classifyNodeInputKind(hasSource): ok=false; want the sourced classification")
+	kinds := declaredNodeInputKinds(true, false, false)
+	if len(kinds) != 1 {
+		t.Fatalf("declaredNodeInputKinds(hasSource) = %+v; want the sourced kind alone", kinds)
 	}
 
-	warnUnhonorableAnnotations("api", "helm", "helm", kind,
+	warnUnhonorableAnnotations("api", "helm", "helm", kinds,
 		annotations(t, "aggrega.ai/image-registry", "registry.example.com"), lookup, sink)
 
 	if len(*got) != 1 {
@@ -93,10 +93,10 @@ func TestWarnUnhonorableAnnotations_SubPrefixKeyNeverAdvises(t *testing.T) {
 	// would make the whole comparison stand down and the silence prove nothing.
 	lookup := annotationLookup("helm", types.WellKnownAnnotation{
 		Key: "aggrega.ai/image-registry", Scope: []string{types.WellKnownAnnotationScopeSynthesized}})
-	kind, _ := classifyNodeInputKind(true, false, false)
+	sourced := declaredNodeInputKinds(true, false, false)
 
 	sink, got := collect()
-	warnUnhonorableAnnotations("api", "helm", "helm", kind, annotations(t,
+	warnUnhonorableAnnotations("api", "helm", "helm", sourced, annotations(t,
 		"compliance.aggrega.ai/data-class", "restricted",
 		"component.aggrega.ai/type", "service",
 		"acme.aggrega.ai/team", "payments",
@@ -108,7 +108,7 @@ func TestWarnUnhonorableAnnotations_SubPrefixKeyNeverAdvises(t *testing.T) {
 	// Calibration: the instrument fires on the bare-prefix spelling of the same
 	// concept, so the zero above is the prefix rule and not a dead check.
 	calibrationSink, calibration := collect()
-	warnUnhonorableAnnotations("api", "helm", "helm", kind,
+	warnUnhonorableAnnotations("api", "helm", "helm", sourced,
 		annotations(t, "aggrega.ai/data-class", "restricted"), lookup, calibrationSink)
 	if len(*calibration) != 1 {
 		t.Fatalf("calibration: bare-prefix key produced %d advisories, want 1 — the check is inert, so the zero above proves nothing", len(*calibration))
@@ -122,7 +122,7 @@ func TestWarnUnhonorableAnnotations_SubPrefixKeyNeverAdvises(t *testing.T) {
 // contradict).
 func TestWarnUnhonorableAnnotations_CoveringClaimsStaySilent(t *testing.T) {
 	t.Parallel()
-	kind, _ := classifyNodeInputKind(true, false, false)
+	sourced := declaredNodeInputKinds(true, false, false)
 	for _, tc := range []struct {
 		name  string
 		entry types.WellKnownAnnotation
@@ -136,7 +136,7 @@ func TestWarnUnhonorableAnnotations_CoveringClaimsStaySilent(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			sink, got := collect()
-			warnUnhonorableAnnotations("api", "helm-chart", "helm-chart", kind,
+			warnUnhonorableAnnotations("api", "helm-chart", "helm-chart", sourced,
 				annotations(t, tc.entry.Key, "value"), annotationLookup("helm-chart", tc.entry), sink)
 			if len(*got) != 0 {
 				t.Fatalf("a claim covering the key produced %d advisories, want 0: %+v", len(*got), *got)
@@ -152,10 +152,10 @@ func TestWarnUnhonorableAnnotations_PerNodeAndAuthorOrdered(t *testing.T) {
 	t.Parallel()
 	lookup := annotationLookup("helm-chart", types.WellKnownAnnotation{
 		Key: "aggrega.ai/chart-name", Scope: []string{types.WellKnownAnnotationScopeBoundary}})
-	kind, _ := classifyNodeInputKind(true, false, false)
+	sourced := declaredNodeInputKinds(true, false, false)
 
 	sink, got := collect()
-	warnUnhonorableAnnotations("api", "helm-chart", "helm-chart", kind, annotations(t,
+	warnUnhonorableAnnotations("api", "helm-chart", "helm-chart", sourced, annotations(t,
 		"aggrega.ai/service-account", "api-runner",
 		"aggrega.ai/chart-name", "platform",
 		"aggrega.ai/namespace", "prod",
@@ -181,7 +181,7 @@ func TestWarnUnhonorableAnnotations_PerNodeAndAuthorOrdered(t *testing.T) {
 // does advise — so this silence is the absent-claim rule and not an inert check.
 func TestWarnUnhonorableAnnotations_AbsentClaimStaysSilent(t *testing.T) {
 	t.Parallel()
-	sourced, _ := classifyNodeInputKind(true, false, false)
+	sourced := declaredNodeInputKinds(true, false, false)
 	authored := annotations(t, "aggrega.ai/namespace", "prod")
 
 	sink, got := collect()
@@ -203,15 +203,15 @@ func TestWarnUnhonorableAnnotations_AbsentClaimStaysSilent(t *testing.T) {
 
 // TestWarnUnhonorableAnnotations_NothingToCompareStaysSilent proves each shape
 // that leaves nothing to compare emits nothing rather than guessing: no sink, no
-// lookup, no resolving entity, no annotations, and a node classifying to no input
-// kind.
+// lookup, no resolving entity, no annotations, and a node declaring no input kind
+// at all.
 func TestWarnUnhonorableAnnotations_NothingToCompareStaysSilent(t *testing.T) {
 	t.Parallel()
 	// A provider with a real claim, so each silence below is the named condition
 	// rather than the absent-claim rule covered by its own test.
 	lookup := annotationLookup("helm", types.WellKnownAnnotation{
 		Key: "aggrega.ai/chart-name", Scope: []string{types.WellKnownAnnotationScopeBoundary}})
-	sourced, _ := classifyNodeInputKind(true, false, false)
+	sourced := declaredNodeInputKinds(true, false, false)
 	authored := annotations(t, "aggrega.ai/namespace", "prod")
 
 	// No sink: the call must not panic.
@@ -235,20 +235,94 @@ func TestWarnUnhonorableAnnotations_NothingToCompareStaysSilent(t *testing.T) {
 		t.Errorf("no annotations emitted %d advisories, want 0", len(*got))
 	}
 
-	noKind, ok := classifyNodeInputKind(false, false, false)
-	if ok {
-		t.Fatal("classifyNodeInputKind(none): ok=true; a node declaring no input classifies to none")
+	noKinds := declaredNodeInputKinds(false, false, false)
+	if len(noKinds) != 0 {
+		t.Fatalf("declaredNodeInputKinds(none) = %+v; a node declaring no input declares no kind", noKinds)
 	}
 	sink, got = collect()
-	warnUnhonorableAnnotations("api", "helm", "helm", noKind, authored, lookup, sink)
+	warnUnhonorableAnnotations("api", "helm", "helm", noKinds, authored, lookup, sink)
 	if len(*got) != 0 {
-		t.Errorf("unclassified node emitted %d advisories, want 0", len(*got))
+		t.Errorf("node declaring no input kind emitted %d advisories, want 0", len(*got))
+	}
+}
+
+// TestWarnUnhonorableAnnotations_MultiKindNodeAsksAboutEveryDeclaredKind is the
+// acceptance for the whole shape of this advisory on a node that declares more
+// than one input kind, and its two halves are asserted together on purpose.
+//
+// The ABSENCE half: the target's claim covers the key on the synthesized path
+// only, and the node declares a source AND a workload — so the target does act on
+// the key, through the synthesized half, and reporting it as ignored would
+// contradict the node's own rendered output. Nothing may be raised.
+//
+// The PRESENCE half, on the SAME node and the same call: a key the claim names at
+// no scope at all is still raised, and the sentence names BOTH declared kinds
+// rather than one of them. Without this half the test would pass on a change that
+// deleted the advisory outright; without the first half it would pass on the
+// defect. Neither alone is the contract.
+func TestWarnUnhonorableAnnotations_MultiKindNodeAsksAboutEveryDeclaredKind(t *testing.T) {
+	t.Parallel()
+	kinds := declaredNodeInputKinds(true, true, false)
+	if len(kinds) != 2 {
+		t.Fatalf("a node declaring a source and a workload declares two kinds; got %+v", kinds)
+	}
+	// The shape the shipped helm claim has: read where this provider builds the
+	// pod itself, and nowhere else.
+	lookup := annotationLookup("helm", types.WellKnownAnnotation{
+		Key:   "aggrega.ai/service-account",
+		Scope: []string{types.WellKnownAnnotationScopeSynthesized},
+	})
+
+	sink, got := collect()
+	warnUnhonorableAnnotations("api", "helm", "helm", kinds, annotations(t,
+		"aggrega.ai/service-account", "api-runner",
+		"aggrega.ai/cluster-domain", "cluster.local",
+	), lookup, sink)
+
+	if len(*got) != 1 {
+		t.Fatalf("advisory count = %d, want exactly 1 — the synthesized-scoped key is honoured "+
+			"through the workload half and the unnamed key is honoured by nothing: %+v", len(*got), *got)
+	}
+	d := (*got)[0]
+	if d.SourceRef != "aggrega.ai/cluster-domain" {
+		t.Fatalf("the advisory names %q; the only key no declared kind honours is aggrega.ai/cluster-domain",
+			d.SourceRef)
+	}
+	for _, want := range []string{"sourced", "synthesised"} {
+		if !strings.Contains(d.Message, want) {
+			t.Errorf("message %q does not name the %s kind; a node declaring two kinds must not be "+
+				"described by one of them", d.Message, want)
+		}
+	}
+}
+
+// TestWarnUnhonorableAnnotations_SingleKindSentenceIsUnchanged pins the sentence a
+// single-kind node produces as a literal. The overwhelming majority of nodes
+// declare one input kind, the published reference quotes this exact line, and the
+// plural handling must leave it alone rather than rendering a one-element list in
+// some new shape.
+func TestWarnUnhonorableAnnotations_SingleKindSentenceIsUnchanged(t *testing.T) {
+	t.Parallel()
+	lookup := annotationLookup("helm-chart", types.WellKnownAnnotation{
+		Key: "aggrega.ai/chart-name", Scope: []string{types.WellKnownAnnotationScopeBoundary}})
+
+	sink, got := collect()
+	warnUnhonorableAnnotations("frontend", "helm-chart", "helm-chart",
+		declaredNodeInputKinds(true, false, false),
+		annotations(t, "aggrega.ai/namespace", "app-zone"), lookup, sink)
+
+	if len(*got) != 1 {
+		t.Fatalf("advisory count = %d, want 1: %+v", len(*got), *got)
+	}
+	const want = `target "helm-chart" does not support annotation aggrega.ai/namespace on sourced input and ignored it`
+	if (*got)[0].Message != want {
+		t.Errorf("single-kind message drifted\n got: %s\nwant: %s", (*got)[0].Message, want)
 	}
 }
 
 // TestClassifyNodeInputKind_Precedence pins the source > workload > artifacts
-// precedence and the scope/word pairing that the capability gate and the
-// annotation advisory both read, so neither can drift into a second vocabulary.
+// precedence and the scope/word pairing every reader of an input kind's name
+// derives from, so no reader can drift into a second vocabulary.
 func TestClassifyNodeInputKind_Precedence(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -280,8 +354,9 @@ func TestClassifyNodeInputKind_Precedence(t *testing.T) {
 }
 
 // TestNodeInputKind_ClaimedBy pins that each classification reads its own field
-// of the provider contract, which is what keeps the capability gate's verdict and
-// the annotation advisory's scope derived from one classification.
+// of the provider contract, which is what keeps the capability gate's verdict
+// derived from the same classification the annotation advisory takes its scope
+// from.
 func TestNodeInputKind_ClaimedBy(t *testing.T) {
 	t.Parallel()
 	sourced, _ := classifyNodeInputKind(true, false, false)

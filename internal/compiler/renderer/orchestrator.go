@@ -1405,19 +1405,24 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, err
 		}
 
-		// The node's input kind is settled now, and the resolved provider and the
-		// deployment's authored annotations were already in hand — so this is the
-		// one point that holds every fact the advisory needs. It reports the
-		// platform annotations this node carries that its target's own support
-		// claim does not cover for this input kind: authored directives that reach
-		// no consumer, which without a word are indistinguishable from a typo.
-		// A degradation, never a refusal: the annotations pass through untouched
-		// and no rendered byte moves.
-		if kind, ok := classifyNodeInputKind(hasSource, hasWorkload, hasArtifacts); ok {
-			warnUnhonorableAnnotations(nodeID, providerRef, providerName, kind,
-				node.ReleaseAnnotations, input.CatalogLookup.ProviderPlugin,
-				nodeCtx.UnsupportedFieldSink)
-		}
+		// The node's declared input kinds are settled now, and the resolved
+		// provider and the deployment's authored annotations were already in hand —
+		// so this is the one point that holds every fact the advisory needs. It
+		// reports the platform annotations this node carries that its target's own
+		// support claim covers for none of those kinds: authored directives that
+		// reach no consumer, which without a word are indistinguishable from a
+		// typo. A degradation, never a refusal: the annotations pass through
+		// untouched and no rendered byte moves.
+		//
+		// It is handed the same declared set the gate above consults, not the one
+		// kind the precedence names this node's mode after. A node's declared kinds
+		// each render and their outputs are added together, so a target acting on
+		// an annotation through any one of them acts on it — and a set of one is
+		// the ordinary case, which reads exactly as it always has.
+		warnUnhonorableAnnotations(nodeID, providerRef, providerName,
+			declaredNodeInputKinds(hasSource, hasWorkload, hasArtifacts),
+			node.ReleaseAnnotations, input.CatalogLookup.ProviderPlugin,
+			nodeCtx.UnsupportedFieldSink)
 
 		// Advertised-only refusal of an authored identity the node's target will
 		// not accept. This node's identity is the one its author wrote, so it is
@@ -2422,9 +2427,10 @@ func resolveFeatureRecipes(
 // handed a kind its own report did not declare has been mis-routed — that is a
 // defect on this path, not something the author of the Recipe can fix.
 //
-// The per-kind scope and user-facing name live in classifyNodeInputKind, which
-// the annotation-support advisory reads too, so an input kind's name is stated
-// once rather than once per reader.
+// declaredNodeInputKinds is also what the annotation-support advisory reads, so
+// the two per-kind readings of a node agree on which kinds it renders through;
+// each kind's scope and user-facing name come from classifyNodeInputKind, so an
+// input kind's name is stated once rather than once per reader.
 //
 // A node declaring no input kind at all is passed without the provider's contract
 // being read, and the early return is load-bearing rather than a micro-optimisation:

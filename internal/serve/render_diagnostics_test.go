@@ -274,6 +274,73 @@ func TestPublishRenderDiagnostics_CarriesUnhonorableAnnotationAdvisory(t *testin
 	}
 }
 
+// TestPublishRenderDiagnostics_CarriesEveryDeclaredInputKindOfTheAdvisory is the
+// editor-surface half of the per-kind reading. A node whose Recipe declares more
+// than one input kind is described by all of them, and the editor is where a false
+// "and ignored it" is most likely to be believed and acted on, because it sits
+// beside the line being edited — so the whole phrase has to survive the crossing
+// rather than the key and the target alone.
+//
+// The single-kind case is asserted in the same table as the control on the other
+// side: a bridge that appended every kind name would satisfy a multi-kind
+// assertion while describing every ordinary node wrongly.
+func TestPublishRenderDiagnostics_CarriesEveryDeclaredInputKindOfTheAdvisory(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		diag     renderer.Diagnostic
+		want     string
+		unwanted string
+	}{
+		{
+			name: "a node declaring two input kinds is described by both",
+			diag: rendercore.UnhonorableAnnotationDiagnostic(
+				"helm", "aggrega.ai/cluster-domain", "sourced", "synthesised"),
+			want: `target "helm" does not support annotation aggrega.ai/cluster-domain ` +
+				`on sourced or synthesised input and ignored it`,
+		},
+		{
+			name: "a node declaring one input kind is described by that one",
+			diag: rendercore.UnhonorableAnnotationDiagnostic(
+				"helm", "aggrega.ai/service-account", "sourced"),
+			want: `target "helm" does not support annotation aggrega.ai/service-account ` +
+				`on sourced input and ignored it`,
+			unwanted: "synthesised",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := layeredServer()
+			var out bytes.Buffer
+			ctx, flush := serializerContext(t, &out)
+			const file = "/w/release.yaml"
+
+			d := tc.diag
+			d.Location = &renderer.DiagnosticLocation{URI: "backend", Kind: "helm"}
+			s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{d})
+			flush()
+
+			got := s.snapshotDiagnostics(file)
+			if len(got) != 1 {
+				t.Fatalf("published %d diagnostics; want 1", len(got))
+			}
+			if !strings.Contains(got[0].Message, tc.want) {
+				t.Errorf("published editor message does not carry the advisory sentence\n got: %s\nwant: …%s…",
+					got[0].Message, tc.want)
+			}
+			if tc.unwanted != "" && strings.Contains(got[0].Message, tc.unwanted) {
+				t.Errorf("published editor message %q names %q, a kind this node does not declare",
+					got[0].Message, tc.unwanted)
+			}
+			// The node is still named, so the reader can tell which of several
+			// components under one cascading annotation the entry is about.
+			if !strings.Contains(got[0].Message, "backend") {
+				t.Errorf("published editor message %q does not name the node", got[0].Message)
+			}
+		})
+	}
+}
+
 // TestPublishRenderDiagnostics_ForwardsTheAdvisoryCodeVerbatim is the acceptance
 // for the code on the render layer. An advisory arrives already carrying a
 // machine-matchable code, and before the forward existed the published entry

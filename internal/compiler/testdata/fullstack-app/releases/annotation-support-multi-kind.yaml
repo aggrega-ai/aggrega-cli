@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+#
+# One boundary annotating three keys over three nodes that differ only in which
+# input kinds their Recipe declares, so one build shows every outcome the
+# per-kind reading has to produce:
+#
+#   backend      — a vendored chart AND a synthesized Workload
+#   frontend     — a vendored chart alone
+#   data.main-db — a synthesized Workload alone
+#
+#   aggrega.ai/service-account — the target reads it where it builds the pod
+#                                itself, so it is acted on through a synthesized
+#                                declaration and unreachable through a sourced one
+#   aggrega.ai/namespace       — read on both paths, so no node can miss it
+#   aggrega.ai/cluster-domain  — named by no entry in the claim, so no node reads
+#                                it, whatever it declares
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod-release-annotation-support-multi-kind
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregate.yaml
+  manifest: ../manifests/annotation-support-multi-kind.yaml
+  boundaries:
+    app-ns:
+      directory: ./dist/app
+      annotations:
+        aggrega.ai/service-account: "api-runner"
+        aggrega.ai/namespace: "app-zone"
+        aggrega.ai/cluster-domain: "cluster.local"
+      components:
+        backend:
+          infra:
+            replicas: 3
+            port: 8082
+        frontend:
+          infra:
+            replicas: 2
+            port: 3003
+          features:
+            cross-namespace-routing:
+              type: core/k8s-dns-resolver
+              infra:
+                target_var: "API_HOST"
+        data.main-db:
+          infra:
+            replicas: 1

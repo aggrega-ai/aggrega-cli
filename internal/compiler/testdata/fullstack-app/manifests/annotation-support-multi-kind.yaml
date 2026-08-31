@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: fullstack-manifest-annotation-support-multi-kind
+  version: "1.0.0"
+  description: >
+    One Recipe per input-kind shape, so a single build holds a node declaring two
+    kinds beside a node declaring each one alone: api-server renders through a
+    vendored chart AND a synthesized Workload, web-ui through a vendored chart
+    alone, and postgres through a synthesized Workload alone.
+spec:
+  mappings:
+    components:
+      type:
+        core/compute/api-server: helm-api-server-sourced-with-workload:1.0.0
+        core/compute/web-ui: helm-web-ui-sourced:1.0.0
+        core/datastore/postgres: helm-postgres-synthesized:1.0.0
+    features:
+      type:
+        core/k8s-dns-resolver: k8s-dns-patcher:1.0.0
+        feature.myco/db-pool: db-pool-patcher:1.0.0
+        feature.myco/rewrite-host: rewrite-host-patcher:1.0.0

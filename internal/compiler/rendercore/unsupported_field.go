@@ -5,6 +5,7 @@ package rendercore
 
 import (
 	"fmt"
+	"strings"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
@@ -13,8 +14,8 @@ import (
 // UnsupportedFieldCode is the stable, machine-matchable code carried by every
 // diagnostic reporting an authored input a render target cannot honor — an
 // authored field the target cannot express, or can express only in a reduced
-// form, and a platform annotation the resolved target does not act on for the
-// node's input kind. Every constructor
+// form, and a platform annotation the resolved target does not act on for any
+// of the input kinds the node declares. Every constructor
 // in this class shares this one code so a single display filter can suppress the
 // whole class: an author silencing "things I authored that this target ignores"
 // silences them together rather than discovering one switch per kind of authored
@@ -23,12 +24,25 @@ import (
 const UnsupportedFieldCode = "unsupported-field"
 
 // UnhonorableAnnotationDiagnostic builds the warning raised when a node carries
-// an authored platform annotation the resolved target's own support claim does
-// not cover for that node's input kind, so the annotation reaches no consumer and
-// changes nothing. target is the target's user-facing name; key is the annotation
-// key exactly as authored; inputKind is the node's input kind in the same words
-// every other diagnostic about an input kind spells it. The caller attaches the
-// location naming the node and the target.
+// an authored platform annotation the resolved target's own support claim covers
+// for NONE of the input kinds that node declares, so the annotation reaches no
+// consumer and changes nothing. target is the target's user-facing name; key is
+// the annotation key exactly as authored; inputKinds are every input kind the
+// node declares, in the same words every other diagnostic about an input kind
+// spells them. The caller attaches the location naming the node and the target.
+//
+// The kinds are plural because a Recipe may declare more than one and their
+// outputs are added together, so the target may act on an annotation through one
+// declared kind while having no slot for it on another. Naming one kind on such a
+// node would assert something false about a node that renders two — and this
+// warning says the value was ignored, which invites deleting an annotation that
+// is in fact changing the rendered output. So the raiser asks about every declared
+// kind and reaches this constructor only when the answer is no for all of them,
+// and the sentence names all of them.
+//
+// A node declaring a single input kind reads exactly as it always has: the kinds
+// are joined into one phrase, and a phrase built from one kind is that kind's own
+// word.
 //
 // It shares UnsupportedFieldCode with its siblings because it reports the same
 // fact about a different authored input: something the author declared, which
@@ -41,15 +55,34 @@ const UnsupportedFieldCode = "unsupported-field"
 // One authored annotation can raise several of these, one per node that cannot
 // act on it. That is not duplication — each names a different node, and the fact
 // being reported is per node.
-func UnhonorableAnnotationDiagnostic(target, key, inputKind string) renderctx.Diagnostic {
+//
+// At least one input kind is expected. A node declaring none renders nothing, so
+// there is no annotation support to compare and the raiser emits nothing for it.
+func UnhonorableAnnotationDiagnostic(target, key string, inputKinds ...string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
 		Severity:  abi.SeverityWarn,
 		Code:      UnsupportedFieldCode,
 		SourceRef: key,
 		Message: fmt.Sprintf(
 			"target %q does not support annotation %s on %s input and ignored it",
-			target, key, inputKind),
+			target, key, joinInputKinds(inputKinds)),
 	}
+}
+
+// joinInputKinds renders input-kind words as the noun phrase a diagnostic reads
+// them in. The last two are joined with "or" rather than a comma because the
+// sentence around it is negative — the target supports the key on none of them —
+// and "or" is what carries that reading in English. One kind yields that kind's
+// own word unchanged, which is what keeps a single-kind node's sentence identical
+// to the one this class has always printed.
+func joinInputKinds(kinds []string) string {
+	switch len(kinds) {
+	case 0:
+		return ""
+	case 1:
+		return kinds[0]
+	}
+	return strings.Join(kinds[:len(kinds)-1], ", ") + " or " + kinds[len(kinds)-1]
 }
 
 // UnsupportedFieldDiagnostic builds the warning a render target emits when it
