@@ -5,13 +5,12 @@
 //
 // SynthesizeWorkloadCore is the single byte-identical-critical synthesis path:
 // it takes the evaluated Workload, the per-slot secret provides, and the node's
-// render context, and returns the K8s manifest files. Both the in-tree host
-// engine (through the SynthesizeWorkload adapter, which bridges the host-only
-// template context) and the provider Wasm guest (which reconstructs the Workload
-// from the payload's workload projection) call this one function, so the two
-// synthesis surfaces stay byte-for-byte identical. This file carries no build
-// tag: it compiles for the host and for the wasip1 guest alike, so it imports no
-// host-only capability (no filesystem, no network).
+// render context, and returns the K8s manifest files. The helm provider Wasm
+// guest, which reconstructs the Workload from the payload's workload projection,
+// calls this one function, and nothing re-implements it, so a node's synthesised
+// bytes have a single producer. This file carries no build tag: it compiles for
+// the host and for the wasip1 guest alike, so it imports no host-only capability
+// (no filesystem, no network).
 //
 // Translation contract (chapter 16 §3):
 //

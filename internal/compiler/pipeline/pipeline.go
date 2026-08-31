@@ -263,8 +263,8 @@ func emitRenderWarnings(w io.Writer, result *renderer.RenderResult, suppressUnsu
 // guestWarmer is the compile-only capability the eager plugin-compilation pass
 // drives on a provider engine that renders through a Wasm guest: it compiles the
 // guest into the shared compilation cache without rendering a node, so the render
-// loop's per-node loads are cache hits. A provider that renders through the
-// in-tree Go engine does not satisfy it and is skipped by the pass.
+// loop's per-node loads are cache hits. An engine that does not implement it is
+// skipped by the pass.
 type guestWarmer interface {
 	Warm(ctx context.Context) error
 }
@@ -949,8 +949,8 @@ func warmProviderGuest(ctx context.Context, w guestWarmer, onCompiling func()) e
 // will load, in the same way the render loop does: it walks the graph's nodes,
 // resolves each node's recipe to its provider reference, and routes that provider
 // through the same hybrid engine factory the render uses. A provider that routes
-// to a Wasm guest yields a guestWarmer; a provider that renders through the
-// in-tree Go engine yields none. Guests are deduplicated by the engine identity
+// to a Wasm guest yields a guestWarmer; an engine that implements no warm
+// capability yields none. Guests are deduplicated by the engine identity
 // the factory memoizes, so two bindings that resolve to one guest warm once.
 // Node order is stable so the pass is deterministic. A factory error (a version
 // pin no plugin satisfies) is returned — the same error the render loop would

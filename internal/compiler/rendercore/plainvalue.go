@@ -42,12 +42,13 @@ func PlainValue(v any) any {
 	case json.Number:
 		// The wire codec decodes JSON numerics to json.Number (high-precision
 		// integer preservation via UseNumber). go-yaml serializes a json.Number —
-		// a string-kind type — as a quoted scalar, which would diverge from the
-		// in-tree engine, whose values carry the Go numeric types a YAML scalar
-		// parse yields. Renormalize to those same types so a value that crosses
-		// the wire serializes byte-identically to one that did not: an integral
-		// value to int64, a fractional value to float64, and anything neither
-		// leaves the number untouched.
+		// a string-kind type — as a quoted scalar rather than as the Go numeric
+		// types a YAML scalar parse yields, so a value that reached the render
+		// through the wire codec would serialize differently from one parsed
+		// straight out of YAML. Renormalize to those same types so a value that
+		// crosses the wire serializes byte-identically to one that did not: an
+		// integral value to int64, a fractional value to float64, and anything
+		// neither leaves the number untouched.
 		if i, err := strconv.ParseInt(string(t), 10, 64); err == nil {
 			return i
 		}

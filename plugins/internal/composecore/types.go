@@ -266,9 +266,7 @@ type ServiceVolume struct {
 
 // Volume is a top-level named volume declaration. Compose top-level volumes
 // have driver/driver_opts/external/labels/name; the synthesizer emits the
-// minimum viable form (empty body — `<name>: {}`) today. Future expansion
-// covers driver options when Workload's persistent.class signals a
-// non-default storage class.
+// minimum viable form — an empty body, `<name>: {}`.
 type Volume struct {
 	Driver     string            `yaml:"driver,omitempty"`
 	DriverOpts map[string]string `yaml:"driver_opts,omitempty"`

@@ -5,8 +5,9 @@
 
 // Command helm-provider is the helm Provider Wasm guest. It implements the
 // sourced-render path of the helm engine behind the provider render ABI's
-// render_node export, reusing the same filesystem-free render core the in-tree
-// helm engine runs so the two produce byte-identical output for identical input.
+// render_node export, driving the filesystem-free render core in
+// plugins/internal/helmcore rather than carrying its own copy of it, so
+// identical input produces byte-identical output.
 //
 // The guest decodes a RenderNodeInput, resolves the chart root from the payload's
 // name-only SourceListing, asks the host to pack the chart's file tree through the
@@ -14,8 +15,8 @@
 // reconstructs the Helm chart in memory, renders it against the node's values
 // through the shared render core, and returns each rendered manifest's serialized
 // bytes as a RenderedFile.
-// The host writes those bytes verbatim and runs no serializer, so the on-disk
-// output matches the in-tree engine's bytes.
+// The host writes those bytes verbatim and runs no serializer, so the guest's
+// serialization is the on-disk output.
 //
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o helm-provider.wasm ./plugins/helm-provider
 // (c-shared produces a WASI reactor whose _initialize the host runs before
@@ -173,8 +174,8 @@ func errorChainMessage(err error) string {
 // indentation width the guest serializes output at (carried on the render
 // context; the render core clamps its zero value to the default width).
 // Carrying the full provenance here is what makes the guest's rendered
-// manifests carry the same aggrega.ai labels and annotations the in-tree engine
-// emits, so the two produce byte-identical output for identical input.
+// manifests carry the whole aggrega.ai label and annotation set, so identical
+// input produces byte-identical output.
 func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
 	return rendercore.NodeRenderContext{
 		NodeID:           in.Node.ID,
@@ -198,10 +199,10 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 
 // renderSourcedFromInput resolves the Helm chart root from the wire input's
 // name-only source listing, asks the host to pack the chart's file tree,
-// reconstructs the chart in memory, runs the same filesystem-free render core the
-// in-tree engine runs, and returns each rendered manifest's serialized bytes as
-// a RenderedFile. The node's values, identity, provenance, and merged
-// annotations arrive in the node projection and render context.
+// reconstructs the chart in memory, runs the shared filesystem-free render core,
+// and returns each rendered manifest's serialized bytes as a RenderedFile. The
+// node's values, identity, provenance, and merged annotations arrive in the node
+// projection and render context.
 //
 // Values-schema validation runs hermetically: the chart's values.schema.json
 // (and dependency charts' schemas) are validated by the render core's
@@ -209,7 +210,7 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 // chart files and whose remote http/https references resolve through the
 // host's pinned external-input channel. The SDK's own live-fetching validator
 // never runs in the guest. Validation only gates — it never alters values —
-// so rendered bytes stay byte-identical with the in-tree engine.
+// so rendered bytes are byte-identical for any accepted input.
 func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.SourceListing == nil {
 		return rendercore.RenderNodeOutput{}, errors.New("helm-provider: render_node input carries no source listing")
@@ -246,9 +247,9 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 }
 
 // renderSynthFromInput synthesizes provider-native manifests from the wire
-// input's workload projection, running the same filesystem-free synthesis core
-// the in-tree engine runs, and returns each synthesized manifest's serialized
-// bytes as a RenderedFile. The workload and its attachments' resolved provides
+// input's workload projection, running the shared filesystem-free synthesis
+// core, and returns each synthesized manifest's serialized bytes as a
+// RenderedFile. The workload and its attachments' resolved provides
 // arrive in the workload projection; the node's identity, provenance, and merged
 // annotations arrive in the node projection and render context. The core's
 // emission order is deterministic and load-bearing, so the files are collected

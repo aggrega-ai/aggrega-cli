@@ -6,12 +6,12 @@
 //
 // SynthesizeWorkloadCore is the single byte-identical-critical synthesis path:
 // it takes the evaluated Workload and the node's render context and returns the
-// per-node compose fragment. Both the in-tree host engine (through the
-// SynthesizeWorkload adapter) and the provider Wasm guest (which reconstructs the
-// Workload from the payload's workload projection) call this one function, so the
-// two synthesis surfaces stay byte-for-byte identical. This file carries no build
-// tag: it compiles for the host and for the wasip1 guest alike, so it imports no
-// host-only capability (no filesystem, no network).
+// per-node compose fragment. The compose provider Wasm guest, which reconstructs
+// the Workload from the payload's workload projection, calls this one function,
+// and nothing re-implements it, so a node's synthesised bytes have a single
+// producer. This file carries no build tag: it compiles for the host and for the
+// wasip1 guest alike, so it imports no host-only capability (no filesystem, no
+// network).
 //
 // Container model. Single-container Workloads → one compose service named
 // `<nodeID>`. Multi-container Workloads → main service `<nodeID>` plus one

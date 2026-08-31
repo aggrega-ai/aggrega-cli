@@ -6,9 +6,9 @@
 // Command helmchart-provider is the helm-chart Provider Wasm guest. It implements
 // the sourced-render path of the helm-chart engine behind the provider render
 // ABI's render_node export, and the umbrella-assembly path behind its
-// assemble_boundary export, reusing the same filesystem-free render and assemble
-// cores the in-tree helm-chart engine runs so the two produce byte-identical
-// output for identical input.
+// assemble_boundary export, reusing the filesystem-free render and assemble
+// cores in plugins/internal/helmchartcore rather than carrying its own copy of
+// them, so identical input produces byte-identical output.
 //
 // The helm-chart provider is sourced-only: it copies a user's local Helm chart
 // verbatim into a sub-chart file set (umbrella + sub-chart composition). It
@@ -26,7 +26,7 @@
 // the host read at compile time), and assembles the umbrella Chart.yaml +
 // values.yaml through the same core, signalling that per-node files nest under a
 // per-node sub-directory. The host writes all returned bytes verbatim and runs no
-// serializer, so the on-disk output matches the in-tree engine's bytes.
+// serializer, so the guest's serialization is the on-disk output.
 //
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o helmchart-provider.wasm ./plugins/helmchart-provider
 // (c-shared produces a WASI reactor whose _initialize the host runs before
@@ -233,9 +233,9 @@ func assembleBoundary() int32 {
 }
 
 // assembleBoundaryFromInput reconstructs the umbrella assemble core's inputs from
-// the wire AssembleBoundaryInput and runs the same filesystem-free assembly core
-// the in-tree helm-chart engine runs, returning the umbrella Chart.yaml +
-// values.yaml as RenderedFiles. Each sub-chart carries its instance identity, its
+// the wire AssembleBoundaryInput and runs the shared filesystem-free assembly
+// core, returning the umbrella Chart.yaml + values.yaml as RenderedFiles. Each
+// sub-chart carries its instance identity, its
 // per-instance values (flattened from the wire's ordered map), and, for a
 // sub-chart vendored from a chart source, the pristine bytes of that chart's
 // Chart.yaml the host read at compile time; the core draws the dependency's name

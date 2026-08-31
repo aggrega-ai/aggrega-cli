@@ -6,9 +6,9 @@
 // Command compose-provider is the compose Provider Wasm guest. It implements the
 // sourced-render and workload-synthesis paths of the compose engine behind the
 // provider render ABI's render_node export, and the per-dispatch-group merge
-// behind its assemble_boundary export, reusing the same filesystem-free render
-// and assemble cores the in-tree compose engine runs so the two produce
-// byte-identical output for identical input.
+// behind its assemble_boundary export, reusing the filesystem-free render and
+// assemble cores in plugins/internal/composecore rather than carrying its own
+// copy of them, so identical input produces byte-identical output.
 //
 // The guest decodes a RenderNodeInput and routes on what it carries: a workload
 // projection is synthesized into a compose service fragment; a source listing is
@@ -18,8 +18,8 @@
 // is the pack-source callback its source resolution uses.
 //
 // The guest returns each rendered file's serialized bytes as a RenderedFile. The
-// host writes those bytes verbatim and runs no serializer, so the on-disk output
-// matches the in-tree engine's bytes.
+// host writes those bytes verbatim and runs no serializer, so the guest's
+// serialization is the on-disk output.
 //
 // The guest also implements the boundary_env_overrides export: from a boundary's
 // internal uses edges and the driving feature's infra it computes the
@@ -259,9 +259,9 @@ func errorChainMessage(err error) string {
 
 // renderSourcedFromInput resolves the base compose document from the wire
 // input's name-only source listing, asks the host to pack it, reconstructs it in
-// memory, runs the same filesystem-free render core the in-tree engine runs, and
-// returns the rendered fragment's serialized bytes as a RenderedFile. Compose's
-// selection is a single document; a pack that returns a different file count is
+// memory, runs the shared filesystem-free render core, and returns the rendered
+// fragment's serialized bytes as a RenderedFile. Compose's selection is a single
+// document; a pack that returns a different file count is
 // an orchestrator bug rather than authoring drift and halts loudly. The node's
 // values, identity, provenance, and merged annotations arrive in the node
 // projection and render context.
@@ -332,9 +332,9 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 }
 
 // renderSynthFromInput synthesizes a compose service fragment from the wire
-// input's workload projection, running the same filesystem-free synthesis core
-// the in-tree engine runs, and returns the fragment's serialized bytes as a
-// RenderedFile. The workload arrives in the workload projection; the node's
+// input's workload projection, running the shared filesystem-free synthesis
+// core, and returns the fragment's serialized bytes as a RenderedFile. The
+// workload arrives in the workload projection; the node's
 // identity, provenance, and merged annotations arrive in the node projection and
 // render context. Compose's synthesis reads no attachment provides, so the
 // projection's AttachmentProvides are ignored by design. The core's emission
@@ -379,8 +379,8 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 // indentation width the guest serializes output at (carried on the render
 // context; the render core clamps its zero value to the default width).
 // Carrying the full provenance here is what makes the guest's fragments carry
-// the same aggrega.ai labels the in-tree engine emits, so the two produce
-// byte-identical output for identical input.
+// the whole aggrega.ai label set, so identical input produces byte-identical
+// output.
 func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContext {
 	return rendercore.NodeRenderContext{
 		NodeID:           in.Node.ID,

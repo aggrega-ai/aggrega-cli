@@ -62,8 +62,8 @@ type NodeRenderContext struct {
 	// value of the aggrega.ai/provider label.
 	ProviderName string
 	// ProviderVersion is the resolved provider-rendering plugin version behind
-	// ProviderName, or empty when the node renders through the in-tree engine
-	// with no resolved plugin version. When set it is the value of the
+	// ProviderName, or empty when no provider-rendering plugin version resolves
+	// behind the node's provider binding. When set it is the value of the
 	// aggrega.ai/provider-version label; empty omits that label.
 	ProviderVersion string
 	// LabelComponentID, when non-empty, overrides NodeID as the value of the

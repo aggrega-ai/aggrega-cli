@@ -25,13 +25,12 @@ const (
 	EmitOriginWorkload
 
 	// EmitOriginArtifactsInline — the file originated from an artifacts: entry
-	// authored with inline content. Reserved for the artifacts render path
-	// (Phase B.3 is a stub today).
+	// authored with inline content. It is also what the host reports for a file
+	// a guest placed that no entry claims.
 	EmitOriginArtifactsInline
 
 	// EmitOriginArtifactsImport — the file originated from an artifacts:
-	// entry authored with $import: (file path). Reserved for the artifacts
-	// render path.
+	// entry authored with $import: (file path).
 	EmitOriginArtifactsImport
 
 	// EmitOriginPipeline — the file originated from a pipeline step's EMIT

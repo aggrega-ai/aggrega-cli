@@ -52,11 +52,11 @@ type ValuesValidator func(ch *chart.Chart, vals chartutil.Values) error
 // the template engine, so they are split, labeled, and keyed by resource identity
 // exactly like templated documents, in a deterministic order. It is the
 // filesystem-free render core: it receives the chart in memory and never reads
-// from disk, so both the in-tree host engine (which loads the chart from a path)
-// and the provider Wasm guest (which reconstructs the chart from the payload's
-// source projection) share this one byte-identical-critical render path. Do not
-// re-implement this logic in a caller — route through this function so the two
-// render surfaces stay byte-for-byte identical.
+// from disk, which is what lets the provider Wasm guest — which reconstructs the
+// chart from the payload's source projection — drive this one
+// byte-identical-critical render path. Do not re-implement this logic in a
+// caller: route through this function so a node's rendered bytes have a single
+// producer.
 //
 // validate is the values-schema validation strategy the caller supplies; it
 // gates on the coalesced values table without altering it, so rendered output
@@ -80,8 +80,8 @@ func RenderLoadedChart(
 	// would — not merely the chart's own defaults. This runs before coalescing
 	// and before building the render values, mirroring the CLI's render order.
 	// It mutates ch; the chart is freshly loaded per render (the provider guest
-	// reconstructs it per node, the in-tree host loads it per node), so the
-	// mutation is not an aliasing or determinism hazard across nodes.
+	// reconstructs it per node), so the mutation is not an aliasing or
+	// determinism hazard across nodes.
 	if err := chartutil.ProcessDependenciesWithMerge(ch, chartutil.Values(values)); err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: process dependencies", nodeCtx.NodeID))
 	}

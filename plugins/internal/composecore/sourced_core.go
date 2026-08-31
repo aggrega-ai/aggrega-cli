@@ -41,7 +41,7 @@ import (
 // RenderSourcedCore parses the base compose bytes, deep-merges the values dict
 // on top, injects the compose-bridge gateway (no-op for non-bridge renders) and
 // the aggrega.ai/* provenance labels, and emits an Intermediate=true
-// compose-fragment for the Release-level merger to consume. sourcePath is the
+// compose-fragment for the boundary merger to consume. sourcePath is the
 // operator-facing source identifier threaded through only for diagnostics so the
 // parse-error messages match the source the host read.
 //
@@ -90,7 +90,7 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 	}
 
 	// Output path mirrors synthesised-mode: <nodeID>.compose-fragment.yaml.
-	// Both flow into the same Release-level merger via Intermediate=true. The
+	// Both flow into the same boundary merger via Intermediate=true. The
 	// orchestrator's per-node Phase B sub-passes wrap the file into an
 	// EmittedFile and tag origin/intermediate; sourced-mode origin is
 	// EmitOriginSource per the existing convention.

@@ -48,10 +48,10 @@ type CoreSubChart struct {
 
 // ReadChartMetaBytes parses a chart's Chart.yaml bytes and returns its `name` and
 // `version` fields. label identifies the sub-chart in error strings; it carries
-// no filesystem path so the guardrails read identically on the host and in a
-// provider Wasm guest, whose payload has no host paths. It is exported so a
-// provider Wasm guest, which lives in a separate package, can drive the same
-// decode-and-guardrail logic the in-tree engine runs.
+// no filesystem path so the guardrails read identically wherever they run, and a
+// provider Wasm guest's payload has no host paths to name. It is exported so that
+// guest, which lives in a separate package, can drive this decode-and-guardrail
+// logic rather than carrying its own copy of it.
 //
 // A chart's Chart.yaml is a single YAML document. This decodes the first document,
 // then requires the stream to be exhausted: a single yaml.Unmarshal would silently
@@ -84,11 +84,10 @@ func ReadChartMetaBytes(data []byte, label string) (name, version string, err er
 
 // AssembleUmbrellaCore produces the umbrella Chart.yaml + values.yaml for a
 // dispatch path from the filesystem-free sub-chart views. It is the umbrella
-// assembly core — it reads no disk and formats no host path — so both the in-tree
-// host engine (through the BuildUmbrella adapter, which reads each sourced
-// sub-chart's Chart.yaml) and a provider Wasm guest call this one
-// byte-identical-critical function. It is exported so a provider Wasm guest, which
-// lives in a separate package, can drive the same core the in-tree engine runs.
+// assembly core — it reads no disk and formats no host path — which is what lets
+// a provider Wasm guest call this one byte-identical-critical function. It is
+// exported so that guest, which lives in a separate package, can drive this core
+// rather than carrying its own copy of it.
 //
 // chartNameOverride is the cascaded `aggrega.ai/chart-name` value when present;
 // when non-empty it is the chart's name verbatim (the merged-path scenario's name
