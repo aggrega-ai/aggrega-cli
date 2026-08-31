@@ -1,0 +1,11 @@
+Recipe: core/three-mode-recipe:1.0.0
+Implements: core/api-server:1.0.0
+Capability: helm
+## Sourced
+  source: oci://charts.example.com/api-server:2.1.0
+## Synthesized
+  workload: inline
+valuesMapping: inline template
+Artifacts: 2
+  - servicemonitor.yaml
+  - networkpolicy.yaml

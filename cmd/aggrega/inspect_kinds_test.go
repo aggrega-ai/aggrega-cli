@@ -149,6 +149,37 @@ spec:
     image: redis
 `
 
+// recipeThreeModeFixture declares all three input modes at once — a source: to
+// render, a workload: to synthesize, and an artifacts: map — which is legal
+// because a Recipe's modes compose by addition. It is the fixture that pins the
+// declared modes being reported as a set: a renderer reporting only the mode a
+// single-mode Recipe would resolve to prints one of these three and hides the
+// rest.
+const recipeThreeModeFixture = `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: core/three-mode-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/api-server:1.0.0
+  source: oci://charts.example.com/api-server:2.1.0
+  valuesMapping: |
+    image: api-server
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+  artifacts:
+    servicemonitor.yaml: |
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+    networkpolicy.yaml: |
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+  provides:
+    endpoint: api-server
+`
+
 func TestInspectRecipe_Synthesized_Goldens(t *testing.T) {
 	t.Parallel()
 	runKindGoldens(t, "recipe", recipeSynthesizedFixture)
@@ -169,6 +200,85 @@ func TestInspectRecipe_Sourced_Golden(t *testing.T) {
 		t.Errorf("sourced recipe should not render ## Synthesized; got:\n%s", out)
 	}
 	compareGoldenKind(t, "recipe_sourced", "default.text.golden", []byte(out))
+}
+
+// TestInspectRecipe_ThreeModes_ReportsEverySection asserts against the printed
+// bytes that a Recipe declaring all three input modes has all three reported,
+// and that they are ordered source → workload → artifacts — the same order the
+// build applies. Asserting the sections are present is not enough on its own:
+// the omission this pins was a renderer that read every field and printed one
+// section, so each mode's own body line is asserted too, at every level that
+// renders a mode section.
+func TestInspectRecipe_ThreeModes_ReportsEverySection(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "recipe_three_mode", recipeThreeModeFixture)
+
+	for _, tc := range []struct {
+		name  string
+		level inspectLevel
+	}{
+		{"default", levelDefault},
+		{"detail", levelDetail},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			opts := testInspectOptions(&buf)
+			opts.level = tc.level
+			if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
+				t.Fatalf("inspect three-mode recipe: %v", err)
+			}
+			out := buf.String()
+
+			// Every declared mode is named, with the body line that makes it
+			// actionable — the source reference above all, since that is the
+			// line a single-section renderer drops.
+			for _, want := range []string{
+				"## Sourced",
+				"  source: oci://charts.example.com/api-server:2.1.0",
+				"## Synthesized",
+				"  workload: inline",
+				"Artifacts: 2",
+				"  - servicemonitor.yaml",
+				"  - networkpolicy.yaml",
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("three-mode recipe output is missing %q; got:\n%s", want, out)
+				}
+			}
+
+			// Ordered source → workload → artifacts. Presence alone would pass
+			// on a renderer that reports the modes in the reverse of the order
+			// a build applies, which is what makes this output comparable
+			// against a build at all.
+			sourceAt := strings.Index(out, "## Sourced")
+			workloadAt := strings.Index(out, "## Synthesized")
+			artifactsAt := strings.Index(out, "Artifacts: 2")
+			if !(sourceAt < workloadAt && workloadAt < artifactsAt) {
+				t.Errorf("modes should be ordered source → workload → artifacts; got offsets source=%d workload=%d artifacts=%d in:\n%s",
+					sourceAt, workloadAt, artifactsAt, out)
+			}
+
+			// A Recipe declaring a source: or a workload: is never artifacts-only,
+			// whatever else it declares.
+			if strings.Contains(out, "## Artifacts-only") {
+				t.Errorf("a recipe declaring a source: and a workload: is not artifacts-only; got:\n%s", out)
+			}
+		})
+	}
+}
+
+// TestInspectRecipe_ThreeModes_Golden pins the whole three-mode rendering in
+// bytes, so the section set and its order are reviewable as a diff rather than
+// as a list of substring assertions.
+func TestInspectRecipe_ThreeModes_Golden(t *testing.T) {
+	t.Parallel()
+	path := writeKindFixture(t, "recipe_three_mode", recipeThreeModeFixture)
+	var buf bytes.Buffer
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
+		t.Fatalf("inspect three-mode recipe: %v", err)
+	}
+	compareGoldenKind(t, "recipe_three_mode", "default.text.golden", buf.Bytes())
 }
 
 const featureRecipeFixture = `apiVersion: aggrega.ai/v1alpha1

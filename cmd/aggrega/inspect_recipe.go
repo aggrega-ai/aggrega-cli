@@ -12,13 +12,15 @@ import (
 )
 
 // renderRecipeFile renders a Recipe authored as a standalone file. The layout
-// is mode-prominent: a Synthesized or Sourced section names the input kind, with
-// mode-specific body. spec.implements renders as authored (isolation default);
-// --show-implements resolves the bound Component against the catalog via the
-// shared lookup and surfaces the presence mandates it declares.
+// is mode-prominent: one Sourced / Synthesized section per input mode the Recipe
+// declares, each with its own body, followed by the valuesMapping summary and
+// the artifacts listing. spec.implements renders as authored (isolation
+// default); --show-implements resolves the bound Component against the catalog
+// via the shared lookup and surfaces the presence mandates it declares.
 //
 //   - levelList: identifier, implements, provider.
-//   - levelDefault: implements, provider, mode section, valuesMapping summary.
+//   - levelDefault: implements, provider, mode sections, valuesMapping summary,
+//     artifacts listing.
 //   - levelDetail: adds workload body, provides / locals / assertions / pipeline.
 func renderRecipeFile(rw *workspaceconfig.ResolvedWorkspace, path string, data []byte, catalogDirs []string, opts inspectOptions) error {
 	if opts.output == outputYAML {
@@ -76,19 +78,42 @@ func renderRecipeFile(rw *workspaceconfig.ResolvedWorkspace, path string, data [
 	return nil
 }
 
-// renderRecipeMode prints the Synthesized / Sourced mode section. Synthesized
-// (a workload: block) shows a one-line workload summary; Sourced (a source:
-// reference) shows the source as authored. A Recipe carrying neither relies on
-// artifacts and is reported as artifacts-only.
+// renderRecipeMode prints one section per input mode the Recipe declares, not
+// one section for the whole Recipe. A Recipe's input modes compose by addition —
+// a source: to render, a workload: to synthesize and an artifacts: map all
+// contribute output, and any combination of them is legal — so the sections are
+// a set: Sourced shows the source as authored, Synthesized shows a one-line
+// workload summary, and both appear when both are declared. A Recipe declaring
+// neither a source: nor a workload: relies on its artifacts: entries and is
+// reported as artifacts-only.
+//
+// The sections are ordered source → workload → artifacts, the same order the
+// build applies when it resolves a Recipe to a single mode name and when it
+// reports which declared mode a provider cannot honour. Ordering them alike is
+// what lets a reader compare this output against a build without re-deriving
+// which mode takes precedence.
+//
+// That order is stated here as well as in the renderer, and the duplication is
+// deliberate. The renderer's enumerator answers a different question — which
+// modes need a provider capability, which deliberately excludes an artifacts:
+// map declared alongside a source: or a workload:, because those files ride
+// through as composed output. Reporting that answer here would drop the
+// artifacts section from exactly the mixed-mode Recipe this section exists to
+// describe, so the two are kept separate on purpose rather than for want of a
+// shared home. The artifacts entries themselves are listed by the caller.
 func renderRecipeMode(opts inspectOptions, workload types.WorkloadTemplate, source any) {
-	switch {
-	case !workload.IsEmpty():
-		fmt.Fprintln(opts.out, "## Synthesized")
-		fmt.Fprintf(opts.out, "  workload: %s\n", importableSummary(workload.Inline, workload.Import))
-	case source != nil:
+	declared := false
+	if source != nil {
 		fmt.Fprintln(opts.out, "## Sourced")
 		fmt.Fprintf(opts.out, "  source: %s\n", sourceSummary(source))
-	default:
+		declared = true
+	}
+	if !workload.IsEmpty() {
+		fmt.Fprintln(opts.out, "## Synthesized")
+		fmt.Fprintf(opts.out, "  workload: %s\n", importableSummary(workload.Inline, workload.Import))
+		declared = true
+	}
+	if !declared {
 		fmt.Fprintln(opts.out, "## Artifacts-only")
 	}
 }
