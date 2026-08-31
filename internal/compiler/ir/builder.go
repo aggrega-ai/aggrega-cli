@@ -160,8 +160,8 @@ func (s AttachmentSites) siteOf(node, attachment, pillar, leaf string) constrain
 // fails — which today happens exclusively on ErrFeatureTypeMismatch.
 // All other operations either succeed or fall through (missing
 // CatalogLookup, missing Release, JSON-marshal failures on values/infra
-// mapping leave the slot empty rather than aborting). Callers wrap the
-// error with the Step 3 prefix; see cmd/aggrega/build.go.
+// mapping leave the slot empty rather than aborting). Each caller adds its
+// own context prefix when wrapping the returned error.
 func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, AttachmentSites, error) {
 	return BuildIRContext(context.Background(), cfg)
 }
