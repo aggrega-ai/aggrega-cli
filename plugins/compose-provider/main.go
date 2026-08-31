@@ -305,13 +305,19 @@ func packComposeSource(listing *rendercore.SourceListing) (*aggrega.SourceProjec
 	return aggrega.PackSource("file", rel)
 }
 
-// placeArtifactsFromInput places the node's pre-evaluated artifact set. compose
-// emits each artifact at its author-resolved name and splices the host-computed
-// build provenance into the manifest's metadata via the shared placer, using the
-// default "{{"/"}}" delimiters (a manifest without metadata is a silent no-op in
-// the splice). Entries are placed in author order. The Intermediate marking that
-// routes these fragments to the boundary merge is applied host-side from compose's
-// boundary-assembly self-report, not here.
+// placeArtifactsFromInput places the node's pre-evaluated artifact set. A compose
+// artifact is a compose fragment, whose provenance site is each service's own
+// `labels:` block rather than a document-level metadata block, so the entries go
+// through the compose placer in the compose render core: it folds the two
+// host-computed provenance halves into the single service-labels set compose
+// emits and stamps every service the fragment declares. A fragment that declares
+// none is emitted unchanged and reports it, which becomes the
+// artifact-provenance-skipped diagnostic below — so an unstamped fragment is
+// always named, never passed through in silence.
+//
+// Entries are placed at their author-resolved names, in author order. The
+// Intermediate marking that routes these fragments to the boundary merge is
+// applied host-side from compose's boundary-assembly self-report, not here.
 func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.ArtifactsProjection == nil {
 		return rendercore.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no artifacts projection")
@@ -319,7 +325,7 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 	indent := in.Context.YAMLIndent
 	var out rendercore.RenderNodeOutput
 	for _, ent := range in.ArtifactsProjection.Entries {
-		body, warning, err := rendercore.SpliceArtifactProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, true, indent)
+		body, warning, err := composecore.SpliceArtifactServiceProvenance(ent.Name, ent.Content, ent.Labels, ent.Annotations, indent)
 		if err != nil {
 			return rendercore.RenderNodeOutput{}, err
 		}

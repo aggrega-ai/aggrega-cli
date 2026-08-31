@@ -61,8 +61,12 @@ func spliceProvenanceMultiDoc(rendered string, labels, annotations map[string]st
 		}
 	}
 	if !stampedAny {
-		// No document carried stampable metadata (e.g. raw config fragments) —
-		// nothing to splice; the original bytes are already correct.
+		// No document in the stream carried a metadata block, so this splice found
+		// no Kubernetes-manifest provenance site and inserted nothing. The bytes go
+		// back unchanged and unstamped — which is the whole answer only for a
+		// document model whose provenance site IS metadata. A guest emitting a
+		// different model locates its own sites through its own placer; nothing
+		// here can judge a shape it does not model.
 		return rendered, true
 	}
 
@@ -83,9 +87,10 @@ type lineInsertion struct {
 
 // planDocProvenanceSplice plans the label + annotation insertions for one decoded
 // document, or returns ok=false when the document's metadata region is not safely
-// spliceable. A document with no metadata mapping is a silent no-op (ok=true, no
-// insertions) — matching the existing injector's "manifests without metadata skip
-// silently" contract.
+// spliceable. A document with no metadata mapping plans no insertions and reports
+// ok=true: this planner reads the Kubernetes-manifest model, where metadata is the
+// provenance site, so its absence means there is no site to plan against. The
+// caller sees that as "nothing stamped" and owns what follows from it.
 func planDocProvenanceSplice(root *yaml.Node, lines []string, body []byte, offs []int, bo func(int, int) int, labels, annotations map[string]string) ([]lineInsertion, bool) {
 	mapping := DocumentMapping(root)
 	if mapping == nil {
@@ -93,7 +98,7 @@ func planDocProvenanceSplice(root *yaml.Node, lines []string, body []byte, offs 
 	}
 	metaKey, metaVal := FindKeyValueNode(mapping, "metadata")
 	if metaKey == nil || metaVal == nil {
-		return nil, true // no metadata → skip silently
+		return nil, true // no metadata block: no site in this model to plan against
 	}
 	metaVal = UnwrapAlias(metaVal)
 	if metaVal.Kind != yaml.MappingNode || isFlow(metaVal) || len(metaVal.Content) == 0 {
@@ -282,7 +287,7 @@ func injectProvenanceRoundTrip(filename, rendered string, labels, annotations ma
 			continue
 		}
 		if err := injectProvenanceNode(filename, d, labels, annotations); err != nil {
-			return nil, artifactInjected, err // CATALOG_ERROR from the Q1a shape guard
+			return nil, artifactInjected, err // CATALOG_ERROR from the labels-shape guard
 		}
 	}
 
@@ -329,6 +334,16 @@ func helmTokensPreserved(in, out string) bool {
 func decodeAllDocs(s string) ([]*yaml.Node, error) {
 	docs, _, err := decodeAllDocsWithLines(s)
 	return docs, err
+}
+
+// DecodeAllYAMLDocs decodes every document in a YAML stream, so a provenance
+// placer for a document model this package does not itself splice reaches the
+// one decoder rather than opening a second one. A stream carrying `---`
+// separators yields one node per document; a single-yaml.Unmarshal caller would
+// keep only the first and drop the rest, which is a silent misread rather than
+// an error, and is why the decoder is shared instead of re-rolled per placer.
+func DecodeAllYAMLDocs(s string) ([]*yaml.Node, error) {
+	return decodeAllDocs(s)
 }
 
 // decodeAllDocsWithLines is the single multi-document decoder. It runs one

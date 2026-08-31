@@ -140,12 +140,33 @@ func buildSingleOriginMap(doc map[string]any, nodeCtx rendercore.NodeRenderConte
 // (composeOmittedProvenanceKeys) are dropped; the remaining set matches the
 // helm and helm-chart engines' provenance for the same node.
 func buildAggregaLabels(nodeCtx rendercore.NodeRenderContext) map[string]string {
-	labels := rendercore.BuildAggregaProvenanceLabels(nodeCtx)
-	for k, v := range rendercore.BuildAggregaProvenanceAnnotations(nodeCtx, rendercore.ProvenanceRecipeURIFromNodeCtx(nodeCtx)) {
-		labels[k] = v
+	return foldComposeProvenanceSet(
+		rendercore.BuildAggregaProvenanceLabels(nodeCtx),
+		rendercore.BuildAggregaProvenanceAnnotations(nodeCtx, rendercore.ProvenanceRecipeURIFromNodeCtx(nodeCtx)),
+	)
+}
+
+// foldComposeProvenanceSet folds a Kubernetes-shaped provenance split — the
+// label-safe half and the charset-unsafe half — into the single service-labels
+// map compose emits, dropping composeOmittedProvenanceKeys. It is the one home
+// for that fold, so the services this package synthesises and merges and the
+// services an artifact fragment contributes carry the same key set from the same
+// rule rather than from two agreeing copies of it.
+//
+// The result is a fresh map because one caller does not own its inputs: the
+// artifact path is handed the key sets the host computed for a projection entry,
+// and folding in place would leave one entry's stamp on the next entry of the
+// same node.
+func foldComposeProvenanceSet(labels, annotations map[string]string) map[string]string {
+	out := make(map[string]string, len(labels)+len(annotations))
+	for k, v := range labels {
+		out[k] = v
+	}
+	for k, v := range annotations {
+		out[k] = v
 	}
 	for _, k := range composeOmittedProvenanceKeys {
-		delete(labels, k)
+		delete(out, k)
 	}
-	return labels
+	return out
 }

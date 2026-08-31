@@ -1,0 +1,40 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: compose-db-sourced
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/datastore/postgres
+  source: ./sources/db.yaml
+  provides:
+    host: "{{ .context.instance_id }}"
+    service_port: "5432"
+  valuesMapping: |
+    {
+      "services": {
+        "db": {
+          "environment": {
+            "POSTGRES_DB": "{{ .values.database_name }}"
+          }
+        }
+      }
+    }
+  # The artifact contributes a SERVICE, so this Recipe emits one service through
+  # the source path and a second through the artifact path, and both land in the
+  # same assembled docker-compose.yaml. That side-by-side pair is what the
+  # provenance-parity proof reads: the two services must carry the same
+  # provenance keys with the same values.
+  artifacts:
+    db-sidecar.yaml: |
+      services:
+        db-metrics:
+          image: postgres-exporter:latest
+          restart: unless-stopped
+    # A fragment contributing only a top-level key carries no service, so
+    # provenance has no site in it. It is emitted unchanged and named in an
+    # advisory rather than passed through in silence.
+    db-volume.yaml: |
+      volumes:
+        {{ .context.instance_id }}-archive:
+          driver: local

@@ -42,12 +42,18 @@ func helmTemplateTokens(s string) []string {
 // position — provenance labels are authoritative on key collision per the
 // chapter-16 contract.
 //
-// When the document does not carry a metadata block (compose service
-// fragments, raw config-only fragments) the injector returns nil unchanged
-// — silent no-op per chapter 16's "manifests without metadata skip
-// silently" contract.
+// When the document carries no metadata block — a raw config-only fragment in
+// a Kubernetes-emitting provider's output — nothing is stamped and the function
+// returns nil. That is correct for this document model and only for it:
+// metadata is where a Kubernetes manifest carries provenance, so a document of
+// this model that has no metadata block has no provenance site. A document
+// whose model puts provenance somewhere else is not this injector's to judge
+// and does not route here — a compose fragment carries provenance on each
+// service's labels block, and the compose provider stamps it through its own
+// placer, which reports the artifacts it found no site in rather than passing
+// them through in silence.
 //
-// Q1a guardrail: when metadata.labels exists but its kind is not a YAML
+// Shape guardrail: when metadata.labels exists but its kind is not a YAML
 // mapping (scalar, sequence, alias, etc.), the function returns a
 // CATALOG_ERROR rather than silently discarding the user-authored content.
 // Aligns with Invariant 4 — the compiler never silently mutates user
@@ -66,31 +72,38 @@ func injectProvenanceNode(filename string, root *yaml.Node, labels, annotations 
 		return nil
 	}
 
-	if err := mergeOrAppendProvenanceMapping(filename, metadata, "labels", labels); err != nil {
+	if err := MergeProvenanceIntoMappingChild(filename, "metadata", metadata, "labels", labels); err != nil {
 		return err
 	}
-	if err := mergeOrAppendProvenanceMapping(filename, metadata, "annotations", annotations); err != nil {
+	if err := MergeProvenanceIntoMappingChild(filename, "metadata", metadata, "annotations", annotations); err != nil {
 		return err
 	}
 	return nil
 }
 
-// mergeOrAppendProvenanceMapping merges entries into the named mapping
-// child of metadata, creating the child if absent. Same Q1a guardrail as
-// the original labels-only path: if the child exists but its kind is not
-// a YAML mapping, return CATALOG_ERROR rather than silently discarding
-// user content. No-op when entries is empty.
-func mergeOrAppendProvenanceMapping(filename string, metadata *yaml.Node, key string, entries map[string]string) error {
+// MergeProvenanceIntoMappingChild merges entries into the named mapping child
+// of parent, creating the child if absent. It is the one home for the
+// merge-or-append step every provenance placer performs; what differs between
+// placers is which node they locate as parent — a Kubernetes manifest's
+// metadata block, or a compose service's own body — so a placer for a new
+// document shape supplies its own parent and inherits this behaviour rather
+// than restating it.
+//
+// Shape guardrail: if the child exists but its kind is not a YAML mapping — a
+// compose service's `labels:` written in the `["k=v"]` sequence form, say — it
+// returns CATALOG_ERROR rather than silently discarding user content. No-op
+// when entries is empty.
+func MergeProvenanceIntoMappingChild(filename, parentPath string, parent *yaml.Node, key string, entries map[string]string) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	keyNode, valNode := FindKeyValueNode(metadata, key)
+	keyNode, valNode := FindKeyValueNode(parent, key)
 	if keyNode != nil && valNode != nil {
 		valNode = UnwrapAlias(valNode)
 		if valNode.Kind != yaml.MappingNode {
 			return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: filename},
-				fmt.Sprintf("artifact %q metadata.%s has unexpected shape (expected mapping, got %s); cannot merge provenance entries",
-					filename, key, NodeKindName(valNode.Kind)),
+				fmt.Sprintf("artifact %q %s.%s has unexpected shape (expected mapping, got %s); cannot merge provenance entries",
+					filename, parentPath, key, NodeKindName(valNode.Kind)),
 				nil, nil)
 		}
 		mergeProvenanceIntoLabels(valNode, entries)
@@ -98,7 +111,7 @@ func mergeOrAppendProvenanceMapping(filename string, metadata *yaml.Node, key st
 	}
 	newMapping := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	mergeProvenanceIntoLabels(newMapping, entries)
-	metadata.Content = append(metadata.Content,
+	parent.Content = append(parent.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
 		newMapping,
 	)

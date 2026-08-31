@@ -72,7 +72,7 @@ func SpliceArtifactProvenance(name string, rendered []byte, labels, annotations 
 	switch outcome {
 	case artifactInjected:
 		if rtErr != nil {
-			return nil, "", rtErr // CATALOG_ERROR from the Q1a metadata-shape guard
+			return nil, "", rtErr // CATALOG_ERROR from the metadata-shape guard
 		}
 		return b, "", nil
 	case artifactParseFailDefault:

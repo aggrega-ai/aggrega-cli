@@ -171,15 +171,17 @@ spec: {}
 	}
 }
 
-// TestMergeOrAppendProvenanceMapping_EveryBranch pins the empty-
+// TestMergeProvenanceIntoMappingChild_EveryBranch pins the empty-
 // entries short-circuit, existing-mapping merge, wrong-kind error,
-// and new-mapping append.
-func TestMergeOrAppendProvenanceMapping_EveryBranch(t *testing.T) {
+// and new-mapping append. The parent path is a caller-supplied label
+// for the message, so a placer locating a non-metadata parent names
+// its own site rather than reporting a metadata path it never read.
+func TestMergeProvenanceIntoMappingChild_EveryBranch(t *testing.T) {
 	t.Parallel()
 	metadata := &yaml.Node{Kind: yaml.MappingNode}
 
 	// Empty entries → no-op (no panic).
-	if err := mergeOrAppendProvenanceMapping("f", metadata, "labels", nil); err != nil {
+	if err := MergeProvenanceIntoMappingChild("f", "metadata", metadata, "labels", nil); err != nil {
 		t.Errorf("empty entries: %v", err)
 	}
 	if len(metadata.Content) != 0 {
@@ -187,7 +189,7 @@ func TestMergeOrAppendProvenanceMapping_EveryBranch(t *testing.T) {
 	}
 
 	// Append new mapping branch.
-	if err := mergeOrAppendProvenanceMapping("f", metadata, "labels", map[string]string{
+	if err := MergeProvenanceIntoMappingChild("f", "metadata", metadata, "labels", map[string]string{
 		"k": "v",
 	}); err != nil {
 		t.Errorf("append: %v", err)
@@ -197,20 +199,23 @@ func TestMergeOrAppendProvenanceMapping_EveryBranch(t *testing.T) {
 	}
 
 	// Existing mapping (different key) → merge into the appended one.
-	if err := mergeOrAppendProvenanceMapping("f", metadata, "labels", map[string]string{
+	if err := MergeProvenanceIntoMappingChild("f", "metadata", metadata, "labels", map[string]string{
 		"k2": "v2",
 	}); err != nil {
 		t.Errorf("merge into existing: %v", err)
 	}
 
-	// Wrong-kind error branch: write metadata.labels as a scalar.
+	// Wrong-kind error branch: write the child as a scalar.
 	bad := &yaml.Node{Kind: yaml.MappingNode, Content: []*yaml.Node{
 		{Kind: yaml.ScalarNode, Value: "labels"},
 		{Kind: yaml.ScalarNode, Value: "scalar-instead-of-mapping"},
 	}}
-	err := mergeOrAppendProvenanceMapping("f", bad, "labels", map[string]string{"k": "v"})
+	err := MergeProvenanceIntoMappingChild("f", "services.db", bad, "labels", map[string]string{"k": "v"})
 	if err == nil {
-		t.Errorf("wrong-kind should error")
+		t.Fatalf("wrong-kind should error")
+	}
+	if !strings.Contains(err.Error(), "services.db.labels") {
+		t.Errorf("the refusal should name the caller's parent path, got %q", err)
 	}
 }
 
