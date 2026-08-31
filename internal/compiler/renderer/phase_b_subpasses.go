@@ -278,8 +278,14 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 // filename-collision rule can name every contributor on a clash.
 //
 // An engine that does not implement ArtifactsEmitter, while the Recipe declares
-// artifacts:, produces a CATALOG_ERROR — mirroring the WorkloadSynthesizer gate
-// at B.4.
+// artifacts:, produces a CATALOG_ERROR. That is not a capability check: which
+// input kinds a provider may be handed is settled once per node, before any render
+// dispatch, by the central input-kind gate reading the provider's declared
+// contract, and no provider this host ships can fail the assertion anyway — the
+// single provider adapter the host renders through implements ArtifactsEmitter by
+// compile-time assertion whatever its guest declares. The branch is kept loud
+// because the alternative is emitting nothing for a declared artifacts: block and
+// reporting success.
 func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBState, engine Provider, nodeCtx NodeRenderContext) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 3

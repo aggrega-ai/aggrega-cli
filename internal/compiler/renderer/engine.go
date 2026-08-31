@@ -128,12 +128,22 @@ func linksCrossBoundary(engine Provider) bool {
 // and it would be wrong the first time a provider's capabilities changed
 // without the core being rebuilt.
 //
-// The central input-kind gate consumes these to accept or reject a
-// (node-mode, provider) combination once per node, with a single uniform
-// diagnostic. Synthesis is gated twice over, at two different layers: this
-// report decides whether the node may be dispatched at all, and the synthesis
-// dispatch separately requires the engine to implement [WorkloadSynthesizer],
-// halting with a catalog error naming the provider when it does not.
+// The central input-kind gate (gateInputKind) consumes these to accept or reject
+// a (node-mode, provider) combination once per node, with a single uniform
+// diagnostic. It is the ONE gate deciding whether a node may be dispatched, and
+// it consults every kind the node declares rather than only the kind the node's
+// mode is named after.
+//
+// The synthesis and artifacts dispatches type-assert the engine to
+// [WorkloadSynthesizer] and [ArtifactsEmitter] before handing it a workload or an
+// artifact set, and neither assertion is a second gate on what an author wrote:
+// the host renders through a single provider adapter, which satisfies both
+// interfaces by compile-time assertion whatever its guest's describe() declares,
+// so no provider this host ships can fail either one. A provider declining an
+// input kind is therefore refused at the gate above, by its own declared
+// contract. The assertions' false branches survive as guards against an outcome
+// worse than a loud refusal — a dispatch that emits nothing for a declared input
+// and reports success.
 type ProviderContract struct {
 	Sourced             bool
 	Synthesized         bool

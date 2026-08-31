@@ -12,9 +12,18 @@ import (
 )
 
 // WorkloadSynthesizer is the optional interface a provider engine implements
-// to translate a parsed types.Workload into provider-native manifests. Phase
-// B.4 type-asserts the engine to this interface when a Recipe has declared
-// workload:; engines that don't implement it produce a CATALOG_ERROR at B.4.
+// to translate a parsed types.Workload into provider-native manifests. The
+// synthesis dispatch (phaseB4, through dispatchWorkloadSynthesis) type-asserts
+// the engine to this interface when a Recipe has declared workload:, and an
+// engine that does not implement it produces a CATALOG_ERROR there.
+//
+// That assertion is not the check deciding whether a provider may synthesise.
+// Which input kinds a provider may be handed is settled once per node, before any
+// render dispatch, by the central input-kind gate reading the provider's own
+// declared [ProviderContract]; a provider that does not claim synthesised input is
+// refused there. The assertion cannot refuse a provider this host ships at all,
+// because the host renders through a single provider adapter which satisfies this
+// interface by compile-time assertion whatever its guest declares.
 //
 // Synthesis starts from a declared Workload and from nothing else — which is
 // why the parameter is a *types.Workload rather than the node's values. A
@@ -37,13 +46,19 @@ type WorkloadSynthesizer interface {
 	SynthesizeWorkload(ctx context.Context, tmplCtx *types.TemplateContext, w *types.Workload, nodeCtx NodeRenderContext) ([]EmittedFile, error)
 }
 
-// dispatchWorkloadSynthesis is Phase B.4's nil-safe entry point: returns
-// []EmittedFile{} when the engine doesn't implement WorkloadSynthesizer or
-// when w is nil. Exposed for the orchestrator and for unit tests.
+// dispatchWorkloadSynthesis is the synthesis dispatch's nil-safe entry point: a
+// nil Workload is not a fault and yields no files, so a node that declares no
+// workload: passes straight through. Exposed for the orchestrator and for unit
+// tests.
 //
-// When workload synthesis is required (w != nil) but the engine doesn't
-// implement WorkloadSynthesizer, returns a CATALOG_ERROR-shaped error
-// naming the provider that lacks the capability.
+// A non-nil Workload reaching an engine that does not implement
+// WorkloadSynthesizer returns a CATALOG_ERROR-shaped error naming the provider.
+// That branch guards a state neither render path produces: the input-kind gate has
+// already refused any provider whose declared contract does not claim synthesised
+// input, and the single provider adapter the host renders through implements the
+// interface by compile-time assertion. It is kept loud rather than reduced to an
+// empty file set because a dispatch emitting nothing for a declared workload would
+// drop compute the author asked for and report success.
 func dispatchWorkloadSynthesis(
 	ctx context.Context,
 	engine Provider,

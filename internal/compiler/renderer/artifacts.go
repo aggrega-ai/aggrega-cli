@@ -38,9 +38,14 @@ import (
 // the template parse pre-check, the template evaluation, and the provenance-key
 // computation).
 //
-// Mirrors [WorkloadSynthesizer]: an engine that does not implement it produces a
-// CATALOG_ERROR at B.3. Implemented by the Wasm provider adapter for every shipped
-// provider; the delimiter accessor reports the guest's declared artifact-template
+// Implemented by the Wasm provider adapter — the single engine implementation the
+// host renders through — for every shipped provider, by compile-time assertion. So
+// the dispatch's own type assertion is not a capability check on what an author
+// wrote, and it mirrors [WorkloadSynthesizer] in that too: which input kinds a
+// provider may be handed is settled by the central input-kind gate from the
+// provider's declared contract, and an engine that does not implement this
+// interface produces a CATALOG_ERROR only in a state neither render path reaches.
+// The delimiter accessor reports the guest's declared artifact-template
 // delimiter pair so the host evaluates each entry with the pair the guest's target
 // syntax needs (the default "{{"/"}}", or an alternate such as helm-chart's
 // "[["/"]]").

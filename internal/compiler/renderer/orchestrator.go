@@ -1535,8 +1535,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 		// Phase B.4 — workload synthesizer dispatch. No-op for a node with no
 		// parsed workload (state.ParsedWorkload is nil); dispatches to the
-		// engine's WorkloadSynthesizer otherwise (engines that don't
-		// implement the interface produce a CATALOG_ERROR).
+		// engine's WorkloadSynthesizer otherwise. Whether this provider may be
+		// handed a workload at all was settled by gateInputKind above, from the
+		// provider's own declared contract; the dispatch asserts the interface
+		// but adds no capability check of its own.
 		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
