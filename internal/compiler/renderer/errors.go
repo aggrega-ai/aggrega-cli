@@ -889,3 +889,37 @@ var errNameBoundNotConverging = cerrors.Register("compiler-renderer/name-bound-n
 	ShortCode: "E0264",
 	Message:   "provider guest never accepted a component identity the compiler composed for it",
 })
+
+// ErrUnsupportedInputKind is the Loud Guardrail halt raised when the input kind
+// a node resolved to is not one the provider bound to that node supports.
+//
+// The condition is a provider capability rather than a semantic opinion about
+// what a node ought to declare: the compiler reads the input kinds the
+// provider's contract claims and compares them against the kind the node's
+// input blocks classify to, and it holds no view on which kinds a node should
+// carry. One identity covers both authoring surfaces, because the gate is one
+// gate — a Recipe on a component and a FeatureRecipe on an attachment are
+// classified and compared identically — so the sentence names the node and its
+// provider rather than either entity kind, and stays true on both paths.
+//
+// Why the condition is identified at all, rather than left as a categorised
+// message with no identity, is worth stating here so it is not later read as
+// bookkeeping. A halt with no identity can be named by no coverage declaration,
+// so its published entry sits outside the comparison that holds every other
+// entry's quoted output against what a build prints — and an entry outside that
+// comparison is exactly where a message prefix no build emits can sit
+// indefinitely with every check green, because nothing compares it to anything.
+// An unheld entry is a defect that recurs; a short code is stable by design,
+// never reissued even when its condition is withdrawn. That asymmetry is what
+// makes the identity the cheaper side of the trade, and the cost paid for it is
+// real: the code appears in a head users match on and is published permanently.
+//
+// Category: CATALOG_ERROR — the pairing at fault is between an authored catalog
+// document's input blocks and the provider that document binds. Match with
+// errors.Is(err, ErrUnsupportedInputKind()).
+func ErrUnsupportedInputKind() error { return errUnsupportedInputKind }
+
+var errUnsupportedInputKind = cerrors.Register("compiler-renderer/unsupported-input-kind", cerrors.Meta{
+	ShortCode: "E0265",
+	Message:   "provider does not support the node's input kind",
+})

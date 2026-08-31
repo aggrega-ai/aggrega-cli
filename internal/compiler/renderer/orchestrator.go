@@ -2452,10 +2452,28 @@ func routeNodeInputDiagnostics(nodeID, providerName string, diags []Diagnostic, 
 // mode. It names the provider, the unsupported mode, the kinds the provider
 // does support, and the remedy — framed as a provider capability, not a
 // "compute mandatory" semantic opinion (Invariant 1).
+//
+// The diagnostic opens with the sentence ErrUnsupportedInputKind registers and
+// appends what this occurrence supplies after it, which is what puts the
+// condition's short code in the head a reader matches on. Opening with the
+// registered sentence is load-bearing rather than stylistic: the chain walk that
+// renders a halt prints any frame whose text the output does not already carry,
+// so a message that did not lead with the sentence would print it again as a
+// redundant continuation line beneath the diagnostic.
+//
+// The occurrence's own clause stays a single call to UnsupportedInputKindMessage
+// so that the provider-capability wording has one home across both surfaces that
+// report it — this gate at render, and the early detector that reads a Recipe on
+// its own. The clause repeating in miniature what the sentence states is the
+// price of that: the early detector's boundary prints no head, so the clause is
+// the only statement of the fault a reader gets there and cannot be reduced to
+// occurrence values alone.
 func unsupportedInputKindError(nodeID, providerName, mode string, caps ProviderContract) error {
-	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-		fmt.Sprintf("node %q: %s", nodeID, UnsupportedInputKindMessage(providerName, mode, caps)),
-		nil, nil)
+	return cerrors.Wrap(ErrUnsupportedInputKind(), cerrors.CatalogError,
+		cerrors.SourceLocation{File: nodeID},
+		cerrors.ComposeMessage(ErrUnsupportedInputKind(),
+			[]string{fmt.Sprintf("node %q", nodeID)},
+			UnsupportedInputKindMessage(providerName, mode, caps)))
 }
 
 // UnsupportedInputKindMessage is the provider-capability clause shared by the
