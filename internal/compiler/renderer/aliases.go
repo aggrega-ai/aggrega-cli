@@ -3,7 +3,10 @@
 
 package renderer
 
-import rendercore "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+import (
+	rendercore "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
+)
 
 // The loader-free render primitives live in package rendercore so provider
 // guests and the per-provider render subpackages depend on them without
@@ -111,13 +114,25 @@ const (
 
 // Pure placement, provenance, value-flattening, and codec constructors.
 var (
-	OrderedMapToPlain                 = rendercore.OrderedMapToPlain
-	PlainValue                        = rendercore.PlainValue
-	ClampYAMLIndent                   = rendercore.ClampYAMLIndent
-	MarshalYAMLIndent                 = rendercore.MarshalYAMLIndent
-	NamespaceFromAnnotations          = rendercore.NamespaceFromAnnotations
-	ProvenanceComponentID             = rendercore.ProvenanceComponentID
-	TargetNameBasis                   = rendercore.TargetNameBasis
+	OrderedMapToPlain        = rendercore.OrderedMapToPlain
+	PlainValue               = rendercore.PlainValue
+	ClampYAMLIndent          = rendercore.ClampYAMLIndent
+	MarshalYAMLIndent        = rendercore.MarshalYAMLIndent
+	NamespaceFromAnnotations = rendercore.NamespaceFromAnnotations
+	ProvenanceComponentID    = rendercore.ProvenanceComponentID
+	TargetNameBasis          = rendercore.TargetNameBasis
+	// encodeNodeIdentity writes a node identity into the alphabet every authored
+	// component name satisfies. Every surface here that publishes a node's identity
+	// as .context.instance_id — the pillar a recipe author spends to predict the
+	// name a target will give a resource — routes through it, so the identity a
+	// template reads and the identity a provider stamps are one string. It is
+	// aliased here rather than imported in each of those files so that one spelling
+	// reaches all of them and a new publisher has an obvious thing to call.
+	//
+	// It takes the identity a graph is keyed by, so a caller already holding a
+	// published identity must NOT call it again: this encoding is injective, not
+	// idempotent, and a second pass writes out the escape the first one emitted.
+	encodeNodeIdentity                = labels.EncodeNodeIdentity
 	BuildAggregaProvenanceLabels      = rendercore.BuildAggregaProvenanceLabels
 	BuildAggregaProvenanceAnnotations = rendercore.BuildAggregaProvenanceAnnotations
 	FormatTerraformProvenanceComment  = rendercore.FormatTerraformProvenanceComment

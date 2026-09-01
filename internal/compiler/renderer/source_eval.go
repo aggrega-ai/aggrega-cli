@@ -43,7 +43,7 @@ func EvaluateRecipeSource(
 	locals types.OrderedMap[string],
 ) (any, error) {
 	ctx := LocalsContext{
-		Context: ProvidesContextBlock{InstanceID: nodeID},
+		Context: ProvidesContextBlock{InstanceID: encodeNodeIdentity(nodeID)},
 		Values:  values,
 		Infra:   infra,
 		Locals:  locals,

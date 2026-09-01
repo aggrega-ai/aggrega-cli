@@ -6,15 +6,22 @@
 // resources for provenance, attribution and tooling integration, and some of
 // those values have to be built rather than copied.
 //
-// There are two mechanics here because there are two jobs, and which one a
-// caller needs is decided by whether the value identifies one authored name or
-// several parts.
+// Which mechanic a caller needs is decided by what the value it holds is: a
+// value composed of several authored parts, a node identity the compiler
+// assembled, or one already-authored name with nothing to compose.
 //
 // Where a value identifies something composed of several authored parts,
 // [ComposeComponentIdentity] COMPOSES it from those parts through an encoding
 // that writes out what the label alphabet refuses instead of folding it away —
 // so two identities differing at all reach two values, and the value reads back
 // into the parts it was built from.
+//
+// Where a value is a node identity, [EncodeNodeIdentity] writes it into the
+// alphabet every authored name already satisfies. A node one aggregate composes
+// into another carries a qualified identity joining the outer name to the inner
+// one, and the character that joins them is one no authored name may carry — so
+// that character, and only that character, is written out as an escape and every
+// ordinary authored name is returned byte for byte as it was written.
 //
 // Where a value carries one already-authored name and there is nothing to
 // compose, [SanitizeForK8sLabelValue] rewrites that name into the permitted

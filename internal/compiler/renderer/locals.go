@@ -351,7 +351,7 @@ func EvaluateRecipeLocals(
 		func(key string) string { return fmt.Sprintf("locals[%q]", key) },
 		func(resolved types.OrderedMap[string]) any {
 			return LocalsContext{
-				Context: ProvidesContextBlock{InstanceID: nodeID},
+				Context: ProvidesContextBlock{InstanceID: encodeNodeIdentity(nodeID)},
 				Values:  values,
 				Infra:   infra,
 				Locals:  resolved,

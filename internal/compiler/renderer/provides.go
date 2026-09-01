@@ -118,7 +118,7 @@ func EvaluateAllProvides(
 		}
 
 		pCtx := ProvidesContext{
-			Context: ProvidesContextBlock{InstanceID: nodeID},
+			Context: ProvidesContextBlock{InstanceID: encodeNodeIdentity(nodeID)},
 			Values:  values,
 			Infra:   infra,
 			Locals:  nodeLocals,

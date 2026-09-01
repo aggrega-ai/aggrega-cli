@@ -175,26 +175,26 @@ func TestBoundaryComponentFeatureUses_ReachedThroughRoutingEntry(t *testing.T) {
 	}
 
 	merged := string(result.Artifacts["dist/cluster/compose/docker-compose.yaml"])
-	if !strings.Contains(merged, "DB_HOST: data.store") {
+	if !strings.Contains(merged, "DB_HOST: data-zdstore") {
 		t.Errorf("expected the consumer's DB_HOST to carry the target's host provides:\n%s", merged)
 	}
 	// The target's own service block runs to the next service key; it must declare
 	// no environment mapping, which is the consumer-scoping invariant at render
 	// level. The match is on the service-level key at its own indent, so the
 	// `aggrega.ai/environment` label nested deeper is not mistaken for one.
-	_, after, found := strings.Cut(merged, "\n  data.store:\n")
+	_, after, found := strings.Cut(merged, "\n  data-zdstore:\n")
 	if !found {
-		t.Fatalf("expected a data.store service in the merged output:\n%s", merged)
+		t.Fatalf("expected a data-zdstore service in the merged output:\n%s", merged)
 	}
-	targetBlock, _, _ := strings.Cut(after, "\n  data.svc:\n")
+	targetBlock, _, _ := strings.Cut(after, "\n  data-zdsvc:\n")
 	if strings.Contains(targetBlock, "\n    environment:") {
 		t.Errorf("target's rendered service declares an environment; per-edge config must not reach it:\n%s", targetBlock)
 	}
 	// A positive control on the same probe: the consumer's block, read the same
 	// way, does declare one — so an always-false probe cannot pass this test.
-	_, afterConsumer, foundConsumer := strings.Cut(merged, "\n  data.svc:\n")
+	_, afterConsumer, foundConsumer := strings.Cut(merged, "\n  data-zdsvc:\n")
 	if !foundConsumer {
-		t.Fatalf("expected a data.svc service in the merged output:\n%s", merged)
+		t.Fatalf("expected a data-zdsvc service in the merged output:\n%s", merged)
 	}
 	if !strings.Contains(afterConsumer, "\n    environment:") {
 		t.Errorf("consumer's rendered service declares no environment, so the absence probe above proves nothing:\n%s", merged)

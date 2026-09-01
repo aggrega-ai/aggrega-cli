@@ -169,7 +169,7 @@ func TestOutputComponentLabels_HelmSynthesis_ValueFollowsTheComponent(t *testing
 	}
 	// The promoted key coexists with the literal output labels and with the
 	// compiler-owned provenance labels.
-	if !strings.Contains(data, "hosting: self-hosted") || !strings.Contains(data, "aggrega.ai/component-id: data.main-db") {
+	if !strings.Contains(data, "hosting: self-hosted") || !strings.Contains(data, "aggrega.ai/component-id: data-zdmain-db") {
 		t.Errorf("promoted, literal and provenance labels must coexist in %s:\n%s", dataPath, data)
 	}
 }

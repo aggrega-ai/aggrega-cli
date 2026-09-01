@@ -180,11 +180,22 @@ func longestReleaseNameSource(proposed string) int {
 // did would refuse names that are legal for the workload the node actually
 // emits. Reaching them needs the node's resolved workload on the question, which
 // is a wider question than this one.
-func NameBoundOutput(proposed string) rendercore.NameBoundOutput {
+//
+// Only one of the two kinds is told whether the identity was authored, and the
+// asymmetry is deliberate. Each kind judges the value ITS OWN name is derived
+// from, and the two are not the same value. The release name is derived here,
+// from the proposal, whichever way the proposal was arrived at — so the proposal
+// is what this side measures, and handing it an already-written identity would
+// put one encoding inside another and spell the name differently from the one a
+// recipe author predicts it by. The label value is not derived at all: it IS the
+// identity as stamped, which for an authored identity is the proposal written
+// into the identity alphabet. So the label kind needs to know which state the
+// proposal is in, and the release name does not.
+func NameBoundOutput(proposed string, authored bool) rendercore.NameBoundOutput {
 	return rendercore.NameBoundOutput{
 		Names: []rendercore.DerivedNameVerdict{
 			ReleaseNameVerdict(proposed),
-			rendercore.ComponentIDLabelVerdict(proposed),
+			rendercore.ComponentIDLabelVerdict(proposed, authored),
 		},
 	}
 }

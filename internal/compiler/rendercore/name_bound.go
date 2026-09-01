@@ -6,6 +6,8 @@ package rendercore
 import (
 	"fmt"
 	"unicode/utf8"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 )
 
 // ComponentIDLabelKind is what a verdict about the component-id label value
@@ -41,18 +43,68 @@ const componentIDLabelMaxLength = 63
 // The bound is measured in bytes because the target counts bytes and because the
 // compiler's own shortening cuts by byte, so a bound stated here is a bound the
 // compiler can act on directly.
-func ComponentIDLabelVerdict(proposed string) DerivedNameVerdict {
+//
+// # The LENGTH is measured on what will be stamped
+//
+// A proposal reaches here in one of two states, and authored says which. An
+// identity a person WROTE arrives as they wrote it and is written through
+// [labels.EncodeNodeIdentity] where it is stamped, so its length is taken from
+// the written form. An identity the compiler COMPOSED was composed through an
+// encoding of its own and is stamped exactly as it arrives, so its length is
+// taken as it stands; writing it again would spell one identity two ways.
+//
+// Both states are the same rule: the length judged is the length the label will
+// carry. Measuring a written identity as proposed would measure a value shorter
+// than the one stamped — the character joining a module's name to a component's
+// own is written out rather than dropped, so it costs more written than proposed —
+// and an identity just inside the limit would then be accepted and stamped just
+// outside it, with nothing reporting that anything was wrong.
+//
+// The bound on the written path is MEASURED rather than the limit restated,
+// because the number reaches an author who acts on it. An author told the limit
+// when their identity is written longer than they wrote it would choose a name of
+// exactly that length and be refused a second time, so the bound is the greatest
+// number of bytes of this identity that still fits once written.
+//
+// # The character set and the edge rule read the identity AS PROPOSED
+//
+// Only the length moves to the written form. The two grammar checks below judge
+// the identity as it arrives, which is deliberately stricter than the label the
+// writing would produce: writing removes a character the target refuses, so an
+// identity the grammar checks turn away could in fact have been stamped legally.
+//
+// The strictness is kept rather than relaxed because relaxing it withdraws a
+// refusal, and a refusal withdrawn is a change in what a build accepts — a
+// larger question than the length this measures, and one about names that carry
+// no composition separator at all. The two live at different widths on purpose,
+// and unifying them is not a tidying.
+func ComponentIDLabelVerdict(proposed string, authored bool) DerivedNameVerdict {
 	if proposed == "" {
 		return DerivedNameVerdict{Kind: ComponentIDLabelKind, Usable: true}
 	}
-	if n := len(proposed); n > componentIDLabelMaxLength {
+	stamped := proposed
+	if authored {
+		stamped = labels.EncodeNodeIdentity(proposed)
+	}
+	if n := len(stamped); n > componentIDLabelMaxLength {
 		bound := componentIDLabelMaxLength
+		reason := fmt.Sprintf("a label value is at most %d characters and this identity is %d",
+			componentIDLabelMaxLength, n)
+		// Only where writing the identity actually changed it are two lengths worth
+		// reporting, and only there is the limit the wrong bound to state. Read from
+		// the two values rather than from the flag, so an authored identity that is
+		// written as authored — every ordinary name — gets the plainer answer.
+		if stamped != proposed {
+			bound = labels.NodeIdentityBound(proposed, componentIDLabelMaxLength)
+			reason = fmt.Sprintf("a label value is at most %d characters, and this identity of %d is stamped as %d "+
+				"because a character it carries is written out rather than dropped, most often the dot joining a "+
+				"module's name to a component's own", componentIDLabelMaxLength, len(proposed), n)
+		}
 		return DerivedNameVerdict{
 			Kind:   ComponentIDLabelKind,
 			Usable: false,
 			Bound:  &bound,
-			Reason: fmt.Sprintf("a label value is at most %d characters and this identity is %d",
-				componentIDLabelMaxLength, n),
+			Reason: reason,
 		}
 	}
 	for _, r := range proposed {

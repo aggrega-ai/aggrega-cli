@@ -1,37 +1,37 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: data.main-db
+  name: data-zdmain-db
   namespace: database-zone
   labels:
     aggrega.ai/aggregate-name: fullstack-app
     aggrega.ai/compiler-version: 0.1.0
-    aggrega.ai/component-id: data.main-db
+    aggrega.ai/component-id: data-zdmain-db
     aggrega.ai/environment: production
     aggrega.ai/provider: helm
     aggrega.ai/provider-version: 1.0.0
-    app: data.main-db
-    app.kubernetes.io/name: data.main-db
+    app: data-zdmain-db
+    app.kubernetes.io/name: data-zdmain-db
   annotations:
     aggrega.ai/boundary-path: data-ns
-    aggrega.ai/recipe-uri: helm-postgres-synthesized-with-artifacts:1.0.0
+    aggrega.ai/recipe-uri: helm-postgres-synthesized:1.0.0
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: data.main-db
+      app: data-zdmain-db
   template:
     metadata:
       name: ""
       labels:
         aggrega.ai/aggregate-name: fullstack-app
         aggrega.ai/compiler-version: 0.1.0
-        aggrega.ai/component-id: data.main-db
+        aggrega.ai/component-id: data-zdmain-db
         aggrega.ai/environment: production
         aggrega.ai/provider: helm
         aggrega.ai/provider-version: 1.0.0
-        app: data.main-db
-        app.kubernetes.io/name: data.main-db
+        app: data-zdmain-db
+        app.kubernetes.io/name: data-zdmain-db
     spec:
       containers:
         - name: main

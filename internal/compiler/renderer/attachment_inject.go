@@ -161,7 +161,7 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 		func(key string) string { return fmt.Sprintf("attach-inject-local[%s.%s]", instanceName, key) },
 		func(resolved types.OrderedMap[string]) any {
 			return ProvidesContext{
-				Context:        ProvidesContextBlock{InstanceID: nodeID},
+				Context:        ProvidesContextBlock{InstanceID: encodeNodeIdentity(nodeID)},
 				Values:         entry.Values,
 				Infra:          entry.Infra,
 				Locals:         resolved,

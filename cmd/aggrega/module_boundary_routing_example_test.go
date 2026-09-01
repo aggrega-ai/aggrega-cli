@@ -41,12 +41,30 @@ import (
 // The Release's routing entries name exactly one of these components (query, by
 // its local name inside the metrics module). The other four are placed purely by
 // routing, which is what makes the full set the property worth pinning.
+//
+// The keys are the identities as EMITTED, which is what the label carries: a
+// component a module contributes holds a qualified identity, and the character
+// joining the module's name to the component's is written out of it before it
+// reaches a name or a label, because no name a target accepts admits that
+// character. The Aggregate's own spelling of these components is the dotted one.
 var moduleRoutingPlacement = map[string]string{
-	"metrics.objstore":  "observability",
-	"metrics.store":     "observability",
-	"metrics.query":     "observability",
-	"documents.backend": "data",
-	"documents.proxy":   "data",
+	"metrics-zdobjstore":  "observability",
+	"metrics-zdstore":     "observability",
+	"metrics-zdquery":     "observability",
+	"documents-zdbackend": "data",
+	"documents-zdproxy":   "data",
+}
+
+// moduleRoutingAttachmentPlacement is the identity of every resource a Feature
+// attachment emits in this example, mapped to the boundary it must land under.
+//
+// It is separate from moduleRoutingPlacement because an attachment's identity is
+// composed for the attachment rather than contributed by a module, so the
+// every-contributed-component-emitted-something pass must not demand a resource
+// of it — while the placement rules apply to it identically: a resource emitted
+// inside a boundary belongs to that boundary whoever emitted it.
+var moduleRoutingAttachmentPlacement = map[string]string{
+	"cfr--metrics-zdquery--scrape": "observability",
 }
 
 // The well-known labels and annotations the assertions read. Each is emitted on
@@ -115,7 +133,10 @@ func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 		id := res.Metadata.Labels[componentIDLabel]
 		want, ok := moduleRoutingPlacement[id]
 		if !ok {
-			t.Errorf("%s belongs to component %q, which neither module in this example contributes", path, id)
+			want, ok = moduleRoutingAttachmentPlacement[id]
+		}
+		if !ok {
+			t.Errorf("%s belongs to component %q, which is neither a component this example's modules contribute nor an attachment identity it emits", path, id)
 			continue
 		}
 		seen[id] = true
@@ -161,7 +182,7 @@ func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 	// The routing entry configures one component of the module it routes, by the
 	// local name that component carries inside the module. Its sizing must reach
 	// that component's workload and no other.
-	query, _ := resourceOfKind(t, run1, "Deployment", "metrics.query")
+	query, _ := resourceOfKind(t, run1, "Deployment", "metrics-zdquery")
 	for _, want := range []string{"cpu: 500m", "memory: 1Gi"} {
 		if !bytes.Contains(query, []byte(want)) {
 			t.Errorf("the routed component's workload is missing the sizing the routing entry declares (%q):\n%s", want, query)
@@ -170,7 +191,10 @@ func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 
 	// The Feature the routing entry attaches to that same component renders its
 	// own artifact, under the routing boundary, carrying the operator's settings.
-	monitor, monitorPath := resourceOfKind(t, run1, "ServiceMonitor", "metrics.query")
+	// The attachment's resources carry the attachment's OWN composed identity, not
+	// the host component's, which is what keeps them distinguishable from the
+	// host's in the cluster.
+	monitor, monitorPath := resourceOfKind(t, run1, "ServiceMonitor", "cfr--metrics-zdquery--scrape")
 	for _, want := range []string{"port: http", "interval: 30s", "path: /metrics"} {
 		if !bytes.Contains(monitor, []byte(want)) {
 			t.Errorf("the attached Feature's artifact is missing the setting the routing entry declares (%q):\n%s", want, monitor)
@@ -188,7 +212,7 @@ func TestModuleBoundaryRoutingExampleRoutesModulesIntoBoundaries(t *testing.T) {
 	// check is satisfied by this component's Deployment, so without this assertion
 	// the Feature's artifact could silently stop carrying one.
 	monitorRes := parseRenderedResource(t, monitorPath, monitor)
-	if want, got := moduleRoutingPlacement["metrics.query"], monitorRes.Metadata.Namespace; got != want {
+	if want, got := moduleRoutingPlacement["metrics-zdquery"], monitorRes.Metadata.Namespace; got != want {
 		t.Errorf("%s: the attached Feature's artifact carries namespace %q; the component it describes is routed into boundary %q, whose namespace it must share:\n%s", monitorPath, got, want, monitor)
 	}
 }

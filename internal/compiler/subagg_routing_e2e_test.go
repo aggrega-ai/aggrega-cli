@@ -149,7 +149,7 @@ func TestSubaggRouting_PerComponentPayloadMatchesExplicitPlacement(t *testing.T)
 func TestSubaggRouting_FeatureOnRoutedComponentReachesArtifacts(t *testing.T) {
 	t.Parallel()
 
-	const target = "dist/svc/helm/svc.edge-deployment.yaml"
+	const target = "dist/svc/helm/svc-zdedge-deployment.yaml"
 	named := pipelinetest.Build(t, fullstackRoutingInput("named-feature.yaml"))
 	routed := pipelinetest.Build(t, fullstackRoutingInput("routed-feature.yaml"))
 

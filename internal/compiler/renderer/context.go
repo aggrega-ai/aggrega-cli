@@ -80,7 +80,7 @@ func AssembleNodeContext(
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
-			InstanceID:  nodeID,
+			InstanceID:  encodeNodeIdentity(nodeID),
 			Labels:      node.Labels,
 			Annotations: annotations,
 			Inject:      inject,

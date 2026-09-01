@@ -5,6 +5,7 @@ package helmcore_test
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ type helmOracle struct{ passes int }
 
 func (o *helmOracle) NameBound(_ context.Context, in renderer.NameBoundInput) (renderer.NameBoundOutput, error) {
 	o.passes++
-	return helmcore.NameBoundOutput(in.Proposed), nil
+	return helmcore.NameBoundOutput(in.Proposed, in.Authored), nil
 }
 
 // TestComposedIdentitiesSettleWithinWhatTheHelmTargetAccepts is the clause the
@@ -82,7 +83,7 @@ func TestComposedIdentitiesSettleWithinWhatTheHelmTargetAccepts(t *testing.T) {
 				// provider's own verdict rather than a length here is what makes this a
 				// proof about the agreement instead of about one number: a grammar
 				// refusal, a label-value refusal and a length refusal all fail it.
-				for _, verdict := range helmcore.NameBoundOutput(got).Names {
+				for _, verdict := range helmcore.NameBoundOutput(got, false).Names {
 					if !verdict.Usable {
 						t.Errorf("scope %q parts %v settled on %q, which the provider still refuses as a %s: %s",
 							scope, parts, got, verdict.Kind, verdict.Reason)
@@ -109,7 +110,7 @@ func TestComposedIdentitiesSettleWithinWhatTheHelmTargetAccepts(t *testing.T) {
 func TestHelmVerdicts_ReportEveryKindTheProviderDerives(t *testing.T) {
 	t.Parallel()
 
-	out := helmcore.NameBoundOutput("web")
+	out := helmcore.NameBoundOutput("web", true)
 	kinds := make([]string, 0, len(out.Names))
 	for _, v := range out.Names {
 		kinds = append(kinds, v.Kind)
@@ -144,7 +145,7 @@ func TestHelmVerdicts_SeparateALengthRefusalFromAGrammarRefusal(t *testing.T) {
 
 	// Six capitals: the shipping breach. The first character is escaped, so no
 	// length repairs it.
-	for _, v := range helmcore.NameBoundOutput("ABCDEF").Names {
+	for _, v := range helmcore.NameBoundOutput("ABCDEF", true).Names {
 		if v.Kind != helmcore.ReleaseNameKind {
 			continue
 		}
@@ -160,7 +161,7 @@ func TestHelmVerdicts_SeparateALengthRefusalFromAGrammarRefusal(t *testing.T) {
 	// Lowercase and long: a length refusal, which a shorter name does repair.
 	long := strings.Repeat("a", 60)
 	sawBound := false
-	for _, v := range helmcore.NameBoundOutput(long).Names {
+	for _, v := range helmcore.NameBoundOutput(long, true).Names {
 		if v.Kind != helmcore.ReleaseNameKind {
 			continue
 		}
@@ -175,7 +176,7 @@ func TestHelmVerdicts_SeparateALengthRefusalFromAGrammarRefusal(t *testing.T) {
 			t.Errorf("the stated bound is %d, which leaves nothing to compose", *v.Bound)
 		}
 		// The bound has to be actionable: a name cut to it must actually pass.
-		for _, again := range helmcore.NameBoundOutput(long[:*v.Bound]).Names {
+		for _, again := range helmcore.NameBoundOutput(long[:*v.Bound], true).Names {
 			if again.Kind == helmcore.ReleaseNameKind && !again.Usable {
 				t.Errorf("a name cut to the stated bound of %d is still refused: %s", *v.Bound, again.Reason)
 			}
@@ -197,7 +198,7 @@ type chartOracle struct{}
 
 func (chartOracle) NameBound(_ context.Context, in renderer.NameBoundInput) (renderer.NameBoundOutput, error) {
 	return renderer.NameBoundOutput{
-		Names: []rendercore.DerivedNameVerdict{rendercore.ComponentIDLabelVerdict(in.Proposed)},
+		Names: []rendercore.DerivedNameVerdict{rendercore.ComponentIDLabelVerdict(in.Proposed, in.Authored)},
 	}, nil
 }
 
@@ -230,7 +231,7 @@ func TestComposedIdentitiesSettleWithinTheLabelValueBound(t *testing.T) {
 			if got != labels.ComposeComponentIdentity(scope, labels.Unbounded, parts...) {
 				shortened++
 			}
-			if v := rendercore.ComponentIDLabelVerdict(got); !v.Usable {
+			if v := rendercore.ComponentIDLabelVerdict(got, false); !v.Usable {
 				t.Errorf("scope %q parts %v settled on %q (%d characters), which the label rule still refuses: %s",
 					scope, parts, got, len(got), v.Reason)
 			}
@@ -238,5 +239,183 @@ func TestComposedIdentitiesSettleWithinTheLabelValueBound(t *testing.T) {
 	}
 	if shortened == 0 {
 		t.Error("no case reached the shortening path, so this proves only that short names are short")
+	}
+}
+
+// qualifiedIdentity is a component identity of n bytes carrying one join: a
+// module's name, a dot, and the component's own. It is the only shape a compiler
+// can produce that carries the dot, and it is what makes the written form longer
+// than the identity as authored.
+func qualifiedIdentity(n int) string {
+	const module = "documents."
+	return module + strings.Repeat("a", n-len(module))
+}
+
+// TestSettleAuthoredComponentIdentity_HaltsWhereTheWrittenLabelWouldNotFit is the
+// halt this repair exists to produce, driven through the real settle path and the
+// real label verdict rather than a stub.
+//
+// Both sides of the wall are asserted, because only the pair says the wall is in
+// the right place. An identity whose written form is exactly the limit builds; one
+// byte more halts. Before this the shorter one built and the longer one ALSO
+// built, stamping a label value the target refuses at exit zero with nothing
+// reporting it — which is the silent outcome the halt replaces.
+//
+// The provider driven here reports the label kind alone, which is deliberate: a
+// provider that also derives a release name refuses this identity for that name
+// first and at a much smaller bound, so the label kind's own answer would never be
+// the one reported and the assertion would be about the other kind.
+func TestSettleAuthoredComponentIdentity_HaltsWhereTheWrittenLabelWouldNotFit(t *testing.T) {
+	t.Parallel()
+
+	// One byte under: written as exactly the limit, so it builds.
+	fits := qualifiedIdentity(61)
+	if err := renderer.SettleAuthoredComponentIdentity(context.Background(), chartOracle{},
+		fits, "spec.components."+fits); err != nil {
+		t.Fatalf("an identity of %d written as %d is within the limit and must build: %v",
+			len(fits), len(labels.EncodeNodeIdentity(fits)), err)
+	}
+
+	// One byte over: written past the limit, so it halts.
+	over := qualifiedIdentity(62)
+	err := renderer.SettleAuthoredComponentIdentity(context.Background(), chartOracle{},
+		over, "spec.components."+over)
+	if err == nil {
+		t.Fatalf("an identity of %d is written as %d and must halt; the label would carry %d bytes",
+			len(over), len(labels.EncodeNodeIdentity(over)), len(labels.EncodeNodeIdentity(over)))
+	}
+
+	for _, want := range []string{
+		"spec.components." + over,                // the field the author wrote
+		rendercore.ComponentIDLabelKind,          // the target's own name for what refused
+		"a label value is at most 63 characters", // the target's own reason
+		"this identity of 62 is stamped as 64",   // the gap the author cannot otherwise see
+		"choose a name of at most 61 characters", // the MEASURED budget
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not carry %q; got %v", want, err)
+		}
+	}
+	// The limit is NOT the budget here, and reporting it would send the author to a
+	// length that is refused a second time.
+	if strings.Contains(err.Error(), "at most 63 characters that the target accepts") {
+		t.Errorf("the halt states the limit as the budget; an identity of 63 is written as 65 and refused again: %v", err)
+	}
+	t.Logf("halt: %v", err)
+}
+
+// TestNameBoundOutput_TheReleaseNameVerdictIsBlindToTheAuthoredFlag is the guard
+// against the repair that was refused.
+//
+// The label verdict now judges the value it will stamp, which for an authored
+// identity means writing it first. The release name is DERIVED from the proposal,
+// so the same writing applied to the proposal would be applied a second time by
+// the derivation — one escape inside another — and the release-name verdict would
+// refuse legal names well inside its own limit. Nothing about the label repair may
+// reach it, so this asserts the release-name verdict is byte-for-byte the same
+// answer whichever state the proposal is in.
+//
+// The concrete numbers are pinned alongside, because the identical-answer property
+// would also hold if BOTH answers had moved together.
+func TestNameBoundOutput_TheReleaseNameVerdictIsBlindToTheAuthoredFlag(t *testing.T) {
+	t.Parallel()
+
+	corpus := append(namesegmenttest.Corpus(),
+		"web", "payments-api", "documents.backend", "PAYMENTS",
+		qualifiedIdentity(55), qualifiedIdentity(61), qualifiedIdentity(62),
+		strings.Repeat("a", 60), strings.Repeat("a", 200),
+		"bfr--cluster--bridge", "cfr--host--instance",
+	)
+	compared := 0
+	for _, proposed := range corpus {
+		asAuthored := releaseVerdictKey(releaseVerdictOf(t, proposed, true))
+		asComposed := releaseVerdictKey(releaseVerdictOf(t, proposed, false))
+		if asAuthored != asComposed {
+			t.Errorf("proposed %q: the release-name verdict differs by the authored flag:\n authored: %s\n composed: %s",
+				proposed, asAuthored, asComposed)
+		}
+		compared++
+	}
+	if compared != len(corpus) {
+		t.Fatalf("compared %d of %d cases; a corpus partly skipped reads exactly like a clean one",
+			compared, len(corpus))
+	}
+
+	// The derivation reads the UNWRITTEN identity, and these are the numbers that
+	// say so. A proposal written before it reached here would be written again by
+	// the derivation: the hyphen the first writing emitted gets an escape of its
+	// own, and the reported encoded length would be larger.
+	over := qualifiedIdentity(55)
+	v := releaseVerdictOf(t, over, true)
+	if v.Usable {
+		t.Fatalf("an identity of %d must be refused as a release name", len(over))
+	}
+	if !strings.Contains(v.Reason, "this identity of 55 encodes to 57") {
+		t.Errorf("the release-name reason does not report 55 encoding to 57, so the derivation is not reading "+
+			"the identity as authored; got %q", v.Reason)
+	}
+}
+
+// releaseVerdictKey is a verdict's whole content as one comparable string.
+//
+// A verdict carries its bound behind a POINTER, so two verdicts of identical
+// content compare unequal as structs: each call allocates its own int. Comparing
+// the structs would therefore report every pair as differing and the test would
+// fail for a reason that has nothing to do with what it asserts. The bound is
+// spelled out here, absence included, because absent and zero are different
+// answers and a key that folded them together would pass on a verdict that had
+// moved between the two.
+func releaseVerdictKey(v rendercore.DerivedNameVerdict) string {
+	bound := "absent"
+	if v.Bound != nil {
+		bound = strconv.Itoa(*v.Bound)
+	}
+	return v.Kind + " usable=" + strconv.FormatBool(v.Usable) + " bound=" + bound + " reason=" + v.Reason
+}
+
+// releaseVerdictOf reads the release-name verdict out of the provider's whole
+// answer, so the test drives the shipped assembly rather than the one kind.
+func releaseVerdictOf(t *testing.T, proposed string, authored bool) rendercore.DerivedNameVerdict {
+	t.Helper()
+	for _, v := range helmcore.NameBoundOutput(proposed, authored).Names {
+		if v.Kind == helmcore.ReleaseNameKind {
+			return v
+		}
+	}
+	t.Fatalf("the provider reported no release-name verdict for %q", proposed)
+	return rendercore.DerivedNameVerdict{}
+}
+
+// TestComponentIDLabelVerdict_ComposedIdentitiesAreJudgedVerbatim is the other
+// half of the same guard, on the branch the repair must leave alone.
+//
+// A composed identity was composed through an encoding of its own and is stamped
+// exactly as proposed, so the verdict judges it as it stands. Writing it again
+// would write out the two-hyphen join it was composed with, and every composed
+// identity within a few bytes of the limit would start being refused. The corpus
+// here is the composed shape itself, at and around the limit.
+func TestComponentIDLabelVerdict_ComposedIdentitiesAreJudgedVerbatim(t *testing.T) {
+	t.Parallel()
+
+	separating := 0
+	for _, opening := range []string{"bfr--", "cfr--"} {
+		for _, n := range []int{53, 62, 63} {
+			proposed := opening + strings.Repeat("a", n-len(opening))
+			if v := rendercore.ComponentIDLabelVerdict(proposed, false); !v.Usable {
+				t.Errorf("a composed identity of %d (%q) was refused: %s", n, proposed, v.Reason)
+			}
+			// A case only separates the two branches where writing the value again
+			// would push it OVER the limit — otherwise the row passes on either
+			// branch and proves nothing about which one ran. The two-hyphen opening
+			// costs two bytes written, so the separating cases are the ones within two
+			// bytes of the limit; the shorter rows are ordinary coverage.
+			if len(labels.EncodeNodeIdentity(proposed)) > 63 {
+				separating++
+			}
+		}
+	}
+	if separating == 0 {
+		t.Error("no case in this corpus would have been refused had the composed branch been written again, " +
+			"so it proves only that short composed identities are short")
 	}
 }

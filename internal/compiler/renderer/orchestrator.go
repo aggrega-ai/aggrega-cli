@@ -1037,7 +1037,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				Values: tmplCtxValues(graph, nodeID),
 				Infra:  tmplCtxInfra(graph, nodeID),
 				Context: SelfInjectContextBlock{
-					InstanceID: nodeID,
+					InstanceID: encodeNodeIdentity(nodeID),
 					Labels:     node.Labels,
 					Annotations: &types.AnnotationBuckets{
 						Catalog:   node.CatalogAnnotations,

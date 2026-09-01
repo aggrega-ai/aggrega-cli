@@ -127,8 +127,16 @@ func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName st
 //     fills, or the free name the author gave it. It is the route from a local to
 //     the instance name, and the only one.
 //
-// nodeID supplies the first and instanceName the second. A base Recipe's locals
+// instanceID supplies the first and instanceName the second. A base Recipe's locals
 // surface refuses .attachment_name, because no attachment is being resolved there.
+//
+// instanceID is the identity ALREADY PUBLISHED as .context.instance_id on the host
+// node's context, not the identity the graph is keyed by, and the difference is
+// load-bearing: a published identity has had the composition join written out of it,
+// and that encoding is injective rather than idempotent, so encoding a published
+// identity again would write out the escape the first pass emitted and give one node
+// two spellings. A caller holding a graph identity here encodes it once; a caller
+// reading it off a context, as the one production caller does, passes it through.
 //
 // Iteration is in author order (fr.Spec.Locals is an OrderedMap), and an entry may
 // read an earlier sibling: the evaluation routes through evaluateLocalsInOrder,
@@ -141,7 +149,7 @@ func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName st
 // key reports the unknown-reference halt.
 func EvaluateFeatureRecipeLocals(
 	fr *types.FeatureRecipe,
-	instanceName, nodeID string,
+	instanceName, instanceID string,
 	values types.OrderedMap[any],
 	infra types.OrderedMap[any],
 ) (types.OrderedMap[string], error) {
@@ -161,7 +169,7 @@ func EvaluateFeatureRecipeLocals(
 		func(key string) string { return fmt.Sprintf("fr-locals[%q]", key) },
 		func(resolved types.OrderedMap[string]) any {
 			return LocalsContext{
-				Context:        ProvidesContextBlock{InstanceID: nodeID},
+				Context:        ProvidesContextBlock{InstanceID: instanceID},
 				Values:         values,
 				Infra:          infra,
 				Locals:         resolved,

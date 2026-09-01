@@ -80,7 +80,10 @@ func TestBuildProvenanceLabels_EveryConditional(t *testing.T) {
 // case for a resource a FeatureRecipe emits, whose node id is a dispatch marker
 // rather than an identity anyone authored — it is the component identity, so a
 // charset-invalid marker never reaches a label value. When LabelComponentID is
-// empty (the ordinary component node) the already-label-valid NodeID stands.
+// empty (the ordinary component node) the node's own identity stands, written
+// through the encoding that takes the qualified-name join out of it — so a
+// component one aggregate composed into another reaches a label value, and a
+// resource name, that its target admits.
 //
 // The carried value here is the composed form the boundary-scope dispatch
 // produces for the instance `bridge` at the boundary `cluster`, written out
@@ -108,9 +111,17 @@ func TestProvenanceComponentID_PrefersTheCarriedComponentID(t *testing.T) {
 		}
 	}
 
-	// Ordinary component node: no LabelComponentID, the label-valid NodeID stands.
-	if got := ProvenanceComponentID(NodeRenderContext{NodeID: "data.main-db"}); got != "data.main-db" {
-		t.Errorf("ProvenanceComponentID fallback = %q; want the NodeID", got)
+	// Ordinary component node: no LabelComponentID, so the node's own identity
+	// stands — encoded, because a qualified identity carries a join no name may.
+	// Written out rather than computed: a value taken from the derivation would
+	// agree with the derivation whatever it did.
+	if got := ProvenanceComponentID(NodeRenderContext{NodeID: "data.main-db"}); got != "data-zdmain-db" {
+		t.Errorf("ProvenanceComponentID fallback = %q; want the encoded node identity", got)
+	}
+	// An identity carrying no join is returned as authored, which is what keeps a
+	// rendered diff readable: the names move only where the identity was composed.
+	if got := ProvenanceComponentID(NodeRenderContext{NodeID: "main-db"}); got != "main-db" {
+		t.Errorf("ProvenanceComponentID fallback = %q; want the authored name byte for byte", got)
 	}
 }
 
@@ -147,6 +158,21 @@ func TestComponentIdentityAndTargetNameBasisAreIndependent(t *testing.T) {
 			nodeCtx:   NodeRenderContext{NodeID: "alpha", LabelComponentID: "cfr--alpha--src"},
 			wantID:    "cfr--alpha--src",
 			wantBasis: "alpha",
+		},
+		{
+			what: "a component one aggregate composes into another: the identity ENCODES " +
+				"the qualified name's join, and the basis does not, because a target " +
+				"deriving its own name narrows the basis through its own alphabet",
+			nodeCtx:   NodeRenderContext{NodeID: "data.main-db"},
+			wantID:    "data-zdmain-db",
+			wantBasis: "data.main-db",
+		},
+		{
+			what: "a per-component attachment on a composed host: the attachment's own " +
+				"identity is already composed and must NOT be encoded a second time",
+			nodeCtx:   NodeRenderContext{NodeID: "data.main-db", LabelComponentID: "cfr--data-zdmain-db--src"},
+			wantID:    "cfr--data-zdmain-db--src",
+			wantBasis: "data.main-db",
 		},
 		{
 			what: "a boundary-scope attachment: one composed value answers both, " +

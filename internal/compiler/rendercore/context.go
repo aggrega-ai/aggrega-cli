@@ -71,9 +71,12 @@ type NodeRenderContext struct {
 	// this node emits BELONGS to, which is what provenance records and what a
 	// selector queries. It is set for every resource an FR attachment emits,
 	// whatever input kind delivers them, so an attachment's resources are
-	// distinguishable from its host component's by label alone. Empty means "use
-	// NodeID directly" — the default for regular component nodes whose NodeIDs are
-	// already alphanumeric. Read through [ProvenanceComponentID].
+	// distinguishable from its host component's by label alone. Empty is the
+	// default for a regular component node, and means "derive it from NodeID" —
+	// which ENCODES rather than copies, because a node one aggregate composes into
+	// another carries a qualified identity whose join no name may hold. Read
+	// through [ProvenanceComponentID], never as a field: reading the field is how a
+	// caller gets the unencoded form into a name.
 	//
 	// It is deliberately NOT the value a target derives its own names from; that is
 	// DerivedNameBasis below, and the two answer different questions.

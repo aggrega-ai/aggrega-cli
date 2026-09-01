@@ -408,7 +408,7 @@ func nameBound() int32 {
 		return 1
 	}
 	out := rendercore.NameBoundOutput{
-		Names: []rendercore.DerivedNameVerdict{rendercore.ComponentIDLabelVerdict(in.Proposed)},
+		Names: []rendercore.DerivedNameVerdict{rendercore.ComponentIDLabelVerdict(in.Proposed, in.Authored)},
 	}
 	encoded, err := out.MarshalJSON()
 	if err != nil {

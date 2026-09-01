@@ -444,6 +444,112 @@ func TestBoundaryScopeIdentity_IsAPureFunctionOfItsInput(t *testing.T) {
 	}
 }
 
+// TestNodeIdentityBound_MeasuresWhatTheWrittenFormCosts is the property a caller
+// holding a limit on the WRITTEN value rests on: the number it gets back is a
+// length of the identity, and an identity of that length is written within the
+// limit.
+//
+// The rows are stated as expected numbers rather than as a re-derivation, because
+// a check that re-derives the measurement agrees with it whatever it does. The
+// closing property is the one that matters most: cutting to the returned length
+// must actually fit, and cutting to one more must not.
+func TestNodeIdentityBound_MeasuresWhatTheWrittenFormCosts(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		nodeID   string
+		limit    int
+		want     int
+		exhausts bool // the returned length is the whole identity, so there is nothing longer to try
+	}{
+		{
+			name:   "a qualified identity pays two bytes for its join",
+			nodeID: "documents." + strings.Repeat("a", 52), // 62 bytes, written as 64
+			limit:  63,
+			want:   61,
+		},
+		{
+			name:     "an identity that already fits comes back whole",
+			nodeID:   strings.Repeat("a", 10),
+			limit:    63,
+			want:     10,
+			exhausts: true,
+		},
+		{
+			name:     "an identity exactly at the limit comes back whole",
+			nodeID:   strings.Repeat("a", 63),
+			limit:    63,
+			want:     63,
+			exhausts: true,
+		},
+		{
+			name:   "an identity of plain characters is cut at the limit itself",
+			nodeID: strings.Repeat("a", 70),
+			limit:  63,
+			want:   63,
+		},
+		{
+			// The written length does not rise monotonically with what is written: a
+			// cut landing immediately after a hyphen writes that hyphen out, so the
+			// cut at 3 costs five bytes while the cut at 4 costs four. A scan that
+			// stopped at the first overrun would report 2 here. This row is the
+			// regression guard for that simplification.
+			name:   "a cut landing after a hyphen costs more than a cut one character further on",
+			nodeID: "ab-" + strings.Repeat("d", 10),
+			limit:  4,
+			want:   4,
+		},
+		{
+			name:     "an empty identity has no length to state",
+			nodeID:   "",
+			limit:    63,
+			want:     0,
+			exhausts: true,
+		},
+		{
+			name:   "a limit of zero admits nothing",
+			nodeID: "payments",
+			limit:  0,
+			want:   0,
+		},
+		{
+			name:   "a negative limit reads as zero rather than cutting from the wrong end",
+			nodeID: "payments",
+			limit:  -5,
+			want:   0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := NodeIdentityBound(tc.nodeID, tc.limit)
+			if got != tc.want {
+				t.Fatalf("NodeIdentityBound(%q, %d) = %d, want %d (the whole identity is written as %d)",
+					tc.nodeID, tc.limit, got, tc.want, len(EncodeNodeIdentity(tc.nodeID)))
+			}
+			if tc.limit <= 0 {
+				return
+			}
+			// The answer has to be actionable: an identity cut to it is written within
+			// the limit. Asserting the number alone would pass on a number nobody could
+			// act on.
+			if n := len(EncodeNodeIdentity(tc.nodeID[:got])); n > tc.limit {
+				t.Errorf("an identity cut to the returned %d is written as %d, over the limit of %d",
+					got, n, tc.limit)
+			}
+			// And it has to be the GREATEST such length, or a caller reporting it asks
+			// an author to shorten a name that already fitted.
+			if !tc.exhausts && got < len(tc.nodeID) {
+				if n := len(EncodeNodeIdentity(tc.nodeID[:got+1])); n <= tc.limit {
+					t.Errorf("one byte more is written as %d, within the limit of %d, so %d is not the greatest",
+						n, tc.limit, got)
+				}
+			}
+		})
+	}
+}
+
 // itoa keeps the identity key in the injectivity test above free of a dependency
 // on a formatter, so the key is exactly the parts and their count.
 func itoa(n int) string {

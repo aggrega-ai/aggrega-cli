@@ -141,7 +141,7 @@ func nameBound() int32 {
 		pdk.SetError(err)
 		return 1
 	}
-	encoded, err := helmcore.NameBoundOutput(in.Proposed).MarshalJSON()
+	encoded, err := helmcore.NameBoundOutput(in.Proposed, in.Authored).MarshalJSON()
 	if err != nil {
 		pdk.SetError(err)
 		return 1

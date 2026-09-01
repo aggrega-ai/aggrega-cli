@@ -4,18 +4,18 @@ metadata:
   labels:
     aggrega.ai/aggregate-name: fullstack-app
     aggrega.ai/compiler-version: 0.1.0
-    aggrega.ai/component-id: data.main-db
+    aggrega.ai/component-id: data-zdmain-db
     aggrega.ai/environment: production
     aggrega.ai/provider: helm-chart
     aggrega.ai/provider-version: 1.0.0
-    app.kubernetes.io/name: data.main-db
+    app.kubernetes.io/name: data-zdmain-db
   annotations:
     aggrega.ai/boundary-path: data-ns
     aggrega.ai/recipe-uri: helm-postgres-chart-with-artifacts:1.0.0
-  name: data.main-db-pdb
+  name: data-zdmain-db-pdb
   namespace: {{ .Release.Namespace }}
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: data.main-db
+      app: data-zdmain-db

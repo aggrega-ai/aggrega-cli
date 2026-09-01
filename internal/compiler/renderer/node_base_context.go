@@ -87,7 +87,7 @@ func ExtractNodeBaseContext(nodeID string, graph *types.IRGraph) NodeBaseContext
 
 	node, ok := graph.Spec.Nodes.Get(nodeID)
 	metadata := map[string]any{
-		"instance_id":       nodeID,
+		"instance_id":       encodeNodeIdentity(nodeID),
 		"aggregate_name":    graph.Metadata.AggregateName,
 		"release_version":   graph.Spec.Provenance.ReleaseVersion,
 		"aggregate_version": graph.Spec.Provenance.AggregateVersion,

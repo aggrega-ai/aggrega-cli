@@ -854,8 +854,15 @@ func buildBoundaryContext(
 			node, _ := graph.Spec.Nodes.Get(nodeID)
 			if isInSubtree(node.BoundaryPath, boundaryPath) {
 				subtreeMembers[nodeID] = true
+				// The KEY stays the identity the graph is keyed by and the entry's
+				// instance_id is encoded, and the two answer different questions: the
+				// key is how a template finds a component, written the way its author
+				// can read it, while instance_id is what a template names a resource
+				// after and so has to be a name every target admits. A key a template
+				// could not spell would be no key at all, and an unencoded name would
+				// carry the identity join into a resource name.
 				componentsMap.Set(nodeID, types.ComponentInfo{
-					InstanceID:      nodeID,
+					InstanceID:      encodeNodeIdentity(nodeID),
 					Component:       node.Component,
 					ResolvedVersion: node.ResolvedVersion,
 					BoundaryPath:    node.BoundaryPath,

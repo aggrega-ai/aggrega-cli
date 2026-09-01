@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 )
 
 // ProvenanceComponentID returns the Kubernetes-safe component identity for a
@@ -20,16 +22,30 @@ import (
 // It is the LabelComponentID when set — every resource an FR attachment emits
 // has it populated, whatever input kind delivered them, so an attachment's
 // resources are distinguishable from its host component's by label alone —
-// falling back to NodeID for ordinary component nodes.
+// falling back to the node's own identity, written through
+// [labels.EncodeNodeIdentity], for ordinary component nodes.
 //
-// The fallback rests on a REFUSAL rather than on an assumption, and the
-// difference matters because nothing here could repair a NodeID that was not
-// label-valid: an ordinary component's identity is the deployed name of its
-// workload, so it reaches this point unmodified by design. A build whose
-// composition holds a node identity that could not be stamped — one that is not
-// a valid label value, or one opening as a composed identity does — halts before
-// any of this is reached. So by the time a NodeID arrives here it is a name the
-// target accepts, and one no reader can mistake for a composed one.
+// The fallback ENCODES rather than passes through, and that is the whole of why
+// it is a call rather than a field read. A node one aggregate composes into
+// another carries a qualified identity, joining the composing aggregate's name
+// for the inner one to the inner one's name for the node; the character that
+// joins them is reserved out of every authored name, so it is the one character
+// an identity can carry that a target is liable to refuse in a name. A resource
+// this value names would carry it verbatim, and a consumer handed the same string
+// as an address would dial something else, because that character separates a
+// service from its namespace. Encoding writes it out and carries every ordinary
+// authored name through unchanged.
+//
+// A NodeID reaching here is already known to be usable: a build whose
+// composition holds an identity that could not be stamped — one that is not a
+// valid label value once encoded, or one opening as a composed identity does —
+// halts before any of this is reached. The encoding is what makes a qualified
+// identity part of that space rather than an exception to it.
+//
+// LabelComponentID is NOT encoded again, and must not be: it is already composed
+// through an encoding of its own, over its own alphabet, and encoding it a second
+// time would write out the join it was composed with and spell one identity two
+// ways.
 //
 // It is NOT the value a target derives its own names from. That is
 // [TargetNameBasis], and reading this one in its place is the mistake the two
@@ -39,7 +55,7 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 	if nodeCtx.LabelComponentID != "" {
 		return nodeCtx.LabelComponentID
 	}
-	return nodeCtx.NodeID
+	return labels.EncodeNodeIdentity(nodeCtx.NodeID)
 }
 
 // TargetNameBasis returns the identity a target derives its OWN names from when
@@ -69,6 +85,17 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 // which is what keeps an FR's synthesized workload from colliding with its
 // host's own. Reading this there would fall back to the host's NodeID and
 // reintroduce exactly that collision.
+//
+// It also does NOT encode, where [ProvenanceComponentID] does, and the asymmetry
+// is deliberate rather than an oversight — encoding here would be a defect, not a
+// tidying. Each of the two things read from this value already answers the
+// question for itself: a target deriving a name from it narrows it through that
+// target's OWN alphabet, which escapes whatever that target refuses, so encoding
+// first would put one escape inside another and spell the name differently from
+// the identity a recipe author predicts it by; and the prefix on the files a
+// render emits is a filename, a position the identity join is legal in. So the
+// value is passed as authored, once, and every reader that needs a narrower
+// alphabet applies its own.
 func TargetNameBasis(nodeCtx NodeRenderContext) string {
 	if nodeCtx.DerivedNameBasis != "" {
 		return nodeCtx.DerivedNameBasis

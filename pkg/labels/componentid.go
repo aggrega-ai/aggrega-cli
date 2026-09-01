@@ -105,7 +105,145 @@ const identityDigestLength = 10
 // composition always opens with its scope — so a composed value is a valid label
 // value for every input by construction, rather than by a check that could be
 // reached with nothing left to return.
+//
+// The alphabet is held here while the LENGTH bound is not, and the asymmetry is
+// deliberate. A length is one target's limit: holding it here would apply it to
+// every target, including the targets that impose none, so a length arrives from
+// whichever guest renders. An alphabet narrower than every target's is a different
+// thing — not one target's rule imposed on the rest, but the intersection of all of
+// them — so a composed value is legal everywhere it can be written without the
+// compiler learning what any target admits. That narrowness also protects a target
+// whose own derivation folds rather than escapes: an alphabet admitting the dot
+// would hand it a name it must fold, and two identities can fold to one. The
+// guest-side channel therefore carries lengths and grammars; the alphabet stays here.
 var componentIdentityEncoding = namesegment.NewEncoding(isAlphanumeric)
+
+// nodeIdentityEncoding writes a node identity into the alphabet every authored
+// name already satisfies: the ASCII letters, the digits and the underscore.
+//
+// That set is the authoring surface's own, less the hyphen. A component, module
+// or subsystem name is held to letters, digits, the underscore and the hyphen
+// where it is authored, and the hyphen is the encoding's own — it opens every
+// escape and composes the join, so no alphabet may admit it. What the encoding
+// does with a hyphen is keep it where it can: an authored hyphen is carried
+// through as written wherever the character after it is admitted, which is every
+// position an ordinary name puts one in.
+//
+// So the only character this encoding writes out of an identity the compiler can
+// produce is the one that joins a qualified identity together, which no authored
+// name may carry. Every ordinary authored name is returned byte for byte, which
+// is what keeps a rendered diff readable: the names move only where the identity
+// was composed rather than written.
+//
+// The alphabet is deliberately not any target's. It carries no knowledge of what
+// a target admits, and it is not the intersection of the targets either — it is
+// the set the authoring surface already holds its own names to, so an identity
+// written through it is spelled the way its author would have spelled it. A
+// target whose own alphabet is poorer narrows it again on its own side, and a
+// target whose derivation folds rather than escapes is protected for the reason
+// stated above: this encoding hands it no dot to fold.
+var nodeIdentityEncoding = namesegment.NewEncoding(isAuthoredNameRune)
+
+// isAuthoredNameRune reports whether a character is carried through
+// [nodeIdentityEncoding] as itself: an ASCII letter, a digit or an underscore.
+// The hyphen is absent because it is the encoding's own; every other character,
+// the identity join included, is escaped.
+func isAuthoredNameRune(r rune) bool {
+	return isAlphanumeric(r) || r == '_'
+}
+
+// EncodeNodeIdentity writes a node identity into the alphabet every authored
+// component name already satisfies, so the identity can be spent as a name on
+// any target without the caller knowing what that target admits.
+//
+// A node one aggregate composes into another carries a QUALIFIED identity: the
+// name the composing aggregate gave the inner one, joined to the name the inner
+// one gave the node. The character that joins them is reserved out of every
+// authored name precisely so that join is unambiguous — which also means it is
+// the one character an identity can carry that no name an author wrote ever
+// does, and the one character a deployment target is therefore liable to refuse.
+//
+// This writes that character out as an escape and carries everything else
+// through. The encoding is injective, so two identities differing at all reach
+// two names and no two components can arrive at one: substituting for the join
+// instead would let an identity joining `a` to `b` and one an author wrote as
+// `a_b` meet, and a name two components reach identifies neither.
+//
+// An identity carrying no join comes back as it was written, with two exceptions
+// that are both legal to author: a name ending in a hyphen, and a name whose
+// hyphen is followed by the character an escape is marked with. Neither can be
+// carried through as authored without making an escape ambiguous, so each is
+// written out instead.
+//
+// An empty identity comes back empty. There is nothing to tell apart from
+// anything, so it gets no stand-in — a caller with no identity to spell wants no
+// name rather than a placeholder that reads like one.
+//
+// It is NOT for a value composed from several parts — [ComposeComponentIdentity]
+// composes one of those, over its own alphabet, and passing its result here would
+// escape the join it composed with and spell one identity two ways. Nor is it for
+// the identity a graph is keyed by: a caller looking a node up, or naming one in
+// a diagnostic, wants the identity as the author can read it.
+//
+// The derivation is deterministic: one identity always yields one name.
+func EncodeNodeIdentity(nodeID string) string {
+	if nodeID == "" {
+		return ""
+	}
+	return nodeIdentityEncoding.Segment(nodeID)
+}
+
+// NodeIdentityBound returns how many bytes of nodeID still reach a value of at
+// most limit bytes once [EncodeNodeIdentity] has written it.
+//
+// It exists because a caller holding a limit on the WRITTEN value has to state
+// its bound in bytes of the identity, which is what an author shortens by. The
+// two differ by however much writing the identity out costs, and that cost is
+// this package's to know rather than the caller's.
+//
+// It measures rather than estimates, because what a byte costs is not uniform: a
+// character the alphabet carries through costs one, the character joining a
+// qualified identity costs three, and a character with no selector of its own
+// costs nine. An estimate from a ratio would be wrong in both directions — too
+// generous on an identity joined several times, which would send an author back
+// to the same wall a second time, and too mean on an ordinary name, which would
+// ask them to shorten one that already fitted.
+//
+// The scan walks character boundaries so a cut never lands inside one, and it
+// keeps the LAST boundary that fitted rather than stopping at the first that did
+// not. The written length does not rise monotonically with what is written: a
+// hyphen an author wrote is carried through only where the character after it is
+// one the alphabet admits, so a cut landing immediately after a hyphen writes
+// that hyphen out and costs more than a cut one character further on. Stopping
+// at the first overrun would report that cut's cost as the wall and hand back a
+// smaller number than the encoding requires.
+//
+// Zero is a real answer, and two things yield it: a limit of zero or less, and an
+// identity whose very first character already overruns. A caller reporting zero
+// says no length of this identity reaches a value the limit admits.
+//
+// It is DELIBERATELY not shared with the same measurement a target makes over its
+// own alphabet, and the near-duplication is the point rather than an oversight.
+// What a byte costs is a property of the alphabet doing the writing, so the
+// arithmetic belongs beside the alphabet: one shared measurement would have to be
+// told which alphabet to use, and the only caller holding that answer is the one
+// that already owns the alphabet. Sharing it would put every alphabet's bound on
+// one path, which is the single place a mis-measurement could reach all of them.
+func NodeIdentityBound(nodeID string, limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	best := 0
+	for i := range nodeID {
+		if len(EncodeNodeIdentity(nodeID[:i])) <= limit {
+			best = i
+		}
+	}
+	if len(EncodeNodeIdentity(nodeID)) <= limit {
+		best = len(nodeID)
+	}
+	return best
+}
 
 // The encoding's own two fixed strings, read out of the encoding rather than
 // restated here as literals. A literal copy would agree with the encoding on the
