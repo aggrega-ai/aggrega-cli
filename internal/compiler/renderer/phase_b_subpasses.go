@@ -445,6 +445,19 @@ func phaseB6(
 		nodeAttachments, _ = graph.Spec.FeatureValuesMapping.Get(nodeID)
 	}
 
+	// The platform annotations authored for the scope every component-scope
+	// attachment below renders into. An attachment's output lands in the host
+	// node's boundary directory, so the set that reaches it is the host node's own
+	// merged set — read here from the ordered IR node rather than from the render
+	// context's flattened copy, so the advisory stream each render raises is
+	// byte-stable across runs of identical input.
+	var nodeAnnotations types.OrderedMap[string]
+	if graph != nil {
+		if hostNode, ok := graph.Spec.Nodes.Get(nodeID); ok {
+			nodeAnnotations = hostNode.ReleaseAnnotations
+		}
+	}
+
 	// ONE attachment render loop over ONE sequence. The sequence carries every
 	// attachment the node holds that has work here — a resource of its own to
 	// generate, a pipeline to run, or both; the per-attachment differences travel
@@ -533,7 +546,8 @@ func phaseB6(
 		// over the carrier's facts can be asked inside the walk that records them.
 		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Identity,
 			carrierProductsOf(state).attachmentOnNode(nodeID, item.Instance),
-			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
+			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
+			nodeAnnotations, input.CatalogLookup.ProviderPlugin)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -826,6 +840,17 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // and from a boundary-scope one, and the node identity it is handed is the host
 // component's on the first and a composite dispatch marker on the second. A nil
 // carrier records nothing and asks nothing.
+//
+// annotations are the platform annotations authored for the scope this render's
+// output lands in, in the order the deployment authored them. They are supplied by
+// the caller for the same reason the carrier is — the set is the caller's own
+// knowledge and differs by scope: the per-component caller passes the host node's
+// merged annotations, the boundary-scope caller its boundary's. They arrive as the
+// ordered source rather than as the render context's flattened copy, which is what
+// keeps the advisory stream below byte-stable across runs of identical input.
+// providerPlugin resolves this FeatureRecipe's provider binding to the entity
+// carrying the support claim that advisory reads. Either one absent leaves nothing
+// to compare and the advisory emits nothing.
 func renderFeatureRecipeFiles(
 	ctx context.Context,
 	frEngine Provider,
@@ -839,6 +864,8 @@ func renderFeatureRecipeFiles(
 	slots types.OrderedMap[types.AttachmentSlot],
 	workloadLibs map[string]types.WorkloadLibrary,
 	artifactsLibs map[string]types.ArtifactsLibrary,
+	annotations types.OrderedMap[string],
+	providerPlugin func(ref string) (types.Plugin, bool, error),
 ) ([]EmittedFile, string, error) {
 	// Every document this render emits names THIS FeatureRecipe as the Recipe that
 	// produced it. The context arrives as a copy of the host component's and so
@@ -866,6 +893,27 @@ func renderFeatureRecipeFiles(
 	if err := gateInputKind(frNodeCtx.NodeID, fr.Spec.Capability, frEngine, hasSource, hasWorkload, hasArtifacts); err != nil {
 		return nil, "", err
 	}
+
+	// The same advisory the component render path raises, on the same seat: after
+	// the capability gate, before any render pass. It reaches the one site that
+	// emits it rather than restating the rule, and it reads the SAME declared-kind
+	// triple the gate above consults, so the two cannot come to describe this
+	// render's input kinds differently.
+	//
+	// This render is judged on its OWN provider and its OWN declared kinds, which
+	// is the whole reason the host node's advisory does not cover it: a
+	// FeatureRecipe names its own capability and declares its own inputs, so an
+	// annotation the host's target acts on may reach nothing at all here — and the
+	// documents this render emits are a different set of bytes from the host's.
+	// Judging it by the host's answer would report the host's outcome about output
+	// the host did not produce.
+	//
+	// An attachment admitted for its pipeline alone declares no input kind, so the
+	// triple is empty and nothing is emitted for it: it renders no documents of its
+	// own, so there is no output for an annotation to have been dropped from.
+	warnUnhonorableAnnotations(frNodeCtx.NodeID, fr.Spec.Capability, ProviderEngineKind(fr.Spec.Capability),
+		declaredNodeInputKinds(hasSource, hasWorkload, hasArtifacts),
+		annotations, providerPlugin, frNodeCtx.UnsupportedFieldSink)
 
 	// Advertised-only per-node input validation for the FeatureRecipe render —
 	// the same gate the component render path applies, on the same seat (after the

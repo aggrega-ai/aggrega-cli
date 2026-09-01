@@ -1,0 +1,44 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: helm
+  version: 1.0.0
+  pluginType: provider
+  description: Provider-rendering plugin for the helm provider.
+spec:
+  abiVersion: v1alpha1
+  provider:
+    capabilities:
+      - helm
+    # The support claim this corpus turns on: the namespace key reaches the two
+    # paths where this provider builds the manifest itself, and no slot exists for
+    # it where the whole output is imported artifact documents. Declared here so a
+    # fixture build compares an authored annotation against a real claim — a
+    # provider declaring no claim at all reports every key covered, which is a
+    # different rule and would make this corpus measure nothing.
+    wellKnownAnnotations:
+      - key: aggrega.ai/namespace
+        purpose: Kubernetes namespace the boundary's resources render into.
+        defaultBehavior: No namespace field is injected; resources inherit the apply-time context namespace.
+        scope:
+          - sourced
+          - synthesized
+    # The input kinds this provider renders. artifactsStandalone is claimed and
+    # deliberately absent from the scope list above: that pairing is what makes an
+    # artifacts-only render a case where the key reaches nothing while the target
+    # still renders the node perfectly well.
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: true
+        artifactsStandalone: true
+      boundaryAssembly: none
+      reusableInstance: true
+  exports:
+    - name: render_node
+  runtime:
+    maxMemoryPages: 4096
+    # Generous per-call cap so guest runtime initialization completes even where
+    # the host runs the Wasm engine without native code generation (a sandboxed
+    # environment that denies executable memory falls back to slow interpretation).
+    timeoutMs: 300000

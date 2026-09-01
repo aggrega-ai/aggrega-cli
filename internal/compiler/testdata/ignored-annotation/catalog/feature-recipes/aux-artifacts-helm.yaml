@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: ann-aux-artifacts-helm, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: feature.ann/aux-artifacts
+  # Artifacts and nothing else, so this attachment's whole output is imported
+  # artifact documents — the same input kind the component-artifacts recipe
+  # declares, reached through the attachment crossing instead.
+  artifacts:
+    aux-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: aux-config
+      data:
+        note: "aux"

@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+#
+# The boundary-scope attachment crossing carries the artifacts. It reaches the
+# FeatureRecipe render funnel through the boundary-scope caller rather than the
+# per-component one, so this corpus is what proves the advisory covers both
+# callers of that funnel and not only the one a component attachment takes.
+#
+# The node's own Recipe declares a Workload, which the target's claim covers, so
+# the host stays quiet and the only advisory a build may raise here is the
+# boundary attachment's.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: ann-release-boundary-artifacts
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-boundary-artifacts.yaml
+  manifest: ./manifest-boundary-artifacts.yaml
+  boundaries:
+    app-ns:
+      directory: ./dist/app
+      annotations:
+        aggrega.ai/namespace: "app-zone"
+      features:
+        bart:
+          type: feature.ann/boundary-artifacts
+      components:
+        app: {}

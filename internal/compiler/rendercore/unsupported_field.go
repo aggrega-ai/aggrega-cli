@@ -23,24 +23,25 @@ import (
 // independent of the human-readable message text.
 const UnsupportedFieldCode = "unsupported-field"
 
-// UnhonorableAnnotationDiagnostic builds the warning raised when a node carries
-// an authored platform annotation the resolved target's own support claim covers
-// for NONE of the input kinds that node declares, so the annotation reaches no
-// consumer and changes nothing. target is the target's user-facing name; key is
-// the annotation key exactly as authored; inputKinds are every input kind the
-// node declares, in the same words every other diagnostic about an input kind
-// spells them. The caller attaches the location naming the node and the target.
+// UnhonorableAnnotationDiagnostic builds the warning raised when an authored
+// platform annotation reaches a render whose resolved target's own support claim
+// covers it for NONE of the input kinds that render declares, so the annotation
+// reaches no consumer and changes nothing. target is the target's user-facing
+// name; key is the annotation key exactly as authored; inputKinds are every input
+// kind that render declares, in the same words every other diagnostic about an
+// input kind spells them. The caller attaches the location naming the node and
+// the target.
 //
 // The kinds are plural because a Recipe may declare more than one and their
 // outputs are added together, so the target may act on an annotation through one
-// declared kind while having no slot for it on another. Naming one kind on such a
-// node would assert something false about a node that renders two — and this
+// declared kind while having no slot for it on another. Naming one kind in such a
+// render would assert something false about a render that emits two — and this
 // warning says the value was ignored, which invites deleting an annotation that
 // is in fact changing the rendered output. So the raiser asks about every declared
 // kind and reaches this constructor only when the answer is no for all of them,
 // and the sentence names all of them.
 //
-// A node declaring a single input kind reads exactly as it always has: the kinds
+// A render declaring a single input kind reads as a single kind: the kinds
 // are joined into one phrase, and a phrase built from one kind is that kind's own
 // word.
 //
@@ -52,11 +53,13 @@ const UnsupportedFieldCode = "unsupported-field"
 // heterogeneous targets, so on a mixed boundary some nodes cannot act on it and
 // refusing the build would reject a correct deployment.
 //
-// One authored annotation can raise several of these, one per node that cannot
-// act on it. That is not duplication — each names a different node, and the fact
-// being reported is per node.
+// One authored annotation can raise several of these, one per render that cannot
+// act on it. That is not duplication — a node's own Recipe and each feature
+// attached to it render separately, through independently declared targets and
+// input kinds, so two of these may name the same node while reporting different
+// emitted output. The fact being reported is per render.
 //
-// At least one input kind is expected. A node declaring none renders nothing, so
+// At least one input kind is expected. A render declaring none emits nothing, so
 // there is no annotation support to compare and the raiser emits nothing for it.
 func UnhonorableAnnotationDiagnostic(target, key string, inputKinds ...string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{

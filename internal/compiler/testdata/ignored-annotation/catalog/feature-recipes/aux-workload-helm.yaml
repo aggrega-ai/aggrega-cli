@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: ann-aux-workload-helm, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: feature.ann/aux-workload
+  # A Workload and nothing else, so this attachment renders at the synthesised
+  # kind, which the target's claim DOES cover for the authored annotation. It is
+  # the control that catches a check warning whenever the key is merely present.
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: aux:1.0
+        ports:
+          p: 9090

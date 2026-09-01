@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+#
+# Every crossing in this deployment renders at a kind the target's claim covers
+# for the authored annotation: the node synthesises its Workload, and so does its
+# one attachment. Nothing is ignored, so a build must raise no advisory at all and
+# emit the same bytes every time.
+#
+# It is the control on the over-warning side. A check that fired whenever the
+# annotation was merely present would satisfy every firing assertion elsewhere in
+# this corpus and would be caught only here.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: ann-release-all-honoured
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-all-honoured.yaml
+  manifest: ./manifest-all-honoured.yaml
+  boundaries:
+    app-ns:
+      directory: ./dist/app
+      annotations:
+        aggrega.ai/namespace: "app-zone"
+      components:
+        app: {}

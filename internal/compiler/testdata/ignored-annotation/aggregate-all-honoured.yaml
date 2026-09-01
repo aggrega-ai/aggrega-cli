@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: ann-app-all-honoured
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/annapp
+      features:
+        wl:
+          type: feature.ann/aux-workload

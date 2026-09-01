@@ -108,19 +108,25 @@ func (k nodeInputKind) claimedBy(caps ProviderContract) bool {
 	return true
 }
 
-// warnUnhonorableAnnotations advises on every platform annotation authored on a
-// node that the resolved target's own support claim covers for NONE of the input
-// kinds that node declares — the annotations that reach no consumer and change
-// nothing. It emits into the structured advisory sink and returns nothing: this is
-// a degradation, never a refusal, because a boundary annotation legitimately
-// cascades across components rendering through heterogeneous targets and
-// refusing the build would reject a correct deployment.
+// warnUnhonorableAnnotations advises on every platform annotation authored for the
+// scope a render's output lands in that the render's resolved target's own support
+// claim covers for NONE of the input kinds that render declares — the annotations
+// that reach no consumer and change nothing. It emits into the structured advisory
+// sink and returns nothing: this is a degradation, never a refusal, because a
+// boundary annotation legitimately cascades across components rendering through
+// heterogeneous targets and refusing the build would reject a correct deployment.
+//
+// It is asked once per RENDER rather than once per node. A node's own Recipe and
+// each feature attached to that node name their own capability and declare their
+// own inputs, and each emits its own documents — so each is judged on the target
+// and the declared kinds that produced its own output, and one authored annotation
+// may be honoured in one of them while reaching nothing in another.
 //
 // The honour question is asked once per declared kind and an advisory is raised
-// only when every answer is no. A node's declared kinds compose by addition and
+// only when every answer is no. A render's declared kinds compose by addition and
 // their outputs are added together, so a target with a slot for the key on one
 // declared kind DOES act on it, whatever the other kinds are — and this advisory
-// says the value was ignored, so asking about one kind on a node that renders two
+// says the value was ignored, so asking about one kind in a render that emits two
 // produces a statement contradicted by the same build's own emitted bytes, whose
 // remedy is to delete an annotation that is in fact working. Raising only on a
 // unanimous no is what keeps the sentence true.

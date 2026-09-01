@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata: { name: annapp-artifacts, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: core/annapp
+  provides:
+    host: "{{ .context.instance_id }}"
+  # Artifacts and nothing else, so this node's whole output is imported artifact
+  # documents and its one declared input kind is the standalone-artifacts kind.
+  artifacts:
+    app-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-app-config
+      data:
+        SERVICE: {{ .context.instance_id }}

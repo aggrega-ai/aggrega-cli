@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+#
+# The attachment crossing carries the artifacts, and everything else is held
+# fixed: same target, same authored annotation, same boundary. The node's own
+# Recipe declares a Workload, which the target's claim covers, so the host must
+# stay quiet; one attachment declares artifacts and nothing else, which the claim
+# does not cover; a second attachment declares a Workload, so it must stay quiet
+# too. One build therefore carries the case under test beside both silences.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: ann-release-feature-artifacts
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-feature-artifacts.yaml
+  manifest: ./manifest-feature-artifacts.yaml
+  boundaries:
+    app-ns:
+      directory: ./dist/app
+      annotations:
+        aggrega.ai/namespace: "app-zone"
+      components:
+        app: {}

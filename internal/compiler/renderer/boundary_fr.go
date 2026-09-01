@@ -494,9 +494,17 @@ func dispatchBoundaryScopeFR(
 	// therefore discarded — this render derives none, and the boundary-disambiguated
 	// value it carries was declared at the point it was minted above. Reading it
 	// here as well would declare one name twice for one derivation.
+	//
+	// The annotation set handed over is this BOUNDARY's own, not any component's:
+	// a boundary-scope render has no host component, and its output lands in the
+	// boundary's directory, so the boundary's authored annotations are the set that
+	// reaches it. Read from the ordered per-boundary map for the same reason the
+	// per-component caller reads the ordered IR node — the advisory stream stays
+	// byte-stable across runs of identical input.
 	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, attachmentIdentity{},
 		carrierProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
-		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
+		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
+		boundaryAnnotations[key.BoundaryPath], input.CatalogLookup.ProviderPlugin)
 	if err != nil {
 		return err
 	}

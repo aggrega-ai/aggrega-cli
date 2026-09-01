@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: ann-app-feature-artifacts
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/annapp
+      features:
+        # The attachment whose whole output is imported artifact documents — the
+        # crossing under test.
+        art:
+          type: feature.ann/aux-artifacts
+        # The attachment rendering at a kind the target's claim covers, so it must
+        # stay quiet whatever the artifacts one does.
+        wl:
+          type: feature.ann/aux-workload

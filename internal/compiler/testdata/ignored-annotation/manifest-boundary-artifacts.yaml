@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: ann-manifest-boundary-artifacts
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/annapp: annapp-synthesized:1.0.0
+    features:
+      type:
+        feature.ann/boundary-artifacts: ann-boundary-artifacts-helm:1.0.0

@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: ann-boundary-artifacts-helm, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: feature.ann/boundary-artifacts
+  # Attached at a boundary rather than against a named component, so this render
+  # is reached through the boundary-scope caller of the FeatureRecipe funnel
+  # rather than the per-component one. Artifacts and nothing else, so its one
+  # declared input kind is the standalone-artifacts kind.
+  executionScope: boundary
+  artifacts:
+    boundary-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: boundary-config
+      data:
+        boundary: "{{ .boundary.boundary_name }}"

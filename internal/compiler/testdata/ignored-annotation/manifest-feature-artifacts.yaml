@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: ann-manifest-feature-artifacts
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/annapp: annapp-synthesized:1.0.0
+    features:
+      type:
+        feature.ann/aux-artifacts: ann-aux-artifacts-helm:1.0.0
+        feature.ann/aux-workload: ann-aux-workload-helm:1.0.0
