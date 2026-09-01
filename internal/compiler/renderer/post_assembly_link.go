@@ -255,8 +255,12 @@ func applyLinkPatches(grp *assembledGroup, patches []LinkPatch, provider string,
 	for _, patch := range patches {
 		rec, ok := grp.files[patch.File]
 		if !ok {
-			return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: patch.File},
-				fmt.Sprintf("cross-boundary link patch targets file %q the dispatch group did not emit", patch.File), nil, nil)
+			return nil, cerrors.Wrap(ErrLinkPatchFileNotEmitted(), cerrors.TranslationError,
+				cerrors.SourceLocation{File: patch.File},
+				cerrors.ComposeMessage(ErrLinkPatchFileNotEmitted(), []string{
+					fmt.Sprintf("file %q", patch.File),
+					fmt.Sprintf("node %q", nodeID),
+				}, ""))
 		}
 		patched, warns, err := applyLinkPatch(codec, patch.File, rec.Content, patch.Ops, nodeID)
 		if err != nil {

@@ -4,6 +4,8 @@
 package renderer
 
 import (
+	"fmt"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
@@ -922,4 +924,134 @@ func ErrUnsupportedInputKind() error { return errUnsupportedInputKind }
 var errUnsupportedInputKind = cerrors.Register("compiler-renderer/unsupported-input-kind", cerrors.Meta{
 	ShortCode: "E0265",
 	Message:   "provider does not support the node's input kind",
+})
+
+// The four conditions below share an audience and a reason for carrying an
+// identity, so the reason is stated once here rather than four times.
+//
+// Each is a refusal of the plugin contract this project publishes, and each is
+// raised against what a guest RETURNED rather than against anything an author
+// wrote. No corpus of authored documents can reach any of them: an Aggregate, a
+// Release, a Recipe and a Manifest together decide which guest runs and what it
+// is handed, and none of them decides what the guest hands back. So the reader
+// holding one of these diagnostics is someone debugging a guest they wrote, and
+// the wording is theirs — the vocabulary is the export and wire-field names the
+// published plugin contract teaches, and nothing else.
+//
+// They carry identities for the same reason every other halting condition does,
+// and the audience does not weaken it. A code is what a reader quotes in a
+// report, searches for, and matches on programmatically, and a refusal without
+// one leaves a plugin author holding a sentence and no handle. It is also what
+// admits the condition to the published reference at all, where the entry's
+// quoted output is held against what a build actually prints; an unidentified
+// halt can be named by no coverage declaration, so its documentation would sit
+// outside that comparison indefinitely.
+
+// ErrProviderRenderDuplicatePath fires when a provider guest returns two output
+// files under one path, so the second would overwrite the first.
+//
+// The host collects the returned files into a set keyed by path and writes each
+// file's bytes verbatim, running no serializer of its own. A duplicate key
+// therefore has no correct resolution available to the host: taking the last
+// wins silently discards a file the guest said to write, and taking the first
+// discards a later one just as silently. Which of the two the guest meant is a
+// question only the guest can answer, so the build halts and names the path.
+//
+// One identity covers both surfaces a provider guest returns files on — the
+// per-node render and the boundary assembly of a dispatch group — because the
+// guest mistake and its remedy are the same on both, and a reader acts on the
+// path the message names rather than on which export produced it. The sentence
+// names neither export for that reason: a sentence naming one would be false
+// wherever the other raised it, and the surface is already evident from the
+// position the diagnostic carries. Match with
+// errors.Is(err, ErrProviderRenderDuplicatePath()).
+// Category: CATALOG_ERROR.
+func ErrProviderRenderDuplicatePath() error { return errProviderRenderDuplicatePath }
+
+var errProviderRenderDuplicatePath = cerrors.Register("compiler-renderer/provider-render-duplicate-path", cerrors.Meta{
+	ShortCode: "E0269",
+	Message: "provider guest returned two output files under one path; " +
+		"a conforming guest returns each output path at most once",
+})
+
+// DuplicateRenderPathErr raises [ErrProviderRenderDuplicatePath] for the given
+// duplicated output path, naming the node it was returned for when the caller
+// has one.
+//
+// It is exported because the surfaces that detect the duplicate are not all in
+// this package: a guest's files are collected per node and again when a dispatch
+// group is assembled. Every one of those calls this rather than composing its
+// own message, so the condition has one raise implementation and cannot come to
+// be worded two ways — which is what the several independent duplicate-path
+// checks that preceded it had done.
+//
+// An empty nodeID contributes no node to the message rather than an empty one,
+// so a caller with no node in hand produces a sentence about the path alone
+// instead of one trailing an empty value.
+func DuplicateRenderPathErr(path, nodeID string) error {
+	values := []string{fmt.Sprintf("path %q", path)}
+	if nodeID != "" {
+		values = append(values, fmt.Sprintf("node %q", nodeID))
+	}
+	return cerrors.Wrap(ErrProviderRenderDuplicatePath(), cerrors.CatalogError,
+		cerrors.SourceLocation{File: path},
+		cerrors.ComposeMessage(ErrProviderRenderDuplicatePath(), values, ""))
+}
+
+// ErrLinkPatchFileNotEmitted fires when a provider guest returns artifact
+// wiring for a cross-boundary link that names an output file the dispatch group
+// it applies to did not emit.
+//
+// The wiring is applied by a later host pass that carves the named file, applies
+// the ordered operations, and reassembles it byte-faithfully. A name that
+// matches no emitted file leaves that pass nothing to carve, and the operations
+// it carries are the wiring that resolves the link — so dropping them would
+// leave assembled output referencing an endpoint nothing wired, which surfaces
+// far from its cause. The build halts and names the file instead.
+// Category: TRANSLATION_ERROR.
+func ErrLinkPatchFileNotEmitted() error { return errLinkPatchFileNotEmitted }
+
+var errLinkPatchFileNotEmitted = cerrors.Register("compiler-renderer/link-patch-file-not-emitted", cerrors.Meta{
+	ShortCode: "E0270",
+	Message: "link patch names an output file the dispatch group did not emit; " +
+		"a conforming link patch names a file the group's own render returned",
+})
+
+// ErrPipelineEmitFileAbsent fires when a pipeline step's guest returns a side
+// effect declaring the emit_file kind while carrying no file to write.
+//
+// It is the narrower of the two side-effect refusals and the distinction is
+// worth keeping: the kind here is one the contract DOES define, and the arm that
+// reads a file has already been selected on the strength of it. What is absent
+// is the member that arm needs — a path to write at and the content to write —
+// so the guest declared an intention the payload does not carry out. The
+// remedy names the two fields rather than the kind, because the kind is right.
+// Category: CATALOG_ERROR.
+func ErrPipelineEmitFileAbsent() error { return errPipelineEmitFileAbsent }
+
+var errPipelineEmitFileAbsent = cerrors.Register("compiler-renderer/pipeline-emit-file-absent", cerrors.Meta{
+	ShortCode: "E0271",
+	Message: "emit_file side effect carries no file; " +
+		"a conforming emit_file side effect carries a file with its path and content",
+})
+
+// ErrPipelineSideEffectKindUndefined fires when a pipeline step's guest returns
+// a side effect whose kind the plugin contract does not define, so the host has
+// no arm that knows what bytes the effect contributes.
+//
+// The kind is an open string on the wire, which is what lets a later effect kind
+// extend the contract without breaking the ABI. That openness is why the refusal
+// exists: an undefined kind cannot be told apart from a future one by its shape
+// alone, so a host that passed it over would silently drop whatever the guest
+// meant by it and emit output missing an effect the step returned. Halting is
+// the reading that keeps the extension point open without making it a hole —
+// a kind this build does not define is reported as undefined, naming what the
+// guest sent, rather than accepted and ignored.
+// Category: CATALOG_ERROR.
+func ErrPipelineSideEffectKindUndefined() error { return errPipelineSideEffectKindUndefined }
+
+var errPipelineSideEffectKindUndefined = cerrors.Register("compiler-renderer/pipeline-side-effect-kind-undefined", cerrors.Meta{
+	ShortCode: "E0272",
+	Message: "side effect declares a kind the plugin contract does not define; " +
+		"a conforming side effect declares emit_file or emit_crd",
 })

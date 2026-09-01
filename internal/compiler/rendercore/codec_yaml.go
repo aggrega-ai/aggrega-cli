@@ -135,8 +135,12 @@ func (c StockYAMLCodec) Reassemble(name string, body []byte, segs []frp.Unit, pa
 		}
 		sg, ok := byToken[pu.Token]
 		if !ok {
-			return nil, nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: name},
-				fmt.Sprintf("pipeline PATCH names output unit %q, which is not present in %q", pu.Token, name), nil, nil)
+			return nil, nil, cerrors.Wrap(ErrPipelinePatchUnitNotCarved(), cerrors.CatalogError,
+				cerrors.SourceLocation{File: name},
+				cerrors.ComposeMessage(ErrPipelinePatchUnitNotCarved(), []string{
+					fmt.Sprintf("token %q", pu.Token),
+					fmt.Sprintf("file %q", name),
+				}, ""))
 		}
 		docBody := body[sg.bodyStart:sg.bodyEnd]
 		edited, eerr := editDocumentBody(docBody, pu.Ops, c.indent)

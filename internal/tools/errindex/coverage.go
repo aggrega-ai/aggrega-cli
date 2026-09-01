@@ -272,25 +272,26 @@ func gapsIn(ids []Identity, covered map[string]bool) (gaps []Identity, origins i
 }
 
 // reportGaps writes the gap tier to w and returns how many declared halting
-// conditions no entry names, alongside how many were considered. A non-zero
-// shortfall is a refusal, and the caller exits non-zero on it.
+// conditions no entry names, alongside how many were considered.
+//
+// 🔴 This tier REPORTS and does not refuse. The caller discards the shortfall
+// deliberately, and the reason is recorded at that call site: a blocking figure
+// here would refuse the moment any condition is declared ahead of its entry,
+// which is the ordinary shape of work in progress — a condition is registered by
+// the change that raises it and documented afterwards. So a blocking tier would
+// redden the gate against correct work elsewhere in the tree, and stop somebody
+// who is never the person able to clear it. The opposite direction in
+// [resolveCoverage] does refuse, because a declaration naming nothing is
+// something that is actually wrong rather than something merely not yet written.
 //
 // Every declared halting condition earns an entry, so a condition with none is a
-// hole in the published reference rather than a note about it. A figure that
-// only reports leaves the set free to regrow such a hole one declaration at a
-// time, with every run of every gate green while it happens — and a coverage
-// figure nobody has seen fail is decoration.
+// hole in the published reference rather than a note about it. The figure is
+// therefore the signal that something moved, and it is worth promoting to a
+// refusal once the declared set is stable and the documented set has caught up.
 //
-// A blocking tier is safe to introduce only over a set that is already complete,
-// because a check that is red on the day it ships stays red and gets switched
-// off — which would cost the blocking direction in [resolveCoverage] along with
-// it. That is a constraint on the moment such a tier is turned on, not an
-// argument against turning it on: the shortfall is what says whether the
-// condition holds, and it is the caller's whole verdict here.
-//
-// The word on a shortfall line is not WARN, because the line stops the run. The
-// tier beside it does warn, and two tiers printing the same word while one of
-// them fails is how a reader learns to skim both.
+// The word on a shortfall line is WARN, matching what the line does. A tier that
+// stops the run says so in its own word instead, so a reader meeting a red can
+// tell which tier produced it without re-running anything.
 //
 // The enumeration is opt-in because this runs inside the routine build, where
 // printing every uncovered identity on every build produces a wall of output

@@ -176,7 +176,7 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 	files := make(map[string]renderer.AssembledFile, len(out.Files))
 	for _, f := range out.Files {
 		if _, dup := files[f.Path]; dup {
-			return nil, renderer.BoundaryNesting{}, fmt.Errorf("wasmengine: assembler guest emitted duplicate output path %q", f.Path)
+			return nil, renderer.BoundaryNesting{}, renderer.DuplicateRenderPathErr(f.Path, info.BoundaryPath)
 		}
 		files[f.Path] = renderer.AssembledFile{Content: f.Content, Format: f.Format}
 	}

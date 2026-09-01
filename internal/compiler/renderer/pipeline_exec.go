@@ -869,21 +869,38 @@ func lookupFile(pfs []pipelineFile, name string) (pipelineFile, bool) {
 }
 
 // sideEffectBytes extracts the bytes an EMIT side effect contributes: the file
-// content for emit_file, the CRD document for emit_crd. An unrecognised kind
-// halts loudly rather than silently dropping.
+// content for emit_file, the CRD document for emit_crd.
+//
+// Two refusals rather than one, and they are separate conditions rather than two
+// spellings of the same one. A kind the contract defines that arrives without
+// the member its arm reads is [ErrPipelineEmitFileAbsent]; a kind the contract
+// does not define at all is [ErrPipelineSideEffectKindUndefined]. The guest
+// mistakes are disjoint and so are their remedies — supply the absent member,
+// versus declare a kind the contract defines — so a reader is told which of the
+// two they hit rather than being handed one sentence covering both. Either way
+// the build halts rather than dropping the effect silently.
 func sideEffectBytes(se frp.SideEffect, nodeID string, idx int) ([]byte, error) {
 	switch se.Kind {
 	case "emit_file":
 		if se.File == nil {
-			return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-				fmt.Sprintf("node %q: pipeline: emit_file side effect %d has no file", nodeID, idx), nil, nil)
+			return nil, cerrors.Wrap(ErrPipelineEmitFileAbsent(), cerrors.CatalogError,
+				cerrors.SourceLocation{File: nodeID},
+				cerrors.ComposeMessage(ErrPipelineEmitFileAbsent(), []string{
+					fmt.Sprintf("node %q", nodeID),
+					fmt.Sprintf("side effect %d", idx),
+				}, ""))
 		}
 		return []byte(se.File.Content), nil
 	case "emit_crd":
 		return se.Crd, nil
 	default:
-		return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-			fmt.Sprintf("node %q: pipeline: unknown side-effect kind %q", nodeID, se.Kind), nil, nil)
+		return nil, cerrors.Wrap(ErrPipelineSideEffectKindUndefined(), cerrors.CatalogError,
+			cerrors.SourceLocation{File: nodeID},
+			cerrors.ComposeMessage(ErrPipelineSideEffectKindUndefined(), []string{
+				fmt.Sprintf("node %q", nodeID),
+				fmt.Sprintf("side effect %d", idx),
+				fmt.Sprintf("kind %q", se.Kind),
+			}, ""))
 	}
 }
 

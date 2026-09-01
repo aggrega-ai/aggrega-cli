@@ -160,6 +160,97 @@ func EnsureFixtureBuilt(t *testing.T, artifactName string) string {
 	return path
 }
 
+// EnsureLocalGuestBuilt builds a self-contained Go guest whose source lives
+// inside this module and returns the built artifact's absolute path.
+//
+// srcDir is an absolute path to a directory holding the guest's main.go and its
+// own go.mod. It is addressed directly rather than derived from an artifact
+// name, so this reaches a guest the two name-parsed layouts above cannot: one
+// authored here rather than in a per-language plugin kit. artifactName is the
+// name the built guest is published under in the shared fixture directory, and
+// it must not collide with a name either of those layouts owns.
+//
+// It exists for a guest that is DELIBERATELY non-conforming — one built to
+// violate the plugin contract so a host refusal can be driven and its
+// diagnostic read. Such a guest belongs beside the tests that drive it rather
+// than in a kit of reference examples, and it hand-writes its own wire bytes,
+// because a generated codec exists precisely to make the mistakes it has to make
+// unrepresentable.
+//
+// There is no toolchain-absent skip and there must not be one. The build is the
+// standard Go toolchain targeting wasip1, which ships with every Go
+// distribution, so the toolchain is present whenever this runs at all — a caller
+// is executing under `go test`. A skip here would let a proof that never ran
+// read as a proof that passed, which for a fixture whose whole purpose is to
+// make an unprovable registration provable is the one failure mode worth
+// refusing outright. Any build failure is therefore a hard test failure.
+//
+// The cache, lock and publish-by-rename discipline is the same as the layouts
+// above: at most one builder per artifact across processes, and the destination
+// only ever written by rename.
+func EnsureLocalGuestBuilt(t *testing.T, srcDir, artifactName string) string {
+	t.Helper()
+
+	path, skip := buildFixtureOnce(artifactName, func() (string, error) {
+		t.Helper()
+
+		umbrellaRoot, err := resolveUmbrellaRoot()
+		if err != nil {
+			t.Fatalf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
+		}
+		if _, err := os.Stat(filepath.Join(srcDir, "main.go")); err != nil {
+			t.Fatalf("local guest source missing at %s: %v (the fixture's main.go is supposed to ship; absence is a regression)", srcDir, err)
+		}
+
+		testdataDir := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata")
+		artifactPath := filepath.Join(testdataDir, artifactName)
+		if isFresh(artifactPath, srcDir) {
+			return artifactPath, nil
+		}
+		if err := os.MkdirAll(testdataDir, 0o755); err != nil {
+			t.Fatalf("mkdir testdata: %v", err)
+		}
+
+		release := lockFixtureBuild(testdataDir, artifactName)
+		defer release()
+
+		if isFresh(artifactPath, srcDir) {
+			return artifactPath, nil
+		}
+
+		stageDir, err := newStageDir(testdataDir)
+		if err != nil {
+			t.Fatalf("stage local guest build for %s: %v", artifactName, err)
+		}
+		defer os.RemoveAll(stageDir)
+
+		staged := filepath.Join(stageDir, artifactName)
+		// GOWORK=off is what makes the guest's own go.mod authoritative: the
+		// umbrella workspace does not enrol these single-file guest modules, and
+		// resolving them through it would either fail or bind them to whatever
+		// the workspace pins rather than to what the guest declares.
+		cmd := exec.Command("go", "build", "-buildmode=c-shared", "-o", staged, "./")
+		cmd.Dir = srcDir
+		cmd.Env = append(os.Environ(), "GOWORK=off", "GOOS=wasip1", "GOARCH=wasm")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("local guest build failed for %s at %s: %v\noutput:\n%s",
+				artifactName, srcDir, err, string(output))
+		}
+		if _, err := os.Stat(staged); err != nil {
+			t.Fatalf("local guest build for %s reported success but produced nothing at %s: %v",
+				artifactName, staged, err)
+		}
+		if err := publishArtifact(staged, artifactPath); err != nil {
+			t.Fatalf("publish local guest %s: %v", artifactName, err)
+		}
+		return artifactPath, nil
+	})
+	if skip != nil {
+		t.Fatalf("%v", skip)
+	}
+	return path
+}
+
 // EnsureFixtureBytes builds the fixture (via EnsureFixtureBuilt) and returns its
 // .wasm bytes. It is the byte-oriented companion for callers that load a plugin
 // from in-memory content (the publishing-linter dispatcher takes resolved bytes,

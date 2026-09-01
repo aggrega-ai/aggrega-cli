@@ -302,7 +302,7 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 	seen := make(map[string]struct{}, len(out.Files))
 	for _, f := range out.Files {
 		if _, dup := seen[f.Path]; dup {
-			return nil, fmt.Errorf("wasmengine: node %q: guest emitted duplicate output path %q", nodeCtx.NodeID, f.Path)
+			return nil, renderer.DuplicateRenderPathErr(f.Path, nodeCtx.NodeID)
 		}
 		seen[f.Path] = struct{}{}
 	}
