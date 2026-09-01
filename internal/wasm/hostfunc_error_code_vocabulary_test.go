@@ -15,7 +15,7 @@ import (
 )
 
 // Each host-function reply envelope carries the machine-matchable failure
-// identity under error_code, and its value set is the shared host-function
+// identity under hostfunc_error_code, and its value set is the shared host-function
 // error-code vocabulary declared once and generated into the per-language
 // constants the host sets. These tests hold the three surfaces that name that
 // set — the declared vocabulary, the field's own documentation, and the codes

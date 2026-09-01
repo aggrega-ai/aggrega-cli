@@ -552,7 +552,7 @@ func (p *Plugin) handleAggregaFetchExternalInput(ctx context.Context, reader plu
 // same diagnostic the guest received.
 func (p *Plugin) writeFetchFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
-	return p.writeFetchEnvelope(writer, abi.FetchExternalInputResponse{Error: message, ErrorCode: code})
+	return p.writeFetchEnvelope(writer, abi.FetchExternalInputResponse{Error: message, HostfuncErrorCode: code})
 }
 
 // writeFetchEnvelope marshals env and writes it into plugin memory,
@@ -819,7 +819,7 @@ func (p *Plugin) handleAggregaParseSource(ctx context.Context, reader pluginMemo
 // the failure.
 func (p *Plugin) writeParseSourceFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
-	b, err := abi.ParseSourceResponse{Error: message, ErrorCode: code}.EncodeCBOR()
+	b, err := abi.ParseSourceResponse{Error: message, HostfuncErrorCode: code}.EncodeCBOR()
 	if err != nil {
 		log.Printf("plugin %q: aggrega_parse_source: error envelope encode failed: %v", p.name, err)
 		return 0
@@ -944,7 +944,7 @@ func (p *Plugin) resolveUnderSourceRoot(rel string) (string, string, error) {
 // the failure.
 func (p *Plugin) writeSourcePackFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
-	b, err := abi.SourcePackResponse{Error: message, ErrorCode: code}.EncodeCBOR()
+	b, err := abi.SourcePackResponse{Error: message, HostfuncErrorCode: code}.EncodeCBOR()
 	if err != nil {
 		log.Printf("plugin %q: aggrega_pack_source: error envelope encode failed: %v", p.name, err)
 		return 0
@@ -959,7 +959,7 @@ func (p *Plugin) writeSourcePackFailure(writer pluginMemoryWriter, message, code
 // success envelope carries for the reason given there.
 func (p *Plugin) writeSourceFileFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
-	b, err := abi.SourceFileResponse{Error: message, ErrorCode: code}.EncodeCBOR()
+	b, err := abi.SourceFileResponse{Error: message, HostfuncErrorCode: code}.EncodeCBOR()
 	if err != nil {
 		log.Printf("plugin %q: aggrega_read_source_file: error envelope encode failed: %v", p.name, err)
 		return 0

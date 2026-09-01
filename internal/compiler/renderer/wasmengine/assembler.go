@@ -220,8 +220,8 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 	}
 	if err := wasm.GuestReturnedError(export, wasm.GuestFailure{
 		Message:   out.Error,
-		Code:      out.ErrorCode,
-		ShortCode: out.ErrorShortCode,
+		Code:      out.ConditionCode,
+		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}

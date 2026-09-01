@@ -104,8 +104,8 @@ func TestHandleParseSource_ReentryDenied(t *testing.T) {
 	if !strings.Contains(env.Error, ErrProducerConsumptionReentry().Error()) {
 		t.Errorf("envelope error = %q; want it to carry the re-entry sentinel message %q", env.Error, ErrProducerConsumptionReentry().Error())
 	}
-	if env.ErrorCode != abi.CodeProducerConsumptionReentry {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeProducerConsumptionReentry)
+	if env.HostfuncErrorCode != abi.CodeProducerConsumptionReentry {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeProducerConsumptionReentry)
 	}
 	warnings := p.DrainWarnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], ErrProducerConsumptionReentry().Error()) {
@@ -145,8 +145,8 @@ func TestHandleParseSource_MissingSeam(t *testing.T) {
 	if !strings.Contains(env.Error, "no source parser is available") {
 		t.Errorf("envelope error = %q; want the no-seam-available message", env.Error)
 	}
-	if env.ErrorCode != abi.CodeNoSourceParser {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeNoSourceParser)
+	if env.HostfuncErrorCode != abi.CodeNoSourceParser {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeNoSourceParser)
 	}
 	if len(p.DrainWarnings()) != 1 {
 		t.Errorf("missing-seam failure was not recorded on the warning channel")
@@ -172,8 +172,8 @@ func TestHandleParseSource_SeamErrorSurfaced(t *testing.T) {
 	if env.Error != sentinel.Error() {
 		t.Errorf("envelope error = %q; want the seam's error message %q", env.Error, sentinel.Error())
 	}
-	if env.ErrorCode != abi.CodeParseFailed {
-		t.Errorf("error_code = %q; want the generic %q for an uncoded seam error", env.ErrorCode, abi.CodeParseFailed)
+	if env.HostfuncErrorCode != abi.CodeParseFailed {
+		t.Errorf("hostfunc_error_code = %q; want the generic %q for an uncoded seam error", env.HostfuncErrorCode, abi.CodeParseFailed)
 	}
 	warnings := p.DrainWarnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], sentinel.Error()) {
@@ -199,8 +199,8 @@ func TestHandleParseSource_CodedSeamError(t *testing.T) {
 	p.handleAggregaParseSource(context.Background(), reader, writer, []uint64{7})
 
 	env := lastParseSourceEnvelope(t, writer)
-	if env.ErrorCode != abi.CodeNoParserForFormat {
-		t.Errorf("error_code = %q; want %q from the coded seam error", env.ErrorCode, abi.CodeNoParserForFormat)
+	if env.HostfuncErrorCode != abi.CodeNoParserForFormat {
+		t.Errorf("hostfunc_error_code = %q; want %q from the coded seam error", env.HostfuncErrorCode, abi.CodeNoParserForFormat)
 	}
 	if env.Error != underlying.Error() {
 		t.Errorf("envelope error = %q; want the coded error's underlying message %q", env.Error, underlying.Error())
@@ -232,8 +232,8 @@ func TestHandleParseSource_BadRequest(t *testing.T) {
 	if !strings.Contains(env.Error, "decoding the request failed") {
 		t.Errorf("envelope error = %q; want the decode-failure message", env.Error)
 	}
-	if env.ErrorCode != abi.CodeRequestUndecodable {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeRequestUndecodable)
+	if env.HostfuncErrorCode != abi.CodeRequestUndecodable {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeRequestUndecodable)
 	}
 }
 
@@ -251,8 +251,8 @@ func TestHandleParseSource_UnreadableRequest(t *testing.T) {
 	if !strings.Contains(env.Error, "reading the request from plugin memory failed") {
 		t.Errorf("envelope error = %q; want the unreadable-request message", env.Error)
 	}
-	if env.ErrorCode != abi.CodeRequestUndecodable && env.ErrorCode != abi.CodeRequestUnreadable {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeRequestUnreadable)
+	if env.HostfuncErrorCode != abi.CodeRequestUndecodable && env.HostfuncErrorCode != abi.CodeRequestUnreadable {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeRequestUnreadable)
 	}
 }
 
@@ -284,7 +284,7 @@ func TestHandleParseSource_RequestSlotIsBytesNotText(t *testing.T) {
 
 	if !seamReached {
 		env := lastParseSourceEnvelope(t, writer)
-		t.Fatalf("the request slot was not read as bytes; the handler failed with %q (code %q)", env.Error, env.ErrorCode)
+		t.Fatalf("the request slot was not read as bytes; the handler failed with %q (code %q)", env.Error, env.HostfuncErrorCode)
 	}
 }
 
@@ -332,8 +332,8 @@ func TestParseSourceEnvelope_BothShapesEncodeInTheSameEncoding(t *testing.T) {
 	}
 	gotFailure := wf.written[len(wf.written)-1]
 	wantFailure, err := abi.ParseSourceResponse{
-		Error:     "aggrega_parse_source: no source parser is available in this context",
-		ErrorCode: abi.CodeNoSourceParser,
+		Error:             "aggrega_parse_source: no source parser is available in this context",
+		HostfuncErrorCode: abi.CodeNoSourceParser,
 	}.EncodeCBOR()
 	if err != nil {
 		t.Fatalf("encode the expected failure envelope: %v", err)

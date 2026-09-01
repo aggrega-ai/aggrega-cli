@@ -110,7 +110,7 @@ func TestHandlePackSource_RequestSlotIsBytesNotText(t *testing.T) {
 
 	env := lastSourcePackEnvelope(t, writer)
 	if env.Error != "" {
-		t.Fatalf("the request slot was not read as bytes; the handler failed with %q (code %q)", env.Error, env.ErrorCode)
+		t.Fatalf("the request slot was not read as bytes; the handler failed with %q (code %q)", env.Error, env.HostfuncErrorCode)
 	}
 	if env.SourceProjection == nil || len(env.SourceProjection.Files) != 1 {
 		t.Fatalf("reply projection = %+v; want one packed file", env.SourceProjection)
@@ -141,7 +141,7 @@ func TestHandleReadSourceFile_RequestSlotIsBytesNotText(t *testing.T) {
 
 	env := lastSourceFileEnvelope(t, writer)
 	if env.Error != "" {
-		t.Fatalf("the request slot was not read as bytes; the handler failed with %q (code %q)", env.Error, env.ErrorCode)
+		t.Fatalf("the request slot was not read as bytes; the handler failed with %q (code %q)", env.Error, env.HostfuncErrorCode)
 	}
 	if string(env.Content) != content {
 		t.Errorf("reply content = %q; want %q", env.Content, content)
@@ -207,8 +207,8 @@ func TestPackSourceEnvelope_BothShapesEncodeInTheSameEncoding(t *testing.T) {
 	}
 	gotFailure := wf.written[len(wf.written)-1]
 	wantFailure, err := abi.SourcePackResponse{
-		Error:     "aggrega_pack_source: no acquired source is available in this context",
-		ErrorCode: abi.CodeSourceRootUnavailable,
+		Error:             "aggrega_pack_source: no acquired source is available in this context",
+		HostfuncErrorCode: abi.CodeSourceRootUnavailable,
 	}.EncodeCBOR()
 	if err != nil {
 		t.Fatalf("encode the expected failure envelope: %v", err)
@@ -263,8 +263,8 @@ func TestReadSourceFileEnvelope_BothShapesEncodeInTheSameEncoding(t *testing.T) 
 	}
 	gotFailure := wf.written[len(wf.written)-1]
 	wantFailure, err := abi.SourceFileResponse{
-		Error:     "aggrega_read_source_file: no acquired source is available in this context",
-		ErrorCode: abi.CodeSourceRootUnavailable,
+		Error:             "aggrega_read_source_file: no acquired source is available in this context",
+		HostfuncErrorCode: abi.CodeSourceRootUnavailable,
 	}.EncodeCBOR()
 	if err != nil {
 		t.Fatalf("encode the expected failure envelope: %v", err)
@@ -296,8 +296,8 @@ func TestHandlePackSource_BadRequest(t *testing.T) {
 	if env.SourceProjection != nil {
 		t.Fatalf("a malformed request produced a projection: %+v", env.SourceProjection)
 	}
-	if env.ErrorCode != abi.CodeRequestUndecodable {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeRequestUndecodable)
+	if env.HostfuncErrorCode != abi.CodeRequestUndecodable {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeRequestUndecodable)
 	}
 }
 
@@ -317,8 +317,8 @@ func TestHandleReadSourceFile_BadRequest(t *testing.T) {
 	if len(env.Content) != 0 {
 		t.Fatalf("a malformed request produced content: %q", env.Content)
 	}
-	if env.ErrorCode != abi.CodeRequestUndecodable {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeRequestUndecodable)
+	if env.HostfuncErrorCode != abi.CodeRequestUndecodable {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeRequestUndecodable)
 	}
 }
 
@@ -332,8 +332,8 @@ func TestHandlePackSource_UnreadableRequest(t *testing.T) {
 	p.handleAggregaPackSource(&fakeMemoryReader{errOnOffset: 7}, writer, []uint64{7})
 
 	env := lastSourcePackEnvelope(t, writer)
-	if env.ErrorCode != abi.CodeRequestUnreadable {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeRequestUnreadable)
+	if env.HostfuncErrorCode != abi.CodeRequestUnreadable {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeRequestUnreadable)
 	}
 }
 
@@ -347,7 +347,7 @@ func TestHandleReadSourceFile_UnreadableRequest(t *testing.T) {
 	p.handleAggregaReadSourceFile(&fakeMemoryReader{errOnOffset: 7}, writer, []uint64{7})
 
 	env := lastSourceFileEnvelope(t, writer)
-	if env.ErrorCode != abi.CodeRequestUnreadable {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeRequestUnreadable)
+	if env.HostfuncErrorCode != abi.CodeRequestUnreadable {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeRequestUnreadable)
 	}
 }

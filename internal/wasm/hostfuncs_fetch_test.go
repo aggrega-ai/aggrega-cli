@@ -140,8 +140,8 @@ func TestHandleFetchExternalInputNilService(t *testing.T) {
 			t.Errorf("error envelope missing %q: %s", want, env.Error)
 		}
 	}
-	if env.ErrorCode != abi.CodeFetchInputUnavailable {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeFetchInputUnavailable)
+	if env.HostfuncErrorCode != abi.CodeFetchInputUnavailable {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeFetchInputUnavailable)
 	}
 	warnings := p.Warnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "external inputs are not available in this context") {
@@ -165,8 +165,8 @@ func TestHandleFetchExternalInputFetchError(t *testing.T) {
 	if !strings.Contains(env.Error, "https://example.com/y") || !strings.Contains(env.Error, "not pinned") {
 		t.Errorf("error envelope must carry the service's message verbatim; got %q", env.Error)
 	}
-	if env.ErrorCode != abi.CodeFetchFailed {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeFetchFailed)
+	if env.HostfuncErrorCode != abi.CodeFetchFailed {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeFetchFailed)
 	}
 	warnings := p.Warnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "not pinned") {
@@ -193,8 +193,8 @@ func TestHandleFetchExternalInputMemoryReadFailure(t *testing.T) {
 	if !strings.Contains(env.Error, "reading the URL from plugin memory failed") {
 		t.Errorf("read failure must still deliver an error envelope; got %+v", env)
 	}
-	if env.ErrorCode != abi.CodeFetchRequestUnreadable {
-		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeFetchRequestUnreadable)
+	if env.HostfuncErrorCode != abi.CodeFetchRequestUnreadable {
+		t.Errorf("hostfunc_error_code = %q; want %q", env.HostfuncErrorCode, abi.CodeFetchRequestUnreadable)
 	}
 }
 

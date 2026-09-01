@@ -518,8 +518,8 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 	}
 	if err := wasm.GuestReturnedError(export, wasm.GuestFailure{
 		Message:   out.Error,
-		Code:      out.ErrorCode,
-		ShortCode: out.ErrorShortCode,
+		Code:      out.ConditionCode,
+		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
@@ -704,8 +704,8 @@ func (e *Engine) invokeValidate(ctx context.Context, export string, input render
 	}
 	if err := wasm.GuestReturnedError(export, wasm.GuestFailure{
 		Message:   out.Error,
-		Code:      out.ErrorCode,
-		ShortCode: out.ErrorShortCode,
+		Code:      out.ConditionCode,
+		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return nil, fmt.Errorf("wasmengine: %w", err)
 	}
@@ -807,8 +807,8 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 	}
 	if err := wasm.GuestReturnedError(NameBoundExport, wasm.GuestFailure{
 		Message:   out.Error,
-		Code:      out.ErrorCode,
-		ShortCode: out.ErrorShortCode,
+		Code:      out.ConditionCode,
+		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
@@ -867,8 +867,8 @@ func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) 
 	}
 	if err := wasm.GuestReturnedError(wasm.LinkPublishExport, wasm.GuestFailure{
 		Message:   out.Error,
-		Code:      out.ErrorCode,
-		ShortCode: out.ErrorShortCode,
+		Code:      out.ConditionCode,
+		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
@@ -914,8 +914,8 @@ func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) 
 	}
 	if err := wasm.GuestReturnedError(wasm.LinkResolveExport, wasm.GuestFailure{
 		Message:   out.Error,
-		Code:      out.ErrorCode,
-		ShortCode: out.ErrorShortCode,
+		Code:      out.ConditionCode,
+		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}

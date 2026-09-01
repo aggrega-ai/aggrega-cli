@@ -63,14 +63,15 @@ func FailureOf(err error) GuestFailure {
 // RenderNodeFailure is the render_node output a guest returns when it could not
 // complete: the in-band failure derived from err and nothing else.
 //
-// A failing render emits no files, and the four constructors here exist so no
-// guest spells that envelope for itself. Each guest owns its own exports, so the
+// A failing render emits no files, and the constructors here — one per output
+// shape that declares the failure channel — exist so no guest spells that
+// envelope for itself. Each guest owns its own exports, so the
 // alternative is one copy of this shape per guest per export — and a copy that
 // forgot a field would drop the identity for that one export while every other
 // export carried it, which is the shape a green proof does not show.
 func RenderNodeFailure(err error) RenderNodeOutput {
 	f := FailureOf(err)
-	return RenderNodeOutput{Error: f.Message, ErrorCode: f.Code, ErrorShortCode: f.ShortCode}
+	return RenderNodeOutput{Error: f.Message, ConditionCode: f.Code, ConditionShortCode: f.ShortCode}
 }
 
 // ValidateNodeFailure is the validate_node_input output a guest returns when it
@@ -78,14 +79,14 @@ func RenderNodeFailure(err error) RenderNodeOutput {
 // and reporting findings as diagnostics.
 func ValidateNodeFailure(err error) ValidateNodeOutput {
 	f := FailureOf(err)
-	return ValidateNodeOutput{Error: f.Message, ErrorCode: f.Code, ErrorShortCode: f.ShortCode}
+	return ValidateNodeOutput{Error: f.Message, ConditionCode: f.Code, ConditionShortCode: f.ShortCode}
 }
 
 // AssembleBoundaryFailure is the assemble_boundary output a guest returns when it
 // could not complete: the in-band failure derived from err and no assembled files.
 func AssembleBoundaryFailure(err error) AssembleBoundaryOutput {
 	f := FailureOf(err)
-	return AssembleBoundaryOutput{Error: f.Message, ErrorCode: f.Code, ErrorShortCode: f.ShortCode}
+	return AssembleBoundaryOutput{Error: f.Message, ConditionCode: f.Code, ConditionShortCode: f.ShortCode}
 }
 
 // NameBoundFailure is the name_bound output a guest returns when the question
@@ -93,21 +94,21 @@ func AssembleBoundaryFailure(err error) AssembleBoundaryOutput {
 // verdict.
 func NameBoundFailure(err error) NameBoundOutput {
 	f := FailureOf(err)
-	return NameBoundOutput{Error: f.Message, ErrorCode: f.Code, ErrorShortCode: f.ShortCode}
+	return NameBoundOutput{Error: f.Message, ConditionCode: f.Code, ConditionShortCode: f.ShortCode}
 }
 
 // LinkPublishFailure is the link_publish output a guest returns when it could not
 // publish the link: the in-band failure derived from err, no handle and no wiring.
 func LinkPublishFailure(err error) LinkPublishOutput {
 	f := FailureOf(err)
-	return LinkPublishOutput{Error: f.Message, ErrorCode: f.Code, ErrorShortCode: f.ShortCode}
+	return LinkPublishOutput{Error: f.Message, ConditionCode: f.Code, ConditionShortCode: f.ShortCode}
 }
 
 // LinkResolveFailure is the link_resolve output a guest returns when it could not
 // resolve the link: the in-band failure derived from err and no wiring.
 func LinkResolveFailure(err error) LinkResolveOutput {
 	f := FailureOf(err)
-	return LinkResolveOutput{Error: f.Message, ErrorCode: f.Code, ErrorShortCode: f.ShortCode}
+	return LinkResolveOutput{Error: f.Message, ConditionCode: f.Code, ConditionShortCode: f.ShortCode}
 }
 
 // failureMessage flattens err's chain into the one message that crosses the

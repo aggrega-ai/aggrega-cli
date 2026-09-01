@@ -145,8 +145,11 @@ var enumSources = map[string]enumSource{
 	// Host-function error codes — the single source of the machine-matchable
 	// wire-code vocabulary, generated into the aggrega-abi Go/Rust/TS codec from
 	// one schema so the three languages share one closed set. The host sets a
-	// code as error_code on a host-function reply envelope when a callback fails;
-	// a guest branches on it without parsing the message.
+	// code as hostfunc_error_code on a host-function reply envelope when a
+	// callback fails; a guest branches on it without parsing the message. The key
+	// names this catalog rather than failure in general, because a socket output
+	// travelling the other way carries a halting condition's identifiers under
+	// condition_code and condition_short_code, which are a different vocabulary.
 	"hostfunc_error_enums_gen.go": {
 		schema:     schemas.WasmHostfuncErrorV1alpha1,
 		schemaFile: "wasm-hostfunc-error-v1alpha1.schema.json",
@@ -282,11 +285,17 @@ const diagnosticSeverityEnumDoc = "These consts are the single source of the sha
 // error-code enum targets, so the Go/Rust/TS files carry one explanation.
 const hostfuncErrorEnumDoc = "These consts are the single source of the host-function error-code wire\n" +
 	"vocabulary, shared across every host-function reply envelope. The host sets\n" +
-	"one as error_code beside the free-form error message when a callback fails;\n" +
-	"a guest branches on the code without parsing the message, tolerating an\n" +
+	"one as hostfunc_error_code beside the free-form error message when a callback\n" +
+	"fails; a guest branches on the code without parsing the message, tolerating an\n" +
 	"absent code (older host) or an unrecognized one (newer host) by falling back\n" +
 	"to the message. Generated into Go, Rust, and TypeScript from one schema so\n" +
-	"the three codecs share one closed vocabulary."
+	"the three codecs share one closed vocabulary.\n" +
+	"\n" +
+	"This closed catalog is a different vocabulary from the halting conditions the\n" +
+	"compiler registers. A guest reporting a condition it raised puts that\n" +
+	"condition's own identifiers on its socket output, under condition_code and\n" +
+	"condition_short_code, and those values are not members of this set. Each key\n" +
+	"names the vocabulary it draws from, so neither can be read as the general case."
 
 // codecTarget binds an output filename to a multi-type codec emission: the
 // embedded `$defs`-shaped schema, the schema file basename for the generated
