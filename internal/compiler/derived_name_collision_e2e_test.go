@@ -161,6 +161,145 @@ func TestDerivedNames_DeclaringMovesNoEmittedByte(t *testing.T) {
 	pipelinetest.AssertDeterministic(t, derivedNameInput("distinct"))
 }
 
+// artifactsNameInput compiles the artifacts-path fixture for one of its two
+// releases. It is a second pair of releases over the SAME catalog as the sourced
+// pair above, which is the point: one component, one recipe and one provider
+// Plugin serve both, so the two paths are compared over one corpus rather than
+// over two that could drift apart.
+func artifactsNameInput(variant string) pipelinetest.Input {
+	return pipelinetest.Input{
+		ReleasePath:  "testdata/derived-name-collision/release-artifacts-" + variant + ".yaml",
+		CatalogPaths: []string{"testdata/derived-name-collision/catalog/base"},
+	}
+}
+
+// TestArtifactsNames_OneAttachmentOnTwoHostsNamingOneResourceHalts is the
+// artifacts path's form of the case above, and the shape is the one that reaches
+// it in ordinary authoring: ONE artifacts-delivering FeatureRecipe, attached under
+// ONE instance key, to TWO components in one boundary.
+//
+// An artifact's output filename is the author's map key verbatim, so the emitted
+// paths differ only by the host directory and the assembled-path check cannot see
+// a conflict — the paths genuinely differ. What collides is the name INSIDE the
+// two bodies, which is one authored literal reaching two hosts.
+//
+// The names in an artifact's body are authored rather than derived by the render,
+// and that distinction deliberately does not change the answer: two resources
+// reaching one name in one namespace is a cluster overwrite whichever surface the
+// name came from, so the emitted document is compared the same way a chart's
+// rendered document is. The halt must name BOTH hosts, because renaming either is
+// the author's remedy and naming one would assert a choice the compiler has not
+// made.
+func TestArtifactsNames_OneAttachmentOnTwoHostsNamingOneResourceHalts(t *testing.T) {
+	t.Parallel()
+
+	_, err := pipelinetest.BuildE(t, artifactsNameInput("collide"))
+	if err == nil {
+		t.Fatal("one artifacts attachment on two hosts emitting one resource name built cleanly; want a halt naming both")
+	}
+	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
+		t.Fatalf("the build failed for a different reason than the name collision: %v", err)
+	}
+
+	// Read through the wrapped set for the reason the sourced case does: the
+	// report's own text names only what the findings have in common.
+	var envelope *cerrors.CompilerError
+	if !errors.As(err, &envelope) {
+		t.Fatalf("the halt is not a categorised diagnostic: %v", err)
+	}
+	joined, isMulti := envelope.Wrap.(interface{ Unwrap() []error })
+	if !isMulti {
+		t.Fatalf("the report wraps a single error rather than the set the rule raised: %T", envelope.Wrap)
+	}
+	findings := joined.Unwrap()
+	if len(findings) != 2 {
+		t.Fatalf("expected one finding per contributing host, got %d: %v", len(findings), findings)
+	}
+	texts := make([]string, 0, len(findings))
+	for _, f := range findings {
+		texts = append(texts, f.Error())
+	}
+	whole := strings.Join(texts, "\n")
+
+	for _, want := range []string{
+		// The colliding name, byte-identical to the literal in the artifact body,
+		// so it doubles as the term to search that body for.
+		`"aux-policy"`,
+		// The same key space the sourced path declares into — the fixed prefix,
+		// then the kind and the namespace that bound a Kubernetes resource name.
+		`key space "resource-names:NetworkPolicy--default"`,
+		// Both hosts, under one attachment key, in the author's own words.
+		`derived by component "alpha", carrying attachment "aux"`,
+		`derived by component "beta", carrying attachment "aux"`,
+	} {
+		if !strings.Contains(whole, want) {
+			t.Errorf("the halt does not carry %q, so the author cannot act on it\ngot:\n%s", want, whole)
+		}
+	}
+	t.Logf("the artifacts collision halts with %d finding(s):\n%s", len(texts), whole)
+}
+
+// TestArtifactsNames_ComposingTheHostBuildsWithDistinctNames is the half that
+// makes the halt above answerable, and it is the whole justification for adding a
+// refusal: the author has a remedy, demonstrated rather than asserted.
+//
+// The FeatureRecipe is the same shape as the colliding one and differs only in
+// that its body composes the host component and the attachment key into the
+// resource name — the two fields the template context contract states an
+// `artifacts:` body receives. One authored body then reaches two hosts as two
+// distinct names, and the build stands.
+//
+// Without this case the increment would have added a refusal with no demonstrated
+// way out, which is what makes a halt indefensible rather than loud.
+func TestArtifactsNames_ComposingTheHostBuildsWithDistinctNames(t *testing.T) {
+	t.Parallel()
+
+	res := pipelinetest.Build(t, artifactsNameInput("distinct"))
+
+	var policies []string
+	for _, body := range res.Artifacts {
+		if !strings.Contains(string(body), "kind: NetworkPolicy") {
+			continue
+		}
+		policies = append(policies, resourceNamesOf(string(body))...)
+	}
+	sort.Strings(policies)
+	if len(policies) != 2 {
+		t.Fatalf("the fixture emitted %d NetworkPolicy name(s), want 2: %v", len(policies), policies)
+	}
+	// Two distinct names from ONE authored body is the remedy working. Equality
+	// here would mean the composition never reached the body, and the case would
+	// then prove nothing about the remedy while still passing on the count.
+	if policies[0] == policies[1] {
+		t.Fatalf("both hosts emitted the NetworkPolicy name %q; the composition did not reach the artifact body, so this case no longer demonstrates the remedy", policies[0])
+	}
+	// Each name carries its own host, which is what makes the two distinct rather
+	// than merely different — a body that composed some other varying value would
+	// satisfy the inequality above without giving the author a name they can
+	// predict.
+	for _, host := range []string{"alpha", "beta"} {
+		found := false
+		for _, p := range policies {
+			if strings.HasPrefix(p, host+"-") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no emitted NetworkPolicy name opens with the host %q; got %v", host, policies)
+		}
+	}
+	t.Logf("composing the host emits two distinct names: %v", policies)
+}
+
+// TestArtifactsNames_DeclaringMovesNoEmittedByte is the artifacts path's form of
+// the property beside it: the declaration reports what the output already says and
+// changes nothing about what the output is.
+func TestArtifactsNames_DeclaringMovesNoEmittedByte(t *testing.T) {
+	t.Parallel()
+
+	pipelinetest.AssertDeterministic(t, artifactsNameInput("distinct"))
+}
+
 // resourceNamesOf collects every metadata.name a rendered body carries, read by
 // scanning lines rather than by parsing, because the property under test is what
 // the emitted TEXT says.

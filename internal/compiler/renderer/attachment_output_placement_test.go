@@ -6,6 +6,7 @@ package renderer_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -94,10 +95,12 @@ containers:
 	}
 }
 
-// artifactsOnlyFR is a FeatureRecipe declaring artifacts: and nothing else. The
-// artifact's output filename is the author's map key verbatim, so nothing in the
-// emitted name separates one host's copy from another's — the placement is the
-// only thing that can.
+// artifactsOnlyFR is a FeatureRecipe declaring artifacts: and nothing else,
+// naming its resource with a literal. The artifact's output filename is the
+// author's map key verbatim, so nothing in the emitted PATH separates one host's
+// copy from another's — the placement directory is the only thing that does. The
+// name inside the two bodies is therefore identical, which is the collision the
+// case below refuses.
 func artifactsOnlyFR(featureType string) *types.FeatureRecipe {
 	art := types.OrderedMap[types.ArtifactEntry]{}
 	art.Set("policy.yaml", types.ArtifactEntry{Inline: `apiVersion: networking.k8s.io/v1
@@ -117,28 +120,103 @@ spec:
 	}
 }
 
-// TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost is the
+// artifactsHostComposedFR is the same FeatureRecipe with the remedy applied: the
+// host component and the attachment key are composed into the resource name, so
+// one authored body reaches each host under a name of its own.
+//
+// It exists so the placement property keeps a two-host proof. Placement is a
+// property of the attachment rather than of what its body names, so it needs a
+// two-host corpus that BUILDS — and after the refusal below, a two-host corpus
+// builds only when its names are distinct.
+func artifactsHostComposedFR(featureType string) *types.FeatureRecipe {
+	art := types.OrderedMap[types.ArtifactEntry]{}
+	art.Set("policy.yaml", types.ArtifactEntry{Inline: `apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .context.instance_id }}-{{ .attachment_name }}-policy
+spec:
+  podSelector: {}
+`})
+	return &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "aux-fr", Version: "1.0.0"},
+		Spec: types.FeatureRecipeSpec{
+			Capability: "helm",
+			Implements: featureType,
+			Artifacts:  art,
+		},
+	}
+}
+
+// TestRenderAll_ArtifactsAttachmentOnTwoComponentsWithOneNameHalts is the
 // end-to-end proof that one instance name attached to two components in one
-// boundary, bound to an artifacts-only FeatureRecipe, builds — because each
-// attachment's output is placed under the component hosting it.
+// boundary, bound to an artifacts-only FeatureRecipe whose body names its
+// resource with a literal, is REFUSED.
+//
+// 🔴 The assertion here was inverted deliberately, and a reader meeting the
+// change should not read it as a regression. This case previously required the
+// colliding corpus to BUILD, and the reason it gave was a property of the reader
+// rather than of the authoring surface: the derived-name check compared names
+// read out of the documents a render produced, and an artifacts body was not one
+// of those, so nothing looked inside it. Nothing looking is a blind spot, not a
+// guarantee — the two hosts each emit a NetworkPolicy under one name, and in the
+// cluster the second overwrites the first while the build reports success.
+//
+// The emitted paths differ only by the host directory, so the assembled-path
+// check cannot see the conflict: those paths genuinely differ. What conflicts is
+// the name inside the bodies, and comparing it is what this now covers.
+//
+// The names in an artifacts body are authored rather than derived by the render.
+// That deliberately does not change the answer, because two resources reaching
+// one name in one namespace is a cluster overwrite whichever surface the name
+// came from — the identical collision through a chart template already halts, and
+// a difference in outcome there would be a difference in what the reader happened
+// to look at rather than in what the output does.
+//
+// The remedy is on the authoring surface and it is proven beside this case rather
+// than asserted: an artifacts body is a template and receives the host component
+// and the attachment key, so a name that has to differ per host is composed from
+// them. See the placement case below, which builds the composed form over the same
+// two hosts.
+func TestRenderAll_ArtifactsAttachmentOnTwoComponentsWithOneNameHalts(t *testing.T) {
+	t.Parallel()
+
+	const (
+		instance    = "aux"
+		featureType = "core/aux"
+	)
+	input := placementHostedInput([]string{"api", "worker"}, instance, featureType)
+
+	_, err := renderer.RenderAll(context.Background(), input,
+		placementLookup(artifactsOnlyFR(featureType), featureType), testHelmFactory(t))
+	if err == nil {
+		t.Fatal("one literal resource name reaching two hosts built cleanly; want a refusal naming both")
+	}
+	// Asserted against the collision specifically rather than against any failure:
+	// a corpus that fell over for another reason would not prove the names were
+	// what stopped it.
+	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
+		t.Fatalf("the render failed for a different reason than the name collision: %v", err)
+	}
+	t.Logf("the colliding artifacts corpus is refused: %v", err)
+}
+
+// TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost pins the
+// placement of a two-host artifacts attachment: each attachment's output lands
+// under the component hosting it, and the directory is what separates the two
+// copies because the filename is the author's map key verbatim.
 //
 // One instance key on two components is ordinary authoring, and a cascade that
 // mints one instance name across many components by design produces it without
-// the author choosing it. An artifact's filename is the author's map key
-// verbatim, so the emitted name cannot separate the two copies; the directory is
-// what does, and it names the host.
+// the author choosing it — so the placement has to keep working for exactly that
+// shape.
 //
-// What this case rests on is a property of the READER rather than a principle
-// about authoring: the derived-name check compares names read out of the
-// documents a render itself produced, and an artifacts body is not one of those
-// — it is emitted as authored, with only provenance spliced in. So nothing
-// compares the names inside one, and this build succeeds.
-//
-// That is a gap rather than a guarantee, and the distinction matters to anyone
-// changing this test. An artifacts body is a template: it receives the host
-// component and the attachment key, so an author who needs a name to differ per
-// host can compose one. This case must therefore not be read as establishing
-// that two authored names may collide — only that today nothing looks.
+// It uses the host-composed body rather than the literal one, and that is the
+// substance rather than an incidental choice: placement is a property of the
+// attachment and not of what its body names, so proving it needs a two-host
+// corpus that builds — and a two-host corpus builds when its resource names are
+// distinct. The paths asserted here are the same paths the literal-named corpus
+// produced before it was refused, which is what makes this the placement
+// behaviour unchanged rather than a new one.
 func TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost(t *testing.T) {
 	t.Parallel()
 
@@ -149,9 +227,9 @@ func TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost(t *test
 	input := placementHostedInput([]string{"api", "worker"}, instance, featureType)
 
 	result, err := renderer.RenderAll(context.Background(), input,
-		placementLookup(artifactsOnlyFR(featureType), featureType), testHelmFactory(t))
+		placementLookup(artifactsHostComposedFR(featureType), featureType), testHelmFactory(t))
 	if err != nil {
-		t.Fatalf("one instance name on two components must build, got: %v", err)
+		t.Fatalf("one instance name on two components with distinct resource names must build, got: %v", err)
 	}
 
 	keys := fileKeys(result.Files)

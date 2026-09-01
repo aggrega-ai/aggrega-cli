@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: aux-art-fixed-helm, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: feature.id/aux-art-fixed
+  # The resource name is written as a literal, so every host this attachment lands
+  # on emits a NetworkPolicy under the same name. Only the output directory differs.
+  artifacts:
+    policy.yaml: |
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: aux-policy
+      spec:
+        podSelector: {}

@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: artifacts-collide-app
+  version: "1.0.0"
+spec:
+  components:
+    alpha:
+      type: core/host
+      features:
+        aux:
+          type: feature.id/aux-art-fixed
+    beta:
+      type: core/host
+      features:
+        aux:
+          type: feature.id/aux-art-fixed

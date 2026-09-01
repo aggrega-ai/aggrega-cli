@@ -102,6 +102,13 @@ const defaultNamespace = "default"
 // already the answer to every Kubernetes-specific question — which kind, which
 // namespace, which field is the name.
 //
+// The same holds for a name an author wrote directly into an artifact body,
+// which reaches this reader on identical terms: it is a name inside an emitted
+// document, and this reads emitted documents. Whether the render derived a name
+// or carried it through as authored is not a distinction available here and not
+// one the comparison needs — two resources reaching one name in one kind and
+// namespace displace each other in the cluster either way.
+//
 // # The declaration mirrors the emitted set, and moves none of it
 //
 // It is derived from the files the render is about to hand back rather than from

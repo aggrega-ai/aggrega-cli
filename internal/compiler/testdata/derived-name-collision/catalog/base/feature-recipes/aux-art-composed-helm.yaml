@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: aux-art-composed-helm, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: feature.id/aux-art-composed
+  # The remedy: the host component and the attachment key are composed into the
+  # resource name, so each host emits a distinctly named NetworkPolicy from one
+  # authored body.
+  artifacts:
+    policy.yaml: |
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: {{ .context.instance_id }}-{{ .attachment_name }}-policy
+      spec:
+        podSelector: {}

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: artifacts-name-release-distinct
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: artifacts-distinct-app
+  manifest: derived-name-manifest
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        alpha: {}
+        beta: {}

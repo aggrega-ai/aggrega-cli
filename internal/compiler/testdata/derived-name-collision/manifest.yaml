@@ -13,3 +13,5 @@ spec:
         feature.id/aux-a: aux-a-helm:1.0.0
         feature.id/aux-b: aux-b-helm:1.0.0
         feature.id/aux-c: aux-c-helm:1.0.0
+        feature.id/aux-art-fixed: aux-art-fixed-helm:1.0.0
+        feature.id/aux-art-composed: aux-art-composed-helm:1.0.0
