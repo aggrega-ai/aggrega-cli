@@ -123,10 +123,22 @@ spec:
 // attachment's output is placed under the component hosting it.
 //
 // One instance key on two components is ordinary authoring, and a cascade that
-// mints one instance name across many components leaves an author no way to
-// write anything else. An artifact's filename is the author's map key verbatim,
-// so the emitted name cannot separate the two copies; the directory is what
-// does, and it names the host.
+// mints one instance name across many components by design produces it without
+// the author choosing it. An artifact's filename is the author's map key
+// verbatim, so the emitted name cannot separate the two copies; the directory is
+// what does, and it names the host.
+//
+// What this case rests on is a property of the READER rather than a principle
+// about authoring: the derived-name check compares names read out of the
+// documents a render itself produced, and an artifacts body is not one of those
+// — it is emitted as authored, with only provenance spliced in. So nothing
+// compares the names inside one, and this build succeeds.
+//
+// That is a gap rather than a guarantee, and the distinction matters to anyone
+// changing this test. An artifacts body is a template: it receives the host
+// component and the attachment key, so an author who needs a name to differ per
+// host can compose one. This case must therefore not be read as establishing
+// that two authored names may collide — only that today nothing looks.
 func TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost(t *testing.T) {
 	t.Parallel()
 
