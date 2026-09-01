@@ -6,7 +6,7 @@ metadata:
   version: "1.0.0"
 spec:
   aggregate: ../aggregates/compose-synthesized.yaml
-  manifest: ../manifests/compose-sourced.yaml
+  manifest: ../manifests/compose-sourced-with-artifacts.yaml
   boundaries:
     app:
       directory: ./dist/app

@@ -27,10 +27,23 @@ import (
 // `volumes:` key. Compose carries provenance as service labels, so that fragment
 // has no site for it; the build emits it unchanged and names it in an advisory.
 // The pair covers both outcomes of the placer in one build.
+//
+// The Recipes below carry their own identities and their own Manifest rather than
+// reusing the artifact-less compose-sourced pair beside them. Two reasons, and the
+// first is a hard constraint: catalog identities are unique per directory, so a
+// second Recipe answering to a name already taken refuses the whole catalog for
+// every consumer of this shared fixture, not only for this test. The second is
+// that binding through a Manifest naming these identities is what makes the
+// resolution observable — the assertion on recipe-uri below reads it back out of
+// the emitted document.
 const (
 	composeArtifactVariantRelease = "testdata/fullstack-app/releases/compose-sourced-with-artifacts.yaml"
 	composeArtifactVariantRecipes = "testdata/fullstack-app/catalog/recipes/compose-sourced-with-artifacts"
 	composeArtifactAssembledFile  = "dist/app/compose/docker-compose.yaml"
+
+	// The identity the db node's Recipe resolves to, asserted whole rather than by
+	// prefix; see the assertion site for why a prefix would not discriminate.
+	composeArtifactVariantRecipeURI = "compose-db-sourced-with-artifacts:1.0.0"
 )
 
 // composeServiceLabels decodes an assembled compose document into per-service
@@ -131,8 +144,13 @@ func TestComposeArtifactService_CarriesTheSameProvenanceAsTheSourcedServiceBesid
 	if fromArtifact["aggrega.ai/component-id"] != "db" {
 		t.Errorf("the artifact-supplied service must carry the emitting node's identity; component-id = %q", fromArtifact["aggrega.ai/component-id"])
 	}
-	if !strings.HasPrefix(fromArtifact["aggrega.ai/recipe-uri"], "compose-db-sourced:") {
-		t.Errorf("the artifact-supplied service must carry the producing Recipe's identity; recipe-uri = %q", fromArtifact["aggrega.ai/recipe-uri"])
+	// Pinned to the whole identity rather than to a prefix, and that is the point:
+	// the artifact-less Recipe beside this one carries a name this Recipe's name
+	// merely EXTENDS, so a prefix check is satisfied by either. Only the exact
+	// identity establishes that the artifacts-declaring Recipe is the one that
+	// rendered — which is the premise every assertion above rests on.
+	if got := fromArtifact["aggrega.ai/recipe-uri"]; got != composeArtifactVariantRecipeURI {
+		t.Errorf("the artifact-supplied service must carry the producing Recipe's identity; recipe-uri = %q, want %q", got, composeArtifactVariantRecipeURI)
 	}
 
 	// The unstampable half of the same build: the volumes-only fragment reaches

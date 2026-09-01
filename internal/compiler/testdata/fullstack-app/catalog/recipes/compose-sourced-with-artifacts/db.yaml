@@ -1,7 +1,7 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
-  name: compose-db-sourced
+  name: compose-db-sourced-with-artifacts
   version: "1.0.0"
 spec:
   capability: compose
