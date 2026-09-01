@@ -97,6 +97,28 @@ func TestNodeProducerLabel(t *testing.T) {
 	}
 }
 
+// TestNodeOutputSegment holds the directory a nesting assembler places a
+// contributor's files under to the name that contributor carries in the author's
+// input. The boundary-feature row is the load-bearing one: the per-node key it
+// is derived from opens with an angle bracket and joins with a colon, and a
+// directory named for that key would be refused on some platforms and would have
+// to be escaped in a URL.
+func TestNodeOutputSegment(t *testing.T) {
+	t.Parallel()
+
+	if got, want := nodeOutputSegment("api"), "api"; got != want {
+		t.Errorf("nodeOutputSegment(api) = %q, want %q", got, want)
+	}
+	if got, want := nodeOutputSegment(boundaryFRNodePrefix+"logging"), "logging"; got != want {
+		t.Errorf("nodeOutputSegment(boundary feature) = %q, want %q", got, want)
+	}
+	for _, bad := range []string{"<", ">", ":"} {
+		if strings.Contains(nodeOutputSegment(boundaryFRNodePrefix+"logging"), bad) {
+			t.Errorf("the segment for a boundary feature carries %q, which a path refuses on some platforms", bad)
+		}
+	}
+}
+
 // TestAssembledFileSetIsTheOnlyPlacementPath keeps the attribution reachable from
 // every producer. Two properties hold it in place:
 //

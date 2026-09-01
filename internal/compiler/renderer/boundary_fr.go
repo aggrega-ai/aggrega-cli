@@ -27,7 +27,13 @@
 //      FR Intermediate=true files into the per-(path, provider) dispatch
 //      group at the FR's evaluated path (using fr.Spec.Capability for the
 //      provider component of the dispatch key). Intermediate=false files
-//      land under <boundary_directory>/<provider>/features/<instance>/.
+//      land under <boundary_directory>/<provider>/features/<instance>/,
+//      and a provider whose assembler nests each contributor separately
+//      places that whole shape inside the attachment's own sub-directory
+//      first — <boundary_directory>/<provider>/<nest_segment>/<instance>/.
+//      The sub-directory is named for the attachment instance, never for
+//      the synthetic node id below: that id is a dispatch marker, and the
+//      characters it opens and joins with are refused in a path.
 //   4. Consumer resolution: when a per-component consumer references
 //      .context.uses.<feat>.<provided> for a feat whose FR has
 //      executionScope: boundary, the inject-rehydration path consults

@@ -576,6 +576,28 @@ func nodeProducerLabel(nodeID string) string {
 	return kind + " " + instance
 }
 
+// nodeOutputSegment is the directory a nesting assembler's dispatch group places
+// one contributor's files under: the name that contributor carries in the
+// author's own input.
+//
+// A component's per-node key already is that name, so it passes through. A
+// boundary-scope feature's key is a marker the compiler built for its own
+// dispatch, and the characters that marker opens and joins with — angle
+// brackets, a colon — are refused in a path on some platforms and have to be
+// escaped in a URL, so the marker itself can never be a directory name. What
+// distinguishes one boundary-scope attachment from another at the boundary the
+// group assembles is the instance name alone, because the boundary IS the
+// enclosing directory here: the marker carries nothing else a reader of the
+// output could act on.
+//
+// It reads the name through the same classification a diagnostic does, so the
+// directory a reader opens and the name a finding calls that contributor by
+// cannot come to disagree.
+func nodeOutputSegment(nodeID string) string {
+	_, instance := nodeProducerKind(nodeID)
+	return instance
+}
+
 func joinWithAnd(items []string) string {
 	switch len(items) {
 	case 0:
@@ -2212,11 +2234,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			}
 			// Node files go under the per-node sub-directory the assembler named
 			// (or flat if it says no nesting). The segment is the assembler's own
-			// vocabulary: the orchestrator joins it with the node identity and
-			// supplies only the default for an assembler that names none, so no
-			// target's directory vocabulary is fixed here. It is resolved once per
-			// dispatch group rather than once per node, so an out-of-bound segment
-			// is refused even for a group that placed no per-node files at all.
+			// vocabulary: the orchestrator joins it with the contributor's
+			// authoring-level name and supplies only the default for an assembler
+			// that names none, so no target's directory vocabulary is fixed here.
+			// The name rather than the per-node key, because a boundary-scope
+			// feature's key is a dispatch marker whose characters a path refuses.
+			// The segment is resolved once per dispatch group rather than once per
+			// node, so an out-of-bound segment is refused even for a group that
+			// placed no per-node files at all.
 			// These per-node fragments carry no producer format at this nesting
 			// position, so their records leave Format empty.
 			nestPrefix := ""
@@ -2233,7 +2258,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			for nodeID, nodeFiles := range pd.files {
 				nodeRel := ""
 				if nesting.PerNode {
-					nodeRel = nestPrefix + nodeID + "/"
+					nodeRel = nestPrefix + nodeOutputSegment(nodeID) + "/"
 				}
 				producer := nodeProducerLabel(nodeID)
 				for p, c := range nodeFiles {
