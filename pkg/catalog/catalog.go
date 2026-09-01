@@ -652,7 +652,10 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // the now-fully-populated SchemaLibraries map for cross-document $ref
 // expansion (Component / Feature only), collects every failure, and
 // returns a single aggregated CatalogError when at least one entity
-// failed. Sorted iteration is required for diagnostic stability:
+// failed. The aggregate names the pass and counts what it found, and
+// carries every finding on its chain, so a caller can read a finding's
+// condition and its code rather than only the text of the group.
+// Sorted iteration is required for diagnostic stability:
 // map-iteration order would flap across runs and make CI logs unstable
 // against the deterministic-output invariant.
 //
@@ -747,17 +750,28 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 	if len(validationErrors) == 0 {
 		return nil
 	}
-	parts := make([]string, 0, len(validationErrors))
-	for _, e := range validationErrors {
-		parts = append(parts, e.Error())
-	}
+	// The findings are carried on the chain, and the message names the pass and
+	// counts them. Rendering each finding into the message text as well would be
+	// a second home for content the chain already holds, and the two would be
+	// printed one after the other on the same diagnostic.
+	//
+	// Attaching them is what the report was missing rather than a refinement of
+	// it: joining the findings into a string and constructing with no wrap left
+	// every consumer of this envelope unable to read a finding's condition,
+	// match one, or reach its code, so a build could print a coded finding while
+	// the program holding it knew of no condition at all.
+	//
+	// This group takes no identity of its own. It names a pass and counts what
+	// that pass found, and its findings come from three separate producers whose
+	// fixes differ per finding, so no one sentence is true of all of them and
+	// tells the reader what to do. Whatever code the head carries is therefore
+	// the condition the chain actually names, never one minted for the count.
 	return cerrors.New(
 		cerrors.CatalogError,
 		cerrors.SourceLocation{},
-		fmt.Sprintf("catalog load: %d schema validation error(s):\n  - %s",
-			len(validationErrors), strings.Join(parts, "\n  - ")),
+		fmt.Sprintf("catalog load: %d schema validation error(s)", len(validationErrors)),
 		nil,
-		nil,
+		errors.Join(validationErrors...),
 	)
 }
 
@@ -774,13 +788,16 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 // when it was skipped as broken.
 //
 // Iteration is sorted by name for diagnostic stability (the deterministic-output
-// invariant); errors are collected across entities and joined into one aggregate
-// CatalogError. Returns nil when every supplied entity validates. The advisory
+// invariant); errors are collected across entities and carried on the chain of
+// one aggregate CatalogError, whose own message names the pass and counts them.
+// Returns nil when every supplied entity validates. The advisory
 // pillar-overlap lint is intentionally NOT run here — it is a non-fatal authoring
 // smell the build collects separately, not part of the reject gate.
 //
 // remedy, when non-nil, supplies an operator-actionable line appended to the
-// aggregate message. It is a function rather than a string because it is called
+// aggregate message. It belongs on the group rather than on a finding because
+// it is one suggestion about the pass as a whole, which no single finding
+// carries. It is a function rather than a string because it is called
 // ONLY when there is already an error to attach it to: a caller that has to read
 // the filesystem to work out what to suggest must not pay for that on a clean
 // validation. It belongs in the message rather than in a wrapping error because
@@ -825,12 +842,7 @@ func ValidateClosurePillars(
 	if len(validationErrors) == 0 {
 		return nil
 	}
-	parts := make([]string, 0, len(validationErrors))
-	for _, e := range validationErrors {
-		parts = append(parts, e.Error())
-	}
-	message := fmt.Sprintf("closure validation: %d schema validation error(s):\n  - %s",
-		len(validationErrors), strings.Join(parts, "\n  - "))
+	message := fmt.Sprintf("closure validation: %d schema validation error(s)", len(validationErrors))
 	// The remedy is consulted only now, on the failing path, so a caller that
 	// has to read the filesystem to produce one never pays for it on a clean
 	// validation.
@@ -839,12 +851,18 @@ func ValidateClosurePillars(
 			message += "\n  " + r
 		}
 	}
+	// The findings are carried on the chain, for the reason given at the
+	// catalog-load counterpart: attaching them is what lets a consumer read a
+	// finding's condition, and rendering them into the message as well would
+	// print the same content twice on one diagnostic. This group takes no
+	// identity of its own either — it names a pass and counts what it found,
+	// over findings whose fixes differ per finding.
 	return cerrors.New(
 		cerrors.CatalogError,
 		cerrors.SourceLocation{},
 		message,
 		nil,
-		nil,
+		errors.Join(validationErrors...),
 	)
 }
 
@@ -1939,9 +1957,16 @@ func resolveSubAggregateParameters(typeName string, raw []byte, absPath, returnP
 	}
 	resolved := resolver.ApplyParameterDefaults(contract, parentParams)
 	if verrs := resolver.ValidateParametersAgainstContract(contract, resolved, absPath); len(verrs) > 0 {
+		// Every finding here is one unfulfilled slot of one contract, so one
+		// sentence is true of all of them and names the fix: the parameter
+		// contract of a sub-module the application composes was not fulfilled.
+		// That makes the group a condition rather than a roll-up, and a
+		// condition declares its identity so the header opens with that
+		// condition's registered sentence.
 		return nil, "", nil, &resolver.MultiResolverError{
 			Entity:     fmt.Sprintf("sub-aggregate %s", typeName),
 			Summary:    fmt.Sprintf("%d parameter contract violation(s)", len(verrs)),
+			Sentinel:   resolver.ErrParameterContractViolation(),
 			Violations: verrs,
 		}
 	}

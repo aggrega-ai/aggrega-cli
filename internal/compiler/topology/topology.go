@@ -795,9 +795,14 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			return nil, err
 		}
 		if len(placementErrs) > 0 {
+			// One rule produced every finding, so one sentence is true of all of
+			// them and names the fix. The group is therefore a condition and
+			// declares that condition's identity, which is what lets its header
+			// open with the registered sentence instead of a count.
 			return result, &resolver.MultiResolverError{
 				Entity:     "sub-module placement",
 				Summary:    fmt.Sprintf("%d sub-module placement violation(s)", len(placementErrs)),
+				Sentinel:   ErrUnplacedSubModule(),
 				Violations: placementErrs,
 			}
 		}
@@ -813,9 +818,12 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			return nil, err
 		}
 		if len(componentErrs) > 0 {
+			// A condition for its neighbour's reason: one rule, one sentence
+			// true of every finding, one fix to name.
 			return result, &resolver.MultiResolverError{
 				Entity:     "component placement",
 				Summary:    fmt.Sprintf("%d component placement violation(s)", len(componentErrs)),
+				Sentinel:   ErrUnplacedComponent(),
 				Violations: componentErrs,
 			}
 		}
@@ -837,10 +845,13 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			return nil, err
 		}
 		if len(referenceErrs) > 0 {
+			// A condition for the same reason as the two above: one rule, and
+			// one sentence that is true of every entry it reported.
 			return result, &resolver.MultiResolverError{
 				Entity: "boundary component resolution",
 				Summary: fmt.Sprintf(
 					"%d unresolved boundary component reference(s)", len(referenceErrs)),
+				Sentinel:   ErrUnresolvedBoundaryComponent(),
 				Violations: referenceErrs,
 			}
 		}
