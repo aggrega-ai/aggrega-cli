@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: identity-app
+  version: "1.0.0"
+spec:
+  components:
+    alpha:
+      type: core/host
+      features:
+        src:
+          type: feature.id/aux-sourced
+        wl:
+          type: feature.id/aux-workload
+        art:
+          type: feature.id/aux-artifacts

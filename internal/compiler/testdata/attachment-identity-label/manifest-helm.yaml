@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: identity-manifest-helm
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/host: host-helm:1.0.0
+    features:
+      type:
+        feature.id/aux-sourced: aux-sourced-helm:1.0.0
+        feature.id/aux-workload: aux-workload-helm:1.0.0
+        feature.id/aux-artifacts: aux-artifacts-helm:1.0.0

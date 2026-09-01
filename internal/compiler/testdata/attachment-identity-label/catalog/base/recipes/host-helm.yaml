@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata: { name: host-helm, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: core/host
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: host:1.0
+        ports:
+          p: 8080

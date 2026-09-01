@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: aux-artifacts-compose, version: "1.0.0" }
+spec:
+  capability: compose
+  implements: feature.id/aux-artifacts
+  artifacts:
+    aux-extra.yaml: |
+      services:
+        aux-extra:
+          image: aux-extra:1.0

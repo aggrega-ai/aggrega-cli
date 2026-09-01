@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: identity-manifest-compose
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/host: host-compose:1.0.0
+    features:
+      type:
+        feature.id/aux-sourced: aux-sourced-compose:1.0.0
+        feature.id/aux-workload: aux-workload-compose:1.0.0
+        feature.id/aux-artifacts: aux-artifacts-compose:1.0.0

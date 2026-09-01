@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: aux-artifacts-helm, version: "1.0.0" }
+spec:
+  capability: helm
+  implements: feature.id/aux-artifacts
+  artifacts:
+    aux-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: aux-config
+      data:
+        note: "aux"

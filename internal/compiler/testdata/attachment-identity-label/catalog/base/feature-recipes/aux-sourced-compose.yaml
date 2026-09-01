@@ -1,0 +1,7 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata: { name: aux-sourced-compose, version: "1.0.0" }
+spec:
+  capability: compose
+  implements: feature.id/aux-sourced
+  source: ../aux-fragment/aux.yaml

@@ -1,0 +1,4 @@
+apiVersion: v2
+name: aux
+version: 0.1.0
+description: sourced chart for the aux attachment.
