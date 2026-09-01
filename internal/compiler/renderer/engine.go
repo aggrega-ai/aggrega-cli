@@ -11,6 +11,7 @@ import (
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // Provider renders one node's values dictionary into on-disk-style artifacts.
@@ -144,11 +145,24 @@ func linksCrossBoundary(engine Provider) bool {
 // contract. The assertions' false branches survive as guards against an outcome
 // worse than a loud refusal — a dispatch that emits nothing for a declared input
 // and reports success.
-type ProviderContract struct {
-	Sourced             bool
-	Synthesized         bool
-	ArtifactsStandalone bool
-}
+// It is an ALIAS of [types.PluginInputKinds] rather than a distinct struct. The
+// input-kind claim is one fact about one provider and has one home; an alias means
+// a claim read off a Plugin entity reaches this gate without a field copy, so no
+// copy can drop a kind between the entity and the gate that reads it. The local
+// name is kept because the gate's vocabulary is a provider's contract rather than
+// entity authoring.
+//
+// Adding a kind means adding a field to the home type. Do not declare a second
+// three-boolean struct here or anywhere else: nothing makes that fail to compile,
+// so the only thing standing between a new shape and a capability this gate
+// silently stops reading is the field-set guard in internal/wasm and this comment.
+type ProviderContract = types.PluginInputKinds
+
+// Compiles only while ProviderContract really is an alias. Two DISTINCT named
+// struct types are never assignable to one another in Go however identical their
+// fields, so re-expanding the alias into a struct of its own breaks the build here
+// — which makes this the one rung on this path that a reader cannot walk past.
+var _ ProviderContract = types.PluginInputKinds{}
 
 // EngineFactory returns the Provider implementation for a given provider name
 // (from `recipe.spec.capability`). Returning an error halts the build.

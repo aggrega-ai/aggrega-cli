@@ -216,6 +216,19 @@ func IsZeroContract(c wasm.ProviderContract) bool {
 // descriptorContract maps the describe() provider render-behavior self-report
 // onto the entity's authored-contract shape, or returns nil when the guest
 // reports none.
+//
+// The input-kind copy below is one of the few that SURVIVE consolidation, and it
+// survives for a structural reason rather than by oversight: it crosses from the
+// GENERATED describe-socket codec into the entity's hand-written shape, and those
+// two cannot be one Go type — the guest-side half of the socket lives in a module
+// that must not import the host. The claim's one host-side home is
+// [types.PluginInputKinds]; every consumer that can share it does, by alias.
+//
+// So adding an input kind means editing this copy too. It is guarded from the far
+// side rather than from here: the field-set guard in internal/wasm fails when the
+// generated shape and the home type stop agreeing, which is what makes a forgotten
+// line here loud instead of silent. Do not answer a new kind by declaring another
+// three-boolean struct.
 func descriptorContract(c *wasm.ProviderContract) *types.ProviderContract {
 	if c == nil || IsZeroContract(*c) {
 		return nil

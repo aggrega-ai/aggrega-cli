@@ -172,6 +172,17 @@ func recordProvenance(resolved pluginpath.ResolvedPlugin) {
 
 // wasmContract maps the neutral plugin-level capability claim onto the
 // load gate's cross-check shape, or nil when the resolution carries none.
+//
+// The input-kind copy below SURVIVES consolidation for a structural reason: it
+// crosses into the GENERATED describe-socket codec, which is single-sourced at that
+// schema rather than at a Go type and cannot be merged with the host's own home for
+// the claim ([types.PluginInputKinds], which every alias-able consumer shares).
+//
+// This copy is what feeds the load gate's `want` operand, so a kind missed here
+// arrives as false and the gate compares two falses and passes. That is the exact
+// silent drop the field-set guard in internal/wasm exists to make loud: it fails
+// when the generated shape and the home type stop agreeing. Adding an input kind
+// means editing this copy — never declaring another three-boolean struct.
 func wasmContract(c *pluginpath.ProviderContractClaim) *wasm.ProviderContract {
 	if c == nil {
 		return nil

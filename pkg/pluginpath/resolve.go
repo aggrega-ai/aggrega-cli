@@ -50,6 +50,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -255,13 +256,27 @@ type PluginAssemblyNameAnnotationClaim struct {
 	RequireUnique bool
 }
 
-// PluginInputKindsClaim is one entity's authored input-kind claim in the
-// neutral shape: which of the three Recipe input kinds the plugin renders.
-type PluginInputKindsClaim struct {
-	Sourced             bool
-	Synthesized         bool
-	ArtifactsStandalone bool
-}
+// PluginInputKindsClaim is one entity's authored input-kind claim: which of the
+// Recipe input kinds the plugin renders.
+//
+// It is an ALIAS rather than a distinct struct, and deliberately so. "Which input
+// kinds does this provider render" is one fact about one provider, and
+// [types.PluginInputKinds] is its one home; an alias carries the same type
+// identity, so an entity claim crossing into this package needs no field copy and
+// cannot silently lose a field on the way. The name is kept because it is part of
+// this package's published surface.
+//
+// Adding a kind means adding a field to the home type. Do not declare a second
+// three-boolean struct here or anywhere else: nothing makes that fail to compile,
+// so the only thing standing between a new shape and a silently dropped
+// capability is the field-set guard in internal/wasm and this comment.
+type PluginInputKindsClaim = types.PluginInputKinds
+
+// Compiles only while PluginInputKindsClaim really is an alias. Two DISTINCT named
+// struct types are never assignable to one another in Go however identical their
+// fields, so re-expanding the alias into a struct of its own breaks the build here
+// — which makes this the one rung on this path that a reader cannot walk past.
+var _ PluginInputKindsClaim = types.PluginInputKinds{}
 
 // PluginArtifactDelimitersClaim is an entity's authored artifact-template
 // delimiter pair in the neutral shape.

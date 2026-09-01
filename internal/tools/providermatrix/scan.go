@@ -10,8 +10,11 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // manifestRelPath is the declarative embedded-plugin manifest, relative to the
@@ -37,11 +40,12 @@ const contractTypeName = "ProviderContract"
 type provider struct {
 	// Name is the provider name a Recipe targets.
 	Name string
-	// Sourced, Synthesized and ArtifactsStandalone are the three Recipe input
-	// kinds, exactly as the guest declares them.
-	Sourced             bool
-	Synthesized         bool
-	ArtifactsStandalone bool
+	// PluginInputKinds carries the Recipe input kinds exactly as the guest declares
+	// them. It is EMBEDDED rather than restated as booleans of its own, so this
+	// projection cannot fall behind the one home the claim has: a kind added there
+	// appears here with no edit. The fields promote, so a reader still writes
+	// p.Sourced.
+	types.PluginInputKinds
 	// DelimLeft and DelimRight are the template delimiter pair the guest applies
 	// to imported artifact files, empty when it takes the default pair.
 	DelimLeft  string
@@ -210,15 +214,39 @@ func readContract(lit *ast.CompositeLit) provider {
 	var p provider
 
 	if kinds, ok := field(lit, "InputKinds").(*ast.CompositeLit); ok {
-		p.Sourced = boolValue(field(kinds, "Sourced"))
-		p.Synthesized = boolValue(field(kinds, "Synthesized"))
-		p.ArtifactsStandalone = boolValue(field(kinds, "ArtifactsStandalone"))
+		readInputKinds(kinds, &p.PluginInputKinds)
 	}
 	if delims, ok := unwrap(field(lit, "ArtifactDelimiters")).(*ast.CompositeLit); ok {
 		p.DelimLeft = stringValue(field(delims, "Left"))
 		p.DelimRight = stringValue(field(delims, "Right"))
 	}
 	return p
+}
+
+// readInputKinds reads every input kind the home type declares out of a guest's
+// input-kinds literal.
+//
+// The kinds are enumerated by REFLECTING over the home type rather than by naming
+// them, because this reader crosses a boundary no Go type can span: it matches a
+// guest's fields as source text, so a field list written here would be one more
+// copy of the claim — and the copy would fail silently, reporting a guest as not
+// declaring a kind it does declare. Reflecting means a kind added to the home type
+// is read here with no edit.
+//
+// Field order is the home type's declaration order, which reflect preserves, so
+// nothing rendered from this depends on map iteration.
+func readInputKinds(lit *ast.CompositeLit, out *types.PluginInputKinds) {
+	v := reflect.ValueOf(out).Elem()
+	for _, f := range reflect.VisibleFields(v.Type()) {
+		if f.Type.Kind() != reflect.Bool {
+			// The grid projects an input-kind claim as a set of independent boolean
+			// claims. A non-boolean kind would need a rendering decision this
+			// projection cannot invent, so it halts rather than reporting a zero.
+			panic(fmt.Sprintf("input kind %q is %s, not a bool; the grid projects boolean claims only",
+				f.Name, f.Type.Kind()))
+		}
+		v.FieldByIndex(f.Index).SetBool(boolValue(field(lit, f.Name)))
+	}
 }
 
 // field returns the value a composite literal assigns to the named field, or nil

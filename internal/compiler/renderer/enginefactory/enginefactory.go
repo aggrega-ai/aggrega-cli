@@ -35,10 +35,10 @@ func ContractFor(providerPlugin func(ref string) (types.Plugin, bool, error), pr
 	if err != nil || !ok || plugin.Spec.Provider == nil || plugin.Spec.Provider.Contract == nil {
 		return renderer.ProviderContract{}, false
 	}
-	ik := plugin.Spec.Provider.Contract.InputKinds
-	return renderer.ProviderContract{
-		Sourced:             ik.Sourced,
-		Synthesized:         ik.Synthesized,
-		ArtifactsStandalone: ik.ArtifactsStandalone,
-	}, true
+	// Returned whole, not copied field-by-field: the gate's contract type is an
+	// alias of the entity's input-kind type, so this carries every kind the home
+	// type declares and a new one needs no edit here. A field-by-field copy would
+	// re-introduce a site that silently drops a kind between the published entity
+	// and the gate that reads it.
+	return plugin.Spec.Provider.Contract.InputKinds, true
 }

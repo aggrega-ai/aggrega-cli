@@ -8,9 +8,24 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 const fixtureRoot = "testdata/root"
+
+// kinds builds an input-kind claim positionally, in the home type's declaration
+// order, so a fixture reads as one line. It names the kinds explicitly rather than
+// taking a variadic list: a new kind added to the home type must break this
+// signature, which is what forces every fixture below to be re-read rather than
+// silently defaulting the new kind to false.
+func kinds(sourced, synthesized, artifactsStandalone bool) types.PluginInputKinds {
+	return types.PluginInputKinds{
+		Sourced:             sourced,
+		Synthesized:         synthesized,
+		ArtifactsStandalone: artifactsStandalone,
+	}
+}
 
 // TestScanReadsDeclaredContractsInManifestOrder covers the whole extraction: the
 // manifest selects which guests are read and in what order, the guest's own
@@ -23,8 +38,8 @@ func TestScanReadsDeclaredContractsInManifestOrder(t *testing.T) {
 	}
 
 	want := []provider{
-		{Name: "alpha", Sourced: true, Synthesized: true, ArtifactsStandalone: true},
-		{Name: "beta", Sourced: true, DelimLeft: "[[", DelimRight: "]]"},
+		{Name: "alpha", PluginInputKinds: kinds(true, true, true)},
+		{Name: "beta", PluginInputKinds: kinds(true, false, false), DelimLeft: "[[", DelimRight: "]]"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("extracted %d providers, want %d: %+v", len(got), len(want), got)
@@ -91,10 +106,10 @@ func TestAlongsideArtifactsFollowsGatePrecedence(t *testing.T) {
 		p    provider
 		want bool
 	}{
-		{"sourced only", provider{Sourced: true}, true},
-		{"synthesized only", provider{Synthesized: true}, true},
-		{"both primaries", provider{Sourced: true, Synthesized: true}, true},
-		{"standalone artifacts but no primary", provider{ArtifactsStandalone: true}, false},
+		{"sourced only", provider{PluginInputKinds: kinds(true, false, false)}, true},
+		{"synthesized only", provider{PluginInputKinds: kinds(false, true, false)}, true},
+		{"both primaries", provider{PluginInputKinds: kinds(true, true, false)}, true},
+		{"standalone artifacts but no primary", provider{PluginInputKinds: kinds(false, false, true)}, false},
 		{"no input kind at all", provider{}, false},
 	}
 	for _, c := range cases {
@@ -158,8 +173,8 @@ func TestRenderRegionProjectsEveryClaim(t *testing.T) {
 // declaration carries for that provider.
 func TestRenderRegionNamesADeclaredDelimiterPair(t *testing.T) {
 	region, err := renderRegion([]provider{
-		{Name: "beta", Sourced: true, DelimLeft: "[[", DelimRight: "]]"},
-		{Name: "alpha", Sourced: true},
+		{Name: "beta", PluginInputKinds: kinds(true, false, false), DelimLeft: "[[", DelimRight: "]]"},
+		{Name: "alpha", PluginInputKinds: kinds(true, false, false)},
 	})
 	if err != nil {
 		t.Fatalf("renderRegion: %v", err)
@@ -179,7 +194,7 @@ func TestRenderRegionNamesADeclaredDelimiterPair(t *testing.T) {
 // about what it covers. Without it the grid reads as the complete set of
 // providers, which it is not.
 func TestRenderRegionStatesItsOwnScope(t *testing.T) {
-	region, err := renderRegion([]provider{{Name: "alpha", Sourced: true}})
+	region, err := renderRegion([]provider{{Name: "alpha", PluginInputKinds: kinds(true, false, false)}})
 	if err != nil {
 		t.Fatalf("renderRegion: %v", err)
 	}
@@ -214,7 +229,7 @@ func TestRenderRegionIsDeterministic(t *testing.T) {
 // TestRenderRegionRefusesACellBreakingTableSeparator covers the one input that
 // would render a structurally broken table rather than a wrong one.
 func TestRenderRegionRefusesACellBreakingTableSeparator(t *testing.T) {
-	if _, err := renderRegion([]provider{{Name: "a|b", Sourced: true}}); err == nil {
+	if _, err := renderRegion([]provider{{Name: "a|b", PluginInputKinds: kinds(true, false, false)}}); err == nil {
 		t.Fatal("expected an error for a provider name containing a table separator")
 	}
 }

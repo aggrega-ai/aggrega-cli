@@ -53,11 +53,11 @@ func pluginContractClaim(c *types.ProviderContract) *pluginpath.ProviderContract
 		return nil
 	}
 	claim := &pluginpath.ProviderContractClaim{
-		InputKinds: pluginpath.PluginInputKindsClaim{
-			Sourced:             c.InputKinds.Sourced,
-			Synthesized:         c.InputKinds.Synthesized,
-			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
-		},
+		// Assigned whole, not copied field-by-field: the neutral claim's input-kind
+		// type is an alias of the entity's, so this carries every kind the home type
+		// declares and a new one needs no edit here. A field-by-field copy would
+		// re-introduce a site that silently drops a kind.
+		InputKinds:           c.InputKinds,
 		BoundaryAssembly:     c.BoundaryAssembly,
 		SourceFilter:         c.SourceFilter,
 		ReusableInstance:     c.ReusableInstance,

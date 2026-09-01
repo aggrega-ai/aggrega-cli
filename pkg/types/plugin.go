@@ -388,6 +388,30 @@ type ProviderContract struct {
 
 // PluginInputKinds is a plugin's authored input-kind claim: which of the three
 // Recipe input kinds it renders. Each field is an independent claim.
+//
+// THIS IS THE ONE HOME for that claim across the compiler. "Which input kinds does
+// this provider render" is a single fact about a single provider, and every
+// host-side consumer of it — the resolution claim a loaded entity carries, and the
+// contract the central input-kind gate reads — is an ALIAS of this type rather than
+// a struct of its own. So a kind added here reaches all of them at once, and no
+// field copy sits between them to drop one.
+//
+// Two representations remain genuinely distinct, and both are deliberate:
+//
+//   - The describe() wire structs (the host-side codec, and the plugin kit's
+//     guest-side codec in the shared ABI module) are GENERATED from the
+//     describe-socket schema. They are single-sourced at that schema, which is a
+//     stronger guarantee than sharing a Go type would be, and they cannot share one
+//     because a guest must not import the host.
+//   - The published capability grid reads a guest's claim out of guest SOURCE TEXT
+//     by parsing it, so it matches field names as strings and no Go type can bind it.
+//
+// To add an input kind: add the field here, add it to the describe-socket schema so
+// both generated codecs carry it, and extend the mappers that cross into the
+// generated shapes. 🔴 Do NOT declare a fourth struct with the same booleans.
+// Nothing makes that fail to compile — not unexported fields, not aliases, not
+// generation — so the field-set guard in internal/wasm is a floor that reports a new
+// shape after the fact, never a bar that prevents one.
 type PluginInputKinds struct {
 	// Sourced declares that the plugin renders a sourced file set (a chart, a
 	// module, a compose file).

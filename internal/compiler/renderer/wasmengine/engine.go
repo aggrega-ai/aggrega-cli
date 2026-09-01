@@ -130,6 +130,18 @@ func New(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loader) *Engin
 // reports no supported input kind, so the central input-kind gate halts the node
 // loudly rather than dispatching to an unloadable guest; the underlying load
 // failure surfaces in full on the render path.
+//
+// The field copy below SURVIVES consolidation for a structural reason: it crosses
+// from the GENERATED describe-socket codec into the gate's contract type, and the
+// socket's two halves cannot share a Go type because a guest must not import the
+// host. The gate's type is itself an alias of the claim's one home,
+// [types.PluginInputKinds], so this is the only copy left on this path.
+//
+// A kind missed here reads as "the guest does not render it" and the gate declines
+// a node the guest could have rendered. Adding an input kind means editing this
+// copy; the field-set guard in internal/wasm fails when the generated shape and the
+// home type stop agreeing, which is what turns a forgotten line into a red. Do not
+// declare another three-boolean struct.
 func (e *Engine) Contract() renderer.ProviderContract {
 	desc, err := e.describe()
 	if err != nil || desc.Contract == nil {
