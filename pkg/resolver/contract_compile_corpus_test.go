@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -298,12 +300,22 @@ func TestContractCorpus_ABrokenSocketContractRefusesTheBuild(t *testing.T) {
 // is what catches this case, and stops anyone "fixing" a duplicate that does not
 // exist.
 //
-// 🔴 The assertion is on the message rather than on an identity, and the reason is a
-// property of the earlier gate rather than a concession: catalog load aggregates its
-// per-entity findings by formatting them into one message, so no per-finding identity
-// survives for errors.Is to match. That is worth knowing independently of this
-// condition, and it is why the identity assertion here is against the condition that
-// must NOT appear — which is matchable, and is the claim this test is actually about.
+// Two identities carry the claim, and they point in opposite directions. The
+// resolution condition must NOT appear, which is what this test is about. The
+// catalog-load finding MUST appear, and it is reachable because the aggregate the
+// loader returns carries its findings on the chain: the group names the pass and
+// counts what it found, while the condition each finding met stays matchable
+// beneath it. So the offending keyword is read off the structured compile failure
+// rather than looked for in a string.
+//
+// One claim has no identity to match. Which of the three fields a contract may be
+// declared in was at fault is carried in the finding's message text alone — no
+// condition distinguishes the pillars — so that claim is asserted on the flattened
+// cause chain, as one contiguous phrase. Contiguity is the point rather than a
+// convenience: several independent substring probes are satisfiable by several
+// unrelated frames, and one phrase is not. It is also why the flattened chain is
+// read instead of the error's own text, which renders a single frame and so carries
+// the group's header without the finding beneath it.
 //
 // INVARIANT: the entity's own contract is refused at catalog load, not at resolution.
 // CONSEQUENCE: were the resolver condition to appear here, one fault would be
@@ -312,8 +324,15 @@ func TestContractCorpus_ABrokenSocketContractRefusesTheBuild(t *testing.T) {
 func TestContractCorpus_TheEntityContractIsRefusedEarlier(t *testing.T) {
 	t.Parallel()
 
+	// The keyword the entity contract below misspells, named once so the fixture
+	// and the assertion that reads it back cannot drift apart: were they two
+	// literals, correcting the spelling in one would leave the other asserting a
+	// keyword no fixture plants, and the row would fail for a reason that is not
+	// its subject.
+	const contractCorpusPlantedKeyword = "minimun"
+
 	_, err := pipelinetest.BuildE(t, contractCorpusWorkspace(t,
-		contractCorpusComponent("", "", "timeout: { type: integer, minimun: 1 }")))
+		contractCorpusComponent("", "", "timeout: { type: integer, "+contractCorpusPlantedKeyword+": 1 }")))
 	if err == nil {
 		t.Fatalf("the build accepted an entity contract that does not compile.\n" +
 			"INVARIANT: the fault is refused somewhere.\n" +
@@ -325,14 +344,34 @@ func TestContractCorpus_TheEntityContractIsRefusedEarlier(t *testing.T) {
 			"CONSEQUENCE: one fault is reported by two gates, and the earlier one's source "+
 			"file and line are buried.", err)
 	}
-	for _, want := range []string{"spec.schema.values", "failed to compile", "minimun"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not carry %q: %v\n"+
-				"INVARIANT: the earlier gate names the pillar, the condition and the offending "+
-				"keyword.\n"+
-				"CONSEQUENCE: this test would pass on any refusal at all, including one from an "+
-				"unrelated fault in the fixture.", want, err)
-		}
+	if !errors.Is(err, compactform.ErrUnknownKeyword()) {
+		t.Errorf("the refusal does not carry the unknown-keyword condition: %v\n"+
+			"INVARIANT: the earlier gate's finding stays matchable for the condition it met.\n"+
+			"CONSEQUENCE: this test would pass on any refusal at all, including one from an "+
+			"unrelated fault in the fixture.", cerrors.CauseChain(err))
+	}
+
+	var compileErr *compactform.CompileError
+	switch {
+	case !errors.As(err, &compileErr):
+		t.Errorf("the refusal carries no structured compile failure: %v\n"+
+			"INVARIANT: the finding beneath the group locates the fault inside the contract.\n"+
+			"CONSEQUENCE: the keyword assertion cannot run, and an author is told a contract "+
+			"is unreadable and not which fragment of it to correct.", cerrors.CauseChain(err))
+	case compileErr.Keyword != contractCorpusPlantedKeyword:
+		t.Errorf("the compile failure names keyword %q; want %q\n"+
+			"INVARIANT: the finding names the keyword this fixture planted.\n"+
+			"CONSEQUENCE: the row passes on a compile failure the fixture did not author.",
+			compileErr.Keyword, contractCorpusPlantedKeyword)
+	}
+
+	const wantPillar = "spec.schema.values body failed to compile"
+	if chain := cerrors.CauseChain(err); !strings.Contains(chain, wantPillar) {
+		t.Errorf("the refusal does not carry %q: %v\n"+
+			"INVARIANT: the earlier gate names the pillar the unreadable contract was "+
+			"declared in.\n"+
+			"CONSEQUENCE: an author is sent to the wrong one of the three fields a contract "+
+			"can be declared in.", wantPillar, chain)
 	}
 }
 
