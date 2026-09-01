@@ -370,14 +370,13 @@ func dispatchBoundaryScopeFR(
 	// pseudo-NodeID for the engine — the engine's per-node identity is
 	// the boundary-FR tuple, not a per-component instance. The synthetic
 	// NodeID marker syntax stays for dispatch + trace + error-message
-	// uniqueness. RecipeName/Version carry the FR's identity so the
-	// aggrega.ai/recipe-uri label resolves to the FR (not the consumer
-	// node's Recipe whose nodeCtx this struct was copied from).
+	// uniqueness. The FeatureRecipe's own Recipe identity is deliberately NOT set
+	// here: renderFeatureRecipeFiles is the one funnel every FeatureRecipe render
+	// passes through and establishes it there, so both attachment scopes name the
+	// producing FeatureRecipe from a single site rather than from two that agree.
 	frNodeCtx := nodeCtx
 	frNodeCtx.NodeID = "<boundary-fr>:" + frInstance + "@" + key.BoundaryPath
 	frNodeCtx.BoundaryPath = key.BoundaryPath
-	frNodeCtx.RecipeName = fr.Metadata.Name
-	frNodeCtx.RecipeVersion = fr.Metadata.Version
 	// The component identity is COMPOSED from the two things an author wrote —
 	// the instance name this feature is attached under, and the segments of the
 	// boundary path it is attached to — and deliberately not read out of the

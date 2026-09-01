@@ -840,6 +840,25 @@ func renderFeatureRecipeFiles(
 	workloadLibs map[string]types.WorkloadLibrary,
 	artifactsLibs map[string]types.ArtifactsLibrary,
 ) ([]EmittedFile, string, error) {
+	// Every document this render emits names THIS FeatureRecipe as the Recipe that
+	// produced it. The context arrives as a copy of the host component's and so
+	// carries the host Recipe's identity, while the recipe-uri provenance value is
+	// assembled from these two fields at whichever surface stamps it — so leaving
+	// them as copied hands a reader tracing a document back to its producer the
+	// identity of a Recipe that did not produce it. That is worse than stamping
+	// nothing: an absent value is visibly absent, whereas a wrong one is
+	// indistinguishable from a right one and is read precisely when someone is
+	// working out where a document came from.
+	//
+	// This is the one home for that identity because this function is the single
+	// funnel every FeatureRecipe render passes through — both attachment scopes,
+	// and each of the three input kinds. The artifacts kind reaches the same value
+	// by its own route: its recipe-uri is computed host-side from the synthetic
+	// Recipe below, which carries this same metadata. So setting it here is what
+	// makes all three kinds answer alike, not what makes one of them work.
+	frNodeCtx.RecipeName = fr.Metadata.Name
+	frNodeCtx.RecipeVersion = fr.Metadata.Version
+
 	hasSource := sourceValueDeclared(resolvedSrc)
 	hasWorkload := !fr.Spec.Workload.IsEmpty()
 	hasArtifacts := fr.Spec.Artifacts.Len() > 0
