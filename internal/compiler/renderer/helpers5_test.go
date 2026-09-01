@@ -114,6 +114,71 @@ func TestProvenanceComponentID_PrefersTheCarriedComponentID(t *testing.T) {
 	}
 }
 
+// TestComponentIdentityAndTargetNameBasisAreIndependent is the proof that the two
+// jobs one value used to do are now two values, and that neither reads the
+// other's. One value answered both "what does this resource belong to" and "what
+// does an author's own source render against", and the second answer is what held
+// the first one back: the identity had to stay the host component's so the
+// release name would.
+//
+// Every node shape the compiler produces is a row, and each row states BOTH
+// answers, so a regression that unified them fails whichever direction it
+// unified in. The expected values are written out rather than computed from
+// either accessor, because a value taken from a derivation agrees with that
+// derivation whatever it did.
+func TestComponentIdentityAndTargetNameBasisAreIndependent(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		what      string
+		nodeCtx   NodeRenderContext
+		wantID    string
+		wantBasis string
+	}{
+		{
+			what:      "an ordinary component: its authored name is both answers",
+			nodeCtx:   NodeRenderContext{NodeID: "alpha"},
+			wantID:    "alpha",
+			wantBasis: "alpha",
+		},
+		{
+			what: "a per-component attachment delivering source its author wrote: " +
+				"the identity is the attachment's, the basis stays the host's",
+			nodeCtx:   NodeRenderContext{NodeID: "alpha", LabelComponentID: "cfr--alpha--src"},
+			wantID:    "cfr--alpha--src",
+			wantBasis: "alpha",
+		},
+		{
+			what: "a boundary-scope attachment: one composed value answers both, " +
+				"because its node id is a dispatch marker no target accepts as a name",
+			nodeCtx: NodeRenderContext{
+				NodeID:           "<boundary-fr>:bridge@cluster",
+				LabelComponentID: "bfr--cluster--bridge",
+				DerivedNameBasis: "bfr--cluster--bridge",
+			},
+			wantID:    "bfr--cluster--bridge",
+			wantBasis: "bfr--cluster--bridge",
+		},
+	} {
+		if got := ProvenanceComponentID(tc.nodeCtx); got != tc.wantID {
+			t.Errorf("%s: ProvenanceComponentID = %q, want %q", tc.what, got, tc.wantID)
+		}
+		if got := TargetNameBasis(tc.nodeCtx); got != tc.wantBasis {
+			t.Errorf("%s: TargetNameBasis = %q, want %q", tc.what, got, tc.wantBasis)
+		}
+	}
+
+	// The discriminating row, stated as its own assertion so a failure names the
+	// property rather than a value: on the attachment shape the two answers must
+	// DIFFER. A single-value implementation passes every equality above by
+	// returning one string twice, and only this fails it.
+	attached := NodeRenderContext{NodeID: "alpha", LabelComponentID: "cfr--alpha--src"}
+	if ProvenanceComponentID(attached) == TargetNameBasis(attached) {
+		t.Errorf("the identity and the target-name basis are the same value (%q) for an attachment delivering an author's own source; the two jobs have been re-unified",
+			ProvenanceComponentID(attached))
+	}
+}
+
 // TestBuildProvenanceAnnotations_SyncWaveAndDefault pins the
 // SyncWave-driven and zero cases.
 func TestBuildProvenanceAnnotations_SyncWaveAndDefault(t *testing.T) {

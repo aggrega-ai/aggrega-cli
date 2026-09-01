@@ -142,21 +142,29 @@ func RenderLoadedChart(
 	// keyOrigin maps each emitted output key back to the rendered template that
 	// produced it, so a distinct-content collision can name both source templates.
 	keyOrigin := make(map[string]string, len(rendered))
-	// The file-key prefix uses the sanitised component id, not the raw NodeID: a
+	// The file-key prefix is the target-name basis, not the raw NodeID: a
 	// boundary-scope FR's synthetic NodeID carries marker syntax
 	// (`<boundary-fr>:<inst>@<boundary>`) whose `<>:@` are illegal in filenames on
-	// some platforms. ProvenanceComponentID is the raw NodeID for ordinary
-	// components (byte-identical key) and the sanitised LabelComponentID for
-	// FR-emitted nodes.
+	// some platforms, so that node carries the basis explicitly.
+	// TargetNameBasis is the raw NodeID everywhere else — for an ordinary
+	// component and for a per-component FR attachment alike, so both keep the key
+	// they already emitted.
 	//
-	// It is also the value the release name above is derived from. The two are
-	// the same identity written twice — here as authored, there through an
-	// injective encoding — so two nodes land on one release name exactly when
-	// they land on one prefix. Deriving the release name from a second value
-	// would put a lossy name beside a lossless one, and the lossless one would
-	// keep two nodes' output apart while the lossy one silently gave them a
-	// single in-cluster identity.
-	prefix := rendercore.ProvenanceComponentID(nodeCtx)
+	// It is the same value the release name above is derived from, and that
+	// coupling is deliberate: the two are one name written twice — here as
+	// authored, there through an injective encoding — so two nodes land on one
+	// release name exactly when they land on one prefix. Deriving the release name
+	// from a second value would put a lossy name beside a lossless one, and the
+	// lossless one would keep two nodes' output apart while the lossy one silently
+	// gave them a single in-cluster identity.
+	//
+	// What it is NOT is the component identity these documents are LABELLED with.
+	// Both names here belong to the author's chart — the release name its
+	// templates read, the prefix on the files it produced — while the label says
+	// which component the resources belong to. For a Feature attachment
+	// delivering a chart its author supplied the two part: the label carries the
+	// attachment's own composed identity, and these two stay the host's.
+	prefix := rendercore.TargetNameBasis(nodeCtx)
 	keys := make([]string, 0, len(rendered))
 	for k := range rendered {
 		keys = append(keys, k)

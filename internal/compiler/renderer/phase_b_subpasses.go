@@ -815,10 +815,9 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // composed from those parts, for the caller to declare into its own
 // derived-name accumulator — the caller holds that accumulator and this function
 // does not, and the value is reported rather than re-derived at the caller so
-// the derivation itself stays at one site. It is empty for a render that derived
-// none: a caller supplying no instance label, and a render whose only crossing
-// is the sourced one, which reads the unmodified context and so never puts the
-// derived value on anything emitted.
+// the derivation itself stays at one site. It is empty only for a render that
+// derived none, which is a caller supplying no instance label. Every input kind
+// stamps the composed value on what it emits, so every one of them reports it.
 //
 // hydrated is the carrier this render records its mid-render state through, and
 // the carrier whose declared rule is asked about each artifact entry it projects.
@@ -865,25 +864,33 @@ func renderFeatureRecipeFiles(
 		}
 	}
 
-	// The synthesised and artifacts paths name their resources after the
-	// feature instance, not the host component whose NodeID the FR node carries
-	// — otherwise an FR-synthesised Deployment would be named for the host and
-	// collide with the host's own workload. We set LabelComponentID (consumed by
-	// ProvenanceComponentID inside the synthesizer and the artifacts provenance
-	// builder) on a copy used only for B.3/B.4; the sourced engine.Render runs
-	// against the unmodified frNodeCtx so existing sourced-FR provenance is
-	// unchanged.
+	// Every resource this attachment emits carries the attachment's own identity,
+	// not the host component's whose NodeID the FR node carries — for all three
+	// input kinds alike, so a reader or a tool selecting an attachment's resources
+	// by identity finds every one of them. We set LabelComponentID (consumed by
+	// ProvenanceComponentID inside the synthesizer, the artifacts provenance
+	// builder and the sourced render's label injection) on a copy every crossing
+	// below is handed.
+	//
+	// What the copy deliberately does NOT set is the target-name basis. The
+	// synthesised and artifacts paths name their resources after the identity,
+	// which is what keeps an FR-synthesised Deployment from being named for the
+	// host and colliding with the host's own workload. But a sourced attachment
+	// delivers a chart or a fragment its AUTHOR wrote, and that author's own
+	// templates render against the release name and name resources after it — so
+	// the basis stays empty here, falls back to the host component's node id, and
+	// the author's resources keep the names they are already deployed under. The
+	// identity and the basis are two carries for exactly this reason; a
+	// boundary-scope attachment, which has no host component to fall back to, sets
+	// both.
 	//
 	// That label value is a name the compiler derived, so it is reported to the
 	// caller for the injectivity check the names a guest declares go through: two
 	// attachments whose instances reach one label value would otherwise hand the
 	// same provenance to two different sets of resources, with nothing in the
-	// emitted output recording that two were meant. It is reported only where a
-	// crossing that READS this copy runs — the artifacts placement and the
-	// workload synthesis below. A render whose only crossing is the sourced one
-	// reads the unmodified context above, so the value derived here reaches
-	// nothing emitted, and offering it would invite a refusal over a name in no
-	// output.
+	// emitted output recording that two were meant. It is reported for every
+	// crossing, because every crossing now reads this copy and stamps the value on
+	// what it emits.
 	//
 	// The identity is COMPOSED from the host component and the instance rather
 	// than written out of the instance alone, and the host is what makes it an
@@ -908,9 +915,7 @@ func renderFeatureRecipeFiles(
 			return nil, "", err
 		}
 		synthNodeCtx.LabelComponentID = settled
-		if hasWorkload || hasArtifacts {
-			derivedComponentID = synthNodeCtx.LabelComponentID
-		}
+		derivedComponentID = settled
 	}
 
 	synth := &types.Recipe{
@@ -949,7 +954,12 @@ func renderFeatureRecipeFiles(
 	// path uses: a BoundaryAssembler that does not place its own artifacts
 	// consumes Render output as fragment input.
 	if hasSource {
-		files, err := frEngine.Render(ctx, frValues, frNodeCtx)
+		// The settled copy, so the identity this attachment's resources are
+		// labelled with is the attachment's own on this crossing too. Only the
+		// label moves: the copy leaves the target-name basis empty, so the release
+		// name and the output-file prefix the author's chart renders under stay the
+		// host component's.
+		files, err := frEngine.Render(ctx, frValues, synthNodeCtx)
 		if err != nil {
 			return nil, "", cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe render")
 		}

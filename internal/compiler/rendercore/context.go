@@ -67,12 +67,40 @@ type NodeRenderContext struct {
 	// aggrega.ai/provider-version label; empty omits that label.
 	ProviderVersion string
 	// LabelComponentID, when non-empty, overrides NodeID as the value of the
-	// app.kubernetes.io/name and aggrega.ai/component-id labels. Used by FR-
-	// emitted resources whose internal NodeID carries marker syntax
-	// (e.g. <boundary-fr>:bridge@cluster) that needs sanitization for K8s
-	// label-value rules. Empty means "use NodeID directly" — the default for
-	// regular component nodes whose NodeIDs are already alphanumeric.
+	// app.kubernetes.io/name and aggrega.ai/component-id labels — what a resource
+	// this node emits BELONGS to, which is what provenance records and what a
+	// selector queries. It is set for every resource an FR attachment emits,
+	// whatever input kind delivers them, so an attachment's resources are
+	// distinguishable from its host component's by label alone. Empty means "use
+	// NodeID directly" — the default for regular component nodes whose NodeIDs are
+	// already alphanumeric. Read through [ProvenanceComponentID].
+	//
+	// It is deliberately NOT the value a target derives its own names from; that is
+	// DerivedNameBasis below, and the two answer different questions.
 	LabelComponentID string
+	// DerivedNameBasis, when non-empty, overrides NodeID as the identity a target
+	// derives its OWN names from when it renders source an author wrote — the Helm
+	// release name a chart's templates read as .Release.Name, and the prefix on the
+	// files that render emits. Empty means "use NodeID directly". Read through
+	// [TargetNameBasis].
+	//
+	// The split from LabelComponentID above is the point rather than a compromise,
+	// and the asymmetry runs both ways. A chart or fragment an FR attachment's
+	// author supplied renders against the HOST component's name, because the
+	// author's own templates name resources after it and changing it would rename
+	// resources already deployed for a reason that has nothing to do with the
+	// chart — so a per-component attachment leaves this empty and the host's NodeID
+	// stands. A workload or artifact set the compiler SYNTHESIZES has no author
+	// templates, so nothing renders against its name and its resources are named
+	// after the identity instead, which is what keeps an FR's synthesized workload
+	// from colliding with its host's own.
+	//
+	// A boundary-scope attachment sets it, to the same composed identity it sets
+	// LabelComponentID to. It has to: that node's NodeID is a dispatch marker
+	// opening with a character the release-name alphabet refuses, so falling back
+	// to NodeID there would produce a name no shortening repairs and halt the
+	// build.
+	DerivedNameBasis string
 	// OutputLabels are the recipe-author-owned labels stamped onto every object
 	// this node's rendered output produces: the pairs written literally on the
 	// recipe (recipe.spec.outputLabels) together with the ones it promotes from

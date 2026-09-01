@@ -169,8 +169,8 @@ func errorChainMessage(err error) string {
 // nodeCtxFromInput builds the full render context for a node from the wire
 // input: the node's identity and the provenance the render core stamps onto
 // every emitted manifest (boundary path, deployment wave, Recipe identity,
-// component-id override, and build identity) from the node projection, the
-// merged annotations from the render context, and the render-wide YAML
+// component-id override, derived-name basis, and build identity) from the node
+// projection, the merged annotations from the render context, and the render-wide YAML
 // indentation width the guest serializes output at (carried on the render
 // context; the render core clamps its zero value to the default width).
 // Carrying the full provenance here is what makes the guest's rendered
@@ -185,6 +185,7 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 		RecipeName:       in.Node.RecipeName,
 		RecipeVersion:    in.Node.RecipeVersion,
 		LabelComponentID: in.Node.LabelComponentID,
+		DerivedNameBasis: in.Node.DerivedNameBasis,
 		OutputLabels:     in.Node.OutputLabels,
 		ProviderName:     in.Node.Provenance.ProviderName,
 		ProviderVersion:  in.Node.Provenance.ProviderVersion,

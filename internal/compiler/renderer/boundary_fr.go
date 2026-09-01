@@ -400,6 +400,15 @@ func dispatchBoundaryScopeFR(
 		return err
 	}
 	frNodeCtx.LabelComponentID = frComponentID
+	// The same composed value is this render's target-name basis, and setting it
+	// here is what keeps a boundary-scope feature's release name and output-file
+	// prefix the names they already were. The basis defaults to the node id, and
+	// this node's id is the dispatch marker above: its first character is one a
+	// release-name alphabet refuses, so every escape would open the name with a
+	// hyphen and the target would return a refusal no shortening repairs. A
+	// per-component attachment is the opposite case and leaves the basis empty, so
+	// its author's own chart keeps rendering against the host component's name.
+	frNodeCtx.DerivedNameBasis = frComponentID
 	// That label value is a name the compiler derived, and it lands on every
 	// resource this feature's output carries — so it joins the injectivity check
 	// the names a guest declares go through. Two features whose identities reach

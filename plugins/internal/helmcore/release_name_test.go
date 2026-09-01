@@ -12,17 +12,18 @@ import (
 )
 
 // releaseNameContexts returns the node contexts the release-name assertions run
-// over: every identity in the shared segment corpus reached both ways a node can
-// carry one — as the node's own id, and as the component identity an
-// FR-emitted node carries beside a different node id. Both are needed, because a
-// derivation reading only the node id agrees with the file prefix for every
-// context of the first shape and diverges on every context of the second.
+// over: every name in the shared segment corpus reached both ways a node can
+// carry a target-name basis — as the node's own id, and as the basis a node
+// carries beside a different node id, which is the shape a boundary-attached
+// feature has. Both are needed, because a derivation reading only the node id
+// agrees with the file prefix for every context of the first shape and diverges
+// on every context of the second.
 func releaseNameContexts() []rendercore.NodeRenderContext {
 	corpus := namesegmenttest.Corpus()
 	out := make([]rendercore.NodeRenderContext, 0, 2*len(corpus))
 	for _, s := range corpus {
 		out = append(out, rendercore.NodeRenderContext{NodeID: s})
-		out = append(out, rendercore.NodeRenderContext{NodeID: "carrier", LabelComponentID: s})
+		out = append(out, rendercore.NodeRenderContext{NodeID: "carrier", DerivedNameBasis: s})
 	}
 	return out
 }
@@ -75,32 +76,64 @@ func TestReleaseNameSeparatesFoldedPunctuation(t *testing.T) {
 }
 
 // TestReleaseNameFollowsTheFilePrefixSource asserts the release name and the
-// prefix a node's rendered output files carry are two writings of one identity:
-// two contexts reach one release name exactly when they reach one prefix.
+// prefix a node's rendered output files carry are two writings of one basis: two
+// contexts reach one release name exactly when they reach one prefix.
 //
 // The biconditional is what makes this more than an observation that the two
 // agree today. A release name derived from the node id alone agrees with the
-// prefix for every ordinary node and diverges for every node carrying a
-// separate component identity, which the corpus supplies; a derivation that
-// substitutes for punctuation instead of encoding it gives one name to two
-// prefixes. Either failure breaks one direction of the equivalence, and neither
-// is visible from a test that only checks the two match for some identity
-// somebody thought of.
+// prefix for every ordinary node and diverges for every node carrying a separate
+// basis, which the corpus supplies; a derivation that substitutes for
+// punctuation instead of encoding it gives one name to two prefixes. Either
+// failure breaks one direction of the equivalence, and neither is visible from a
+// test that only checks the two match for some name somebody thought of.
+//
+// The basis both sides read is the TARGET-name basis, not the component
+// identity. Those are two carries answering two questions, and this equivalence
+// is a statement about the one the author's own source renders against; the
+// identity's own reading is asserted where the identity is written.
 func TestReleaseNameFollowsTheFilePrefixSource(t *testing.T) {
 	t.Parallel()
 	contexts := releaseNameContexts()
 	for i := range contexts {
 		for j := range contexts {
 			a, b := contexts[i], contexts[j]
-			samePrefix := rendercore.ProvenanceComponentID(a) == rendercore.ProvenanceComponentID(b)
+			samePrefix := rendercore.TargetNameBasis(a) == rendercore.TargetNameBasis(b)
 			sameRelease := releaseName(a) == releaseName(b)
 			if samePrefix != sameRelease {
-				t.Fatalf("node ids %q/%q with component identities %q/%q: file prefixes %q/%q, release names %q/%q — one identity must decide both",
-					a.NodeID, b.NodeID, a.LabelComponentID, b.LabelComponentID,
-					rendercore.ProvenanceComponentID(a), rendercore.ProvenanceComponentID(b),
+				t.Fatalf("node ids %q/%q with target-name bases %q/%q: file prefixes %q/%q, release names %q/%q — one basis must decide both",
+					a.NodeID, b.NodeID, a.DerivedNameBasis, b.DerivedNameBasis,
+					rendercore.TargetNameBasis(a), rendercore.TargetNameBasis(b),
 					releaseName(a), releaseName(b))
 			}
 		}
+	}
+}
+
+// TestReleaseNameIgnoresTheComponentIdentity is the negative half of the split,
+// and it is the case a fix that separated only two of the three consumers would
+// fail. A node carrying a component identity that differs from its target-name
+// basis — the shape a Feature attachment delivering source its author wrote has —
+// must reach the release name its BASIS gives, not the one its identity would.
+//
+// The two expected names are written out rather than computed, so a derivation
+// that started reading the identity cannot satisfy this by agreeing with itself.
+func TestReleaseNameIgnoresTheComponentIdentity(t *testing.T) {
+	t.Parallel()
+	// The host component's name is the basis; the attachment's own composed
+	// identity is what its resources are labelled with.
+	attached := rendercore.NodeRenderContext{
+		NodeID:           "alpha",
+		LabelComponentID: "cfr--alpha--cache",
+	}
+	if got, want := releaseName(attached), "alpha"; got != want {
+		t.Errorf("release name %q, want %q — an attachment's chart renders against the host component's name", got, want)
+	}
+	// The same node with the basis set: now the name moves, which is what proves
+	// the case above is reading the basis rather than merely ignoring a field.
+	explicit := attached
+	explicit.DerivedNameBasis = "cfr--alpha--cache"
+	if got, want := releaseName(explicit), "cfr-zh-alpha-zh-cache"; got != want {
+		t.Errorf("release name %q, want %q — a node carrying a basis must derive from it", got, want)
 	}
 }
 
@@ -118,22 +151,22 @@ func TestReleaseNameUsesOnlyTheReleaseNameAlphabet(t *testing.T) {
 			if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' {
 				continue
 			}
-			t.Errorf("release name %q for component identity %q carries %q at %d, which Helm does not admit",
-				name, rendercore.ProvenanceComponentID(nodeCtx), string(c), i)
+			t.Errorf("release name %q for target-name basis %q carries %q at %d, which Helm does not admit",
+				name, rendercore.TargetNameBasis(nodeCtx), string(c), i)
 		}
 	}
 }
 
-// TestReleaseNameIsRecoverable reads a release name back into the component
-// identity it was built from and asserts it comes back exactly as supplied.
-// Distinctness says no identity in the corpus collided; recovering the identity
-// says why — the name still carries it. The reader shares no code with the
-// encoder, because a reader that called into the encoder would agree with it
-// whatever the encoder did.
+// TestReleaseNameIsRecoverable reads a release name back into the target-name
+// basis it was built from and asserts it comes back exactly as supplied.
+// Distinctness says no name in the corpus collided; recovering the basis says
+// why — the name still carries it. The reader shares no code with the encoder,
+// because a reader that called into the encoder would agree with it whatever the
+// encoder did.
 func TestReleaseNameIsRecoverable(t *testing.T) {
 	t.Parallel()
 	for _, nodeCtx := range releaseNameContexts() {
-		want := rendercore.ProvenanceComponentID(nodeCtx)
+		want := rendercore.TargetNameBasis(nodeCtx)
 		got := namesegmenttest.DecodeSegment(t, releaseName(nodeCtx))
 		if got != want {
 			t.Errorf("release name %q read back as %q, want %q", releaseName(nodeCtx), got, want)
@@ -141,29 +174,41 @@ func TestReleaseNameIsRecoverable(t *testing.T) {
 	}
 }
 
-// TestReleaseNameForFeatureEmittedNode pins the release name of a node whose
-// component identity is carried separately from its node id. A boundary-attached
-// feature's node id is a dispatch marker rather than an identity anyone
-// authored, and it carries characters no release name admits; the component
-// identity beside it is the value the node's output files are named for, so it
-// is the value the release name is built from too.
+// TestReleaseNameForFeatureEmittedNode pins the release name of a
+// boundary-attached feature, which is the one node shape that carries a
+// target-name basis of its own. Its node id is a dispatch marker rather than a
+// name anyone authored, and it carries characters no release name admits — so
+// falling back to the node id there would produce a name no shortening repairs.
+// The composed value beside it is the basis, and it is what the node's output
+// files are named for too.
 //
-// The identity is built the way the compiler builds it — composed from the
-// instance name and the boundary path — rather than restated as a literal, so
-// this case follows the compiler's own derivation instead of a copy of it that
-// could stop matching. The release name it reaches is written out, because that
-// is the value under test.
+// The value is built the way the compiler builds it — composed from the instance
+// name and the boundary path — rather than restated as a literal, so this case
+// follows the compiler's own derivation instead of a copy of it that could stop
+// matching. The release name it reaches is written out, because that is the value
+// under test, and because it is the value this change must leave exactly where it
+// was: the dispatch sets the basis and the identity to one composed value, so a
+// boundary-attached feature's release name and output prefix do not move.
 func TestReleaseNameForFeatureEmittedNode(t *testing.T) {
 	t.Parallel()
+	// The bound is the one this target's own answer carries for a component-id
+	// label value, stated by the caller because the composition holds no bound of
+	// its own: how long an identity may be belongs to the target, and the compiler
+	// learns it by asking rather than by holding a number.
+	composed := labels.ComposeComponentIdentity(labels.BoundaryFeatureScope, 63, "cluster", "bridge")
 	nodeCtx := rendercore.NodeRenderContext{
 		NodeID: "<boundary-fr>:bridge@cluster",
-		// The bound is the one this target's own answer carries for a component-id
-		// label value, stated by the caller because the composition holds no bound of
-		// its own: how long an identity may be belongs to the target, and the compiler
-		// learns it by asking rather than by holding a number.
-		LabelComponentID: labels.ComposeComponentIdentity(labels.BoundaryFeatureScope, 63, "cluster", "bridge"),
+		// Both carries, set to one value, exactly as the boundary-scope dispatch
+		// sets them.
+		LabelComponentID: composed,
+		DerivedNameBasis: composed,
 	}
 	if got, want := releaseName(nodeCtx), "bfr-zh-cluster-zh-bridge"; got != want {
 		t.Errorf("release name %q, want %q", got, want)
+	}
+	// And the prefix the sourced render keys its files with is the same basis, so
+	// the two names this node emits are one name written twice.
+	if got, want := rendercore.TargetNameBasis(nodeCtx), "bfr--cluster--bridge"; got != want {
+		t.Errorf("output-file prefix %q, want %q", got, want)
 	}
 }

@@ -187,6 +187,7 @@ func NodeProjection(nodeCtx NodeRenderContext, values types.OrderedMap[any], w *
 		RecipeName:            nodeCtx.RecipeName,
 		RecipeVersion:         nodeCtx.RecipeVersion,
 		LabelComponentID:      nodeCtx.LabelComponentID,
+		DerivedNameBasis:      nodeCtx.DerivedNameBasis,
 		OutputLabels:          nodeCtx.OutputLabels,
 		Provenance: NodeProvenance{
 			CompilerVersion: nodeCtx.Provenance.CompilerVersion,

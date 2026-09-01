@@ -44,20 +44,31 @@ func isReleaseNameRune(r rune) bool {
 	return r >= 'a' && r <= 'z' || r >= '0' && r <= '9'
 }
 
-// releaseName derives a node's Helm release name from the same component
-// identity its rendered output files are prefixed with,
-// [rendercore.ProvenanceComponentID].
+// releaseName derives a node's Helm release name from the same basis its
+// rendered output files are prefixed with, [rendercore.TargetNameBasis].
 //
-// One source feeds both, so the two are the same identity written twice — once
-// as authored in the file prefix, once through an injective encoding here — and
-// two nodes reach one release name exactly when they reach one prefix. Deriving
-// it from a second value would put a lossy name beside a lossless one: the
-// lossless one would keep two nodes' files apart while the lossy one quietly
-// gave both a single in-cluster identity, and nothing about the files would
-// show it, because a release name lives inside the rendered bytes rather than
-// in the name of the file carrying them.
+// One source feeds both, so the two are the same name written twice — once as
+// authored in the file prefix, once through an injective encoding here — and two
+// nodes reach one release name exactly when they reach one prefix. Deriving it
+// from a second value would put a lossy name beside a lossless one: the lossless
+// one would keep two nodes' files apart while the lossy one quietly gave both a
+// single in-cluster identity, and nothing about the files would show it, because
+// a release name lives inside the rendered bytes rather than in the name of the
+// file carrying them.
+//
+// The basis is deliberately NOT the component identity the rendered resources
+// are LABELLED with. A release name reaches this chart's own templates as
+// .Release.Name and charts routinely name their resources after it, so the name
+// belongs to whoever wrote the chart; the label says which component the
+// resources belong to, which is the compiler's answer and a different question.
+// The two coincide for an ordinary component, where the node's own name is both.
+// They part for a Feature attachment delivering a chart its author supplied: the
+// label becomes the attachment's own composed identity so its resources are
+// distinguishable from its host's, while the release name stays the host's,
+// because moving it would rename resources the chart's author declared and that
+// are already deployed under those names.
 func releaseName(nodeCtx rendercore.NodeRenderContext) string {
-	return releaseNameEncoding.Segment(rendercore.ProvenanceComponentID(nodeCtx))
+	return releaseNameEncoding.Segment(rendercore.TargetNameBasis(nodeCtx))
 }
 
 // ReleaseNameKind is what a verdict about a Helm release name calls itself. It

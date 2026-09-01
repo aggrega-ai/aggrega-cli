@@ -11,12 +11,16 @@ import (
 )
 
 // ProvenanceComponentID returns the Kubernetes-safe component identity for a
-// node — the sanitised LabelComponentID when set (FR-emitted resources whose
-// internal NodeID carries marker syntax such as `<boundary-fr>:bridge@cluster`
-// have it populated and sanitised), falling back to NodeID for ordinary
-// component nodes. It is the single source of the app.kubernetes.io/name and
-// aggrega.ai/component-id values across every emitting surface, so an FR-emitted
-// artifact never stamps a charset-invalid component identity.
+// node — what a resource this node emits BELONGS to. That is the value
+// provenance records and the value a selector queries, and it is the single
+// source of the app.kubernetes.io/name and aggrega.ai/component-id values across
+// every emitting surface, so an FR-emitted artifact never stamps a
+// charset-invalid component identity.
+//
+// It is the LabelComponentID when set — every resource an FR attachment emits
+// has it populated, whatever input kind delivered them, so an attachment's
+// resources are distinguishable from its host component's by label alone —
+// falling back to NodeID for ordinary component nodes.
 //
 // The fallback rests on a REFUSAL rather than on an assumption, and the
 // difference matters because nothing here could repair a NodeID that was not
@@ -26,9 +30,48 @@ import (
 // a valid label value, or one opening as a composed identity does — halts before
 // any of this is reached. So by the time a NodeID arrives here it is a name the
 // target accepts, and one no reader can mistake for a composed one.
+//
+// It is NOT the value a target derives its own names from. That is
+// [TargetNameBasis], and reading this one in its place is the mistake the two
+// exist to prevent: it would rename the resources an attachment author's own
+// chart declared.
 func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 	if nodeCtx.LabelComponentID != "" {
 		return nodeCtx.LabelComponentID
+	}
+	return nodeCtx.NodeID
+}
+
+// TargetNameBasis returns the identity a target derives its OWN names from when
+// it renders source an author wrote — a Helm release name, the prefix on the
+// files a source render emits. It is the DerivedNameBasis when set, falling back
+// to NodeID.
+//
+// It sits beside [ProvenanceComponentID] rather than inside it because the two
+// answer different questions, and a single value answering both is what made an
+// FR attachment's sourced resources indistinguishable from its host's: the
+// identity had to stay the host's in order to keep the release name the host's.
+// Separating them lets the identity say which attachment emitted a resource
+// while the name an author's own templates render against stays put.
+//
+// The fallback is what keeps the split cheap. An ordinary component's NodeID is
+// its deployed name and reaches here unmodified; a per-component FR attachment
+// leaves DerivedNameBasis empty, so its author's chart renders against the host
+// component's name exactly as it did before this value existed. Only a node
+// whose NodeID a target's name alphabet refuses carries the basis explicitly,
+// and a boundary-scope attachment is that case: its NodeID is a dispatch marker
+// whose first character the release-name alphabet does not admit, so every
+// escape would open the name with a hyphen and no shortening would repair it.
+//
+// Deliberately NOT read by a surface that names resources the COMPILER built. A
+// synthesized workload and a standalone artifact set have no author templates,
+// so nothing renders against their names and they are named after the identity —
+// which is what keeps an FR's synthesized workload from colliding with its
+// host's own. Reading this there would fall back to the host's NodeID and
+// reintroduce exactly that collision.
+func TargetNameBasis(nodeCtx NodeRenderContext) string {
+	if nodeCtx.DerivedNameBasis != "" {
+		return nodeCtx.DerivedNameBasis
 	}
 	return nodeCtx.NodeID
 }

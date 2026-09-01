@@ -347,20 +347,26 @@ func TestRenderAll_TwoComponentsWithDifferentAttachmentNamesReachTwoIdentities(t
 	}
 }
 
-// TestRenderAll_SourceOnlyAttachmentsDerivingOneLabelRender pins the bound the
-// declaration is deliberately narrowed to. A source-only FeatureRecipe renders:
-// a sourced render reads the unmodified node context, so the identity composed
-// for the attachment lands on nothing emitted, and refusing a build over a name
-// in no output would be refusing input the author wrote correctly.
+// TestRenderAll_SourceOnlyAttachmentsCarryTheAttachmentIdentity pins the input
+// kind that used to be the exception. A FeatureRecipe delivering only source its
+// author wrote stamps the ATTACHMENT's composed identity on what it emits, the
+// same as a synthesised or an artifacts one — so a reader or a tool selecting an
+// attachment's resources by identity finds every resource the attachment
+// produced, whichever way it produced them.
 //
-// Remove the crossing condition on the declaration and this case halts, which is
-// what makes the narrowing asserted rather than assumed.
+// The case asserts presence rather than absence, and that inversion is the
+// point: it previously asserted that a source-only attachment stamped the HOST
+// component's identity, which made an attachment's resources indistinguishable
+// by label from the resources the host emitted itself. Anything selecting by
+// identity found the synthesised and artifacts resources and silently missed the
+// sourced ones. That is what this input kind no longer does.
 //
-// The assertion names the COMPOSED identities rather than any earlier spelling,
-// because those are the values this render would stamp if the narrowing were
-// wrong — a check for a value nothing can produce would pass whatever the
-// narrowing did.
-func TestRenderAll_SourceOnlyAttachmentsDerivingOneLabelRender(t *testing.T) {
+// The composed identities are written out by hand for the same reason every
+// other expected value in this file is: a value computed from the composition
+// would agree with the composition whatever it did. The substituted spelling is
+// asserted absent alongside, so the case fails on a regression to the older
+// derivation as well as on a regression to the host's own identity.
+func TestRenderAll_SourceOnlyAttachmentsCarryTheAttachmentIdentity(t *testing.T) {
 	t.Parallel()
 
 	res, err := runHostLabelRender(map[string]string{
@@ -374,17 +380,19 @@ func TestRenderAll_SourceOnlyAttachmentsDerivingOneLabelRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected the build to complete, got: %v", err)
 	}
-	// The host component's own identity is what a sourced attachment render
-	// stamps, which is the reading that makes the composed value irrelevant here.
 	bodies := strings.Join(bodiesOf(res), "\n")
-	for _, unwanted := range []string{
+	for _, want := range []string{
 		hostIdentityAlphaRefusedChar,
 		hostIdentityBetaPlain,
-		hostSubstitutedComponentID + "\n",
 	} {
-		if strings.Contains(bodies, "component-id: "+unwanted) {
-			t.Errorf("a source-only attachment render stamped %q; the narrowing this case pins is wrong\n--- bodies ---\n%s", unwanted, bodies)
+		if !strings.Contains(bodies, "component-id: "+want+"\n") {
+			t.Errorf("a source-only attachment render did not stamp %q; its resources are not distinguishable from its host's\n--- bodies ---\n%s", want, bodies)
 		}
+	}
+	// The value both instance names once folded onto, asserted absent so a
+	// regression to the substituting derivation fails here too.
+	if strings.Contains(bodies, "component-id: "+hostSubstitutedComponentID+"\n") {
+		t.Errorf("emitted output carries the substituted identity %q\n--- bodies ---\n%s", hostSubstitutedComponentID, bodies)
 	}
 }
 

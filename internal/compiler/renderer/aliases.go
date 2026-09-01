@@ -117,6 +117,7 @@ var (
 	MarshalYAMLIndent                 = rendercore.MarshalYAMLIndent
 	NamespaceFromAnnotations          = rendercore.NamespaceFromAnnotations
 	ProvenanceComponentID             = rendercore.ProvenanceComponentID
+	TargetNameBasis                   = rendercore.TargetNameBasis
 	BuildAggregaProvenanceLabels      = rendercore.BuildAggregaProvenanceLabels
 	BuildAggregaProvenanceAnnotations = rendercore.BuildAggregaProvenanceAnnotations
 	FormatTerraformProvenanceComment  = rendercore.FormatTerraformProvenanceComment
