@@ -48,6 +48,18 @@ func renameCorpusComponent(wf *workspaceFiles, identity string) {
 // The positive control is its own row rather than an assumption: an identity the
 // rules admit must still build, or every refusing row below would pass on a rule
 // that refuses everything.
+//
+// Every refusing row pins a rule belonging to the IDENTITY itself — its character
+// set, its edges, and the opening reserved for a composed name. Those are
+// properties of the alphabet the composition writes into, so they hold whatever
+// target the identity is rendered for, which is why the compiler asks them.
+//
+// A LENGTH is deliberately not among them, and a row asserting one here would be
+// wrong rather than missing. How long a name may be is a property of the target it
+// is written for: it is answered by the guest that renders for that target and
+// reported with that target's own reason, so it is proven where such a guest is
+// wired. This corpus renders through a target that declares no length at all, and
+// the row below says so positively.
 func TestComponentIdentityRefusal_HaltsOnAnIdentityThatCannotBeStamped(t *testing.T) {
 	t.Parallel()
 
@@ -100,10 +112,28 @@ func TestComponentIdentityRefusal_HaltsOnAnIdentityThatCannotBeStamped(t *testin
 			wantMessage: "begin and end with a letter or a digit",
 		},
 		{
-			name:        "an identity longer than a stamped name may be is refused",
-			identity:    strings.Repeat("a", 64),
-			wantHalt:    true,
-			wantMessage: "be at most 63 characters",
+			// This row covers the condition where THE TARGET DECLARES NO BOUND, and it
+			// is written as a positive assertion rather than as the absence of a
+			// negative one. The target this corpus renders through carries no length
+			// limit on the names it derives, so an identity of any length reaches its
+			// output unrefused — and that is the product's position, not an oversight
+			// waiting to be closed. A compiler refusing this name would be applying one
+			// target's limit to a target that has none.
+			//
+			// Sixty-four characters is chosen because it is past the bound of the
+			// targets that DO declare one, so the row would fail if a length rule were
+			// ever restored to the compiler itself.
+			//
+			// The other condition — a target that DOES declare a bound, under which an
+			// identity of this length is refused and told the target's own budget — is
+			// covered end to end at
+			// cmd/aggrega/build_component_name_target_refuses_e2e_test.go, where a
+			// bound-declaring guest is wired. Neither case is readable without the
+			// other: this one alone reads as "length is never checked", and that one
+			// alone reads as "the compiler holds a length rule".
+			name:     "an identity longer than a bounded target would accept builds where the target declares no bound",
+			identity: strings.Repeat("a", 64),
+			wantHalt: false,
 		},
 	}
 

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // End-to-end proof that a component name a target cannot use is refused where it
@@ -33,6 +34,15 @@ import (
 // escaped form leaves a lowercase-only target's bound, and therefore the smallest
 // input that shows the whole effect.
 const capitalsComponentName = "ABCDEF"
+
+// longLowercaseComponentName is sixty-four lowercase letters, and every one of
+// them is a character the bounded target's alphabet admits.
+//
+// That isolation is the point: it leaves LENGTH as the only rule the derived name
+// breaches, so the refusal it draws is attributable to the bound and to nothing
+// else. The capitals name above breaches the alphabet as well, and a case failing
+// on the alphabet would read exactly like a case failing on the length.
+var longLowercaseComponentName = strings.Repeat("a", 64)
 
 // helmCapitalsFixture authors a buildable workspace whose single component is
 // named compName and whose recipe sources a local chart naming its ConfigMap
@@ -191,6 +201,72 @@ func TestBuild_CapitalsComponentNameIsRefusedWhereItWasWritten(t *testing.T) {
 		"spec.components." + capitalsComponentName, // the field the developer wrote
 		"release name",         // the target's own name for what refused
 		"rename the component", // the remedy
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not carry %q; got %v", want, err)
+		}
+	}
+
+	// Nothing was written. A halt that emitted output first would have put a name
+	// the target refuses on disk, which is what the refusal exists to prevent.
+	if entries, statErr := os.ReadDir(filepath.Join(root, "dist")); statErr == nil && len(entries) > 0 {
+		t.Errorf("the refused build emitted %d entries under dist/; it must emit none", len(entries))
+	}
+}
+
+// TestBuild_ALongComponentNameIsRefusedWhereTheTargetDeclaresABound covers the
+// condition where THE TARGET DECLARES A BOUND: an authored identity longer than
+// that bound is refused, and the refusal carries the target's own budget.
+//
+// The other condition — a target declaring NO bound, under which an identity of
+// this same length builds clean — is covered at
+// internal/compiler/component_identity_refusal_build_test.go, whose corpus renders
+// through such a target. Neither case is readable without the other: this one alone
+// reads as a length rule the compiler holds, which is precisely what it is not, and
+// that one alone reads as length never being checked at all.
+//
+// The bound reported is the SMALLEST across the kinds that refused, because one
+// identity has to satisfy every kind at once. This target derives two names from a
+// component identity and both refuse a name this long — a release name at
+// fifty-three characters and the component-id label value at sixty-three — so the
+// release name is the binding one and is what the message names. Asserting a
+// figure the target owns is deliberate rather than a duplicated constant: the
+// number lives unexported beside the derivation in the guest's own package, out of
+// reach from here by construction, and an independently written expectation is what
+// makes this a check on the target's answer instead of a restatement of it.
+//
+// The budget in the remedy is the assertion that separates a LENGTH refusal from
+// the grammar refusal above. A grammar refusal can offer no budget, because no
+// shortening repairs it; only a length refusal knows how short is short enough.
+func TestBuild_ALongComponentNameIsRefusedWhereTheTargetDeclaresABound(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+
+	err := buildCapitalsWorkspace(t, root, helmCapitalsFixture(t, root, longLowercaseComponentName))
+	if err == nil {
+		t.Fatal("an authored identity longer than the target's declared bound must halt the build")
+	}
+	if !errors.Is(err, renderer.ErrComponentIdentityTargetRefuses()) {
+		t.Fatalf("the halt must carry the target-refuses condition; got %v", err)
+	}
+
+	// The category routes the reader to the surface at fault, so it is asserted
+	// rather than left to the message text: a name a person wrote is a fault in
+	// authored content, and reporting it as a translation fault would send them to
+	// the plugin's maintainer for something only they can change.
+	var compilerErr *cerrors.CompilerError
+	if !errors.As(err, &compilerErr) {
+		t.Fatalf("the halt must carry a category; got %T", err)
+	}
+	if compilerErr.Category != cerrors.CatalogError {
+		t.Errorf("category = %v, want %v", compilerErr.Category, cerrors.CatalogError)
+	}
+
+	for _, want := range []string{
+		"spec.components." + longLowercaseComponentName, // the field the developer wrote
+		"release name", // the kind whose bound binds, being the smaller
+		"a release name is at most 53 characters", // the target's own reason, carried through verbatim
+		"choose a name of at most 53 characters",  // the budget, which only a length refusal can offer
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the halt does not carry %q; got %v", want, err)
