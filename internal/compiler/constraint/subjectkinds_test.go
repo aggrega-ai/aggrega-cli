@@ -1073,12 +1073,6 @@ var subjectKindBindings = map[SubjectKind]struct {
 				"spec", "pipeline", "annotate")
 		},
 	},
-	SubjectBoundaryProviderPath: {
-		iface: reflect.TypeOf((*BoundaryProviderPathSubject)(nil)).Elem(),
-		make: func(f string) Subject {
-			return newBoundaryProviderPathSubject(f, "prod", "helm", "a.yaml", "spec", "boundaries", "prod")
-		},
-	},
 	SubjectAssemblyPathProvider: {
 		iface: reflect.TypeOf((*AssemblyPathProviderSubject)(nil)).Elem(),
 		// No segments, and that is the kind's own shape rather than an omission

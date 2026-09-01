@@ -11,27 +11,39 @@ import (
 )
 
 // renderedStageAxes is every axis a rule declared over a render's assembled
-// output is invoked once per: the boundaries that fed output, the providers that
-// assembled within each, and the paths each pair wrote.
+// output is invoked once per: the evaluated assembly paths groups landed at, and
+// the providers that assembled at each.
 //
-// It is named as one set because an invocation needs all three together. A value
-// satisfying two of them cannot be handed to the traversal at all, and the
+// It is named as one set because an invocation needs both together. A value
+// satisfying one of them cannot be handed to the traversal at all, and the
 // failure a partial value would produce is a rule invoked zero times — which
 // reports exactly what a rule that ran and approved reports.
+//
+// It is the same pair the stage before this is keyed by, and that is the point
+// rather than an accident: what a rule here reports on — an output path two
+// contributors met at, a placeholder a provider left standing — is a property of
+// the GROUP that assembled it, and a group is what boundaries whose path
+// declarations evaluate alike collapse into. Keyed per boundary a rule here is
+// invoked once per boundary of a collapsed group about output there is one copy
+// of, and one of those invocations positions its finding at a boundary that
+// contributed nothing. The paths themselves are read as a fact rather than
+// enumerated as an axis, because the subject names the group and each rule asks
+// its own question of each path the group wrote.
 type renderedStageAxes interface {
-	constraint.BoundaryEnumerator
-	constraint.ProviderEnumerator
-	constraint.EmittedPathEnumerator
+	constraint.AssemblyPathEnumerator
+	constraint.AssemblyGroupProviderEnumerator
 }
 
 // runRenderedStageRules invokes the rules declared over what a render assembled,
 // and returns what they raised as the render's own halt.
 //
 // It runs after the assembly has flushed its groups into the result, which is the
-// first point the facts it reads exist: the paths a provider wrote within a
-// boundary and the bytes standing at one of them are read from the attribution
-// the flush records, so a reading placed before it would ask about output that
-// had not been attributed yet and would be answered with nothing.
+// first point the facts it reads exist: the paths a group wrote, the contributors
+// that placed a file at one of them and the bytes standing there are read from the
+// attribution the flush completes, so a reading placed before it would ask about
+// output that had not been attributed yet and would be answered with nothing. The
+// two axes it is invoked over are complete earlier — they are the grouping's own —
+// which is why the same enumeration serves the stage before this one.
 //
 // It also runs after the cross-boundary link pass, which is what the placeholder
 // rule here needs: a resolved link replaces its own placeholder, so a reading taken
@@ -60,6 +72,11 @@ type renderedStageAxes interface {
 // category-bearing entries rather than through one: the wording and the position
 // are the same mechanic, and only the attribution differs.
 //
+// Neither reading names a boundary in its position, and that is the shape rather
+// than an omission: both report on a group, a group several boundaries fed has no
+// single authored site, and the collision reading names every boundary that fed it
+// in its detail so an operator has each site without being told which is at fault.
+//
 // # The two absent-presentation conditions are DIFFERENT questions
 //
 // The collision reading HALTS, so it cannot treat an absent presentation as an
@@ -72,8 +89,8 @@ type renderedStageAxes interface {
 //
 // 🔴 That is a real bound and it is stated rather than implied: such a caller gets
 // no collision reading, so two contributors meeting on one output path assemble for
-// it instead of halting, and whichever of their two files sorts first by contributor
-// is the one it receives. The build path supplies the presentation, so the bound
+// it instead of halting, and whichever of their two files the assembly kept is the
+// one it receives. The build path supplies the presentation, so the bound
 // does not reach a build; it reaches exactly the callers that assemble a render's
 // input themselves.
 //
@@ -86,7 +103,7 @@ type renderedStageAxes interface {
 // fault to the compiler reaching a check without its inputs.
 //
 // The cancellation signal is the caller's own, so a long walk over a large
-// output stops within one boundary of the caller asking it to.
+// output stops within one group of the caller asking it to.
 func runRenderedStageRules(
 	ctx context.Context,
 	callerPresentationSupplied bool,
@@ -106,8 +123,8 @@ func runRenderedStageRules(
 				"compiler rather than in the catalog, so there is nothing to correct in any document",
 			nil, nil)
 	}
-	collided, err := constraint.RunOnBoundaryProviderPaths(
-		ctx.Err, coordinates, coordinates, coordinates, view,
+	collided, err := constraint.RunOnAssemblyPathProviders(
+		ctx.Err, coordinates, coordinates, view,
 		AssembledPathWrittenByOneContributor,
 	)
 	if err != nil {
@@ -118,8 +135,8 @@ func runRenderedStageRules(
 	); halt != nil {
 		return halt
 	}
-	raised, err := constraint.RunOnBoundaryProviderPaths(
-		ctx.Err, coordinates, coordinates, coordinates, view,
+	raised, err := constraint.RunOnAssemblyPathProviders(
+		ctx.Err, coordinates, coordinates, view,
 		CrossBoundaryLinkPlaceholderResolved,
 	)
 	if err != nil {

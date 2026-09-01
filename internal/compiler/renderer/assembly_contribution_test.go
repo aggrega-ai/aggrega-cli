@@ -430,62 +430,48 @@ func TestAssemblyContributionNamesEveryContributingBoundary(t *testing.T) {
 	}
 }
 
-// TestEmittedPathsAttributesPerBoundary is the substitution proof. It asks each
-// boundary in each case for its own paths and compares against the pinned
-// answer, so a lookup that returned one boundary's file set for another — the
-// failure a path-keyed map leaves open, because a boundary can only be guessed
-// back from a path — fails here.
+// TestEmittedPathsAttributesPerGroup is the substitution proof. It asks each
+// group in each case for its own paths and compares against the pinned answer, so
+// a lookup that returned one group's file set for another — the failure a
+// path-keyed map leaves open, because a group can only be guessed back from a
+// path — fails here.
 //
-// Where several boundaries merged onto one path the answer is the group's whole
-// output for each of them, and that is the correct answer rather than a
-// concession: the assembler merged their contributions into one output, so there
-// is no per-boundary subset of it to return. What the index guarantees is that
-// every one of them is named and none is silently handed a different group's
-// files.
-func TestEmittedPathsAttributesPerBoundary(t *testing.T) {
+// It is keyed by the group rather than by a boundary, and the two are not the
+// same question. Where several boundaries merged onto one path there is no
+// per-boundary subset of the output to return: the assembler merged their
+// contributions into one, so a per-boundary reading answers each of them with the
+// group's whole output. That answer is not wrong so much as unusable — a rule
+// walking it walks one group's output once per boundary — so the reading is the
+// group's and the boundaries it was fed by are a fact of their own.
+func TestEmittedPathsAttributesPerGroup(t *testing.T) {
 	t.Parallel()
 
 	want := map[string]map[string][]string{
 		"one boundary, one provider, flat": {
-			"billing|flatprov": {"dist/billing/flatprov/api.yaml"},
+			"dist/billing/flatprov|flatprov": {"dist/billing/flatprov/api.yaml"},
 		},
 		"two boundaries, distinct paths, flat (one-to-one)": {
-			// Neither boundary may be handed the other's file.
-			"billing|flatprov":  {"dist/billing/flatprov/api.yaml"},
-			"payments|flatprov": {"dist/payments/flatprov/web.yaml"},
+			// Neither group may be handed the other's file.
+			"dist/billing/flatprov|flatprov":  {"dist/billing/flatprov/api.yaml"},
+			"dist/payments/flatprov|flatprov": {"dist/payments/flatprov/web.yaml"},
 		},
 		"two boundaries, one evaluated path, flat (many-to-one)": {
-			// Both merged onto one path, so both answer with the merged set —
-			// and, crucially, both answer at all.
-			"billing|flatprov":  {"dist/shared/flatprov/api.yaml", "dist/shared/flatprov/web.yaml"},
-			"payments|flatprov": {"dist/shared/flatprov/api.yaml", "dist/shared/flatprov/web.yaml"},
+			// Two boundaries collapsed into one group, which answers once with the
+			// merged set rather than once per boundary.
+			"dist/shared/flatprov|flatprov": {
+				"dist/shared/flatprov/api.yaml",
+				"dist/shared/flatprov/web.yaml",
+			},
 		},
 		"two boundaries, one evaluated path, assembled (many-to-one)": {
-			"billing|asmprov": {
-				"dist/shared/asmprov/assembly.yaml",
-				"dist/shared/asmprov/charts/api/api.yaml",
-				"dist/shared/asmprov/charts/web/web.yaml",
-			},
-			"payments|asmprov": {
+			"dist/shared/asmprov|asmprov": {
 				"dist/shared/asmprov/assembly.yaml",
 				"dist/shared/asmprov/charts/api/api.yaml",
 				"dist/shared/asmprov/charts/web/web.yaml",
 			},
 		},
 		"three boundaries, one evaluated path, assembled (many-to-one)": {
-			"billing|asmprov": {
-				"dist/shared/asmprov/assembly.yaml",
-				"dist/shared/asmprov/charts/api/api.yaml",
-				"dist/shared/asmprov/charts/web/web.yaml",
-				"dist/shared/asmprov/charts/worker/worker.yaml",
-			},
-			"payments|asmprov": {
-				"dist/shared/asmprov/assembly.yaml",
-				"dist/shared/asmprov/charts/api/api.yaml",
-				"dist/shared/asmprov/charts/web/web.yaml",
-				"dist/shared/asmprov/charts/worker/worker.yaml",
-			},
-			"ledger|asmprov": {
+			"dist/shared/asmprov|asmprov": {
 				"dist/shared/asmprov/assembly.yaml",
 				"dist/shared/asmprov/charts/api/api.yaml",
 				"dist/shared/asmprov/charts/web/web.yaml",
@@ -493,17 +479,17 @@ func TestEmittedPathsAttributesPerBoundary(t *testing.T) {
 			},
 		},
 		"one boundary, two providers, distinct paths": {
-			// One boundary, two providers: the provider half of the coordinate
-			// separates them.
-			"billing|flatprov":  {"dist/billing/flatprov/api.yaml"},
-			"billing|otherprov": {"dist/billing/otherprov/web.yaml"},
+			// One boundary, two providers: two groups, and the provider half of the
+			// coordinate separates them.
+			"dist/billing/flatprov|flatprov":   {"dist/billing/flatprov/api.yaml"},
+			"dist/billing/otherprov|otherprov": {"dist/billing/otherprov/web.yaml"},
 		},
 		"two boundaries, two providers, one directory": {
-			"billing|flatprov":   {"dist/shared/flatprov/api.yaml"},
-			"payments|otherprov": {"dist/shared/otherprov/web.yaml"},
-			// The pairs that wrote nothing: same directory, wrong provider.
-			"billing|otherprov": nil,
-			"payments|flatprov": nil,
+			"dist/shared/flatprov|flatprov":   {"dist/shared/flatprov/api.yaml"},
+			"dist/shared/otherprov|otherprov": {"dist/shared/otherprov/web.yaml"},
+			// The pairs that are no group: same directory, wrong provider.
+			"dist/shared/flatprov|otherprov": nil,
+			"dist/shared/otherprov|flatprov": nil,
 		},
 	}
 
@@ -511,31 +497,30 @@ func TestEmittedPathsAttributesPerBoundary(t *testing.T) {
 		res := runContributionCase(t, c)
 		expected, ok := want[c.name]
 		if !ok {
-			t.Errorf("case %q has no pinned per-boundary answer", c.name)
+			t.Errorf("case %q has no pinned per-group answer", c.name)
 			continue
 		}
 		for pair, wantPaths := range expected {
-			boundary, provider, _ := strings.Cut(pair, "|")
-			got := res.EmittedPaths(boundary, provider)
+			assemblyPath, provider, _ := strings.Cut(pair, "|")
+			got := res.EmittedPaths(assemblyPath, provider)
 			if !slices.Equal(got, wantPaths) {
 				t.Errorf("case %q: EmittedPaths(%q, %q)\n got: %v\nwant: %v",
-					c.name, boundary, provider, got, wantPaths)
+					c.name, assemblyPath, provider, got, wantPaths)
 			}
 		}
-		// A boundary the build never saw is answered with nothing rather than
-		// with whichever group happened to be first.
-		if got := res.EmittedPaths("no-such-boundary", "flatprov"); len(got) != 0 {
-			t.Errorf("case %q: an unknown boundary was handed %v", c.name, got)
+		// A group the build never formed is answered with nothing rather than with
+		// whichever group happened to be first.
+		if got := res.EmittedPaths("no-such-path", "flatprov"); len(got) != 0 {
+			t.Errorf("case %q: an unknown assembly path was handed %v", c.name, got)
 		}
 	}
 }
 
-// TestAssembledFileContentAnswersForTheContributorAndRefusesOtherwise proves the
-// second half of the coordinate. Every emitted path answers with its own bytes
-// for each boundary that contributed to the group holding it, and refuses for a
-// boundary that did not — even though that path is in the file map and a
-// path-keyed lookup would have returned it.
-func TestAssembledFileContentAnswersForTheContributorAndRefusesOtherwise(t *testing.T) {
+// TestAssembledFileContentAnswersForTheGroupAndRefusesOtherwise proves the second
+// half of the coordinate. Every emitted path answers with its own bytes for the
+// group that wrote it, and refuses for every other group — even though that path
+// is in the file map and a path-keyed lookup would have returned it.
+func TestAssembledFileContentAnswersForTheGroupAndRefusesOtherwise(t *testing.T) {
 	t.Parallel()
 
 	answered, refused := 0, 0
@@ -546,37 +531,30 @@ func TestAssembledFileContentAnswersForTheContributorAndRefusesOtherwise(t *test
 				// Reference bytes come from the file map directly, never through
 				// the accessor being tested.
 				wantBody := res.Files[p].Content
-				for _, b := range ct.Boundaries {
-					body, ok := res.AssembledFileContent(b, ct.Provider, p)
-					if !ok {
-						t.Errorf("case %q: %q refused for its own contributor %q", c.name, p, b)
-						continue
-					}
-					if string(body) != string(wantBody) {
-						t.Errorf("case %q: %q for %q\n got: %q\nwant: %q",
-							c.name, p, b, string(body), string(wantBody))
-					}
-					answered++
+				body, ok := res.AssembledFileContent(ct.AssemblyPath, ct.Provider, p)
+				if !ok {
+					t.Errorf("case %q: %q refused for the group that wrote it", c.name, p)
+					continue
 				}
-				// Every group in the case that is not this one: its boundaries
-				// must not be able to read this path.
+				if string(body) != string(wantBody) {
+					t.Errorf("case %q: %q for %q\n got: %q\nwant: %q",
+						c.name, p, ct.AssemblyPath, string(body), string(wantBody))
+				}
+				answered++
+
+				// Every other group in the case: none may read this path.
 				for _, other := range res.Contributions {
 					if other.AssemblyPath == ct.AssemblyPath && other.Provider == ct.Provider {
 						continue
 					}
-					for _, b := range other.Boundaries {
-						if slices.Contains(ct.Boundaries, b) {
-							continue // genuinely a contributor to both groups
-						}
-						if _, ok := res.AssembledFileContent(b, ct.Provider, p); ok {
-							t.Errorf("case %q: %q answered for %q, which contributed nothing to that group",
-								c.name, p, b)
-						}
-						refused++
+					if _, ok := res.AssembledFileContent(other.AssemblyPath, other.Provider, p); ok {
+						t.Errorf("case %q: %q answered for group %q|%q, which did not write it",
+							c.name, p, other.AssemblyPath, other.Provider)
 					}
+					refused++
 				}
-				if _, ok := res.AssembledFileContent("no-such-boundary", ct.Provider, p); ok {
-					t.Errorf("case %q: %q answered for a boundary the build never saw", c.name, p)
+				if _, ok := res.AssembledFileContent("no-such-path", ct.Provider, p); ok {
+					t.Errorf("case %q: %q answered for a group the build never formed", c.name, p)
 				}
 				refused++
 			}
@@ -588,14 +566,19 @@ func TestAssembledFileContentAnswersForTheContributorAndRefusesOtherwise(t *test
 	}
 }
 
-// TestEmittedPathsUnionsEveryPathOneBoundaryReached covers a boundary that
+// TestEmittedPathsSeparateTwoGroupsOneBoundaryReached covers a boundary that
 // reaches more than one assembly path under one provider — two of its components
-// declaring different sub-directories. The answer is the union across both
-// groups, in path order, rather than whichever group was found first.
+// declaring different sub-directories. Each group answers with its own path and
+// neither answers with the other's.
+//
+// That separation is the property the group keying adds and the boundary keying
+// could not have: read per boundary, this boundary's answer was the union of both
+// groups, so a rule invoked over it was asked about output written by a group it
+// was not looking at.
 //
 // It stands outside the pinned corpus because that corpus is the frozen
 // byte-identity capture; this case was added after it.
-func TestEmittedPathsUnionsEveryPathOneBoundaryReached(t *testing.T) {
+func TestEmittedPathsSeparateTwoGroupsOneBoundaryReached(t *testing.T) {
 	t.Parallel()
 
 	res := runContributionCase(t, contributionCase{
@@ -610,14 +593,23 @@ func TestEmittedPathsUnionsEveryPathOneBoundaryReached(t *testing.T) {
 		t.Fatalf("expected two groups for one boundary at two sub-directories, got %d: %+v",
 			len(res.Contributions), res.Contributions)
 	}
-	want := []string{"dist/billing/alpha/web.yaml", "dist/billing/zeta/api.yaml"}
-	if got := res.EmittedPaths("billing", "flatprov"); !slices.Equal(got, want) {
-		t.Errorf("EmittedPaths across two groups\n got: %v\nwant: %v", got, want)
+	perGroup := map[string][]string{
+		"dist/billing/alpha": {"dist/billing/alpha/web.yaml"},
+		"dist/billing/zeta":  {"dist/billing/zeta/api.yaml"},
 	}
-	for _, p := range want {
-		if _, ok := res.AssembledFileContent("billing", "flatprov", p); !ok {
-			t.Errorf("%q refused for the boundary that wrote it", p)
+	for assemblyPath, want := range perGroup {
+		if got := res.EmittedPaths(assemblyPath, "flatprov"); !slices.Equal(got, want) {
+			t.Errorf("EmittedPaths(%q, \"flatprov\")\n got: %v\nwant: %v", assemblyPath, got, want)
 		}
+		for _, p := range want {
+			if _, ok := res.AssembledFileContent(assemblyPath, "flatprov", p); !ok {
+				t.Errorf("%q refused for the group that wrote it", p)
+			}
+		}
+	}
+	// Neither group answers with the other's file, which is what the union hid.
+	if _, ok := res.AssembledFileContent("dist/billing/alpha", "flatprov", "dist/billing/zeta/api.yaml"); ok {
+		t.Error("one group answered for a path the other wrote")
 	}
 }
 

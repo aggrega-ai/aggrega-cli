@@ -3812,8 +3812,8 @@ type DispatchedView interface {
 type RenderedView interface {
 	DispatchedView
 
-	// EmittedFilePathSet are the output paths written for one provider within
-	// one boundary, in path order.
+	// EmittedFilePathSet are the output paths one assembly group wrote, in
+	// path order.
 	//
 	// The order is stated rather than inherited. The order in which files are
 	// placed into a group is not a property of the input, so answering in that
@@ -3821,12 +3821,22 @@ type RenderedView interface {
 	// is derived from something ordered and is therefore the same on every
 	// run.
 	//
+	// It is keyed by the group rather than by a boundary the group was fed by,
+	// and the difference is not presentational. Boundaries whose path
+	// declarations evaluate alike under one provider collapse into one group,
+	// and the group is what wrote the paths — so a set keyed per boundary
+	// answers every boundary of a collapsed group with the SAME paths, and a
+	// rule invoked over that keying is invoked once per boundary about output
+	// there is one copy of. A boundary carries no path of its own once the
+	// collapse has happened, so there is nothing narrower for this fact to
+	// answer.
+	//
 	// No rule reads it as a predicate, which is a real state rather than an
 	// oversight: a fact is declared from where its subject is produced, so it
-	// stands whether or not a rule has been placed on it. It is what a rule at
-	// this stage is invoked ONCE PER — the paths it answers are the third
-	// coordinate of every subject here — so the enumeration a rule is walked
-	// over and this fact are one reader rather than two.
+	// stands whether or not a rule has been placed on it. What a rule at this
+	// stage reads it FOR is the set of paths to ask its own question about,
+	// one at a time, since the subject it is invoked over names the group and
+	// not any single path.
 	//
 	// The collision rule over assembled output is not its predicate reader,
 	// and the reason is the shape of the answer rather than where that rule
@@ -3836,29 +3846,27 @@ type RenderedView interface {
 	// of what an author needs. That rule reads the producer set declared
 	// beside this one, which carries the attribution this one does not.
 	//
-	// Keyed by (boundary, provider, path); read from renderer.AssembledFile.
-	EmittedFilePathSet(boundary string, provider string) []string
+	// Keyed by (assembly-path, provider); read from renderer.AssembledFile.
+	EmittedFilePathSet(assemblyPath string, provider string) []string
 
-	// AssembledFileContent is the bytes standing at one output path for one
-	// provider within one boundary.
+	// AssembledFileContent is the bytes standing at one output path of one
+	// assembly group.
 	//
-	// It is keyed by the path as well as by the boundary and the provider,
-	// where the path set naming those same three coordinates is keyed by the
-	// first two and enumerates the third. The two answer different questions:
-	// one is which paths were written, this is what stands at one of them, and
-	// neither is derivable from the other.
+	// It is keyed by the path as well as by the group, where the path set over
+	// the same group is keyed by the group alone and enumerates the path. The
+	// two answer different questions: one is which paths were written, this is
+	// what stands at one of them, and neither is derivable from the other.
 	//
 	// A rule scanning assembled output reads one path's bytes at a time rather
 	// than receiving the assembly, so no rule can walk from one path to
 	// another's content.
 	//
-	// Keyed by (boundary, provider, path); read from
+	// Keyed by (assembly-path, provider); read from
 	// renderer.AssembledFile.Content.
-	AssembledFileContent(boundary string, provider string, path string) []byte
+	AssembledFileContent(assemblyPath string, provider string, path string) []byte
 
 	// AssembledFileProducerSet are the contributors that placed a file at one
-	// output path for one provider within one boundary, deduplicated, in
-	// producer order.
+	// output path of one assembly group, deduplicated, in producer order.
 	//
 	// Several contributors meet in one assembly — each component the group
 	// holds, each feature attached to a boundary the group serves, and the
@@ -3870,6 +3878,13 @@ type RenderedView interface {
 	// One entry is the ordinary answer, and the ordinary answer is not the
 	// empty one: a path no contributor placed is a path the group did not
 	// write, so the coordinate does not exist and no rule is invoked for it.
+	//
+	// It is keyed by the group, and that keying is what makes one collision
+	// one answer. The contributors that met are a property of the group's own
+	// output, so a set keyed per boundary answers every boundary a collapsed
+	// group was fed by with the SAME contributors — including boundaries
+	// none of those contributors sat in, which a set keyed that way cannot
+	// tell apart.
 	//
 	// It is the contributors and not the bytes, and that is the whole of what
 	// this fact carries. What separates two contributors meeting on one path
@@ -3897,9 +3912,9 @@ type RenderedView interface {
 	// grouped are a separate fact at an earlier stage, and neither is
 	// derivable from the other.
 	//
-	// Keyed by (boundary, provider, path); read from
+	// Keyed by (assembly-path, provider); read from
 	// renderer.AssemblyContribution.PathProducers.
-	AssembledFileProducerSet(boundary string, provider string, path string) []string
+	AssembledFileProducerSet(assemblyPath string, provider string, path string) []string
 
 	// ArtifactProjectionNameSet are the artifact names a node projects, in
 	// author order.

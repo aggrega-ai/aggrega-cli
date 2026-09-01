@@ -38,8 +38,9 @@ var errWalkCancelled = errors.New("walk cancelled")
 // n outer iterations and exactly n invocations.
 func largeCancellationFixture(n int) traversalFixture {
 	f := traversalFixture{
-		providers:    map[string][]string{},
-		emittedPaths: map[string][]string{},
+		providers:         map[string][]string{},
+		emittedPaths:      map[string][]string{},
+		assemblyProviders: map[string][]string{},
 	}
 	for i := range n {
 		name := "n" + strconv.Itoa(i)
@@ -55,6 +56,9 @@ func largeCancellationFixture(n int) traversalFixture {
 		f.boundaries = append(f.boundaries, AuthoredCoordinate{Value: name, SourceFile: "release.yaml"})
 		f.providers[fixtureKey(name)] = []string{"helm"}
 		f.emittedPaths[fixtureKey(name, "helm")] = []string{"a.yaml"}
+		f.assemblyPaths = append(f.assemblyPaths,
+			AuthoredCoordinate{Value: name, SourceFile: "release.yaml"})
+		f.assemblyProviders[fixtureKey(name)] = []string{"helm"}
 	}
 	return f
 }
@@ -108,12 +112,12 @@ func cancellationShapes() []cancellationShape {
 			},
 		},
 		{
-			name:  "RunOnBoundaryProviderPaths",
-			outer: "boundary",
+			name:  "RunOnAssemblyPathProviders",
+			outer: "assembly path",
 			run: func(cancelled Cancellation, f traversalFixture, visit func()) ([]Objection, error) {
-				return RunOnBoundaryProviderPaths(
-					cancelled, f, f, f, traversalView{},
-					countingCheck[BoundaryProviderPathSubject](visit),
+				return RunOnAssemblyPathProviders(
+					cancelled, f, f, traversalView{},
+					countingCheck[AssemblyPathProviderSubject](visit),
 				)
 			},
 		},

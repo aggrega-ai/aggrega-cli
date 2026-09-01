@@ -145,11 +145,8 @@ const (
 	// SubjectBoundaryAttachmentPath is the subject kind (boundary, attachment, path), keyed by 1 declared fact.
 	SubjectBoundaryAttachmentPath SubjectKind = "(boundary, attachment, path)"
 
-	// SubjectAssemblyPathProvider is the subject kind (assembly-path, provider), keyed by 7 declared facts.
+	// SubjectAssemblyPathProvider is the subject kind (assembly-path, provider), keyed by 10 declared facts.
 	SubjectAssemblyPathProvider SubjectKind = "(assembly-path, provider)"
-
-	// SubjectBoundaryProviderPath is the subject kind (boundary, provider, path), keyed by 3 declared facts.
-	SubjectBoundaryProviderPath SubjectKind = "(boundary, provider, path)"
 )
 
 // SubjectKinds is every derived subject kind, in the order the first fact
@@ -193,7 +190,6 @@ var SubjectKinds = []SubjectKindInfo{
 	{Kind: SubjectNodeAttachmentPath, Coordinates: []string{"node", "attachment", "path"}, Traversal: TraversalPull},
 	{Kind: SubjectBoundaryAttachmentPath, Coordinates: []string{"boundary", "attachment", "path"}, Traversal: TraversalPull},
 	{Kind: SubjectAssemblyPathProvider, Coordinates: []string{"assembly-path", "provider"}, Traversal: TraversalPull},
-	{Kind: SubjectBoundaryProviderPath, Coordinates: []string{"boundary", "provider", "path"}, Traversal: TraversalPull},
 }
 
 // SubjectKindInfo is one derived subject kind together with what a

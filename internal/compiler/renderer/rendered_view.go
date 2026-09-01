@@ -22,17 +22,17 @@ import (
 // of which facts are which, and a list is exactly what would go stale the moment
 // a further fact is declared at this stage.
 type assembledOutputFacts interface {
-	// EmittedFilePathSet are the output paths written for one provider within one
-	// boundary, in path order.
-	EmittedFilePathSet(boundary string, provider string) []string
+	// EmittedFilePathSet are the output paths one assembly group wrote, in path
+	// order.
+	EmittedFilePathSet(assemblyPath string, provider string) []string
 
-	// AssembledFileContent is the bytes standing at one output path for one
-	// provider within one boundary.
-	AssembledFileContent(boundary string, provider string, path string) []byte
+	// AssembledFileContent is the bytes standing at one output path of one
+	// assembly group.
+	AssembledFileContent(assemblyPath string, provider string, path string) []byte
 
 	// AssembledFileProducerSet are the contributors that placed a file at one
-	// output path for one provider within one boundary, in producer order.
-	AssembledFileProducerSet(boundary string, provider string, path string) []string
+	// output path of one assembly group, in producer order.
+	AssembledFileProducerSet(assemblyPath string, provider string, path string) []string
 }
 
 // assembledOutput answers those two facts from the render's own assembly
@@ -44,7 +44,7 @@ type assembledOutputFacts interface {
 //
 // Neither accessor re-derives anything. The path set is the result's own reader
 // verbatim, and the content reader differs from the fact by one result: the
-// result reports whether the boundary and provider wrote the path at all, and a
+// result reports whether the group wrote the path at all, and a
 // fact accessor returns a value and never a report, so the not-written case
 // arrives as no bytes. That is the same answer this stage's other accessors give
 // for a coordinate nothing recorded, so it needs no separate treatment — but it
@@ -54,28 +54,28 @@ type assembledOutput struct {
 	result *RenderResult
 }
 
-// EmittedFilePathSet returns the output paths written for one provider within one
-// boundary, in path order.
-func (a assembledOutput) EmittedFilePathSet(boundary string, provider string) []string {
-	return a.result.EmittedPaths(boundary, provider)
+// EmittedFilePathSet returns the output paths one assembly group wrote, in path
+// order.
+func (a assembledOutput) EmittedFilePathSet(assemblyPath string, provider string) []string {
+	return a.result.EmittedPaths(assemblyPath, provider)
 }
 
-// AssembledFileContent returns the bytes standing at one output path for one
-// provider within one boundary, and no bytes when that pair wrote no such path.
-func (a assembledOutput) AssembledFileContent(boundary string, provider string, path string) []byte {
-	content, _ := a.result.AssembledFileContent(boundary, provider, path)
+// AssembledFileContent returns the bytes standing at one output path of one
+// assembly group, and no bytes when that group wrote no such path.
+func (a assembledOutput) AssembledFileContent(assemblyPath string, provider string, path string) []byte {
+	content, _ := a.result.AssembledFileContent(assemblyPath, provider, path)
 	return content
 }
 
 // AssembledFileProducerSet returns the contributors that placed a file at one
-// output path for one provider within one boundary, and nothing when that pair
-// wrote no such path.
-func (a assembledOutput) AssembledFileProducerSet(boundary string, provider string, path string) []string {
-	return a.result.AssembledFileProducers(boundary, provider, path)
+// output path of one assembly group, and nothing when that group wrote no such
+// path.
+func (a assembledOutput) AssembledFileProducerSet(assemblyPath string, provider string, path string) []string {
+	return a.result.AssembledFileProducers(assemblyPath, provider, path)
 }
 
 // renderedView presents, as named facts, what a render produced: the output paths
-// each provider wrote within each boundary, the bytes standing at one of them,
+// each assembly group wrote, the bytes standing at one of them,
 // the artifact names each node projected, and the bytes each of those artifacts
 // evaluated to.
 //

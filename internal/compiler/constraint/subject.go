@@ -243,7 +243,7 @@ const locatorSeparator = "."
 // A locator is a position and not an identifier, which is why the dropped value
 // is not spelled here in some escaped form. The element's own name reaches the
 // reader as a coordinate the subject carries and as the detail a rule raises
-// with — the same division [RunOnBoundaryProviderPaths] draws for a value that
+// with — the same division [RunOnAssemblyPathProviders] draws for a value that
 // is legitimate as a coordinate and refused as a segment.
 //
 // It returns the empty string when no authored segment remains, which is the

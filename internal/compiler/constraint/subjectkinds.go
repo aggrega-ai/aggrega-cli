@@ -1382,60 +1382,6 @@ func newBoundaryAttachmentPathSubject(
 	}
 }
 
-// BoundaryProviderPathSubject is the subject of a check invoked once per output
-// path written for one provider within one boundary.
-//
-// It is rooted at a boundary rather than at a document or a node because the
-// emitted file set is keyed that way: collisions between paths are only visible
-// per provider within the boundary that holds them.
-type BoundaryProviderPathSubject interface {
-	Subject
-
-	// BoundaryPath is the boundary the emitted set was written within, as every
-	// keyed fact takes it. It is the scope's path from the document's own scope
-	// set rather than a bare name, because boundaries nest and two scopes at
-	// different depths may carry one name.
-	BoundaryPath() string
-
-	// ProviderName is the provider within that boundary the path was written for.
-	ProviderName() string
-
-	// EmittedPath is the output path the check was invoked for. It is the one
-	// coordinate here that contributes no locator segment, because it is output
-	// rather than something an author wrote — so a check naming a particular path
-	// reads it from here.
-	EmittedPath() string
-
-	boundaryProviderPath()
-}
-
-type boundaryProviderPathSubject struct {
-	provenance
-	boundary string
-	provider string
-	path     string
-}
-
-func (boundaryProviderPathSubject) boundaryProviderPath() {}
-
-func (s boundaryProviderPathSubject) BoundaryPath() string { return s.boundary }
-
-func (s boundaryProviderPathSubject) ProviderName() string { return s.provider }
-
-func (s boundaryProviderPathSubject) EmittedPath() string { return s.path }
-
-func newBoundaryProviderPathSubject(
-	sourceFile, boundary, provider, path string,
-	segments ...string,
-) BoundaryProviderPathSubject {
-	return boundaryProviderPathSubject{
-		provenance: newProvenance(sourceFile, segments...),
-		boundary:   boundary,
-		provider:   provider,
-		path:       path,
-	}
-}
-
 // AssemblyPathProviderSubject is the subject of a check invoked once per
 // assembly group: one provider's contribution at one evaluated assembly path.
 //

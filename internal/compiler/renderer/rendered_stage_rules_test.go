@@ -22,19 +22,21 @@ import (
 // than the first, that the walk observes the caller's cancellation signal per
 // iteration, that the halt is attributed to the translation rather than to a
 // catalog document, that the rule about two contributors writing one output path
-// is reached from the same site and attributed to a catalog document instead, and
-// that the enumeration is built from the attribution the assembly recorded.
+// is reached from the same site and attributed to a catalog document instead, that
+// one collision is reported once however many boundaries fed the group that wrote
+// it, and that the enumeration is built from the attribution the assembly
+// recorded.
 
-// The cancellation and counting fixture. Three boundaries, each with one provider
-// writing two files, so a walk stopped after the first boundary's turn is a
+// The cancellation and counting fixture. Three groups, each with one provider
+// writing two files, so a walk stopped after the first group's turn is a
 // different number from a walk that ran to the end.
-const linkBoundaryCount, linkPathsPerBoundary = 3, 2
+const linkGroupCount, linkPathsPerGroup = 3, 2
 
-func linkBoundaryIDs() []string { return []string{"prod/eu", "prod/us", "stage"} }
+func linkGroupIDs() []string { return []string{"prod/eu", "prod/us", "stage"} }
 
-// assembledOutputHolding presents a completed render whose attribution names the
-// given boundaries, one provider each, holding one entry per path with the same
-// bytes.
+// assembledOutputHolding presents a completed render whose attribution records one
+// group per named boundary, one provider each, holding one entry per path with the
+// same bytes.
 //
 // It builds the attribution the flush records rather than the assembly's working
 // groups, because that attribution is what the presentation and the enumeration
@@ -73,14 +75,14 @@ func assembledOutputHolding(boundaries []string, provider string, files map[stri
 func orphanCrossBoundaryLinkHalt(t *testing.T, res *RenderResult) error {
 	t.Helper()
 	view := presentationOverTheRender(t, res)
-	coordinates := newRenderedStageCoordinates(res, "release.yaml")
+	coordinates := newAssemblyGroupCoordinates(res, "release.yaml")
 	if coordinates == nil {
 		t.Fatal("the enumeration refused to build over a render carrying attribution")
 	}
 	subjects := 0
-	for _, boundary := range coordinates.Boundaries() {
-		for _, provider := range coordinates.Providers(boundary.Value) {
-			subjects += len(coordinates.EmittedPaths(boundary.Value, provider))
+	for _, path := range coordinates.AssemblyPaths() {
+		for _, provider := range coordinates.AssemblyGroupProviders(path.Value) {
+			subjects += len(res.EmittedPaths(path.Value, provider))
 		}
 	}
 	if subjects == 0 {
@@ -113,13 +115,19 @@ func TestTheAssembledLinkPlaceholderRuleIsReachedFromTheRenderSite(t *testing.T)
 	if !errors.Is(err, ErrOrphanCrossBoundaryLinkSentinel()) {
 		t.Errorf("halt condition = %v, want the unresolved-placeholder condition", err)
 	}
-	// The rendered diagnostic, position included: the deployment document, the
-	// boundary inside it, and the provider and path the detail names.
+	// The rendered diagnostic: the provider and the path the detail names. It
+	// carries no boundary locator, and that is the shape rather than a loss — the
+	// finding is about a group, a group several boundaries fed has no single
+	// authored site, and this fault is the translation's rather than any
+	// document's.
 	text := err.Error()
-	for _, want := range []string{"cloudformation", "prod/cloudformation-stack.json", ".spec.boundaries.prod"} {
+	for _, want := range []string{"cloudformation", "prod/cloudformation-stack.json"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the halt omits %q, so the offending file cannot be identified: %s", want, text)
 		}
+	}
+	if strings.Contains(text, ".spec.boundaries.") {
+		t.Errorf("the halt positions itself at a boundary, which a group-scoped finding must not claim: %s", text)
 	}
 }
 
@@ -169,11 +177,14 @@ func TestTheAssembledCollisionHaltIsACatalogFault(t *testing.T) {
 	for _, want := range []string{
 		`output path "prod/stack.json"`,
 		`written by "component api and the cloudformation assembly"`,
-		".spec.boundaries.prod",
+		`assembled within "prod"`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the halt omits %q, so the offending path cannot be identified: %s", want, text)
 		}
+	}
+	if strings.Contains(text, ".spec.boundaries.") {
+		t.Errorf("the halt positions itself at a boundary rather than naming the group's boundaries in its detail: %s", text)
 	}
 }
 
@@ -213,7 +224,7 @@ func TestTheAssembledLinkPlaceholderRuleReportsEveryOffendingFile(t *testing.T) 
 
 	sentinel := rendercore.CrossBoundaryLinkSentinel("api", "db", "database", "host")
 	marked := []byte(`{"host":"` + sentinel + `"}`)
-	// Two boundaries, two files each, three of the four carrying a placeholder.
+	// Two groups, two files each, three of the four carrying a placeholder.
 	res := &RenderResult{Files: map[string]AssembledFile{
 		"prod/a.json":  {Content: marked},
 		"prod/b.json":  {Content: marked},
@@ -246,7 +257,7 @@ func TestTheAssembledLinkPlaceholderRuleReportsEveryOffendingFile(t *testing.T) 
 	if strings.Contains(joined, "stage/b.json") {
 		t.Errorf("a diagnostic names stage/b.json, which carries no placeholder: %s", joined)
 	}
-	t.Logf("three offending files across two boundaries -> %d diagnostic(s)", len(leaves))
+	t.Logf("three offending files across two groups -> %d diagnostic(s)", len(leaves))
 }
 
 // assembledContentReads answers the one fact the rule reads and counts the reads,
@@ -277,12 +288,12 @@ func (v assembledContentReads) AssembledFileContent(_ string, _ string, _ string
 //
 // # The trigger index is derived from THIS walk's order
 //
-// The walk is outermost by boundary, then by provider, then by path, and the
-// signal is read once per boundary — as the first statement of the outer loop's
-// body. So a withdrawal inside the FIRST boundary's first read is seen at the
-// second boundary's signal read: the first boundary's remaining paths are read,
-// and no later boundary is entered at all. The reached count is therefore exactly
-// one boundary's worth of paths.
+// The walk is outermost by assembly path, then by provider, and the signal is read
+// once per assembly path — as the first statement of the outer loop's body. Each
+// rule then walks the paths of the group it was invoked for. So a withdrawal inside
+// the FIRST group's first read is seen at the second group's signal read: the first
+// group's remaining paths are read, and no later group is entered at all. The
+// reached count is therefore exactly one group's worth of paths.
 //
 // # Why the count and not the error
 //
@@ -293,17 +304,17 @@ func (v assembledContentReads) AssembledFileContent(_ string, _ string, _ string
 func TestTheAssembledLinkPlaceholderWalkStopsOnTheIterationAfterTheSignalTurns(t *testing.T) {
 	t.Parallel()
 
-	total := linkBoundaryCount * linkPathsPerBoundary
-	if linkBoundaryCount < 2 || linkPathsPerBoundary < 1 {
-		t.Fatalf("the fixture holds %d boundary(ies) of %d path(s); one boundary's worth and the whole walk are the same number",
-			linkBoundaryCount, linkPathsPerBoundary)
+	total := linkGroupCount * linkPathsPerGroup
+	if linkGroupCount < 2 || linkPathsPerGroup < 1 {
+		t.Fatalf("the fixture holds %d group(s) of %d path(s); one group's worth and the whole walk are the same number",
+			linkGroupCount, linkPathsPerGroup)
 	}
 	files := map[string][]byte{}
-	for i := range linkPathsPerBoundary {
+	for i := range linkPathsPerGroup {
 		files["f"+strconv.Itoa(i)+".json"] = []byte(`{}`)
 	}
-	res := assembledOutputHolding(linkBoundaryIDs(), "cloudformation", files)
-	coordinates := newRenderedStageCoordinates(res, "release.yaml")
+	res := assembledOutputHolding(linkGroupIDs(), "cloudformation", files)
+	coordinates := newAssemblyGroupCoordinates(res, "release.yaml")
 	if coordinates == nil {
 		t.Fatal("the enumeration refused to build over a render carrying attribution")
 	}
@@ -343,10 +354,10 @@ func TestTheAssembledLinkPlaceholderWalkStopsOnTheIterationAfterTheSignalTurns(t
 	)
 	cancel()
 
-	if reads != linkPathsPerBoundary {
-		t.Errorf("the stopped walk reached %d path(s), want exactly one boundary's worth (%d) out of %d; "+
+	if reads != linkPathsPerGroup {
+		t.Errorf("the stopped walk reached %d path(s), want exactly one group's worth (%d) out of %d; "+
 			"reaching all %d would mean the signal is read after the walk rather than inside it",
-			reads, linkPathsPerBoundary, total, total)
+			reads, linkPathsPerGroup, total, total)
 	}
 	if reads >= total {
 		t.Errorf("the stopped walk reached %d path(s) of %d; it did not stop partway at all", reads, total)
@@ -361,7 +372,8 @@ func TestTheAssembledLinkPlaceholderWalkStopsOnTheIterationAfterTheSignalTurns(t
 
 // TestTheAssembledOutputEnumerationIsTheAttributionsOwn proves the axes are read
 // from the attribution the assembly recorded, in the order it recorded them, and
-// that the path axis is the render's own reader rather than a second walk.
+// that a group fed by several boundaries is ONE coordinate rather than one per
+// boundary.
 func TestTheAssembledOutputEnumerationIsTheAttributionsOwn(t *testing.T) {
 	t.Parallel()
 
@@ -380,50 +392,139 @@ func TestTheAssembledOutputEnumerationIsTheAttributionsOwn(t *testing.T) {
 			Boundaries: []string{"prod/eu"}, OutputPaths: []string{"tf/main.tf"}},
 	}
 
-	coordinates := newRenderedStageCoordinates(res, "release.yaml")
+	coordinates := newAssemblyGroupCoordinates(res, "release.yaml")
 	if coordinates == nil {
 		t.Fatal("the enumeration refused to build over a render carrying attribution")
 	}
 
-	// Every boundary once, in the order the attribution recorded them.
-	var boundaries []string
-	for _, b := range coordinates.Boundaries() {
-		boundaries = append(boundaries, b.Value)
-		if b.SourceFile != "release.yaml" {
-			t.Errorf("boundary %q is positioned at %q, want the deployment document", b.Value, b.SourceFile)
+	// Every assembly path once, in the order the attribution recorded them, each
+	// positioned at the deployment document and at no path inside it.
+	var paths []string
+	for _, p := range coordinates.AssemblyPaths() {
+		paths = append(paths, p.Value)
+		if p.SourceFile != "release.yaml" {
+			t.Errorf("assembly path %q is positioned at %q, want the deployment document", p.Value, p.SourceFile)
 		}
 	}
-	if want := []string{"prod/eu", "prod/us"}; !equalStrings(boundaries, want) {
-		t.Errorf("boundary axis = %v, want %v", boundaries, want)
+	if want := []string{"shared", "tf"}; !equalStrings(paths, want) {
+		t.Errorf("assembly-path axis = %v, want %v", paths, want)
 	}
 
-	// A boundary reaching two providers yields both, in group order.
-	if got, want := coordinates.Providers("prod/eu"), []string{"cloudformation", "terraform"}; !equalStrings(got, want) {
-		t.Errorf("provider axis for prod/eu = %v, want %v", got, want)
-	}
-	if got, want := coordinates.Providers("prod/us"), []string{"cloudformation"}; !equalStrings(got, want) {
-		t.Errorf("provider axis for prod/us = %v, want %v", got, want)
+	// The two-boundary group is ONE coordinate. That is the whole reason the axis
+	// is keyed here: enumerated per boundary this group would present twice, and a
+	// rule over it would report the group's output twice.
+	if got := len(coordinates.AssemblyPaths()); got != len(res.Contributions) {
+		t.Errorf("the axis presents %d coordinate(s) for %d group(s); a collapsed group is being counted per boundary",
+			got, len(res.Contributions))
 	}
 
-	// The path axis is the render's own reader, so the two agree by construction
-	// rather than by comparison — asserted here so a second walk introduced later
-	// fails rather than diverging quietly.
-	for _, boundary := range boundaries {
-		for _, provider := range coordinates.Providers(boundary) {
-			if got, want := coordinates.EmittedPaths(boundary, provider), res.EmittedPaths(boundary, provider); !equalStrings(got, want) {
-				t.Errorf("path axis for %q/%q = %v, want the render's own reader's %v", boundary, provider, got, want)
-			}
+	// The provider axis is the render's own reader, so the coordinate a rule runs
+	// over and the fact it reads cannot be derived two ways.
+	for _, path := range paths {
+		if got, want := coordinates.AssemblyGroupProviders(path), res.assemblyProviders(path); !equalStrings(got, want) {
+			t.Errorf("provider axis for %q = %v, want the render's own reader's %v", path, got, want)
 		}
+	}
+	if got, want := coordinates.AssemblyGroupProviders("shared"), []string{"cloudformation"}; !equalStrings(got, want) {
+		t.Errorf("provider axis for shared = %v, want %v", got, want)
 	}
 
 	// A render that recorded no attribution presents no enumeration at all, rather
 	// than a value that answers emptily.
-	if newRenderedStageCoordinates(&RenderResult{}, "release.yaml") != nil {
+	if newAssemblyGroupCoordinates(&RenderResult{}, "release.yaml") != nil {
 		t.Error("the enumeration built over a render that recorded no attribution")
 	}
-	if newRenderedStageCoordinates(nil, "release.yaml") != nil {
+	if newAssemblyGroupCoordinates(nil, "release.yaml") != nil {
 		t.Error("the enumeration built over no render at all")
 	}
+}
+
+// TestOneCollisionIsOneFindingHoweverManyBoundariesFedTheGroup is the proof for
+// the shape this rule was moved onto its group key for.
+//
+// Three boundaries whose path declarations evaluate alike collapse into one
+// group. Two of the group's contributors meet on one output path and the third
+// contributes a file of its own, so exactly one path collides and one of the three
+// boundaries contributed nothing to it.
+//
+// Three properties are asserted and none of them is implied by the others. The
+// COUNT: one colliding path produces one finding, not one per boundary that fed
+// the group. The CONTRIBUTORS: that one finding names every contributor that met,
+// so the repair is not a deduplication that drops one of them. And the POSITIONS:
+// no finding is positioned at a boundary at all, which is what stops a reader
+// being sent to a document that is not the problem — a per-boundary keying
+// positions one report at each boundary of the group, and cannot tell the innocent
+// one from the rest.
+func TestOneCollisionIsOneFindingHoweverManyBoundariesFedTheGroup(t *testing.T) {
+	t.Parallel()
+
+	res := &RenderResult{Files: map[string]AssembledFile{
+		"shared/monitor.yaml": {Content: []byte(`{}`)},
+		"shared/store.yaml":   {Content: []byte(`{}`)},
+	}}
+	res.artifacts = newArtifactProjections()
+	res.Contributions = []AssemblyContribution{{
+		AssemblyPath: "shared",
+		Provider:     "helm",
+		Boundaries:   []string{"alpha-net", "beta-net", "gamma-net"},
+		OutputPaths:  []string{"shared/monitor.yaml", "shared/store.yaml"},
+		PathProducers: map[string][]string{
+			// alpha and beta met here; gamma wrote the other path and met nothing.
+			"shared/monitor.yaml": {"component alpha", "component beta"},
+			"shared/store.yaml":   {"component gamma"},
+		},
+	}}
+
+	// CONTROL — one contributor per path admits, so a halt below cannot come from
+	// the fixture's shape.
+	clean := *res
+	clean.Contributions = []AssemblyContribution{{
+		AssemblyPath: "shared", Provider: "helm",
+		Boundaries:  []string{"alpha-net", "beta-net", "gamma-net"},
+		OutputPaths: []string{"shared/monitor.yaml", "shared/store.yaml"},
+		PathProducers: map[string][]string{
+			"shared/monitor.yaml": {"component alpha"},
+			"shared/store.yaml":   {"component gamma"},
+		},
+	}}
+	if err := orphanCrossBoundaryLinkHalt(t, &clean); err != nil {
+		t.Fatalf("a three-boundary group whose every path has one contributor was refused: %v", err)
+	}
+
+	err := orphanCrossBoundaryLinkHalt(t, res)
+	if err == nil {
+		t.Fatal("the site admitted an output path two contributors wrote")
+	}
+	if !errors.Is(err, ErrAssembledOutputCollision()) {
+		t.Fatalf("halt condition = %v, want the assembled-output collision", err)
+	}
+
+	leaves := haltLeafMessages(err)
+	if len(leaves) != 1 {
+		t.Fatalf("one colliding path produced %d finding(s), want 1 — a per-boundary keying produces one per boundary that fed the group: %v",
+			len(leaves), leaves)
+	}
+	finding := leaves[0]
+	for _, want := range []string{
+		`output path "shared/monitor.yaml"`,
+		`written by "component alpha and component beta"`,
+		`assembled within "alpha-net, beta-net and gamma-net"`,
+	} {
+		if !strings.Contains(finding, want) {
+			t.Errorf("the finding omits %q: %s", want, finding)
+		}
+	}
+	// The innocent boundary is not a position, and neither is any other: the
+	// finding names the group's boundaries as detail and claims none of them is at
+	// fault.
+	if strings.Contains(finding, ".spec.boundaries.") {
+		t.Errorf("the finding is positioned at a boundary; one of the group's three contributed nothing to this path: %s", finding)
+	}
+	// The path that did not collide is not reported.
+	if strings.Contains(finding, "shared/store.yaml") {
+		t.Errorf("the finding names a path with one contributor: %s", finding)
+	}
+	t.Logf("one colliding path across a three-boundary group -> %d finding: %s", len(leaves), finding)
 }
 
 func equalStrings(got, want []string) bool {

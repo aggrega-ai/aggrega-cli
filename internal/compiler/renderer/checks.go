@@ -447,35 +447,47 @@ var AssemblyGroupDerivesEachNameOnce = constraint.Check[
 // build-internal marker is never valid shipped output, so a violation halts the
 // build rather than advising and letting it finish.
 //
-// It reads one fact, the bytes standing at one output path, and reads them for
-// the single path it was invoked for. The whole of its predicate is a substring
-// test over those bytes, which is why the bytes are all it needs: what makes a
-// placeholder detectable is a prefix the host chose, so the rule never has to
-// establish which edge stamped it or which provider was meant to resolve it.
-// That the rule finds the same file across runs of identical input follows from
-// the order it is invoked in, not from anything it does.
+// It reads two facts: the output paths the group it was invoked for wrote, which
+// is what there is to scan, and the bytes standing at one of them. The whole of
+// its predicate is a substring test over those bytes, which is why the bytes are
+// all it needs: what makes a placeholder detectable is a prefix the host chose,
+// so the rule never has to establish which edge stamped it or which provider was
+// meant to resolve it. That the rule finds the same files in the same order
+// across runs of identical input follows from the order the path fact answers in,
+// not from anything it does.
+//
+// It is keyed by the group for the reason the collision rule beside it is: an
+// assembled file belongs to the group that assembled it, so a per-boundary keying
+// would report one offending file once for every boundary that fed the group and
+// position one of those reports at a boundary that contributed nothing to it.
+// That matters more here than it looks, because this fault is the translation's
+// rather than any document's — so a boundary position would name an editable site
+// for a fault no edit to it can fix.
 //
 // Its detail names the provider and the emitted path, because a path is unique
-// only within a boundary and a provider together — so naming both is what makes
-// the objection point at one file, and the boundary the locator already carries
-// completes the coordinate.
+// only within a group — so naming the provider is what makes the objection point
+// at one file, and the assembly path the subject carries completes the coordinate.
 var CrossBoundaryLinkPlaceholderResolved = constraint.Check[
 	constraint.RenderedView,
-	constraint.BoundaryProviderPathSubject,
+	constraint.AssemblyPathProviderSubject,
 ]{
 	Sentinel: ErrOrphanCrossBoundaryLinkSentinel(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.RenderedView,
-		s constraint.BoundaryProviderPathSubject,
+		s constraint.AssemblyPathProviderSubject,
 	) []constraint.Objection {
-		content := v.AssembledFileContent(s.BoundaryPath(), s.ProviderName(), s.EmittedPath())
-		if !bytes.Contains(content, []byte(rendercore.CrossBoundaryLinkSentinelPrefix)) {
-			return nil
+		var out []constraint.Objection
+		for _, path := range v.EmittedFilePathSet(s.AssemblyPath(), s.ProviderName()) {
+			content := v.AssembledFileContent(s.AssemblyPath(), s.ProviderName(), path)
+			if !bytes.Contains(content, []byte(rendercore.CrossBoundaryLinkSentinelPrefix)) {
+				continue
+			}
+			out = append(out, s.Raise(
+				ErrOrphanCrossBoundaryLinkSentinel(), s.ProviderName(), path,
+			))
 		}
-		return []constraint.Objection{s.Raise(
-			ErrOrphanCrossBoundaryLinkSentinel(), s.ProviderName(), s.EmittedPath(),
-		)}
+		return out
 	},
 }
 
@@ -2237,31 +2249,74 @@ var BoundaryAttachmentEmittedNameProducedByOneBlock = constraint.Check[
 // assembly may have nested, so two contributors emitting one filename that an
 // assembly keeps apart are not reported here.
 //
-// It reads one fact and holds no traversal, because it is invoked once per path the
-// group wrote. Its detail names the path and the contributors that met, joined into
-// one value in the order the fact answered, which is producer order — so the sentence
-// is a function of the build rather than of the order the placements arrived in.
+// # It is keyed by the GROUP, and that is what makes one collision one finding
+//
+// A collision at an output path is a property of the group that wrote it. Keyed
+// per boundary instead — which reads as the friendlier arrangement, since a
+// boundary is a place an author can open — the rule is invoked once for every
+// boundary that fed the group, and the facts answer each of those invocations
+// identically because the paths and the contributors belong to the group and not
+// to any boundary of it. One collision then reports as several findings that say
+// the same thing, and the count depends on how many boundaries happened to
+// collapse into one group rather than on anything about the fault.
+//
+// The sharper half is the POSITION. Several boundaries reach one group exactly
+// when their own path declarations evaluate alike, and nothing says the
+// contributors that met sat in all of them — so a per-boundary keying positions a
+// finding at every boundary of the group, including boundaries whose components
+// contributed nothing to the colliding path. Such a finding sends its reader to a
+// document that is not the problem, which is worse than a finding with no position
+// at all. Keyed here the group has no single authored site to name, so the
+// deployment document is the position and the boundaries that fed the group are
+// named in the detail: every site an operator could act on, and no claim that one
+// of them is at fault.
+//
+// 🔴 The key is a REPORTING decision and not a detection one. What collides is
+// unchanged: the same pairs of contributors on the same output paths are refused,
+// and nothing about the group keying widens or narrows the set of inputs that
+// halt. The predicate below is the same comparison it always was — more than one
+// contributor at one path — so a reader who takes the per-boundary reporting as
+// evidence that the check was wrong will change what the build detects while
+// trying to change what it says.
+//
+// # What it holds and what it reads
+//
+// It holds a walk over the group's own output paths, because the subject names the
+// group rather than one path — the same shape the derived-name rule at the stage
+// before this has, and for the same reason. It reads two facts: the paths the
+// group wrote, which is what there is to ask about, and the contributors at one of
+// them, which is the predicate. The boundaries are a third fact, read only to be
+// reported.
+//
+// Its detail names the path, the contributors that met — joined into one value in
+// the order the fact answered, which is producer order — and the boundaries that
+// fed the group. All three are a function of the build rather than of the order
+// the placements arrived in.
 var AssembledPathWrittenByOneContributor = constraint.Check[
 	constraint.RenderedView,
-	constraint.BoundaryProviderPathSubject,
+	constraint.AssemblyPathProviderSubject,
 ]{
 	Sentinel: ErrAssembledOutputCollision(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.RenderedView,
-		s constraint.BoundaryProviderPathSubject,
+		s constraint.AssemblyPathProviderSubject,
 	) []constraint.Objection {
-		producers := v.AssembledFileProducerSet(s.BoundaryPath(), s.ProviderName(), s.EmittedPath())
-		if len(producers) < 2 {
-			return nil
-		}
-		return []constraint.Objection{
-			s.RaiseWith(
+		var out []constraint.Objection
+		for _, path := range v.EmittedFilePathSet(s.AssemblyPath(), s.ProviderName()) {
+			producers := v.AssembledFileProducerSet(s.AssemblyPath(), s.ProviderName(), path)
+			if len(producers) < 2 {
+				continue
+			}
+			out = append(out, s.RaiseWith(
 				ErrAssembledOutputCollision(),
-				constraint.Captioned("output path", s.EmittedPath()),
+				constraint.Captioned("output path", path),
 				constraint.Captioned("written by", joinWithAnd(producers)),
-			),
+				constraint.Captioned("assembled within", joinWithAnd(
+					v.AssemblyGroupBoundarySet(s.AssemblyPath(), s.ProviderName()))),
+			))
 		}
+		return out
 	},
 }
 

@@ -1525,41 +1525,6 @@ func RunOnBoundaryAttachmentEmittedPaths[V View](
 		})
 }
 
-// RunOnBoundaryProviderPaths invokes check once per output path written for one
-// provider within one boundary, in boundary order, then provider order, then
-// path order.
-//
-// The locator names the boundary alone — .spec.boundaries.<boundary>, with the
-// container's key repeated for each level of a nested boundary — and that is the
-// whole of what is authored here. A provider is selected rather than written at
-// this site, and an emitted path is output rather than authoring, so neither
-// contributes a segment. Both are still coordinates the subject carries, which is
-// what lets a check raising about a particular path name it in its detail:
-// coordinate state and locator segments answer different questions, and this kind
-// is where the same value is legitimate as one and refused as the other.
-func RunOnBoundaryProviderPaths[V View](
-	cancelled Cancellation,
-	boundaries BoundaryEnumerator,
-	providers ProviderEnumerator,
-	paths EmittedPathEnumerator,
-	view V,
-	check Check[V, BoundaryProviderPathSubject],
-) ([]Objection, error) {
-	return runOverAuthoredScopes(cancelled, boundaries.Boundaries(), view, check.Run,
-		func(boundary AuthoredCoordinate) []BoundaryProviderPathSubject {
-			segments := nestedScopeSegments(boundaryNesting, boundary.Value)
-			var out []BoundaryProviderPathSubject
-			for _, provider := range providers.Providers(boundary.Value) {
-				for _, path := range paths.EmittedPaths(boundary.Value, provider) {
-					out = append(out, newBoundaryProviderPathSubject(
-						boundary.SourceFile, boundary.Value, provider, path, segments...,
-					))
-				}
-			}
-			return out
-		})
-}
-
 // RunOnAssemblyPathProviders invokes check once per assembly group — one
 // provider's contribution at one evaluated assembly path — in assembly-path
 // order and then provider order.
@@ -1672,7 +1637,7 @@ func RunOnModules[V View](
 // A rule over this kind owes the id in its detail whichever shape it was invoked
 // for. On the direct axis the id the author typed carries the locator dialect's
 // separator whenever a sub-module contributed the component, so the locator names
-// the component block and stops — the division [RunOnBoundaryProviderPaths] draws
+// the component block and stops — the division [RunOnAssemblyPathProviders] draws
 // for a value legitimate as a coordinate and refused as a segment. On the routed
 // axis the locator reaches the local name, which is not the id the entry
 // addresses, so the detail is the only place the id appears.

@@ -162,13 +162,20 @@ func TestRenderAll_FlatContributorsOnOneOutputPathHalt(t *testing.T) {
 	for _, want := range []string{
 		`output path "boundaries/default/collide/shared.yaml"`,
 		`written by "component alpha and component beta"`,
-		// The finding is positioned at the boundary the output was assembled
-		// within, which is a place an operator can open.
-		".spec.boundaries.default",
+		// The boundary the output was assembled within is named in the detail
+		// rather than claimed as a position. A group is what boundaries whose
+		// path declarations evaluate alike collapse into, so a boundary locator
+		// would be a claim about which of them is at fault — and here, where one
+		// boundary fed the group, the detail says the same thing without making
+		// that claim.
+		`assembled within "default"`,
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("diagnostic missing %q\ngot: %s", want, msg)
 		}
+	}
+	if strings.Contains(msg, ".spec.boundaries.") {
+		t.Errorf("diagnostic positions a group-scoped finding at a boundary\ngot: %s", msg)
 	}
 }
 

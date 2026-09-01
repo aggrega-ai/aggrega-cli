@@ -46,13 +46,13 @@ var LocallyDeclaredViewRule = constraint.Check[localView, constraint.DocumentAss
 // cannot place a fact the chain does not carry, so it reports the fact rather
 // than a stage — and reporting it is what keeps a misspelling from being read as
 // a check needing nothing.
-var MisspelledFactRule = constraint.Check[constraint.RenderedView, constraint.BoundaryProviderPathSubject]{
+var MisspelledFactRule = constraint.Check[constraint.RenderedView, constraint.AssemblyPathProviderSubject]{
 	Sentinel: ErrFileCollision,
 	Severity: constraint.SeverityFatal,
-	Run: func(v constraint.RenderedView, s constraint.BoundaryProviderPathSubject) []constraint.Objection {
+	Run: func(v constraint.RenderedView, s constraint.AssemblyPathProviderSubject) []constraint.Objection {
 		seen := map[string]bool{}
 		var out []constraint.Objection
-		for _, path := range v.EmittedFilePathSets(s.Boundary(), s.Provider()) {
+		for _, path := range v.EmittedFilePathSets(s.AssemblyPath(), s.ProviderName()) {
 			if seen[path] {
 				out = append(out, s.Raise(ErrFileCollision, path))
 			}

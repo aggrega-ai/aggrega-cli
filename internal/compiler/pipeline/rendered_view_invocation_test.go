@@ -17,52 +17,51 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// renderedCoordinates supplies the boundary and provider axes for the traversal
-// below, derived from the attribution the render published.
+// renderedCoordinates supplies the two axes a rule declared over assembled output
+// is invoked once per — one provider's contribution at one evaluated assembly path
+// — derived from the attribution the render published.
 //
-// Only these two coordinates are supplied here, because no production
-// implementation of either exists yet — supplying the enumerators the declared
-// rules need is the work of the items this presentation unblocks, so nothing here
-// should be read as a production enumeration. The third axis is not supplied at
-// all: the render's own result already answers it in exactly the shape the
-// framework asks for, so the traversal below takes the result itself for that one.
+// It is a local axis rather than the production one deliberately: this file's
+// subject is whether the PRESENTATION answers from a compiled build, so the
+// enumeration is built here from the render's own attribution and nothing here
+// should be read as the production enumeration.
 //
 // Both axes are derived from what the render produced rather than from what the
 // test expects, and both are sorted, so the enumeration is a function of the build
 // and the same on every run.
 type renderedCoordinates struct {
-	boundaries []constraint.AuthoredCoordinate
-	byBoundary map[string][]string
+	paths   []constraint.AuthoredCoordinate
+	byGroup map[string][]string
 }
 
 func newRenderedCoordinates(res *renderer.RenderResult, sourceFile string) renderedCoordinates {
-	byBoundary := map[string][]string{}
+	byGroup := map[string][]string{}
 	for _, c := range res.Contributions {
-		for _, boundary := range c.Boundaries {
-			if !slices.Contains(byBoundary[boundary], c.Provider) {
-				byBoundary[boundary] = append(byBoundary[boundary], c.Provider)
-			}
+		if !slices.Contains(byGroup[c.AssemblyPath], c.Provider) {
+			byGroup[c.AssemblyPath] = append(byGroup[c.AssemblyPath], c.Provider)
 		}
 	}
-	names := make([]string, 0, len(byBoundary))
-	for boundary := range byBoundary {
-		names = append(names, boundary)
-		sort.Strings(byBoundary[boundary])
+	names := make([]string, 0, len(byGroup))
+	for path := range byGroup {
+		names = append(names, path)
+		sort.Strings(byGroup[path])
 	}
 	sort.Strings(names)
 
-	coordinates := renderedCoordinates{byBoundary: byBoundary}
+	coordinates := renderedCoordinates{byGroup: byGroup}
 	for _, name := range names {
-		coordinates.boundaries = append(coordinates.boundaries, constraint.AuthoredCoordinate{
+		coordinates.paths = append(coordinates.paths, constraint.AuthoredCoordinate{
 			Value: name, SourceFile: sourceFile,
 		})
 	}
 	return coordinates
 }
 
-func (c renderedCoordinates) Boundaries() []constraint.AuthoredCoordinate { return c.boundaries }
+func (c renderedCoordinates) AssemblyPaths() []constraint.AuthoredCoordinate { return c.paths }
 
-func (c renderedCoordinates) Providers(boundary string) []string { return c.byBoundary[boundary] }
+func (c renderedCoordinates) AssemblyGroupProviders(assemblyPath string) []string {
+	return c.byGroup[assemblyPath]
+}
 
 // projectedArtifactAxisOver builds the production artifact axis that enumerates
 // what a render actually projected, rather than what the Recipe declared.
@@ -153,28 +152,28 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 			t.Fatalf("the first attribution names %d boundaries and %d paths; the assertions below need both",
 				len(contribution.Boundaries), len(contribution.OutputPaths))
 		}
-		boundary, provider := contribution.Boundaries[0], contribution.Provider
+		group, provider := contribution.AssemblyPath, contribution.Provider
 
-		paths := view.EmittedFilePathSet(boundary, provider)
+		paths := view.EmittedFilePathSet(group, provider)
 		if len(paths) == 0 {
-			t.Fatalf("EmittedFilePathSet(%q, %q) is empty for a pair the attribution names", boundary, provider)
+			t.Fatalf("EmittedFilePathSet(%q, %q) is empty for a group the attribution names", group, provider)
 		}
 		if !sort.StringsAreSorted(paths) {
-			t.Errorf("EmittedFilePathSet(%q, %q) = %v, want path order", boundary, provider, paths)
+			t.Errorf("EmittedFilePathSet(%q, %q) = %v, want path order", group, provider, paths)
 		}
 		for _, path := range paths {
 			if _, held := res.Files[path]; !held {
-				t.Errorf("EmittedFilePathSet(%q, %q) names %q, which the result's file map does not hold", boundary, provider, path)
+				t.Errorf("EmittedFilePathSet(%q, %q) names %q, which the result's file map does not hold", group, provider, path)
 			}
 		}
 
 		path := paths[0]
-		content := view.AssembledFileContent(boundary, provider, path)
+		content := view.AssembledFileContent(group, provider, path)
 		if len(content) == 0 {
-			t.Fatalf("AssembledFileContent(%q, %q, %q) is empty for a path the same pair wrote", boundary, provider, path)
+			t.Fatalf("AssembledFileContent(%q, %q, %q) is empty for a path the same group wrote", group, provider, path)
 		}
 		if want := res.Files[path].Content; string(content) != string(want) {
-			t.Errorf("AssembledFileContent(%q, %q, %q) = %q, want the bytes the result holds %q", boundary, provider, path, content, want)
+			t.Errorf("AssembledFileContent(%q, %q, %q) = %q, want the bytes the result holds %q", group, provider, path, content, want)
 		}
 
 		// The artifact facts, against what the render projected. The name set is
@@ -206,11 +205,11 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 
 		// A coordinate the render did not reach answers with each fact's zero value
 		// rather than with another coordinate's.
-		if got := view.EmittedFilePathSet("no-such-boundary", provider); got != nil {
-			t.Errorf("EmittedFilePathSet(\"no-such-boundary\", %q) = %v, want no paths", provider, got)
+		if got := view.EmittedFilePathSet("no-such-group", provider); got != nil {
+			t.Errorf("EmittedFilePathSet(\"no-such-group\", %q) = %v, want no paths", provider, got)
 		}
-		if got := view.AssembledFileContent(boundary, provider, "no-such-path"); got != nil {
-			t.Errorf("AssembledFileContent(%q, %q, \"no-such-path\") = %q, want no bytes", boundary, provider, got)
+		if got := view.AssembledFileContent(group, provider, "no-such-path"); got != nil {
+			t.Errorf("AssembledFileContent(%q, %q, \"no-such-path\") = %q, want no bytes", group, provider, got)
 		}
 		if got := view.ArtifactProjectionNameSet("no-such-node"); got != nil {
 			t.Errorf("ArtifactProjectionNameSet(\"no-such-node\") = %v, want no names", got)
@@ -220,7 +219,7 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		}
 
 		t.Logf("presentation answers %d path(s) for %q/%q and %d artifact(s) for %q",
-			len(paths), boundary, provider, len(names), node)
+			len(paths), group, provider, len(names), node)
 	})
 
 	t.Run("a rule declared at that stage is invoked through it", func(t *testing.T) {
@@ -235,17 +234,17 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		// subject would report no objection and read exactly like a rule that ran
 		// and approved, so the subject count is measured rather than assumed.
 		visited := 0
-		for _, boundary := range coordinates.Boundaries() {
-			for _, provider := range coordinates.Providers(boundary.Value) {
-				visited += len(res.EmittedPaths(boundary.Value, provider))
+		for _, path := range coordinates.AssemblyPaths() {
+			for _, provider := range coordinates.AssemblyGroupProviders(path.Value) {
+				visited += len(res.EmittedPaths(path.Value, provider))
 			}
 		}
 		if visited == 0 {
 			t.Fatal("the traversal would visit no emitted path; a finding from it would certify nothing")
 		}
 
-		objections, err := constraint.RunOnBoundaryProviderPaths(
-			context.Background().Err, coordinates, coordinates, res, res.RenderedView,
+		objections, err := constraint.RunOnAssemblyPathProviders(
+			context.Background().Err, coordinates, coordinates, res.RenderedView,
 			renderer.CrossBoundaryLinkPlaceholderResolved,
 		)
 		if err != nil {
@@ -259,8 +258,8 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		if len(objections) != 0 {
 			t.Fatalf("rule raised %d objection(s) over a build the render admitted: %v", len(objections), objections)
 		}
-		t.Logf("rule invoked over %d emitted path(s) across %d boundary(ies); no objection, agreeing with the render",
-			visited, len(coordinates.Boundaries()))
+		t.Logf("rule invoked over %d emitted path(s) across %d assembly path(s); no objection, agreeing with the render",
+			visited, len(coordinates.AssemblyPaths()))
 	})
 
 	t.Run("the same rule raises on bytes the render refuses", func(t *testing.T) {
@@ -269,9 +268,9 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		coordinates := newRenderedCoordinates(res, invocationReleasePath)
 
 		visited := 0
-		for _, boundary := range coordinates.Boundaries() {
-			for _, provider := range coordinates.Providers(boundary.Value) {
-				visited += len(res.EmittedPaths(boundary.Value, provider))
+		for _, path := range coordinates.AssemblyPaths() {
+			for _, provider := range coordinates.AssemblyGroupProviders(path.Value) {
+				visited += len(res.EmittedPaths(path.Value, provider))
 			}
 		}
 		if visited == 0 {
@@ -282,8 +281,8 @@ func TestRenderedPresentationAnswersFromTheCompiledBuild(t *testing.T) {
 		var substituted constraint.RenderedView = renderedContentSubstituted{
 			RenderedView: res.RenderedView, content: offending,
 		}
-		raised, err := constraint.RunOnBoundaryProviderPaths(
-			context.Background().Err, coordinates, coordinates, res, substituted,
+		raised, err := constraint.RunOnAssemblyPathProviders(
+			context.Background().Err, coordinates, coordinates, substituted,
 			renderer.CrossBoundaryLinkPlaceholderResolved,
 		)
 		if err != nil {

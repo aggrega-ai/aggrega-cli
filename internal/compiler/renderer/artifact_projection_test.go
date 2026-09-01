@@ -341,6 +341,27 @@ func TestRenderedPresentationRefusesAPartialConstruction(t *testing.T) {
 // build.
 type stubDispatchedView struct {
 	constraint.DispatchedView
+
+	// groups answers the one embedded fact the rules over assembled output read
+	// through this stand-in: which boundaries fed the group a finding is about.
+	// It is the production presentation of that fact rather than a second answer,
+	// so a test reading it reads what a build reads.
+	groups assemblyGroups
+}
+
+// AssemblyGroupBoundarySet answers from the render's own attribution, overriding
+// the embedded nil presentation.
+//
+// The collision rule over assembled output reports the boundaries that fed the
+// group it objects about, because the group itself is not a site anyone can edit
+// — so a stand-in that answered nothing here would make every such finding
+// nameless, and one that answered from its own list would be a second producer
+// of a fact the render already holds.
+func (s stubDispatchedView) AssemblyGroupBoundarySet(assemblyPath, provider string) []string {
+	if s.groups.result == nil {
+		return nil
+	}
+	return s.groups.AssemblyGroupBoundarySet(assemblyPath, provider)
 }
 
 // presentationOverTheRender builds this stage's presentation over the retention a
@@ -361,7 +382,10 @@ type stubDispatchedView struct {
 // compilation is available.
 func presentationOverTheRender(t *testing.T, res *RenderResult) constraint.RenderedView {
 	t.Helper()
-	view := newRenderedView(stubDispatchedView{}, assembledOutput{result: res}, res.artifacts)
+	view := newRenderedView(
+		stubDispatchedView{groups: assemblyGroups{result: res}},
+		assembledOutput{result: res}, res.artifacts,
+	)
 	if view == nil {
 		t.Fatal("the presentation refused to build over a completed render")
 	}

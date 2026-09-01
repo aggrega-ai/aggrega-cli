@@ -243,44 +243,54 @@ type AssemblyContribution struct {
 	PathProducers map[string][]string
 }
 
-// EmittedPaths returns the output paths written for one provider within one
-// boundary, in path order.
+// EmittedPaths returns the output paths one assembly group wrote, in path order.
+//
+// The group is named by its evaluated assembly path together with the provider
+// that rendered it, which is the pair that identifies exactly one group — so the
+// first record matching both is the whole answer and there is nothing to union.
+//
+// It is keyed by the group rather than by a boundary the group was fed by, and
+// the difference is not presentational. Boundaries whose own path declarations
+// evaluate alike under one provider collapse into a single group, and the paths
+// belong to what that group assembled: a boundary of a collapsed group holds no
+// path of its own, so answering per boundary returns the same set once per
+// boundary and a caller walking that keying walks one group's output several
+// times.
 //
 // The order is stated rather than inherited: the order files are placed into a
 // group is the order the contributing maps happen to iterate in, which is not a
 // property of the input, so path order is what makes this answer a function of
-// the build alone. A boundary that reaches more than one assembly path under one
-// provider gets the union across all of them.
-func (r *RenderResult) EmittedPaths(boundary, provider string) []string {
-	var out []string
+// the build alone.
+func (r *RenderResult) EmittedPaths(assemblyPath, provider string) []string {
 	for _, c := range r.Contributions {
-		if c.Provider != provider || !slices.Contains(c.Boundaries, boundary) {
-			continue
+		if c.AssemblyPath == assemblyPath && c.Provider == provider {
+			out := slices.Clone(c.OutputPaths)
+			sort.Strings(out)
+			return out
 		}
-		out = append(out, c.OutputPaths...)
 	}
-	sort.Strings(out)
-	return out
+	return nil
 }
 
 // AssembledFileProducers returns the contributors that placed a file at one
-// output path for one provider within one boundary, in producer order.
+// output path of one assembly group, in producer order.
 //
-// It answers for the boundary and the provider together, on the reading the
-// content lookup beside it follows: a path is looked up only among the paths the
-// named pair contributed to, so a caller asking about a boundary that wrote
-// nothing there is answered with nothing rather than with another boundary's
-// contributors. A boundary reaching more than one assembly path under one
-// provider is answered from whichever of its groups wrote the path, and only one
-// of them can have: the groups' path sets are disjoint.
-func (r *RenderResult) AssembledFileProducers(boundary, provider, path string) []string {
+// It answers for the group, on the reading the content lookup beside it follows:
+// a path is looked up only among the paths that group wrote, so a caller asking
+// about a group that wrote nothing there is answered with nothing rather than
+// with another group's contributors.
+//
+// The group keying is what makes one collision one answer. Which contributors
+// met at a path is a property of the group's own assembled output, so a set
+// keyed per boundary answers every boundary of a collapsed group with the same
+// contributors — including boundaries none of those contributors sat in, which
+// such a keying cannot tell apart.
+func (r *RenderResult) AssembledFileProducers(assemblyPath, provider, path string) []string {
 	for _, c := range r.Contributions {
-		if c.Provider != provider || !slices.Contains(c.Boundaries, boundary) {
+		if c.AssemblyPath != assemblyPath || c.Provider != provider {
 			continue
 		}
-		if producers, wrote := c.PathProducers[path]; wrote {
-			return producers
-		}
+		return c.PathProducers[path]
 	}
 	return nil
 }
@@ -323,22 +333,22 @@ func (r *RenderResult) assemblyBoundaries(assemblyPath, provider string) []strin
 	return nil
 }
 
-// AssembledFileContent returns the bytes standing at one output path for one
-// provider within one boundary, and reports whether that pair wrote that path.
+// AssembledFileContent returns the bytes standing at one output path of one
+// assembly group, and reports whether that group wrote that path.
 //
-// It answers for the pair rather than for the path alone: a path is looked up
-// only among the paths the named boundary and provider actually contributed to,
-// so a caller asking about a boundary that wrote nothing there is told so rather
-// than handed another boundary's file.
+// It answers for the group rather than for the path alone: a path is looked up
+// only among the paths the named group actually wrote, so a caller asking about
+// a group that wrote nothing there is told so rather than handed another group's
+// file.
 //
 // The bytes are the ones the result holds, not a copy of them.
-func (r *RenderResult) AssembledFileContent(boundary, provider, path string) ([]byte, bool) {
+func (r *RenderResult) AssembledFileContent(assemblyPath, provider, path string) ([]byte, bool) {
 	for _, c := range r.Contributions {
-		if c.Provider != provider || !slices.Contains(c.Boundaries, boundary) {
+		if c.AssemblyPath != assemblyPath || c.Provider != provider {
 			continue
 		}
 		if !slices.Contains(c.OutputPaths, path) {
-			continue
+			return nil, false
 		}
 		af, ok := r.Files[path]
 		return af.Content, ok
@@ -2119,10 +2129,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// held behind the axis interface is a present value that answers nothing, and a
 	// rule invoked zero times reports exactly what a rule that ran and approved
 	// reports.
-	if dispatchedAxes := newDispatchedStageCoordinates(
-		result, releaseFileOf(input.ResolveResult),
-	); dispatchedAxes != nil {
-		if err := runDispatchedStageRules(ctx, result.DispatchedView, dispatchedAxes); err != nil {
+	// One enumeration over the grouping serves both stages keyed by it: the rules
+	// declared over how the nodes were grouped, here, and the rules declared over
+	// what those groups assembled, further down. Its two axes are the grouping's
+	// own and are complete at this point, so building it once is what keeps the
+	// subjects the two stages are invoked over from being walked two ways.
+	groupAxes := newAssemblyGroupCoordinates(result, releaseFileOf(input.ResolveResult))
+	if groupAxes != nil {
+		if err := runDispatchedStageRules(ctx, result.DispatchedView, groupAxes); err != nil {
 			return nil, err
 		}
 	}
@@ -2351,7 +2365,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	)
 
 	// The rules declared over what this render assembled are invoked here, against
-	// the boundary, provider and path axes the attribution just recorded. It is the
+	// the same group axes the stage before this ran over — the paths and the
+	// contributors they ask about are read as facts of the group rather than
+	// enumerated as axes. It is the
 	// first point holding both the presentation and the enumeration, and it is after
 	// the cross-boundary link pass on purpose: a resolved link replaces its own
 	// placeholder, so a reading taken before resolution would object to every marker
@@ -2361,11 +2377,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// held behind the axis interface is a present value that answers nothing, and a
 	// rule invoked zero times reports exactly what a rule that ran and approved
 	// reports.
-	if renderedAxes := newRenderedStageCoordinates(
-		result, releaseFileOf(input.ResolveResult),
-	); renderedAxes != nil {
+	if groupAxes != nil {
 		if err := runRenderedStageRules(
-			ctx, input.GraphView != nil, result.RenderedView, renderedAxes,
+			ctx, input.GraphView != nil, result.RenderedView, groupAxes,
 		); err != nil {
 			return nil, err
 		}

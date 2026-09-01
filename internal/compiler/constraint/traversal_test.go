@@ -1013,23 +1013,6 @@ func traversalCases() []traversalCase {
 			},
 		},
 		{
-			// Three invocations carrying the same provenance, because neither the
-			// provider nor the emitted path is authored at this site: the
-			// boundary is the whole of what the author wrote. The subjects differ
-			// in their coordinates, which this transcript cannot see — that is
-			// what TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues is
-			// for.
-			kind: SubjectBoundaryProviderPath,
-			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
-				return RunOnBoundaryProviderPaths(cancelled, f, f, f, v, raisingCheck[BoundaryProviderPathSubject]())
-			},
-			want: []string{
-				"release.yaml|.spec.boundaries.prod.boundaries.edge",
-				"release.yaml|.spec.boundaries.prod.boundaries.edge",
-				"release.yaml|.spec.boundaries.prod.boundaries.edge",
-			},
-		},
-		{
 			kind: SubjectNodeArtifact,
 			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
 				return RunOnNodeArtifacts(cancelled, f, f, v, raisingCheck[NodeArtifactSubject]())
@@ -1945,18 +1928,6 @@ func coordinateFlowCases() []coordinateFlowCase {
 				})
 			},
 			want: []string{"web|deployment.yaml", "web|service.yaml", "billing.api|main.tf.json"},
-		},
-		{
-			kind: SubjectBoundaryProviderPath,
-			seam: seamTraversal,
-			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, BoundaryProviderPathSubject]) ([]Objection, error) {
-					return RunOnBoundaryProviderPaths(nil, f, f, f, traversalView{}, c)
-				}, func(s BoundaryProviderPathSubject) string {
-					return s.BoundaryPath() + "|" + s.ProviderName() + "|" + s.EmittedPath()
-				})
-			},
-			want: []string{"prod/edge|helm|a.yaml", "prod/edge|helm|b.yaml", "prod/edge|terraform|main.tf.json"},
 		},
 		{
 			kind: SubjectBoundaryAttachment,

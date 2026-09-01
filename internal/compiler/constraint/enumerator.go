@@ -959,45 +959,25 @@ type AssemblyPathEnumerator interface {
 // AssemblyGroupProviderEnumerator supplies the providers that assembled at one
 // evaluated assembly path.
 //
-// It is distinct from [ProviderEnumerator], which answers within a boundary.
-// Several boundaries can evaluate to one assembly path, so the provider set at a
-// path is not the provider set of any one boundary that fed it — and it is
-// exactly the difference that makes a path reached by two providers visible.
+// It answers for the group rather than within a boundary, and the difference is
+// what the axis exists for. Several boundaries can evaluate to one assembly path,
+// so the provider set at a path is not the provider set of any one boundary that
+// fed it — and it is exactly that difference that makes a path reached by two
+// providers visible.
 type AssemblyGroupProviderEnumerator interface {
 	// AssemblyGroupProviders returns the provider names that assembled at one
 	// assembly path, in a deterministic order the implementation declares.
 	AssemblyGroupProviders(assemblyPath string) []string
 }
 
-// ProviderEnumerator supplies the providers rendered within one boundary.
-type ProviderEnumerator interface {
-	// Providers returns the provider names within a boundary, in a
-	// deterministic order the implementation declares.
-	Providers(boundary string) []string
-}
-
-// EmittedPathEnumerator supplies the output paths written for one provider
-// within one boundary.
-type EmittedPathEnumerator interface {
-	// EmittedPaths returns the paths written for one provider within one
-	// boundary, in path order.
-	//
-	// The sibling axes leave their order to the implementation to declare; this
-	// one fixes it, because the order in which files are placed into a group is
-	// not a property of the input. An implementation inheriting that placement
-	// order would answer differently for identical input.
-	EmittedPaths(boundary string, provider string) []string
-}
-
 // NodeEmittedPathEnumerator supplies the output names one node's own render
 // emitted, before anything is grouped for assembly.
 //
-// It is distinct from [EmittedPathEnumerator], which answers for a provider
-// within a boundary once assembly has flushed its groups. A node's own emission
-// is complete earlier and under the names that node chose, and an assembly is
-// free to rename, nest or merge those away — so neither axis is the other read
-// at a different moment, and the names one returns are not a subset of the
-// other's.
+// It is distinct from the output paths an assembly group wrote, which the rules
+// over assembled output read as a fact of the group. A node's own emission is
+// complete earlier and under the names that node chose, and an assembly is free
+// to rename, nest or merge those away — so neither is the other read at a
+// different moment, and the names one returns are not a subset of the other's.
 type NodeEmittedPathEnumerator interface {
 	// NodeEmittedPaths returns the output names one node's own render emitted,
 	// deduplicated, in name order.
