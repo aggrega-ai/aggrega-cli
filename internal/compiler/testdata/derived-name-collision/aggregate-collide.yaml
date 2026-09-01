@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: collide-app
+  version: "1.0.0"
+spec:
+  components:
+    alpha:
+      type: core/host
+      features:
+        one:
+          type: feature.id/aux-a
+        two:
+          type: feature.id/aux-b

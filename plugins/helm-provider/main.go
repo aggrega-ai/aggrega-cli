@@ -119,14 +119,55 @@ func renderNode() int32 {
 	return 0
 }
 
-// renderNodeOutput decodes the render_node input and routes on what it carries.
-// It returns the error rather than reporting it, so the one export above decides
-// how a failure crosses and this stays about what helm renders.
+// renderNodeOutput decodes the render_node input, renders it, and declares the
+// names the rendered output addresses its resources by. It returns the error
+// rather than reporting it, so the one export above decides how a failure crosses
+// and this stays about what helm renders.
+//
+// The declaration is taken here, once, over the emitted file set rather than
+// inside each render path that has one. A resource's name is read from the emitted
+// document the same way whichever path produced it, so one reader serves them all
+// and a path added later is covered without anyone remembering to declare in it.
+// Declaring per path would be several copies of one reader, agreeing on the day
+// they were written, and a path whose copy was forgotten would emit a name nothing
+// compares — invisible from every green build.
+//
+// 🔴 An ARTIFACTS placement declares nothing, and that is a decision rather than an
+// omission. The names in an artifact's body are the ones its author wrote: the body
+// is emitted as authored, with only build provenance spliced into its metadata, so
+// no name in it was derived from anything the compiler supplied. An authored name
+// meeting another authored name is a question for the authoring surface, not a
+// build refusal — refusing it here would halt one Feature attached under one name
+// to several components, which is supported authoring and is exactly what a cascade
+// minting one instance name across many components produces, leaving the author no
+// other name to write. What this guest declares is what its own rendering derived.
 func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
+	out, err := renderNodeFor(in)
+	if err != nil {
+		return rendercore.RenderNodeOutput{}, err
+	}
+	if in.ArtifactsProjection != nil {
+		return out, nil
+	}
+	// The names this node's own rendering derived, declared per key space so the
+	// host can confirm no two contributors assembling into one output claim the same
+	// one. A resource name is unique within its kind and namespace, and the host
+	// writes the file bytes verbatim without reading them, so the declaration is how
+	// the guest asks for a check the host could not otherwise make.
+	if declared := helmcore.DeclaredResourceNames(
+		out.Files, helmcore.EffectiveNamespace(nodeCtxFromInput(in)),
+	); !declared.IsZero() {
+		out.DerivedKeys = declared
+	}
+	return out, nil
+}
+
+// renderNodeFor routes one decoded input to the render path its payload names.
+func renderNodeFor(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	switch {
 	case in.WorkloadProjection != nil:
 		return renderSynthFromInput(in)

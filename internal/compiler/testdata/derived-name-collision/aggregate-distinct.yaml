@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: distinct-app
+  version: "1.0.0"
+spec:
+  components:
+    alpha:
+      type: core/host
+      features:
+        one:
+          type: feature.id/aux-a
+        three:
+          type: feature.id/aux-c

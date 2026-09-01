@@ -1,0 +1,4 @@
+apiVersion: v2
+name: aux-c
+version: 0.1.0
+description: sourced chart c for a per-component attachment.

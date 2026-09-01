@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: derived-name-release-collide
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: collide-app
+  manifest: derived-name-manifest
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        alpha: {}

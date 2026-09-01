@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: derived-name-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/host: host-helm:1.0.0
+    features:
+      type:
+        feature.id/aux-a: aux-a-helm:1.0.0
+        feature.id/aux-b: aux-b-helm:1.0.0
+        feature.id/aux-c: aux-c-helm:1.0.0

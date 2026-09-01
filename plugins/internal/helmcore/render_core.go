@@ -94,11 +94,11 @@ func RenderLoadedChart(
 
 	// Build release options. We are not installing — just rendering templates.
 	// Namespace comes from the `aggrega.ai/namespace` annotation when present
-	// (merged from boundary + boundary_component); otherwise "default".
-	ns := rendercore.NamespaceFromAnnotations(nodeCtx.Annotations)
-	if ns == "" {
-		ns = "default"
-	}
+	// (merged from boundary + boundary_component); otherwise the cluster default.
+	// The fallback is resolved by EffectiveNamespace rather than written out here,
+	// so the namespace this render targets and the namespace an emitted resource's
+	// name is declared under cannot disagree.
+	ns := EffectiveNamespace(nodeCtx)
 	relOpts := chartutil.ReleaseOptions{
 		Name:      releaseName(nodeCtx),
 		Namespace: ns,

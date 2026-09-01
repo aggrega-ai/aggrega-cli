@@ -1,0 +1,4 @@
+apiVersion: v2
+name: aux-a
+version: 0.1.0
+description: sourced chart a for a per-component attachment.
