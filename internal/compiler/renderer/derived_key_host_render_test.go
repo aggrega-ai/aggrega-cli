@@ -248,49 +248,41 @@ func hostLabelArtifactsFR() types.FeatureRecipeSpec {
 	}
 }
 
-// TestRenderAll_OneAttachmentNameOnTwoComponentsStillCollidesOnTheOutputPath
-// records the one shape where a single instance name attached to two components
-// in ONE boundary does not build, and it records WHICH rule refuses it.
+// TestRenderAll_OneAttachmentNameOnTwoComponentsPlacesEachUnderItsHost pins the
+// artifacts-bearing shape of one instance name attached to two components in ONE
+// boundary: it builds, and each attachment's files land under the component
+// hosting it.
 //
-// The identity is no longer the obstacle: the two attachments reach two composed
-// identities, so the derived-name rule passes. What refuses them is a different
-// and older rule — an artifacts-bearing attachment places its files under
-// features/<instance>/ at the artifact's own author-resolved name, so two
-// components sharing an instance name write one output path. That path carries
-// no component identity and this derivation does not put one there.
+// The shape needs pinning on the ARTIFACTS crossing specifically, because that is
+// the crossing whose emitted names cannot separate the two on their own. An
+// artifact's output filename is the author's map key verbatim, so both
+// attachments emit the same filename however the identity is composed — the
+// directory is the only thing that can tell them apart, and it does so by naming
+// the host.
 //
-// It is asserted rather than left to be rediscovered, because a case that merely
-// failed would read as this derivation not working. The assertion is on the
-// output-path rule specifically: were that the derived-name rule instead, the two
-// identities would have met and the composition would be wrong.
-//
-// The workload-bearing shape of the same authoring — one instance name on two
-// components — DOES build, because a synthesised workload's file names carry the
-// identity. That case is proven end to end through the real provider guest
-// beside the resource-generation case in the orchestrator suite.
-func TestRenderAll_OneAttachmentNameOnTwoComponentsStillCollidesOnTheOutputPath(t *testing.T) {
+// Both nodes sit in one boundary and render through one engine, so they land in
+// one dispatch group and their output paths genuinely meet rather than being kept
+// apart by sitting in different groups.
+func TestRenderAll_OneAttachmentNameOnTwoComponentsPlacesEachUnderItsHost(t *testing.T) {
 	t.Parallel()
 
 	res, err := runHostLabelRender(map[string]string{
 		"alpha": hostPlainInstance,
 		"beta":  hostPlainInstance,
 	}, hostLabelArtifactsFR())
-	if err == nil {
-		t.Fatalf("expected the output-path rule to refuse this pair, got %d files", len(res.Files))
+	if err != nil {
+		t.Fatalf("one instance name on two components must build, got: %v", err)
 	}
-	if errors.Is(err, renderer.ErrDerivedKeyCollision()) {
-		t.Fatalf("the two attachments met on their derived identity, so the composition is not separating them: %v", err)
+	var keys []string
+	for k := range res.Files {
+		keys = append(keys, k)
 	}
-	// The refusal names the shared output path and both contributors, which is
-	// what tells an author which two things to separate.
-	msg := err.Error()
-	for _, want := range []string{
-		"features/" + hostPlainInstance + "/",
-		"alpha",
-		"beta",
-	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the refusal does not carry %q\ngot: %v", want, msg)
+	joined := strings.Join(keys, "\n")
+	for _, host := range []string{"alpha", "beta"} {
+		want := "features/" + host + "/" + hostPlainInstance + "/"
+		if !strings.Contains(joined, want) {
+			t.Errorf("no output key is placed under %q; the two attachments have not been separated\nkeys: %v",
+				want, keys)
 		}
 	}
 }

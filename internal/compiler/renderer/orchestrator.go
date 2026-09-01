@@ -1781,8 +1781,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		})
 
 		// Phase B.6 — FeatureRecipe Resource Generation for every attachment on
-		// the node. Returns prefixed paths ("features/<instance>/<file>") merged
-		// into the per-node files map alongside source/workload outputs.
+		// the node. Returns prefixed paths ("features/<host>/<instance>/<file>")
+		// merged into the per-node files map alongside source/workload outputs.
 		var releaseForFR *types.Release
 		var boundaryAnnotationsForFR map[string]types.OrderedMap[string]
 		if input.ResolveResult != nil {

@@ -489,7 +489,7 @@ containers:
 			if featureType == "core/monitoring" {
 				// A synthesised FeatureRecipe: it declares workload: and the
 				// helm provider synthesises its own compute (a Deployment)
-				// under features/mon/, named after the feature instance.
+				// under features/api/mon/, named after the feature instance.
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 					Spec: types.FeatureRecipeSpec{
@@ -515,7 +515,7 @@ containers:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The synthesised FR Deployment lands under features/mon/, and every name it
+	// The synthesised FR Deployment lands under features/api/mon/, and every name it
 	// carries — the output file key, metadata.name and the selector — is the
 	// identity composed for the attachment: the per-component scope, the host
 	// component ("api") and the instance ("mon"). The host is part of it so that
@@ -528,15 +528,15 @@ containers:
 	const frIdentity = "cfr--api--mon"
 	var frDep string
 	for k := range result.Files {
-		if strings.Contains(k, "features/mon/") && strings.Contains(k, "deployment.yaml") {
+		if strings.Contains(k, "features/api/mon/") && strings.Contains(k, "deployment.yaml") {
 			frDep = k
 			break
 		}
 	}
 	if frDep == "" {
-		t.Fatalf("missing synthesised FR deployment under features/mon/, keys: %v", fileKeys(result.Files))
+		t.Fatalf("missing synthesised FR deployment under features/api/mon/, keys: %v", fileKeys(result.Files))
 	}
-	if !strings.Contains(frDep, "features/mon/"+frIdentity+"-") {
+	if !strings.Contains(frDep, "features/api/mon/"+frIdentity+"-") {
 		t.Errorf("FR deployment should be named for the composed identity (%s-*), got %q", frIdentity, frDep)
 	}
 	body := string(result.Files[frDep].Content)
@@ -655,12 +655,17 @@ containers:
 	}
 
 	// Each attachment's synthesised workload carries the identity composed from
-	// ITS host, so the two never meet — in the output keys or in the cluster.
+	// ITS host, so the two never meet — in the output keys or in the cluster. The
+	// directory says the same thing the identity does, from the same two parts:
+	// the host it is attached to and the name it is attached under.
 	joined := strings.Join(fileKeys(result.Files), "\n")
-	for _, want := range []string{apiIdentity, workerIdentity} {
-		if !strings.Contains(joined, "features/"+sharedInstance+"/"+want+"-") {
-			t.Errorf("no output key carries the identity %q; the two attachments have not reached two identities\nkeys: %v",
-				want, fileKeys(result.Files))
+	for _, want := range []struct{ host, identity string }{
+		{"api", apiIdentity},
+		{"worker", workerIdentity},
+	} {
+		if !strings.Contains(joined, "features/"+want.host+"/"+sharedInstance+"/"+want.identity+"-") {
+			t.Errorf("no output key carries the identity %q under its host %q; the two attachments have not reached two identities\nkeys: %v",
+				want.identity, want.host, fileKeys(result.Files))
 		}
 	}
 	var bodies strings.Builder
@@ -793,16 +798,17 @@ stringData:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The credential FR artifact lands under features/<instance>/ — the one prefix.
+	// The credential FR artifact lands under features/<host>/<instance>/ — the one
+	// placement every attachment's output takes, whatever input kind it renders from.
 	var secretArt string
 	for k := range result.Files {
-		if strings.Contains(k, "features/root_password/") && strings.Contains(k, "secret.yaml") {
+		if strings.Contains(k, "features/api/root_password/") && strings.Contains(k, "secret.yaml") {
 			secretArt = k
 			break
 		}
 	}
 	if secretArt == "" {
-		t.Fatalf("missing credential FR artifact under features/root_password/, keys: %v", fileKeys(result.Files))
+		t.Fatalf("missing credential FR artifact under features/api/root_password/, keys: %v", fileKeys(result.Files))
 	}
 	body := string(result.Files[secretArt].Content)
 	// .attachment_name propagates into the rendered manifest.
@@ -869,7 +875,7 @@ containers:
 // TestRenderAll_FeatureRecipeComposedWorkloadAndArtifacts proves a FeatureRecipe
 // composes input kinds exactly as a Recipe does: a single FR declaring both
 // workload: and artifacts: emits the synthesised Deployment AND the artifact,
-// both under features/<instance>/.
+// both under features/<host>/<instance>/.
 func TestRenderAll_FeatureRecipeComposedWorkloadAndArtifacts(t *testing.T) {
 	t.Parallel()
 	input := monitoringFeatureInput(t)
@@ -901,7 +907,7 @@ containers:
 	}
 	foundWorkload, foundArtifact := false, false
 	for k := range result.Files {
-		if !strings.Contains(k, "features/mon/") {
+		if !strings.Contains(k, "features/api/mon/") {
 			continue
 		}
 		if strings.Contains(k, "deployment.yaml") {
@@ -912,10 +918,10 @@ containers:
 		}
 	}
 	if !foundWorkload {
-		t.Errorf("composed FR missing synthesised workload under features/mon/, keys: %v", fileKeys(result.Files))
+		t.Errorf("composed FR missing synthesised workload under features/api/mon/, keys: %v", fileKeys(result.Files))
 	}
 	if !foundArtifact {
-		t.Errorf("composed FR missing artifact under features/mon/, keys: %v", fileKeys(result.Files))
+		t.Errorf("composed FR missing artifact under features/api/mon/, keys: %v", fileKeys(result.Files))
 	}
 }
 

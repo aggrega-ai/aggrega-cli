@@ -7,7 +7,7 @@ spec:
   capability: helm
   implements: "feature.myco/guardrail"
   # An artifacts: entry makes this FeatureRecipe resource-generating, so its
-  # pipeline runs. Its own output renders under features/guardrail/; the
+  # pipeline runs. Its own output renders under features/<host>/guardrail/; the
   # pipeline's work is the cross-entity /host PATCH below.
   artifacts:
     guardrail-config.yaml: |

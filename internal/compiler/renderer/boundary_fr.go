@@ -474,11 +474,13 @@ func dispatchBoundaryScopeFR(
 	// reached through the state of whichever component node dispatched this FR — one
 	// of each for the whole render, so which node that was does not select either.
 	//
-	// The reported derived label value is discarded because instanceLabel is "":
-	// this render derives none, and the boundary-disambiguated value it carries
-	// was declared at the point it was minted above. Reading it here as well would
-	// declare one name twice for one derivation.
-	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "", "",
+	// No per-component attachment identity is named: this render has no host
+	// component, and the identity its resources carry is composed from the boundary
+	// path and set on the context above. The reported derived label value is
+	// therefore discarded — this render derives none, and the boundary-disambiguated
+	// value it carries was declared at the point it was minted above. Reading it
+	// here as well would declare one name twice for one derivation.
+	emitted, _, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, attachmentIdentity{},
 		carrierProductsOf(state).attachmentOnBoundary(key.BoundaryPath, frInstance),
 		featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 	if err != nil {

@@ -10,7 +10,7 @@ spec:
   # runs. Its own provider is compose (an assembler), so its own output is a
   # pre-assembly fragment that is never assembled — a component-scope
   # FeatureRecipe's own output is emitted as discrete fragment files under
-  # features/<instance>/.
+  # features/<host>/<instance>/.
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload

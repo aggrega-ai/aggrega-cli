@@ -77,7 +77,7 @@ func TestHostPatchCompose_PostAssemblyHostPatch(t *testing.T) {
 	// The FeatureRecipe's own resource-generating output rendered alongside the
 	// host (proving the pipeline ran from within a resource-generating FR and
 	// the FR's additive own output is unaffected by the deferred host PATCH).
-	_ = findArtifactBySuffix(t, result.Artifacts, "features/guardrail/guardrail-config.yaml")
+	_ = findArtifactBySuffix(t, result.Artifacts, "features/api/guardrail/guardrail-config.yaml")
 }
 
 // TestHostPatchCompose_Deterministic compiles the host-patch-compose fixture

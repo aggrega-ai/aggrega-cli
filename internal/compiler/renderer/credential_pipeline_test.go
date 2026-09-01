@@ -119,7 +119,7 @@ func TestRenderAll_CredentialFeatureRecipePipelineExecutes(t *testing.T) {
 	var ownEmit, hostEmit string
 	for _, k := range keys {
 		switch {
-		case strings.Contains(k, "features/root_password/") && strings.HasSuffix(k, "pipeline-configmap.yaml"):
+		case strings.Contains(k, "features/api/root_password/") && strings.HasSuffix(k, "pipeline-configmap.yaml"):
 			ownEmit = k
 		case strings.HasSuffix(k, "pipeline-host-marker.yaml"):
 			hostEmit = k

@@ -110,7 +110,7 @@ func TestHostPatchHelmchart_PerNodeHostPatch(t *testing.T) {
 
 	// The FeatureRecipe's own resource-generating output rendered alongside the
 	// host (proving the pipeline ran from within a resource-generating FR).
-	_ = findArtifactBySuffix(t, result.Artifacts, "features/guardrail/guardrail-config.yaml")
+	_ = findArtifactBySuffix(t, result.Artifacts, "features/api/guardrail/guardrail-config.yaml")
 }
 
 // TestHostPatchHelmchart_Deterministic compiles the host-patch-helmchart

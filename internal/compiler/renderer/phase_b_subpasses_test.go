@@ -367,13 +367,13 @@ func nodeEmissionVerdict(t *testing.T, files []EmittedFile) error {
 
 // Verifies the rule is scoped to two blocks meeting on ONE name, and not to two
 // blocks emitting names that merely resemble each other. Two attachments emitting a
-// file called "deployment.yaml" under their own "features/<x>/" prefix do not meet:
-// the name each carries is the whole path, so the two names differ.
+// file called "deployment.yaml" under their own "features/<host>/<instance>/"
+// prefix do not meet: the name each carries is the whole path, so the two differ.
 func TestNodeEmission_DistinctPrefixedNames_NoCollision(t *testing.T) {
 	t.Parallel()
 	err := nodeEmissionVerdict(t, []EmittedFile{
-		{Name: "features/mon/deployment.yaml", Origin: EmitOriginSource, Body: []byte("a")},
-		{Name: "features/log/deployment.yaml", Origin: EmitOriginSource, Body: []byte("b")},
+		{Name: "features/api/mon/deployment.yaml", Origin: EmitOriginSource, Body: []byte("a")},
+		{Name: "features/api/log/deployment.yaml", Origin: EmitOriginSource, Body: []byte("b")},
 	})
 	if err != nil {
 		t.Errorf("names that differ do not meet, so the rule must not fire, got %v", err)

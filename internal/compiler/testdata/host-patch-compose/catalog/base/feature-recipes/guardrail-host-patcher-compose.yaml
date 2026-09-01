@@ -7,7 +7,7 @@ spec:
   capability: helm
   implements: "feature.myco/guardrail"
   # An artifacts: entry makes this FeatureRecipe resource-generating, so its
-  # pipeline runs. Its own output renders under features/guardrail/ via the
+  # pipeline runs. Its own output renders under features/<host>/guardrail/ via the
   # flat helm provider (additive, per-node); the pipeline's work is the
   # cross-entity /host PATCH below, which targets the compose host's MERGED
   # docker-compose.yaml and therefore defers to the post-assembly phase.

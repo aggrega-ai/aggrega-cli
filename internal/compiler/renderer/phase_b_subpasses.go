@@ -388,7 +388,7 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // for post-loop assembly. See boundary_fr.go for the full lifecycle. The scope
 // is read from the FeatureRecipe, so it governs every attachment identically.
 //
-// Returns a map of prefixed paths (e.g. "features/mon/deployment.yaml")
+// Returns a map of prefixed paths (e.g. "features/api/mon/deployment.yaml")
 // to file contents (the FR's own generated files), plus a second map of
 // host-document modifications keyed by their original emitted path. A
 // component-scope FeatureRecipe's pipeline may /host PATCH the host
@@ -449,7 +449,7 @@ func phaseB6(
 	// attachment the node holds that has work here — a resource of its own to
 	// generate, a pipeline to run, or both; the per-attachment differences travel
 	// as data on the item, so the render path below exists exactly once.
-	for seqIndex, item := range attachmentRenderSequence(tmplCtx, featureRefs, nodeAttachments, state.AttachmentProvides) {
+	for seqIndex, item := range attachmentRenderSequence(tmplCtx, nodeID, featureRefs, nodeAttachments, state.AttachmentProvides) {
 		fr := item.FR
 
 		if fr.Spec.ExecutionScope == executionScopeBoundary && boundaryFRState != nil {
@@ -531,7 +531,7 @@ func phaseB6(
 		// nothing makes one's output names distinct from the other's or from the
 		// node's own. It carries this render's presentation too, so the rule declared
 		// over the carrier's facts can be asked inside the walk that records them.
-		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, nodeID, item.Instance,
+		frFiles, frComponentID, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Identity,
 			carrierProductsOf(state).attachmentOnNode(nodeID, item.Instance),
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 		if err != nil {
@@ -622,7 +622,7 @@ func phaseB6(
 		}
 
 		for _, f := range frFiles {
-			out[item.Prefix+f.Name] = f.Body
+			out[item.Identity.outputPrefix()+f.Name] = f.Body
 		}
 	}
 
@@ -645,8 +645,10 @@ func phaseB6(
 //     pillar; nil when the attachment authored none.
 //   - Provides, when non-nil, replaces the inherited .provides pillar with the
 //     attachment's own resolved provides.
-//   - Prefix is the attachment's output prefix, applied to every file its
-//     FeatureRecipe emits.
+//   - Identity is the pair of authored parts this attachment is identified by —
+//     its host component and its instance name. Both the component identity its
+//     resources are stamped with and the directory its files are written under
+//     are derived from it, so the two cannot come to name different attachments.
 type attachmentRenderItem struct {
 	Instance  string
 	FR        *types.FeatureRecipe
@@ -656,7 +658,7 @@ type attachmentRenderItem struct {
 	OwnInfra  map[string]any
 	Inject    *types.InjectPipe
 	Provides  *types.OrderedMap[string]
-	Prefix    string
+	Identity  attachmentIdentity
 }
 
 // attachmentRenderSequence assembles the one ordered sequence Phase B.6
@@ -677,8 +679,16 @@ type attachmentRenderItem struct {
 // the attachment pillar) as its FeatureRecipe's .provides — so a valuesMapping
 // deriving an emitted resource's name from .provides renders the exact name the
 // consumer read, from one evaluation with no drift.
+//
+// The host component is a parameter because an attachment is identified by its
+// host as well as by the name it is attached under, and both parts are needed
+// here: the item carries them as one value, and everything downstream that names
+// this attachment — the identity its resources are stamped with, the directory
+// its files are written under — derives from that one value rather than
+// assembling the pair again.
 func attachmentRenderSequence(
 	tmplCtx *types.TemplateContext,
+	hostComponentID string,
 	featureRefs []FeatureRecipeRef,
 	attachments types.OrderedMap[types.IRFeatureEntry],
 	attachmentProvides map[string]types.OrderedMap[string],
@@ -696,7 +706,7 @@ func attachmentRenderSequence(
 			CtxInfra:  tmplCtx.Infra,
 			OwnValues: map[string]any{},
 			OwnInfra:  map[string]any{},
-			Prefix:    "features/" + ref.InstanceName + "/",
+			Identity:  attachmentIdentity{host: hostComponentID, instance: ref.InstanceName},
 		}
 		if attach, ok := tmplCtx.Features.Get(ref.InstanceName); ok {
 			item.CtxValues, item.CtxInfra = attach.Values, attach.Infra
@@ -784,18 +794,22 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // read state.Recipe.Spec.* — operate unchanged; this is reuse of the component
 // machinery, not a parallel FeatureRecipe track. Returns the accumulated
 // EmittedFiles (each carrying its Origin and Intermediate flag); the per-
-// component callers flatten them under features/<instance>/, while the
+// component callers place them under features/<host>/<instance>/, while the
 // boundary-scope caller routes them by the Intermediate flag.
 //
-// hostComponentID and instanceLabel are the two parts a per-component
-// attachment's identity is composed from: the identity of the component the
-// feature is attached to, and the name it is attached under. Both are needed,
-// and the host is the one that separates a single instance name attached to
-// several components — those attachments emit different resources, so they need
+// identity names the per-component attachment being rendered — the component the
+// feature is attached to, and the name it is attached under. Both parts are
+// needed, and the host is the one that separates a single instance name attached
+// to several components: those attachments emit different resources, so they need
 // different identities, and an author who names them alike has written nothing
-// wrong. A boundary-scope caller supplies neither, because the identity its
-// render carries is composed from the boundary path instead and is set on the
+// wrong. A boundary-scope caller names no attachment here, because the identity
+// its render carries is composed from the boundary path instead and is set on the
 // context before this is reached.
+//
+// The same value is what the per-component caller derives this render's output
+// directory from, so the identity composed below and the directory the emission
+// lands in are two readings of one statement of the parts rather than two
+// assemblies that could disagree.
 //
 // The second return value is the component-identity label value this render
 // composed from those parts, for the caller to declare into its own
@@ -821,8 +835,7 @@ func renderFeatureRecipeFiles(
 	frNodeCtx NodeRenderContext,
 	frValues map[string]any,
 	resolvedSrc any,
-	hostComponentID string,
-	instanceLabel string,
+	identity attachmentIdentity,
 	hydrated attachmentCarrier,
 	slots types.OrderedMap[types.AttachmentSlot],
 	workloadLibs map[string]types.WorkloadLibrary,
@@ -888,9 +901,9 @@ func renderFeatureRecipeFiles(
 	// that answers no such question accepts the composition as composed.
 	synthNodeCtx := frNodeCtx
 	derivedComponentID := ""
-	if instanceLabel != "" {
+	if identity.named() {
 		settled, err := SettleComposedComponentIdentity(ctx, frEngine, labels.AttachmentScope,
-			fr.Spec.Capability, hostComponentID, instanceLabel)
+			fr.Spec.Capability, identity.parts()...)
 		if err != nil {
 			return nil, "", err
 		}

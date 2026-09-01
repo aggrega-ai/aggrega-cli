@@ -76,7 +76,10 @@ func TestPipelineOnlyAttachment_PipelineRuns(t *testing.T) {
 	// The attachment emits no file of its own: it declares no render input, so
 	// its participation is its pipeline and nothing else.
 	for k := range result.Artifacts {
-		if strings.Contains(k, "features/guardrail/") {
+		// Host-agnostic on purpose: an attachment's output is placed under its
+		// host as well as its instance, and naming one host here would let this
+		// assertion pass by matching nothing the day the corpus renames it.
+		if strings.Contains(k, "features/") && strings.Contains(k, "/guardrail/") {
 			t.Errorf("attachment emitted a file of its own at %q; it declares no render input", k)
 		}
 	}
@@ -125,7 +128,10 @@ func TestPipelineOnlyAttachment_InertAttachmentContributesNothing(t *testing.T) 
 		t.Errorf("host values.yaml is not the authored chart; got:\n%s", values)
 	}
 	for k := range result.Artifacts {
-		if strings.Contains(k, "features/guardrail/") {
+		// Host-agnostic on purpose: an attachment's output is placed under its
+		// host as well as its instance, and naming one host here would let this
+		// assertion pass by matching nothing the day the corpus renames it.
+		if strings.Contains(k, "features/") && strings.Contains(k, "/guardrail/") {
 			t.Errorf("an attachment declaring nothing emitted a file at %q", k)
 		}
 	}
