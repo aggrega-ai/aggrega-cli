@@ -93,7 +93,7 @@ func ParseArtifact(ctx context.Context, res ParserResolver, load ParserLoader, f
 	if err := po.UnmarshalJSON(out); err != nil {
 		return abi.ParseOutput{}, fmt.Errorf("decode parse output from parser %q: %w", plugin.Coordinate(), err)
 	}
-	if err := wasm.GuestReturnedError(wasm.ParseExport, po.Error); err != nil {
+	if err := wasm.GuestReturnedError(wasm.ParseExport, wasm.GuestFailure{Message: po.Error}); err != nil {
 		return abi.ParseOutput{}, fmt.Errorf("parser %q: %w", plugin.Coordinate(), err)
 	}
 	if err := wasm.GuestDiagnosticSeverities(plugin.Coordinate(), wasm.ParseExport, po.Diagnostics); err != nil {

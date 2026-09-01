@@ -201,12 +201,40 @@ func describe() int32 {
 	return 0
 }
 
+// The failure path of an export whose output shape declares the in-band failure
+// channel returns 0 and reports the failure on that output, because the identity
+// of the condition crosses only on that path: the out-of-band channel carries one
+// string, so a guest that reports there has discarded the condition's code before
+// the host can read it. rendercore.FailureOf derives what crosses; the host reads
+// a present failure message off the output as a failed invocation.
+//
+// The out-of-band channel remains for the one failure the in-band channel cannot
+// carry: an output the guest could not serialize, where there is no envelope to
+// report on.
+
 //go:wasmexport render_node
 func renderNode() int32 {
+	out, err := renderNodeOutput()
+	if err != nil {
+		out = rendercore.RenderNodeFailure(err)
+	}
+
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// renderNodeOutput decodes the render_node input and routes on what it carries.
+// It returns the error rather than reporting it, so the one export above decides
+// how a failure crosses and this stays about what cloudformation renders.
+func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
+		return rendercore.RenderNodeOutput{}, err
 	}
 
 	var out rendercore.RenderNodeOutput
@@ -216,8 +244,8 @@ func renderNode() int32 {
 		// CloudFormation does not synthesize workloads. A workload projection is
 		// an orchestrator dispatch error rather than authoring drift, so it halts
 		// loudly.
-		pdk.SetError(errors.New("cloudformation-provider: render_node received a workload projection; the cloudformation provider does not synthesize workloads"))
-		return 1
+		return rendercore.RenderNodeOutput{}, errors.New(
+			"cloudformation-provider: render_node received a workload projection; the cloudformation provider does not synthesize workloads")
 	case in.ArtifactsProjection != nil:
 		// Every fragment is normalized first and the whole set is declared at
 		// once. The declaration speaks for the node, and what the assembled stack
@@ -228,8 +256,7 @@ func renderNode() int32 {
 		for _, ent := range in.ArtifactsProjection.Entries {
 			normalized, err := cfncore.NormalizeFragment(ent.Content)
 			if err != nil {
-				pdk.SetError(err)
-				return 1
+				return rendercore.RenderNodeOutput{}, err
 			}
 			// The entry's own provenance halves are read rather than the node
 			// context's, which is what keeps an attachment-carried artifact stamping
@@ -243,8 +270,7 @@ func renderNode() int32 {
 			stamped, warning, err := cfncore.StampResourceProvenance(
 				ent.Name, normalized, cfncore.ProvenanceSet(ent.Labels, ent.Annotations))
 			if err != nil {
-				pdk.SetError(err)
-				return 1
+				return rendercore.RenderNodeOutput{}, err
 			}
 			if warning != "" {
 				out.Diagnostics = append(out.Diagnostics, rendercore.ArtifactProvenanceSkippedDiagnostic(warning))
@@ -254,8 +280,7 @@ func renderNode() int32 {
 		}
 		declaredRes, declaredOut, err := cfncore.DeclaredNames(in.Node.ID, fragments)
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.RenderNodeOutput{}, err
 		}
 		resourceIDs, outputIDs = declaredRes, declaredOut
 		// A section whose content is one statement about the whole template has no
@@ -265,8 +290,7 @@ func renderNode() int32 {
 		// the same whether or not anything is listening.
 		notices, err := cfncore.SectionNotices(fragments)
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.RenderNodeOutput{}, err
 		}
 		out.Diagnostics = append(out.Diagnostics, notices...)
 	case in.SourceListing != nil:
@@ -278,13 +302,11 @@ func renderNode() int32 {
 		// non-template files verbatim.
 		proj, err := packSource(in.SourceListing)
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.RenderNodeOutput{}, err
 		}
 		normalized, err := cfncore.NormalizeSourced(sourcedFiles(proj), in.SourceListing.RootIsDir)
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.RenderNodeOutput{}, err
 		}
 		// The same stamp the fragment path applies, over the templates a sourced
 		// selection carries. The payload carries no per-entry provenance halves here,
@@ -294,23 +316,20 @@ func renderNode() int32 {
 		normalized, provWarnings, err := cfncore.StampSourcedProvenance(
 			normalized, in.SourceListing.RootIsDir, cfncore.ProvenanceSetFromNodeContext(nodeCtxFromInput(in)))
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.RenderNodeOutput{}, err
 		}
 		for _, warning := range provWarnings {
 			out.Diagnostics = append(out.Diagnostics, rendercore.ArtifactProvenanceSkippedDiagnostic(warning))
 		}
 		resourceIDs, outputIDs, err = cfncore.DeclaredNamesSourced(in.Node.ID, normalized, in.SourceListing.RootIsDir)
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.RenderNodeOutput{}, err
 		}
 		// The same out-of-band report the fragment path makes, over the templates a
 		// sourced selection carries.
 		notices, err := cfncore.SectionNoticesSourced(normalized, in.SourceListing.RootIsDir)
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.RenderNodeOutput{}, err
 		}
 		out.Diagnostics = append(out.Diagnostics, notices...)
 		out.Files = make([]rendercore.RenderedFile, 0, len(normalized))
@@ -331,22 +350,32 @@ func renderNode() int32 {
 	if len(outputIDs) > 0 {
 		out.DerivedKeys.Set(cfncore.KeySpaceOutputLogicalIDs, outputIDs)
 	}
+	return out, nil
+}
 
-	encoded, err := out.MarshalJSON()
+//go:wasmexport validate_node_input
+func validateNodeInput() int32 {
+	out, err := validateNodeOutput()
 	if err != nil {
-		pdk.SetError(err)
+		out = rendercore.ValidateNodeFailure(err)
+	}
+
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
 		return 1
 	}
 	pdk.Output(encoded)
 	return 0
 }
 
-//go:wasmexport validate_node_input
-func validateNodeInput() int32 {
+// validateNodeOutput decodes the validate_node_input payload and runs the
+// structural check, returning the error rather than reporting it for the reason
+// renderNodeOutput does.
+func validateNodeOutput() (rendercore.ValidateNodeOutput, error) {
 	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
+		return rendercore.ValidateNodeOutput{}, err
 	}
 
 	var out rendercore.ValidateNodeOutput
@@ -358,19 +387,11 @@ func validateNodeInput() int32 {
 	if in.SourceListing != nil {
 		proj, err := packSource(in.SourceListing)
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.ValidateNodeOutput{}, err
 		}
 		out.Diagnostics = cfncore.ValidateSourced(sourcedFiles(proj), in.SourceListing.RootIsDir)
 	}
-
-	encoded, err := out.MarshalJSON()
-	if err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-	pdk.Output(encoded)
-	return 0
+	return out, nil
 }
 
 // nodeCtxFromInput reconstructs the render context from the wire input's node
@@ -415,10 +436,27 @@ func sourcedFiles(proj *aggrega.SourceProjection) []cfncore.SourcedFile {
 
 //go:wasmexport assemble_boundary
 func assembleBoundary() int32 {
+	out, err := assembleBoundaryOutput()
+	if err != nil {
+		out = rendercore.AssembleBoundaryFailure(err)
+	}
+
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// assembleBoundaryOutput decodes the assemble_boundary input and folds the
+// dispatch group's fragments into one stack template, returning the error rather
+// than reporting it for the reason renderNodeOutput does.
+func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 	var in rendercore.AssembleBoundaryInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
+		return rendercore.AssembleBoundaryOutput{}, err
 	}
 
 	nodes := make([]cfncore.NodeFragment, 0, len(in.RenderedNodes))
@@ -433,8 +471,7 @@ func assembleBoundary() int32 {
 
 	stack, err := cfncore.AssembleStack(nodes)
 	if err != nil {
-		pdk.SetError(err)
-		return 1
+		return rendercore.AssembleBoundaryOutput{}, err
 	}
 
 	out := rendercore.AssembleBoundaryOutput{
@@ -444,55 +481,61 @@ func assembleBoundary() int32 {
 		Files:       []rendercore.RenderedFile{{Path: cfncore.StackTemplateName, Content: stack, Format: "json"}},
 		NestPerNode: false,
 	}
-	encoded, err := out.MarshalJSON()
-	if err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-	pdk.Output(encoded)
-	return 0
+	return out, nil
 }
 
 //go:wasmexport link_publish
 func linkPublish() int32 {
-	var in rendercore.LinkPublishInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-	out, err := cfncore.LinkPublish(in.Edge, in.ProducerFiles)
+	out, err := linkPublishOutput()
 	if err != nil {
-		pdk.SetError(err)
-		return 1
+		out = rendercore.LinkPublishFailure(err)
 	}
-	encoded, err := out.MarshalJSON()
-	if err != nil {
-		pdk.SetError(err)
+
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
 		return 1
 	}
 	pdk.Output(encoded)
 	return 0
 }
 
+// linkPublishOutput decodes the link_publish input and produces the producer-side
+// wiring, returning the error rather than reporting it for the reason
+// renderNodeOutput does.
+func linkPublishOutput() (rendercore.LinkPublishOutput, error) {
+	var in rendercore.LinkPublishInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		return rendercore.LinkPublishOutput{}, err
+	}
+	return cfncore.LinkPublish(in.Edge, in.ProducerFiles)
+}
+
 //go:wasmexport link_resolve
 func linkResolve() int32 {
-	var in rendercore.LinkResolveInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-	out, err := cfncore.LinkResolve(in.Edge, in.Handle, in.ConsumerFiles)
+	out, err := linkResolveOutput()
 	if err != nil {
-		pdk.SetError(err)
-		return 1
+		out = rendercore.LinkResolveFailure(err)
 	}
-	encoded, err := out.MarshalJSON()
-	if err != nil {
-		pdk.SetError(err)
+
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
 		return 1
 	}
 	pdk.Output(encoded)
 	return 0
+}
+
+// linkResolveOutput decodes the link_resolve input and produces the consumer-side
+// wiring, returning the error rather than reporting it for the reason
+// renderNodeOutput does.
+func linkResolveOutput() (rendercore.LinkResolveOutput, error) {
+	var in rendercore.LinkResolveInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		return rendercore.LinkResolveOutput{}, err
+	}
+	return cfncore.LinkResolve(in.Edge, in.Handle, in.ConsumerFiles)
 }
 
 // packSource resolves the acquired CloudFormation template source from the host's

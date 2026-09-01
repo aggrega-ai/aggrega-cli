@@ -166,12 +166,40 @@ func describe() int32 {
 	return 0
 }
 
+// The failure path of an export whose output shape declares the in-band failure
+// channel returns 0 and reports the failure on that output, because the identity
+// of the condition crosses only on that path: the out-of-band channel carries one
+// string, so a guest that reports there has discarded the condition's code before
+// the host can read it. rendercore.FailureOf derives what crosses; the host reads
+// a present failure message off the output as a failed invocation.
+//
+// The out-of-band channel remains for the one failure the in-band channel cannot
+// carry: an output the guest could not serialize, where there is no envelope to
+// report on.
+
 //go:wasmexport render_node
 func renderNode() int32 {
+	out, err := renderNodeOutput()
+	if err != nil {
+		out = rendercore.RenderNodeFailure(err)
+	}
+
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// renderNodeOutput decodes the render_node input and routes on what it carries.
+// It returns the error rather than reporting it, so the one export above decides
+// how a failure crosses and this stays about what terraform renders.
+func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
+		return rendercore.RenderNodeOutput{}, err
 	}
 
 	var out rendercore.RenderNodeOutput
@@ -180,13 +208,12 @@ func renderNode() int32 {
 		// terraform does not synthesize workloads. A workload projection is an
 		// orchestrator dispatch error rather than authoring drift, so it halts
 		// loudly.
-		pdk.SetError(errors.New("terraform-provider: render_node received a workload projection; the terraform provider does not synthesize workloads"))
-		return 1
+		return rendercore.RenderNodeOutput{}, errors.New(
+			"terraform-provider: render_node received a workload projection; the terraform provider does not synthesize workloads")
 	case in.SourceListing != nil:
 		proj, err := packTerraformSource(in.SourceListing)
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.RenderNodeOutput{}, err
 		}
 		out.Files = make([]rendercore.RenderedFile, 0, len(proj.Files)+2)
 		for _, f := range proj.Files {
@@ -218,8 +245,7 @@ func renderNode() int32 {
 			// are siblings by construction rather than by a second placement rule.
 			override, err := terraformcore.SensitivityOverride(in.Node.Values, in.Node.SensitiveRenderedKeys)
 			if err != nil {
-				pdk.SetError(err)
-				return 1
+				return rendercore.RenderNodeOutput{}, err
 			}
 			if override != nil {
 				out.Files = append(out.Files, rendercore.RenderedFile{Path: terraformcore.OverrideFileName, Content: override})
@@ -246,37 +272,34 @@ func renderNode() int32 {
 			out.Files[i].Format = terraformFileFormat(out.Files[i].Path)
 		}
 	}
+	return out, nil
+}
 
-	encoded, err := out.MarshalJSON()
+//go:wasmexport assemble_boundary
+func assembleBoundary() int32 {
+	out, err := assembleBoundaryOutput()
 	if err != nil {
-		pdk.SetError(err)
+		out = rendercore.AssembleBoundaryFailure(err)
+	}
+
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
 		return 1
 	}
 	pdk.Output(encoded)
 	return 0
 }
 
-//go:wasmexport assemble_boundary
-func assembleBoundary() int32 {
+// assembleBoundaryOutput decodes the assemble_boundary input and writes the
+// boundary's root configuration, returning the error rather than reporting it for
+// the reason renderNodeOutput does.
+func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 	var in rendercore.AssembleBoundaryInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
+		return rendercore.AssembleBoundaryOutput{}, err
 	}
-
-	out, err := assembleBoundaryFromInput(in)
-	if err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-
-	encoded, err := out.MarshalJSON()
-	if err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-	pdk.Output(encoded)
-	return 0
+	return assembleBoundaryFromInput(in)
 }
 
 // assembleBoundaryFromInput writes the boundary's root configuration from the
@@ -303,7 +326,7 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 
 	files, err := terraformcore.AssembleRoot(components)
 	if err != nil {
-		return rendercore.AssembleBoundaryOutput{}, errors.New(errorChainMessage(err))
+		return rendercore.AssembleBoundaryOutput{}, err
 	}
 
 	out := rendercore.AssembleBoundaryOutput{Files: files}
@@ -317,27 +340,29 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 	return out, nil
 }
 
-// errorChainMessage serializes err's full wrap chain into one message. The
-// host-side rich error formatter is not available across the plugin ABI, and
-// some wrapper types keep their cause out of Error(), surfacing it only through
-// Unwrap; appending each unwrapped cause not already present keeps the root
-// diagnostic in the message the host receives.
-func errorChainMessage(err error) string {
-	msg := err.Error()
-	for e := errors.Unwrap(err); e != nil; e = errors.Unwrap(e) {
-		if s := e.Error(); !strings.Contains(msg, s) {
-			msg += ": " + s
-		}
-	}
-	return msg
-}
-
 //go:wasmexport validate_node_input
 func validateNodeInput() int32 {
+	out, err := validateNodeOutput()
+	if err != nil {
+		out = rendercore.ValidateNodeFailure(err)
+	}
+
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// validateNodeOutput decodes the validate_node_input payload and runs the
+// structural check, returning the error rather than reporting it for the reason
+// renderNodeOutput does.
+func validateNodeOutput() (rendercore.ValidateNodeOutput, error) {
 	var in rendercore.RenderNodeInput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
+		return rendercore.ValidateNodeOutput{}, err
 	}
 
 	var out rendercore.ValidateNodeOutput
@@ -349,19 +374,11 @@ func validateNodeInput() int32 {
 	if in.SourceListing != nil {
 		proj, err := packTerraformSource(in.SourceListing)
 		if err != nil {
-			pdk.SetError(err)
-			return 1
+			return rendercore.ValidateNodeOutput{}, err
 		}
 		out.Diagnostics = validateTerraformModule(proj)
 	}
-
-	encoded, err := out.MarshalJSON()
-	if err != nil {
-		pdk.SetError(err)
-		return 1
-	}
-	pdk.Output(encoded)
-	return 0
+	return out, nil
 }
 
 // terraformFileFormat classifies an emitted file's rendered format from its

@@ -93,6 +93,10 @@ type RenderNodeOutput struct {
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty" cbor:"diagnostics,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
+	// ErrorCode The descriptive, machine-matchable identity of the condition the failure names, set beside the human error message; absent on success, and absent when the guest names no such condition. A guest that halts on a condition it publishes reports that condition's own identifier here, so a consumer branches on it instead of recovering an identity by reading the message. The host carries the value verbatim onto the structured diagnostic it publishes and derives nothing from it. This identifier and error_short_code are reported together, because they name one condition in two forms: a guest that sets one and not the other has named a condition the host cannot resolve, and the host then reports its own generic plugin-failure condition instead while the message still carries the whole failure.
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty" cbor:"error_code,omitempty"`
+	// ErrorShortCode The compact identifier of the same condition — the letter E and four digits, the form a reader quotes, searches for and pastes into a report — set beside the human error message; absent on success, and absent when the guest names no such condition. The host prints it in the bracketed head of the diagnostic it renders for this failure, so a condition a guest raises is quotable exactly as one the compiler raises is. The host carries the value verbatim and never derives one, so a value of another shape reaches the reader as the guest wrote it. It is reported together with error_code, for the reason stated there.
+	ErrorShortCode string `json:"error_short_code,omitempty" yaml:"error_short_code,omitempty" cbor:"error_short_code,omitempty"`
 }
 
 // ValidateNodeOutput The payload a Provider guest returns from its optional validate_node_input export: the diagnostics raised by a structural check of the node's resolved input. The export consumes the same RenderNodeInput projection render_node receives and emits no files — it only reports diagnostics. A halt-severity diagnostic stops the build loudly, naming the node and provider; a warn- or info-severity diagnostic surfaces to the build result without changing rendered output. An empty diagnostics list means the input passed the structural check.
@@ -101,6 +105,10 @@ type ValidateNodeOutput struct {
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty" cbor:"diagnostics,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
+	// ErrorCode The descriptive, machine-matchable identity of the condition the failure names, set beside the human error message; absent on success, and absent when the guest names no such condition. A guest that halts on a condition it publishes reports that condition's own identifier here, so a consumer branches on it instead of recovering an identity by reading the message. The host carries the value verbatim onto the structured diagnostic it publishes and derives nothing from it. This identifier and error_short_code are reported together, because they name one condition in two forms: a guest that sets one and not the other has named a condition the host cannot resolve, and the host then reports its own generic plugin-failure condition instead while the message still carries the whole failure.
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty" cbor:"error_code,omitempty"`
+	// ErrorShortCode The compact identifier of the same condition — the letter E and four digits, the form a reader quotes, searches for and pastes into a report — set beside the human error message; absent on success, and absent when the guest names no such condition. The host prints it in the bracketed head of the diagnostic it renders for this failure, so a condition a guest raises is quotable exactly as one the compiler raises is. The host carries the value verbatim and never derives one, so a value of another shape reaches the reader as the guest wrote it. It is reported together with error_code, for the reason stated there.
+	ErrorShortCode string `json:"error_short_code,omitempty" yaml:"error_short_code,omitempty" cbor:"error_short_code,omitempty"`
 }
 
 // RenderedFile One output file a Provider guest emitted: its on-disk path relative to the node's output root, and its serialized bytes exactly as the guest produced them. The host writes these bytes verbatim and runs no serializer, so the on-disk output is byte-identical to what the guest emitted.
@@ -283,6 +291,10 @@ type AssembleBoundaryOutput struct {
 	NestSegment string `json:"nest_segment,omitempty" yaml:"nest_segment,omitempty" cbor:"nest_segment,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
+	// ErrorCode The descriptive, machine-matchable identity of the condition the failure names, set beside the human error message; absent on success, and absent when the guest names no such condition. A guest that halts on a condition it publishes reports that condition's own identifier here, so a consumer branches on it instead of recovering an identity by reading the message. The host carries the value verbatim onto the structured diagnostic it publishes and derives nothing from it. This identifier and error_short_code are reported together, because they name one condition in two forms: a guest that sets one and not the other has named a condition the host cannot resolve, and the host then reports its own generic plugin-failure condition instead while the message still carries the whole failure.
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty" cbor:"error_code,omitempty"`
+	// ErrorShortCode The compact identifier of the same condition — the letter E and four digits, the form a reader quotes, searches for and pastes into a report — set beside the human error message; absent on success, and absent when the guest names no such condition. The host prints it in the bracketed head of the diagnostic it renders for this failure, so a condition a guest raises is quotable exactly as one the compiler raises is. The host carries the value verbatim and never derives one, so a value of another shape reaches the reader as the guest wrote it. It is reported together with error_code, for the reason stated there.
+	ErrorShortCode string `json:"error_short_code,omitempty" yaml:"error_short_code,omitempty" cbor:"error_short_code,omitempty"`
 }
 
 // CarveInput The payload a Provider guest receives on its optional carve export: one named output file the pipeline carves into addressable units before a FeatureRecipe step edits some of them. A provider whose output shape the stock YAML codec cannot carve directly (a templated chart, for instance) advertises carve and reassemble so its own output-shape knowledge lives in the guest; a provider that omits the exports borrows the host's stock YAML codec.
@@ -361,6 +373,10 @@ type NameBoundOutput struct {
 	Names []DerivedNameVerdict `json:"names,omitempty" yaml:"names,omitempty" cbor:"names,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from a refusing verdict: a verdict reports a name the target will not accept, while error reports that the question itself could not be answered. The host surfaces a present error as a failed plugin invocation.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
+	// ErrorCode The descriptive, machine-matchable identity of the condition the failure names, set beside the human error message; absent on success, and absent when the guest names no such condition. A guest that halts on a condition it publishes reports that condition's own identifier here, so a consumer branches on it instead of recovering an identity by reading the message. The host carries the value verbatim onto the structured diagnostic it publishes and derives nothing from it. This identifier and error_short_code are reported together, because they name one condition in two forms: a guest that sets one and not the other has named a condition the host cannot resolve, and the host then reports its own generic plugin-failure condition instead while the message still carries the whole failure.
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty" cbor:"error_code,omitempty"`
+	// ErrorShortCode The compact identifier of the same condition — the letter E and four digits, the form a reader quotes, searches for and pastes into a report — set beside the human error message; absent on success, and absent when the guest names no such condition. The host prints it in the bracketed head of the diagnostic it renders for this failure, so a condition a guest raises is quotable exactly as one the compiler raises is. The host carries the value verbatim and never derives one, so a value of another shape reaches the reader as the guest wrote it. It is reported together with error_code, for the reason stated there.
+	ErrorShortCode string `json:"error_short_code,omitempty" yaml:"error_short_code,omitempty" cbor:"error_short_code,omitempty"`
 }
 
 // LinkEndpoint One endpoint of a cross-boundary link: the node, the boundary path its rendered output assembles into, and the provider that rendered it. The two endpoints of a link name the consuming and consumed ends of a uses edge whose ends assemble into different dispatch groups.
@@ -415,6 +431,12 @@ type LinkPublishOutput struct {
 	Handle map[string]string `json:"handle" yaml:"handle" cbor:"handle"`
 	// Patches The producer-side artifact wiring, one structural patch per consumed-endpoint output file the publish must edit. Empty when the consumed endpoint's output needs no change for the link.
 	Patches []LinkPatch `json:"patches,omitempty" yaml:"patches,omitempty" cbor:"patches,omitempty"`
+	// Error A failure message set when the guest ran but could not publish the link; absent on success. The host surfaces a present error as a failed plugin invocation. A publish that cannot proceed — an export name the stack already declares under another entry, say — is reported here rather than only as a crash, so the condition behind it can be named.
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
+	// ErrorCode The descriptive, machine-matchable identity of the condition the failure names, set beside the human error message; absent on success, and absent when the guest names no such condition. A guest that halts on a condition it publishes reports that condition's own identifier here, so a consumer branches on it instead of recovering an identity by reading the message. The host carries the value verbatim onto the structured diagnostic it publishes and derives nothing from it. This identifier and error_short_code are reported together, because they name one condition in two forms: a guest that sets one and not the other has named a condition the host cannot resolve, and the host then reports its own generic plugin-failure condition instead while the message still carries the whole failure.
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty" cbor:"error_code,omitempty"`
+	// ErrorShortCode The compact identifier of the same condition — the letter E and four digits, the form a reader quotes, searches for and pastes into a report — set beside the human error message; absent on success, and absent when the guest names no such condition. The host prints it in the bracketed head of the diagnostic it renders for this failure, so a condition a guest raises is quotable exactly as one the compiler raises is. The host carries the value verbatim and never derives one, so a value of another shape reaches the reader as the guest wrote it. It is reported together with error_code, for the reason stated there.
+	ErrorShortCode string `json:"error_short_code,omitempty" yaml:"error_short_code,omitempty" cbor:"error_short_code,omitempty"`
 }
 
 // LinkResolveInput The payload a provider receives on its link_resolve export: one cross-boundary link, the published identity handle its consumed endpoint exposed, and the consuming endpoint's assembled files. The export returns the consumer-side artifact wiring that injects the reference into the consuming endpoint's assembled output.
@@ -431,6 +453,12 @@ type LinkResolveInput struct {
 type LinkResolveOutput struct {
 	// Patches The consumer-side artifact wiring, one structural patch per consuming-endpoint output file the resolve must edit.
 	Patches []LinkPatch `json:"patches" yaml:"patches" cbor:"patches"`
+	// Error A failure message set when the guest ran but could not resolve the link; absent on success. The host surfaces a present error as a failed plugin invocation. A resolve that cannot proceed — a reference the target can only carry as a whole scalar, met inside a larger string — is reported here rather than only as a crash, so the condition behind it can be named.
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
+	// ErrorCode The descriptive, machine-matchable identity of the condition the failure names, set beside the human error message; absent on success, and absent when the guest names no such condition. A guest that halts on a condition it publishes reports that condition's own identifier here, so a consumer branches on it instead of recovering an identity by reading the message. The host carries the value verbatim onto the structured diagnostic it publishes and derives nothing from it. This identifier and error_short_code are reported together, because they name one condition in two forms: a guest that sets one and not the other has named a condition the host cannot resolve, and the host then reports its own generic plugin-failure condition instead while the message still carries the whole failure.
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty" cbor:"error_code,omitempty"`
+	// ErrorShortCode The compact identifier of the same condition — the letter E and four digits, the form a reader quotes, searches for and pastes into a report — set beside the human error message; absent on success, and absent when the guest names no such condition. The host prints it in the bracketed head of the diagnostic it renders for this failure, so a condition a guest raises is quotable exactly as one the compiler raises is. The host carries the value verbatim and never derives one, so a value of another shape reaches the reader as the guest wrote it. It is reported together with error_code, for the reason stated there.
+	ErrorShortCode string `json:"error_short_code,omitempty" yaml:"error_short_code,omitempty" cbor:"error_short_code,omitempty"`
 }
 
 // MarshalJSON encodes RenderNodeInput in field-declaration order, omitting
@@ -1114,6 +1142,22 @@ func (t RenderNodeOutput) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"error\":")
 		writeJSONString(&buf, t.Error)
 	}
+	if t.ErrorCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_code\":")
+		writeJSONString(&buf, t.ErrorCode)
+	}
+	if t.ErrorShortCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_short_code\":")
+		writeJSONString(&buf, t.ErrorShortCode)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1188,6 +1232,18 @@ func (t *RenderNodeOutput) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Error = s
 			}
+		case "error_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -1207,7 +1263,7 @@ func (t *RenderNodeOutput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *RenderNodeOutput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "files", "derived_keys", "diagnostics", "error"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "files", "derived_keys", "diagnostics", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -1246,6 +1302,22 @@ func (t ValidateNodeOutput) MarshalJSON() ([]byte, error) {
 		first = false
 		buf.WriteString("\"error\":")
 		writeJSONString(&buf, t.Error)
+	}
+	if t.ErrorCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_code\":")
+		writeJSONString(&buf, t.ErrorCode)
+	}
+	if t.ErrorShortCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_short_code\":")
+		writeJSONString(&buf, t.ErrorShortCode)
 	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
@@ -1292,6 +1364,18 @@ func (t *ValidateNodeOutput) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Error = s
 			}
+		case "error_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -1311,7 +1395,7 @@ func (t *ValidateNodeOutput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *ValidateNodeOutput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "diagnostics", "error"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "diagnostics", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -3214,6 +3298,22 @@ func (t AssembleBoundaryOutput) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"error\":")
 		writeJSONString(&buf, t.Error)
 	}
+	if t.ErrorCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_code\":")
+		writeJSONString(&buf, t.ErrorCode)
+	}
+	if t.ErrorShortCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_short_code\":")
+		writeJSONString(&buf, t.ErrorShortCode)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -3290,6 +3390,18 @@ func (t *AssembleBoundaryOutput) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Error = s
 			}
+		case "error_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -3309,7 +3421,7 @@ func (t *AssembleBoundaryOutput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *AssembleBoundaryOutput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "files", "diagnostics", "nest_per_node", "nest_segment", "error"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "files", "diagnostics", "nest_per_node", "nest_segment", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -4174,6 +4286,22 @@ func (t NameBoundOutput) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"error\":")
 		writeJSONString(&buf, t.Error)
 	}
+	if t.ErrorCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_code\":")
+		writeJSONString(&buf, t.ErrorCode)
+	}
+	if t.ErrorShortCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_short_code\":")
+		writeJSONString(&buf, t.ErrorShortCode)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -4217,6 +4345,18 @@ func (t *NameBoundOutput) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Error = s
 			}
+		case "error_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -4236,7 +4376,7 @@ func (t *NameBoundOutput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *NameBoundOutput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "names", "error"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "names", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -4825,6 +4965,30 @@ func (t LinkPublishOutput) MarshalJSON() ([]byte, error) {
 		}
 		buf.WriteByte(']')
 	}
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
+	if t.ErrorCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_code\":")
+		writeJSONString(&buf, t.ErrorCode)
+	}
+	if t.ErrorShortCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_short_code\":")
+		writeJSONString(&buf, t.ErrorShortCode)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -4883,6 +5047,24 @@ func (t *LinkPublishOutput) UnmarshalJSON(data []byte) error {
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
 			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "error_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -4902,7 +5084,7 @@ func (t *LinkPublishOutput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *LinkPublishOutput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "handle", "patches"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "handle", "patches", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -5082,6 +5264,30 @@ func (t LinkResolveOutput) MarshalJSON() ([]byte, error) {
 		}
 	}
 	buf.WriteByte(']')
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
+	if t.ErrorCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_code\":")
+		writeJSONString(&buf, t.ErrorCode)
+	}
+	if t.ErrorShortCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_short_code\":")
+		writeJSONString(&buf, t.ErrorShortCode)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -5119,6 +5325,24 @@ func (t *LinkResolveOutput) UnmarshalJSON(data []byte) error {
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
 			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "error_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -5138,7 +5362,7 @@ func (t *LinkResolveOutput) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *LinkResolveOutput) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "patches"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "patches", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -5809,10 +6033,16 @@ func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Error != "" {
 		n++
 	}
+	if t.ErrorCode != "" {
+		n++
+	}
 	if len(t.Diagnostics) != 0 {
 		n++
 	}
 	if !t.DerivedKeys.IsZero() {
+		n++
+	}
+	if t.ErrorShortCode != "" {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
@@ -5828,6 +6058,10 @@ func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 		if dst, err = ev.appendCBOR(dst); err != nil {
 			return nil, err
 		}
+	}
+	if t.ErrorCode != "" {
+		dst = appendCBORTextString(dst, "error_code")
+		dst = appendCBORTextString(dst, t.ErrorCode)
 	}
 	if len(t.Diagnostics) != 0 {
 		dst = appendCBORTextString(dst, "diagnostics")
@@ -5857,6 +6091,10 @@ func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 				}
 			}
 		}
+	}
+	if t.ErrorShortCode != "" {
+		dst = appendCBORTextString(dst, "error_short_code")
+		dst = appendCBORTextString(dst, t.ErrorShortCode)
 	}
 	return dst, nil
 }
@@ -5957,6 +6195,18 @@ func (t *RenderNodeOutput) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.Error = s
 			}
+		case "error_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -5973,7 +6223,7 @@ func (t *RenderNodeOutput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *RenderNodeOutput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "files", "derived_keys", "diagnostics", "error"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "files", "derived_keys", "diagnostics", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -5993,13 +6243,23 @@ func (t ValidateNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Error != "" {
 		n++
 	}
+	if t.ErrorCode != "" {
+		n++
+	}
 	if len(t.Diagnostics) != 0 {
+		n++
+	}
+	if t.ErrorShortCode != "" {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	if t.Error != "" {
 		dst = appendCBORTextString(dst, "error")
 		dst = appendCBORTextString(dst, t.Error)
+	}
+	if t.ErrorCode != "" {
+		dst = appendCBORTextString(dst, "error_code")
+		dst = appendCBORTextString(dst, t.ErrorCode)
 	}
 	if len(t.Diagnostics) != 0 {
 		dst = appendCBORTextString(dst, "diagnostics")
@@ -6012,6 +6272,10 @@ func (t ValidateNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
 				dst = appendCBORByteString(dst, raw)
 			}
 		}
+	}
+	if t.ErrorShortCode != "" {
+		dst = appendCBORTextString(dst, "error_short_code")
+		dst = appendCBORTextString(dst, t.ErrorShortCode)
 	}
 	return dst, nil
 }
@@ -6062,6 +6326,18 @@ func (t *ValidateNodeOutput) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.Error = s
 			}
+		case "error_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -6078,7 +6354,7 @@ func (t *ValidateNodeOutput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *ValidateNodeOutput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "diagnostics", "error"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "diagnostics", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -7897,6 +8173,9 @@ func (t AssembleBoundaryOutput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.Error != "" {
 		n++
 	}
+	if t.ErrorCode != "" {
+		n++
+	}
 	if len(t.Diagnostics) != 0 {
 		n++
 	}
@@ -7904,6 +8183,9 @@ func (t AssembleBoundaryOutput) appendCBOR(dst []byte) ([]byte, error) {
 		n++
 	}
 	if t.NestPerNode != false {
+		n++
+	}
+	if t.ErrorShortCode != "" {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
@@ -7919,6 +8201,10 @@ func (t AssembleBoundaryOutput) appendCBOR(dst []byte) ([]byte, error) {
 		if dst, err = ev.appendCBOR(dst); err != nil {
 			return nil, err
 		}
+	}
+	if t.ErrorCode != "" {
+		dst = appendCBORTextString(dst, "error_code")
+		dst = appendCBORTextString(dst, t.ErrorCode)
 	}
 	if len(t.Diagnostics) != 0 {
 		dst = appendCBORTextString(dst, "diagnostics")
@@ -7939,6 +8225,10 @@ func (t AssembleBoundaryOutput) appendCBOR(dst []byte) ([]byte, error) {
 	if t.NestPerNode != false {
 		dst = appendCBORTextString(dst, "nest_per_node")
 		dst = appendCBORBool(dst, t.NestPerNode)
+	}
+	if t.ErrorShortCode != "" {
+		dst = appendCBORTextString(dst, "error_short_code")
+		dst = appendCBORTextString(dst, t.ErrorShortCode)
 	}
 	return dst, nil
 }
@@ -8017,6 +8307,18 @@ func (t *AssembleBoundaryOutput) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.Error = s
 			}
+		case "error_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -8033,7 +8335,7 @@ func (t *AssembleBoundaryOutput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *AssembleBoundaryOutput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "files", "diagnostics", "nest_per_node", "nest_segment", "error"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "files", "diagnostics", "nest_per_node", "nest_segment", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -8887,6 +9189,12 @@ func (t NameBoundOutput) appendCBOR(dst []byte) ([]byte, error) {
 	if len(t.Names) != 0 {
 		n++
 	}
+	if t.ErrorCode != "" {
+		n++
+	}
+	if t.ErrorShortCode != "" {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
 	if t.Error != "" {
@@ -8902,6 +9210,14 @@ func (t NameBoundOutput) appendCBOR(dst []byte) ([]byte, error) {
 				return nil, err
 			}
 		}
+	}
+	if t.ErrorCode != "" {
+		dst = appendCBORTextString(dst, "error_code")
+		dst = appendCBORTextString(dst, t.ErrorCode)
+	}
+	if t.ErrorShortCode != "" {
+		dst = appendCBORTextString(dst, "error_short_code")
+		dst = appendCBORTextString(dst, t.ErrorShortCode)
 	}
 	return dst, nil
 }
@@ -8946,6 +9262,18 @@ func (t *NameBoundOutput) decodeCBOR(dec *cborDec) error {
 			} else {
 				t.Error = s
 			}
+		case "error_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -8962,7 +9290,7 @@ func (t *NameBoundOutput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *NameBoundOutput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "names", "error"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "names", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -9512,11 +9840,24 @@ func (t LinkPublishOutput) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t LinkPublishOutput) appendCBOR(dst []byte) ([]byte, error) {
 	n := 1
+	if t.Error != "" {
+		n++
+	}
 	if len(t.Patches) != 0 {
+		n++
+	}
+	if t.ErrorCode != "" {
+		n++
+	}
+	if t.ErrorShortCode != "" {
 		n++
 	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
 	dst = appendCBORTextString(dst, "handle")
 	{
 		keys := make([]string, 0, len(t.Handle))
@@ -9540,6 +9881,14 @@ func (t LinkPublishOutput) appendCBOR(dst []byte) ([]byte, error) {
 				return nil, err
 			}
 		}
+	}
+	if t.ErrorCode != "" {
+		dst = appendCBORTextString(dst, "error_code")
+		dst = appendCBORTextString(dst, t.ErrorCode)
+	}
+	if t.ErrorShortCode != "" {
+		dst = appendCBORTextString(dst, "error_short_code")
+		dst = appendCBORTextString(dst, t.ErrorShortCode)
 	}
 	return dst, nil
 }
@@ -9600,6 +9949,24 @@ func (t *LinkPublishOutput) decodeCBOR(dec *cborDec) error {
 				}
 				t.Patches = s
 			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "error_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -9616,7 +9983,7 @@ func (t *LinkPublishOutput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *LinkPublishOutput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "handle", "patches"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "handle", "patches", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)
@@ -9762,8 +10129,21 @@ func (t LinkResolveOutput) EncodeCBOR() ([]byte, error) {
 // non-required fields so the map head's pair count matches.
 func (t LinkResolveOutput) appendCBOR(dst []byte) ([]byte, error) {
 	n := 1
+	if t.Error != "" {
+		n++
+	}
+	if t.ErrorCode != "" {
+		n++
+	}
+	if t.ErrorShortCode != "" {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
 	dst = appendCBORTextString(dst, "patches")
 	dst = appendCBORHead(dst, 4, uint64(len(t.Patches)))
 	for i := range t.Patches {
@@ -9771,6 +10151,14 @@ func (t LinkResolveOutput) appendCBOR(dst []byte) ([]byte, error) {
 		if dst, err = ev.appendCBOR(dst); err != nil {
 			return nil, err
 		}
+	}
+	if t.ErrorCode != "" {
+		dst = appendCBORTextString(dst, "error_code")
+		dst = appendCBORTextString(dst, t.ErrorCode)
+	}
+	if t.ErrorShortCode != "" {
+		dst = appendCBORTextString(dst, "error_short_code")
+		dst = appendCBORTextString(dst, t.ErrorShortCode)
 	}
 	return dst, nil
 }
@@ -9809,6 +10197,24 @@ func (t *LinkResolveOutput) decodeCBOR(dec *cborDec) error {
 				}
 				t.Patches = s
 			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "error_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		case "error_short_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorShortCode = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -9825,7 +10231,7 @@ func (t *LinkResolveOutput) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *LinkResolveOutput) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "patches"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "patches", "error", "error_code", "error_short_code"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

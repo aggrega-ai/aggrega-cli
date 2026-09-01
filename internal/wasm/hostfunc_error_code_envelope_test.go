@@ -14,13 +14,18 @@ import (
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 )
 
-// Every host-function reply envelope that carries error_code references the
+// Every host-function REPLY envelope that carries error_code references the
 // shared error-code vocabulary rather than declaring a bare string, so the
 // closed set the field's description promises is a constraint the wire contract
-// states rather than prose beside an unconstrained value. These tests hold that
-// reference by driving values through a JSON Schema implementation and reading
-// the outcome: a declared code is accepted and an invented one is refused, on
-// every envelope that carries the field.
+// states rather than prose beside an unconstrained value. A guest→host socket
+// OUTPUT also carries a field of that name and is deliberately NOT in scope
+// here: its identifiers come from the compiler's own open register rather than
+// from this catalogue, and the census below states the structural difference
+// that separates the two.
+//
+// These tests hold the reply envelopes' reference by driving values through a
+// JSON Schema implementation and reading the outcome: a declared code is accepted
+// and an invented one is refused, on every reply envelope that carries the field.
 //
 // What this does and does not establish. The reply envelopes are produced by
 // the host and consumed by a guest through the generated codecs, which shuffle
@@ -222,11 +227,33 @@ func stripErrorCodeRef(t *testing.T, env envelopeRef) string {
 	return string(out)
 }
 
+// vocabRefMarker is the reference a closed-catalogue error_code carries. The
+// socket schemas address the catalogue by a relative document reference rather
+// than by the identity it resolves to, so the marker is the document name.
+const vocabRefMarker = "wasm-hostfunc-error-v1alpha1.schema.json"
+
 // TestHostfuncErrorCodeEnvelopes_CoverEveryDeclaringEnvelope holds the table
 // above to the schemas: every definition in either socket schema that declares an
-// error_code property is covered by the tests here. An envelope added later with
-// the field left unconstrained fails here rather than shipping unchecked, which a
-// fixed list of envelopes alone cannot catch.
+// error_code as a HOST-FUNCTION REPLY is covered by the tests here. An envelope
+// added later with the field left unconstrained fails here rather than shipping
+// unchecked, which a fixed list of envelopes alone cannot catch.
+//
+// **One field name now carries two contracts, and the discriminator is
+// structural.** A host→guest reply envelope carries error_code alone, against the
+// closed catalogue, which is what these tests hold. A guest→host socket OUTPUT
+// carries error_code beside error_short_code, because a halting condition has two
+// identifiers, and those identifiers come from the compiler's own open register
+// rather than from the catalogue — so referencing the catalogue there would
+// declare a condition to be a member of a set it is not in. The pair is therefore
+// what tells the two apart, and it is a real structural difference rather than a
+// naming convention: neither shape can be the other without gaining or losing a
+// field.
+//
+// The guard keeps its teeth on both sides. An error_code that is neither in the
+// table nor paired with a short code still fails, which is the unconstrained-field
+// case the guard exists for. And a paired one that DOES reference the catalogue
+// fails too, so the failure channel cannot quietly acquire a closure that would
+// refuse every code the compiler hands out.
 func TestHostfuncErrorCodeEnvelopes_CoverEveryDeclaringEnvelope(t *testing.T) {
 	t.Parallel()
 
@@ -235,6 +262,7 @@ func TestHostfuncErrorCodeEnvelopes_CoverEveryDeclaringEnvelope(t *testing.T) {
 		covered[env.schemaID+"#"+env.defName] = true
 	}
 
+	paired := 0
 	for schemaID, source := range map[string]string{
 		providerSchemaID: schemas.WasmProviderV1alpha1,
 		parseSchemaID:    schemas.WasmParseV1alpha1,
@@ -251,17 +279,41 @@ func TestHostfuncErrorCodeEnvelopes_CoverEveryDeclaringEnvelope(t *testing.T) {
 			t.Fatalf("%s declares no $defs, so this scan would pass over an empty set", schemaID)
 		}
 		for defName, def := range doc.Defs {
-			if _, declares := def.Properties["error_code"]; !declares {
+			raw, declares := def.Properties["error_code"]
+			if !declares {
 				continue
 			}
-			if !covered[schemaID+"#"+defName] {
-				t.Errorf("%s declares error_code on %s, which no test here covers", schemaID, defName)
+			if covered[schemaID+"#"+defName] {
+				delete(covered, schemaID+"#"+defName)
+				continue
 			}
-			delete(covered, schemaID+"#"+defName)
+			if _, hasShort := def.Properties["error_short_code"]; hasShort {
+				paired++
+				if strings.Contains(string(raw), vocabRefMarker) {
+					t.Errorf("%s declares the guest→host failure channel on %s and references the closed "+
+						"host-function catalogue from its error_code; the identifiers on that channel come "+
+						"from the compiler's own register, which the catalogue does not contain",
+						schemaID, defName)
+				}
+				continue
+			}
+			t.Errorf("%s declares error_code on %s, which no test here covers and which carries no "+
+				"error_short_code beside it, so it is neither a covered reply envelope nor the guest→host "+
+				"failure channel", schemaID, defName)
 		}
 	}
 
 	for ref := range covered {
 		t.Errorf("the tests here cover %s, which declares no error_code property", ref)
+	}
+
+	// Calibration: the paired arm is what makes the census admit anything at all
+	// beyond the table, so a run finding no paired shape has stopped measuring the
+	// distinction it was written for and would pass over a table that had drifted
+	// into covering the failure channel.
+	if paired == 0 {
+		t.Error("the scan found no error_code paired with an error_short_code, so the discriminator this " +
+			"census rests on matched nothing; the failure channel's shape moved, or the scan is reading the " +
+			"wrong schemas")
 	}
 }

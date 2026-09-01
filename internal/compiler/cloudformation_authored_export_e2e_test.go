@@ -33,6 +33,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -116,11 +117,34 @@ func TestCloudFormationAuthoredExport_ShadowingDerivedNameHaltsTheBuild(t *testi
 	msg := cerrors.CauseChain(err)
 	t.Logf("emitted diagnostic, verbatim:\n%s", msg)
 
-	// The refusal is raised inside the rendering engine, so what reaches the
-	// build is the text the engine wrote rather than a halting condition the
-	// build itself declared. The engine's own tests match the condition by
-	// identity; here the text is what a caller has, so the text is what is
-	// asserted.
+	// The refusal is raised inside the guest, and its identity crosses the socket
+	// with it: the guest reports the condition's identifiers on the link_publish
+	// output's failure channel, and the host reports them back off the error. So
+	// the error a real build produced is asserted to carry a code, and to carry
+	// the GUEST's rather than the host's generic plugin-failure one.
+	//
+	// Which number it is cannot be asserted here without writing it out, and the
+	// declaring package is internal to the guest tree so its accessor is
+	// unreachable from this one. A written number would be a second copy of a
+	// registered value with nothing comparing the two, so what is asserted here is
+	// the property this boundary can check — that an identity crossed — and which
+	// condition each code names is held where the conditions are declared, against
+	// the accessors themselves.
+	hostShort, _ := cerrors.ShortCodeOf(wasm.ErrWasmGuestError())
+	short, ok := cerrors.ShortCodeOf(err)
+	if !ok {
+		t.Error("the build's own error reports no short code, so the condition the guest raised is " +
+			"unquotable: its identity did not cross the socket")
+	}
+	if short == hostShort {
+		t.Errorf("the build's own error reports the host's generic plugin-failure code %q rather than the "+
+			"condition the guest raised", hostShort)
+	}
+	if _, ok := cerrors.CodeOf(err); !ok {
+		t.Error("the build's own error reports no descriptive code, so no machine consumer can branch on " +
+			"the condition without parsing the message")
+	}
+
 	for _, want := range []string{
 		// The frame the build's post-assembly link pass adds when the publish on
 		// the consumed end refuses. Its presence is what shows the comparison was

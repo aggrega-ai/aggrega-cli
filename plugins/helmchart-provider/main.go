@@ -35,7 +35,6 @@ package main
 
 import (
 	"errors"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmchartcore"
@@ -120,41 +119,54 @@ func describe() int32 {
 	return 0
 }
 
+// The failure path of an export whose output shape declares the in-band failure
+// channel returns 0 and reports the failure on that output, because the identity
+// of the condition crosses only on that path: the out-of-band channel carries one
+// string, so a guest that reports there has discarded the condition's code before
+// the host can read it. rendercore.FailureOf derives what crosses; the host reads
+// a present failure message off the output as a failed invocation.
+//
+// The out-of-band channel remains for the one failure the in-band channel cannot
+// carry: an output the guest could not serialize, where there is no envelope to
+// report on. carve and reassemble keep it for every failure, because their output
+// shapes declare no failure channel at all.
+
 //go:wasmexport render_node
 func renderNode() int32 {
-	var in rendercore.RenderNodeInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
+	out, err := renderNodeOutput()
+	if err != nil {
+		out = rendercore.RenderNodeFailure(err)
 	}
 
-	var out rendercore.RenderNodeOutput
-	var err error
-	switch {
-	case in.ArtifactsProjection != nil:
-		out, err = placeArtifactsFromInput(in)
-	case in.SourceListing != nil:
-		out, err = renderSourcedFromInput(in)
-	default:
-		// helm-chart is sourced-only for render: it copies a local chart verbatim
-		// and synthesizes nothing. A payload with no source listing and no
-		// artifacts projection is an orchestrator dispatch error rather than
-		// authoring drift, so it halts loudly.
-		pdk.SetError(errors.New("helmchart-provider: render_node input carries neither a source listing nor an artifacts projection"))
-		return 1
-	}
-	if err != nil {
-		pdk.SetError(errors.New(errorChainMessage(err)))
-		return 1
-	}
-
-	encoded, err := out.MarshalJSON()
-	if err != nil {
-		pdk.SetError(err)
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
 		return 1
 	}
 	pdk.Output(encoded)
 	return 0
+}
+
+// renderNodeOutput decodes the render_node input and routes on what it carries.
+// It returns the error rather than reporting it, so the one export above decides
+// how a failure crosses and this stays about what helm-chart renders.
+func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
+	var in rendercore.RenderNodeInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		return rendercore.RenderNodeOutput{}, err
+	}
+	switch {
+	case in.ArtifactsProjection != nil:
+		return placeArtifactsFromInput(in)
+	case in.SourceListing != nil:
+		return renderSourcedFromInput(in)
+	}
+	// helm-chart is sourced-only for render: it copies a local chart verbatim
+	// and synthesizes nothing. A payload with no source listing and no
+	// artifacts projection is an orchestrator dispatch error rather than
+	// authoring drift, so it halts loudly.
+	return rendercore.RenderNodeOutput{}, errors.New(
+		"helmchart-provider: render_node input carries neither a source listing nor an artifacts projection")
 }
 
 // renderSourcedFromInput copies the sourced sub-chart verbatim into a sub-chart
@@ -211,25 +223,29 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 
 //go:wasmexport assemble_boundary
 func assembleBoundary() int32 {
-	var in rendercore.AssembleBoundaryInput
-	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
+	out, err := assembleBoundaryOutput()
+	if err != nil {
+		out = rendercore.AssembleBoundaryFailure(err)
 	}
 
-	out, err := assembleBoundaryFromInput(in)
-	if err != nil {
-		pdk.SetError(errors.New(errorChainMessage(err)))
-		return 1
-	}
-
-	encoded, err := out.MarshalJSON()
-	if err != nil {
-		pdk.SetError(err)
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
 		return 1
 	}
 	pdk.Output(encoded)
 	return 0
+}
+
+// assembleBoundaryOutput decodes the assemble_boundary input and runs the
+// assembly, returning the error rather than reporting it for the reason
+// renderNodeOutput does.
+func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
+	var in rendercore.AssembleBoundaryInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		return rendercore.AssembleBoundaryOutput{}, err
+	}
+	return assembleBoundaryFromInput(in)
 }
 
 // assembleBoundaryFromInput reconstructs the umbrella assemble core's inputs from
@@ -296,7 +312,7 @@ func carve() int32 {
 
 	units, err := helmchartcore.NewHelmChartCodec(in.YamlIndent).Segment(in.Name, in.Body)
 	if err != nil {
-		pdk.SetError(errors.New(errorChainMessage(err)))
+		pdk.SetError(errors.New(rendercore.FailureOf(err).Message))
 		return 1
 	}
 
@@ -319,7 +335,7 @@ func reassemble() int32 {
 
 	body, _, err := helmchartcore.NewHelmChartCodec(in.YamlIndent).Reassemble(in.Name, in.Body, in.Segs, in.Patched)
 	if err != nil {
-		pdk.SetError(errors.New(errorChainMessage(err)))
+		pdk.SetError(errors.New(rendercore.FailureOf(err).Message))
 		return 1
 	}
 
@@ -330,22 +346,6 @@ func reassemble() int32 {
 	}
 	pdk.Output(encoded)
 	return 0
-}
-
-// errorChainMessage serializes err's full wrap chain into one message. The
-// host-side rich error formatter is not available across the plugin ABI, and
-// some wrapper types (the compiler's categorised errors) keep their cause out of
-// Error(), surfacing it only through Unwrap; appending each unwrapped cause not
-// already present keeps the root diagnostic — an empty or multi-document
-// Chart.yaml, an empty name or version — in the message the host receives.
-func errorChainMessage(err error) string {
-	msg := err.Error()
-	for e := errors.Unwrap(err); e != nil; e = errors.Unwrap(e) {
-		if s := e.Error(); !strings.Contains(msg, s) {
-			msg += ": " + s
-		}
-	}
-	return msg
 }
 
 // sortedKeys returns the map's keys in lexical order so file emission is
@@ -403,16 +403,17 @@ func packSourcedChart(listing *rendercore.SourceListing) (*rendercore.SourceProj
 //go:wasmexport name_bound
 func nameBound() int32 {
 	var in rendercore.NameBoundInput
+	var out rendercore.NameBoundOutput
 	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
-		pdk.SetError(err)
-		return 1
+		out = rendercore.NameBoundFailure(err)
+	} else {
+		out = rendercore.NameBoundOutput{
+			Names: []rendercore.DerivedNameVerdict{rendercore.ComponentIDLabelVerdict(in.Proposed, in.Authored)},
+		}
 	}
-	out := rendercore.NameBoundOutput{
-		Names: []rendercore.DerivedNameVerdict{rendercore.ComponentIDLabelVerdict(in.Proposed, in.Authored)},
-	}
-	encoded, err := out.MarshalJSON()
-	if err != nil {
-		pdk.SetError(err)
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
 		return 1
 	}
 	pdk.Output(encoded)

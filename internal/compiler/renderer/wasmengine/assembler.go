@@ -218,7 +218,11 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: decode assemble_boundary output: %w", err)
 	}
-	if err := wasm.GuestReturnedError(export, out.Error); err != nil {
+	if err := wasm.GuestReturnedError(export, wasm.GuestFailure{
+		Message:   out.Error,
+		Code:      out.ErrorCode,
+		ShortCode: out.ErrorShortCode,
+	}); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	if err := wasm.GuestDiagnosticSeverities(e.pluginURI, export, out.Diagnostics); err != nil {

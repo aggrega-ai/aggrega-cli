@@ -223,18 +223,89 @@ func DecodeGuestOutputCBOR(export string, out []byte, dst GuestOutputCBOR) error
 	return nil
 }
 
-// GuestReturnedError maps a guest-returned socket-output error message onto the
-// host taxonomy: it returns an error wrapping ErrWasmGuestError (naming the
-// export and carrying the message) when msg is non-empty, and nil when msg is
-// empty (the success case). A socket consumer calls it right after decoding a
-// guest output so a guest that reports "I could not complete" halts through the
-// same classification a guest crash does.
-func GuestReturnedError(export, msg string) error {
-	if msg == "" {
+// GuestFailure is the failure a guest reported in-band on its socket output: the
+// message, and the identifiers of the halting condition that message names where
+// the socket's shape carries them.
+//
+// It is a struct rather than a list of parameters so a call site cannot transpose
+// two identifiers of the same type, and so a socket whose output declares no code
+// fields states that by setting only Message — the absence is then visible where
+// the call is written rather than inferable from a positional empty string.
+type GuestFailure struct {
+	// Message is the failure text the guest reported. Empty is the success case.
+	Message string
+	// Code is the descriptive, machine-matchable identity of the condition the
+	// guest's failure names, or empty where the guest named none.
+	Code string
+	// ShortCode is the compact identifier of that same condition — the letter E
+	// and four digits — or empty where the guest named none.
+	ShortCode string
+}
+
+// GuestReturnedError maps a guest-returned socket-output failure onto the host
+// taxonomy: it returns an error wrapping ErrWasmGuestError (naming the export and
+// carrying the message) when f carries a message, and nil when it does not (the
+// success case). A socket consumer calls it right after decoding a guest output so
+// a guest that reports "I could not complete" halts through the same
+// classification a guest crash does.
+//
+// Where the guest also named the condition its failure is about, the returned
+// error reports that condition's identifiers rather than the host's own, so the
+// diagnostic a reader meets carries the code the guest published. Classification
+// is unchanged either way: the guest condition wraps ErrWasmGuestError, so a
+// caller matching the host taxonomy with errors.Is still matches.
+func GuestReturnedError(export string, f GuestFailure) error {
+	if f.Message == "" {
 		return nil
 	}
-	return fmt.Errorf("call %q: %w: %s", export, ErrWasmGuestError(), msg)
+	return fmt.Errorf("call %q: %w: %s", export, reportedOver(ErrWasmGuestError(), f), f.Message)
 }
+
+// reportedOver returns the error the wrap above names as the condition: host on
+// its own, or the identifiers the guest reported presented over host.
+//
+// It takes the host condition as an argument rather than reaching for it, so the
+// one wrap above stays the one place this package names that condition
+// constructively — which is the property the chokepoint guard beside this file
+// reads, and it reads it by looking at exactly that argument position.
+//
+// The pairing rule is both-or-neither, and it is a rule rather than a tolerance.
+// A condition has two identifiers naming one condition, so a report carrying one
+// of them describes a condition the host cannot name completely — and attaching
+// it would publish half an identity: one accessor answering for the guest's
+// condition and the other for the host's, on one error, with nothing to say the
+// two are different conditions. A half report therefore names no condition at
+// all, and the host's condition stands, with the guest's message carrying
+// everything the reader needs. The guest's own identity is not forged here and
+// could not be: the identifiers travel as data, and there is no path from a code
+// back to the identity that declared it.
+func reportedOver(host error, f GuestFailure) error {
+	if f.Code == "" || f.ShortCode == "" {
+		return host
+	}
+	return &reportedCondition{host: host, code: f.Code, shortCode: f.ShortCode}
+}
+
+// reportedCondition presents the identifiers a guest reported for the condition
+// its failure names, over the host condition it stands on.
+//
+// Error returns the host condition's own registered sentence and not a second
+// copy of it: the wording has one home, and this type contributes identifiers
+// rather than words. Unwrap returns that condition, so the whole host taxonomy
+// still matches beneath these identifiers.
+type reportedCondition struct {
+	host      error
+	code      string
+	shortCode string
+}
+
+func (c *reportedCondition) Error() string { return c.host.Error() }
+
+func (c *reportedCondition) Unwrap() error { return c.host }
+
+func (c *reportedCondition) ErrorCode() string { return c.code }
+
+func (c *reportedCondition) ErrorShortCode() string { return c.shortCode }
 
 // ErrWasmDiagnosticSeverity indicates that a guest plugin returned a diagnostic
 // whose severity is not one of the values the shared diagnostic contract

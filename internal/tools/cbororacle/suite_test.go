@@ -305,6 +305,8 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.AssembleBoundaryOutput](t, "ErrorEnvelopeAssembleBoundaryOutput", false)
 	vec[abi.FRPStepOutput](t, "ErrorEnvelopeFRPStepOutput", false)
 	vec[abi.ImportOutput](t, "ErrorEnvelopeImportOutput", false)
+	vec[abi.LinkPublishOutput](t, "ErrorEnvelopeLinkPublishOutput", false)
+	vec[abi.LinkResolveOutput](t, "ErrorEnvelopeLinkResolveOutput", false)
 	vec[abi.LinterOutput](t, "ErrorEnvelopeLinterOutput", false)
 	vec[abi.MutatorOutput](t, "ErrorEnvelopeMutatorOutput", false)
 	vec[abi.NameBoundOutput](t, "ErrorEnvelopeNameBoundOutput", false)

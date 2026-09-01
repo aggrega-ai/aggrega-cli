@@ -12,7 +12,7 @@ func ErrTranslationProbeNoPort() error { return errTranslationProbeNoPort }
 
 var errTranslationProbeNoPort = cerrors.Register("compiler-renderer-compose/translation-probe-no-port", cerrors.Meta{
 	ShortCode: "E0236",
-	Message:   "TRANSLATION_ERROR: probe http: requires at least one container port; container declares none",
+	Message:   "probe http: requires at least one container port; container declares none",
 })
 
 // ErrTranslationProbeShape is emitted when a ProbeSpec has no recognised shape
@@ -22,7 +22,7 @@ func ErrTranslationProbeShape() error { return errTranslationProbeShape }
 
 var errTranslationProbeShape = cerrors.Register("compiler-renderer-compose/translation-probe-shape", cerrors.Meta{
 	ShortCode: "E0237",
-	Message:   "TRANSLATION_ERROR: probe declares no shape (http/tcp/exec)",
+	Message:   "probe declares no shape (http/tcp/exec)",
 })
 
 // ErrTranslationConfigMapMissingArtifact is emitted when a configmap volume's
@@ -41,7 +41,7 @@ func ErrTranslationConfigMapMissingArtifact() error { return errTranslationConfi
 
 var errTranslationConfigMapMissingArtifact = cerrors.Register("compiler-renderer-compose/translation-config-map-missing-artifact", cerrors.Meta{
 	ShortCode: "E0235",
-	Message:   "TRANSLATION_ERROR: configmap volume requires a file emitted via the Recipe's artifacts: input; none found",
+	Message:   "configmap volume requires a file emitted via the Recipe's artifacts: input; none found",
 })
 
 // ErrUnsupportedComposeForm is emitted when a Workload declares a controller
@@ -54,7 +54,7 @@ func ErrUnsupportedComposeForm() error { return errUnsupportedComposeForm }
 
 var errUnsupportedComposeForm = cerrors.Register("compiler-renderer-compose/unsupported-compose-form", cerrors.Meta{
 	ShortCode: "E0240",
-	Message:   "TRANSLATION_ERROR: compose cannot express this workload form",
+	Message:   "compose cannot express this workload form",
 })
 
 // ErrUnsupportedComposeLifecycle is emitted when a container declares lifecycle
@@ -65,7 +65,7 @@ func ErrUnsupportedComposeLifecycle() error { return errUnsupportedComposeLifecy
 
 var errUnsupportedComposeLifecycle = cerrors.Register("compiler-renderer-compose/unsupported-compose-lifecycle", cerrors.Meta{
 	ShortCode: "E0241",
-	Message:   "TRANSLATION_ERROR: compose has no lifecycle-hook primitive; container declares lifecycle hooks",
+	Message:   "compose has no lifecycle-hook primitive; container declares lifecycle hooks",
 })
 
 // ErrUnsupportedComposeEnvFrom is emitted when a container declares envFrom
@@ -77,7 +77,7 @@ func ErrUnsupportedComposeEnvFrom() error { return errUnsupportedComposeEnvFrom 
 
 var errUnsupportedComposeEnvFrom = cerrors.Register("compiler-renderer-compose/unsupported-compose-env-from", cerrors.Meta{
 	ShortCode: "E0239",
-	Message:   "TRANSLATION_ERROR: compose has no env-from-object primitive; container declares envFrom",
+	Message:   "compose has no env-from-object primitive; container declares envFrom",
 })
 
 // ErrUnsupportedComposePortProtocol is emitted when a published port declares a
@@ -93,7 +93,7 @@ func ErrUnsupportedComposePortProtocol() error { return errUnsupportedComposePor
 
 var errUnsupportedComposePortProtocol = cerrors.Register("compiler-renderer-compose/unsupported-compose-port-protocol", cerrors.Meta{
 	ShortCode: "E0258",
-	Message:   "TRANSLATION_ERROR: compose publishes a port's transport as a tcp or udp suffix; this port declares a transport compose cannot express",
+	Message:   "compose publishes a port's transport as a tcp or udp suffix; this port declares a transport compose cannot express",
 })
 
 // ErrUnconvertibleComposeQuantity is emitted when a container resources quantity
@@ -104,5 +104,5 @@ func ErrUnconvertibleComposeQuantity() error { return errUnconvertibleComposeQua
 
 var errUnconvertibleComposeQuantity = cerrors.Register("compiler-renderer-compose/unconvertible-compose-quantity", cerrors.Meta{
 	ShortCode: "E0238",
-	Message:   "TRANSLATION_ERROR: resources quantity cannot be converted to a compose deploy.resources value",
+	Message:   "resources quantity cannot be converted to a compose deploy.resources value",
 })

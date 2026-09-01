@@ -29,9 +29,25 @@ const sentinelHome = "internal/wasm/errors.go"
 func sentinelName() string { return "ErrWasm" + "GuestError" }
 
 // nonConstructingCalls are the calls that take the sentinel without building an
-// error around it. A CLASSIFYING call — errors.Is, errors.As — uses the taxonomy
-// as intended; the taxonomy exists to be matched, so the guard admits it
-// everywhere and judges everything else.
+// error around it, keyed by the callee's own FUNCTION name rather than by its
+// package-qualified spelling.
+//
+// Two kinds belong here and both use the identity as intended. A CLASSIFYING
+// call — Is, As — matches the taxonomy, which is what the taxonomy exists for. A
+// READING call — CodeOf, ShortCodeOf, MessageOf — asks the identity what it
+// reports; reading a value off a condition constructs nothing, and it is how
+// every surface that prints or publishes a code obtains one.
+//
+// The key is the bare function name because the package spelling is not
+// stable at the call site: a file may import the standard errors package under
+// an alias, and this project's own error package is conventionally imported
+// aliased. Keyed on the qualified spelling, such a call read as a construction
+// site — measured, on files importing the standard package as stderrors — so the
+// guard reported a clean tree as dirty and the next author's repair would have
+// been to loosen the check itself. The bound is stated because it is real: a
+// function of one of these names in some unrelated package is admitted too. That
+// is accepted, because the failure it opens is a wrap named Is, As or CodeOf,
+// which is a shape review sees and which no idiom produces.
 //
 // Registration needs no entry here. It declares the identity against a code
 // value rather than against the identity's own name, so it never reads as a use
@@ -39,8 +55,11 @@ func sentinelName() string { return "ErrWasm" + "GuestError" }
 // this guard exists to catch in any case, because registering one code twice
 // panics at start-up.
 var nonConstructingCalls = map[string]bool{
-	"errors.Is": true,
-	"errors.As": true,
+	"Is":          true,
+	"As":          true,
+	"CodeOf":      true,
+	"ShortCodeOf": true,
+	"MessageOf":   true,
 }
 
 // TestGuestErrorSentinelHasOneWrapSite is the chokepoint guard for the
@@ -105,7 +124,7 @@ func TestGuestErrorSentinelHasOneWrapSite(t *testing.T) {
 			if !ok {
 				return true
 			}
-			if nonConstructingCalls[callName(call.Fun)] {
+			if nonConstructingCalls[calleeName(call.Fun)] {
 				return true
 			}
 			for _, arg := range call.Args {
@@ -144,6 +163,23 @@ func TestGuestErrorSentinelHasOneWrapSite(t *testing.T) {
 	if n := len(sites[sentinelHome]); n != 1 {
 		t.Errorf("%s must build the sentinel into an error exactly once; got %d site(s): %v", sentinelHome, n, sites[sentinelHome])
 	}
+}
+
+// calleeName renders a call's callee as its own FUNCTION name, dropping whatever
+// package qualifier the call site wrote — "Errorf", "Is", "ShortCodeOf".
+//
+// It is the form nonConstructingCalls is keyed on, and it is separate from
+// callName because the two answer different questions: the allowlist must be
+// blind to an import alias, while a finding printed for a human wants the call as
+// it was written.
+func calleeName(fun ast.Expr) string {
+	switch f := fun.(type) {
+	case *ast.Ident:
+		return f.Name
+	case *ast.SelectorExpr:
+		return f.Sel.Name
+	}
+	return ""
 }
 
 // callName renders a call's callee as written — "fmt.Errorf", "errors.Is", or a
