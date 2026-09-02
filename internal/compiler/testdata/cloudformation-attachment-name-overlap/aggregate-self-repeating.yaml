@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cfn-attachment-self-repeating-app
+  version: "1.0.0"
+  description: >
+    One component carrying one attachment whose own two entries name one
+    resource, which is that attachment's own derivation failing to be unique
+    rather than a meeting between two contributors.
+spec:
+  components:
+    store:
+      type: core/cfn-host
+      features:
+        aux:
+          type: feature.id/cfn-aux-self-repeating

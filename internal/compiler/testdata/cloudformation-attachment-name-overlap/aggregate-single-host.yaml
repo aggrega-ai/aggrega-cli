@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cfn-attachment-single-host-app
+  version: "1.0.0"
+  description: >
+    The two-host shape with one host removed, so nothing collides and the build
+    stands. What the emitted output then carries is the measurement.
+spec:
+  components:
+    alpha:
+      type: core/cfn-host
+      features:
+        aux:
+          type: feature.id/cfn-aux-distinct

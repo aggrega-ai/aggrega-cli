@@ -337,8 +337,12 @@ func identityContextReserve(scope ComponentIdentityScope, bound, regions int) in
 // the identity shortened around a digest of the whole of it, behind a marker no
 // authored part can produce — so a shortened identity can never be mistaken for
 // one that fitted. Two shortened identities are unlikely to meet, and the
-// duplicate check every derived name is declared into halts naming both if two
-// of them do, so nothing here rests on the unlikelihood alone.
+// duplicate check every derived name is declared into halts naming both where
+// the two contributors' output can reach one another. Where it cannot — two
+// attachments on one component, under a provider that folds its group's output
+// into one document and writes each attachment's own resources beside it as
+// files of their own — the two are not compared, and what is left there rests
+// on the unlikelihood alone.
 //
 // The derivation is deterministic in both the bound and the parts: one bound and
 // one part list always yield one identity, so a caller that asks the same

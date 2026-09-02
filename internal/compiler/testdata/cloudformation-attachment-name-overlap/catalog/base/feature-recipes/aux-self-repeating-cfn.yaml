@@ -1,0 +1,33 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: cfn-aux-self-repeating
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: feature.id/cfn-aux-self-repeating
+  # ONE fault, in ONE contributor: this attachment's own two entries name one
+  # resource, and their bodies differ — so the second body is the one that would
+  # be lost. Two entries restating a name with the SAME body would fold and
+  # declare it once, which is why the two bodies below are deliberately not
+  # identical.
+  #
+  # It is the half of the condition that is about a contributor's own derivation
+  # rather than about a meeting between two contributors, so it stands whatever
+  # the provider does with the group's output and whichever files this
+  # attachment's own output was written to.
+  artifacts:
+    aux-alarm-a.yaml: |
+      Resources:
+        AuxAlarm:
+          Type: AWS::CloudWatch::Alarm
+          Properties:
+            ComparisonOperator: GreaterThanThreshold
+            EvaluationPeriods: 1
+    aux-alarm-b.yaml: |
+      Resources:
+        AuxAlarm:
+          Type: AWS::CloudWatch::Alarm
+          Properties:
+            ComparisonOperator: LessThanThreshold
+            EvaluationPeriods: 3

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -32,34 +33,58 @@ const (
 // struct literals so a case cannot quietly assemble a label the production path
 // could never produce — which is what would let a case pass over a coordinate
 // production drops.
-func declaredByComponent(name string) derivedKeyProducer {
-	return derivedKeyProducerFor(producerKindComponent, name, "")
-}
-
-func declaredByAttachment(node, attachment string) derivedKeyProducer {
-	return derivedKeyProducerFor(producerKindComponent, node, attachment)
-}
-
-func declaredByBoundaryFeature(instance, boundaryPath string) derivedKeyProducer {
-	return derivedKeyProducerFor(producerKindFeature, instance, boundaryPath)
-}
-
-// derivedNamesView presents one group's derived-name declarations and nothing
-// else.
 //
-// The rule under test reads exactly one fact, so nothing behind the embedded
-// interface is ever asked for. It carries no value there deliberately: a read
-// panics rather than answering a zero value, so a rule that later starts reading
-// a second fact fails loudly instead of being quietly handed nothing.
+// Each pairs its label with the disposition production pairs it with when the
+// contributor's output reaches its group's assembler, which is the shape every
+// case below is about unless it says otherwise. The standalone direction is built
+// by placedStandalone, so a case asserting the narrowing states it rather than
+// inheriting it.
+func declaredByComponent(name string) derivedKeyContributor {
+	return derivedKeyContributorFor(derivedKeyProducerFor(producerKindComponent, name, ""), false)
+}
+
+func declaredByAttachment(node, attachment string) derivedKeyContributor {
+	return derivedKeyContributorFor(
+		derivedKeyProducerFor(producerKindComponent, node, attachment), false)
+}
+
+func declaredByBoundaryFeature(instance, boundaryPath string) derivedKeyContributor {
+	return derivedKeyContributorFor(
+		derivedKeyProducerFor(producerKindFeature, instance, boundaryPath), false)
+}
+
+// placedStandalone is the same contributor with the render having written its
+// output as discrete files at its own position rather than handing it to its
+// group's assembler.
+func placedStandalone(c derivedKeyContributor) derivedKeyContributor {
+	return derivedKeyContributorFor(c.producer, true)
+}
+
+// derivedNamesView presents one group's derived-name declarations and what its
+// elected provider declared it does with the group's output, and nothing else.
+//
+// The rule under test reads exactly those two facts, so nothing behind the
+// embedded interface is ever asked for. It carries no value there deliberately: a
+// read panics rather than answering a zero value, so a rule that later starts
+// reading a third fact fails loudly instead of being quietly handed nothing.
+//
+// assembly is empty by default, which is the answer for a provider declaring no
+// assembly claim — the case in which nothing is narrowed and every contributor is
+// compared against every other.
 type derivedNamesView struct {
 	constraint.DispatchedView
 	declared []constraint.DerivedNameDeclaration
+	assembly string
 }
 
 func (v derivedNamesView) AssemblyGroupDerivedNames(
 	_ string, _ string,
 ) []constraint.DerivedNameDeclaration {
 	return v.declared
+}
+
+func (v derivedNamesView) AssemblyGroupProviderAssembly(_ string, _ string) string {
+	return v.assembly
 }
 
 // derivedNamesAxes supplies the one group coordinate these cases are about.
@@ -94,9 +119,20 @@ func (a derivedNamesAxes) AssemblyGroupProviders(assemblyPath string) []string {
 // that bypassed the traversal could not tell the two apart.
 func runDerivedNameRule(t *testing.T, set *derivedKeySet) []string {
 	t.Helper()
+	return runDerivedNameRuleUnder(t, set, "")
+}
+
+// runDerivedNameRuleUnder is the same invocation with the group's elected
+// provider declaring assembly. The mode is a parameter rather than a second
+// helper because it is one of the two facts the rule reads, and a case that fixes
+// only the declarations fixes half its input.
+func runDerivedNameRuleUnder(t *testing.T, set *derivedKeySet, assembly string) []string {
+	t.Helper()
 
 	axes := derivedNamesAxes{path: "boundaries/default", provider: "collide"}
-	var view constraint.DispatchedView = derivedNamesView{declared: set.declarations()}
+	var view constraint.DispatchedView = derivedNamesView{
+		declared: set.declarations(), assembly: assembly,
+	}
 	raised, err := constraint.RunOnAssemblyPathProviders(
 		func() error { return nil }, axes, axes, view,
 		AssemblyGroupDerivesEachNameOnce,
@@ -124,11 +160,11 @@ func TestDerivedNameRule_InvariantUnderDeclarationOrder(t *testing.T) {
 	t.Parallel()
 
 	declarations := []derivedKeyDeclaration{
-		{space: "logical-ids", key: realDerivedLogicalID, producer: declaredByComponent("one")},
-		{space: "export-names", key: realDerivedExportName, producer: declaredByComponent("two")},
-		{space: "logical-ids", key: realDerivedLogicalID, producer: declaredByComponent("three")},
-		{space: "export-names", key: realDerivedExportName, producer: declaredByComponent("four")},
-		{space: "export-names", key: realDerivedExportName, producer: declaredByComponent("five")},
+		{space: "logical-ids", key: realDerivedLogicalID, contributor: declaredByComponent("one")},
+		{space: "export-names", key: realDerivedExportName, contributor: declaredByComponent("two")},
+		{space: "logical-ids", key: realDerivedLogicalID, contributor: declaredByComponent("three")},
+		{space: "export-names", key: realDerivedExportName, contributor: declaredByComponent("four")},
+		{space: "export-names", key: realDerivedExportName, contributor: declaredByComponent("five")},
 	}
 
 	var want []string
@@ -136,7 +172,7 @@ func TestDerivedNameRule_InvariantUnderDeclarationOrder(t *testing.T) {
 		var set derivedKeySet
 		for _, i := range order {
 			d := declarations[i]
-			set.put(d.space, d.key, d.producer)
+			set.put(d.space, d.key, d.contributor)
 		}
 		got := runDerivedNameRule(t, &set)
 		if len(got) == 0 {
@@ -278,6 +314,206 @@ func TestDerivedNameRule_OneContributorRestatingItselfAcrossCrossingsIsSilent(t 
 	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
 	if got := runDerivedNameRule(t, &set); len(got) != 0 {
 		t.Fatalf("one contributor restating a name across crossings must not object: %v", got)
+	}
+}
+
+// TestDerivedNameRule_WhereTheOutputMeets is the grid the narrowing lives on, and
+// it is a grid rather than two lists: what the group's provider does with the
+// group's output and where each contributor's own output landed are two axes, and
+// a defect can sit in one cell while both margins read correctly.
+//
+// Every row declares ONE name in ONE space, by two contributors, and differs only
+// in the two axes. The count is the whole assertion: two objections is the
+// collision reported once per contributor, zero is the rule staying silent.
+//
+// 🔴 The rows that matter most are the ones that must still object. A predicate
+// keyed on placement alone would silence every row here, because a provider that
+// folds nothing places every contributor's output standalone — that is a removal
+// rather than a narrowing, and these rows are what separates the two.
+func TestDerivedNameRule_WhereTheOutputMeets(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		assembly string
+		second   derivedKeyContributor
+		want     int
+	}{
+		{
+			// The subject of the narrowing: the folded contributor's name stands
+			// inside the assembled document and the standalone one's stands in
+			// files of its own, so neither can displace the other and no rename
+			// would change that.
+			name:     "folding group, one folded and one standalone contributor",
+			assembly: wasm.BoundaryAssemblyMerge,
+			second:   placedStandalone(declaredByAttachment("alpha", "aux")),
+			want:     0,
+		},
+		{
+			// The negative direction, from the same shape: two contributors whose
+			// output really is folded into one document still collide.
+			name:     "folding group, two folded contributors",
+			assembly: wasm.BoundaryAssemblyMerge,
+			second:   declaredByComponent("beta"),
+			want:     2,
+		},
+		{
+			// Two standalone contributors on a folding group meet nowhere
+			// either: each stands in files of its own, so neither is inside the
+			// assembled document and neither is inside the other's output.
+			name:     "folding group, two standalone contributors",
+			assembly: wasm.BoundaryAssemblyMerge,
+			second:   placedStandalone(declaredByAttachment("beta", "aux")),
+			want:     0,
+		},
+		{
+			// A provider declaring no assembly folds nothing, so it has no
+			// document for a placement to be inside or outside of and every
+			// contributor is compared against every other. A resource identity
+			// scoped wider than one file collides across two files.
+			name:     "no assembly claim, one folded and one standalone contributor",
+			assembly: "",
+			second:   placedStandalone(declaredByAttachment("alpha", "aux")),
+			want:     2,
+		},
+		{
+			name:     "flat-output group, one folded and one standalone contributor",
+			assembly: wasm.BoundaryAssemblyNone,
+			second:   placedStandalone(declaredByAttachment("alpha", "aux")),
+			want:     2,
+		},
+		{
+			// Nesting combines a group without folding it: each node keeps a
+			// document of its own under its own position. A narrowing keyed on
+			// "does this group have an assembler" rather than on "does it fold"
+			// would silence this row.
+			name:     "nesting group, one folded and one standalone contributor",
+			assembly: wasm.BoundaryAssemblyNest,
+			second:   placedStandalone(declaredByAttachment("alpha", "aux")),
+			want:     2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var set derivedKeySet
+			set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+			set.put("logical-ids", realDerivedLogicalID, tc.second)
+			got := runDerivedNameRuleUnder(t, &set, tc.assembly)
+			if len(got) != tc.want {
+				t.Fatalf("expected %d objection(s), got %d: %v", tc.want, len(got), got)
+			}
+		})
+	}
+}
+
+// TestDerivedNameRule_OneAttachmentOnTwoHostsIsSilentOnAFoldingGroup is the shape
+// an author actually writes and the one the narrowing exists for: one feature
+// attached to two components of the same type, each host rendering the same
+// attachment. Both attachments derive one name, and on a folding provider each
+// one's output is written under its own host's position — so the name stands
+// twice in two file sets that never meet, and no rename by the author would
+// change that.
+//
+// It is stated apart from the grid above because the grid varies one axis at a
+// time and this is the composed shape: two standalone contributors on a folding
+// group, which is neither margin.
+func TestDerivedNameRule_OneAttachmentOnTwoHostsIsSilentOnAFoldingGroup(t *testing.T) {
+	t.Parallel()
+
+	var set derivedKeySet
+	set.put("logical-ids", realDerivedLogicalID, placedStandalone(declaredByAttachment("alpha", "aux")))
+	set.put("logical-ids", realDerivedLogicalID, placedStandalone(declaredByAttachment("beta", "aux")))
+	if got := runDerivedNameRuleUnder(t, &set, wasm.BoundaryAssemblyMerge); len(got) != 0 {
+		t.Fatalf("one attachment on two hosts writes two file sets that never meet: %v", got)
+	}
+
+	// The same two contributors on a provider that folds nothing DO collide: the
+	// name's uniqueness is then scoped to whatever reads the group's files as a
+	// set, and two files are exactly where such a name meets itself. Written into
+	// the same case because the contrast is the whole point — a narrowing that
+	// silenced this would be a removal.
+	if got := runDerivedNameRuleUnder(t, &set, wasm.BoundaryAssemblyNone); len(got) != 2 {
+		t.Fatalf("expected one objection per contributor where nothing folds, got %d: %v", len(got), got)
+	}
+}
+
+// TestDerivedNameRule_ARepeatInsideAStandaloneContributorStillObjects is the half
+// of the condition the narrowing does not touch, at the axis it is most likely to
+// be lost on. One declaration carrying a name twice is a fault inside one
+// contributor's own derivation — the name is not unique in the contributor's own
+// output — so it is answerable wherever that output landed, and a folding group
+// that placed the contributor standalone answers it exactly as any other does.
+func TestDerivedNameRule_ARepeatInsideAStandaloneContributorStillObjects(t *testing.T) {
+	t.Parallel()
+
+	declared := types.OrderedMap[[]string]{}
+	declared.Set("logical-ids", []string{realDerivedLogicalID, realDerivedLogicalID})
+
+	var acc types.OrderedMap[[]string]
+	repeated := mergeDerivedKeys(&acc, declared)
+
+	var set derivedKeySet
+	set.putAll(acc, repeated, placedStandalone(declaredByAttachment("alpha", "aux")))
+
+	got := runDerivedNameRuleUnder(t, &set, wasm.BoundaryAssemblyMerge)
+	if len(got) != 1 {
+		t.Fatalf("expected one objection naming the repeating contributor, got %d: %v", len(got), got)
+	}
+	if !strings.Contains(got[0], `derived more than once by component "alpha", carrying attachment "aux"`) {
+		t.Errorf("the objection does not name the repeating attachment\ngot: %s", got[0])
+	}
+}
+
+// TestDerivedNameRule_AStandaloneContributorIsNotNamedForSomeoneElsesRepeat is
+// the negative direction of the case above, and it is what keeps the repeat half
+// from quietly restoring the broad comparison. A folded contributor that repeated
+// a name inside one of its own declarations is named; a standalone contributor
+// that merely declared the same name is not, because its name met nothing.
+func TestDerivedNameRule_AStandaloneContributorIsNotNamedForSomeoneElsesRepeat(t *testing.T) {
+	t.Parallel()
+
+	var set derivedKeySet
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("alpha"))
+	set.put("logical-ids", realDerivedLogicalID, placedStandalone(declaredByAttachment("beta", "aux")))
+	set.repeats = append(set.repeats, derivedKeyDeclaration{
+		space: "logical-ids", key: realDerivedLogicalID,
+		contributor: declaredByComponent("alpha"),
+	})
+
+	got := runDerivedNameRuleUnder(t, &set, wasm.BoundaryAssemblyMerge)
+	if len(got) != 1 {
+		t.Fatalf("expected one objection naming only the repeating contributor, got %d: %v", len(got), got)
+	}
+	if !strings.Contains(got[0], `derived more than once by component "alpha"`) {
+		t.Errorf("the objection does not name the repeating contributor\ngot: %s", got[0])
+	}
+}
+
+// TestDerivedKeyLedger_ContributorDispositionsCombineByConjunction pins the
+// accumulation's answer for a producer that declared under both dispositions. One
+// crossing whose output reached the assembler puts that producer's names inside
+// the assembled document, so standing standalone has to hold for every crossing
+// before it holds at all — and the producer stays ONE contributor, since the
+// accumulation is keyed by the label alone.
+func TestDerivedKeyLedger_ContributorDispositionsCombineByConjunction(t *testing.T) {
+	t.Parallel()
+
+	var ledger derivedKeyLedger
+	ledger.declareDerived(placedStandalone(declaredByComponent("alpha")), "logical-ids", realDerivedLogicalID)
+	ledger.declareDerived(declaredByComponent("alpha"), "logical-ids", realDerivedLogicalID)
+
+	if n := len(ledger.entries); n != 1 {
+		t.Fatalf("one producer opened %d ledger entries, want 1", n)
+	}
+	if ledger.entries[0].contributor.placedStandalone {
+		t.Error("a producer that reached the assembler on one crossing still reads as standalone")
+	}
+
+	var set derivedKeySet
+	ledger.into(&set)
+	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("beta"))
+	if got := runDerivedNameRuleUnder(t, &set, wasm.BoundaryAssemblyMerge); len(got) != 2 {
+		t.Fatalf("expected one objection per contributor, got %d: %v", len(got), got)
 	}
 }
 
@@ -439,7 +675,7 @@ func TestDerivedNameRule_ARepeatAndACollisionOnOneNameNameBothContributors(t *te
 	set.put("logical-ids", realDerivedLogicalID, declaredByComponent("beta"))
 	set.repeats = append(set.repeats, derivedKeyDeclaration{
 		space: "logical-ids", key: realDerivedLogicalID,
-		producer: declaredByComponent("alpha"),
+		contributor: declaredByComponent("alpha"),
 	})
 
 	got := runDerivedNameRule(t, &set)
@@ -471,7 +707,7 @@ func TestDerivedNameRule_ARepeatWhoseDeclarationNeverAccumulatedIsStillAnswered(
 	var set derivedKeySet
 	set.repeats = append(set.repeats, derivedKeyDeclaration{
 		space: "logical-ids", key: realDerivedLogicalID,
-		producer: declaredByComponent("alpha"),
+		contributor: declaredByComponent("alpha"),
 	})
 
 	got := runDerivedNameRule(t, &set)
@@ -818,7 +1054,7 @@ func TestDerivedKeyLedger_ReportsARepeatInsideOneOfAProducersDeclarations(t *tes
 func TestDerivedKeyLedger_DrainsInDeclarationOrder(t *testing.T) {
 	t.Parallel()
 
-	want := []derivedKeyProducer{
+	want := []derivedKeyContributor{
 		declaredByComponent("alpha"),
 		declaredByAttachment("alpha", "cache a"),
 		declaredByAttachment("alpha", "cache-a"),
@@ -836,14 +1072,14 @@ func TestDerivedKeyLedger_DrainsInDeclarationOrder(t *testing.T) {
 		ledger.into(&set)
 		// One entry per name per producer reaches the set, so the order under test
 		// is the order the producers first appear in.
-		seen := map[derivedKeyProducer]bool{}
-		got := make([]derivedKeyProducer, 0, len(want))
+		seen := map[derivedKeyContributor]bool{}
+		got := make([]derivedKeyContributor, 0, len(want))
 		for _, e := range set.entries {
-			if seen[e.producer] {
+			if seen[e.contributor] {
 				continue
 			}
-			seen[e.producer] = true
-			got = append(got, e.producer)
+			seen[e.contributor] = true
+			got = append(got, e.contributor)
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("run %d: drained %v, want %v", run, got, want)

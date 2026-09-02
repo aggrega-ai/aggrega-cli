@@ -198,9 +198,10 @@ var records = []recordDecl{
 		Name: "DerivedNameDeclaration",
 		Doc: "DerivedNameDeclaration is one contributor's declaration that it " +
 			"derived one name into one of its own key spaces: the space, the " +
-			"name, every coordinate that identifies the contributor, and " +
-			"whether a single one of that contributor's declarations carried " +
-			"the name more than once within that space.\n\nIt is one fact " +
+			"name, every coordinate that identifies the contributor, whether " +
+			"a single one of that contributor's declarations carried the name " +
+			"more than once within that space, and where the render put that " +
+			"contributor's output.\n\nIt is one fact " +
 			"rather than several because no half of it answers anything alone. " +
 			"A name without its space says nothing — one name in two spaces has " +
 			"not met itself — and a space without its contributors says nothing " +
@@ -212,7 +213,12 @@ var records = []recordDecl{
 			"one declaration carrying the name twice. The distinction is drawn " +
 			"while a single declaration is still whole and is carried here " +
 			"attached to the declaration it was drawn from, which is what keeps " +
-			"a reader from having to pair two answers up and stopping halfway.",
+			"a reader from having to pair two answers up and stopping halfway. " +
+			"Where the render put the output travels with the declaration for " +
+			"that same reason: two contributors' names are the same pair of " +
+			"strings whichever files they landed in, so the accumulated names " +
+			"cannot show that one of them stands in a document the other never " +
+			"reaches.",
 		Fields: []recordField{
 			{Name: "KeySpace", Type: "string", Doc: "KeySpace is the space the declaring contributor named, an opaque string of its own choosing."},
 			{Name: "DerivedName", Type: "string", Doc: "DerivedName is the name derived into that space, an opaque string the contributor derived."},
@@ -220,6 +226,7 @@ var records = []recordDecl{
 			{Name: "ContributorKind", Type: "string", Doc: "ContributorKind is what that contributor is in authoring terms, either a component or a feature, which is what says where its name is written."},
 			{Name: "ContributorScope", Type: "string", Doc: "ContributorScope is the further authored coordinate that completes the contributor's identity within what its kind names: the attachment key a component carries, or the path of the boundary a feature is attached at. It is empty where the kind's own name identifies the contributor on its own, which is the case for a component's own render. It is carried apart from Contributor rather than run together with it because the pair is compared as well as read: two contributors differing only in this coordinate have to arrive as two, and one joined string could fold them into one — leaving a name two of them derived compared against nothing."},
 			{Name: "RepeatedWithinOneDeclaration", Type: "bool", Doc: "RepeatedWithinOneDeclaration reports whether a single one of that contributor's declarations carried this name more than once inside this space, which is a failure of that contributor's own derivation rather than a meeting between two of them."},
+			{Name: "OutputPlacedStandalone", Type: "bool", Doc: "OutputPlacedStandalone reports whether the render wrote this contributor's output as discrete files at its own position rather than handing it to its dispatch group's assembler. It states where the output went and nothing that follows from it: it is true for every contributor to a group whose provider folds nothing into one document, because such a group has no assembled document for anything to be handed to. A reader treating it alone as a reason not to compare two names would therefore stop comparing everywhere, which is a removal rather than a narrowing — what the group's provider declares it does with the group's output is a separate answer, and the two are read together."},
 		},
 	},
 	{
@@ -4068,9 +4075,13 @@ var facts = []factDecl{
 			"host cannot read them out, and reading them out would mean " +
 			"interpreting the contributor's own format. The contributor declares " +
 			"them instead, and this is where the declarations of everything " +
-			"feeding one group stand together. The group is the scope because it " +
-			"is the set of contributors whose output merges, which is where one " +
-			"name can displace another.\n\nThe order is stated rather than " +
+			"feeding one group stand together. The group is the scope because a " +
+			"group is what a provider assembles, so it is the widest set inside " +
+			"which one contributor's name can displace another's. It is not " +
+			"always the narrowest: a group whose provider folds its per-node " +
+			"output into one document holds contributors whose output the render " +
+			"placed beside that document rather than inside it, and each entry " +
+			"carries which of the two it was.\n\nThe order is stated rather than " +
 			"inherited. Declarations accumulate as contributors render, and the " +
 			"walks that reach them are not all fixed by the input, so answering " +
 			"in arrival order would return a different sequence for identical " +

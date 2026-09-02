@@ -66,9 +66,9 @@ type AttachmentDeclaration struct {
 
 // DerivedNameDeclaration is one contributor's declaration that it derived
 // one name into one of its own key spaces: the space, the name, every
-// coordinate that identifies the contributor, and whether a single one of
-// that contributor's declarations carried the name more than once within
-// that space.
+// coordinate that identifies the contributor, whether a single one of that
+// contributor's declarations carried the name more than once within that
+// space, and where the render put that contributor's output.
 //
 // It is one fact rather than several because no half of it answers
 // anything alone. A name without its space says nothing — one name in
@@ -81,7 +81,11 @@ type AttachmentDeclaration struct {
 // the name twice. The distinction is drawn while a single declaration is
 // still whole and is carried here attached to the declaration it was drawn
 // from, which is what keeps a reader from having to pair two answers up
-// and stopping halfway.
+// and stopping halfway. Where the render put the output travels with the
+// declaration for that same reason: two contributors' names are the same
+// pair of strings whichever files they landed in, so the accumulated names
+// cannot show that one of them stands in a document the other never
+// reaches.
 type DerivedNameDeclaration struct {
 	// KeySpace is the space the declaring contributor named, an opaque string
 	// of its own choosing.
@@ -116,6 +120,18 @@ type DerivedNameDeclaration struct {
 	// space, which is a failure of that contributor's own derivation rather
 	// than a meeting between two of them.
 	RepeatedWithinOneDeclaration bool
+
+	// OutputPlacedStandalone reports whether the render wrote this
+	// contributor's output as discrete files at its own position rather than
+	// handing it to its dispatch group's assembler. It states where the output
+	// went and nothing that follows from it: it is true for every contributor
+	// to a group whose provider folds nothing into one document, because such
+	// a group has no assembled document for anything to be handed to. A reader
+	// treating it alone as a reason not to compare two names would therefore
+	// stop comparing everywhere, which is a removal rather than a narrowing
+	// — what the group's provider declares it does with the group's output
+	// is a separate answer, and the two are read together.
+	OutputPlacedStandalone bool
 }
 
 // InjectDelivery is one delivery a node's injection pipe carries or was
@@ -3768,9 +3784,13 @@ type DispatchedView interface {
 	// the host cannot read them out, and reading them out would mean
 	// interpreting the contributor's own format. The contributor declares them
 	// instead, and this is where the declarations of everything feeding one
-	// group stand together. The group is the scope because it is the set of
-	// contributors whose output merges, which is where one name can displace
-	// another.
+	// group stand together. The group is the scope because a group is what a
+	// provider assembles, so it is the widest set inside which one
+	// contributor's name can displace another's. It is not always the
+	// narrowest: a group whose provider folds its per-node output into one
+	// document holds contributors whose output the render placed beside that
+	// document rather than inside it, and each entry carries which of the two
+	// it was.
 	//
 	// The order is stated rather than inherited. Declarations accumulate as
 	// contributors render, and the walks that reach them are not all fixed by

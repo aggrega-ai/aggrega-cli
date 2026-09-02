@@ -524,9 +524,23 @@ func phaseB6(
 		// against a sibling attachment's — the two would arrive as one declarer,
 		// and a collision between them would read as one contributor restating
 		// itself, which the group check rules legitimate.
+		//
+		// Its output is placed standalone, and that is structural rather than
+		// configured: the loop below composes this attachment's own output prefix
+		// onto every file it rendered and writes them as discrete documents, so
+		// nothing this attachment emits is ever handed to the host component's
+		// dispatch group's assembler — whatever that group's provider does with the
+		// component output it IS handed. So the names declared here stand in files
+		// of the attachment's own, where no other contributor's name reaches them.
+		//
+		// 🔴 The disposition is stated, never inferred from the label. A
+		// boundary-scope attachment carries a label of the same shape and its
+		// fragments DO reach the assembler, so a reader keying on the shape would
+		// answer the same for both and would be wrong for one of them.
 		attachmentProducer := derivedKeyProducerFor(producerKindComponent, nodeID, item.Instance)
+		attachmentContributor := derivedKeyContributorFor(attachmentProducer, true)
 		frNodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
-			state.DerivedKeys.declare(attachmentProducer, declared)
+			state.DerivedKeys.declare(attachmentContributor, declared)
 		}
 		frNodeCtx.OriginalSource = fr.Spec.Source
 		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, fr.Spec.SourceDigests)
@@ -560,12 +574,24 @@ func phaseB6(
 		// Declared under THIS ATTACHMENT's label rather than the host node's, which
 		// is what the coverage rests on: every contributor's declarations reach the
 		// group under its own label, so two attachments reaching one label value are
-		// two declarers and halt — whether they sit on two different components or
-		// on the same one — as do an attachment and a boundary-scope feature. The
-		// attachment key is a coordinate of the value being declared, since the
-		// value is derived from it, so it is a coordinate of the label too.
+		// two declarers rather than one contributor restating itself. The attachment
+		// key is a coordinate of the value being declared, since the value is derived
+		// from it, so it is a coordinate of the label too.
+		//
+		// 🔴 The bound, because an unstated one reads as full coverage. This value
+		// travels with the disposition above, and the disposition says the output it
+		// labels is placed standalone — so on a provider that folds its group's
+		// output into one document, two attachments reaching one label value are
+		// compared only within themselves and do not halt. The requirement this value
+		// carries is wider than one document: it is unique across contributors,
+		// because two of them reaching one value hand one provenance to two different
+		// sets of resources. It is reached only where a composed identity had to be
+		// shortened, the composition being injective wherever it fits its target's
+		// bound. An attachment and a boundary-scope feature are excluded by
+		// construction rather than by this: their identities compose under different
+		// scopes and can never meet.
 		if frComponentID != "" {
-			state.DerivedKeys.declareDerived(attachmentProducer, componentIDKeySpace, frComponentID)
+			state.DerivedKeys.declareDerived(attachmentContributor, componentIDKeySpace, frComponentID)
 		}
 
 		// Component-scope FeatureRecipe pipeline. Every attachment's

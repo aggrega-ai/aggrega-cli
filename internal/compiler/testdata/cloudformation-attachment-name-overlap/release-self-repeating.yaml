@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cfn-attachment-self-repeating-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: cfn-attachment-self-repeating-app
+  manifest: cfn-attachment-overlap-manifest
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      components:
+        store: {}

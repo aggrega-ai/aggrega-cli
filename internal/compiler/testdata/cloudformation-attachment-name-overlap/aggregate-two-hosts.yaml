@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cfn-attachment-two-hosts-app
+  version: "1.0.0"
+  description: >
+    One attachment under one instance key on two components of one boundary. The
+    attachment's fragment names its resource with a literal, so both hosts land
+    on the same logical id.
+spec:
+  components:
+    alpha:
+      type: core/cfn-host
+      features:
+        aux:
+          type: feature.id/cfn-aux-distinct
+    beta:
+      type: core/cfn-host
+      features:
+        aux:
+          type: feature.id/cfn-aux-distinct

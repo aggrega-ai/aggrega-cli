@@ -345,7 +345,29 @@ func assemblyNameAnnotationOf(engine Provider) (annotation string, requireUnique
 // guest's live describe() claim. This is the single home of the
 // intermediate-marking rule; every classification site reads it here.
 func RenderIsIntermediate(engine Provider) bool {
-	return boundaryAssemblyOf(engine) == wasm.BoundaryAssemblyMerge
+	return boundaryAssemblyFolds(boundaryAssemblyOf(engine))
+}
+
+// boundaryAssemblyFolds reports whether a declared boundary-assembly mode folds
+// a dispatch group's per-node output into ONE document. Only the fragment-merging
+// mode does. A nesting mode combines a group's output without folding it — each
+// node keeps a document of its own under its own position — and a flat-output
+// mode and an absent claim combine nothing.
+//
+// It is separated from [boundaryAssemblyCombines] because the two answer
+// different questions and the difference is exactly one mode. Whether a group HAS
+// an assembler is what the election and the artifacts classifier ask; whether a
+// group has one document in which two contributors' names can displace each other
+// is what the derived-name comparison asks, and nesting answers the first yes and
+// the second no.
+//
+// It is one helper rather than the same comparison written at each reader, for
+// the reason the sibling above is: the two readers hold the claim in different
+// forms — the classification above holds an engine and asks it, while a rule
+// declared over a dispatch group holds the elected provider's claim as a declared
+// value and has no engine to ask.
+func boundaryAssemblyFolds(mode string) bool {
+	return mode == wasm.BoundaryAssemblyMerge
 }
 
 // AssemblesBoundary reports whether an engine assembles its dispatch group's

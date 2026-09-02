@@ -1,0 +1,7 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  # The host component's source-derived resource. It reaches the assembled stack
+  # through the boundary merge, which is what makes it comparable against the
+  # artifact-derived one beside it.
+  HostBucket:
+    Type: AWS::S3::Bucket

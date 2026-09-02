@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: cfn-attachment-overlap-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/cfn-host: cfn-host-recipe:1.0.0
+    features:
+      type:
+        feature.id/cfn-aux-overlapping: cfn-aux-overlapping:1.0.0
+        feature.id/cfn-aux-distinct: cfn-aux-distinct:1.0.0
+        feature.id/cfn-aux-self-repeating: cfn-aux-self-repeating:1.0.0

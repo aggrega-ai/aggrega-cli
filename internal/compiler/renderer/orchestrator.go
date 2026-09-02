@@ -1404,6 +1404,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Structured unsupported-field diagnostics route here, kept apart from the
 		// free-form warnings so the class stays suppressible by its stable code.
 		nodeCtx.UnsupportedFieldSink = func(d Diagnostic) { state.Diagnostics = append(state.Diagnostics, d) }
+		// How this node's own output is routed, resolved once here and read at each
+		// of the four places that need it: the Intermediate marking every emitted
+		// file below carries, the derived-name declaration's disposition, the
+		// own-scope pipeline's deferral, and the host-document surface a
+		// component-scope attachment's pipeline is offered. It is read before any
+		// crossing runs because the declaration sink attached below closes over it,
+		// and a sink attached after a crossing would lose that crossing's names.
+		// The full statement of what the marking means is at the emission below.
+		renderIsIntermediate := RenderIsIntermediate(engine)
 		// The names the node's provider guest declares it derived accumulate here,
 		// merged across every crossing that carries this node context, and move into
 		// the node's dispatch group below once the group key exists. The sink is
@@ -1417,9 +1426,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// rewires the sink to its own label before it runs, because a name an
 		// attachment's guest derived is the attachment's rather than the node's and
 		// has to be comparable against a sibling attachment's.
+		//
+		// Where the node's own output lands travels with the label, read from the
+		// same claim that stamps every file this node emits below: an intermediate
+		// render is handed to the group's assembler, and a non-intermediate one is
+		// written as discrete files at the node's own position. Reading it here
+		// rather than at the routing is what keeps the two from being separate
+		// decisions — the value that routes the files is the value that labels the
+		// declaration.
 		nodeProducer := derivedKeyProducerFor(producerKindComponent, nodeID, "")
+		nodeContributor := derivedKeyContributorFor(nodeProducer, !renderIsIntermediate)
 		nodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
-			state.DerivedKeys.declare(nodeProducer, declared)
+			state.DerivedKeys.declare(nodeContributor, declared)
 		}
 		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID,
@@ -1510,8 +1528,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Render output Intermediate=false so the orchestrator nests their
 		// files under the per-node prefix rather than routing them to
 		// AssembleBoundary's IntermediatesByNode. Engines that are not
-		// BoundaryAssemblers also keep Intermediate=false.
-		renderIsIntermediate := RenderIsIntermediate(engine)
+		// BoundaryAssemblers also keep Intermediate=false. The claim itself is
+		// resolved once above, before the sink that reads it is attached.
+		//
 		// Accumulate by sorted path so state.EmittedFiles order is stable across
 		// runs of identical input regardless of the guest's emission order. Each
 		// file's producer-declared Format rides onto the EmittedFile so it stays
@@ -2046,8 +2065,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// characters either part may itself contain, so cutting it apart again
 		// cannot return what went in — and it drops the path entirely, which is what
 		// let one instance name written at two boundaries arrive as one declarer.
+		//
+		// Where this contributor's output landed travels with the label, read from
+		// the routing performed immediately above rather than from any claim about
+		// it: a boundary-scope feature whose fragments reached the group's
+		// assembler has its names inside the assembled document, and one whose
+		// output was written under its own features/ position does not. A feature
+		// that emitted nothing reached no document either, which is the same answer
+		// and the same reason.
 		frProducer := derivedKeyProducerFor(producerKindFeature, key.FRInstance, key.BoundaryPath)
-		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], boundaryFRState.DerivedKeyRepeats[key], frProducer)
+		frContributor := derivedKeyContributorFor(frProducer, len(intermediates) == 0)
+		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], boundaryFRState.DerivedKeyRepeats[key], frContributor)
 		// Record the boundary as a contributor for the dispatch group's
 		// diagnostic context.
 		alreadyContributing := false

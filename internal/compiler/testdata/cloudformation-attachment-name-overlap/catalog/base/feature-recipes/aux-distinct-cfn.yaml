@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: cfn-aux-distinct
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: feature.id/cfn-aux-distinct
+  # The resource name is a literal, so every host this attachment lands on names
+  # its resource identically. One host is the standing case; two hosts is the
+  # shape where two contributors reach one name.
+  artifacts:
+    aux-fragment.yaml: |
+      Resources:
+        AuxAlarm:
+          Type: AWS::CloudWatch::Alarm
+          Properties:
+            ComparisonOperator: GreaterThanThreshold
+            EvaluationPeriods: 1

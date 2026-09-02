@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cfn-attachment-overlapping-app
+  version: "1.0.0"
+  description: >
+    One component carrying one attachment, where the attachment's fragment names
+    its resource exactly as the component's own artifact names one of its own.
+spec:
+  components:
+    store:
+      type: core/cfn-host
+      features:
+        aux:
+          type: feature.id/cfn-aux-overlapping

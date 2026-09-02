@@ -287,19 +287,33 @@ var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-
 })
 
 // ErrDerivedKeyCollision fires when one derived name is declared more than once
-// in one key space of one assembled output — whether two contributors each
-// derived it, or one contributor's single declaration carried it twice. A
-// provider guest derives the names its output addresses resources by, and those
-// names live inside the file bytes the host writes verbatim — so the host cannot
-// see them. The guest declares them instead, and this sentinel is the halt when
-// the declarations are not injective within a space: the colliding contributors
-// halt loudly rather than one silently displacing the other in the merged output
-// (a Loud Guardrail, per the No Ghost Infrastructure invariant).
+// in one key space by contributors whose output can reach each other — whether
+// two contributors each derived it, or one contributor's single declaration
+// carried it twice. A provider guest derives the names its output addresses
+// resources by, and those names live inside the file bytes the host writes
+// verbatim — so the host cannot see them. The guest declares them instead, and
+// this sentinel is the halt when the declarations are not injective within a
+// space: the colliding contributors halt loudly rather than one silently
+// displacing the other in the output (a Loud Guardrail, per the No Ghost
+// Infrastructure invariant).
 //
 // One contributor restating a name across its several render crossings is not a
 // collision and does not fire this: the name describes one resource and the
 // output carries it once. What fires is one declaration carrying the name twice,
-// which is that contributor's own derivation failing to be injective.
+// which is that contributor's own derivation failing to be injective. That half
+// fires wherever the contributor's output lands, because it is a fault inside one
+// contributor rather than a meeting between two.
+//
+// Which contributors can reach each other follows from what the provider does
+// with the group's output. Where the provider folds the group's per-node output
+// into one document, the contributors folded into it are compared against one
+// another, and a contributor whose output is written as discrete files at its own
+// position stands outside that document — its names meet nobody else's, and no
+// rename would change that, so it is compared only within itself. Where the
+// provider folds nothing — nesting each node under its own position, writing flat
+// output, or declaring no assembly — every contributor to the group is compared
+// against every other, because a name whose uniqueness is scoped to something
+// wider than a file still collides across two files.
 //
 // The check is blind to what a key means. It compares declared strings for
 // equality within one declared space, so it covers every key space any guest

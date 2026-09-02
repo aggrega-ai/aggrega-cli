@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: cfn-aux-overlapping
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: feature.id/cfn-aux-overlapping
+  # The fragment names its resource exactly as the host component's own artifact
+  # names one of its resources, so the two contributors of one node arrive at one
+  # logical id.
+  artifacts:
+    aux-fragment.yaml: |
+      Resources:
+        HostQueue:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "60"

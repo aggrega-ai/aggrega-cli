@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: cfn-host-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/cfn-host
+  # Both input kinds, so the host component contributes a source-derived resource
+  # and an artifact-derived one to the same assembled stack. The artifact half is
+  # what makes the attachment's crossing comparable: the two arrive at the guest
+  # through the same artifacts payload shape and only one of them merges.
+  source: ./sources/host-template.yaml
+  artifacts:
+    host-queue.yaml: |
+      Resources:
+        HostQueue:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "{{ .values.queue_retention }}"

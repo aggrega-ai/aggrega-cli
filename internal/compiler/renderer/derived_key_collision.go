@@ -80,6 +80,54 @@ func derivedKeyProducerFor(kind, name, scope string) derivedKeyProducer {
 	return derivedKeyProducer{kind: kind, name: name, scope: scope}
 }
 
+// derivedKeyContributor is one contributor's label together with where the
+// render put that contributor's output.
+//
+// The two travel as one value because the comparison downstream needs both and
+// neither is recoverable from the other. The label says who derived a name. The
+// disposition says whether that name can reach another contributor's at all,
+// which is what makes two equal names a collision rather than two names standing
+// in two documents that never meet.
+//
+// 🔴 The disposition is NOT derivable from the label, and the case that proves it
+// is the one a reader is most likely to assume away. An attachment's label looks
+// identical whether the render handed its output to the group's assembler or
+// wrote it beside the assembled document — a boundary-scope attachment's
+// fragments do reach the assembler, a component-scope attachment's output never
+// does — so a predicate keyed on the label's shape would answer the same for both
+// and would be wrong for one of them. The routing is what decides, so the routing
+// is what is carried.
+type derivedKeyContributor struct {
+	producer derivedKeyProducer
+
+	// placedStandalone reports that the render wrote this contributor's output
+	// as discrete files at its own position rather than handing it to its
+	// dispatch group's assembler.
+	//
+	// It states where the output went and nothing that follows from it. In
+	// particular it is true for every contributor to a group whose provider
+	// folds nothing into one document, because such a group has no assembled
+	// document for anything to be handed to — so a reader treating this alone as
+	// a reason not to compare two names would stop comparing everywhere, which
+	// is a removal rather than a narrowing. What the group's provider declared it
+	// does with the group's output is a separate answer, and the two are read
+	// together.
+	placedStandalone bool
+}
+
+// derivedKeyContributorFor pairs one contributor's label with where the render
+// put its output.
+//
+// Both coordinates are taken as arguments so every site that records a
+// declaration states the disposition it observed rather than inheriting a
+// default. A default would be the quiet failure this whole check exists to
+// refuse: a site that forgot to answer would have its answer supplied for it,
+// and whichever way the default fell it would be wrong for some contributor with
+// nothing failing to say so.
+func derivedKeyContributorFor(producer derivedKeyProducer, placedStandalone bool) derivedKeyContributor {
+	return derivedKeyContributor{producer: producer, placedStandalone: placedStandalone}
+}
+
 // declareDerivedKey records that the compiler itself derived one name into one
 // key space, folding it into an accumulator through the same merge a guest's
 // declaration takes.
@@ -113,9 +161,9 @@ func declareDerivedKey(into *types.OrderedMap[[]string], space, key string) []de
 // the comparison upstream needs them apart for the sharper reason given on
 // [derivedKeyProducer].
 type derivedKeyDeclaration struct {
-	space    string
-	key      string
-	producer derivedKeyProducer
+	space       string
+	key         string
+	contributor derivedKeyContributor
 }
 
 // derivedKeyRepeat is one name a single declaration carried more than once
@@ -181,20 +229,44 @@ type derivedKeyRepeat struct {
 //
 // The scope is one dispatch group's assembled output: the set of contributors
 // whose output merges, which is where one contributor's name can displace
-// another's. A guest needing uniqueness across a narrower or wider scope
-// expresses that scope in the space name it declares, which keeps the choice in
-// the guest and out of the host.
+// another's. Each declaration therefore carries where the render put that
+// contributor's output, so a contributor the render placed beside the assembled
+// document rather than inside it can be told from one that reaches it — the
+// distinction the accumulated names cannot show, since two contributors' names
+// are the same pair of strings whichever files they landed in.
+//
+// 🔴 The bound on that, stated because an unstated bound reads as full coverage.
+// The host knows its own routing — which of its outputs it folded into one
+// document — and never learns what a key space's uniqueness MEANS. So a space
+// whose names must be unique across something wider than one document, a cluster
+// namespace or an account, has its comparison narrowed to less than that space
+// requires wherever its declarer also folds its output into one document. The
+// remedy for a guest-declared space is the one this type's contract already names
+// and needs no host change: a guest needing uniqueness across a narrower or wider
+// scope expresses that scope in the space name it declares, which keeps the
+// choice in the guest and out of the host.
+//
+// 🔴 One space in the bound is the compiler's OWN and cannot use that remedy:
+// componentIDKeySpace, whose value the compiler stamps as a provenance label on
+// every resource a contributor emits. Its uniqueness requirement is across
+// contributors rather than across one document — two contributors reaching one
+// value hand one provenance to two different sets of resources — so on a provider
+// that folds its group's output, a contributor whose own output is placed
+// standalone has that value compared only within itself. Reached only where a
+// composed identity had to be shortened, since the composition is injective
+// wherever it fits its target's bound.
 type derivedKeySet struct {
 	entries []derivedKeyDeclaration
 	repeats []derivedKeyDeclaration
 }
 
-// put records that producer declared key in space. Whether that declaration
+// put records that contributor declared key in space. Whether that declaration
 // collides with another is not decided here: the set answers what was declared
-// and the rule declared over the grouping decides.
-func (s *derivedKeySet) put(space, key string, producer derivedKeyProducer) {
+// and where the declarer's output went, and the rule declared over the grouping
+// decides.
+func (s *derivedKeySet) put(space, key string, c derivedKeyContributor) {
 	s.entries = append(s.entries, derivedKeyDeclaration{
-		space: space, key: key, producer: producer,
+		space: space, key: key, contributor: c,
 	})
 }
 
@@ -215,16 +287,16 @@ func (s *derivedKeySet) put(space, key string, producer derivedKeyProducer) {
 func (s *derivedKeySet) putAll(
 	declared types.OrderedMap[[]string],
 	repeated []derivedKeyRepeat,
-	producer derivedKeyProducer,
+	c derivedKeyContributor,
 ) {
 	for space, keys := range declared.All() {
 		for _, key := range keys {
-			s.put(space, key, producer)
+			s.put(space, key, c)
 		}
 	}
 	for _, r := range repeated {
 		s.repeats = append(s.repeats, derivedKeyDeclaration{
-			space: r.space, key: r.key, producer: producer,
+			space: r.space, key: r.key, contributor: c,
 		})
 	}
 }
@@ -304,9 +376,9 @@ type derivedKeyLedger struct {
 // the names merged across that producer's several render crossings, and the
 // names one of its single declarations carried more than once.
 type derivedKeyLedgerEntry struct {
-	producer derivedKeyProducer
-	declared types.OrderedMap[[]string]
-	repeats  []derivedKeyRepeat
+	contributor derivedKeyContributor
+	declared    types.OrderedMap[[]string]
+	repeats     []derivedKeyRepeat
 }
 
 // declare folds one render crossing's declaration into the accumulation for the
@@ -316,16 +388,16 @@ type derivedKeyLedgerEntry struct {
 // Merging rather than replacing is the argument mergeDerivedKeys makes for a
 // node, applied one level finer: a single producer renders across more than one
 // crossing and each returns its own declaration.
-func (l *derivedKeyLedger) declare(producer derivedKeyProducer, declared types.OrderedMap[[]string]) {
-	e := l.entryFor(producer)
+func (l *derivedKeyLedger) declare(c derivedKeyContributor, declared types.OrderedMap[[]string]) {
+	e := l.entryFor(c)
 	e.repeats = append(e.repeats, mergeDerivedKeys(&e.declared, declared)...)
 }
 
 // declareDerived records one name the compiler itself derived for a producer,
 // through the same merge a guest's declaration takes, so the two kinds of
 // declaration answer to one rule inside one space.
-func (l *derivedKeyLedger) declareDerived(producer derivedKeyProducer, space, key string) {
-	e := l.entryFor(producer)
+func (l *derivedKeyLedger) declareDerived(c derivedKeyContributor, space, key string) {
+	e := l.entryFor(c)
 	e.repeats = append(e.repeats, declareDerivedKey(&e.declared, space, key)...)
 }
 
@@ -333,13 +405,28 @@ func (l *derivedKeyLedger) declareDerived(producer derivedKeyProducer, space, ke
 // that producer declares. Two producers are the same producer here exactly when
 // every coordinate of their labels agrees, which is the whole property this type
 // exists to preserve.
-func (l *derivedKeyLedger) entryFor(producer derivedKeyProducer) *derivedKeyLedgerEntry {
+//
+// The accumulation is keyed by the label alone and never by the disposition
+// beside it. Keying by both would open a second entry for a producer that
+// declared under two dispositions, and the two entries would then present as two
+// contributors — reintroducing, one layer down, exactly the fold the label's own
+// structure exists to prevent.
+//
+// Where a producer declares more than once the dispositions combine by
+// conjunction: a producer whose output reached the assembler on any one of its
+// crossings has its names inside the assembled document, so standing standalone
+// has to hold for every crossing before it holds at all. Nothing declares one
+// producer under two dispositions today; combining rather than assuming is what
+// keeps the answer from depending on that.
+func (l *derivedKeyLedger) entryFor(c derivedKeyContributor) *derivedKeyLedgerEntry {
 	for i := range l.entries {
-		if l.entries[i].producer == producer {
+		if l.entries[i].contributor.producer == c.producer {
+			l.entries[i].contributor.placedStandalone =
+				l.entries[i].contributor.placedStandalone && c.placedStandalone
 			return &l.entries[i]
 		}
 	}
-	l.entries = append(l.entries, derivedKeyLedgerEntry{producer: producer})
+	l.entries = append(l.entries, derivedKeyLedgerEntry{contributor: c})
 	return &l.entries[len(l.entries)-1]
 }
 
@@ -347,18 +434,23 @@ func (l *derivedKeyLedger) entryFor(producer derivedKeyProducer) *derivedKeyLedg
 // group is checked from, each under its own label.
 func (l *derivedKeyLedger) into(s *derivedKeySet) {
 	for _, e := range l.entries {
-		s.putAll(e.declared, e.repeats, e.producer)
+		s.putAll(e.declared, e.repeats, e.contributor)
 	}
 }
 
 // declarations is every declaration this group's contributors made, one entry
 // per contributor per name per space, each carrying whether one of that
-// contributor's own declarations held the name more than once.
+// contributor's own declarations held the name more than once and where the
+// render put that contributor's output.
 //
 // It answers what was declared and decides nothing. Whether a name collides is
 // the question a rule declared over the grouping asks of this answer, and
 // keeping the two apart is what leaves the rule something to decide: an answer
-// that already said which names collided would BE the rule.
+// that already said which names collided would BE the rule. The disposition is
+// carried for the same reason the repeat is — it is a fact about the declaration
+// that the accumulated entries cannot show — and it is carried unjoined to any
+// verdict, because what follows from it depends on a second answer this set does
+// not hold: what the group's own provider does with the group's output.
 //
 // A contributor appears once per name per space however many entries it
 // accumulated for that pair. Deduplicating here rather than leaving the
@@ -406,23 +498,34 @@ func (s *derivedKeySet) declarations() []constraint.DerivedNameDeclaration {
 	}
 	repeated := make(map[entryKey]bool, len(s.repeats))
 	for _, e := range s.repeats {
-		repeated[entryKey{space: e.space, key: e.key, producer: e.producer}] = true
+		repeated[entryKey{space: e.space, key: e.key, producer: e.contributor.producer}] = true
 	}
 
 	seen := make(map[entryKey]bool, len(s.entries)+len(s.repeats))
 	keys := make([]entryKey, 0, len(s.entries)+len(s.repeats))
-	record := func(k entryKey) {
-		if seen[k] {
+	// The dispositions of the several entries one contributor accumulates for one
+	// name combine by conjunction, for the reason the ledger's own accumulation
+	// does: output that reached the assembler on any one crossing puts the name
+	// inside the assembled document, so standing standalone has to hold for every
+	// entry before it holds at all. A name's first entry sets the value and each
+	// later one can only narrow it.
+	standalone := make(map[entryKey]bool, len(s.entries)+len(s.repeats))
+	record := func(k entryKey, placedStandalone bool) {
+		if !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
+			standalone[k] = placedStandalone
 			return
 		}
-		seen[k] = true
-		keys = append(keys, k)
+		standalone[k] = standalone[k] && placedStandalone
 	}
 	for _, e := range s.entries {
-		record(entryKey{space: e.space, key: e.key, producer: e.producer})
+		record(entryKey{space: e.space, key: e.key, producer: e.contributor.producer},
+			e.contributor.placedStandalone)
 	}
-	for k := range repeated {
-		record(k)
+	for _, e := range s.repeats {
+		record(entryKey{space: e.space, key: e.key, producer: e.contributor.producer},
+			e.contributor.placedStandalone)
 	}
 	if len(keys) == 0 {
 		return nil
@@ -453,6 +556,7 @@ func (s *derivedKeySet) declarations() []constraint.DerivedNameDeclaration {
 			ContributorKind:              k.producer.kind,
 			ContributorScope:             k.producer.scope,
 			RepeatedWithinOneDeclaration: repeated[k],
+			OutputPlacedStandalone:       standalone[k],
 		})
 	}
 	return out

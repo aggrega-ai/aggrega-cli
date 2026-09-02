@@ -318,12 +318,41 @@ func derivedNameScopeCaption(contributorKind string) string {
 // A contributor derives the names its output addresses resources by — the
 // identifier a target uses for one resource, the name one output is published
 // under for another to reference — and puts them inside the file bytes the host
-// writes verbatim. Where the group's output merges, one such name can hold only
-// one thing, so two contributors arriving at one name means one of them would be
-// published and the other silently dropped: a resource the author declared would
-// leave the output entirely, and anything referring to it would resolve to the
-// survivor instead. That is a Loud Guardrail case rather than a warning one —
-// nothing in the merged output records what was dropped.
+// writes verbatim. Where two contributors' names land in one document, one such
+// name can hold only one thing, so two contributors arriving at one name means
+// one of them would be published and the other silently dropped: a resource the
+// author declared would leave the output entirely, and anything referring to it
+// would resolve to the survivor instead. That is a Loud Guardrail case rather
+// than a warning one — nothing in the merged output records what was dropped.
+//
+// # Which contributors are compared, and why the answer is not "all of them"
+//
+// A provider that folds its dispatch group's per-node output into ONE document
+// is handed some of the group's output and not the rest: a contributor whose
+// output the render placed as discrete files at its own position stands beside
+// that document rather than inside it, so its names meet nobody's. Comparing it
+// against the folded contributors refuses a build over a collision the output
+// does not have — and there is no edit that answers such a refusal, because the
+// names genuinely do not meet, so nothing renaming one of them changes anything.
+// 🔴 A halt an author cannot act on is worse than a missed one: a missed one
+// produces output someone eventually reads, while a halt with no available remedy
+// reads as a guardrail and behaves as a wall. Accepting the broad comparison as
+// harmless conservatism was considered and refused, and it must not be restored
+// on those grounds.
+//
+// 🔴 The narrowing is bounded to a group that HAS one such document, and dropping
+// that bound turns it into a removal. A provider that folds nothing — one that
+// nests each node under its own position, one with flat output, one declaring no
+// assembly at all — places every contributor's output as discrete files, so a
+// predicate reading the placement alone would find nothing compared anywhere. Two
+// files are exactly where a name can still collide there: a resource identity
+// scoped to a cluster rather than to a document is unique across the files as a
+// set, which is why the comparison over such a group stays group-wide.
+//
+// The host reads its own routing and never learns what a key space's uniqueness
+// means. A guest whose names must be unique across something wider than one
+// document expresses that scope in the space name it declares, which is the
+// mechanism the accumulation's own contract names and needs no host change.
 //
 // A name fails uniqueness two ways and both are the same defect. Two contributors
 // can arrive at one name, which the declarations show directly. Or one
@@ -336,18 +365,30 @@ func derivedNameScopeCaption(contributorKind string) string {
 // and each declaration carries the answer, which is why the fact this reads
 // carries it per entry rather than leaving it to be counted.
 //
-// It reads one fact, which is every declaration the group's contributors made.
-// The predicate is the whole of the comparison: how many contributors arrived at
-// one name in one space, and whether any of them repeated it inside one
-// declaration. Neither is a question the fact answers — a fact that named the
+// It reads two facts: every declaration the group's contributors made, and what
+// the group's elected provider declared it does with the group's output. The
+// predicate is the whole of the comparison: which of the contributors that
+// arrived at one name in one space can reach each other at all, how many of them
+// there are, and whether any of them repeated the name inside one declaration.
+// None of the three is a question either fact answers — a fact that named the
 // colliding names would be this rule rather than its input.
+//
+// The two facts are read together rather than combined upstream, and the reason
+// is the one that keeps a fact a fact: each answers only what it observed. Where
+// a contributor's output went is a fact about that contributor; whether the group
+// folds anything into one document is a fact about the group's provider; and what
+// follows from the pair is the decision, which is this rule's.
 //
 // It raises one objection per contributor involved in each colliding name, rather
 // than one per name, for the reason the collision rule at this stage does: a
 // contributor is what an author can go and change and a name is not. Every
-// contributor that derived the name is named and not only some of them, because
-// nothing in a collision makes one of two derivations the intended one, so naming
-// a subset would assert a choice the compiler has not made.
+// contributor whose name met another's is named and not only some of them,
+// because nothing in a collision makes one of two derivations the intended one,
+// so naming a subset of the ones that met would assert a choice the compiler has
+// not made. A contributor that derived the same name where it could meet nobody
+// is not among them, and is not named: an author reading it would have no edit to
+// make. A contributor whose own declaration carried the name twice is named on
+// that count alone, whoever else derived it.
 //
 // The space bounds the comparison. Two contributors deriving one name into two
 // different spaces have not collided — neither output displaces the other — and a
@@ -378,6 +419,19 @@ var AssemblyGroupDerivesEachNameOnce = constraint.Check[
 		if len(declared) == 0 {
 			return nil
 		}
+		// Whether this group has one document for two names to meet inside. Only
+		// where it has does a contributor's own placement narrow anything: a group
+		// that folds nothing places every contributor's output as discrete files,
+		// and reading that placement as a reason not to compare would leave nothing
+		// compared at all.
+		folds := boundaryAssemblyFolds(
+			v.AssemblyGroupProviderAssembly(s.AssemblyPath(), s.ProviderName()))
+		// meets reports whether one declaration's contributor can reach another
+		// contributor's name in this group. It is the whole of the narrowing, in one
+		// place, so the run count below and the per-entry decision cannot come apart.
+		meets := func(d constraint.DerivedNameDeclaration) bool {
+			return !folds || !d.OutputPlacedStandalone
+		}
 		var out []constraint.Objection
 		// The declarations arrive in space then name then contributor order, so
 		// every entry for one (space, name) pair is consecutive and the run is the
@@ -401,12 +455,31 @@ var AssemblyGroupDerivesEachNameOnce = constraint.Check[
 					break
 				}
 			}
-			// One contributor that did not repeat the name is the ordinary answer:
-			// a name derived once in its space by the one thing that derives it.
-			if len(run) < 2 && !repeated {
+			// How many of the run's contributors can reach each other's names.
+			// Where the group folds nothing this is the whole run, so the
+			// comparison is the run's own length exactly as it is for a group with
+			// no placement to read.
+			meeting := 0
+			for _, d := range run {
+				if meets(d) {
+					meeting++
+				}
+			}
+			// Fewer than two contributors meeting, and none of them repeating the
+			// name inside one of its own declarations, is the ordinary answer: a
+			// name derived once wherever it can be read.
+			if meeting < 2 && !repeated {
 				continue
 			}
 			for _, d := range run {
+				// A contributor is named for one of two reasons, and the second
+				// stands wherever its output landed: its name met another
+				// contributor's, or one of its own declarations carried the name
+				// twice, which is a fault inside that one contributor and is
+				// answerable in a document nobody else writes into.
+				if !(meeting >= 2 && meets(d)) && !d.RepeatedWithinOneDeclaration {
+					continue
+				}
 				details := []constraint.DetailValue{
 					constraint.Uncaptioned(d.DerivedName),
 					constraint.Captioned("key space", d.KeySpace),
