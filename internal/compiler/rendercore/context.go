@@ -129,14 +129,25 @@ type NodeRenderContext struct {
 	// engines nil-check it before calling. Warnings never affect emitted bytes,
 	// so byte-identity of rendered files is independent of whether a sink is
 	// attached. Host-only: it is not part of any wire projection sent to a guest.
-	WarningSink func(string)
+	//
+	// It carries the whole diagnostic rather than a rendered line, which is what
+	// lets an advisory reach a consumer that cannot read a terminal: a caller with
+	// only text has to parse the node identity back out of it, and a caller
+	// needing a position has nothing to parse it out of at all. Every display
+	// surface renders an entry through [RenderDiagnosticText], so the text a
+	// reader sees is composed once rather than at each sink.
+	//
+	// What separates it from UnsupportedFieldSink below is now the CLASS an entry
+	// belongs to and not its shape: this is the stream a display prints
+	// unconditionally, and that one is the stream a display may suppress by its
+	// class code.
+	WarningSink func(renderctx.Diagnostic)
 	// UnsupportedFieldSink, when non-nil, receives the unsupported-field advisories a
 	// provider engine raises while rendering this node — the structured
 	// warn-severity diagnostics reporting an authored field the target could
 	// not honor. It is routed separately from WarningSink so a display surface can
 	// suppress the unsupported-field class alone by its stable code while other render
-	// warnings still surface, and so the structured diagnostics stay
-	// machine-matchable downstream. Like WarningSink it never affects emitted
+	// warnings still surface. Like WarningSink it never affects emitted
 	// bytes and is host-only: not part of any wire projection sent to a guest.
 	UnsupportedFieldSink func(renderctx.Diagnostic)
 	// DerivedKeySink, when non-nil, receives the names a provider engine's guest

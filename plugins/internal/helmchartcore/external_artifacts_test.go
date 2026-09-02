@@ -302,10 +302,16 @@ metadata:
 
 	var found bool
 	for _, w := range result.Warnings {
-		if strings.Contains(w, "skipped provenance label injection") {
-			found = true
-			break
+		if !strings.Contains(w.Message, "skipped provenance label injection") {
+			continue
 		}
+		found = true
+		// The advisory arrives located at the node and the provider that raised
+		// it, which is what a consumer reading no terminal attributes it by.
+		if w.Location == nil || w.Location.URI == "" || w.Location.Kind == "" {
+			t.Errorf("the guest advisory reached the result unlocated: %+v", w.Location)
+		}
+		break
 	}
 	if !found {
 		t.Fatalf("guest provenance-skip warning did not reach result.Warnings; warnings: %#v", result.Warnings)

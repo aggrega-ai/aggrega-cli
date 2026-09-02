@@ -74,8 +74,8 @@ func wireCrossBoundaryLinks(
 	engineFactory EngineFactory,
 	yamlIndent int,
 	deploymentID string,
-) ([]string, error) {
-	var warnings []string
+) ([]Diagnostic, error) {
+	var warnings []Diagnostic
 	for _, edge := range graph.Spec.Edges {
 		srcKey, srcOK := nodeDispatch[edge.Source]
 		tgtKey, tgtOK := nodeDispatch[edge.Target]
@@ -246,12 +246,12 @@ func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides No
 // applyLinkPatches applies each returned link patch to the named assembled file
 // in grp, through the endpoint provider's codec. A patch naming a file the
 // dispatch group did not emit halts loudly rather than silently dropping.
-func applyLinkPatches(grp *assembledGroup, patches []LinkPatch, provider string, engineFactory EngineFactory, yamlIndent int, nodeID string) ([]string, error) {
+func applyLinkPatches(grp *assembledGroup, patches []LinkPatch, provider string, engineFactory EngineFactory, yamlIndent int, nodeID string) ([]Diagnostic, error) {
 	if len(patches) == 0 {
 		return nil, nil
 	}
 	codec := selectCodec(engineFactory, provider, yamlIndent)
-	var warnings []string
+	var warnings []Diagnostic
 	for _, patch := range patches {
 		rec, ok := grp.files[patch.File]
 		if !ok {
@@ -285,7 +285,7 @@ func applyLinkPatches(grp *assembledGroup, patches []LinkPatch, provider string,
 // step-pipeline wrapper: a link patch is a set of pre-resolved ops, not a
 // pipeline step. The ops address the file's own root (scope own) by the file's
 // segmentation token.
-func applyLinkPatch(codec frp.Codec, name string, body []byte, ops []frp.JSONPatchOp, nodeID string) ([]byte, []string, error) {
+func applyLinkPatch(codec frp.Codec, name string, body []byte, ops []frp.JSONPatchOp, nodeID string) ([]byte, []Diagnostic, error) {
 	pfs, docs, err := buildScopeDocs(codec, []EmittedFile{{Name: name, Body: body}})
 	if err != nil {
 		return nil, nil, wrapPipelineErr(err, nodeID)

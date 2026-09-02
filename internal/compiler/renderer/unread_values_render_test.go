@@ -61,6 +61,9 @@ containers:
 	}
 }
 
+// uvrRender renders the fixture and returns the advisory lines a reader is
+// shown, rendered through the one display formatter so the rows keep asserting
+// on the text a build prints.
 func uvrRender(t *testing.T, edgeValues types.OrderedMap[any], consumerMapping string) []string {
 	t.Helper()
 	result, err := renderer.RenderAll(context.Background(),
@@ -68,7 +71,14 @@ func uvrRender(t *testing.T, edgeValues types.OrderedMap[any], consumerMapping s
 	if err != nil {
 		t.Fatalf("RenderAll: %v", err)
 	}
-	return result.Warnings
+	if result.Warnings == nil {
+		return nil
+	}
+	out := make([]string, 0, len(result.Warnings))
+	for _, d := range result.Warnings {
+		out = append(out, renderer.RenderDiagnosticText(d))
+	}
+	return out
 }
 
 func uvrEdgeValues(pairs ...any) types.OrderedMap[any] {

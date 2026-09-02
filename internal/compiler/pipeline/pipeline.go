@@ -241,16 +241,23 @@ type Options struct {
 }
 
 // emitRenderWarnings writes the render step's advisory warnings to w: first the
-// free-form warning stream, then the structured coded diagnostics, each entry
+// stream no class code governs, then the class-coded diagnostics, each entry
 // attributed to its node and provider from its location. Suppression is keyed on
-// the diagnostic's own code and drops the unsupported-field class alone — the
-// free-form warnings and every other coded class still surface, which is what
-// keeps a target-fidelity preference from silencing an unrelated advisory. This
-// is a pure display pass over out-of-band diagnostics and never touches the
+// the diagnostic's own code and drops the unsupported-field class alone — every
+// entry of the first stream and every other coded class still surface, which is
+// what keeps a target-fidelity preference from silencing an unrelated advisory.
+// This is a pure display pass over out-of-band diagnostics and never touches the
 // rendered bytes.
+//
+// Both streams render through [renderer.RenderDiagnosticText], the one formatter
+// every surface that displays this channel reads, so an advisory has one wording
+// in a terminal and in an editor. The two are printed as two groups rather than
+// as one because a display treats them differently — the first unconditionally,
+// the second subject to the suppression above — and because the carrier's own
+// order is this order.
 func emitRenderWarnings(w io.Writer, result *renderer.RenderResult, suppressUnsupportedFields bool) {
 	for _, warning := range result.Warnings {
-		fmt.Fprintf(w, "  warning: %s\n", warning)
+		fmt.Fprintf(w, "  warning: %s\n", renderer.RenderDiagnosticText(warning))
 	}
 	for _, d := range result.Diagnostics {
 		if suppressUnsupportedFields && d.Code == renderer.UnsupportedFieldCode {
@@ -258,6 +265,31 @@ func emitRenderWarnings(w io.Writer, result *renderer.RenderResult, suppressUnsu
 		}
 		fmt.Fprintf(w, "  warning: %s\n", renderer.RenderDiagnosticText(d))
 	}
+}
+
+// mergeRenderDiagnostics joins the render's two advisory streams into the single
+// list a caller that reads no terminal consumes, uncoded entries first and coded
+// entries second.
+//
+// The render keeps them apart because a display treats them differently, and a
+// caller reading the result needs that distinction for nothing — so merging here
+// is what stops every such caller either re-implementing the join or reading one
+// stream and silently missing the other.
+//
+// The ORDER is the contract, and it is the display's order: whoever compares what
+// a build printed against what a build returned must find the same entries in the
+// same sequence. That is why this is a named function rather than two appends at
+// the call site — an order with a reason needs somewhere for the reason to live
+// and something to assert against.
+//
+// The result is a fresh slice. Appending onto either input would be free to write
+// into a backing array the render still holds, and the render's result outlives
+// this call.
+func mergeRenderDiagnostics(result *renderer.RenderResult) []renderer.Diagnostic {
+	merged := make([]renderer.Diagnostic, 0, len(result.Warnings)+len(result.Diagnostics))
+	merged = append(merged, result.Warnings...)
+	merged = append(merged, result.Diagnostics...)
+	return merged
 }
 
 // guestWarmer is the compile-only capability the eager plugin-compilation pass
@@ -277,12 +309,25 @@ type Result struct {
 	Artifacts map[string][]byte
 	IRGraph   *types.IRGraph
 	Trace     map[string][]byte
-	// RenderDiagnostics carries the render's structured, coded advisories so a
-	// caller that does not read the terminal can surface them itself — the daemon
-	// turns them into editor problems. The terminal display already happened by
-	// the time this returns; carrying them here is what stops that display from
-	// being the only place they exist. Empty when the render was skipped, and
-	// out-of-band in every case: no entry affects Artifacts.
+	// RenderDiagnostics carries EVERY advisory the render raised, so a caller that
+	// does not read the terminal can surface them itself — the daemon turns them
+	// into editor problems. The terminal display already happened by the time this
+	// returns; carrying them here is what stops that display from being the only
+	// place they exist. Empty when the render was skipped, and out-of-band in
+	// every case: no entry affects Artifacts.
+	//
+	// The render keeps two advisory streams because a display treats them
+	// differently — one prints unconditionally, the other is suppressible by class
+	// code — and they arrive here as ONE list, in the order the display prints
+	// them: the uncoded stream first, then the coded one. A caller reading this
+	// needs the distinction for nothing, and holding two lists here would ask
+	// every such caller to merge them or, worse, to read one and silently miss
+	// the other. The display keeps its two groups because it reads the render's
+	// own result, where the streams are still separate fields.
+	//
+	// An entry carries a class code where its raising site had one to carry and
+	// carries none where it did not, so a consumer matching on code matches the
+	// classes that exist rather than a code invented at this boundary.
 	RenderDiagnostics []renderer.Diagnostic
 }
 
@@ -846,7 +891,10 @@ func RunTier4Pipeline(
 // Mid-pipeline warnings (binding-lint advisories, analyzer warnings,
 // renderer warnings) are written to os.Stderr inline by this function;
 // daemons that need to capture or silence them redirect os.Stderr at the
-// process boundary.
+// process boundary. The renderer's warnings ALSO ride out on
+// Result.RenderDiagnostics, so a caller that reads no terminal receives them as
+// structured entries rather than depending on the redirect; the binding-lint and
+// analyzer advisories reach the stream and nothing else.
 //
 // The parameter map merged from Release.spec.parameters flows through to
 // the renderer (for orchestrator-time path-template evaluation). RunPipeline
@@ -1204,10 +1252,13 @@ func RunPipeline(
 			return err
 		}
 
+		// The two advisory streams join here, in the order the display above
+		// printed them, so a caller that reads no terminal receives everything the
+		// render had to say through one field.
 		result = &Result{
 			Artifacts:         renderResult.FileBytes(),
 			IRGraph:           graph,
-			RenderDiagnostics: renderResult.Diagnostics,
+			RenderDiagnostics: mergeRenderDiagnostics(renderResult),
 		}
 		if memWriter != nil {
 			result.Trace = memWriter.Entries()

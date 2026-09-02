@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -33,7 +34,7 @@ import (
 type pipelineResult struct {
 	Own         []EmittedFile
 	HostPatched map[string][]byte
-	Warnings    []string
+	Warnings    []Diagnostic
 }
 
 // DeferredPatch carries everything the post-assembly phase needs to replay a
@@ -155,8 +156,11 @@ func runNodePipeline(
 		return res, nil
 	}
 	if lookup == nil {
-		res.Warnings = append(res.Warnings,
-			fmt.Sprintf("node %q: pipeline (%d steps) validated but not executed (no plugin path resolver configured)", nodeID, len(steps)))
+		res.Warnings = append(res.Warnings, Diagnostic{
+			Severity: abi.SeverityWarn,
+			Location: &DiagnosticLocation{URI: nodeID},
+			Message:  fmt.Sprintf("pipeline (%d steps) validated but not executed (no plugin path resolver configured)", len(steps)),
+		})
 		return res, nil
 	}
 
@@ -327,8 +331,21 @@ func runNodePipelineWithInvoker(
 
 	res.Own = ownOut
 	res.HostPatched = hostPatched
+	// The walk's advisories already arrive structured — a guest's own diagnostic,
+	// or the notice the walk raises for a soft-failed optional step, each carrying
+	// whatever class code its raiser assigned. They travel onward whole, located
+	// at this node where the walk set no location of its own, with the pipeline
+	// scope named in the text because the walk's advisories are about a node's
+	// steps rather than about a second thing a location could identify.
+	//
+	// A guest that set its own location keeps it: it knows where inside the
+	// document the fault sits, which this executor does not.
 	for _, d := range walkRes.Warnings {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("node %q: pipeline: %s", nodeID, d.Message))
+		if d.Location == nil {
+			d.Location = &DiagnosticLocation{URI: nodeID}
+		}
+		d.Message = "pipeline: " + d.Message
+		res.Warnings = append(res.Warnings, d)
 	}
 	return res, nil
 }
@@ -784,14 +801,19 @@ func buildScopeDocs(codec frp.Codec, files []EmittedFile) ([]pipelineFile, types
 // preserves every untouched byte; a file with no patched unit passes through
 // verbatim. A PATCH that addressed an opaque (non-structured) token surfaces
 // as the renderer's not-structured Loud Guardrail.
+//
+// A codec's reassembly notice is located at the node and names the file it was
+// raised for as the element it concerns, so a reader that renders no text can
+// still tell which of a node's files the notice is about. The codec assigns no
+// class code, so the notice carries none.
 func foldPatchesBack(
 	codec frp.Codec,
 	pfs []pipelineFile,
 	appliedByToken map[string][]frp.JSONPatchOp,
 	nodeID string,
-) ([]EmittedFile, []string, error) {
+) ([]EmittedFile, []Diagnostic, error) {
 	out := make([]EmittedFile, 0, len(pfs))
-	var warnings []string
+	var warnings []Diagnostic
 	for _, pf := range pfs {
 		var patched []frp.PatchedUnit
 		for _, u := range pf.units {
@@ -813,7 +835,12 @@ func foldPatchesBack(
 			}
 			body = b
 			for _, w := range warns {
-				warnings = append(warnings, fmt.Sprintf("node %q: pipeline: %s", nodeID, w))
+				warnings = append(warnings, Diagnostic{
+					Severity:  abi.SeverityWarn,
+					SourceRef: pf.file.Name,
+					Location:  &DiagnosticLocation{URI: nodeID},
+					Message:   "pipeline: " + w,
+				})
 			}
 		}
 		out = append(out, EmittedFile{Name: pf.file.Name, Origin: pf.file.Origin, Body: body, Intermediate: pf.file.Intermediate})

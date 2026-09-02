@@ -31,8 +31,24 @@ import (
 // back to extension-based selection. Format never affects the emitted bytes, so
 // carrying it alongside the content keeps the two from drifting apart.
 type RenderResult struct {
-	Files    map[string]AssembledFile // boundary-relative path → content + producer-declared format
-	Warnings []string
+	Files map[string]AssembledFile // boundary-relative path → content + producer-declared format
+	// Warnings carries the render's advisory stream that no class code governs:
+	// the notices a rule declared its own finding advisory, the authored keys
+	// nothing consumed, the guest advisories a provider raised while rendering,
+	// and the pipeline notices raised while a node's steps ran.
+	//
+	// Each entry is the structured diagnostic the raising site held rather than a
+	// line of text it composed, which is what lets an entry reach a consumer that
+	// reads no terminal — the node it concerns, the element it is about, and the
+	// severity it carries are fields rather than substrings of a sentence. A site
+	// that holds a class code puts it here; a site that holds none carries none,
+	// so an absent code is a fact about the raising site and not a gap.
+	//
+	// It stays a separate field from Diagnostics because a display treats the two
+	// differently: this stream prints unconditionally and that one is suppressible
+	// by class code. Every surface renders an entry of either through
+	// [RenderDiagnosticText], so one advisory has one wording wherever it is read.
+	Warnings []Diagnostic
 	// Contributions attributes each group of assembled output to the boundaries
 	// and the provider that produced it, in assembly-path then provider order.
 	//
@@ -53,15 +69,18 @@ type RenderResult struct {
 	// The property above describes the value this returns, which is the completed
 	// one.
 	Contributions []AssemblyContribution
-	// Diagnostics carries the structured, coded advisories raised during render,
-	// separately from the free-form Warnings stream: the unsupported-field
-	// notices a lower-fidelity target emits for an authored field it cannot
-	// honor, and the sensitive-by-value notices attachment delivery raises for a
-	// declared-sensitive datum travelling as a literal. Each entry keeps its
-	// stable code and names the node and provider via its Location, so a display
-	// surface can filter one class by code while the others still surface, and so
-	// downstream consumers can match them structurally. Out-of-band: never part
-	// of the emitted bytes.
+	// Diagnostics carries the CLASS-CODED advisories raised during render: the
+	// unsupported-field notices a lower-fidelity target emits for an authored
+	// field it cannot honor, and the sensitive-by-value notices attachment
+	// delivery raises for a declared-sensitive datum travelling as a literal.
+	// Each entry keeps its stable code and names the node and provider via its
+	// Location. Out-of-band: never part of the emitted bytes.
+	//
+	// It is a separate field from Warnings because a display surface treats the
+	// two differently — every entry here belongs to a class such a surface may
+	// suppress by code, while an entry there is printed unconditionally. Both
+	// streams carry the same shape, so the split is about what a display DOES
+	// with an entry rather than about what an entry is.
 	Diagnostics []Diagnostic
 
 	// DescribedView presents, as named facts, what every plugin this render
@@ -1395,14 +1414,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// sub-renders that copy it — surfaces its guest warnings through one channel.
 		// Attached before the recipe block below so the advisory a promoted output
 		// label raises for a key the component does not declare rides it too.
-		nodeCtx.WarningSink = func(w string) { state.Warnings = append(state.Warnings, w) }
+		nodeCtx.WarningSink = func(d Diagnostic) { state.Warnings = append(state.Warnings, d) }
 		if recipe != nil {
 			nodeCtx.RecipeName = recipe.Metadata.Name
 			nodeCtx.RecipeVersion = recipe.Metadata.Version
 			nodeCtx.OutputLabels = resolveOutputLabels(recipe, nodeID, node, nodeCtx.WarningSink)
 		}
-		// Structured unsupported-field diagnostics route here, kept apart from the
-		// free-form warnings so the class stays suppressible by its stable code.
+		// Unsupported-field advisories route here, kept apart from the stream above
+		// so the class stays suppressible by its stable code.
 		nodeCtx.UnsupportedFieldSink = func(d Diagnostic) { state.Diagnostics = append(state.Diagnostics, d) }
 		// How this node's own output is routed, resolved once here and read at each
 		// of the four places that need it: the Intermediate marking every emitted
@@ -2244,7 +2263,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				ContributingBoundaries: pd.contributingBoundaries,
 				Edges:                  edges,
 				ChartName:              chartName,
-				WarningSink:            func(w string) { result.Warnings = append(result.Warnings, w) },
+				WarningSink:            func(d Diagnostic) { result.Warnings = append(result.Warnings, d) },
 			}
 			boundaryFiles, nesting, err := pd.assembler.AssembleBoundary(ctx, info)
 			if err != nil {
@@ -2563,11 +2582,20 @@ func gateInputKind(nodeID, providerName string, engine Provider, hasSource, hasW
 // Warnings never affect emitted bytes. The component render path and the
 // FeatureRecipe render path share this routing, so a provider's input check
 // reads identically on both surfaces.
-func routeNodeInputDiagnostics(nodeID, providerName string, diags []Diagnostic, sink func(string)) error {
+//
+// An advisory keeps the node and provider as its location rather than as a
+// prefix on its text, so a consumer that reads no terminal can attribute the
+// finding without parsing it back out of a sentence. A guest that set its own
+// location keeps it: it knows where inside the input the fault sits, which this
+// crossing does not.
+func routeNodeInputDiagnostics(nodeID, providerName string, diags []Diagnostic, sink func(Diagnostic)) error {
 	errs, advisories := SplitDiagnostics(diags)
 	for _, a := range advisories {
 		if sink != nil {
-			sink(fmt.Sprintf("node %q (provider %q): %s", nodeID, providerName, a))
+			if a.Location == nil {
+				a.Location = &DiagnosticLocation{URI: nodeID, Kind: providerName}
+			}
+			sink(a)
 		}
 	}
 	if len(errs) > 0 {

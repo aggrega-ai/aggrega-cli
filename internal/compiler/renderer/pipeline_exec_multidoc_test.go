@@ -180,7 +180,12 @@ func TestRunNodePipeline_ValidateOnlyWhenNoLookup(t *testing.T) {
 	if len(res.Own) != 1 || string(res.Own[0].Body) != "kind: ConfigMap\n" {
 		t.Errorf("validate-only path mutated the own set: %v", res.Own)
 	}
-	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "validated but not executed") {
+	if len(res.Warnings) != 1 || !strings.Contains(RenderDiagnosticText(res.Warnings[0]), "validated but not executed") {
 		t.Errorf("validate-only path missing warning: %v", res.Warnings)
+	}
+	// The notice locates itself at the node rather than naming it inside the
+	// sentence, which is what a consumer reading no terminal has to work from.
+	if loc := res.Warnings[0].Location; loc == nil || loc.URI != "node" {
+		t.Errorf("validate-only notice not located at the node: %+v", res.Warnings[0].Location)
 	}
 }

@@ -99,16 +99,19 @@ type PhaseBState struct {
 	// so any sub-pass appending here — present today: phaseB3's helm-chart
 	// provenance-skip notice — and any future sub-pass appending later in
 	// the pipeline both reach the result. Drain position is load-bearing.
-	Warnings []string
+	//
+	// Each entry is the diagnostic its raising site held rather than a line that
+	// site composed, so what a consumer reading no terminal needs — the node, the
+	// element concerned, the severity — stays in fields.
+	Warnings []Diagnostic
 
-	// Diagnostics is the per-node accumulator for the structured, coded
-	// advisories the render raises — the unsupported-field notices a target
-	// emits for an authored field it cannot honor, and the sensitive-by-value
-	// notices attachment delivery raises — drained into result.Diagnostics
-	// alongside Warnings at the end of the per-node sequence. Kept separate from
-	// Warnings because each entry carries a stable code, which is what lets a
-	// display surface filter one class without touching another and lets a
-	// downstream consumer match them structurally.
+	// Diagnostics is the per-node accumulator for the class-coded advisories the
+	// render raises — the unsupported-field notices a target emits for an
+	// authored field it cannot honor, and the sensitive-by-value notices
+	// attachment delivery raises — drained into result.Diagnostics alongside
+	// Warnings at the end of the per-node sequence. Kept separate from Warnings
+	// because every entry here belongs to a class a display surface may suppress
+	// by code, while an entry there is printed unconditionally.
 	Diagnostics []Diagnostic
 
 	// DerivedKeys is the per-node accumulator for every derived name this node is

@@ -6,6 +6,7 @@ package renderer
 import (
 	stderrors "errors"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -109,29 +110,43 @@ func objectionsAsCategorisedHalt(
 // reads in the same shape as every other positioned diagnostic rather than in a
 // second one that agrees today.
 //
-// A warning is a plain string with no field to carry a locator, so the position
-// is composed into the text rather than dropped: it is the only thing naming
-// which authored site the finding is about, and an advisory a reader cannot
-// navigate to is one they cannot act on. A finding whose subject carries neither
-// a file nor a locator renders as its message alone rather than as a message with
-// an empty position hanging off it.
+// The position is composed into the text as well as carried in the authored-key
+// field, and the reason for the duplication is that the two halves of a position
+// are not equally expressible. An advisory's location field identifies a node
+// and an authored key inside it, and a rule's subject is authored in a
+// DOCUMENT — so the locator has a field of its own while the file does not, and
+// writing the file into the node slot would attribute the finding to a node of
+// that name. Composing the whole position into the text is what keeps a reader
+// able to navigate to it; carrying the locator as a field is what lets a
+// consumer that renders no text act on it. A finding whose subject carries
+// neither a file nor a locator renders as its message alone rather than as a
+// message with an empty position hanging off it.
+//
+// No class code is carried, and that is deliberate rather than an omission. An
+// objection does hold a registered halting-condition identity, and publishing
+// that identity as an advisory's class code would put a code on this channel
+// that has never carried one — which is a decision about the code register
+// rather than about this conversion, so it is not taken here.
 //
 // Advisories come back in the order the objections were raised, which is the
 // order the rule was invoked in — so a render over identical input produces the
 // same warning stream in the same order.
-func objectionsAsAdvisories(objections []constraint.Objection) []string {
+func objectionsAsAdvisories(objections []constraint.Objection) []Diagnostic {
 	if len(objections) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(objections))
+	out := make([]Diagnostic, 0, len(objections))
 	for _, o := range objections {
 		message := constraint.ObjectionMessage(o)
 		position := cerrors.SourceLocation{File: o.SourceFile(), Locator: o.Locator()}.String()
-		if position == "" {
-			out = append(out, message)
-			continue
+		if position != "" {
+			message = position + ": " + message
 		}
-		out = append(out, position+": "+message)
+		d := Diagnostic{Severity: abi.SeverityWarn, Message: message}
+		if locator := o.Locator(); locator != "" {
+			d.Location = &DiagnosticLocation{KeyPath: locator}
+		}
+		out = append(out, d)
 	}
 	return out
 }

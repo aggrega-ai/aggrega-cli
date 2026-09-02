@@ -735,6 +735,11 @@ type crossBoundaryLinkAxis interface {
 // halt conversion beside it would turn a build that renders into one that fails,
 // whatever the declaration said.
 //
+// What comes back is the advisory itself rather than a line of text, so the
+// finding reaches a consumer that renders nothing — an editor asking which
+// authored key a connection's provider seam sits on reads a field rather than
+// parsing a position back out of a sentence.
+//
 // Every offending connection is reported rather than the first, because the rule
 // is invoked once per connection: a deployment wiring three connections across a
 // provider seam tells the author about all three from one build, each positioned
@@ -746,7 +751,7 @@ func runCrossBoundaryLinkProviderRule(
 	ctx context.Context,
 	view constraint.DescribedView,
 	coordinates crossBoundaryLinkAxis,
-) ([]string, error) {
+) ([]Diagnostic, error) {
 	if view == nil || coordinates == nil {
 		return nil, nil
 	}

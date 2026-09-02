@@ -202,14 +202,24 @@ func TestOutputComponentLabels_AbsentKey_ElidesAndWarns(t *testing.T) {
 	}
 
 	var advisory string
-	for _, w := range result.Warnings {
+	var raised renderer.Diagnostic
+	for _, d := range result.Warnings {
+		w := renderer.RenderDiagnosticText(d)
 		if strings.Contains(w, "component.aggrega.ai/hosting") {
-			advisory = w
+			advisory, raised = w, d
 			break
 		}
 	}
 	if advisory == "" {
 		t.Fatalf("expected an advisory naming the missing promoted key; warnings: %v", result.Warnings)
+	}
+	// The node and the promoted key are fields as well as words, so a consumer
+	// reading no terminal can point at the right node and the right key.
+	if raised.Location == nil || raised.Location.URI != "first" {
+		t.Errorf("the advisory is not located at the node: %+v", raised.Location)
+	}
+	if raised.SourceRef != "component.aggrega.ai/hosting" {
+		t.Errorf("the promoted key did not survive as the source reference: %+v", raised)
 	}
 	for _, want := range []string{`"first"`, `"shared-recipe"`, `"component.aggrega.ai/hosting"`} {
 		if !strings.Contains(advisory, want) {

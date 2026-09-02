@@ -398,8 +398,8 @@ func TestRenderAll_PhaseCWarning(t *testing.T) {
 		t.Error("expected Phase C pipeline warning")
 	}
 	found := false
-	for _, w := range result.Warnings {
-		if strings.Contains(w, "not executed") {
+	for _, d := range result.Warnings {
+		if strings.Contains(renderer.RenderDiagnosticText(d), "not executed") {
 			found = true
 			break
 		}
@@ -1085,9 +1085,15 @@ func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
 	}
 
 	var gotInfra bool
-	for _, w := range result.Warnings {
+	for _, d := range result.Warnings {
+		w := renderer.RenderDiagnosticText(d)
 		if strings.Contains(w, ".infra") && strings.Contains(w, "replicas") {
 			gotInfra = true
+			// The advisory names the unread key as the element it concerns, so a
+			// consumer that renders no text does not have to find it in a sentence.
+			if d.SourceRef != "replicas" {
+				t.Errorf("the unread key did not survive as the advisory's source reference: %+v", d)
+			}
 		}
 	}
 	if !gotInfra {

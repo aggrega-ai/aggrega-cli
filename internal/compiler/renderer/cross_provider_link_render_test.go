@@ -242,7 +242,8 @@ func TestRenderAll_ConnectionAcrossAProviderSeamIsReported(t *testing.T) {
 	}
 
 	var found []string
-	for _, w := range res.Warnings {
+	for _, d := range res.Warnings {
+		w := renderer.RenderDiagnosticText(d)
 		if strings.Contains(w, renderer.ErrCrossProviderLinkUnsupported().Error()) {
 			found = append(found, w)
 		}
@@ -292,7 +293,8 @@ func TestRenderAll_ConnectionWithinOneProviderIsSilent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderAll must render a connection within one provider; got %v", err)
 	}
-	for _, w := range res.Warnings {
+	for _, d := range res.Warnings {
+		w := renderer.RenderDiagnosticText(d)
 		if strings.Contains(w, renderer.ErrCrossProviderLinkUnsupported().Error()) {
 			t.Errorf("a connection within one provider must report nothing; got %q", w)
 		}
@@ -318,7 +320,8 @@ func TestRenderAll_ConnectionAcrossTwoNonLinkingProvidersIsSilent(t *testing.T) 
 	if err != nil {
 		t.Fatalf("RenderAll must render a seam neither provider can link across; got %v", err)
 	}
-	for _, w := range res.Warnings {
+	for _, d := range res.Warnings {
+		w := renderer.RenderDiagnosticText(d)
 		if strings.Contains(w, renderer.ErrCrossProviderLinkUnsupported().Error()) {
 			t.Errorf("a seam neither provider links across must report nothing; got %q", w)
 		}

@@ -124,11 +124,17 @@ func crossProviderLinkAdvisories(
 	view crossProviderLinkFactStub,
 ) []string {
 	t.Helper()
-	out, err := runCrossBoundaryLinkProviderRule(
+	raised, err := runCrossBoundaryLinkProviderRule(
 		context.Background(), view, crossProviderLinkEdges{edges: edges},
 	)
 	if err != nil {
 		t.Fatalf("the advisory walk returned an error: %v", err)
+	}
+	// Rendered through the one display formatter, because the rows below assert
+	// on the sentence a reader is shown.
+	out := make([]string, 0, len(raised))
+	for _, d := range raised {
+		out = append(out, RenderDiagnosticText(d))
 	}
 	return out
 }

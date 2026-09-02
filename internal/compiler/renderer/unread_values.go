@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -52,12 +53,17 @@ import (
 // each uses alias in the order the edges were emitted, each group in the order
 // the census returns — so the same input produces the same advisory stream on
 // every run.
+//
+// Each advisory is located at the node and names the unread key as the element
+// it concerns, so a reader that renders no text can act on the finding without
+// recovering the key from a sentence. There is no class code for this reading,
+// so none is carried.
 func unreadValueWarnings(
 	nodeID string,
 	recipe *types.Recipe,
 	values, infra types.OrderedMap[any],
 	uses types.OrderedMap[types.EnrichedEdge],
-) []string {
+) []Diagnostic {
 	if recipe == nil || recipe.Spec.ValuesMapping.Inline == "" {
 		return nil
 	}
@@ -85,15 +91,19 @@ func unreadValueWarnings(
 			data types.OrderedMap[any]
 		}{".context.uses." + alias + ".values", edge.Values})
 	}
-	var warnings []string
+	var warnings []Diagnostic
 	for _, g := range groups {
 		if enclosingPathRead(refs, g.root) {
 			continue
 		}
 		for _, k := range gotmpl.UnreadKeys(refs, g.root, g.data) {
-			warnings = append(warnings,
-				fmt.Sprintf("node %q: unused %s key %q (not referenced by valuesMapping of recipe %q)",
-					nodeID, g.root, k, recipe.Metadata.Name))
+			warnings = append(warnings, Diagnostic{
+				Severity:  abi.SeverityWarn,
+				SourceRef: k,
+				Location:  &DiagnosticLocation{URI: nodeID},
+				Message: fmt.Sprintf("unused %s key %q (not referenced by valuesMapping of recipe %q)",
+					g.root, k, recipe.Metadata.Name),
+			})
 		}
 	}
 	return warnings

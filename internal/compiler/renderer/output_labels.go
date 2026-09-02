@@ -6,6 +6,7 @@ package renderer
 import (
 	"fmt"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -28,12 +29,15 @@ import (
 //
 // A named key the node's component does not declare stamps nothing and raises a
 // non-fatal advisory through warn, so the discrepancy is surfaced and the build
-// proceeds. warn may be nil, which drops the advisory.
+// proceeds. warn may be nil, which drops the advisory. The advisory is located
+// at the node and names the promoted key as the element it concerns, so a reader
+// that renders no text still knows which key on which node went unstamped. It
+// carries no class code, because this site has none to carry.
 //
 // Copying the literal map by range is not an ordering hazard: the destination is
 // a map, so the order entries are written in is not observable, and every surface
 // that emits labels sorts its keys.
-func resolveOutputLabels(recipe *types.Recipe, nodeID string, node types.IRNode, warn func(string)) map[string]string {
+func resolveOutputLabels(recipe *types.Recipe, nodeID string, node types.IRNode, warn func(Diagnostic)) map[string]string {
 	if recipe == nil {
 		return nil
 	}
@@ -51,9 +55,14 @@ func resolveOutputLabels(recipe *types.Recipe, nodeID string, node types.IRNode,
 		value, declared := node.Labels.Get(key)
 		if !declared {
 			if warn != nil {
-				warn(fmt.Sprintf(
-					"node %q: recipe %q promotes component label %q, which component %q does not declare; no label is stamped for it",
-					nodeID, recipe.Metadata.Name, key, node.Component))
+				warn(Diagnostic{
+					Severity:  abi.SeverityWarn,
+					SourceRef: key,
+					Location:  &DiagnosticLocation{URI: nodeID},
+					Message: fmt.Sprintf(
+						"recipe %q promotes component label %q, which component %q does not declare; no label is stamped for it",
+						recipe.Metadata.Name, key, node.Component),
+				})
 			}
 			continue
 		}

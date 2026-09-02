@@ -35,11 +35,23 @@ func uvGraph(nodeIDs []string, edges ...types.IREdge) *types.IRGraph {
 
 // uvWarnings runs the reading for one node through the same context assembly the
 // render loop uses, so the per-edge group is reached exactly as it is in a build.
+//
+// The advisories come back as the lines a reader is shown, rendered through the
+// one display formatter, so the rows below keep asserting on the text a build
+// prints rather than on a shape only this reading produces.
 func uvWarnings(t *testing.T, nodeID string, graph *types.IRGraph, recipe *types.Recipe) []string {
 	t.Helper()
 	inject, injectRaw := BuildInjectPipe(nil)
 	ctx := AssembleNodeContext(nodeID, graph, NodeProvides{}, nil, inject, injectRaw)
-	return unreadValueWarnings(nodeID, recipe, ctx.Values, ctx.Infra, ctx.Context.Uses)
+	raised := unreadValueWarnings(nodeID, recipe, ctx.Values, ctx.Infra, ctx.Context.Uses)
+	if raised == nil {
+		return nil
+	}
+	out := make([]string, 0, len(raised))
+	for _, d := range raised {
+		out = append(out, RenderDiagnosticText(d))
+	}
+	return out
 }
 
 func uvJoined(warnings []string) string { return strings.Join(warnings, "\n") }

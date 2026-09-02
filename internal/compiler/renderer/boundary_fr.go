@@ -435,7 +435,7 @@ func dispatchBoundaryScopeFR(
 	// warnings, which reach result.Warnings. The context was copied from a
 	// consumer node whose sink (if any) targets a different accumulator, so wire
 	// it explicitly here to the boundary-FR render state.
-	frNodeCtx.WarningSink = func(w string) { state.Warnings = append(state.Warnings, w) }
+	frNodeCtx.WarningSink = func(d renderctx.Diagnostic) { state.Warnings = append(state.Warnings, d) }
 	// The derived-name declarations this FR's guest makes are rewired for the same
 	// reason: the copied context's sink targets the consumer node's accumulator,
 	// and a declaration landing there would be attributed to that component

@@ -48,6 +48,12 @@ type LinkPassNode struct {
 // inputs. It returns the pass's warnings, the per-path assembled files after
 // the pass edited them in place, and the pass's error. It is a thin marshalling
 // bridge only — the pass logic under test is unchanged.
+//
+// The warnings come back as the lines a reader would see, rendered through the
+// one display formatter, because that is the surface the rows assert on: a
+// row checking what a build tells its operator is checking the text, and
+// rendering it here keeps that assertion pinned to the formatter every real
+// display goes through.
 func RunCrossBoundaryLinkPassForTest(
 	ctx context.Context,
 	edges []types.IREdge,
@@ -77,10 +83,13 @@ func RunCrossBoundaryLinkPassForTest(
 		}
 	}
 
-	warnings, err = wireCrossBoundaryLinks(
+	raised, err := wireCrossBoundaryLinks(
 		ctx, graph, allProvides, nodeDispatch, nodeEngine, nodeAnnotations,
 		assembledByDispatch, engineFactory, yamlIndent, "",
 	)
+	for _, d := range raised {
+		warnings = append(warnings, RenderDiagnosticText(d))
+	}
 
 	filesByPath = map[string]map[string][]byte{}
 	for key, grp := range assembledByDispatch {

@@ -240,13 +240,27 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 
 // surfaceAssembleDiagnostics routes a boundary assembler's diagnostics: warning-
 // and info-severity entries go to the dispatch group's warning sink (nil-safe,
-// each prefixed with the boundary path), and halt-severity entries are joined
-// into a returned error naming the boundary. Warnings never affect emitted bytes.
-func surfaceAssembleDiagnostics(boundaryPath string, diags []renderer.Diagnostic, sink func(string)) error {
+// each naming the boundary it was raised for), and halt-severity entries are
+// joined into a returned error naming the boundary. Warnings never affect
+// emitted bytes.
+//
+// Everything the guest reported travels onward — its severity, its class code,
+// the element it named, any position it set and any remediation it offered — so
+// a consumer reading no terminal works from fields rather than from a sentence.
+//
+// The boundary is the one coordinate that stays inside the message text, and
+// that is a property of what a location can express rather than a choice made
+// here. A diagnostic's location identifies a NODE, and this advisory is about a
+// group of nodes assembling together rather than about any one of them, so
+// writing the boundary into that slot would attribute the finding to a node that
+// does not exist. Naming it in the text is what an assembler's reader can act
+// on.
+func surfaceAssembleDiagnostics(boundaryPath string, diags []renderer.Diagnostic, sink func(renderer.Diagnostic)) error {
 	errs, advisories := renderer.SplitDiagnostics(diags)
 	for _, a := range advisories {
 		if sink != nil {
-			sink(fmt.Sprintf("boundary %q: %s", boundaryPath, a))
+			a.Message = fmt.Sprintf("boundary %q: %s", boundaryPath, a.Message)
+			sink(a)
 		}
 	}
 	if len(errs) > 0 {

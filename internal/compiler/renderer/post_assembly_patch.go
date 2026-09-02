@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -49,7 +50,7 @@ func replayDeferredPatches(
 	records []DeferredPatch,
 	engineFactory EngineFactory,
 	input RendererInput,
-) ([]string, error) {
+) ([]Diagnostic, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
@@ -70,10 +71,15 @@ func replayDeferredPatches(
 	if lookup == nil {
 		// No resolver configured: the deferred steps were validated by their
 		// presence but cannot run. Surface the same validate-only notice the
-		// per-node path emits rather than silently skipping.
-		warnings := make([]string, 0, len(ordered))
+		// per-node path emits rather than silently skipping — located at the node
+		// whose pipeline was deferred, as that path's notice is.
+		warnings := make([]Diagnostic, 0, len(ordered))
 		for _, rec := range ordered {
-			warnings = append(warnings, fmt.Sprintf("node %q: deferred pipeline (%d steps) validated but not executed (no plugin path resolver configured)", rec.NodeID, len(rec.Steps)))
+			warnings = append(warnings, Diagnostic{
+				Severity: abi.SeverityWarn,
+				Location: &DiagnosticLocation{URI: rec.NodeID},
+				Message:  fmt.Sprintf("deferred pipeline (%d steps) validated but not executed (no plugin path resolver configured)", len(rec.Steps)),
+			})
 		}
 		return warnings, nil
 	}
@@ -81,7 +87,7 @@ func replayDeferredPatches(
 	codec := selectCodec(engineFactory, provider, input.YAMLIndent)
 	invoke := newStepInvoker(lookup)
 
-	var warnings []string
+	var warnings []Diagnostic
 	for _, rec := range ordered {
 		// Mount the merged documents as the root(s) this record's pipeline
 		// actually targets: the own root for an own pipeline (a component Recipe —

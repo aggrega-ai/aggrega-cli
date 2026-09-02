@@ -575,11 +575,20 @@ func (e *Engine) verifyRenderDeterminism(ctx context.Context, plugin *wasm.Plugi
 }
 
 // surfaceNodeDiagnostics routes a provider guest's render/synthesis diagnostics:
-// warn- and info-severity entries go to the node's warning sink (nil-safe,
-// each prefixed with the node and provider identity), and halt-severity entries
-// are joined into a returned render error naming the node and provider. Warnings
-// never affect emitted bytes, so a node's rendered output is byte-identical
-// whether or not a sink is attached.
+// warn- and info-severity entries go to the node's warning sink (nil-safe, each
+// located at the node and provider), and halt-severity entries are joined into a
+// returned render error naming the node and provider. Warnings never affect
+// emitted bytes, so a node's rendered output is byte-identical whether or not a
+// sink is attached.
+//
+// Both advisory routes are located identically and by one call, because the node
+// and the provider are the same two coordinates whichever class an entry belongs
+// to — a guest that sets its own location keeps it, since it knows something
+// about where the fault sits that this crossing does not. The entry itself
+// travels to each sink whole: what a guest reported about severity, class, the
+// element concerned and any remediation it offered is what a consumer reading no
+// terminal has to work from, and composing it into a line here would leave that
+// consumer parsing a sentence to get it back.
 func (e *Engine) surfaceNodeDiagnostics(nodeCtx renderer.NodeRenderContext, diags []renderer.Diagnostic) error {
 	var errs []string
 	for _, d := range diags {
@@ -587,22 +596,20 @@ func (e *Engine) surfaceNodeDiagnostics(nodeCtx renderer.NodeRenderContext, diag
 			errs = append(errs, d.Message)
 			continue
 		}
-		// Unsupported-field advisories route to the structured unsupported-field sink
-		// (when one is attached), enriched with the node and provider so the
-		// display and downstream consumers keep attribution. This keeps the class
-		// separately suppressible by its stable code while other advisories flow to
-		// the free-form warning sink unchanged. When no unsupported-field sink is
-		// attached the class falls through to the warning sink, so it never goes
-		// silent.
+		if d.Location == nil {
+			d.Location = &renderer.DiagnosticLocation{URI: nodeCtx.NodeID, Kind: nodeCtx.ProviderName}
+		}
+		// Unsupported-field advisories route to the structured unsupported-field
+		// sink when one is attached, which is what keeps the class separately
+		// suppressible by its stable code while every other advisory reaches the
+		// unconditional stream. When no unsupported-field sink is attached the
+		// class falls through to the warning sink, so it never goes silent.
 		if d.Code == renderer.UnsupportedFieldCode && nodeCtx.UnsupportedFieldSink != nil {
-			if d.Location == nil {
-				d.Location = &renderer.DiagnosticLocation{URI: nodeCtx.NodeID, Kind: nodeCtx.ProviderName}
-			}
 			nodeCtx.UnsupportedFieldSink(d)
 			continue
 		}
 		if nodeCtx.WarningSink != nil {
-			nodeCtx.WarningSink(fmt.Sprintf("node %q (provider %q): %s", nodeCtx.NodeID, nodeCtx.ProviderName, d.Message))
+			nodeCtx.WarningSink(d)
 		}
 	}
 	if len(errs) > 0 {

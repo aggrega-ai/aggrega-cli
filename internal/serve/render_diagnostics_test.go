@@ -414,6 +414,82 @@ func TestPublishRenderDiagnostics_ForwardsTheAdvisoryCodeVerbatim(t *testing.T) 
 	}
 }
 
+// TestPublishRenderDiagnostics_CarriesTheRenderAdvisoriesThatCarryNoClass is the
+// arrival end of the render's uncoded advisory stream.
+//
+// That stream used to reach the terminal and stop there: the pipeline result had
+// no field for it, so an editor could not read it however it tried. It now rides
+// the same channel the coded classes ride, and the entries look exactly like the
+// three below — warn severity, a node as the position, an element name where the
+// raising site knew one, and no class code, because those sites have none.
+//
+// The subject is that shape reaching the problems surface. It asserts the entry
+// is published, that its text is the line the terminal shows for it, and that it
+// is a warning rather than an error — an advisory that stopped no build must not
+// arrive as one that did.
+func TestPublishRenderDiagnostics_CarriesTheRenderAdvisoriesThatCarryNoClass(t *testing.T) {
+	t.Parallel()
+	s := layeredServer()
+	var out bytes.Buffer
+	ctx, flush := serializerContext(t, &out)
+	defer flush()
+	const file = "/w/aggregate.yaml"
+
+	// One entry per shape the uncoded stream produces: a node position alone, a
+	// node and provider, and an element named as the source reference.
+	s.publishRenderDiagnostics(ctx, file, []renderer.Diagnostic{
+		{
+			Severity:  abi.SeverityWarn,
+			Message:   `unused .infra key "cpu" (not referenced by valuesMapping of recipe "ghost-recipe")`,
+			SourceRef: "cpu",
+			Location:  &renderer.DiagnosticLocation{URI: "api"},
+		},
+		{
+			Severity: abi.SeverityWarn,
+			Message:  "the provider raised this while rendering",
+			Location: &renderer.DiagnosticLocation{URI: "api", Kind: "compose"},
+		},
+	})
+
+	got := s.snapshotDiagnostics(file)
+	if len(got) != 2 {
+		t.Fatalf("published %d diagnostics; want 2: %+v", len(got), got)
+	}
+
+	// The published text is the terminal's own line for each entry, because both
+	// surfaces read the one formatter. Asserting it here is what makes "the editor
+	// shows what the build showed" a checked property rather than an intention.
+	wantText := []string{
+		`node "api": unused .infra key "cpu" (not referenced by valuesMapping of recipe "ghost-recipe")`,
+		`node "api" (provider "compose"): the provider raised this while rendering`,
+	}
+	for i, want := range wantText {
+		if got[i].Message != want {
+			t.Errorf("published message %d:\n got: %q\nwant: %q", i, got[i].Message, want)
+		}
+	}
+
+	// An advisory arrives as a warning. A render advisory halts no build, so
+	// publishing it at the error tier would tell a reader a build failed.
+	for i, d := range got {
+		if d.Severity != editorSeverityWarning {
+			t.Errorf("entry %d published at severity %q; want %q", i, d.Severity, editorSeverityWarning)
+		}
+		if d.Code != "" {
+			t.Errorf("entry %d acquired the class code %q; the raising site had none", i, d.Code)
+		}
+	}
+
+	// The needle on the assertion itself: an entry the render never raised must
+	// not be found, so a passing check above is about what was published rather
+	// than about the reader always returning something.
+	for _, d := range got {
+		if strings.Contains(d.Message, "an advisory nothing raised") {
+			t.Fatal("the reader returned an entry that was never published")
+		}
+	}
+}
+
 // TestPublishRenderDiagnostics_OmitsTheKeyWhenTheAdvisoryCarriesNoCode pins the
 // omission half of the published contract. An advisory whose raiser assigned no
 // code must leave the key off the wire entirely rather than send it empty: the

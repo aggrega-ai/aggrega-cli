@@ -494,7 +494,12 @@ type BoundaryInfo struct {
 	// any guest-emitted warnings. The orchestrator wires it to the build result's
 	// warnings stream; assemblers nil-check it before calling. Warnings never
 	// affect emitted bytes. Host-only: not part of any wire projection.
-	WarningSink func(string)
+	//
+	// It carries the whole diagnostic for the reason the per-node sink does: an
+	// entry travels past the terminal to a consumer that reads none, so the
+	// severity and the class code stay fields rather than becoming substrings of
+	// a rendered line.
+	WarningSink func(Diagnostic)
 }
 
 // SubChartInfo describes one sub-chart contributing to an umbrella chart.
@@ -521,12 +526,20 @@ type SubChartProjection struct {
 }
 
 // SplitDiagnostics partitions a provider guest's diagnostics by severity into
-// the human-readable messages of its halt-severity entries and the messages of
-// its warn- and info-severity entries, each list in the guest's emission order.
-// It is the single classification the render, assemble, and input-validation
-// surfaces share, so a diagnostic's severity means the same thing on every
-// provider-socket crossing: the halting severity stops the build, and the two
-// advisory severities advise.
+// the human-readable messages of its halt-severity entries and the whole
+// diagnostics of its warn- and info-severity entries, each list in the guest's
+// emission order. It is the single classification the render, assemble, and
+// input-validation surfaces share, so a diagnostic's severity means the same
+// thing on every provider-socket crossing: the halting severity stops the build,
+// and the two advisory severities advise.
+//
+// The two halves are returned in different shapes because they are consumed for
+// different things. A halting entry is joined into an error's text, so nothing
+// but its message survives the join and returning more would be returning
+// something no caller can carry. An advisory entry travels onward to a display
+// and to a consumer that reads no display, so it keeps every field the guest
+// populated — the code a class is suppressed by, the element it names, and the
+// position it points at, none of which is recoverable from a sentence.
 //
 // The severity a diagnostic carries is drawn from a closed set the shared
 // diagnostic contract declares, and a guest that returns anything outside it
@@ -535,13 +548,13 @@ type SubChartProjection struct {
 // here covers the two advisory severities and nothing else: this classification
 // never has to decide what an unroutable value means, because such a value never
 // reaches it.
-func SplitDiagnostics(diags []Diagnostic) (errs []string, advisories []string) {
+func SplitDiagnostics(diags []Diagnostic) (errs []string, advisories []Diagnostic) {
 	for _, d := range diags {
 		if d.Severity == abi.SeverityHalt {
 			errs = append(errs, d.Message)
 			continue
 		}
-		advisories = append(advisories, d.Message)
+		advisories = append(advisories, d)
 	}
 	return errs, advisories
 }
