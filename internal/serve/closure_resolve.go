@@ -6,8 +6,11 @@ package serve
 import (
 	stderrors "errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -15,6 +18,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // resolveReleaseClosure loads the Manifest + Aggregate siblings to
@@ -48,7 +52,11 @@ import (
 // load failed — File names the source document a failure is about, and nothing
 // else; a lockfile-scoped failure names its lockfile in Data.Lockfile instead,
 // so a client never has to read the error code to learn which artifact it was
-// handed. The closure-compute failure stays Data-less (the catalog spans
+// handed. Where the failing stage is attributable to a key the Release itself
+// authored, the same payload also carries that key's span, so an editor
+// underlines the reference that could not be followed rather than marking the
+// head of the file; closureErrorData decides that and states which stages
+// qualify. The closure-compute failure stays Data-less (the catalog spans
 // multiple source dirs) and is annotated with skipContext so an in-closure
 // entity skipped at the tolerant lazy enumeration is explained rather than a
 // bare "not found".
@@ -88,7 +96,7 @@ func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath str
 		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: cerr.Error(),
-			Data:    newErrorData(releasePath, 0, 0),
+			Data:    s.closureErrorData(releasePath, cerr.Stage),
 			cause:   cerr,
 		}
 	}
@@ -129,7 +137,7 @@ func (s *Server) previewFailureEnvelope(view *catalog.LazyLookup, releasePath st
 			return &jsonRPCError{
 				Code:    errEntityNotResolvable,
 				Message: cerr.Error(),
-				Data:    newErrorData(releasePath, 0, 0),
+				Data:    s.closureErrorData(releasePath, cerr.Stage),
 				cause:   err,
 			}
 		}
@@ -151,6 +159,74 @@ func (s *Server) previewFailureEnvelope(view *catalog.LazyLookup, releasePath st
 			cause:   err,
 		}
 	}
+}
+
+// releaseFieldForClosureStage names the Release key a closure-resolution
+// failure is attributable to, or "" when the failing stage names none.
+//
+// A stage earns a key only when the fault belongs to a value the Release
+// itself authored: the manifest reference the resolution could not follow, or
+// the aggregate reference it could not load. Composing the manifest's extends
+// chain shares the manifest reference's key, because that reference is what
+// selected the chain that turned out to be broken.
+//
+// The remaining stages name nothing, and each for its own reason. A failure
+// loading the Release has no loaded document to walk and no single key to
+// blame — the fault is frequently that the document does not parse at all. A
+// closure-walk failure spans the whole catalog rather than one document, which
+// is why that stage carries no payload here in the first place. And a manifest
+// reference-shape fault belongs to the Manifest, so spanning a Release key
+// would underline a document that is not at fault.
+func releaseFieldForClosureStage(stage compilerops.ClosureStage) string {
+	switch stage {
+	case compilerops.ClosureStageResolveManifest, compilerops.ClosureStageComposeManifest:
+		return ".spec.manifest"
+	case compilerops.ClosureStageLoadAggregate:
+		return ".spec.aggregate"
+	default:
+		return ""
+	}
+}
+
+// closureErrorData builds the wire payload for a closure-resolution failure:
+// the Release document the failure is about, plus the span of the offending key
+// when the failing stage names one and the authored document yields it.
+//
+// The span is resolved through the same field-path walk every other positioned
+// surface resolves through, so a key reported here and the same key reported as
+// a document diagnostic cannot sit at different coordinates. Its columns are
+// counted in the client's negotiated encoding, matching every other position
+// the daemon reports.
+//
+// It reads the bytes ON DISK rather than any editor buffer, and that is a
+// correctness requirement rather than a convenience: the resolution that failed
+// read the file from disk, so a span taken from an unsaved buffer could name a
+// line the fault is not on.
+//
+// Every miss keeps the plain file-level shape, so a client reads either a
+// position or none at all and never a fabricated one. Four misses reach it: a
+// stage with no key to blame, a file that does not read, a file that does not
+// parse, and a path the walk resolves nothing for.
+func (s *Server) closureErrorData(releasePath string, stage compilerops.ClosureStage) *errorData {
+	fileLevel := newErrorData(releasePath, 0, 0)
+	field := releaseFieldForClosureStage(stage)
+	if field == "" {
+		return fileLevel
+	}
+	content, readErr := os.ReadFile(releasePath)
+	if readErr != nil {
+		return fileLevel
+	}
+	var doc yaml.Node
+	if unErr := yaml.Unmarshal(content, &doc); unErr != nil {
+		return fileLevel
+	}
+	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
+	span, ok := yamlpos.FieldRange(&doc, idx, field)
+	if !ok {
+		return fileLevel
+	}
+	return newErrorDataWithRange(releasePath, span.Line, span.Column, span.EndLine, span.EndColumn)
 }
 
 // reconstructClosureAxes augments the resolved closure's cross-document library

@@ -28,6 +28,7 @@ import (
 // findings and the terminal did not — and they are equal now because both
 // resolve the path here.
 var fieldPathCallers = []string{
+	"internal/serve/closure_resolve.go",
 	"internal/serve/envelope_diagnostics.go",
 	"internal/serve/tier4_validation.go",
 	"pkg/validator/envelope/envelope.go",

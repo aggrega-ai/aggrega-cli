@@ -37,9 +37,10 @@ func TestErrorDataRangeRoundTrip(t *testing.T) {
 	}
 }
 
-// TestErrorDataFileLevelOmitsRange confirms a file-level emission (no
-// sub-scalar position, as every 1004 site produces) drops the
-// end-position keys entirely so the extension falls back to point-style.
+// TestErrorDataFileLevelOmitsRange confirms a file-level emission — the
+// shape every emission with no sub-scalar position in hand produces, a
+// lockfile-scoped failure among them — drops the end-position keys
+// entirely so the extension falls back to point-style.
 func TestErrorDataFileLevelOmitsRange(t *testing.T) {
 	t.Parallel()
 	raw, err := json.Marshal(newErrorData("lockfile.yaml", 0, 0))
