@@ -463,10 +463,70 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 	return sink.response
 }
 
+// methodHandler answers one request method.
+type methodHandler func(*Server, context.Context, *jsonRPCRequest) error
+
+// methodRoute binds one wire method name to the handler that answers it.
+type methodRoute struct {
+	method  string
+	handler methodHandler
+}
+
+// methodRoutes is the daemon's request-method routing table, and the one place
+// the daemon's wire surface is stated: adding a method means adding a row here.
+//
+// It is a table rather than a switch so the method set is readable as data.
+// Whether the surface is completely accounted for is a question something has
+// to be able to ask, and a switch answers it only by being read — which is what
+// let three methods reach the wire before anything noticed they were not
+// accounted for anywhere else.
+//
+// The order is the order a reader meets the methods: the session handshake, the
+// document checks, then the workspace queries. Routing itself goes through the
+// index below, so the order carries no behaviour.
+var methodRoutes = []methodRoute{
+	{"aggrega/initialize", (*Server).dispatchInitialize},
+	{"aggrega/validate", (*Server).dispatchValidate},
+	{"aggrega/invalidate", (*Server).dispatchInvalidate},
+	{"aggrega/diagnostics", (*Server).dispatchDiagnostics},
+	{"aggrega/irGraph", (*Server).dispatchIrGraph},
+	{"aggrega/resolve", (*Server).dispatchResolve},
+	{"aggrega/findReferences", (*Server).dispatchFindReferences},
+	{"aggrega/findImplementations", (*Server).dispatchFindImplementations},
+	{"aggrega/hover", (*Server).dispatchHover},
+	{"aggrega/completion", (*Server).dispatchCompletion},
+	{"aggrega/catalogIndex", (*Server).dispatchCatalogIndex},
+	{"aggrega/attachCandidates", (*Server).dispatchAttachCandidates},
+	{"aggrega/releaseCandidates", (*Server).dispatchReleaseCandidates},
+	{"aggrega/activeRelease", (*Server).dispatchActiveRelease},
+}
+
+// methodIndex resolves a method name to its handler in one lookup. It is built
+// from methodRoutes, so the routing table and the lookup cannot disagree.
+var methodIndex = func() map[string]methodHandler {
+	idx := make(map[string]methodHandler, len(methodRoutes))
+	for _, r := range methodRoutes {
+		idx[r.method] = r.handler
+	}
+	return idx
+}()
+
+// Methods returns every request method the daemon routes, in routing-table
+// order.
+//
+// It is exported so what the daemon carries is readable from outside this
+// package, which is what lets the operation set be checked against the wire
+// surface rather than against someone's recollection of it.
+func Methods() []string {
+	out := make([]string, 0, len(methodRoutes))
+	for _, r := range methodRoutes {
+		out = append(out, r.method)
+	}
+	return out
+}
+
 // dispatch routes a parsed request to the appropriate per-method
-// handler. The method routing table is the load-bearing surface for
-// the daemon's wire protocol: adding a new method means adding a
-// case here.
+// handler, through the routing table above.
 //
 // The aggrega/shutdown message never reaches dispatch: the main loop
 // intercepts it at the acceptance boundary to drive the drain-then-abort
@@ -475,38 +535,10 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 // message it accepts afterward — so dispatch only ever sees
 // pre-shutdown-accepted messages, which process normally.
 func (s *Server) dispatch(ctx context.Context, req *jsonRPCRequest) error {
-	switch req.Method {
-	case "aggrega/initialize":
-		return s.dispatchInitialize(ctx, req)
-	case "aggrega/validate":
-		return s.dispatchValidate(ctx, req)
-	case "aggrega/invalidate":
-		return s.dispatchInvalidate(ctx, req)
-	case "aggrega/diagnostics":
-		return s.dispatchDiagnostics(ctx, req)
-	case "aggrega/irGraph":
-		return s.dispatchIrGraph(ctx, req)
-	case "aggrega/resolve":
-		return s.dispatchResolve(ctx, req)
-	case "aggrega/findReferences":
-		return s.dispatchFindReferences(ctx, req)
-	case "aggrega/findImplementations":
-		return s.dispatchFindImplementations(ctx, req)
-	case "aggrega/hover":
-		return s.dispatchHover(ctx, req)
-	case "aggrega/completion":
-		return s.dispatchCompletion(ctx, req)
-	case "aggrega/catalogIndex":
-		return s.dispatchCatalogIndex(ctx, req)
-	case "aggrega/attachCandidates":
-		return s.dispatchAttachCandidates(ctx, req)
-	case "aggrega/releaseCandidates":
-		return s.dispatchReleaseCandidates(ctx, req)
-	case "aggrega/activeRelease":
-		return s.dispatchActiveRelease(ctx, req)
-	default:
-		return s.writeError(ctx, req.ID, jsonRPCMethodNotFound, "method not found: "+req.Method)
+	if handler, ok := methodIndex[req.Method]; ok {
+		return handler(s, ctx, req)
 	}
+	return s.writeError(ctx, req.ID, jsonRPCMethodNotFound, "method not found: "+req.Method)
 }
 
 // isNotification reports whether req is a JSON-RPC 2.0 notification
