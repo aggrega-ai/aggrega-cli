@@ -29,6 +29,20 @@ func StaticIdentityToken(tok string) IdentityTokenSource {
 	return func(context.Context) (string, error) { return tok, nil }
 }
 
+// The environment variables the identity-token ladder reads. Their names live
+// here, beside the ladder that consults them, so the resolution order and the
+// names it resolves have one home.
+const (
+	// EnvIdentityToken supplies the keyless OIDC identity token. It is a
+	// short-lived secret read at resolution time and never persisted.
+	EnvIdentityToken = "AGGREGA_IDENTITY_TOKEN"
+	// EnvSigstoreIDToken is the sigstore-ecosystem interop alias for the
+	// identity token, consulted below EnvIdentityToken and below the ambient
+	// endpoint. It carries no Aggrega prefix because it is a foreign alias
+	// rather than an Aggrega setting.
+	EnvSigstoreIDToken = "SIGSTORE_ID_TOKEN"
+)
+
 // GitHub Actions exposes an ambient OIDC token endpoint through these
 // environment variables. They are ecosystem names set by the Actions runner,
 // not Aggrega settings.
@@ -116,4 +130,89 @@ func AmbientGitHubActionsSource(look func(string) string, client *http.Client, v
 		}
 		return payload.Value, nil
 	}
+}
+
+// InteractiveIdentityTokenAcquirer supplies an identity token from a flow that
+// may block on a human — a browser federated login, or an out-of-band paste.
+// It reports ok when it produced a token, and ok false with a nil error when it
+// declines because the conditions for asking a human are absent (no terminal to
+// prompt at). A non-nil error is a genuine acquisition failure and is returned
+// to the caller unchanged.
+//
+// The flow itself is deliberately not implemented in this package. A caller
+// that may ask a human supplies one; a caller that may not passes none, and the
+// absence is what makes asking impossible rather than merely discouraged.
+type InteractiveIdentityTokenAcquirer func() (tok string, ok bool, err error)
+
+// ResolveIdentityToken resolves the keyless identity as a token SOURCE — the
+// single home for identity-token precedence — in one strict precedence:
+//
+//  1. flagToken, when non-empty — an explicit token the caller supplies;
+//  2. EnvIdentityToken, when non-empty;
+//  3. the ambient GitHub Actions OIDC endpoint, when reachable — a live source
+//     that mints a fresh token per signature;
+//  4. EnvSigstoreIDToken, when non-empty — the sigstore-ecosystem interop alias;
+//  5. acquire, when non-nil and it does not decline — one token acquired once;
+//  6. otherwise a loud refusal naming what to supply, so keyless signing never
+//     silently proceeds and never hangs waiting on a flow nobody is watching.
+//
+// The ambient source outranks the frozen EnvSigstoreIDToken value so a CI job
+// whose exported token would expire mid-run self-heals with no workflow change,
+// while an explicit token still wins over the ambient endpoint. A static
+// resolution returns its token as a string, leaving source nil, and the caller
+// validates the subject once at signer construction; the ambient resolution
+// returns a live source that fetches and validates per fetch through validate,
+// so subject derivation is not duplicated. Rung 5 returns its token as a static
+// string, so a batch acquires once and reuses it.
+//
+// look reads the environment; client performs the ambient fetch and is obtained
+// from the network-egress gate, so a nil client means the workspace is offline
+// and the ambient source refuses when the signer invokes it. A nil acquire is
+// the unattended shape — see ResolveIdentityTokenNonInteractive, which is the
+// name to reach for when no human may be asked.
+func ResolveIdentityToken(flagToken string, look func(string) string, validate func(string) error, client *http.Client, acquire InteractiveIdentityTokenAcquirer) (idToken string, source IdentityTokenSource, err error) {
+	if flagToken != "" {
+		return flagToken, nil, nil
+	}
+	if t := look(EnvIdentityToken); t != "" {
+		return t, nil, nil
+	}
+	if GitHubActionsAmbientAvailable(look) {
+		return "", AmbientGitHubActionsSource(look, client, validate), nil
+	}
+	if t := look(EnvSigstoreIDToken); t != "" {
+		return t, nil, nil
+	}
+	if acquire != nil {
+		t, ok, aerr := acquire()
+		if aerr != nil {
+			return "", nil, aerr
+		}
+		if ok {
+			return t, nil, nil
+		}
+	}
+	return "", nil, noIdentityTokenRefusal()
+}
+
+// ResolveIdentityTokenNonInteractive resolves the keyless identity from
+// supplied and ambient inputs alone: an explicit token, EnvIdentityToken, the
+// ambient GitHub Actions OIDC endpoint, or EnvSigstoreIDToken. When none of
+// them yields a token it refuses, naming what to supply.
+//
+// It is the entry point for a caller that must never block on a human — a
+// long-running service, or a machine-driven protocol server with no user
+// watching — where hanging on a federated login flow would be a silent failure
+// and a refusal is the honest one. It takes no acquirer, so such a caller has no
+// parameter through which an interactive flow could be introduced.
+func ResolveIdentityTokenNonInteractive(flagToken string, look func(string) string, validate func(string) error, client *http.Client) (idToken string, source IdentityTokenSource, err error) {
+	return ResolveIdentityToken(flagToken, look, validate, client, nil)
+}
+
+// noIdentityTokenRefusal builds the refusal returned when every rung of the
+// identity-token ladder declines. It names each input that would have satisfied
+// resolution, so the caller learns what to supply rather than being told only
+// that resolution failed.
+func noIdentityTokenRefusal() error {
+	return fmt.Errorf("keyless signing needs an identity token: no --identity-token was passed, no %s or %s is exported, no ambient GitHub Actions OIDC endpoint is available, and stdin is not an interactive terminal; on GitHub Actions the workflow OIDC token is used automatically, otherwise export one of those variables (for example a CI workflow OIDC token) or pass --identity-token", EnvIdentityToken, EnvSigstoreIDToken)
 }

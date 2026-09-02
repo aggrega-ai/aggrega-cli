@@ -74,53 +74,33 @@ func acquireInteractiveIDToken() (string, error) {
 	return tok.RawString, nil
 }
 
-// resolveIdentityTokenSource resolves the keyless identity as a token SOURCE —
-// the single home for identity-token precedence across push, sign, and
-// deprecate — in one strict precedence:
+// resolveIdentityTokenSource resolves the keyless identity as a token SOURCE
+// for the command layer — push, sign, and deprecate. The precedence itself, and
+// the refusal that ends it, belong to the signing package; what this adds is the
+// one rung a command may reach and a background caller may not: acquiring a
+// token interactively when stdin is an interactive terminal.
 //
-//  1. the --identity-token flag (non-empty) — an explicit operator token;
-//  2. AGGREGA_IDENTITY_TOKEN (non-empty);
-//  3. the ambient GitHub Actions OIDC endpoint, when reachable — a live source
-//     that mints a fresh token per signature;
-//  4. SIGSTORE_ID_TOKEN (non-empty) — the sigstore-ecosystem interop alias;
-//  5. an interactive terminal, where one token is acquired once;
-//  6. otherwise a loud refusal, so a keyless push never silently proceeds or
-//     hangs waiting on a browser in a non-interactive context.
+// The acquisition rung sits below every supplied and ambient input, so a token
+// that is already available is always preferred over asking. It declines when
+// there is no terminal to ask at, and the shared ladder then refuses. The
+// acquired token is returned as a static string, so a command that signs more
+// than one artifact acquires once and reuses it.
 //
-// The ambient source outranks the frozen SIGSTORE_ID_TOKEN so a CI job whose
-// exported token would expire mid-run self-heals with no workflow change,
-// while an explicit operator token still wins over the ambient endpoint. A
-// static resolution returns its token as a string (buildSigner validates the
-// subject once at construction); the ambient resolution returns a live source
-// that fetches and validates per signature via the injected validate func, so
-// subject derivation is not duplicated. The interactive branch acquires at most
-// one token per command and returns it as a static string, so an interactive
-// batch mints once and reuses it. look, tty, and acquire are injected seams for
-// tests.
+// look, tty, and acquire are injected seams for tests.
 func resolveIdentityTokenSource(flagToken string, look func(string) string, tty func() bool, acquire func() (string, error), validate func(string) error, httpClient *http.Client) (idToken string, source signing.IdentityTokenSource, err error) {
-	if flagToken != "" {
-		return flagToken, nil, nil
-	}
-	if t := look(envIdentityToken); t != "" {
-		return t, nil, nil
-	}
-	if signing.GitHubActionsAmbientAvailable(look) {
-		// The ambient identity-token fetch transports over the network-egress
-		// gate's client; it is nil for an offline workspace, in which case the
-		// source refuses loudly when the signer invokes it.
-		return "", signing.AmbientGitHubActionsSource(look, httpClient, validate), nil
-	}
-	if t := look(envSigstoreIDToken); t != "" {
-		return t, nil, nil
-	}
-	if tty() {
+	return signing.ResolveIdentityToken(flagToken, look, validate, httpClient, func() (string, bool, error) {
+		// Declining, rather than failing, is what lets the shared ladder
+		// produce its own refusal: there is nobody to ask, which is not an
+		// acquisition failure.
+		if !tty() {
+			return "", false, nil
+		}
 		t, aerr := acquire()
 		if aerr != nil {
-			return "", nil, aerr
+			return "", false, aerr
 		}
-		return t, nil, nil
-	}
-	return "", nil, fmt.Errorf("keyless signing needs an identity token: no --identity-token was passed, no %s or %s is exported, no ambient GitHub Actions OIDC endpoint is available, and stdin is not an interactive terminal; on GitHub Actions the workflow OIDC token is used automatically, otherwise export one of those variables (for example a CI workflow OIDC token) or pass --identity-token", envIdentityToken, envSigstoreIDToken)
+		return t, true, nil
+	})
 }
 
 // tokenGetterOrDefault returns getter when non-nil, else the production

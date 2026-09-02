@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -63,8 +64,9 @@ func envLookupOrGetenv(look func(string) string) func(string) string {
 // config field).
 const (
 	// envIdentityToken supplies the keyless OIDC identity token. A secret —
-	// never a config field — resolved at the signer-construction boundary.
-	envIdentityToken = "AGGREGA_IDENTITY_TOKEN"
+	// never a config field — resolved at the signer-construction boundary. The
+	// name's home is the signing package, beside the ladder that reads it.
+	envIdentityToken = signing.EnvIdentityToken
 	// envRegistryPassword supplies a registry password for non-interactive
 	// login. A secret — never a config field — resolved at the login command.
 	envRegistryPassword = "AGGREGA_REGISTRY_PASSWORD"
@@ -75,8 +77,9 @@ const (
 	// envSigstoreIDToken is the sigstore-ecosystem interop alias for the
 	// identity token. Read only by the identity-token resolver, after the
 	// AGGREGA_ token; deliberately not an AGGREGA_-prefixed binding so it is
-	// not treated as an Aggrega setting.
-	envSigstoreIDToken = "SIGSTORE_ID_TOKEN"
+	// not treated as an Aggrega setting. The name's home is the signing
+	// package, beside the ladder that reads it.
+	envSigstoreIDToken = signing.EnvSigstoreIDToken
 )
 
 // allBoundEnvVars returns every AGGREGA_-prefixed environment variable the CLI
