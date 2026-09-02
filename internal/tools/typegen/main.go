@@ -809,7 +809,8 @@ var providerHostVocabulary = map[string]string{
 var cliGuestVocabulary = map[string]string{}
 
 // parseGuestVocabulary is empty: the parse schema's non-scalar carries — the
-// source bytes ([]byte, base64 on the wire), the opaque options and tree
+// source bytes (a []byte field the codec converts to whatever form the wire
+// carries bytes in), the opaque options and tree
 // (json.RawMessage passthrough), and the def-local span/diagnostic types
 // referenced by $ref — already spell the neutral guest types the generator
 // emits. The parser attaches no meaning to the tree, so it carries it verbatim;
@@ -818,7 +819,8 @@ var cliGuestVocabulary = map[string]string{}
 var parseGuestVocabulary = map[string]string{}
 
 // importGuestVocabulary is empty: the import schema's non-scalar carries — the
-// source bytes ([]byte, base64 on the wire), the opaque settings document
+// source bytes (a []byte field the codec converts to whatever form the wire
+// carries bytes in), the opaque settings document
 // (json.RawMessage passthrough), the string-to-string label and annotation maps
 // (map[string]string, sorted-key marshal), and the def-local nested types
 // referenced by $ref — already spell the neutral guest types the generator
@@ -1240,9 +1242,9 @@ var codecTargets = map[string]codecTarget{
 
 	// Parser socket — guest codecs into aggrega-abi (Go/Rust/TS). A parser turns
 	// foreign source bytes into a canonical structured tree: it receives a
-	// ParseInput (format, base64 bytes, opaque options) and returns a ParseOutput
+	// ParseInput (format, source bytes, opaque options) and returns a ParseOutput
 	// (the opaque tree plus optional diagnostics and source spans). Every carry is
-	// a scalar, base64 bytes, an opaque json.RawMessage, or a def-local span/
+	// a scalar, a byte field, an opaque json.RawMessage, or a def-local span/
 	// diagnostic type, so the guest vocabulary is empty. The abi Go codec
 	// references the helpers FRP owns in package abi (helpers: false, the default).
 	"parse_gen.go": {
@@ -1271,10 +1273,10 @@ var codecTargets = map[string]codecTarget{
 
 	// Importer socket — guest codecs into aggrega-abi (Go/Rust/TS). An importer
 	// turns a foreign infrastructure description into Aggrega entities: it
-	// receives an ImportInput (format, base64 primary bytes, optional named
+	// receives an ImportInput (format, primary source bytes, optional named
 	// sources, opaque settings) and returns an ImportOutput (the emitted
 	// entities, the mapping decisions behind them, optional diagnostics, and
-	// optional scaffold files). Every carry is a scalar, base64 bytes, an opaque
+	// optional scaffold files). Every carry is a scalar, a byte field, an opaque
 	// json.RawMessage, a string-to-string map, or a def-local nested type
 	// referenced by $ref, so the guest vocabulary is empty. The abi Go codec
 	// references the helpers FRP owns in package abi (helpers: false, the default).

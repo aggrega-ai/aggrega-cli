@@ -39,9 +39,9 @@ type RenderNodeInput struct {
 type IRNodeProjection struct {
 	// ID The node's absolute id within the topology graph.
 	ID string `json:"id" yaml:"id" cbor:"id"`
-	// Type The node's component-type label — opaque metadata for the guest, not a behavior switch.
+	// Type Declared and deliberately withheld: the host always emits this as the empty string. The node's component-type label is opaque metadata rather than a behavior switch, so carrying it here would only invite a guest to branch on it. A guest reads an empty string and must not read that as a node whose component type is unset. (The boundary-assembly node shape carries a type of its own, for a different purpose.)
 	Type string `json:"type" yaml:"type" cbor:"type"`
-	// ResolvedRecipe The Universal URI of the Recipe the resolver pinned for this node.
+	// ResolvedRecipe Declared and deliberately withheld: the host always emits this as the empty string. The bound Recipe's identity already reaches the guest as the recipe name and version it stamps into provenance, so the resolved URI adds nothing a guest renders from. A guest that needs to attribute output to a Recipe reads those provenance fields instead.
 	ResolvedRecipe string `json:"resolved_recipe" yaml:"resolved_recipe" cbor:"resolved_recipe"`
 	// Values The node's rendered values dictionary, the key set the guest renders from. Keys arrive in sorted order, not author order, and that sorting is what makes the payload byte-identical across runs of identical input; a guest needing any other ordering imposes it itself.
 	Values types.OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty" cbor:"values,omitempty"`
@@ -49,7 +49,7 @@ type IRNodeProjection struct {
 	Features types.OrderedMap[types.IRFeatureEntry] `json:"features,omitempty,omitzero" yaml:"features,omitempty" cbor:"features,omitempty"`
 	// SensitiveRenderedKeys Rendered keys whose identity is recovered from a datum an author declared sensitive, each mapped to the declaration it inherited that sensitivity from. Travels host to guest on the render input — the opposite direction from the names a guest declares on the render output. What a key names follows the shape this payload carries: on a payload carrying the node's values it is one of that map's keys; on a payload carrying a workload it names an entry in the workload's own attachment maps, where the node's values are empty. A key is present only where the recovery is exact, joining a declaration to a rendered identity with nothing read out of the key's own text and no per-node or per-attachment marking spread across individual keys. A key a template invented is therefore absent, because no declaration names it: the output keys of a recipe's valuesMapping, and the content of an artifact, are template-authored, so neither yields a key here. Absence therefore states that no key's identity could be recovered, never that nothing on this payload carries sensitive material — a guest that reads an absent key as permission to display or emit a value in the clear has read it backwards. Keys arrive in sorted order, which is what makes the payload byte-identical across runs of identical input.
 	SensitiveRenderedKeys map[string]string `json:"sensitive_rendered_keys,omitempty" yaml:"sensitive_rendered_keys,omitempty" cbor:"sensitive_rendered_keys,omitempty"`
-	// Uses The node's outbound uses edges keyed by socket alias, each carrying the ordered target node ids bound to that socket. Preserves author order so the payload is byte-identical across runs of identical input.
+	// Uses Declared and deliberately withheld: the host never populates this, so the map is absent from every render payload. An outbound edge is consumed before dispatch — the edge's published values are rehydrated into the node's own inject pipe, which the Recipe has already evaluated into the values and workload the guest receives — and a guest assembling a boundary receives the edge list on its own input instead. Were it populated it would key the node's outbound uses edges by socket alias, each carrying that socket's ordered target node ids in author order.
 	Uses types.OrderedMap[[]string] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty" cbor:"uses,omitempty"`
 	// BoundaryPath The node's boundary path, stamped as the aggrega.ai/boundary-path annotation on every emitted manifest that carries a metadata block.
 	BoundaryPath string `json:"boundary_path,omitempty" yaml:"boundary_path,omitempty" cbor:"boundary_path,omitempty"`
@@ -63,7 +63,7 @@ type IRNodeProjection struct {
 	LabelComponentID string `json:"label_component_id,omitempty" yaml:"label_component_id,omitempty" cbor:"label_component_id,omitempty"`
 	// DerivedNameBasis The identity a guest derives its own names from when it renders source an author wrote — the release name a chart installer's templates read, and the prefix on the files that render emits. Empty means the node id is used directly, which is the value for an ordinary component and for a per-component Feature attachment: an attachment delivering a chart or a fragment its author wrote renders it against the HOST component's name, because the author's own templates name resources after that name and a different one would rename resources already deployed. A node whose id carries marker syntax a target's name alphabet refuses carries this explicitly instead, so the name a guest derives stays one the target accepts. It is deliberately separate from label_component_id: a guest that BUILDS resources itself rather than rendering an author's source names them after the identity, so a Feature attachment's own resources cannot collide with its host's, while the name an author's source renders against stays put. The two carry the same value wherever a node's identity is also what its source renders against.
 	DerivedNameBasis string `json:"derived_name_basis,omitempty" yaml:"derived_name_basis,omitempty" cbor:"derived_name_basis,omitempty"`
-	// OutputLabels The recipe-author-declared output labels (recipe.spec.outputLabels) the guest stamps onto every emitted manifest alongside the build-identity provenance, keyed by label name. Disjoint from the provenance keyspace by load-time validation (no aggrega.ai/ or app.kubernetes.io/ key), so stamping never collides with a provenance label. A guest whose output is not Kubernetes YAML translates them onto its own label surface (Compose service labels) or ignores them.
+	// OutputLabels The recipe-author-declared output labels the guest stamps onto every emitted manifest alongside the build-identity provenance, keyed by label name. Two authored blocks merge into this one map: the literal key-value pairs a recipe writes in `outputLabels`, and one entry for each key a recipe names in `outputComponentLabels`, whose value is read from that key on the rendered component's own labels — so a promoted value follows the component it came from rather than being repeated in the recipe. Both blocks are disjoint from the provenance keyspace by load-time validation (no aggrega.ai/ or app.kubernetes.io/ key), so stamping never collides with a provenance label. A promoted key the component does not declare stamps nothing and raises an advisory rather than an empty label. A guest whose output is not Kubernetes YAML translates them onto its own label surface (Compose service labels) or ignores them.
 	OutputLabels map[string]string `json:"output_labels,omitempty" yaml:"output_labels,omitempty" cbor:"output_labels,omitempty"`
 	// Provenance The build-identity provenance the guest stamps onto every emitted manifest as aggrega.ai labels.
 	Provenance NodeProvenance `json:"provenance" yaml:"provenance" cbor:"provenance"`
@@ -115,7 +115,7 @@ type ValidateNodeOutput struct {
 type RenderedFile struct {
 	// Path The output file's path relative to the node's output root (for example Chart.yaml or templates/deployment.yaml).
 	Path string `json:"path" yaml:"path" cbor:"path"`
-	// Content The file's serialized bytes exactly as the guest produced them; the host writes these bytes verbatim and runs no serializer, so output is byte-identical to what the guest emitted (base64 on the JSON wire).
+	// Content The file's serialized bytes exactly as the guest produced them; the host writes these bytes verbatim and runs no serializer, so output is byte-identical to what the guest emitted. Each kit carries them in its own field type — raw where that type is a byte type, base64-encoded where it is a string the guest decodes to recover them — and the generated encoder converts between the field and the form the wire carries bytes in.
 	Content []byte `json:"content" yaml:"content" cbor:"content"`
 	// Format The format the guest declares the emitted file was rendered in, so the host can route the file to a matching parser. Absent when the guest declares no format, in which case the host infers the format from the file extension.
 	Format string `json:"format,omitempty" yaml:"format,omitempty" cbor:"format,omitempty"`
@@ -187,9 +187,9 @@ type SourceFileResponse struct {
 	HostfuncErrorCode string `json:"hostfunc_error_code,omitempty" yaml:"hostfunc_error_code,omitempty" cbor:"hostfunc_error_code,omitempty"`
 }
 
-// FetchExternalInputResponse The fetch-external-input host function's reply: on success the fetched content, on failure an error message. Exactly one of content or error is populated. Failure is delivered in-band rather than by trapping, so a guest carries an unresolvable URL or a fetch failure into its own diagnostics as a deterministic render failure. The request is a bare URL string rather than a JSON payload, so only the reply has a wire shape.
+// FetchExternalInputResponse The fetch-external-input host function's reply: on success the fetched content, on failure an error message. Exactly one of content or error is populated. Failure is delivered in-band rather than by trapping, so a guest carries an unresolvable URL or a fetch failure into its own diagnostics as a deterministic render failure. The request is a bare URL string rather than a structured payload, so only the reply has a declared shape.
 type FetchExternalInputResponse struct {
-	// Content The fetched content on success (base64 on the JSON wire); absent on failure. A pointer so a zero-length payload still emits the content key and stays distinguishable from a failure.
+	// Content The fetched content on success; absent on failure. Unlike the byte-carrying fields elsewhere in this socket, every kit holds this one as a string and the guest decodes it to recover the bytes. Held by reference so a zero-length payload still emits the content key and stays distinguishable from a failure.
 	Content *string `json:"content,omitempty" yaml:"content,omitempty" cbor:"content,omitempty"`
 	// Error The failure message on failure, naming the URL and the remedy; absent on success.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
@@ -217,7 +217,7 @@ type ArtifactProjectionEntry struct {
 	Name string `json:"name" yaml:"name" cbor:"name"`
 	// Origin Whether the entry was authored as inline content or as an imported file. A guest that rejects one form (an umbrella-chart provider rejects inline content) reads this to halt loudly.
 	Origin string `json:"origin" yaml:"origin" cbor:"origin"`
-	// Content The already-template-evaluated content bytes the host produced from the entry's inline content or imported file, evaluated against the render context using the guest's declared artifact-template delimiter pair (base64 on the JSON wire).
+	// Content The already-template-evaluated content bytes the host produced from the entry's inline content or imported file, evaluated against the render context using the guest's declared artifact-template delimiter pair. Each kit carries them in its own field type — raw where that type is a byte type, base64-encoded where it is a string the guest decodes to recover them — and the generated encoder converts between the field and the form the wire carries bytes in.
 	Content []byte `json:"content" yaml:"content" cbor:"content"`
 	// Labels The Kubernetes-label-safe build-provenance key set the host computed for the node, keyed by label name. A guest that stamps provenance into a manifest's metadata.labels splices these; a guest whose output is not Kubernetes YAML ignores them.
 	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty" cbor:"labels,omitempty"`
@@ -249,7 +249,7 @@ type AssembleBoundaryInput struct {
 type RenderedNode struct {
 	// ID The node's absolute id within the topology graph.
 	ID string `json:"id" yaml:"id" cbor:"id"`
-	// Type The node's component-type label.
+	// Type The node's component-type label, carried on this shape — unlike the per-node render projection, which withholds it. Opaque metadata rather than a behavior switch: it is here so an assembler can group and label the nodes it merges, not so a guest can branch on it.
 	Type     string           `json:"type" yaml:"type" cbor:"type"`
 	Rendered RenderNodeOutput `json:"rendered" yaml:"rendered" cbor:"rendered"`
 	// Annotations The node's merged annotations, so a boundary assembler can attribute per-node placement (e.g. the compose network derived from the aggrega.ai/namespace annotation).
@@ -275,7 +275,7 @@ type SubChart struct {
 	Version string `json:"version,omitempty" yaml:"version,omitempty" cbor:"version,omitempty"`
 	// Values The per-instance values the umbrella scopes under the sub-chart's alias in the umbrella values.yaml file. Keys arrive in sorted order, not author order, and that sorting is what makes the payload byte-identical across runs of identical input; a guest needing any other ordering imposes it itself.
 	Values types.OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty" cbor:"values,omitempty"`
-	// ChartYaml The pristine bytes of the vendored chart's Chart.yaml, read from the local source at compile time, from which the umbrella draws the sub-chart dependency's name and version. Empty for a generative sub-chart that carries no vendored chart (base64 on the JSON wire).
+	// ChartYaml The pristine bytes of the vendored chart's Chart.yaml, read from the local source at compile time, from which the umbrella draws the sub-chart dependency's name and version. Empty for a generative sub-chart that carries no vendored chart. Each kit carries them in its own field type — raw where that type is a byte type, base64-encoded where it is a string the guest decodes to recover them — and the generated encoder converts between the field and the form the wire carries bytes in.
 	ChartYaml []byte `json:"chart_yaml,omitempty" yaml:"chart_yaml,omitempty" cbor:"chart_yaml,omitempty"`
 }
 
@@ -301,7 +301,7 @@ type AssembleBoundaryOutput struct {
 type CarveInput struct {
 	// Name The output file's name, so the codec can apply any name-scoped carving rule.
 	Name string `json:"name" yaml:"name" cbor:"name"`
-	// Body The output file's bytes to carve into addressable units (base64 on the JSON wire).
+	// Body The output file's bytes to carve into addressable units. Each kit carries them in its own field type — raw where that type is a byte type, base64-encoded where it is a string the guest decodes to recover them — and the generated encoder converts between the field and the form the wire carries bytes in.
 	Body []byte `json:"body" yaml:"body" cbor:"body"`
 	// YamlIndent The indentation width the codec uses when it must synthesize new structured text; carried so the guest's carving matches the render-wide indentation.
 	YamlIndent int `json:"yaml_indent,omitempty" yaml:"yaml_indent,omitempty" cbor:"yaml_indent,omitempty"`
@@ -317,7 +317,7 @@ type CarveOutput struct {
 type ReassembleInput struct {
 	// Name The output file's name, matching the name the same file was carved under.
 	Name string `json:"name" yaml:"name" cbor:"name"`
-	// Body The original file bytes the reassembly splices the patched units back into (base64 on the JSON wire).
+	// Body The original file bytes the reassembly splices the patched units back into. Each kit carries them in its own field type — raw where that type is a byte type, base64-encoded where it is a string the guest decodes to recover them — and the generated encoder converts between the field and the form the wire carries bytes in.
 	Body []byte `json:"body" yaml:"body" cbor:"body"`
 	// Segs The units the file was carved into, as carve returned them.
 	Segs []frp.Unit `json:"segs,omitempty" yaml:"segs,omitempty" cbor:"segs,omitempty"`
@@ -329,7 +329,7 @@ type ReassembleInput struct {
 
 // ReassembleOutput The payload a Provider guest returns from its reassemble export: the file's bytes with the patched units spliced back in. Reassembly is byte-faithful — every byte the ops did not touch survives verbatim.
 type ReassembleOutput struct {
-	// Body The reassembled file bytes the host writes verbatim (base64 on the JSON wire).
+	// Body The reassembled file bytes the host writes verbatim. Each kit carries them in its own field type — raw where that type is a byte type, base64-encoded where it is a string the guest decodes to recover them — and the generated encoder converts between the field and the form the wire carries bytes in.
 	Body []byte `json:"body" yaml:"body" cbor:"body"`
 }
 

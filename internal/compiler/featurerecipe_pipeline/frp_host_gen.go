@@ -60,7 +60,7 @@ type DocumentSet struct {
 type Unit struct {
 	// Token The opaque positional address the codec assigns — the emitted filename for a single-document file, or `<filename>#<ordinal>` (file order) when one file carries several documents. The guest treats it as opaque: it content-selects a unit and echoes the token, never parsing it.
 	Token string `json:"token" yaml:"token" cbor:"token"`
-	// Bytes The unit's original bytes, the reassembly source, base64-encoded on the wire. Reassembly is byte-faithful by construction: untouched bytes are re-joined from this verbatim.
+	// Bytes The unit's original bytes, the reassembly source. Reassembly is byte-faithful by construction: untouched bytes are re-joined from this verbatim. Each kit carries them in its own field type — raw where that type is a byte type, base64-encoded where it is a string the step decodes to recover them — and the generated encoder converts between the field and the form the wire carries bytes in.
 	Bytes []byte `json:"bytes,omitempty" yaml:"bytes,omitempty" cbor:"bytes,omitempty"`
 	// MediaType The unit's content type (for example `application/yaml` for the stock YAML codec), so the guest knows what it is looking at.
 	MediaType string `json:"media_type,omitempty" yaml:"media_type,omitempty" cbor:"media_type,omitempty"`
