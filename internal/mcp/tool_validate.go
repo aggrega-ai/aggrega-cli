@@ -92,23 +92,27 @@ var validateToolSpec = toolSpec{
   "properties": {
     "release": {
       "type": "string",
-      "description": "Path to a Release YAML to validate over its resolved dependency closure. Mutually exclusive with entity, plugin, and catalog."
+      "minLength": 1,
+      "description": "Path to a Release YAML to validate over its resolved dependency closure."
     },
     "entity": {
       "type": "string",
+      "minLength": 1,
       "description": "Path to a single catalog entity file (Component, Feature, Recipe, FeatureRecipe, Workload, or Plugin) to schema- and shape-check. When combined with plugin, this is instead the Plugin entity cross-checked against the binary."
     },
     "plugin": {
       "type": "string",
-      "description": "Path to a raw .wasm to validate against its describe() self-report. Needs type for a binary-only check, or entity (a Plugin entity path) to cross-check against the entity's declared surface. Mutually exclusive with release and catalog."
+      "minLength": 1,
+      "description": "Path to a raw .wasm to validate against its describe() self-report. Needs type for a binary-only check, or entity (a Plugin entity path) to cross-check against the entity's declared surface."
     },
     "type": {
       "type": "string",
-      "description": "Plugin type for a binary-only plugin check, verified against the binary's self-reported type. Meaningful only with plugin; when a Plugin entity supplies the type, omit it (a disagreeing value halts)."
+      "minLength": 1,
+      "description": "Plugin type for a binary-only plugin check, verified against the binary's self-reported type. When a Plugin entity supplies the type, omit it (a disagreeing value halts)."
     },
     "catalog": {
       "type": "boolean",
-      "description": "When true, validate the whole catalog: schema-pillar structure, library resolution, extends chains, OCI-location collisions, and provider input-kind capabilities. Mutually exclusive with the other scope selectors."
+      "description": "When true, validate the whole catalog: schema-pillar structure, library resolution, extends chains, OCI-location collisions, and provider input-kind capabilities."
     },
     "workspace_root": {
       "type": "string",
@@ -124,7 +128,14 @@ var validateToolSpec = toolSpec{
       "enum": ["detailed", "concise"],
       "description": "detailed returns every diagnostic; concise returns the count and the first. Applies to the release scope; defaults to detailed."
     }
-  }
+  },
+  "anyOf": [
+    {"required":["release"],"properties":{"catalog":{"const":false}},"not":{"anyOf":[{"required":["entity"]},{"required":["plugin"]},{"required":["type"]}]}},
+    {"required":["entity"],"properties":{"catalog":{"const":false}},"not":{"anyOf":[{"required":["release"]},{"required":["plugin"]},{"required":["type"]}]}},
+    {"required":["plugin"],"properties":{"catalog":{"const":false}},"not":{"anyOf":[{"required":["release"]},{"required":["entity"]}]}},
+    {"required":["plugin","entity"],"properties":{"catalog":{"const":false}},"not":{"required":["release"]}},
+    {"required":["catalog"],"properties":{"catalog":{"const":true}},"not":{"anyOf":[{"required":["release"]},{"required":["entity"]},{"required":["plugin"]},{"required":["type"]}]}}
+  ]
 }`,
 	invoke: validateInvoke,
 }
@@ -134,13 +145,17 @@ var validateToolSpec = toolSpec{
 // and catalog, release excludes a single-entity target and catalog, catalog
 // excludes a single-entity target, and exactly one scope must be chosen. When
 // plugin is set, entity is the cross-check Plugin entity rather than a
-// single-entity target. Argument-combination failures return codeInvalidParams;
-// scope-operation failures return an error result.
+// single-entity target. The input schema declares these combinations too, so a
+// caller reading it structurally does not have to make the call to learn them.
+//
+// Every failure here is one the caller corrects by changing the arguments, so
+// each returns a tool result carrying the corrective text — a refused
+// combination exactly as much as a scope operation that ran and failed.
 func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a validateArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, invalidToolArguments("validate", err)
+			return invalidToolArguments("validate", err)
 		}
 	}
 	release := strings.TrimSpace(a.Release)
@@ -152,17 +167,17 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 	// meaningful only alongside plugin; reject it on its own so it never silently
 	// no-ops on another scope.
 	if pluginType != "" && plugin == "" {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "validate 'type' applies only with 'plugin'"}
+		return errorResult("validate 'type' applies only with 'plugin'")
 	}
 
 	// Plugin scope. It selects neither the catalog nor a release closure, and
 	// entity (when present) is the cross-check Plugin entity.
 	if plugin != "" {
 		if release != "" {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "validate takes exactly one scope: 'plugin' and 'release' are mutually exclusive"}
+			return errorResult("validate takes exactly one scope: 'plugin' and 'release' are mutually exclusive")
 		}
 		if a.Catalog {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "validate takes exactly one scope: 'plugin' and 'catalog' are mutually exclusive"}
+			return errorResult("validate takes exactly one scope: 'plugin' and 'catalog' are mutually exclusive")
 		}
 		return validatePluginScope(s, a, plugin, pluginType, entity)
 	}
@@ -171,10 +186,10 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 	// whole-catalog validation.
 	if release != "" {
 		if entity != "" {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "validate takes exactly one scope: 'release' and 'entity' are mutually exclusive"}
+			return errorResult("validate takes exactly one scope: 'release' and 'entity' are mutually exclusive")
 		}
 		if a.Catalog {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "validate takes exactly one scope: 'release' and 'catalog' are mutually exclusive"}
+			return errorResult("validate takes exactly one scope: 'release' and 'catalog' are mutually exclusive")
 		}
 		return validateReleaseScope(s, ctx, a, release)
 	}
@@ -182,7 +197,7 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 	// Whole-catalog scope.
 	if a.Catalog {
 		if entity != "" {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "validate takes exactly one scope: 'catalog' and 'entity' are mutually exclusive"}
+			return errorResult("validate takes exactly one scope: 'catalog' and 'entity' are mutually exclusive")
 		}
 		return validateCatalogScope(s, a)
 	}
@@ -192,7 +207,7 @@ func validateInvoke(s *server, ctx context.Context, args json.RawMessage) (*call
 		return validateEntityScope(s, a, entity)
 	}
 
-	return nil, &rpcError{Code: codeInvalidParams, Message: "validate requires exactly one of 'release', 'entity', 'plugin', or 'catalog'"}
+	return errorResult("validate requires exactly one of 'release', 'entity', 'plugin', or 'catalog'")
 }
 
 // validateReleaseScope runs the release-scoped semantic-validation pipeline

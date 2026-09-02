@@ -77,10 +77,12 @@ var describeToolSpec = toolSpec{
   "properties": {
     "name": {
       "type": "string",
+      "minLength": 1,
       "description": "A catalog Component or Feature type URI to resolve and describe, e.g. core/compute/api-server. Mutually exclusive with release."
     },
     "release": {
       "type": "string",
+      "minLength": 1,
       "description": "A Release path whose catalog closure to summarize. Mutually exclusive with name."
     },
     "workspace_root": {
@@ -97,7 +99,11 @@ var describeToolSpec = toolSpec{
       "enum": ["detailed", "concise"],
       "description": "detailed returns the full definition or every closure entity; concise returns identity and counts. Defaults to detailed."
     }
-  }
+  },
+  "anyOf": [
+    {"required":["name"],"not":{"required":["release"]}},
+    {"required":["release"],"not":{"required":["name"]}}
+  ]
 }`,
 	invoke: describeInvoke,
 }
@@ -106,16 +112,16 @@ func describeInvoke(s *server, _ context.Context, args json.RawMessage) (*callTo
 	var a describeArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, invalidToolArguments("describe", err)
+			return invalidToolArguments("describe", err)
 		}
 	}
 	name := strings.TrimSpace(a.Name)
 	release := strings.TrimSpace(a.Release)
 	switch {
 	case name != "" && release != "":
-		return nil, &rpcError{Code: codeInvalidParams, Message: "describe takes exactly one of 'name' or 'release', not both"}
+		return errorResult("describe takes exactly one of 'name' or 'release', not both")
 	case name == "" && release == "":
-		return nil, &rpcError{Code: codeInvalidParams, Message: "describe requires either a 'name' (catalog entity) or a 'release' (path)"}
+		return errorResult("describe requires either a 'name' (catalog entity) or a 'release' (path)")
 	case name != "":
 		return s.describeCatalogEntity(a, name)
 	default:

@@ -182,8 +182,10 @@ func TestValidateToolReleaseScopeCarriesScopeAndTarget(t *testing.T) {
 }
 
 // TestValidateToolScopeGuards exercises the mutual-exclusion and scope-selection
-// guards. Each is an argument-combination failure, so the tool returns a protocol
-// error with codeInvalidParams and arg-name guidance — not a tool result.
+// guards. Each is a failure the caller corrects by changing the arguments, so
+// the tool answers with a tool result marked as a failure and carrying arg-name
+// guidance — the channel a model reads — rather than with an error envelope,
+// which a client may treat as a transport fault and never show the model.
 func TestValidateToolScopeGuards(t *testing.T) {
 	s := newTestServer(t)
 	cases := []struct {
@@ -206,14 +208,14 @@ func TestValidateToolScopeGuards(t *testing.T) {
 				t.Fatalf("marshal args: %v", err)
 			}
 			res, rpcErr := validateInvoke(s, context.Background(), raw)
-			if res != nil {
-				t.Fatalf("expected no tool result, got %+v", res)
+			if rpcErr != nil {
+				t.Fatalf("argument refusal travelled as an error envelope: %+v", rpcErr)
 			}
-			if rpcErr == nil || rpcErr.Code != codeInvalidParams {
-				t.Fatalf("error = %+v, want code %d", rpcErr, codeInvalidParams)
+			if res == nil || !res.IsError {
+				t.Fatalf("result = %+v, want a tool result marked as a failure", res)
 			}
-			if !strings.Contains(rpcErr.Message, tc.want) {
-				t.Fatalf("guidance %q does not contain %q", rpcErr.Message, tc.want)
+			if len(res.Content) == 0 || !strings.Contains(res.Content[0].Text, tc.want) {
+				t.Fatalf("guidance %+v does not contain %q", res.Content, tc.want)
 			}
 		})
 	}

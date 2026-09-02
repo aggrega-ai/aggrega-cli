@@ -66,10 +66,12 @@ var lintToolSpec = toolSpec{
   "properties": {
     "entity": {
       "type": "string",
+      "minLength": 1,
       "description": "Path to a catalog entity YAML to lint against the publishing-discipline rules. Mutually exclusive with release."
     },
     "release": {
       "type": "string",
+      "minLength": 1,
       "description": "Path to a Release YAML to validate over its resolved dependency closure. Mutually exclusive with entity."
     },
     "pre_publish": {
@@ -84,7 +86,11 @@ var lintToolSpec = toolSpec{
       "type": "string",
       "description": "Optional workspace root override. Defaults to discovery from the server's working directory."
     }
-  }
+  },
+  "anyOf": [
+    {"required":["entity"],"not":{"required":["release"]}},
+    {"required":["release"],"not":{"required":["entity"]}}
+  ]
 }`,
 	invoke: lintInvoke,
 }
@@ -93,16 +99,16 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	var a lintArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, invalidToolArguments("lint", err)
+			return invalidToolArguments("lint", err)
 		}
 	}
 	entity := strings.TrimSpace(a.Entity)
 	release := strings.TrimSpace(a.Release)
 	switch {
 	case entity != "" && release != "":
-		return nil, &rpcError{Code: codeInvalidParams, Message: "lint takes exactly one of 'entity' or 'release', not both"}
+		return errorResult("lint takes exactly one of 'entity' or 'release', not both")
 	case entity == "" && release == "":
-		return nil, &rpcError{Code: codeInvalidParams, Message: "lint requires either an 'entity' (catalog entity path) or a 'release' (Release path)"}
+		return errorResult("lint requires either an 'entity' (catalog entity path) or a 'release' (Release path)")
 	}
 
 	kind := "component"

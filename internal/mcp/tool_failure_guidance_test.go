@@ -4,27 +4,34 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"testing"
 )
 
-// The assertions in this file are driven from the tool registries rather than
-// from a hand-written list of tool names, so a tool added to either registry
+// The assertions in this file are driven from the population of tools a session
+// can invoke rather than from a hand-written list of names, so a tool added
 // later inherits the failure-guidance property instead of escaping it. A
 // hand-picked set would keep passing while a newly added tool answered a bad
 // call with an opaque code, which is the failure mode these assertions exist to
-// prevent.
+// prevent — and a population that stops covering a registry fails the same way,
+// which is why it is itself asserted rather than assumed.
 //
-// Two payloads are drivable generically against every registered tool, and the
-// pair is deliberate: one is rejected by every tool (a payload that is not an
-// arguments object at all) and one is rejected by every tool that needs an
-// argument to act (an empty arguments object). A tool's semantic failures — an
+// Three payloads are drivable generically against every tool in that population,
+// and the set is deliberate: one is refused by every tool (a payload that is not
+// an arguments object at all), one by every tool that declares a string argument
+// (that argument sent as a number), and one by every tool that needs an argument
+// to act (an empty arguments object). A tool's semantic failures — an
 // unresolvable path, a diagnostic from the compiler — need workspace state that
 // differs per tool, so those are covered by that tool's own test rather than
-// here.
+// here, with the one exception driven below for the tools that take a Release.
+//
+// Two properties are asserted of every failure: that its text is a correction a
+// caller can act on, and that it travelled on the channel that caller reads.
 
 // internalLabelTokens are implementation labels that must never appear in text a
 // caller reads. A caller cannot see, correct, or look up an internal shape, so
@@ -51,14 +58,35 @@ var opaqueCodeOnly = regexp.MustCompile(`^[A-Za-z]{0,6}[-_]?[0-9]+$`)
 // without pinning any particular phrasing.
 const guidanceMinimumWords = 4
 
-// registeredToolSpecs returns every invocable tool, curated set first and then
-// the deferred long tail, so an assertion spans both registries rather than the
-// default-advertised one alone.
-func registeredToolSpecs() []toolSpec {
-	out := make([]toolSpec, 0, len(toolRegistry)+len(deferredToolRegistry))
+// registeredToolSpecs returns every tool the given session can invoke: the
+// curated set, the statically declared deferred set, and the command tools
+// derived for that session. An assertion driven from it therefore spans the
+// whole population rather than the default-advertised part of it.
+//
+// It takes the server rather than reading package state because the command
+// tools are per-session — derived at construction from the command surface the
+// caller supplied — so a package-level enumeration structurally cannot see them
+// and would report a green over a set it no longer spans. Which is why the
+// population is derived here from the same fields the server serves from, and
+// why TestTheToolPopulationIsDerivedFromWhatTheServerServes asserts that this
+// enumeration and the server's own advertisements are the same set.
+func registeredToolSpecs(s *server) []toolSpec {
+	out := make([]toolSpec, 0, len(toolRegistry)+len(deferredToolRegistry)+len(s.commandTools))
 	out = append(out, toolRegistry...)
 	out = append(out, deferredToolRegistry...)
+	out = append(out, s.commandTools...)
 	return out
+}
+
+// newGuidanceServer builds the server the failure-guidance assertions drive: one
+// carrying command tools, so the derived long tail is inside the population
+// under test rather than outside it.
+//
+// The command runner is injected, so a case that reaches an operation records
+// the invocation instead of spawning a subprocess.
+func newGuidanceServer(t *testing.T) *server {
+	t.Helper()
+	return newCommandToolServer(t, func(_ context.Context, _ []string, _, _ io.Writer) error { return nil })
 }
 
 // declaredArgumentKeys returns the argument names a tool's own input schema
@@ -94,11 +122,22 @@ type toolFailure struct {
 
 // callToolRaw drives a tool through the real tools/call dispatch with a verbatim
 // arguments payload and reports what came back.
+//
+// It asserts the channel as well as reading it. Every failure a resolved tool
+// produces is one the caller corrects by changing the arguments, so it must
+// arrive as a tool result — the one channel a model is shown. An error envelope
+// here would mean such a failure had been routed where a client may treat it as
+// a transport fault and show the model nothing to act on, which is the defect
+// these assertions exist to keep out. The failure is reported and the guidance
+// checks still run, so one call reports both problems rather than hiding the
+// second behind the first.
 func callToolRaw(t *testing.T, s *server, name, rawArgs string) toolFailure {
 	t.Helper()
 	params := json.RawMessage(fmt.Sprintf(`{"name":%q,"arguments":%s}`, name, rawArgs))
 	res, rpcErr := s.handleToolsCall(params)
 	if rpcErr != nil {
+		t.Errorf("%s: a failure the caller could correct travelled as an error envelope (code %d), which a client need never show the model: %q",
+			name, rpcErr.Code, rpcErr.Message)
 		return toolFailure{text: rpcErr.Message, viaProtocol: true, failed: true}
 	}
 	cr, ok := res.(*callToolResult)
@@ -118,11 +157,18 @@ func callToolRaw(t *testing.T, s *server, name, rawArgs string) toolFailure {
 //
 // One property is asked of one channel only, and the asymmetry is the point
 // rather than an omission. A failure travelling as an error envelope must name
-// the tool, because that envelope carries a code and a message and nothing that
-// identifies which call produced it. A failure travelling as a tool result need
-// not: it is the answer to a call the client made by name, so the subject is
+// its subject, because that envelope carries a code and a message and nothing
+// that identifies which call produced it. A failure travelling as a tool result
+// need not: it is the answer to a call the client made by name, so the subject is
 // already established, and requiring the name again would push every message
 // toward restating what the envelope already says.
+//
+// Which channel a failure is entitled to take is not decided here, and the rule
+// itself lives in the package documentation rather than in any assertion. What
+// is asserted is that the code follows it: a tool's own failures are held to the
+// tool-result channel by callToolRaw, and the faults with no tool result to live
+// in are enumerated and driven by
+// TestTheProtocolChannelCarriesTheFaultsWithNoToolResult.
 func assertActionableGuidance(t *testing.T, tool, scenario string, f toolFailure) {
 	t.Helper()
 	trimmed := strings.TrimSpace(f.text)
@@ -150,13 +196,13 @@ func assertActionableGuidance(t *testing.T, tool, scenario string, f toolFailure
 }
 
 // TestEveryRegisteredToolRejectsANonObjectPayloadWithGuidance asserts that every
-// tool in either registry refuses a payload that is not an arguments object, and
-// that its refusal is guidance rather than a decoder's internal complaint. No
-// tool is exempt: a payload of the wrong shape reaches every tool's argument
+// tool the session can invoke refuses a payload that is not an arguments object,
+// and that its refusal is guidance rather than a decoder's internal complaint.
+// No tool is exempt: a payload of the wrong shape reaches every tool's argument
 // decoding before any of its own logic.
 func TestEveryRegisteredToolRejectsANonObjectPayloadWithGuidance(t *testing.T) {
-	s := newTestServer(t)
-	for _, spec := range registeredToolSpecs() {
+	s := newGuidanceServer(t)
+	for _, spec := range registeredToolSpecs(s) {
 		f := callToolRaw(t, s, spec.name, `[]`)
 		if !f.failed {
 			t.Errorf("%s: accepted an array where an arguments object is required: %q", spec.name, f.text)
@@ -173,8 +219,8 @@ func TestEveryRegisteredToolRejectsANonObjectPayloadWithGuidance(t *testing.T) {
 // declares no string argument is reported as uncovered rather than skipped
 // silently.
 func TestEveryRegisteredToolRejectsAWrongTypedArgumentWithGuidance(t *testing.T) {
-	s := newTestServer(t)
-	for _, spec := range registeredToolSpecs() {
+	s := newGuidanceServer(t)
+	for _, spec := range registeredToolSpecs(s) {
 		key, ok := firstStringArgument(t, spec)
 		if !ok {
 			t.Logf("%s: no string-typed argument declared; the wrong-type case is not drivable for this tool", spec.name)
@@ -198,8 +244,8 @@ func TestEveryRegisteredToolRejectsAWrongTypedArgumentWithGuidance(t *testing.T)
 // tool's own input schema, so the assertion measures each tool against the
 // surface it advertises rather than against a list kept in this file.
 func TestEveryRegisteredToolGuidesAnEmptyCall(t *testing.T) {
-	s := newTestServer(t)
-	for _, spec := range registeredToolSpecs() {
+	s := newGuidanceServer(t)
+	for _, spec := range registeredToolSpecs(s) {
 		f := callToolRaw(t, s, spec.name, `{}`)
 		if !f.failed {
 			// A tool that needs no argument answers an empty call; that is a
@@ -236,9 +282,9 @@ func TestEveryRegisteredToolGuidesAnEmptyCall(t *testing.T) {
 // operation and reports its outcome, which is where a caller most needs to be
 // told what to fix.
 func TestEveryReleaseTakingToolGuidesAnUnresolvableRelease(t *testing.T) {
-	s := newTestServer(t)
+	s := newGuidanceServer(t)
 	drivable := 0
-	for _, spec := range registeredToolSpecs() {
+	for _, spec := range registeredToolSpecs(s) {
 		if !declaresStringArgument(t, spec, "release") {
 			continue
 		}
@@ -372,5 +418,148 @@ func TestDecodeFailureGuidanceCases(t *testing.T) {
 	}
 	if strings.Contains(got, "some transport condition") {
 		t.Errorf("fallback guidance pasted the underlying condition verbatim: %s", got)
+	}
+}
+
+// TestTheProtocolChannelCarriesTheFaultsWithNoToolResult enumerates the failures
+// that stay on the error-envelope channel and drives each one to prove it still
+// travels there.
+//
+// The channel is not removable and this is what shows why: a call naming a tool
+// that does not exist has no tool result to answer through, and neither does a
+// params payload the server cannot read, since the params are what name the
+// tool. The resource and prompt surfaces answer with envelopes for the same
+// structural reason — their results carry no failure flag for a failure to live
+// in — and an unrecognised method never reaches a surface at all.
+//
+// One class is enumerated here and deliberately not driven: an internal failure
+// inside a resolved tool, such as a result the server cannot marshal. It answers
+// on this channel because no change of arguments would alter it, and it is
+// unreachable from the wire because no tool's payload can fail to marshal, so
+// there is no request that would exercise it.
+func TestTheProtocolChannelCarriesTheFaultsWithNoToolResult(t *testing.T) {
+	s := newGuidanceServer(t)
+	cases := []struct {
+		name    string
+		method  string
+		params  string
+		subject string
+		code    int
+		want    string
+	}{
+		{
+			name: "a tool that does not exist", method: "tools/call",
+			params: `{"name":"no-such-tool","arguments":{}}`, subject: "no-such-tool",
+			code: codeInvalidParams, want: "unknown tool: no-such-tool",
+		},
+		{
+			name: "no tool named at all", method: "tools/call",
+			params: `{"arguments":{}}`, subject: "tools/call",
+			code: codeInvalidParams, want: "requires a tool name",
+		},
+		{
+			name: "params that are not an object", method: "tools/call",
+			params: `[]`, subject: "tools/call",
+			code: codeInvalidParams, want: "the params must be a JSON object",
+		},
+		{
+			name: "an unrecognised method", method: "no/such/method",
+			params: `{}`, subject: "no/such/method",
+			code: codeMethodNotFound, want: "method not found",
+		},
+		{
+			name: "a resource read naming no uri", method: "resources/read",
+			params: `{}`, subject: "resources/read",
+			code: codeInvalidParams, want: "requires a resource uri",
+		},
+		{
+			name: "a resource uri nothing resolves", method: "resources/read",
+			params: `{"uri":"nosuchscheme://whatever"}`, subject: "nosuchscheme://whatever",
+			code: codeResourceNotFound, want: "resource not found",
+		},
+		{
+			name: "a prompt that does not exist", method: "prompts/get",
+			params: `{"name":"no-such-prompt"}`, subject: "no-such-prompt",
+			code: codeInvalidParams, want: "unknown prompt: no-such-prompt",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &rpcRequest{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: tc.method, Params: json.RawMessage(tc.params)}
+			res, rpcErr := s.dispatch(req)
+			if rpcErr == nil {
+				t.Fatalf("answered with a result (%+v); this fault has no tool result to live in and must travel as an envelope", res)
+			}
+			if rpcErr.Code != tc.code {
+				t.Errorf("envelope code = %d, want %d: %q", rpcErr.Code, tc.code, rpcErr.Message)
+			}
+			if !strings.Contains(rpcErr.Message, tc.want) {
+				t.Errorf("envelope message %q does not contain %q", rpcErr.Message, tc.want)
+			}
+			assertActionableGuidance(t, tc.subject, tc.name,
+				toolFailure{text: rpcErr.Message, viaProtocol: true, failed: true})
+		})
+	}
+}
+
+// TestTheToolPopulationIsDerivedFromWhatTheServerServes holds the enumeration
+// every assertion in this file is driven from to the set of tools the server
+// actually serves.
+//
+// It exists because the population is the quietest thing here that can rot. A
+// tool registered outside the sets the enumeration reads would leave every
+// assertion in this file green over a set it no longer spans — no failure, no
+// warning, and nothing in the output to notice — so the two sides are compared
+// as sets and any difference is named rather than counted. Both directions are
+// checked: a tool the server advertises and the enumeration misses is the rot
+// this guards against, and a tool the enumeration holds but nothing advertises
+// is one no caller can discover.
+func TestTheToolPopulationIsDerivedFromWhatTheServerServes(t *testing.T) {
+	s := newGuidanceServer(t)
+	if len(s.commandTools) == 0 {
+		t.Fatal("the session under test derives no command tools, so the per-session part of the population is not measured at all")
+	}
+	enumerated := toolSpecNames(registeredToolSpecs(s))
+
+	listRes, rpcErr := s.handleToolsList()
+	if rpcErr != nil {
+		t.Fatalf("tools/list: %+v", rpcErr)
+	}
+	listed, ok := listRes.(listToolsResult)
+	if !ok {
+		t.Fatalf("tools/list returned %T, want listToolsResult", listRes)
+	}
+	advertised := make([]string, 0, len(listed.Tools))
+	for _, tl := range listed.Tools {
+		advertised = append(advertised, tl.Name)
+	}
+
+	capRes, capErr := describeCapabilitiesInvoke(s, context.Background(), nil)
+	if capErr != nil {
+		t.Fatalf("%s: %+v", describeCapabilitiesName, capErr)
+	}
+	var caps describeCapabilitiesResult
+	if err := json.Unmarshal(capRes.StructuredContent, &caps); err != nil {
+		t.Fatalf("%s payload does not parse: %v", describeCapabilitiesName, err)
+	}
+	for _, c := range caps.Capabilities {
+		advertised = append(advertised, c.Name)
+	}
+
+	t.Logf("enumeration spans %d tool(s); the server advertises %d (%d in tools/list, %d through %s)",
+		len(enumerated), len(advertised), len(listed.Tools), len(caps.Capabilities), describeCapabilitiesName)
+
+	if missing := missingFrom(advertised, enumerated); len(missing) > 0 {
+		t.Errorf("the server advertises %d tool(s) this file's enumeration does not span, so every assertion here is green over a set it no longer covers: %s",
+			len(missing), strings.Join(missing, ", "))
+	}
+	if extra := missingFrom(enumerated, advertised); len(extra) > 0 {
+		t.Errorf("the enumeration spans %d tool(s) the server advertises nowhere, so no caller can discover them: %s",
+			len(extra), strings.Join(extra, ", "))
+	}
+	for _, name := range enumerated {
+		if _, resolvable := s.lookupTool(name); !resolvable {
+			t.Errorf("%s is enumerated but tools/call cannot resolve it", name)
+		}
 	}
 }

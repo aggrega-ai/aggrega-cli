@@ -74,11 +74,14 @@ type toolTextContent struct {
 
 // callToolResult is the tools/call result envelope. Content carries the
 // human-readable rendering; StructuredContent carries the same result as a
-// machine-parseable object when the tool has one; IsError marks a tool-level
-// failure — the call was well-formed but the operation did not succeed — as
-// distinct from a protocol-level error, which travels as a JSON-RPC error
-// envelope instead. A tool-level failure still carries corrective guidance in
-// its text block so the assistant can act on it rather than on an opaque code.
+// machine-parseable object when the tool has one; IsError marks a failure the
+// caller can correct by changing the arguments — a refused argument
+// combination, a missing or wrong-typed argument, or an operation that ran and
+// reported a problem. It is distinct from a protocol-level error, which travels
+// as a JSON-RPC error envelope and is reserved for a fault with no tool result
+// to live in. A failure carried here always carries corrective guidance in its
+// text block so the assistant can act on it rather than on an opaque code; the
+// rule that decides the channel is in the package documentation.
 type callToolResult struct {
 	Content           []toolTextContent `json:"content"`
 	StructuredContent json.RawMessage   `json:"structuredContent,omitempty"`
@@ -119,9 +122,16 @@ func textResult(text string, structured any) (*callToolResult, *rpcError) {
 	return res, nil
 }
 
-// errorResult builds a tool-level failure result. The guidance text is the
-// actionable message an assistant reads to correct the call; the result is
-// marked IsError so the client renders it as a failure rather than a success.
+// errorResult builds a tool-level failure result, and it is the route every
+// failure a caller can correct travels on: a refused argument combination, a
+// missing or wrong-typed argument, an unresolvable path, a diagnostic from the
+// compiler. The guidance text is the actionable message an assistant reads to
+// correct the call; the result is marked IsError so the client renders it as a
+// failure rather than a success.
+//
+// The rule that decides between this route and an error envelope is stated once,
+// in the package documentation, and is not restated here — two statements of one
+// rule drift, and nothing fails when they do.
 func errorResult(guidance string) (*callToolResult, *rpcError) {
 	return &callToolResult{
 		Content: []toolTextContent{{Type: "text", Text: guidance}},
@@ -137,17 +147,21 @@ const (
 	payloadParams    = "params"
 )
 
-// invalidToolArguments builds the protocol error a tool returns when it cannot
-// read its arguments object. The call never reached the operation, so there is
-// no operation outcome to report as a tool-level failure; what the caller needs
-// is the corrective text, which is why this shares one route with the
-// request-params failure below.
-func invalidToolArguments(tool string, err error) *rpcError {
-	return &rpcError{Code: codeInvalidParams, Message: decodeFailureGuidance(tool, payloadArguments, err)}
+// invalidToolArguments builds the failure a tool returns when it cannot read its
+// arguments object. The tool is already resolved and the caller corrects this by
+// re-sending the arguments, so it is a tool-level failure carrying the corrective
+// text rather than an error envelope.
+//
+// It returns the tool-invoke result pair so a handler returns it directly.
+func invalidToolArguments(tool string, err error) (*callToolResult, *rpcError) {
+	return errorResult(decodeFailureGuidance(tool, payloadArguments, err))
 }
 
 // invalidRequestParams builds the protocol error a method returns when it cannot
-// read its params object.
+// read its params object. This one stays an error envelope: the params are what
+// name the tool, so a params the server cannot read leaves no tool result to
+// answer through. It shares the corrective-text route with the arguments failure
+// above so the two cannot phrase the same rejection differently.
 func invalidRequestParams(method string, err error) *rpcError {
 	return &rpcError{Code: codeInvalidParams, Message: decodeFailureGuidance(method, payloadParams, err)}
 }
@@ -245,11 +259,14 @@ func (s *server) handleToolsList() (any, *rpcError) {
 	return listToolsResult{Tools: tools}, nil
 }
 
-// handleToolsCall dispatches a tools/call request to the named tool. A missing
-// or unknown tool name is an invalid-params protocol error naming the curated
-// set so the caller can correct it; a well-formed call to a known tool runs the
-// tool, whose own outcome — success or a guidance-carrying failure — is
-// returned as the result.
+// handleToolsCall dispatches a tools/call request to the named tool. Params it
+// cannot read, an absent tool name, and a name no tool answers to are the three
+// failures that reach this surface before a tool is resolved: none has a tool
+// result to live in, so each is an invalid-params error envelope, and the
+// unknown-name envelope names the curated set and the capability tool so the
+// caller can correct it. Once a tool is resolved, its own outcome — success or a
+// guidance-carrying failure — is returned as the result, including a refusal of
+// the arguments it was given.
 func (s *server) handleToolsCall(params json.RawMessage) (any, *rpcError) {
 	var p callToolParams
 	if err := json.Unmarshal(params, &p); err != nil {

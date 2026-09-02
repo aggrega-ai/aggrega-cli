@@ -111,7 +111,7 @@ func toolSpecNames(specs []toolSpec) []string {
 	return out
 }
 
-// missingFrom names the members of want that have absent from got. It names
+// missingFrom names the members of want that are absent from got. It names
 // them rather than counting them, because two sets both short by one still
 // agree on length.
 func missingFrom(want, got []string) []string {
@@ -441,6 +441,10 @@ func TestGeneratedCommandToolSurfacesAFailure(t *testing.T) {
 // TestGeneratedCommandToolRefusesAnUnknownProperty asserts an argument the
 // command does not declare is refused, naming what the tool accepts. A silently
 // dropped argument reads to a caller as an argument that was honored.
+//
+// The refusal travels as a tool result rather than as an error envelope: the
+// tool exists and the caller corrects the call by re-spelling the property, so
+// it is the channel a model reads.
 func TestGeneratedCommandToolRefusesAnUnknownProperty(t *testing.T) {
 	var ran bool
 	s := newCommandToolServer(t, func(_ context.Context, _ []string, _, _ io.Writer) error {
@@ -451,12 +455,16 @@ func TestGeneratedCommandToolRefusesAnUnknownProperty(t *testing.T) {
 		Name:      "cli-work",
 		Arguments: mustJSON(t, map[string]any{"output-dir": "/tmp/out"}),
 	})
-	_, rpcErr := s.handleToolsCall(params)
-	if rpcErr == nil || rpcErr.Code != codeInvalidParams {
-		t.Fatalf("kebab-spelled property = %+v, want invalid-params", rpcErr)
+	res, rpcErr := s.handleToolsCall(params)
+	if rpcErr != nil {
+		t.Fatalf("argument refusal travelled as an error envelope: %+v", rpcErr)
 	}
-	if !strings.Contains(rpcErr.Message, "output_dir") {
-		t.Errorf("refusal does not name the accepted spelling: %q", rpcErr.Message)
+	cr, ok := res.(*callToolResult)
+	if !ok || !cr.IsError {
+		t.Fatalf("kebab-spelled property = %+v, want a tool result marked as a failure", res)
+	}
+	if !strings.Contains(cr.Content[0].Text, "output_dir") {
+		t.Errorf("refusal does not name the accepted spelling: %q", cr.Content[0].Text)
 	}
 	if ran {
 		t.Error("the command ran despite an unaccepted argument")

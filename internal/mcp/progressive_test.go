@@ -208,11 +208,11 @@ func TestDeferredLintInvocableViaToolsCall(t *testing.T) {
 		t.Errorf("halting lint did not surface findings as guidance: %+v", bad)
 	}
 
-	// Mode selection is exclusive.
-	params, _ := json.Marshal(callToolParams{Name: "lint", Arguments: mustJSON(t, lintArgs{Entity: "a", Release: "b"})})
-	_, rpcErr := s.handleToolsCall(params)
-	if rpcErr == nil || rpcErr.Code != codeInvalidParams {
-		t.Errorf("lint with both entity and release = %+v, want invalid-params", rpcErr)
+	// Mode selection is exclusive, and its refusal reaches the caller as a tool
+	// result rather than as an error envelope.
+	both := callTool(t, s, "lint", lintArgs{Entity: "a", Release: "b"})
+	if !both.IsError || !strings.Contains(both.Content[0].Text, "exactly one of 'entity' or 'release'") {
+		t.Errorf("lint with both entity and release = %+v, want a failing tool result naming the exclusion", both)
 	}
 }
 
@@ -233,8 +233,17 @@ func TestDefaultDefinitionTokenBudget(t *testing.T) {
 
 	// A ceiling that fails loudly if the default set balloons — a full long-tail
 	// tool's definition runs ~2000 bytes, so this trips if one creeps back into
-	// the default list rather than staying deferred.
-	const ceiling = 14500
+	// the default list rather than staying deferred. The headroom is deliberately
+	// less than one such definition, which is what makes the ceiling discriminate
+	// a creeping tool from ordinary drift.
+	//
+	// It sits where it does because the curated tools declare their
+	// argument-combination rules in their own input schemas rather than only in
+	// prose, so a caller reading a schema structurally cannot compose a call the
+	// server would refuse. Those declarations are the reason the figure this test
+	// logs is what it is; the trade is a one-off definition cost against a refused
+	// call every time a caller guesses a combination wrong.
+	const ceiling = 15000
 	if bytesTotal > ceiling {
 		t.Errorf("default definition budget %d bytes exceeds %d; move long-tail tools to the deferred set", bytesTotal, ceiling)
 	}

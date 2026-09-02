@@ -60,6 +60,7 @@ var buildToolSpec = toolSpec{
   "properties": {
     "release": {
       "type": "string",
+      "minLength": 1,
       "description": "Path to the Release YAML to build, absolute or relative to the workspace root."
     },
     "workspace_root": {
@@ -86,11 +87,11 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	var a buildArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, invalidToolArguments("build", err)
+			return invalidToolArguments("build", err)
 		}
 	}
 	if strings.TrimSpace(a.Release) == "" {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "build requires a 'release' path"}
+		return errorResult("build requires a 'release' path")
 	}
 
 	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)

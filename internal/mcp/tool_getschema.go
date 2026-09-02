@@ -43,19 +43,24 @@ var getSchemaToolSpec = toolSpec{
   "properties": {
     "kind": {
       "type": "string",
+      "minLength": 1,
       "description": "The lowercase-hyphenated schema kind token, e.g. component, aggregate, release, recipe, ir, wasm-provider. Required unless list is true."
     },
     "list": {
       "type": "boolean",
       "description": "When true, enumerate every addressable schema kind instead of returning one schema. Ignores kind."
     }
-  }
+  },
+  "anyOf": [
+    {"required":["kind"]},
+    {"required":["list"],"properties":{"list":{"const":true}}}
+  ]
 }`,
 	invoke: func(_ *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 		var a getSchemaArgs
 		if len(args) > 0 {
 			if err := json.Unmarshal(args, &a); err != nil {
-				return nil, invalidToolArguments("get-schema", err)
+				return invalidToolArguments("get-schema", err)
 			}
 		}
 		if a.List {
@@ -64,7 +69,7 @@ var getSchemaToolSpec = toolSpec{
 		}
 		kind := strings.TrimSpace(a.Kind)
 		if kind == "" {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "get-schema requires a 'kind' argument, or 'list': true to enumerate kinds"}
+			return errorResult("get-schema requires a 'kind' argument, or 'list': true to enumerate kinds")
 		}
 		schema, ok := schemas.SchemaByKind(kind)
 		if !ok {
@@ -109,6 +114,7 @@ var scaffoldToolSpec = toolSpec{
   "properties": {
     "kind": {
       "type": "string",
+      "minLength": 1,
       "description": "The entity kind to scaffold, as a lowercase-hyphenated schema token, e.g. component, aggregate, release, recipe, feature, manifest."
     },
     "name": {
@@ -122,12 +128,12 @@ var scaffoldToolSpec = toolSpec{
 		var a scaffoldArgs
 		if len(args) > 0 {
 			if err := json.Unmarshal(args, &a); err != nil {
-				return nil, invalidToolArguments("scaffold", err)
+				return invalidToolArguments("scaffold", err)
 			}
 		}
 		kind := strings.TrimSpace(a.Kind)
 		if kind == "" {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "scaffold requires a 'kind' argument"}
+			return errorResult("scaffold requires a 'kind' argument")
 		}
 		schema, ok := schemas.SchemaByKind(kind)
 		if !ok {

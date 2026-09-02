@@ -55,18 +55,25 @@ var genCatalogToolSpec = toolSpec{
     },
     "plugin": {
       "type": "string",
+      "minLength": 1,
       "description": "Path to a single .wasm guest to generate one entity for. The overlay is then a single overlay file. Mutually exclusive with from_embedded."
     },
     "output_dir": {
       "type": "string",
+      "minLength": 1,
       "description": "Directory the generated Plugin entities are written under."
     },
     "overlay": {
       "type": "string",
+      "minLength": 1,
       "description": "Authored overlay: a directory (with from_embedded) or a single file (with plugin)."
     }
   },
-  "required": ["output_dir", "overlay"]
+  "required": ["output_dir", "overlay"],
+  "anyOf": [
+    {"required":["from_embedded"],"properties":{"from_embedded":{"const":true}},"not":{"required":["plugin"]}},
+    {"required":["plugin"],"properties":{"from_embedded":{"const":false}}}
+  ]
 }`,
 	invoke: genCatalogInvoke,
 }
@@ -75,20 +82,20 @@ func genCatalogInvoke(s *server, ctx context.Context, args json.RawMessage) (*ca
 	var a genCatalogArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
-			return nil, invalidToolArguments("gen-catalog", err)
+			return invalidToolArguments("gen-catalog", err)
 		}
 	}
 	switch {
 	case a.FromEmbedded && strings.TrimSpace(a.Plugin) != "":
-		return nil, &rpcError{Code: codeInvalidParams, Message: "gen-catalog takes either 'from_embedded' or 'plugin', not both"}
+		return errorResult("gen-catalog takes either 'from_embedded' or 'plugin', not both")
 	case !a.FromEmbedded && strings.TrimSpace(a.Plugin) == "":
-		return nil, &rpcError{Code: codeInvalidParams, Message: "gen-catalog requires one of 'from_embedded': true or a 'plugin' path"}
+		return errorResult("gen-catalog requires one of 'from_embedded': true or a 'plugin' path")
 	}
 	if strings.TrimSpace(a.Output) == "" {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "gen-catalog requires an 'output_dir' directory"}
+		return errorResult("gen-catalog requires an 'output_dir' directory")
 	}
 	if strings.TrimSpace(a.Overlay) == "" {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "gen-catalog requires an 'overlay' path (a directory with from_embedded, a file with plugin)"}
+		return errorResult("gen-catalog requires an 'overlay' path (a directory with from_embedded, a file with plugin)")
 	}
 
 	opts := gencatalog.Options{

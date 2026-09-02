@@ -93,6 +93,7 @@ var explainErrorToolSpec = toolSpec{
   "properties": {
     "message": {
       "type": "string",
+      "minLength": 1,
       "description": "The diagnostic or error text to expand into guidance. Typically copied verbatim from a validate or build result."
     },
     "kind": {
@@ -107,11 +108,11 @@ var explainErrorToolSpec = toolSpec{
 		var a explainErrorArgs
 		if len(args) > 0 {
 			if err := json.Unmarshal(args, &a); err != nil {
-				return nil, invalidToolArguments("explain-error", err)
+				return invalidToolArguments("explain-error", err)
 			}
 		}
 		if strings.TrimSpace(a.Message) == "" {
-			return nil, &rpcError{Code: codeInvalidParams, Message: "explain-error requires a non-empty 'message' argument"}
+			return errorResult("explain-error requires a non-empty 'message' argument")
 		}
 		guidance := explainDiagnostic(a.Message, a.Kind)
 		return textResult(guidance, explainErrorResult{

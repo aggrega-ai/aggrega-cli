@@ -413,19 +413,21 @@ func jsonQuote(s string) string {
 // the command's output becomes tool data and cannot reach this server's own
 // stdout, where it would corrupt the protocol stream.
 //
-// A non-zero exit is a tool-level failure rather than a protocol error: the call
-// was well-formed and the operation reported something the caller can act on, so
-// the command's own diagnostics are returned as guidance.
+// Every failure this tool can produce is one the caller corrects by changing the
+// arguments — a property the command does not accept, a value of the wrong
+// shape, or a non-zero exit reporting something about the workspace — so each is
+// returned as a tool-level failure carrying the corrective text rather than as
+// an error envelope.
 func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	supplied := map[string]json.RawMessage{}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &supplied); err != nil {
-			return nil, invalidToolArguments(ct.name, err)
+			return invalidToolArguments(ct.name, err)
 		}
 	}
-	argv, rpcErr := ct.argv(supplied)
-	if rpcErr != nil {
-		return nil, rpcErr
+	argv, refusal := ct.argv(supplied)
+	if refusal != "" {
+		return errorResult(refusal)
 	}
 
 	run := s.runCommand
@@ -481,7 +483,12 @@ type commandToolResultPayload struct {
 // argument vector. A property the command does not declare is refused, naming
 // what the tool accepts, rather than being dropped — a silently ignored argument
 // reads to a caller as an argument that was honored.
-func (ct commandTool) argv(supplied map[string]json.RawMessage) ([]string, *rpcError) {
+//
+// A refusal is returned as the corrective text an assistant reads, empty when
+// the vector is good. It is text rather than an error envelope because the
+// caller fixes it by changing the arguments, and the channel that decision picks
+// belongs to the invoke path above rather than to vector building.
+func (ct commandTool) argv(supplied map[string]json.RawMessage) ([]string, string) {
 	known := map[string]bool{commandPositionalProperty: ct.positional != ""}
 	for _, a := range ct.arguments {
 		known[a.property] = true
@@ -494,9 +501,9 @@ func (ct commandTool) argv(supplied map[string]json.RawMessage) ([]string, *rpcE
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		return nil, &rpcError{Code: codeInvalidParams, Message: fmt.Sprintf(
+		return nil, fmt.Sprintf(
 			"%s does not accept %s; it accepts: %s",
-			ct.name, strings.Join(quoteAll(unknown), ", "), strings.Join(ct.acceptedProperties(), ", "))}
+			ct.name, strings.Join(quoteAll(unknown), ", "), strings.Join(ct.acceptedProperties(), ", "))
 	}
 
 	argv := append([]string(nil), ct.path...)
@@ -507,8 +514,7 @@ func (ct commandTool) argv(supplied map[string]json.RawMessage) ([]string, *rpcE
 		}
 		values, err := flagValues(a, raw)
 		if err != nil {
-			return nil, &rpcError{Code: codeInvalidParams, Message: fmt.Sprintf(
-				"%s: the %q property %s", ct.name, a.property, err.Error())}
+			return nil, fmt.Sprintf("%s: the %q property %s", ct.name, a.property, err.Error())
 		}
 		for _, v := range values {
 			argv = append(argv, "--"+a.flag+"="+v)
@@ -517,8 +523,7 @@ func (ct commandTool) argv(supplied map[string]json.RawMessage) ([]string, *rpcE
 	if raw, ok := supplied[commandPositionalProperty]; ok {
 		positionals, err := jsonStringList(raw)
 		if err != nil {
-			return nil, &rpcError{Code: codeInvalidParams, Message: fmt.Sprintf(
-				"%s: the %q property %s", ct.name, commandPositionalProperty, err.Error())}
+			return nil, fmt.Sprintf("%s: the %q property %s", ct.name, commandPositionalProperty, err.Error())
 		}
 		if len(positionals) > 0 {
 			// The bare double dash ends flag parsing, so a positional value that
@@ -527,7 +532,7 @@ func (ct commandTool) argv(supplied map[string]json.RawMessage) ([]string, *rpcE
 			argv = append(argv, positionals...)
 		}
 	}
-	return argv, nil
+	return argv, ""
 }
 
 // acceptedProperties names every property the tool accepts, for the refusal a
