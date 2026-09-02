@@ -1,0 +1,29 @@
+# Two boundaries whose declared directories evaluate alike, so both feed one
+# CloudFormation dispatch group and one assembled stack. Each attaches the same
+# Feature under the same instance name, and the FeatureRecipe's body references
+# nothing about the boundary — so two contributors render byte-identical
+# fragments and each declares one endpoint.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: bs-identical-bodies
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-cfn-two-zones.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    zone-a:
+      directory: ./dist/stack
+      features:
+        audit:
+          type: feature.bs/constant
+      components:
+        store-a: {}
+    zone-b:
+      directory: ./dist/stack
+      features:
+        audit:
+          type: feature.bs/constant
+      components:
+        store-b: {}

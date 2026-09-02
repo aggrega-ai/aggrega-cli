@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: bs-helm-two-zones
+  version: "1.0.0"
+spec:
+  components:
+    app-a:
+      type: core/bs-helm-host
+      values:
+        config_name: "app-a-config"
+    app-b:
+      type: core/bs-helm-host
+      values:
+        config_name: "app-b-config"

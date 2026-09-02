@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: bs-distinct-res-cfn
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: feature.bs/distinct-res
+  # A boundary-scope attachment whose stack resource name says which boundary it
+  # rendered for, so two boundaries attaching it under one instance name author
+  # two distinct resource names and the resource comparison has nothing to
+  # report. What they DO share is the entry name they publish, which is where the
+  # Output name is built.
+  executionScope: boundary
+  artifacts:
+    audit-fragment.yaml: |
+      Resources:
+        AuditTrail{{ .boundary.boundary_name }}:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "120"
+      provides:
+        endpoint: "shared-endpoint-value"

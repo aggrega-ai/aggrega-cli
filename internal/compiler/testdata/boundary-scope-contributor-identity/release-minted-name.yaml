@@ -1,0 +1,21 @@
+# The sibling of the declared-name variant: the component's own published
+# endpoint reaches the stack Output name the assembled stack actually carries for
+# the boundary-scope attachment, rather than the one that render declared.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: bs-minted-name
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-cfn-minted-name.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    zone-a:
+      directory: ./dist/stack
+      features:
+        audit:
+          type: feature.bs/constant
+      components:
+        store-a: {}
+        boundary-fr-audit: {}

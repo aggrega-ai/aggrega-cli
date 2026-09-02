@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: bs-distinct-res-varying-cfn
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: feature.bs/distinct-res-varying
+  # The sibling above with one difference: the value it publishes names the
+  # boundary it rendered for, so the two renders' bodies for that entry differ.
+  executionScope: boundary
+  artifacts:
+    audit-fragment.yaml: |
+      Resources:
+        AuditTrail{{ .boundary.boundary_name }}:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "120"
+      provides:
+        endpoint: "endpoint-for-{{ .boundary.boundary_name }}"

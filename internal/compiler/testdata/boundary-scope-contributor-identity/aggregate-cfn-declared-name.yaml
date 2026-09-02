@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: bs-cfn-declared-name
+  version: "1.0.0"
+  description: >
+    One zone with a boundary-level attachment, plus a component whose own
+    published endpoint reaches the very stack Output name the attachment's render
+    declared it had derived.
+spec:
+  components:
+    store-a:
+      type: core/bs-host
+      values:
+        resource_id: "StoreAQueue"
+        endpoint_value: "store-a-endpoint"
+    boundary-fr-audit-zone-a:
+      type: core/bs-host
+      values:
+        resource_id: "ClaimantQueue"
+        endpoint_value: "shared-endpoint-value"

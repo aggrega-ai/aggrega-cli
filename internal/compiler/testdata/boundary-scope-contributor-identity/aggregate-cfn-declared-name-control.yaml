@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: bs-cfn-declared-name-control
+  version: "1.0.0"
+  description: >
+    The control for the declared-name variant: the same one zone and the same
+    boundary-level attachment, with the second component named so that it reaches
+    no name the attachment reaches. The build completes, so what the assembled
+    stack carries for the attachment is readable.
+spec:
+  components:
+    store-a:
+      type: core/bs-host
+      values:
+        resource_id: "StoreAQueue"
+        endpoint_value: "store-a-endpoint"
+    store-c:
+      type: core/bs-host
+      values:
+        resource_id: "StoreCQueue"
+        endpoint_value: "store-c-endpoint"

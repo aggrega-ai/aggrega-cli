@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: bs-helm-host
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/bs-helm-host
+  artifacts:
+    app-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .values.config_name }}
+      data:
+        marker: "component"

@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: bs-varying-cfn
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: feature.bs/varying
+  # The same boundary-scope shape as its sibling, except the published value
+  # names the boundary this render ran for — so two boundaries attaching it
+  # under one instance name render fragments whose bodies differ.
+  executionScope: boundary
+  artifacts:
+    audit-fragment.yaml: |
+      Resources:
+        AuditTrail:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "120"
+      provides:
+        endpoint: "endpoint-for-{{ .boundary.boundary_name }}"

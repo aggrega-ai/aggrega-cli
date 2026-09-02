@@ -1,0 +1,21 @@
+# One boundary with one boundary-scope attachment, beside a component whose own
+# published endpoint reaches the stack Output name the attachment's render
+# declared. Both land in one dispatch group and one assembled stack.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: bs-declared-name
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-cfn-declared-name.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    zone-a:
+      directory: ./dist/stack
+      features:
+        audit:
+          type: feature.bs/constant
+      components:
+        store-a: {}
+        boundary-fr-audit-zone-a: {}

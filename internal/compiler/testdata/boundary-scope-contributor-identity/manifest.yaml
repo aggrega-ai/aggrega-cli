@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: bs-identity-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/bs-host: bs-host-cfn:1.0.0
+        core/bs-helm-host: bs-helm-host:1.0.0
+    features:
+      # Mapped by type only. Two boundaries attach two different Features under
+      # one instance name, so a name-tier mapping would resolve both to one
+      # FeatureRecipe and the case would not be reachable.
+      type:
+        feature.bs/constant: bs-constant-cfn:1.0.0
+        feature.bs/varying: bs-varying-cfn:1.0.0
+        feature.bs/helm-a: bs-helm-a:1.0.0
+        feature.bs/helm-b: bs-helm-b:1.0.0
+        feature.bs/distinct-res: bs-distinct-res-cfn:1.0.0
+        feature.bs/distinct-res-varying: bs-distinct-res-varying-cfn:1.0.0

@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: bs-host-cfn
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/bs-host
+  # Both the resource name and the published endpoint are value-driven, so two
+  # components sharing this Recipe author distinct names, and one of them can be
+  # given a name that meets the name a boundary-scope contributor reaches.
+  artifacts:
+    host-fragment.yaml: |
+      Resources:
+        {{ .values.resource_id }}:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "60"
+      provides:
+        endpoint: "{{ .values.endpoint_value }}"

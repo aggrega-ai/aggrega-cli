@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: bs-helm-b
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.bs/helm-b
+  executionScope: boundary
+  artifacts:
+    audit-b.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: audit-b
+      data:
+        boundary: "{{ .boundary.boundary_name }}"

@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: bs-helm-a
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: feature.bs/helm-a
+  # A boundary-scope attachment on a provider that assembles nothing, so its
+  # output is written under the boundary's own features position. The file name
+  # is distinct from its sibling's, so two boundaries attaching the two under one
+  # instance name have two files to write and neither can displace the other by
+  # sharing a path.
+  executionScope: boundary
+  artifacts:
+    audit-a.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: audit-a
+      data:
+        boundary: "{{ .boundary.boundary_name }}"

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: cloudformation
+  version: 0.0.0-test
+  pluginType: provider
+  description: Renders the CloudFormation fragments of a component whose Recipe declares the cloudformation capability — normalizing them to pure-JSON long-form intrinsics — and folds a dispatch group's fragments into one stack template, ordering the merged resources by the declared deployment wave.
+spec:
+  abiVersion: v1alpha1
+  exports:
+    - name: render_node
+    - name: validate_node_input
+    - name: assemble_boundary
+    - name: link_publish
+    - name: link_resolve
+  runtime:
+    maxMemoryPages: 4096
+    timeoutMs: 300000
+  provider:
+    capabilities:
+      - cloudformation
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: false
+        artifactsStandalone: true
+      boundaryAssembly: merge
+      reusableInstance: true
+      crossBoundaryLinking: true

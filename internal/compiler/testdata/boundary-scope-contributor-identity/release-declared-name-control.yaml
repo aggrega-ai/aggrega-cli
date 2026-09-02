@@ -1,0 +1,21 @@
+# The control for the declared-name variant. Nothing here reaches a name anything
+# else reaches, so the build completes and the stack Output name the
+# boundary-scope attachment actually lands under is readable from the bytes.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: bs-declared-name-control
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-cfn-declared-name-control.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    zone-a:
+      directory: ./dist/stack
+      features:
+        audit:
+          type: feature.bs/constant
+      components:
+        store-a: {}
+        store-c: {}

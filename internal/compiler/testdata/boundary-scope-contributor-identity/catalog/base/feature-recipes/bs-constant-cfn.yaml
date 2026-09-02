@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: bs-constant-cfn
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: feature.bs/constant
+  # Attached at a boundary rather than against a named component, so this render
+  # reaches the FeatureRecipe funnel through the boundary-scope caller. Its body
+  # references nothing about the boundary, so two boundaries attaching it under
+  # one instance name render byte-identical fragments.
+  executionScope: boundary
+  artifacts:
+    audit-fragment.yaml: |
+      Resources:
+        AuditTrail:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "120"
+      provides:
+        endpoint: "shared-endpoint-value"

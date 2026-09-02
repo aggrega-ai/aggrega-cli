@@ -1,0 +1,28 @@
+# Two boundaries whose declared directories evaluate alike on a provider that
+# assembles nothing. Each attaches a DIFFERENT Feature under the SAME instance
+# name, and the two FeatureRecipes author different file names — so a correct
+# build writes two files under the boundary directory's features position.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: bs-helm-two-boundaries
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-helm-two-zones.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    zone-a:
+      directory: ./dist/app
+      features:
+        audit:
+          type: feature.bs/helm-a
+      components:
+        app-a: {}
+    zone-b:
+      directory: ./dist/app
+      features:
+        audit:
+          type: feature.bs/helm-b
+      components:
+        app-b: {}

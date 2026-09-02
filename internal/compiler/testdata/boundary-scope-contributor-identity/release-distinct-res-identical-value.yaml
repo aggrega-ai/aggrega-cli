@@ -1,0 +1,28 @@
+# Two boundaries whose declared directories evaluate alike, each attaching the
+# same Feature under the same instance name. Each render authors its own stack
+# resource name, so the resource comparison has nothing to report — and each
+# publishes the same entry name with the same value.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: bs-distinct-res-identical-value
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-cfn-two-zones.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    zone-a:
+      directory: ./dist/stack
+      features:
+        audit:
+          type: feature.bs/distinct-res
+      components:
+        store-a: {}
+    zone-b:
+      directory: ./dist/stack
+      features:
+        audit:
+          type: feature.bs/distinct-res
+      components:
+        store-b: {}
