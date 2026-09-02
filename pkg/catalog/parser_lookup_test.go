@@ -106,7 +106,7 @@ func TestParserPluginForFormat_IgnoresNonParserTypes(t *testing.T) {
 	// A provider plugin whose capabilities list a parse:<format> string.
 	provider := types.Plugin{
 		Metadata: types.PluginMetadata{Name: "odd-provider", Version: "1.0.0", PluginType: "provider"},
-		Spec:     types.PluginSpec{Provider: &types.PluginProvider{Capabilities: []string{"parse:hcl", "helm"}}},
+		Spec:     types.PluginSpec{Provider: types.PluginProvider{Capabilities: []string{"parse:hcl", "helm"}}},
 	}
 	c := &catalog.Catalog{Plugins: map[string]types.Plugin{
 		"odd-provider:1.0.0": provider,

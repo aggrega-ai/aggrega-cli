@@ -3,22 +3,36 @@
 
 package types
 
-import "github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+import (
+	"reflect"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+)
 
 //go:generate go run ../../internal/tools/typegen plugin_gen.go
 //go:generate go run ../../internal/tools/typegen plugin_enums_gen.go
 
 // Plugin's top-level struct declarations (Plugin,
 // PluginMetadata, PluginSpec) are generated into
-// plugin_gen.go from the published plugin-v1alpha1 schema; their
+// plugin_gen.go from the published plugin-v1alpha1 schema, as are the provider
+// block and everything under it (the block itself, its render-behavior
+// contract, and that contract's input-kind claim); their
 // godoc is the schema's descriptions. This hand-written companion holds
 // the optional nested blocks the generator names but does not
-// descend into (PluginSignature, PluginRuntime, the four per-plugin-type
-// blocks PluginProvider, PluginPipelineStep, PluginParser and PluginImporter,
-// PluginProvider's nested ProviderContract, and ProviderContract's nested
-// PluginInputKinds and PluginArtifactDelimiters), plus any future Plugin methods or
-// marshalers. The shared Maintainer and WellKnownAnnotation types the
-// generated fields reference live in common.go.
+// descend into (PluginSignature, PluginRuntime, the three per-plugin-type
+// blocks PluginPipelineStep, PluginParser and PluginImporter, and the
+// contract's nested PluginArtifactDelimiters and PluginAssemblyNameAnnotation),
+// plus the Plugin methods and the aliases below. The shared Maintainer and
+// WellKnownAnnotation types the generated fields reference live in common.go.
+//
+// The generator derives a nested type's name from its path through the schema,
+// so the provider chain is declared as PluginSpecProvider,
+// PluginSpecProviderContract and PluginSpecProviderContractInputKinds. The
+// three names this package published before those declarations were generated —
+// PluginProvider, ProviderContract and PluginInputKinds — survive as aliases,
+// which preserve both the name and the type identity, so an external consumer
+// naming one keeps compiling and a reflective comparison against one still sees
+// the same type.
 //
 // The runtime block stays field-aligned with the loader's plugin input
 // (max-memory pages, per-call timeout, the machine-derived host-function
@@ -30,10 +44,14 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 // name and resolved artifact path) are resolution internals supplied by
 // upstream layers, not entity authoring fields.
 //
-// PluginSignature, PluginRuntime, and PluginProvider are referenced by
-// pointer (named via x-aggrega-go-type on the schema's object nodes) so an
-// entity that omits them round-trips without emitting an empty block — a
-// value-typed nested struct would re-marshal as `{}`.
+// PluginSignature and PluginRuntime are referenced by pointer (named via
+// x-aggrega-go-type on the schema's object nodes) so an entity that omits them
+// round-trips without emitting an empty block. The provider block needs no
+// pointer for that: it is held by value and omitted by its omitzero tag. The
+// two encoders differ here and only one ever needed the help — the YAML encoder
+// treats an all-zero struct as empty under plain omitempty, so it never emitted
+// the block either way, while encoding/json's omitempty is a no-op on a struct
+// value and omitzero is what suppresses it there.
 
 // PluginCoordinate is the single rule deriving a plugin's identity COORDINATE
 // from its pluginType and bare name: `<pluginType>/<name>`. It preserves case —
@@ -80,51 +98,15 @@ func (p Plugin) ArtifactReference() string {
 // the plugin's rendering engine translates the Workload kind into
 // provider-native manifests, which platform-native annotations the engine
 // reads, and the engine's render-behavior contract. It carries no meaning on
-// any other plugin type. The block is hand-written because the generator names
-// it via x-aggrega-go-type on the schema's object node and does not descend
-// into it.
-type PluginProvider struct {
-	// Capabilities is the render-engine capabilities this provider serves —
-	// provider engine names such as "helm" or "compose" — whose output shape
-	// its engine renders. A provider is generic across artifacts that share a
-	// capability's output shape, not across all capabilities, so the list is an
-	// explicit, tested-compatibility claim. Entries preserve author order.
-	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
-	// WorkloadSchema is JSON Schema 2020-12 documenting how this provider
-	// translates the aggrega.ai/v1alpha1 Workload kind into provider-native
-	// manifests. A non-empty body indicates the engine supports Workload
-	// synthesis; an empty or absent field carries no synthesis claim.
-	// Whether a workload: Recipe is supported is determined by the bound
-	// engine's synthesis capability, not by this field's presence. The body
-	// is compiled to JSON Schema 2020-12 at load as a structural guardrail;
-	// it becomes executable input to Wasm translators in a future iteration.
-	WorkloadSchema string `json:"workloadSchema,omitempty" yaml:"workloadSchema,omitempty"`
-	// WellKnownAnnotations is this provider's support claim over the
-	// platform-native annotation keys (the aggrega.ai/ namespace): the keys
-	// its engine reads, each with the scope it is read at and the behavior
-	// applied when the annotation is absent. The published support matrix is
-	// rendered from these entries. The compiler reads the claim in exactly two
-	// ways and branches on nothing else in it: a declared scope naming an input
-	// kind Contract.InputKinds does not claim halts the load through
-	// ValidateWellKnownAnnotationScopes, and a render asks
-	// WellKnownAnnotationHonoured whether the claim covers an authored key on the
-	// node's input kind, advising the author when it does not. Neither reads the
-	// annotation's value. Absent declares no support claim.
-	// Entries preserve author order.
-	WellKnownAnnotations []WellKnownAnnotation `json:"wellKnownAnnotations,omitempty" yaml:"wellKnownAnnotations,omitempty"`
-	// Contract is the provider's self-declared render-behavior contract: the
-	// input kinds it renders, how it assembles a dispatch group's per-node
-	// output, the Go-template delimiter pair it applies to imported artifact
-	// files, any restriction on which source files it consumes, whether one
-	// loaded instance may serve every crossing, and whether it wires
-	// cross-boundary edges. It is the publish-time record of the provider
-	// guest's describe() self-report, which the host cross-checks against
-	// describe() at publish and at load. Absent declares no render-behavior
-	// contract, and the cross-check compares only the per-export claims. The
-	// block is hand-written because the generator names the provider block via
-	// x-aggrega-go-type on the schema's object node and does not descend into it.
-	Contract *ProviderContract `json:"contract,omitempty" yaml:"contract,omitempty"`
-}
+// any other plugin type.
+//
+// It is an alias of the generated PluginSpecProvider rather than a declaration
+// of its own: an alias preserves the name AND the type identity, so this name
+// stays usable by an external consumer and by a reflective comparison while the
+// shape itself is single-sourced at the schema. The generated block is a value
+// rather than a pointer; a plugin type that carries no provider block leaves it
+// zero, and the field's omitzero tag keeps it out of the serialized entity.
+type PluginProvider = PluginSpecProvider
 
 // PluginPipelineStep is the pipeline-step block on a pluginType: pipeline-step
 // Plugin. It carries the provider capabilities the plugin's step is compatible
@@ -198,15 +180,30 @@ func (p Plugin) DeclaredCapabilities() []string {
 // pluginType gives meaning to, replacing whatever that block carried. A plugin
 // type that is not resolved by capability accepts none, and the call is a no-op.
 //
-// An empty list against an absent block stays absent rather than materialising
-// an empty block, so an entity never gains a block its author did not write and
-// re-serializes byte-identically. An empty list against a block that is already
-// present clears it, so a machine-derived write always overrides an authored
-// claim rather than letting a stale one survive.
+// An empty list against an absent block leaves that block absent from the
+// serialized entity, so an entity never gains a block its author did not write
+// and re-serializes byte-identically. An empty list against a block that is
+// already present clears the list and leaves the block, so a machine-derived
+// write always overrides an authored claim rather than letting a stale one
+// survive. Both spellings of an empty list — a nil slice, and an allocated
+// slice of length zero — mean the same thing here and produce the same bytes,
+// so a caller never has to know which of the two it is holding.
+//
+// Absent means two different things underneath and the difference is not
+// observable in the output: a block held by pointer is absent by being nil,
+// while the provider block is held by value and is absent by being zero, which
+// its omitzero tag keeps out of the serialized entity.
 func (s *PluginSpec) SetCapabilitiesFor(pluginType string, capabilities []string) {
 	slot := s.capabilitiesSlot(pluginType, len(capabilities) > 0)
 	if slot == nil {
 		return
+	}
+	if len(capabilities) == 0 {
+		// Normalising to nil is what keeps the value-held provider block zero.
+		// An allocated slice of length zero is a non-zero field, and a non-zero
+		// block is precisely what omitzero cannot suppress — storing one would
+		// put a block into the serialized entity that no author wrote.
+		capabilities = nil
 	}
 	*slot = capabilities
 }
@@ -219,19 +216,28 @@ func (s *PluginSpec) SetCapabilitiesFor(pluginType string, capabilities []string
 // a second copy that agreed today is exactly what would hide a divergence when a
 // new plugin type gains a block.
 //
-// allocate separates a write from a read. A write creates the block when the
-// entity carries none; a read leaves the entity untouched and simply misses,
-// because a missing block means the plugin declares nothing and materialising an
-// empty one would make the entity re-serialize with a block nobody wrote.
+// allocate separates a write from a read on a block held by pointer. A write
+// creates the block when the entity carries none; a read leaves the entity
+// untouched and simply misses, because a missing block means the plugin declares
+// nothing and materialising an empty one would make the entity re-serialize with
+// a block nobody wrote.
+//
+// It carries no meaning for the provider block, which is held by value: there is
+// no allocation to make and nothing a read could materialise, because a zero
+// block is what absent looks like and its omitzero tag keeps it out of the
+// serialized entity either way. So that arm returns the address unconditionally,
+// and a read of a plugin carrying no provider block yields an empty list exactly
+// as a miss did.
+//
+// Returning that address unconditionally is safe only because the write side
+// normalises an empty list to nil before storing it. Storing an allocated slice
+// of length zero through this address would leave the block non-zero, and a
+// non-zero block is what omitzero stops suppressing — so the two sides are one
+// mechanism, and removing the normalisation would put an empty block back into
+// the serialized entity without changing a line here.
 func (s *PluginSpec) capabilitiesSlot(pluginType string, allocate bool) *[]string {
 	switch plugintype.Type(pluginType) {
 	case plugintype.Provider:
-		if s.Provider == nil {
-			if !allocate {
-				return nil
-			}
-			s.Provider = &PluginProvider{}
-		}
 		return &s.Provider.Capabilities
 	case plugintype.PipelineStep:
 		if s.PipelineStep == nil {
@@ -339,62 +345,47 @@ type PluginCommandFlag struct {
 // load: the input kinds it renders, how it assembles a dispatch group's per-node
 // output, the Go-template delimiter pair it applies to imported artifact files,
 // and any restriction on which source files it consumes. It describes the
-// provider as a whole, not any one export. The block is hand-written because the
-// generator names the provider block via x-aggrega-go-type on the schema's object
-// node and does not descend into it.
-type ProviderContract struct {
-	// InputKinds is which of the three Recipe input kinds this plugin renders:
-	// a sourced file set, a synthesized workload, and a standalone
-	// artifacts-only node.
-	InputKinds PluginInputKinds `json:"inputKinds,omitempty,omitzero" yaml:"inputKinds,omitempty"`
-	// BoundaryAssembly is how the plugin combines a dispatch group's per-node
-	// render output: "none" writes each node's output directly at the dispatch
-	// path; "merge" folds the per-node fragments into one document; "nest"
-	// places each node's output under its own position in an umbrella
-	// structure. Empty carries no assembly claim.
-	BoundaryAssembly string `json:"boundaryAssembly,omitempty" yaml:"boundaryAssembly,omitempty"`
-	// ArtifactDelimiters is the Go-template delimiter pair the plugin applies
-	// to imported artifact files. Absent means the default "{{"/"}}" pair; a
-	// plugin whose target syntax collides with that pair declares an alternate
-	// pair here.
-	ArtifactDelimiters *PluginArtifactDelimiters `json:"artifactDelimiters,omitempty" yaml:"artifactDelimiters,omitempty"`
-	// SourceFilter is the source-file paths the plugin consumes when a node
-	// supplies a file set. Absent means the plugin consumes every file in the
-	// set. Entries preserve author order.
-	SourceFilter []string `json:"sourceFilter,omitempty" yaml:"sourceFilter,omitempty"`
-	// AssemblyNameAnnotation is the boundary annotation whose resolved value
-	// names the artifact the plugin assembles from a dispatch group. A plugin
-	// that folds a group's contributing boundaries into one named assembly
-	// declares the annotation key it reads and whether every contributing
-	// boundary must agree on that annotation's resolved value. Absent means the
-	// plugin names its assembly from the dispatch path alone.
-	AssemblyNameAnnotation *PluginAssemblyNameAnnotation `json:"assemblyNameAnnotation,omitempty" yaml:"assemblyNameAnnotation,omitempty"`
-	// ReusableInstance is whether one loaded plugin instance may serve every
-	// render, assemble, and validate crossing of a build rather than a fresh
-	// instance per crossing. Authored true only when the plugin holds no state
-	// across crossings — a pure function of its per-crossing input — so a single
-	// instance produces byte-identical output whether reused or freshly loaded.
-	// Absent (false) loads a fresh instance per crossing.
-	ReusableInstance bool `json:"reusableInstance,omitempty" yaml:"reusableInstance,omitempty"`
-	// CrossBoundaryLinking is whether the plugin wires a cross-boundary uses
-	// edge — a uses edge whose consuming and consumed ends assemble into
-	// different dispatch groups — by emitting provider-native cross-reference
-	// wiring through its paired link_publish and link_resolve exports. Authored
-	// true only when the plugin exports both; the load gate rejects a claim that
-	// does not match the export pair. Absent (false) declares no cross-boundary
-	// linking, so the host routes no link crossing to the plugin.
-	CrossBoundaryLinking bool `json:"crossBoundaryLinking,omitempty" yaml:"crossBoundaryLinking,omitempty"`
+// provider as a whole, not any one export.
+//
+// It is an alias of the generated PluginSpecProviderContract, so the name and
+// the type identity both survive while the shape is single-sourced at the
+// schema. The contract is held by value on the provider block; a provider that
+// declares none leaves it zero, and its omitzero tag keeps it out of the
+// serialized entity.
+type ProviderContract = PluginSpecProviderContract
+
+// IsZero reports whether the contract declares nothing at all — which is what a
+// provider that authors no render-behavior contract has said. It is the single
+// home of that question: every read-site that used to ask whether the contract
+// pointer was nil asks here instead, so "authors no contract" has one meaning
+// across the resolution, advisory and engine-selection surfaces.
+//
+// It compares against the zero value rather than listing the fields, because the
+// shape is generated from the schema: a hand-written field census here would keep
+// compiling and silently stop covering a field the schema gains, which is the
+// exact failure a generated shape is meant to remove.
+//
+// Declaring it also fixes what the field's omitzero tag omits, since that option
+// dispatches to this method — so the serialized entity and this predicate cannot
+// disagree about what an absent contract is.
+func (c ProviderContract) IsZero() bool {
+	return reflect.ValueOf(c).IsZero()
 }
 
 // PluginInputKinds is a plugin's authored input-kind claim: which of the three
 // Recipe input kinds it renders. Each field is an independent claim.
 //
-// THIS IS THE ONE HOME for that claim across the compiler. "Which input kinds does
-// this provider render" is a single fact about a single provider, and every
-// host-side consumer of it — the resolution claim a loaded entity carries, and the
-// contract the central input-kind gate reads — is an ALIAS of this type rather than
-// a struct of its own. So a kind added here reaches all of them at once, and no
-// field copy sits between them to drop one.
+// THIS IS THE ONE HOST-SIDE HOME for that claim. "Which input kinds does this
+// provider render" is a single fact about a single provider, and every host-side
+// consumer of it — the resolution claim a loaded entity carries, and the contract
+// the central input-kind gate reads — is an ALIAS of this type rather than a
+// struct of its own. So a kind added reaches all of them at once, and no field
+// copy sits between them to drop one.
+//
+// The shape itself is no longer written here: it is an alias of the generated
+// PluginSpecProviderContractInputKinds, so the declaration is derived from the
+// entity schema and the name and type identity survive for every consumer and
+// for a reflective comparison.
 //
 // Two representations remain genuinely distinct, and both are deliberate:
 //
@@ -406,24 +397,14 @@ type ProviderContract struct {
 //   - The published capability grid reads a guest's claim out of guest SOURCE TEXT
 //     by parsing it, so it matches field names as strings and no Go type can bind it.
 //
-// To add an input kind: add the field here, add it to the describe-socket schema so
-// both generated codecs carry it, and extend the mappers that cross into the
-// generated shapes. 🔴 Do NOT declare a fourth struct with the same booleans.
-// Nothing makes that fail to compile — not unexported fields, not aliases, not
-// generation — so the field-set guard in internal/wasm is a floor that reports a new
-// shape after the fact, never a bar that prevents one.
-type PluginInputKinds struct {
-	// Sourced declares that the plugin renders a sourced file set (a chart, a
-	// module, a compose file).
-	Sourced bool `json:"sourced,omitempty" yaml:"sourced,omitempty"`
-	// Synthesized declares that the plugin renders a synthesized workload into
-	// provider-native artifacts.
-	Synthesized bool `json:"synthesized,omitempty" yaml:"synthesized,omitempty"`
-	// ArtifactsStandalone declares that the plugin renders a standalone
-	// artifacts-only node — one carrying imported artifact documents and no
-	// source or workload.
-	ArtifactsStandalone bool `json:"artifactsStandalone,omitempty" yaml:"artifactsStandalone,omitempty"`
-}
+// To add an input kind: add the property to the entity schema's inputKinds node
+// and regenerate, add it to the describe-socket schema so both generated codecs
+// carry it, and extend the mappers that cross into the generated shapes. 🔴 Do
+// NOT declare a fourth struct with the same booleans. Nothing makes that fail to
+// compile — not unexported fields, not aliases, not generation — so the
+// field-set guard in internal/wasm is a floor that reports a new shape after the
+// fact, never a bar that prevents one.
+type PluginInputKinds = PluginSpecProviderContractInputKinds
 
 // PluginArtifactDelimiters is a plugin's authored Go-template delimiter pair
 // for imported artifact files, declared when it differs from the default

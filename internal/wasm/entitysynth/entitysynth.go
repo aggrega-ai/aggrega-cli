@@ -104,11 +104,13 @@ func applyDescriptorContract(entity *types.Plugin, desc wasm.PluginDescriptor) {
 	entity.Spec.AbiVersion = desc.AbiVersion
 	entity.Spec.SetCapabilitiesFor(desc.PluginType, desc.Capabilities)
 	entity.Spec.Exports = descriptorExports(desc.Exports)
+	// The entity's provider block is held by value, so there is nothing to
+	// allocate before writing into it: a plugin that is not a provider leaves the
+	// block zero and its omitzero tag keeps it out of the serialized entity. The
+	// guard stays on the guest's side of the mapping — a guest reporting no
+	// contract writes none, rather than stamping a zero contract onto the entity.
 	if contract := descriptorContract(desc.Contract); contract != nil {
-		if entity.Spec.Provider == nil {
-			entity.Spec.Provider = &types.PluginProvider{}
-		}
-		entity.Spec.Provider.Contract = contract
+		entity.Spec.Provider.Contract = *contract
 	}
 }
 

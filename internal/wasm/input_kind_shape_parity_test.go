@@ -20,19 +20,21 @@ import (
 //
 // Three representations nonetheless remain distinct, and each is deliberate:
 //
-//   - types.PluginInputKinds — the entity-authoring shape, hand-written, its wire
-//     names camelCase because an author types them in catalog YAML.
+//   - types.PluginInputKinds — the entity-authoring shape, generated from the
+//     entity schema, its wire names camelCase because an author types them in
+//     catalog YAML.
 //   - InputKinds — the host side of the describe socket, generated, snake_case.
 //   - abi.InputKinds — the guest side of the same socket, generated into a separate
 //     module because a Wasm guest must not import the host.
 //
-// The two generated shapes are single-sourced at the describe-socket schema, which
-// is a stronger guarantee than sharing a Go type. But no compiler check ties either
-// of them to the hand-written home, and the host-side mappers that cross between
-// them copy field by field. So a kind added to one side and missed on another
-// compiles, passes every other test, and produces the exact failure this guard
-// exists for: the provider declares a capability, the schema carries it, the wire
-// carries it, and the gate that should read it sees false.
+// Each shape is single-sourced at a schema, which is a stronger guarantee than
+// sharing a Go type. But they are single-sourced at TWO DIFFERENT schemas — the
+// entity schema and the describe-socket schema — so no compiler check ties them
+// to each other, and the host-side mappers that cross between them copy field by
+// field. So a kind added to one schema and missed on the other compiles, passes
+// every other test, and produces the exact failure this guard exists for: the
+// provider declares a capability, one schema carries it, the wire carries it, and
+// the gate that should read it sees false.
 //
 // 🔴 THIS GUARD IS A FLOOR, NOT A REMEDY. It reports a divergence AFTER someone
 // writes it. Nothing available makes declaring a fourth three-boolean struct fail to

@@ -68,10 +68,11 @@ var errWellKnownAnnotationScope = cerrors.Register("types/well-known-annotation-
 // A boundary-scoped entry names no input kind and is not compared. An entry with
 // no scope makes no per-path claim and is likewise not compared: it states only
 // that the engine reads the key somewhere.
+//
+// An entity that is not a provider needs no guard of its own: it carries a zero
+// provider block, whose annotation list is empty, so the walk below reports
+// nothing without having to ask first whether a block is there.
 func ValidateWellKnownAnnotationScopes(p Plugin) error {
-	if p.Spec.Provider == nil {
-		return nil
-	}
 	for _, a := range p.Spec.Provider.WellKnownAnnotations {
 		for _, scope := range a.Scope {
 			field, claimed := inputKindClaim(p.Spec.Provider.Contract, scope)
@@ -118,10 +119,11 @@ func ValidateWellKnownAnnotationScopes(p Plugin) error {
 // provider that reads none of these keys and declares nothing is indistinguishable
 // here from one that reads them all, so its authors get no advisory. That gap is
 // closed by the provider declaring its claim, never by this read guessing at one.
-// A nil provider block reports covered for the same reason, one level up: an
-// entity that is not a provider makes no render claim to compare against.
+// An entity carrying no provider block reports covered for the same reason, one
+// level up: it makes no render claim to compare against, and its zero block
+// declares an empty annotation list, which is the same silence.
 func WellKnownAnnotationHonoured(p Plugin, key, inputKindScope string) bool {
-	if p.Spec.Provider == nil || len(p.Spec.Provider.WellKnownAnnotations) == 0 {
+	if len(p.Spec.Provider.WellKnownAnnotations) == 0 {
 		return true
 	}
 	for _, a := range p.Spec.Provider.WellKnownAnnotations {
@@ -145,15 +147,12 @@ func WellKnownAnnotationHonoured(p Plugin, key, inputKindScope string) bool {
 // for a scope that names no input kind — the boundary scope — so the caller
 // skips it rather than treating it as unclaimed.
 //
-// A nil contract claims no input kind, which is what a provider that authors no
+// A zero contract claims no input kind, which is what a provider that authors no
 // render-behavior contract has said; an input-kind scope declared against it is
 // therefore a contradiction on the same terms as one declared against a contract
 // that names the field false.
-func inputKindClaim(c *ProviderContract, scope string) (field string, claimed bool) {
-	var kinds PluginInputKinds
-	if c != nil {
-		kinds = c.InputKinds
-	}
+func inputKindClaim(c ProviderContract, scope string) (field string, claimed bool) {
+	kinds := c.InputKinds
 	switch scope {
 	case WellKnownAnnotationScopeSourced:
 		return "sourced", kinds.Sourced

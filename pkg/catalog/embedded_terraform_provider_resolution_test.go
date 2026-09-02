@@ -45,7 +45,7 @@ func terraformChainCatalog() *catalog.Catalog {
 				Metadata:   types.PluginMetadata{Name: "terraform", Version: testCorePluginVersion, PluginType: "provider"},
 				Spec: types.PluginSpec{
 					AbiVersion: "v1alpha1",
-					Provider:   &types.PluginProvider{Capabilities: []string{"terraform"}},
+					Provider:   types.PluginProvider{Capabilities: []string{"terraform"}},
 					Exports:    []types.PluginExport{{Name: "render_node"}},
 					Runtime:    &types.PluginRuntime{MaxMemoryPages: terraformProviderMemPag},
 				},

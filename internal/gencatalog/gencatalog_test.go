@@ -185,17 +185,14 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		// Contract presence follows the guest self-report: providers carry a
 		// render-behavior contract block on the provider block; the cross-cutting
 		// linter carries none.
-		var contract *types.ProviderContract
-		if entity.Spec.Provider != nil {
-			contract = entity.Spec.Provider.Contract
-		}
+		contract := entity.Spec.Provider.Contract
 		if desc.Contract != nil && !entitysynth.IsZeroContract(*desc.Contract) {
-			if contract == nil {
+			if contract.IsZero() {
 				t.Errorf("%s: contract missing though describe() reports it", name)
 			} else if contract.BoundaryAssembly != desc.Contract.BoundaryAssembly {
 				t.Errorf("%s: boundaryAssembly = %q, want %q", name, contract.BoundaryAssembly, desc.Contract.BoundaryAssembly)
 			}
-		} else if contract != nil {
+		} else if !contract.IsZero() {
 			t.Errorf("%s: contract emitted though describe() reports none", name)
 		}
 	}

@@ -32,7 +32,7 @@ func terraformRouteCatalog() resolver.CatalogLookup {
 				Metadata:   types.PluginMetadata{Name: "terraform", Version: "1.0.0", PluginType: "provider"},
 				Spec: types.PluginSpec{
 					AbiVersion: "v1alpha1",
-					Provider:   &types.PluginProvider{Capabilities: []string{"terraform"}},
+					Provider:   types.PluginProvider{Capabilities: []string{"terraform"}},
 					Exports:    []types.PluginExport{{Name: "render_node"}},
 				},
 			}, true, nil

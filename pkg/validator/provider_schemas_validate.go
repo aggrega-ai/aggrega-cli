@@ -32,7 +32,10 @@ func ValidatePluginProviderSchemas(
 	pluginName, filePath string,
 	spec *types.PluginSpec,
 ) []error {
-	if spec == nil || spec.Provider == nil {
+	// The provider block is held by value, so a plugin that declares none carries
+	// a zero block whose workloadSchema is empty — which the per-field validator
+	// already passes without inspection. Only the spec pointer needs a guard.
+	if spec == nil {
 		return nil
 	}
 	var errs []error

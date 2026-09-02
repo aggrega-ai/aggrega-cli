@@ -94,7 +94,7 @@ func ProjectCuratedSurface(entity types.Plugin) wasm.EntityCuratedSurface {
 	for i, e := range entity.Spec.Exports {
 		exportNames[i] = e.Name
 	}
-	hasContract := entity.Spec.Provider != nil && entity.Spec.Provider.Contract != nil
+	hasContract := !entity.Spec.Provider.Contract.IsZero()
 	return wasm.EntityCuratedSurface{
 		ExportNames:  exportNames,
 		Capabilities: entity.DeclaredCapabilities(),

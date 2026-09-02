@@ -23,11 +23,11 @@ func TestContractFor_ReadsEntityClaim(t *testing.T) {
 		switch ref {
 		case "helm-chart":
 			return types.Plugin{Spec: types.PluginSpec{
-				Provider: &types.PluginProvider{Contract: &types.ProviderContract{InputKinds: types.PluginInputKinds{Sourced: true}}},
+				Provider: types.PluginProvider{Contract: types.ProviderContract{InputKinds: types.PluginInputKinds{Sourced: true}}},
 			}}, true, nil
 		case "compose":
 			return types.Plugin{Spec: types.PluginSpec{
-				Provider: &types.PluginProvider{Contract: &types.ProviderContract{InputKinds: types.PluginInputKinds{Sourced: true, Synthesized: true}}},
+				Provider: types.PluginProvider{Contract: types.ProviderContract{InputKinds: types.PluginInputKinds{Sourced: true, Synthesized: true}}},
 			}}, true, nil
 		case "no-claim":
 			return types.Plugin{Spec: types.PluginSpec{}}, true, nil

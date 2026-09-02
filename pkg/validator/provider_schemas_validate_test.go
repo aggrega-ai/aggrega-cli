@@ -34,7 +34,7 @@ func TestValidatePluginProviderSchemas_NilCasesPass(t *testing.T) {
 func TestValidatePluginProviderSchemas_EmptyBodyPasses(t *testing.T) {
 	t.Parallel()
 	spec := &types.PluginSpec{
-		Provider: &types.PluginProvider{WorkloadSchema: "   "},
+		Provider: types.PluginProvider{WorkloadSchema: "   "},
 	}
 	if errs := validator.ValidatePluginProviderSchemas("helm-chart-renderer:1.0.0", "test.yaml", spec); len(errs) != 0 {
 		t.Errorf("empty body should pass; got %v", errs)
@@ -47,7 +47,7 @@ func TestValidatePluginProviderSchemas_EmptyBodyPasses(t *testing.T) {
 func TestValidatePluginProviderSchemas_CleanSchemaPasses(t *testing.T) {
 	t.Parallel()
 	spec := &types.PluginSpec{
-		Provider: &types.PluginProvider{
+		Provider: types.PluginProvider{
 			WorkloadSchema: `
 containers:
   type: object
@@ -72,7 +72,7 @@ replicas:
 func TestValidatePluginProviderSchemas_CompileErrorWrapsCatalog(t *testing.T) {
 	t.Parallel()
 	spec := &types.PluginSpec{
-		Provider: &types.PluginProvider{
+		Provider: types.PluginProvider{
 			WorkloadSchema: `port: { type: object, min: 5 }`,
 		},
 	}
@@ -115,7 +115,7 @@ containers: &loop
 func TestValidatePluginProviderSchemas_CompileErrorNamesItsCause(t *testing.T) {
 	t.Parallel()
 	spec := &types.PluginSpec{
-		Provider: &types.PluginProvider{WorkloadSchema: recursiveAnchorWorkloadSchema},
+		Provider: types.PluginProvider{WorkloadSchema: recursiveAnchorWorkloadSchema},
 	}
 	errs := validator.ValidatePluginProviderSchemas(
 		"my-provider:1.0.0", "plugins/my-provider.plugin.yaml", spec)
@@ -175,7 +175,7 @@ func TestValidatePluginProviderSchemas_ParseErrorNamesItsCause(t *testing.T) {
 	t.Parallel()
 	const malformed = "\ncontainers:\n  type: object\n valuesType: object\n"
 	spec := &types.PluginSpec{
-		Provider: &types.PluginProvider{WorkloadSchema: malformed},
+		Provider: types.PluginProvider{WorkloadSchema: malformed},
 	}
 	errs := validator.ValidatePluginProviderSchemas(
 		"my-provider:1.0.0", "plugins/my-provider.plugin.yaml", spec)

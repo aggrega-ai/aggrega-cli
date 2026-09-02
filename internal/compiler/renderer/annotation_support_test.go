@@ -20,7 +20,7 @@ func annotationLookup(provider string, entries ...types.WellKnownAnnotation) fun
 			return types.Plugin{}, false, nil
 		}
 		return types.Plugin{Spec: types.PluginSpec{
-			Provider: &types.PluginProvider{WellKnownAnnotations: entries},
+			Provider: types.PluginProvider{WellKnownAnnotations: entries},
 		}}, true, nil
 	}
 }

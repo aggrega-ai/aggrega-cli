@@ -1658,11 +1658,47 @@ func isIdentByte(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
 }
 
+// structValued reports whether an emitted Go type is one the encoder holds as a
+// struct value. It decides which non-required fields carry omitzero, and it is
+// written as an exclusion of the non-struct spellings the generator can produce
+// rather than as a list of struct spellings: the struct side is open (every
+// nested object becomes a named type, and an x-aggrega-go-type annotation may
+// name any type at all), while the non-struct side is closed and short.
+//
+// The excluded spellings are the mechanical scalar mappings (string, bool, int,
+// any), the array recursion's slice, a pointer, a map spelling a target
+// vocabulary substitutes for an order-preserving container, and the opaque
+// byte-slice spelling an opaque host type maps to.
+//
+// An unrecognized spelling is treated as a struct, which is the safe direction:
+// omitzero is never LESS omitting than omitempty for any kind. The two agree on
+// scalars and pointers, and on slices and maps their union is what omitempty
+// already does alone — so a wrong answer here changes emitted bytes only for a
+// value that is genuinely a struct.
+func structValued(gt string) bool {
+	switch {
+	case gt == "",
+		strings.HasPrefix(gt, "*"),
+		strings.HasPrefix(gt, "[]"),
+		strings.HasPrefix(gt, "map["):
+		return false
+	}
+	switch gt {
+	case "string", "bool", "int", "any", "json.RawMessage":
+		return false
+	}
+	return true
+}
+
 // emitStruct writes one struct declaration. typeName seeds nested named types
 // (<parent><Field>). Returns the nested object structs it discovered, to emit
 // after; records package selectors used by field types into `used`. A non-nil
 // vocab rewrites x-aggrega-go-type field values per the target's vocabulary.
-func emitStruct(b *strings.Builder, typeName, doc string, n schemaNode, used map[string]bool, vocab map[string]string, cbor bool) []pending {
+//
+// codecBacked says the emitted type carries its own generated MarshalJSON, so
+// its struct tag is documentation of what that codec does rather than the thing
+// that decides it. It governs omitzero: see the tag construction below.
+func emitStruct(b *strings.Builder, typeName, doc string, n schemaNode, used map[string]bool, vocab map[string]string, cbor, codecBacked bool) []pending {
 	required := map[string]bool{}
 	for _, r := range n.Required {
 		required[r] = true
@@ -1684,11 +1720,38 @@ func emitStruct(b *strings.Builder, typeName, doc string, n schemaNode, used map
 		if !required[p.name] {
 			jsonTag += ",omitempty"
 			yamlTag += ",omitempty"
-			// OrderedMap is a struct value: encoding/json's omitempty is a
-			// no-op on it, so omitzero (Go 1.24+, via IsZero) is the
-			// load-bearing option that omits an empty map rather than emitting
-			// `{}`. yaml.v3 honours its IsZeroer through plain omitempty.
-			if strings.HasPrefix(gt, "OrderedMap[") {
+			// encoding/json's omitempty is a no-op on a struct VALUE, so a
+			// non-required struct-valued field emits `{}` for an author who
+			// wrote nothing at all. omitzero (Go 1.24+, via IsZero or the zero
+			// value) is the load-bearing option that omits it. The YAML tag
+			// needs no counterpart: that encoder already treats an all-zero
+			// struct as empty under plain omitempty, which is why only the JSON
+			// tag carries it.
+			//
+			// It is withheld from a codec-backed type, and the reason is that
+			// the tag means a different thing there. On a type the standard
+			// library encodes reflectively the tag IS the encoder, so it must
+			// state what should happen. On a type carrying its own generated
+			// MarshalJSON the tag is inert documentation of what that codec
+			// does — and the codec cannot omit a zero struct, because a struct
+			// holding a slice is not comparable and the emission guard has no
+			// zero test to fall back on. Claiming omitzero there would put an
+			// omission in the tag that the code beside it never performs.
+			//
+			// An order-preserving container is the one struct value that guard
+			// DOES omit — through the very IsZero method omitzero dispatches to
+			// — so a codec-backed type keeps omitzero on exactly those fields.
+			// The classification comes from orderedMapValueType rather than from
+			// a prefix test written here, because that function is the single
+			// home of the spelling and the emission guard already asks it: a
+			// second copy here would recognise only the bare spelling and
+			// silently under-claim on every codec emitted outside the package
+			// that declares the container.
+			omitzero := structValued(gt)
+			if codecBacked {
+				_, omitzero = orderedMapValueType(gt)
+			}
+			if omitzero {
 				jsonTag += ",omitzero"
 			}
 		}
@@ -2370,7 +2433,7 @@ func generate(typeName, schemaJSON string) ([]byte, error) {
 	// Top-level entity struct, then its nested named structs breadth-first in
 	// declared order.
 	queue := []pending{{name: typeName, doc: root.Description, node: root}}
-	emitQueue(&body, queue, used, nil, false)
+	emitQueue(&body, queue, used, nil, false, false)
 
 	head := genHeader("package types",
 		fmt.Sprintf("// aggrega-schemas/json/%s. DO NOT EDIT.\n", entitySchemaFile(typeName)),
@@ -2790,7 +2853,7 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 			}
 			queue = append(queue, pending{name: d.name, doc: d.node.Description, node: d.node})
 		}
-		emitQueue(&body, queue, used, t.vocabulary, t.emitsCBOR())
+		emitQueue(&body, queue, used, t.vocabulary, t.emitsCBOR(), true)
 	}
 
 	// defTypes names the generated def struct types, so the codec emitter can
@@ -2909,11 +2972,11 @@ func codecSpineImports(body string) []string {
 
 // emitQueue drains a breadth-first struct-emission queue into body, emitting
 // each queued struct and the nested anonymous structs it discovers, in order.
-func emitQueue(body *strings.Builder, queue []pending, used map[string]bool, vocab map[string]string, cbor bool) {
+func emitQueue(body *strings.Builder, queue []pending, used map[string]bool, vocab map[string]string, cbor, codecBacked bool) {
 	for len(queue) > 0 {
 		cur := queue[0]
 		queue = queue[1:]
-		nested := emitStruct(body, cur.name, cur.doc, cur.node, used, vocab, cbor)
+		nested := emitStruct(body, cur.name, cur.doc, cur.node, used, vocab, cbor, codecBacked)
 		queue = append(queue, nested...)
 	}
 }

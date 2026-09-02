@@ -221,7 +221,7 @@ spec:
 // entity-claim path without a catalog. An unknown provider resolves nothing.
 func fakeProviderPlugins(ref string) (types.Plugin, bool, error) {
 	claim := func(ik types.PluginInputKinds) (types.Plugin, bool, error) {
-		return types.Plugin{Spec: types.PluginSpec{Provider: &types.PluginProvider{Contract: &types.ProviderContract{InputKinds: ik}}}}, true, nil
+		return types.Plugin{Spec: types.PluginSpec{Provider: types.PluginProvider{Contract: types.ProviderContract{InputKinds: ik}}}}, true, nil
 	}
 	switch ref {
 	case "helm":
@@ -373,7 +373,7 @@ func TestInputKindCapabilityErrors_FlagsSourcePlusWorkloadOnFeatureRecipe(t *tes
 // provider section and no render-behavior contract on it — the shape a
 // forward-looking catalog entity carries before its capabilities are declared.
 func noContractProviderPlugin(string) (types.Plugin, bool, error) {
-	return types.Plugin{Spec: types.PluginSpec{Provider: &types.PluginProvider{}}}, true, nil
+	return types.Plugin{Spec: types.PluginSpec{Provider: types.PluginProvider{}}}, true, nil
 }
 
 // A resolvable Plugin carrying no contract: block is SKIPPED, and this row is

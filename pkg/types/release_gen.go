@@ -44,7 +44,7 @@ type ReleaseSpec struct {
 	// Extends Enables base-layer inheritance for frictionless local Dev Loops vs Prod deployments.
 	Extends string `json:"extends,omitempty" yaml:"extends,omitempty"`
 	// Parameters Environment-specific variable fulfillment contract with two authoring modes via content-shape dispatch. Mode 1 (inline): a YAML map carrying structured nested parameter values directly. Mode 2 (file import): a YAML map of exactly one key, `$import: ./relative/path.yaml`, pointing at a single local file that supplies the parameter values. Single-source-only at this site — multi-file layering is the province of Release `extends:` chains (the parent Release supplies base parameters; the child extends + overrides).
-	Parameters ParametersBlock `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Parameters ParametersBlock `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 	// Boundaries The root logical boxes into which the Aggregate's components are routed.
 	Boundaries OrderedMap[Boundary] `json:"boundaries,omitempty,omitzero" yaml:"boundaries,omitempty"`
 	// Components Top-level component instances carrying per-component operator infra, for a single-scope deployment with no named boundaries. Mutually exclusive with `boundaries`: declare `components` for a flat deployment or `boundaries` for multi-target routing, never both. When `components` is used, the compiler synthesizes a `default` boundary holding them and emits their artifacts to `dist/` flat.

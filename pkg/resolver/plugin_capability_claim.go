@@ -24,11 +24,8 @@ import (
 // capabilities block yields nil — no claim, so the cross-check is skipped for
 // that plugin.
 func PluginContractClaim(entity types.Plugin) *pluginpath.PluginContractClaim {
-	var contract *types.ProviderContract
-	if entity.Spec.Provider != nil {
-		contract = entity.Spec.Provider.Contract
-	}
-	if len(entity.Spec.Exports) == 0 && contract == nil {
+	contract := entity.Spec.Provider.Contract
+	if len(entity.Spec.Exports) == 0 && contract.IsZero() {
 		return nil
 	}
 	exports := make([]pluginpath.PluginExportClaim, 0, len(entity.Spec.Exports))
@@ -47,9 +44,11 @@ func PluginContractClaim(entity types.Plugin) *pluginpath.PluginContractClaim {
 
 // pluginContractClaim maps a Plugin entity's authored plugin-level
 // capabilities block into the neutral claim shape, or nil when the entity
-// authors none.
-func pluginContractClaim(c *types.ProviderContract) *pluginpath.ProviderContractClaim {
-	if c == nil {
+// authors none. "Authors none" is asked of the contract itself rather than of a
+// pointer, so the entity's own definition of an absent contract is the one that
+// decides.
+func pluginContractClaim(c types.ProviderContract) *pluginpath.ProviderContractClaim {
+	if c.IsZero() {
 		return nil
 	}
 	claim := &pluginpath.ProviderContractClaim{

@@ -222,7 +222,7 @@ func TestPluginSearchableMetadataProjectsTheEntity(t *testing.T) {
 		},
 		Spec: types.PluginSpec{
 			AbiVersion: "v1alpha1",
-			Provider:   &types.PluginProvider{Capabilities: []string{"compose", "podman-compose"}},
+			Provider:   types.PluginProvider{Capabilities: []string{"compose", "podman-compose"}},
 		},
 	}
 

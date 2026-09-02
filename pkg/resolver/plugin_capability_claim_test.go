@@ -71,8 +71,8 @@ func TestWasmContractClaimCarriesEveryCapabilityField(t *testing.T) {
 
 	entity := types.Plugin{}
 	entity.Spec.Exports = []types.PluginExport{{Name: "render_node", Operates: "emit", Scope: "own"}}
-	entity.Spec.Provider = &types.PluginProvider{
-		Contract: &types.ProviderContract{
+	entity.Spec.Provider = types.PluginProvider{
+		Contract: types.ProviderContract{
 			InputKinds: types.PluginInputKinds{
 				Sourced:             true,
 				Synthesized:         true,

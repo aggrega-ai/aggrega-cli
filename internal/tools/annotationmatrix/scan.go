@@ -74,9 +74,7 @@ func scan(moduleRoot, catalogRoot string) ([]provider, error) {
 		if err != nil {
 			return nil, fmt.Errorf("provider %q overlay: %w", name, err)
 		}
-		if overlay.Spec.Provider != nil {
-			p.Annotations = overlay.Spec.Provider.WellKnownAnnotations
-		}
+		p.Annotations = overlay.Spec.Provider.WellKnownAnnotations
 		if err := requireScopes(p); err != nil {
 			return nil, err
 		}
@@ -89,9 +87,7 @@ func scan(moduleRoot, catalogRoot string) ([]provider, error) {
 		if err != nil {
 			return nil, fmt.Errorf("provider %q entity: %w", name, err)
 		}
-		if entity.Spec.Provider != nil && entity.Spec.Provider.Contract != nil {
-			p.InputKinds = entity.Spec.Provider.Contract.InputKinds
-		}
+		p.InputKinds = entity.Spec.Provider.Contract.InputKinds
 
 		out = append(out, p)
 	}

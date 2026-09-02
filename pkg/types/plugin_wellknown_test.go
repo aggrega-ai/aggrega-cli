@@ -19,11 +19,11 @@ func plugin(kinds types.PluginInputKinds, scopes ...string) types.Plugin {
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: "probe", PluginType: "provider"},
 		Spec: types.PluginSpec{
-			Provider: &types.PluginProvider{
+			Provider: types.PluginProvider{
 				WellKnownAnnotations: []types.WellKnownAnnotation{
 					{Key: "aggrega.ai/probe", Purpose: "a probe key", Scope: scopes},
 				},
-				Contract: &types.ProviderContract{InputKinds: kinds},
+				Contract: types.ProviderContract{InputKinds: kinds},
 			},
 		},
 	}
@@ -63,7 +63,7 @@ func TestValidateWellKnownAnnotationScopes(t *testing.T) {
 
 		{"an absent contract claims no input kind", func() types.Plugin {
 			p := plugin(none, types.WellKnownAnnotationScopeSourced)
-			p.Spec.Provider.Contract = nil
+			p.Spec.Provider.Contract = types.ProviderContract{}
 			return p
 		}(), "sourced"},
 

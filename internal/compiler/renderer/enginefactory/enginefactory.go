@@ -32,7 +32,7 @@ func ContractFor(providerPlugin func(ref string) (types.Plugin, bool, error), pr
 		return renderer.ProviderContract{}, false
 	}
 	plugin, ok, err := providerPlugin(providerName)
-	if err != nil || !ok || plugin.Spec.Provider == nil || plugin.Spec.Provider.Contract == nil {
+	if err != nil || !ok || plugin.Spec.Provider.Contract.IsZero() {
 		return renderer.ProviderContract{}, false
 	}
 	// Returned whole, not copied field-by-field: the gate's contract type is an

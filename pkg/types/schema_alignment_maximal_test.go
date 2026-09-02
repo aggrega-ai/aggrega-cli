@@ -170,7 +170,7 @@ func maximalPlugin() types.Plugin {
 				{Name: "lint_naming", Operates: "patch", Scope: "own", Selector: "workloads carrying a pod template"},
 				{Name: "step", Operates: "emit", Scope: "host"},
 			},
-			Provider: &types.PluginProvider{
+			Provider: types.PluginProvider{
 				Capabilities:   []string{"helm", "compose"},
 				WorkloadSchema: "type: object",
 				WellKnownAnnotations: []types.WellKnownAnnotation{
@@ -185,7 +185,7 @@ func maximalPlugin() types.Plugin {
 						},
 					},
 				},
-				Contract: &types.ProviderContract{
+				Contract: types.ProviderContract{
 					InputKinds: types.PluginInputKinds{
 						Sourced:             true,
 						Synthesized:         true,

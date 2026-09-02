@@ -25,7 +25,7 @@ import (
 type FRPStepInput struct {
 	Documents DocumentSet `json:"documents" yaml:"documents" cbor:"documents"`
 	// StepInput The step's rendered `with` block, an author-ordered key set the guest reads as its step-local input. Preserves author order so the payload is byte-identical across runs of identical input.
-	StepInput types.OrderedMap[any] `json:"step_input,omitempty" yaml:"step_input,omitempty" cbor:"step_input,omitempty"`
+	StepInput types.OrderedMap[any] `json:"step_input,omitempty,omitzero" yaml:"step_input,omitempty" cbor:"step_input,omitempty"`
 	// Context The render-time context the host hands the step. The step carries it through; the schema does not interpret its internal shape (an opaque passthrough), so the FRP socket schema does not bind to the cross-boundary render-context shape. The render context's own contract is the render-context wire shape; a guest that reads it consults that contract.
 	Context renderctx.RenderContext `json:"context" yaml:"context" cbor:"context"`
 	// StepIndex This step's zero-based position in the pipeline.
@@ -43,7 +43,7 @@ type FRPStepOutput struct {
 	// Diagnostics Diagnostics the guest raised. Each element is the shared Wasm-plugin diagnostic shape.
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty" cbor:"diagnostics,omitempty"`
 	// Outputs The addressable outputs the guest returns for this step, an author-ordered key set that populates the step's outputs for a later step or a template to read. Preserves author order so the payload is byte-identical across runs of identical input. Absent when the step returns no outputs.
-	Outputs types.OrderedMap[any] `json:"outputs,omitempty" yaml:"outputs,omitempty" cbor:"outputs,omitempty"`
+	Outputs types.OrderedMap[any] `json:"outputs,omitempty,omitzero" yaml:"outputs,omitempty" cbor:"outputs,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
 	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 }
@@ -53,7 +53,7 @@ type DocumentSet struct {
 	// Own The node's own rendered output, keyed by unit token. Preserves key order so the set reaches the wire in a stable order and the payload is byte-identical across runs of identical input.
 	Own types.OrderedMap[Unit] `json:"own" yaml:"own" cbor:"own"`
 	// Host The rendered output of the component a component-scope FeatureRecipe is attached to — the cross-entity surface. Absent for Recipe steps and boundary-scope FeatureRecipe steps, which have no host component. Preserves key order so the set reaches the wire in a stable order and the payload is byte-identical across runs of identical input.
-	Host types.OrderedMap[Unit] `json:"host,omitempty" yaml:"host,omitempty" cbor:"host,omitempty"`
+	Host types.OrderedMap[Unit] `json:"host,omitempty,omitzero" yaml:"host,omitempty" cbor:"host,omitempty"`
 }
 
 // Unit One addressable piece a provider's emitted output carves into — the hybrid view of one piece of output. A structured unit carries a tree (an RFC-6902-addressable view) and is a PATCH target; an opaque unit carries only its media type and bytes (no tree) and is a SELECT and EMIT target but not a PATCH target.
