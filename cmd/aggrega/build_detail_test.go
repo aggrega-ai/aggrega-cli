@@ -50,7 +50,7 @@ func TestBuildDetail_LockfilePresent_NoPullNote(t *testing.T) {
 
 			var diag, out bytes.Buffer
 			pre, err := acquireLockfile(nil, rel, []string{root}, workspaceconfig.Config{},
-				false, false, tc.detail, &diag, &out)
+				false, false, tc.detail, false, &diag, &out)
 			if err != nil {
 				t.Fatalf("acquireLockfile: %v", err)
 			}

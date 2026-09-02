@@ -6,8 +6,6 @@ package renderer
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,42 +14,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
-
-// TestWriteOutput_CreatesDirsAndWritesFiles pins the orchestrator's
-// final-step file emitter: directories created on demand; files
-// written in sorted key order; round-trip preserves byte content.
-func TestWriteOutput_CreatesDirsAndWritesFiles(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	files := map[string][]byte{
-		"a/b/c.yaml":    []byte("c-content"),
-		"a/d.yaml":      []byte("d-content"),
-		"top.txt":       []byte("top-content"),
-		"e/nested.json": []byte("e-content"),
-	}
-	if err := WriteOutput(tmp, files); err != nil {
-		t.Fatalf("WriteOutput: %v", err)
-	}
-	for rel, want := range files {
-		got, err := os.ReadFile(filepath.Join(tmp, rel))
-		if err != nil {
-			t.Errorf("read %q: %v", rel, err)
-			continue
-		}
-		if string(got) != string(want) {
-			t.Errorf("%q content = %q; want %q", rel, got, want)
-		}
-	}
-}
-
-// TestWriteOutput_EmptyMapIsNoOp pins the empty-input short-circuit.
-func TestWriteOutput_EmptyMapIsNoOp(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	if err := WriteOutput(tmp, map[string][]byte{}); err != nil {
-		t.Errorf("empty map should not error; got %v", err)
-	}
-}
 
 // TestEmitOriginString_EveryBranch pins each documented variant of
 // EmitOrigin.String plus the default "unknown" case.

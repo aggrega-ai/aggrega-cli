@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
@@ -56,6 +57,7 @@ type buildFlags struct {
 	autoPull                bool
 	upgrade                 bool
 	noUnsupportedFieldWarns bool
+	dryRun                  bool
 }
 
 // Every command that renders offers the unsupported-field warning filter, so the
@@ -123,6 +125,7 @@ the rendered tree reviewable as a diff.`,
 	c.Flags().BoolVar(&opts.verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
 	c.Flags().BoolVar(&opts.autoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build")
+	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render the Release and print what it would emit instead of writing it: each artifact's would-be path and its content go to stdout, and the output directory and the lockfile are left untouched. External inputs are frozen for the run, so a render that requests an unpinned external URL halts naming it rather than fetching and pinning it; pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing). Refuses to combine with --auto-pull, --upgrade or --trace, each of which writes — run the dependency fill, or a traced build, as its own step")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -148,7 +151,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 	}
 	return dispatchBuildWithDiag(rw, opts.releasePath, opts.catalogDirs, opts.traceEnabled,
 		buildDiagOptions{quiet: opts.quiet, debug: opts.debug, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{detail: opts.detail, noAcquireInputs: opts.noAcquireInputs, disablePluginCache: opts.disablePluginCache, verifyDeterminism: opts.verifyDeterminism, autoPull: opts.autoPull, upgrade: opts.upgrade, suppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, traceUnredacted: opts.traceUnredacted}, os.Stderr, os.Stdout)
+		buildRunOptions{detail: opts.detail, noAcquireInputs: opts.noAcquireInputs, disablePluginCache: opts.disablePluginCache, verifyDeterminism: opts.verifyDeterminism, autoPull: opts.autoPull, upgrade: opts.upgrade, suppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, traceUnredacted: opts.traceUnredacted, dryRun: opts.dryRun}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr
@@ -199,6 +202,16 @@ type buildRunOptions struct {
 	// emits for authored fields it cannot honor. Display-only; other render
 	// warnings still surface and the rendered output is unchanged.
 	suppressUnsupportedFieldWarnings bool
+	// dryRun reports the render instead of persisting it: each artifact goes out
+	// as path-and-content on the same stream the build summary uses, and the
+	// output directory is neither cleaned nor written. It also freezes the
+	// external-input closure,
+	// which is what keeps the run inert rather than merely output-less — a
+	// render that met an unpinned external reference would otherwise fetch it
+	// and write a blob into the content-addressed store on its way to producing
+	// buffers nobody persists. The flags that fill dependencies are refused
+	// alongside it rather than silently ignored.
+	dryRun bool
 	// outDir overrides the rendered-artifact output directory; empty
 	// renders to dist/. The acquire command points it at a discard
 	// directory so an acquisition pass never touches dist/.
@@ -248,6 +261,28 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// caller of this dispatch, not only the command line.
 	if run.traceUnredacted && !traceEnabled {
 		return fmt.Errorf("aggrega build: --trace-unredacted needs --trace; there is no trace to write without it. Pass both to write an unredacted trace, or neither")
+	}
+
+	// A dry run and a flag that writes cannot both be honored, so the pairing is
+	// refused here rather than resolved silently either way: ignoring the write
+	// would make a requested fill vanish, and honoring it would break the one
+	// promise the dry run makes. Each message names the flag the user actually
+	// typed, which is why --upgrade is tested before the promotion below folds it
+	// into --auto-pull — a reader told their --auto-pull conflicts, when what they
+	// passed was --upgrade, has to guess the connection.
+	if run.dryRun {
+		switch {
+		case run.upgrade:
+			return fmt.Errorf("aggrega build: --dry-run conflicts with --upgrade; a dry run writes nothing and --upgrade re-resolves every dependency and rewrites the lockfile. Run `aggrega pull --upgrade --release %s` as its own step, then `aggrega build --dry-run --release %s`", releasePath, releasePath)
+		case run.autoPull:
+			return fmt.Errorf("aggrega build: --dry-run conflicts with --auto-pull; a dry run writes nothing and --auto-pull fills the lockfile. Run `aggrega pull --release %s` as its own step, then `aggrega build --dry-run --release %s`", releasePath, releasePath)
+		case traceEnabled:
+			return fmt.Errorf("aggrega build: --dry-run conflicts with --trace; a dry run writes nothing and --trace writes per-node files to .trace/. Drop --trace to preview the render, or drop --dry-run to write a trace")
+		}
+		// The frozen-input behaviour is adopted, not reimplemented: the same switch
+		// --no-acquire-inputs sets is the one thing that makes a dry run inert, and
+		// a second frozen-input semantic would be free to drift from it.
+		run.noAcquireInputs = true
 	}
 
 	// Wall-clock start of the whole build run, sourced independently of the
@@ -339,7 +374,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
 	// the identical stack with the same config.
 	progress.phase(phaseLockfile)
-	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.upgrade, run.detail, diagOut, out)
+	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.upgrade, run.detail, run.dryRun, diagOut, out)
 	if err != nil {
 		return err
 	}
@@ -356,6 +391,13 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// lockfile's pinned view; newly-acquired pins merge back after a
 	// successful build below.
 	extInputs := newExternalInputsService(cacheDir, lf, run.noAcquireInputs, wsCfg)
+
+	// The seam the render sees is the service behind a recorder, so a reference
+	// declined for want of a pin is remembered by the host that declined it. The
+	// service itself is still held directly, because the acquisition records the
+	// lockfile write below reads are the service's own and the recorder does not
+	// carry them.
+	fetchSeam := &declineRecordingFetch{inner: extInputs}
 
 	// The build's determinism-wired lazy lookup: EVERY dispatchBuild catalog
 	// consumer — guards, triad aggregate resolution, manifest-implements gate,
@@ -391,7 +433,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 			Lockfile:           lf,
 			CompilerVersion:    provenanceCompilerVersion(),
 			LockfilePreexisted: lockfilePreexisted,
-			ExternalInputs:     extInputs,
+			ExternalInputs:     fetchSeam,
 			// The tolerant Pass-1 load's deprecation notices are this command's to
 			// produce (no other surface loads a whole catalog) and the entry point's
 			// to emit, so the advisory sequence has one order.
@@ -427,6 +469,11 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// halted still found everything ahead of it and a reader who loses those
 	// findings has to re-run to see them.
 	writePreviewWarnings(preview, diagOut)
+	// The divergence note sits beside the warnings and is not conditioned on the
+	// failure: a decline halts the render, so it is the failure path in practice,
+	// but the note is owed whenever a reference was declined rather than whenever
+	// the run happened to end badly.
+	writeDryRunDivergenceNote(fetchSeam.Declined(), run.dryRun, releasePath, diagOut)
 	if err != nil {
 		// Only a resolution or validation failure can be explained by a file the
 		// tolerant load refused, so only those are annotated: a deprecation halt
@@ -442,18 +489,30 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	progress.note("schema libraries: %d, mapping libraries: %d, workload libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries), len(cl.WorkloadLibraries))
 	result := preview.Pipeline
 
-	// Write output. Clean dist/boundaries/ first so stale files from a prior
-	// build of a different variant don't leak into this one (GitOps consumers
-	// must see exactly what the compiler just produced).
 	outDir := run.outDir
 	if outDir == "" {
 		outDir = filepath.Join("dist")
 	}
-	if err := os.RemoveAll(filepath.Join(outDir, "boundaries")); err != nil {
-		return fmt.Errorf("clean %s/boundaries: %w", outDir, err)
-	}
-	if err := writeArtifacts(outDir, result.Artifacts); err != nil {
-		return fmt.Errorf("write output: %w", err)
+
+	// A dry run reports the render and leaves the output directory alone —
+	// including the clean, which is itself a write: a dry run that emptied
+	// boundaries/ and wrote nothing back would have destroyed the previous build's
+	// output in order to show what the next one would contain.
+	var summary string
+	if run.dryRun {
+		writeDryRunReport(out, outDir, result.Artifacts)
+		summary = fmt.Sprintf("Dry run: %d files would be written to %s/; nothing was written", len(result.Artifacts), outDir)
+	} else {
+		// Write output. Clean dist/boundaries/ first so stale files from a prior
+		// build of a different variant don't leak into this one (GitOps consumers
+		// must see exactly what the compiler just produced).
+		if err := os.RemoveAll(filepath.Join(outDir, "boundaries")); err != nil {
+			return fmt.Errorf("clean %s/boundaries: %w", outDir, err)
+		}
+		if err := writeArtifacts(outDir, result.Artifacts); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
+		summary = fmt.Sprintf("Build completed: %d files written to %s/", len(result.Artifacts), outDir)
 	}
 
 	// Trace surface — write the collected per-step intermediate state
@@ -462,6 +521,11 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// apply-tool walking surprises. Skip when the trace map is empty
 	// so an empty-trace fixture run does not clobber a pre-existing
 	// .trace/ from an earlier traced build.
+	//
+	// This carries no dry-run guard, and deliberately so: the refusal above is the
+	// guard, and a second one here would be a copy that agrees with it today. What
+	// keeps the two coupled is a test asserting the pairing refuses, so removing
+	// the refusal fails loudly rather than quietly re-opening this write.
 	if traceEnabled && len(result.Trace) > 0 {
 		if err := os.RemoveAll(".trace"); err != nil {
 			return fmt.Errorf("clean .trace: %w", err)
@@ -476,6 +540,12 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// URL-deduplicated merge of the lockfile's pinned view with this run's
 	// acquisitions; the canonical writer keeps the file byte-deterministic.
 	// A run that pinned nothing leaves the lockfile untouched.
+	//
+	// A dry run needs no guard here, and this is the stronger case rather than the
+	// same argument again: acquisition is off, so the service refuses an unpinned
+	// reference instead of pinning one, and the acquired set is empty by
+	// construction. The write is unreachable because nothing can have been
+	// acquired — not because a flag was checked.
 	acquired := extInputs.AcquiredRecords()
 	if len(acquired) > 0 {
 		lf.ExternalInputs = extInputs.Records()
@@ -492,7 +562,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// beside the final output. The deferred finish is idempotent.
 	progress.finish()
 	fmt.Fprintf(out, "%s\n", formatTotalBuildTimeLine(formatPhaseElapsed(time.Since(buildStart))))
-	fmt.Fprintf(out, "Build completed: %d files written to %s/\n", len(result.Artifacts), outDir)
+	fmt.Fprintln(out, summary)
 	return nil
 }
 
@@ -539,6 +609,137 @@ func writePreviewWarnings(preview *compilerops.PreviewResult, diagOut io.Writer)
 	}
 }
 
+// writeDryRunReport prints what the render produced instead of persisting it:
+// one header per artifact naming the path that file would have occupied,
+// followed by its bytes. The header is the familiar multi-file form, so a reader
+// can tell a header apart from content that happens to open with a comment
+// marker.
+//
+// The path reported is computed by the same function that computes the path a
+// real build writes to, so what a dry run says a file would be called and what a
+// build calls it cannot come apart. The order is the same one a build writes in,
+// which makes the report byte-identical across runs of the same input rather
+// than reshuffled by map iteration.
+//
+// A trailing newline is supplied where the artifact's own bytes lack one, so the
+// next header starts at a column rather than butting onto the last line of
+// content; the blank line after each artifact is the separator between them.
+func writeDryRunReport(out io.Writer, outDir string, files map[string][]byte) {
+	for _, name := range sortedArtifactNames(files) {
+		body := files[name]
+		fmt.Fprintf(out, "==> %s <==\n", artifactPath(outDir, name))
+		_, _ = out.Write(body)
+		if len(body) > 0 && body[len(body)-1] != '\n' {
+			fmt.Fprintln(out)
+		}
+		fmt.Fprintln(out)
+	}
+}
+
+// declineRecordingFetch wraps the external-input seam to record which
+// references were declined for want of a pin. It is what lets the dry run report
+// where it diverges from a real build without comparing anything to anything:
+// the host knows a reference was declined because it is the code that declined
+// it, and it keeps the list.
+//
+// Recording here rather than reading it back off the build's failure is not a
+// preference. A guest asks for the input, so the refusal travels back out
+// through the guest, which reports a failure of its own — the registered
+// condition does not survive that crossing, and only its rendered text does. A
+// caller matching on the returned error would therefore be matching on message
+// text that a guest happens to have copied through, and would go silently blind
+// the moment a guest worded its own failure differently.
+//
+// Every method is safe for concurrent use: nodes render in parallel, so the
+// callbacks arrive from several goroutines.
+type declineRecordingFetch struct {
+	inner wasm.FetchService
+
+	mu       sync.Mutex
+	declined map[string]bool
+}
+
+// Fetch delegates, recording the URL when the refusal is the frozen-closure one.
+// Other failures — an unreachable host, a corrupt store blob, a rejected scheme
+// — are passed through unrecorded: they are not a divergence between a dry run
+// and a real build, because a real build fails on them identically.
+func (f *declineRecordingFetch) Fetch(ctx context.Context, url string, requiredBy string) ([]byte, error) {
+	b, err := f.inner.Fetch(ctx, url, requiredBy)
+	if err != nil && stderrors.Is(err, externalinputs.ErrAcquisitionDisabled()) {
+		f.mu.Lock()
+		if f.declined == nil {
+			f.declined = map[string]bool{}
+		}
+		f.declined[url] = true
+		f.mu.Unlock()
+	}
+	return b, err
+}
+
+// Declined returns the declined references, sorted, so the report a dry run
+// prints is the same for the same run rather than ordered by whichever node
+// happened to render first.
+func (f *declineRecordingFetch) Declined() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.declined))
+	for url := range f.declined {
+		out = append(out, url)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// writeDryRunDivergenceNote reports the one way a dry run can diverge from the
+// build it stands in for: it declined an external reference the lockfile does
+// not pin, so the render stopped short of the bytes a real build — which would
+// have fetched and pinned it — would have produced. The references are named
+// from the record of what was declined, not read out of a diagnostic.
+//
+// The note goes to the diagnostic stream beside the failure rather than being
+// wrapped around it, because the diagnostic formatter renders a failure from the
+// outermost categorised envelope it can reach and discards the frames above it;
+// text wrapped on here would reach the reader only while the failure happened to
+// carry no envelope.
+//
+// It says nothing for a real build: acquisition is on there unless the operator
+// froze the closure themselves, in which case they know why it refused.
+func writeDryRunDivergenceNote(declined []string, dryRun bool, releasePath string, diagOut io.Writer) {
+	if !dryRun || len(declined) == 0 {
+		return
+	}
+	fmt.Fprint(diagOut, "  note: the lockfile does not pin every external reference this render requested, so the dry run declined the following and cannot show what a real build would emit:\n")
+	for _, url := range declined {
+		fmt.Fprintf(diagOut, "    - %s\n", url)
+	}
+	fmt.Fprintf(diagOut, "  Run `aggrega acquire --release %s` to pin the inputs the render needs, then run the dry run again\n", releasePath)
+}
+
+// sortedArtifactNames returns a rendered file map's names in sorted order — the
+// one deterministic iteration order every surface that walks such a map uses.
+// Go randomises map iteration, so a surface rolling its own order would report
+// or emit the same build differently on every run.
+func sortedArtifactNames(files map[string][]byte) []string {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// artifactPath returns the host path an artifact name occupies under outRoot.
+// An artifact name is a slash-separated logical name rather than a path in the
+// host's own spelling, so it is converted rather than concatenated. Both the
+// surface that writes a file and the surface that reports where one would go
+// resolve it here, so a reported path is the path that would be written.
+//
+// It does not judge containment: callers that write must check the name first
+// (see writeArtifacts), and a caller that only reports has nothing to contain.
+func artifactPath(outRoot, name string) string {
+	return filepath.Join(outRoot, filepath.FromSlash(path.Clean(name)))
+}
+
 // formatTotalBuildTimeLine renders the successful-build summary's total line with
 // its value right-aligned so the value's last character sits in the same right-
 // hand column the per-phase checklist elapsed times occupy — the two share a
@@ -579,6 +780,12 @@ func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire 
 // honoring existing pins). Under offline a missing lockfile always halts,
 // regardless of the pull step, because the fill itself needs network access.
 //
+// dryRun suppresses the fill outright: the fill writes, and a dry run writes
+// nothing. It is passed in rather than inferred from autoPull because the two
+// are independent — the fill also runs from the workspace setting, which no flag
+// refusal reaches — so a dry run that only refused the flag would still fill in a
+// workspace configured to.
+//
 // The lockfile must exist before the lazy lookup is pinned: its pins drive the
 // verify-on-read Tier-2 reads through which every closure entity (and the
 // libraries a $ref names) resolves.
@@ -589,7 +796,7 @@ func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire 
 // pullConfig.Out. diagOut carries the fill's reuse/verify notices and progress
 // surface, forwarded through pullConfig.DiagOut. In production out is os.Stdout
 // and diagOut is os.Stderr.
-func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, autoPull, upgrade, detail bool, diagOut, out io.Writer) (bool, error) {
+func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, autoPull, upgrade, detail, dryRun bool, diagOut, out io.Writer) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
@@ -623,7 +830,15 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// and lockfile.Verify (in dispatchBuild) is the post-condition. The build's own
 	// resolution runs through the nil-puller pinned lazy lookup, untouched — so build
 	// output is unchanged by this fill.
-	if autoPull || wsCfg.AutoPull {
+	//
+	// A dry run turns the fill off however it was asked for. Asking on the command
+	// line is refused before the build starts; this leg is the workspace setting,
+	// which a dry run overrides for the one invocation rather than refusing to run
+	// at all — a workspace that fills by default would otherwise have no way to
+	// preview a render. A missing lockfile then halts with the same pull-first
+	// remediation the read-only default gives, which is the honest outcome: there
+	// is nothing to render against and filling one would be a write.
+	if !dryRun && (autoPull || wsCfg.AutoPull) {
 		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: diagOut, Out: out, diag: buildDiagOptions{quiet: true}}); err != nil {
 			return false, fmt.Errorf("auto-pull: %w", err)
 		}
@@ -867,19 +1082,14 @@ func shortCodeInHead(reason, code string) string {
 // failing input stops after the same set of files.
 func writeArtifacts(outRoot string, files map[string][]byte) error {
 	outRoot = filepath.Clean(outRoot)
-	names := make([]string, 0, len(files))
-	for name := range files {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range sortedArtifactNames(files) {
 		if name == "" {
 			return fmt.Errorf("empty artifact path")
 		}
 		if !pathscope.IsLocalSlash(name) {
 			return fmt.Errorf("invalid artifact path %q (path escapes the output root)", name)
 		}
-		full := filepath.Join(outRoot, filepath.FromSlash(path.Clean(name)))
+		full := artifactPath(outRoot, name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return fmt.Errorf("mkdir %q: %w", filepath.Dir(full), err)
 		}
