@@ -280,17 +280,25 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// workspace walk runs.
 	s.ensureCascade()
 
+	// The request's spelling of the file is resolved once, here at the boundary,
+	// and every cache and store below is reached with the result. A sender may
+	// name the file relative to the workspace root or by absolute path, and the
+	// two name one document; resolving per store instead would let one request
+	// populate a key the next request's spelling cannot read, which reads back as
+	// a file with nothing to report rather than as a request that missed.
+	file := s.canonicalFile(params.File)
+
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
 		// One slice for both the store and the response, so the source the
 		// store stamps is the source the caller receives. Two slices built
 		// from the same value would leave the returned one unstamped.
 		diags := []Diagnostic{yamlErrorToDiagnostic(err)}
-		s.setDiagnostics(params.File, diags)
-		s.parseCache.Drop(params.File)
+		s.setDiagnostics(file, diags)
+		s.parseCache.Drop(file)
 		return validateResult{Diagnostics: diags}, nil
 	}
-	s.parseCache.Put(params.File, &doc, []byte(params.Content))
+	s.parseCache.Put(file, &doc, []byte(params.Content))
 	// Per-file document-envelope validation on the buffer: any classifiable
 	// aggrega document (not just the active Aggregate) gets the same
 	// envelope verdict the CLI gives it, on its own file, at the offending
@@ -299,8 +307,8 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// the disk-based semantic pipeline's verdict misleading) and is the
 	// honest coverage for every other file. Foreign YAML and envelope-clean
 	// documents fall through to the existing flow unchanged.
-	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(params.File, []byte(params.Content), &doc); hasFindings {
-		s.setDiagnostics(params.File, diags)
+	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(file, []byte(params.Content), &doc); hasFindings {
+		s.setDiagnostics(file, diags)
 		return validateResult{Diagnostics: diags}, nil
 	}
 	if s.activeRelease == nil {
@@ -321,11 +329,11 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		if s.cascadeAttempt.ReleaseCandidatesFound > 0 || failed > 0 {
 			return validateResult{}, s.emitReleaseNotResolvedEnvelope(params.File)
 		}
-		s.setDiagnostics(params.File, nil)
+		s.setDiagnostics(file, nil)
 		return validateResult{Diagnostics: nil}, nil
 	}
 	// Tier 4: structured semantic violations via RunTier4Pipeline.
-	diags := s.runTier4Validation(ctx, params.File, []byte(params.Content), &doc)
+	diags := s.runTier4Validation(ctx, file, []byte(params.Content), &doc)
 	if ctx.Err() != nil {
 		// Cancelled mid-pipeline. Leave the prior diagnostic cache
 		// entry intact and return without overwriting it — which means
@@ -333,11 +341,11 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		// normally stamps it.
 		return validateResult{Diagnostics: stampSource(diags, DiagnosticSourceSemantic)}, nil
 	}
-	s.setDiagnostics(params.File, diags)
+	s.setDiagnostics(file, diags)
 	// The response carries the composed view, not the semantic layer alone: the
 	// client replaces its whole per-file collection from this reply, so returning
 	// one layer would erase any render advisory standing on the same file.
-	return validateResult{Diagnostics: s.snapshotDiagnostics(params.File)}, nil
+	return validateResult{Diagnostics: s.snapshotDiagnostics(file)}, nil
 }
 
 // publishCascadeFailureDiagnostics surfaces every found-but-invalid
@@ -429,14 +437,23 @@ func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) e
 // The mtime check fires via parseCache.Get's transparent eviction —
 // when an entry's cachedAt is older than the file's on-disk mtime,
 // Get drops the entry and reports miss, matching the AC 5 contract.
+//
+// The requested file is resolved to its canonical spelling before either
+// lookup, so the answer names the document rather than the spelling: a request
+// naming the same file the validation named, in the other spelling, is answered
+// with the same findings rather than with an empty result. The refusal below
+// still names the path the request asked about, not the resolved one, because a
+// sender told about some other spelling of its own value has been handed a
+// puzzle instead of an answer.
 func (s *Server) handleDiagnostics(params diagnosticsParams) (diagnosticsResult, *jsonRPCError) {
-	if _, ok := s.parseCache.Get(params.File); !ok {
+	file := s.canonicalFile(params.File)
+	if _, ok := s.parseCache.Get(file); !ok {
 		return diagnosticsResult{}, &jsonRPCError{
 			Code:    errFileNotValidated,
 			Message: fmt.Sprintf("file not validated: %s", params.File),
 		}
 	}
-	return diagnosticsResult{Diagnostics: s.snapshotDiagnostics(params.File)}, nil
+	return diagnosticsResult{Diagnostics: s.snapshotDiagnostics(file)}, nil
 }
 
 // irGraphParams is the request shape for `aggrega/irGraph`. The

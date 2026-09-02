@@ -138,23 +138,33 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		})
 	}
 
-	// The Tier-4 branch is meaningful only when the request file IS
-	// the active Aggregate. Validating a different file with the
-	// active Release context produces no semantic diagnostics for
-	// THAT file from this pipeline.
-	aggPath := resolved.AggregatePath
-	if file != aggPath {
-		return nil
-	}
-
 	// Both the root aggregate's path (passed via Inputs.AggregatePath)
 	// and the validated `file` are rendered in the same workspace-
 	// relative coordinate system the catalog accessors produce for
 	// sub-aggregate paths, so per-node SourceFile and the per-file
 	// comparison sit in one form. catalog.RelativeToWorkspace is the
 	// single source of truth for the conversion; both sides call it.
+	aggPath := resolved.AggregatePath
 	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
 	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
+
+	// The Tier-4 branch is meaningful only when the request file IS
+	// the active Aggregate. Validating a different file with the
+	// active Release context produces no semantic diagnostics for
+	// THAT file from this pipeline.
+	//
+	// The two are compared in that one coordinate system rather than as the
+	// strings they arrived as. The resolved Aggregate's path and the validated
+	// file reach this function from different places — one from the closure
+	// resolution, one from the request — so comparing the raw strings asks
+	// whether the two agree on a spelling when the question is whether they name
+	// the same document. Deciding it on the spelling withholds every finding
+	// below from a request that named this very file the other way, and
+	// withholds them as an empty result, which reads as a file with nothing
+	// wrong rather than as a comparison that failed.
+	if relFile != relAggPath {
+		return nil
+	}
 
 	// Manifest mapping-table findings, decided by the closure resolution above and
 	// therefore ahead of every gate below. They are a Tier-D class: the fault is in

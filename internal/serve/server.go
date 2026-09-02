@@ -69,23 +69,51 @@
 // aggrega/findImplementations all read that state and refuse with the
 // file-not-validated application code when it is absent, so a client
 // sends validate for a file before any of them. Entries are keyed by
-// file path alone: one daemon serves one workspace and one client, so
-// no per-client dimension is needed.
+// the document's canonical path alone — see Paths on the wire below for
+// which spelling that is: one daemon serves one workspace and one
+// client, so no per-client dimension is needed.
 //
 // # Paths on the wire
 //
-// A request naming a document names it relative to the workspace root
-// the handshake reported. The daemon refuses any other form rather than
-// repairing it: an absolute value, or one resolving outside that root,
-// draws the standard invalid-params error, whose message states the
-// contract and then the specific fault. The refusal is load-bearing
-// rather than defensive — filepath.Join concatenates an absolute second
-// operand instead of failing, so a value quietly joined has the daemon
-// read, and report diagnostics against, a path the workspace never
-// held. Repairing such a value here would teach every client that the
-// contract is optional, so the request is rejected and its sender
-// corrects it. aggrega/irGraph is the method this governs today; see
-// resolveReleaseParam.
+// Two rules, and which one applies turns on what the path names rather
+// than on which method carries it.
+//
+// A request naming a document the client already holds open — the file
+// or uri parameter of aggrega/validate, aggrega/diagnostics,
+// aggrega/invalidate, aggrega/hover, aggrega/completion,
+// aggrega/resolve, aggrega/findReferences and
+// aggrega/findImplementations — may spell it either way. Both spellings
+// name one document and are answered alike, because each is resolved to
+// one canonical form at the request boundary before anything reads it.
+// The canonical form is the absolute path, which is forced by two
+// consumers rather than preferred: the parse cache stats its own key to
+// decide whether an entry has gone stale, and the working directory is
+// not guaranteed to be the workspace root; and
+// aggrega/publishDiagnostics carries the key as the identifier a client
+// matches against its own open documents, resolving it as a filesystem
+// path. See canonicalFile, which converts nothing itself — pathscope.Resolve
+// and catalog.RelativeToWorkspace are the single homes for the two
+// directions. A value naming nothing is keyed as it arrived, so such a
+// request still draws file-not-validated naming the path it asked about.
+//
+// A parameter naming a document the daemon must LOCATE inside the
+// workspace is the other rule: aggrega/irGraph's release names a Release
+// relative to the workspace root the handshake reported, and the daemon
+// refuses any other form rather than repairing it. An absolute value, or
+// one resolving outside that root, draws the standard invalid-params
+// error, whose message states the contract and then the specific fault.
+// The refusal is load-bearing rather than defensive — filepath.Join
+// concatenates an absolute second operand instead of failing, so a value
+// quietly joined has the daemon read, and report diagnostics against, a
+// path the workspace never held. Repairing such a value here would teach
+// every client that the contract is optional, so the request is rejected
+// and its sender corrects it. See resolveReleaseParam.
+//
+// The two differ because the faults differ. A file parameter names
+// something the sender already has, so the only question is which
+// document it is, and resolving is a lossless answer. A release
+// parameter selects a document out of the workspace, where an absolute
+// value silently joined would select outside it.
 //
 // Error envelopes point back at artifacts through fields named for the
 // artifact, never through one general-purpose path field. On errorData,
@@ -119,6 +147,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -127,6 +156,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
@@ -559,17 +589,65 @@ func (s *Server) setPositionEncoding(enc yamlpos.PositionEncoding) {
 	s.positionEncodingValue.Store(enc)
 }
 
+// canonicalFile renders a path naming a document into the one spelling every
+// per-file store here is keyed by: that document's absolute path. A request may
+// name a file relative to the workspace root or by absolute path, and both name
+// the same document, so what a request is answered with depends on the document
+// it named rather than on how it spelled it.
+//
+// Absolute is the canonical form because two consumers of the key require it and
+// a workspace-relative one satisfies neither. The parse cache stats its own key
+// to decide whether an entry went stale, and the daemon's working directory is
+// not guaranteed to be the workspace root — root discovery walks upward from
+// that directory, and an explicit root overrides discovery outright — so a
+// workspace-relative key can resolve against some other directory or against
+// nothing, and every entry then reads as stale. And the publishDiagnostics
+// notification carries the key as the identifier a client matches against its
+// own open documents, which it does by resolving it as a filesystem path.
+//
+// No path conversion is implemented here. pathscope.Resolve is the single home
+// for the relative-to-absolute direction, the same one the Release parameter is
+// resolved through, and catalog.RelativeToWorkspace is the single home for the
+// opposite direction, which runTier4Validation uses where the comparison wanted
+// is against the IR's own coordinate system. An absolute value is only cleaned,
+// so two absolute spellings of one document — one of them carrying an interior
+// traversal or a doubled separator — agree on a key.
+//
+// A value naming nothing is left where it stands, so such a request still
+// answers as it did before: the empty string names no document; an absolute path
+// stays absolute whether or not it resolves to a file, which is what keeps a
+// request for a path outside the workspace answering as it did; and a relative
+// path climbing out of the workspace is refused by pathscope.Resolve rather than
+// silently joined onto the root, so resolving cannot turn an unknown path into a
+// match for some other document. A Server holding no workspace root leaves a
+// relative value untouched for the same reason — there is nothing to resolve it
+// against.
+func (s *Server) canonicalFile(file string) string {
+	if file == "" {
+		return file
+	}
+	if filepath.IsAbs(file) {
+		return filepath.Clean(file)
+	}
+	if abs, ok := pathscope.Resolve(s.workspaceRoot, file); ok {
+		return abs
+	}
+	return file
+}
+
 // setDiagnostics records the diagnostics slice for file under diagMu.
 // A nil slice is stored verbatim (it reads back as an empty result).
 // This is the single write entry point for the diagnostics map; all
 // handler write sites route through it so the locking discipline has
 // one home — which is also why the semantic layer's source is stamped
-// here rather than at each construction site.
+// here rather than at each construction site, and why the key's
+// coordinate system is fixed here too: a write site cannot key the map
+// by a spelling the matching read would then miss.
 func (s *Server) setDiagnostics(file string, diags []Diagnostic) {
 	stampSource(diags, DiagnosticSourceSemantic)
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
-	s.diagnostics[file] = diags
+	s.diagnostics[s.canonicalFile(file)] = diags
 }
 
 // dropDiagnostics removes file's diagnostics entry under diagMu. No-op
@@ -577,7 +655,7 @@ func (s *Server) setDiagnostics(file string, diags []Diagnostic) {
 func (s *Server) dropDiagnostics(file string) {
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
-	delete(s.diagnostics, file)
+	delete(s.diagnostics, s.canonicalFile(file))
 }
 
 // snapshotDiagnostics returns a copy of file's composed diagnostics taken under
@@ -586,11 +664,19 @@ func (s *Server) dropDiagnostics(file string) {
 // never races a concurrent writer's whole-slice reassignment. Composition
 // happens here, at the single read entry point, so no caller can publish one
 // layer and silently drop the other. Both layers empty returns nil.
+//
+// Both layers are read at the one key canonicalFile fixes, so they are looked
+// up in a single coordinate system. That matters here more than at any other
+// site: the two layers are written by different requests — the semantic layer
+// by a validation, the render layer by an inspection — and each request names
+// the file in whatever spelling its sender chose, so a key carrying a
+// per-request spelling would compose one layer with nothing.
 func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
+	key := s.canonicalFile(file)
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
-	semantic := s.diagnostics[file]
-	render := s.renderDiags[file]
+	semantic := s.diagnostics[key]
+	render := s.renderDiags[key]
 	if len(semantic)+len(render) == 0 {
 		return nil
 	}
@@ -607,6 +693,12 @@ func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
 // advisory as reliably as it publishes a new one. Whole-layer replacement is
 // what a whole-closure render calls for: a per-file merge would strand an
 // advisory on a file that stopped raising one.
+//
+// Each incoming key is canonicalised, so this layer and the semantic one are
+// keyed alike however the render attributed its advisories. The returned file
+// set is therefore in the canonical spelling too, which is what the caller
+// publishes — the notification's file identifier and the store's key are then
+// the same string, rather than two spellings of one document.
 func (s *Server) setRenderDiagnostics(byFile map[string][]Diagnostic) []string {
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
@@ -619,8 +711,9 @@ func (s *Server) setRenderDiagnostics(byFile map[string][]Diagnostic) []string {
 		if len(d) == 0 {
 			continue
 		}
-		next[f] = stampSource(d, DiagnosticSourceBuild)
-		touched[f] = true
+		key := s.canonicalFile(f)
+		next[key] = stampSource(d, DiagnosticSourceBuild)
+		touched[key] = true
 	}
 	s.renderDiags = next
 	files := make([]string, 0, len(touched))

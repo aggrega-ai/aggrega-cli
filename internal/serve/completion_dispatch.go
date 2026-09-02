@@ -32,7 +32,7 @@ import (
 //  4. Unrecognized cursor → empty candidate list (LSP convention for
 //     "no completion available here").
 func (s *Server) handleCompletion(params completionParams) ([]CompletionItem, *jsonRPCError) {
-	entry, ok := s.parseCache.Get(params.URI)
+	entry, ok := s.parseCache.Get(s.canonicalFile(params.URI))
 	if !ok {
 		return nil, &jsonRPCError{
 			Code:    errFileNotValidated,

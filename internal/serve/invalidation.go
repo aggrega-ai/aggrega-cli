@@ -92,8 +92,15 @@ func (s *Server) handleInvalidate(params invalidateParams) invalidateResult {
 	// entries, and a workspace-scoped invalidate is a superset that
 	// also clears them. No-op when File is empty or the entry is
 	// absent.
-	s.parseCache.Drop(params.File)
-	s.dropDiagnostics(params.File)
+	//
+	// The named file is resolved to the spelling the entries are keyed by, so an
+	// invalidate clears the document it names however the request spelled it. A
+	// drop that missed would leave the stale entry in place and report success,
+	// and the caller's next read would be served the state it just asked to have
+	// discarded.
+	file := s.canonicalFile(params.File)
+	s.parseCache.Drop(file)
+	s.dropDiagnostics(file)
 
 	// Workspace-level drops gated by granularity. Only "file" opts
 	// out; "workspace", empty (default), "entity", and any

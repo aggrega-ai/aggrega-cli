@@ -28,7 +28,7 @@ import (
 // uses-target, which renders the referenced sibling Component instance.
 // SchemaProperty and unclassified positions return null Contents.
 func (s *Server) handleHover(params hoverParams) (*MarkupContent, *jsonRPCError) {
-	entry, ok := s.parseCache.Get(params.URI)
+	entry, ok := s.parseCache.Get(s.canonicalFile(params.URI))
 	if !ok {
 		return nil, &jsonRPCError{
 			Code:    errFileNotValidated,

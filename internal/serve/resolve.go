@@ -29,7 +29,7 @@ import (
 // in any workspace YAML's metadata.name, or when the workspace walk
 // has nothing to scan.
 func (s *Server) resolveDefinitionSite(reqCtx context.Context, uri string, pos yamlpos.Position) (*yamlpos.Location, *jsonRPCError) {
-	entry, ok := s.parseCache.Get(uri)
+	entry, ok := s.parseCache.Get(s.canonicalFile(uri))
 	if !ok {
 		return nil, &jsonRPCError{
 			Code:    errFileNotValidated,
@@ -407,7 +407,7 @@ func (s *Server) findImplementationsAcrossWorkspace(reqCtx context.Context, uri 
 // is on any other shape. The file-not-validated envelope surfaces
 // when uri is not parse-cached.
 func (s *Server) uriAtMetadataName(uri string, pos yamlpos.Position) (string, *jsonRPCError) {
-	entry, ok := s.parseCache.Get(uri)
+	entry, ok := s.parseCache.Get(s.canonicalFile(uri))
 	if !ok {
 		return "", &jsonRPCError{
 			Code:    errFileNotValidated,
