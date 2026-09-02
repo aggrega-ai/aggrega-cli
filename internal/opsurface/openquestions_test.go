@@ -23,7 +23,25 @@ import (
 // Nothing in the package can read it, so no production path can grow the bound
 // and satisfy its own ceiling in one edit — the second edit is in a file whose
 // only purpose is to say the number goes down.
-const boundCeiling = 11
+//
+// It was raised by one for the connection-candidates pair on the tool protocol,
+// and the argument the raise owes is this. That capability reports an entity's
+// dependency sockets and each one's valid targets; the tool protocol's existing
+// grounds for declining are that a request addresses a cursor in a document the
+// caller holds open, that it carries state across calls, that it returns what an
+// earlier call recorded, or that it reports a workspace-wide Release selection.
+// None of them is true of it: it takes an entity name, holds nothing, records
+// nothing and selects no Release. So there is no reason to write, and a reason
+// written anyway would be the unexamined absence dressed as a deliberate one
+// that this bound exists to keep visible.
+//
+// What makes it a question rather than an omission is that the identical
+// question is already open one row above it, for the attachment half of the same
+// authoring question. The two are one decision: whichever way candidacy on this
+// surface is settled, it settles both, and at that point two rows leave together
+// and this number goes down by two. A single row disposed of on its own would be
+// the split the pairing exists to prevent.
+const boundCeiling = 12
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

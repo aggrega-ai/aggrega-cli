@@ -497,6 +497,7 @@ var methodRoutes = []methodRoute{
 	{"aggrega/completion", (*Server).dispatchCompletion},
 	{"aggrega/catalogIndex", (*Server).dispatchCatalogIndex},
 	{"aggrega/attachCandidates", (*Server).dispatchAttachCandidates},
+	{"aggrega/connectionCandidates", (*Server).dispatchConnectionCandidates},
 	{"aggrega/releaseCandidates", (*Server).dispatchReleaseCandidates},
 	{"aggrega/activeRelease", (*Server).dispatchActiveRelease},
 }

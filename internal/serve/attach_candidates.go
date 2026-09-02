@@ -14,24 +14,32 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// AttachCandidate is one Feature in the aggrega/attachCandidates
-// response: a Feature whose declared applicability the addressed entity's
-// labels satisfy.
+// WorkspaceEntityRef addresses one workspace-local document on the wire:
+// kind, name and source file, the three fields that identify it.
 //
-// The identity is deliberately minimal — kind, name and source file, the
-// three fields that address the document. Everything else a palette wants
-// to show about a Feature is already reported by aggrega/catalogIndex for
-// the same kind/name/file triple, so repeating it here would put a second
-// copy of that description on the wire, and the two copies would be free
-// to disagree. A client joins the two responses instead.
+// The identity is deliberately minimal. Everything else a palette wants to
+// show about an entity is already reported by aggrega/catalogIndex for the
+// same kind/name/file triple, so repeating it here would put a second copy
+// of that description on the wire, and the two copies would be free to
+// disagree. A client joins the two responses instead.
 //
-// Kind is carried even though every candidate is a Feature today, so the
-// triple a client joins on has the same shape in both responses.
-type AttachCandidate struct {
+// Kind is carried even where one response's candidates are all of a single
+// kind today, so the triple a client joins on has the same shape in every
+// response that carries one.
+//
+// Every candidate-reporting method reports its candidates as this type, so
+// the joinable triple is one declaration rather than a shape each response
+// repeats and could drift from. sortCandidates orders any of them.
+type WorkspaceEntityRef struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
 	File string `json:"file"`
 }
+
+// AttachCandidate is one Feature in the aggrega/attachCandidates
+// response: a Feature whose declared applicability the addressed entity's
+// labels satisfy.
+type AttachCandidate = WorkspaceEntityRef
 
 // attachCandidatesParams is the aggrega/attachCandidates request shape.
 // Node names the entity whose labels the candidates are matched against,
@@ -245,8 +253,9 @@ func (s *Server) attachCandidates(ctx context.Context, node string) (attachCandi
 
 // sortCandidates puts entities into the shared workspace-entity order,
 // which is the order every projection over the workspace traversal reports
-// in.
-func sortCandidates(entities []AttachCandidate) {
+// in. It serves every candidate list, so two responses a client joins
+// against each other cannot order the same entities differently.
+func sortCandidates(entities []WorkspaceEntityRef) {
 	sort.Slice(entities, func(i, j int) bool {
 		a, b := entities[i], entities[j]
 		return entityOrderLess(a.Kind, a.Name, a.File, b.Kind, b.Name, b.File)

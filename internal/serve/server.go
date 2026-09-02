@@ -41,6 +41,14 @@
 //	aggrega/diagnostics          returns the diagnostics already cached
 //	                             for a file
 //	aggrega/irGraph              returns the IR graph for a Release
+//	aggrega/catalogIndex         lists every workspace-local entity's
+//	                             kind, name, description, labels and
+//	                             source file
+//	aggrega/attachCandidates     lists the Features whose declared
+//	                             applicability an entity's labels satisfy
+//	aggrega/connectionCandidates lists an entity's dependency sockets and,
+//	                             per socket, the components whose declared
+//	                             labels satisfy what it declares
 //	aggrega/releaseCandidates    lists the workspace's Release documents,
 //	                             selected by document kind rather than by
 //	                             filename

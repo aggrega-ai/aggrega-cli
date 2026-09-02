@@ -118,6 +118,14 @@ var openQuestions = []OpenQuestion{
 			"parity half of that reason does not apply here — but a caller proposing an attachment is a " +
 			"plausible consumer of the match itself. Is the capability for an editor alone, or does it belong " +
 			"here as well?"},
+	{SurfaceMCP, "connection-candidates",
+		"The same fork the attach-candidates row above records, reached from the other half of the " +
+			"authoring question: nothing on this surface proposes a connection, so the parity half of " +
+			"that reason does not apply here either — but a caller composing one is a plausible consumer " +
+			"of the socket declarations and the target match. The two rows stand or fall together: " +
+			"whichever way the attachment half is settled, this half is the same capability for the other " +
+			"kind of edge, so settling one and leaving the other would split one decision across two " +
+			"surfaces. Is candidacy for an editor alone, or does it belong here as well?"},
 	{SurfaceMCP, "release-candidates",
 		"Half of this capability's reason plainly does not apply here: the candidate set exists so a caller's " +
 			"own Release detection matches the compiler's, and on this surface every call names the Release it " +

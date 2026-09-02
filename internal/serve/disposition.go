@@ -93,6 +93,7 @@ var dispositions = map[string]opsurface.Disposition{
 	"completion-at-position":      opsurface.Exposed("aggrega/completion"),
 	"workspace-entity-index":      opsurface.Exposed("aggrega/catalogIndex"),
 	"feature-attach-candidates":   opsurface.Exposed("aggrega/attachCandidates"),
+	"connection-candidates":       opsurface.Exposed("aggrega/connectionCandidates"),
 	"release-candidates":          opsurface.Exposed("aggrega/releaseCandidates"),
 	"active-release":              opsurface.Exposed("aggrega/activeRelease"),
 

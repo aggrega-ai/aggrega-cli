@@ -126,6 +126,7 @@ var dispositions = map[string]opsurface.Disposition{
 	"completion-at-position":      opsurface.NotApplicable(groundNoOpenBuffer),
 	"workspace-entity-index":      opsurface.NotApplicable(groundEditorViewParity),
 	"feature-attach-candidates":   opsurface.NotApplicable(groundEditorViewParity),
+	"connection-candidates":       opsurface.NotApplicable(groundEditorViewParity),
 	"release-candidates":          opsurface.NotApplicable(groundEditorViewParity),
 	"active-release":              opsurface.NotApplicable(groundEditorViewParity),
 	"describe-capabilities":       opsurface.NotApplicable(groundProtocolLocalMeta),
