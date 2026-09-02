@@ -430,10 +430,13 @@ type FeatureInstance struct {
 // Defined in recipe-v1alpha1.schema.json#/properties/spec/properties/pipeline/items.
 type PipelineStep struct {
 	ID string `json:"id" yaml:"id"`
-	// Plugin is the URI of the Plugin entity this step runs (e.g.
-	// `name:version` or `provider/name:version`). The build resolves the entity to
-	// its .wasm artifact (derived from the entity's bare identity) and loads the
-	// bytes. A bare .wasm or artifact reference is not accepted.
+	// Plugin is the URI of the Plugin entity this step runs, always scoped by the
+	// plugin's own socket type: `<pluginType>/<name>`, optionally versioned, as in
+	// `parser/yaml` or `parser/yaml:1.0.0`. The scope is mandatory rather than one
+	// form among several, because two sockets may hold a plugin of the same name
+	// and the scope is what makes the entity resolvable. The build resolves the
+	// entity to its .wasm artifact (derived from the entity's bare identity) and
+	// loads the bytes. A bare .wasm or artifact reference is not accepted.
 	Plugin   string `json:"plugin" yaml:"plugin"`
 	Function string `json:"function" yaml:"function"`
 	With     string `json:"with,omitempty" yaml:"with,omitempty"`

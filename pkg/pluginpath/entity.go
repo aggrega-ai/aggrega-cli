@@ -10,11 +10,15 @@ import (
 )
 
 // ErrPluginEntityNotFound is the Loud Guardrail for a plugin reference that
-// does not resolve to a Plugin entity. A plugin is referenced by its
-// Plugin entity URI (`name:version` or `provider/name:version`); the entity's
-// .wasm artifact reference is derived from its bare identity. A bare .wasm
-// reference or an artifact reference is no longer accepted: the build halts here
-// naming the offending reference.
+// does not resolve to a Plugin entity. A plugin is referenced by its Plugin
+// entity URI, always scoped by the plugin's own socket type —
+// `<pluginType>/<name>` optionally versioned, as in `parser/yaml` or
+// `parser/yaml:1.0.0`. The scope is mandatory rather than one form among
+// several, because two sockets may hold a plugin of the same name and the scope
+// is what makes the entity resolvable. The entity's .wasm artifact reference is
+// derived from its bare identity. A bare .wasm reference or an artifact
+// reference is no longer accepted: the build halts here naming the offending
+// reference.
 func ErrPluginEntityNotFound() error { return errPluginEntityNotFound }
 
 var errPluginEntityNotFound = cerrors.Register("pluginpath/plugin-entity-not-found", cerrors.Meta{
@@ -80,7 +84,7 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 		}
 		if !ok {
 			return ResolvedPlugin{}, fmt.Errorf(
-				"%w: %q must be a Plugin entity URI (e.g. `name:version` or `provider/name:version`); "+
+				"%w: %q must be a plugin-type-scoped Plugin entity URI (`<pluginType>/<name>`, optionally versioned, as in `parser/yaml` or `parser/yaml:1.0.0`); "+
 					"bare-`.wasm` and artifact references are no longer accepted",
 				ErrPluginEntityNotFound(), entityURI)
 		}

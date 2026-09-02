@@ -10,9 +10,11 @@ import (
 )
 
 // TestClassifyReference proves the structural classifier partitions every
-// reference shape into the expected form. The provider/name:version case guards
-// against the trap of treating a legitimate entity URI (a slash and a colon) as
-// an artifact reference.
+// reference shape into the expected form. The scoped `<pluginType>/<name>`
+// cases guard against the trap of treating a legitimate entity URI (a slash and
+// a colon) as an artifact reference. Classification is structural, so an
+// unscoped `name:version` classifies as an entity URI here and is refused later
+// at entity resolution.
 func TestClassifyReference(t *testing.T) {
 	cases := []struct {
 		uri  string
@@ -39,7 +41,7 @@ func TestClassifyReference(t *testing.T) {
 // TestAcceptReferenceForm_EntityOnly proves the entity-only policy rejects the
 // two non-entity forms — naming the offending reference and wrapping
 // ErrPluginEntityNotFound — while accepting a bare entity URI, including the
-// provider/name:version shape.
+// scoped `<pluginType>/<name>` shape.
 func TestAcceptReferenceForm_EntityOnly(t *testing.T) {
 	rejected := []struct {
 		uri     string

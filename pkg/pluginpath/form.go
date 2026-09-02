@@ -16,10 +16,15 @@ import (
 type ReferenceForm int
 
 const (
-	// FormEntityURI is a bare Plugin entity URI — `name:version` or
-	// `provider/name:version`. It is the residual form: a reference that is
-	// neither an explicit filesystem path nor a non-entity artifact reference.
-	// A pipeline plugin must be this form.
+	// FormEntityURI is a bare Plugin entity URI — a plugin-type-scoped
+	// coordinate, `<pluginType>/<name>` optionally versioned, as in
+	// `parser/yaml` or `parser/yaml:1.0.0`. It is the residual form: a
+	// reference that is neither an explicit filesystem path nor a non-entity
+	// artifact reference. A pipeline plugin must be this form.
+	//
+	// Classification is structural and does not check the scope: an unscoped
+	// `name:version` classifies here too, and is refused later when the
+	// reference is resolved to its entity.
 	FormEntityURI ReferenceForm = iota
 
 	// FormLocalPath is an explicit filesystem-path reference — a `./` or `../`
@@ -94,12 +99,12 @@ func AcceptReferenceForm(uri string, policy SurfacePolicy) error {
 	switch ClassifyReference(uri) {
 	case FormLocalPath:
 		return fmt.Errorf(
-			"%w: %q is a filesystem path, but a pipeline plugin must be a Plugin entity URI (e.g. `name:version` or `provider/name:version`)",
+			"%w: %q is a filesystem path, but a pipeline plugin must be a plugin-type-scoped Plugin entity URI (`<pluginType>/<name>`, optionally versioned, as in `parser/yaml` or `parser/yaml:1.0.0`)",
 			ErrPluginEntityNotFound(), uri)
 	case FormArtifact:
 		return fmt.Errorf(
 			"%w: %q is an artifact reference (an `oci://` scheme, a bare `.wasm`, or an `@sha256:` digest), "+
-				"but a pipeline plugin must be a Plugin entity URI (e.g. `name:version` or `provider/name:version`)",
+				"but a pipeline plugin must be a plugin-type-scoped Plugin entity URI (`<pluginType>/<name>`, optionally versioned, as in `parser/yaml` or `parser/yaml:1.0.0`)",
 			ErrPluginEntityNotFound(), uri)
 	default:
 		return nil
