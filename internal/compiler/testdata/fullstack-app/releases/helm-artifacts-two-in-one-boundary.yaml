@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: helm-artifacts-two-in-one-boundary-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregates/artifacts-two-in-one-boundary.yaml
+  manifest: ../manifests/helm-sourced-with-artifacts.yaml
+  boundaries:
+    app-ns:
+      directory: ./dist/app
+      annotations:
+        aggrega.ai/namespace: "app-zone"
+      components:
+        alpha:
+          infra:
+            port: 8081
+        beta:
+          infra:
+            port: 8082

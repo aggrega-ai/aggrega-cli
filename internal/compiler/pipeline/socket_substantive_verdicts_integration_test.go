@@ -192,8 +192,11 @@ func TestContentRuleRenderVerdictDenyE2E(t *testing.T) {
 		t.Errorf("content-rule halt does not name the forbidden token %q:\n%v", renderContentForbiddenToken, msg)
 	}
 	// The artifacts sort by path, so the first offender named is deterministic —
-	// proving the guest read a real rendered artifact's content.
-	if !strings.Contains(msg, `artifact "dist/backend/helm/app-config.yaml"`) {
+	// proving the guest read a real rendered artifact's content. The first path in
+	// that order is a rendered manifest sitting directly at the boundary's
+	// dispatch directory; a file the Recipe's artifacts block placed sits one
+	// directory deeper, under the component's own name, and so sorts after it.
+	if !strings.Contains(msg, `artifact "dist/backend/helm/backend-api-service.yaml"`) {
 		t.Errorf("content-rule halt does not name the first offending artifact:\n%v", msg)
 	}
 }

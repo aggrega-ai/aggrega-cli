@@ -32,9 +32,15 @@ import (
 // platforms and a URL has to escape — so a reader must never meet it, and the
 // name they meet instead is the one they wrote in the boundary's features block.
 //
-// A provider that places its contributors flat is here as the control: its files
-// never sat under a per-contributor directory at all, so a change that moved
-// them has reached past the nesting position it was aimed at.
+// A provider that places its contributors flat is here as the control. Its
+// attachment output is pre-keyed at the boundary's own features position and is
+// never handed to a per-contributor placement at all, so a change aimed at the
+// nesting position that moved it has reached past what it was aimed at. The
+// component beside the attachment is on the flat provider's other side of that
+// line: a component's own artifacts DO sit under a directory named for the
+// component, because the name such a file carries is the key its author wrote
+// and carries nothing of the component. Pinning both in one path set is what
+// holds the two apart.
 
 // boundaryFRChart writes a minimal chart whose one template emits a ConfigMap,
 // for a provider that consumes a sourced chart rather than an artifacts map.
@@ -85,11 +91,11 @@ type boundaryFROutputPathCase struct {
 	// the attachment's share alone is what holds the component's own position and
 	// the group's assembled output to account in the same comparison.
 	wantPaths []string
-	// wantAttachmentDir is the directory the attachment's files sit under, or ""
-	// for a provider that places its contributors flat. It is a second, redundant
-	// statement of what wantPaths already implies, and deliberately so: it is the
-	// one the assertion reports on, so a failure names the segment rather than a
-	// path list a reader has to diff by eye.
+	// wantAttachmentDir is the per-contributor directory the group's assembler
+	// named for the attachment, or "" for a provider whose group names none. It is
+	// a second, redundant statement of what wantPaths already implies, and
+	// deliberately so: it is the one the assertion reports on, so a failure names
+	// the segment rather than a path list a reader has to diff by eye.
 	wantAttachmentDir string
 }
 
@@ -124,13 +130,17 @@ func boundaryFROutputPathCases() []boundaryFROutputPathCase {
 			wantAttachmentDir: "dist/cluster/helm-chart/charts/aux/",
 		},
 		{
-			// The control. This provider places contributors flat, so the
-			// attachment's files sit at the boundary directory's own features
-			// position and no per-contributor directory exists to name.
-			name:     "helm places contributors flat, so no per-contributor directory is named",
+			// The control. This provider elects no assembler and so names no
+			// per-contributor directory of its own: the attachment's files sit at
+			// the boundary directory's own features position, exactly where they
+			// were pre-keyed, and there is no assembler-named directory to report.
+			// The component's artifact beside it sits under the component's name —
+			// not the assembler's doing, but the artifacts placement's, which is
+			// what keeps two components in one boundary from writing one path.
+			name:     "helm names no assembler directory, and the attachment stays at its own features position",
 			provider: "helm",
 			wantPaths: []string{
-				"dist/cluster/helm/api-config.yaml",
+				"dist/cluster/helm/api/api-config.yaml",
 				"dist/cluster/helm/features/aux/aux-config.yaml",
 			},
 			wantAttachmentDir: "",

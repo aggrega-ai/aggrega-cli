@@ -2312,11 +2312,47 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// producer-declared format (from the per-node source, empty when the
 			// producer declared none) rides on the record so the render-policy
 			// parser seam can prefer it over the path extension.
+			//
+			// A file a node's artifacts block placed is written under that
+			// contributor's own directory rather than at the dispatch path itself.
+			// Such a file is named by the key its author wrote, and that key carries
+			// nothing of the component the Recipe was bound to — so two components
+			// in one boundary bound to one Recipe write one name, and neither
+			// author has a surface on which to separate them. The directory is the
+			// contributor's authoring-level name, read through the same
+			// classification a finding about that contributor reads, so the
+			// directory and the attribution cannot come to disagree.
+			//
+			// Only a directory is added: the filename stays the author-declared key,
+			// which is what the whole artifacts naming rests on — an author reads
+			// back the name they wrote rather than one derived from something else.
+			//
+			// The other input kinds stay where they are. A rendered or synthesized
+			// file is named by the provider from the node it belongs to, so it
+			// already carries its contributor, and moving it would relocate output
+			// nothing forced.
+			//
+			// Which files those are is read from what the node PLACED, the record
+			// carrying each file's input-kind origin. Output a node acquired after
+			// that record was taken — an attachment's contribution, or a
+			// host-supplied patch — appears in none of it and stays flat, which is
+			// what leaves a boundary-scope attachment's own layout untouched.
 			for nodeID, nodeFiles := range pd.files {
 				nodeFormats := pd.formats[nodeID]
 				producer := nodeProducerLabel(nodeID)
+				artifactsDir := nodeOutputSegment(nodeID) + "/"
+				fromArtifacts := make(map[string]struct{}, len(pd.placed[nodeID]))
+				for _, f := range pd.placed[nodeID] {
+					if f.Origin == EmitOriginArtifactsInline || f.Origin == EmitOriginArtifactsImport {
+						fromArtifacts[f.Name] = struct{}{}
+					}
+				}
 				for p, c := range nodeFiles {
-					groupFiles.put(p, AssembledFile{Content: c, Format: nodeFormats[p]}, producer)
+					path := p
+					if _, isArtifact := fromArtifacts[p]; isArtifact {
+						path = artifactsDir + p
+					}
+					groupFiles.put(path, AssembledFile{Content: c, Format: nodeFormats[p]}, producer)
 				}
 			}
 		}

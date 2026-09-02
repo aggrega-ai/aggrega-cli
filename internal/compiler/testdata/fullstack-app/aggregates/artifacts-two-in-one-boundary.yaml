@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: artifacts-two-in-one-boundary
+  version: "1.0.0"
+spec:
+  components:
+    alpha:
+      type: core/compute/api-server
+    beta:
+      type: core/compute/api-server

@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: compose-artifacts-two-in-one-boundary
+  version: "1.0.0"
+spec:
+  components:
+    alpha:
+      type: core/raw/manifest
+      values:
+        name: alpha-overlays
+    beta:
+      type: core/raw/manifest
+      values:
+        name: beta-overlays
