@@ -30,6 +30,15 @@ type Config struct {
 	// connected assistant can record which server version it spoke to. An
 	// empty value reports an empty version.
 	ServerVersion string
+
+	// Commands is the command surface the long-tail command tools are derived
+	// from, in catalog order. The command layer supplies it because it is the
+	// only layer that can see both the command tree and this server; this
+	// package holds no list of commands of its own, so a command reaches the
+	// tool surface by existing in the tree rather than by being restated here.
+	// An empty value yields no command tools, which is the shape every test
+	// that is not about them runs in.
+	Commands []CommandSurface
 }
 
 // server holds the per-session transport state: the sole stdout writer
@@ -82,11 +91,17 @@ type server struct {
 	// injects a fake that records the request and returns canned output.
 	runLint lintRunner
 
-	// runHelp runs a command's help output for the cli:// resource. Nil
-	// self-execs the running binary with the requested command path and
-	// --help, so the help text has a single home in the command layer. A test
-	// injects a fake that records the arguments and returns canned output.
-	runHelp helpRunner
+	// runCommand runs an aggrega command by argument vector, for the cli://
+	// resource and for the generated command tools. Nil self-execs the running
+	// binary, so a command's behavior and its help text have a single home in
+	// the command layer. A test injects a fake that records the arguments and
+	// returns canned output.
+	runCommand commandRunner
+
+	// commandTools is the long-tail tool set derived from the command surface
+	// the caller supplied, built once per session in Run and never mutated, so
+	// every listing over it is byte-stable for the life of the session.
+	commandTools []toolSpec
 }
 
 // Run reads newline-delimited JSON-RPC 2.0 messages from cfg.Stdin,
@@ -117,6 +132,7 @@ func Run(cfg Config) error {
 		out:           stdout,
 		logw:          logw,
 		serverVersion: cfg.ServerVersion,
+		commandTools:  deriveCommandTools(cfg.Commands),
 	}
 	return s.serve(stdin)
 }

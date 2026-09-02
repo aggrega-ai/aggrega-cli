@@ -258,7 +258,7 @@ func (s *server) handleToolsCall(params json.RawMessage) (any, *rpcError) {
 	if p.Name == "" {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "tools/call requires a tool name; available tools: " + toolNames()}
 	}
-	if spec, ok := lookupTool(p.Name); ok {
+	if spec, ok := s.lookupTool(p.Name); ok {
 		return spec.invoke(s, context.Background(), p.Arguments)
 	}
 	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + p.Name +
@@ -266,18 +266,34 @@ func (s *server) handleToolsCall(params json.RawMessage) (any, *rpcError) {
 		"; call " + describeCapabilitiesName + " to discover additional capabilities"}
 }
 
-// lookupTool resolves a tool by name across the curated set and the deferred
-// set, so a deferred tool a client discovered through the capability tool is
-// invocable by the same tools/call path as a curated one.
+// lookupTool resolves a tool by name across the two statically declared
+// registries — the curated set and the deferred set — so a deferred tool a
+// client discovered through the capability tool is invocable by the same
+// tools/call path as a curated one.
+//
+// It spans the static registries alone, which is what a caller holding no
+// session wants. A tools/call goes through the server's own lookup below, which
+// also spans the command tools derived for that session.
 func lookupTool(name string) (*toolSpec, bool) {
-	for i := range toolRegistry {
-		if toolRegistry[i].name == name {
-			return &toolRegistry[i], true
-		}
-	}
-	for i := range deferredToolRegistry {
-		if deferredToolRegistry[i].name == name {
-			return &deferredToolRegistry[i], true
+	return lookupToolIn(name, toolRegistry, deferredToolRegistry)
+}
+
+// lookupTool resolves a tool by name across every registry this session serves:
+// the curated set, the deferred set, and the command tools derived from the
+// command surface the caller supplied.
+func (s *server) lookupTool(name string) (*toolSpec, bool) {
+	return lookupToolIn(name, toolRegistry, deferredToolRegistry, s.commandTools)
+}
+
+// lookupToolIn resolves a tool by name across the given registries in order. It
+// is the one scan the two lookups above share, so which registries a lookup
+// spans is the only thing that distinguishes them.
+func lookupToolIn(name string, registries ...[]toolSpec) (*toolSpec, bool) {
+	for _, reg := range registries {
+		for i := range reg {
+			if reg[i].name == name {
+				return &reg[i], true
+			}
 		}
 	}
 	return nil, false

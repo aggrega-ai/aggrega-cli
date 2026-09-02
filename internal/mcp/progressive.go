@@ -77,7 +77,20 @@ var describeCapabilitiesToolSpec = toolSpec{
 	invoke: describeCapabilitiesInvoke,
 }
 
-func describeCapabilitiesInvoke(_ *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+// deferredTools returns the deferred long tail this session serves: the
+// statically declared deferred registry followed by the command tools derived
+// from the supplied command surface.
+//
+// The two are concatenated in a fixed order, each already in its own fixed
+// order, so the surfaced long tail and its wire bytes are stable across runs.
+func (s *server) deferredTools() []toolSpec {
+	out := make([]toolSpec, 0, len(deferredToolRegistry)+len(s.commandTools))
+	out = append(out, deferredToolRegistry...)
+	out = append(out, s.commandTools...)
+	return out
+}
+
+func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
 	var a describeCapabilitiesArgs
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &a); err != nil {
@@ -90,8 +103,9 @@ func describeCapabilitiesInvoke(_ *server, _ context.Context, args json.RawMessa
 	if kind == "" {
 		// No kind in play: return the long tail — every deferred tool's
 		// definition — so a client discovers what the default list omits.
-		for i := range deferredToolRegistry {
-			caps = append(caps, descriptorFor(deferredToolRegistry[i], true))
+		deferred := s.deferredTools()
+		for i := range deferred {
+			caps = append(caps, descriptorFor(deferred[i], true))
 		}
 	} else {
 		if !isKnownEntityKind(kind) {
@@ -108,6 +122,14 @@ func describeCapabilitiesInvoke(_ *server, _ context.Context, args json.RawMessa
 // capabilitiesForKind returns the tools that serve kind, walking the curated set
 // then the deferred set so the surfaced order is deterministic. The capability
 // tool itself is skipped — it never lists itself as a capability for a kind.
+//
+// The generated command tools are deliberately absent from a kind-scoped
+// result, and reachable through the unscoped long tail instead. A command's
+// relevance to an entity kind is recorded nowhere the derivation could read it,
+// so every command tool is kind-agnostic — and surfacing the kind-agnostic set
+// here would answer a request to narrow with the entire command surface, which
+// is the opposite of narrowing. Claiming a subset serves a kind would mean this
+// package deciding something about the commands rather than reading it.
 func capabilitiesForKind(kind string) []capabilityDescriptor {
 	var out []capabilityDescriptor
 	collect := func(specs []toolSpec, deferred bool) {

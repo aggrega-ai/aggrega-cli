@@ -100,7 +100,7 @@ func TestServeCliHelp(t *testing.T) {
 	s := &server{
 		out:  io.Discard,
 		logw: io.Discard,
-		runHelp: func(_ context.Context, args []string, stdout, _ io.Writer) error {
+		runCommand: func(_ context.Context, args []string, stdout, _ io.Writer) error {
 			gotArgs = args
 			_, _ = io.WriteString(stdout, "USAGE: aggrega "+strings.Join(args, " "))
 			return nil

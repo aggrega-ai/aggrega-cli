@@ -22,12 +22,14 @@ const (
 	cliMimeType = "text/plain"
 )
 
-// helpRunner runs a command's help by argument vector, writing its output to
-// stdout and stderr. It is the seam the cli:// resource drives: the production
-// value re-invokes the running binary with the requested command path and
-// --help, so the help text keeps its single home in the command layer, and a
-// test injects a fake that records the arguments.
-type helpRunner func(ctx context.Context, args []string, stdout, stderr io.Writer) error
+// commandRunner runs an aggrega command by argument vector, writing its output
+// to stdout and stderr. It is the seam both command-driven surfaces share: the
+// cli:// resource, which asks for a command's help, and the generated command
+// tools, which ask the command to do its work. The production value re-invokes
+// the running binary, so a command's behavior and its help text both keep their
+// single home in the command layer, and a test injects a fake that records the
+// arguments.
+type commandRunner func(ctx context.Context, args []string, stdout, stderr io.Writer) error
 
 // cliResourceTemplate returns the CLI-help URI-template family. The template is
 // parameterised by a command path; a cli:// read resolves it to that command's
@@ -69,9 +71,9 @@ func (s *server) readCliResource(uri string) (any, *rpcError) {
 	if !ok {
 		return nil, resourceNotFound(uri)
 	}
-	run := s.runHelp
+	run := s.runCommand
 	if run == nil {
-		run = selfExecHelp
+		run = selfExecCommand
 	}
 	var stdout, stderr bytes.Buffer
 	if err := run(context.Background(), argv, &stdout, &stderr); err != nil {
@@ -125,13 +127,20 @@ func isCommandToken(s string) bool {
 	return true
 }
 
-// selfExecHelp produces a command's help by re-invoking the running binary with
-// the command path and --help as a subprocess, so the help text keeps its single
-// home in the command layer rather than being duplicated here.
-func selfExecHelp(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+// selfExecCommand runs a command by re-invoking the running binary with the
+// given argument vector as a subprocess, so the command's behavior keeps its
+// single home in the command layer rather than being reimplemented here.
+//
+// The subprocess is also what keeps this server's stream discipline
+// structural rather than merely intended. The child writes to the buffers the
+// caller supplies, on its own file descriptors, so a command that writes to the
+// process stdout directly — several do, rather than to the writer their command
+// object carries — cannot reach the parent's stdout, where the protocol stream
+// lives.
+func selfExecCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	self, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("locate running binary for command help: %w", err)
+		return fmt.Errorf("locate running binary to run a command: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, self, args...)
 	cmd.Stdout = stdout
