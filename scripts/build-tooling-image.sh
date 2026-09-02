@@ -73,7 +73,11 @@ while [ "$#" -gt 0 ]; do
     --push)       PUSH=1; shift ;;
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
     --dry-run)    DRY_RUN=1; shift ;;
-    -h|--help)    sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    # Ends at the header's own closing line rather than at a line NUMBER, which
+    # is how the previous form came to print `set -euo pipefail` to the reader:
+    # a fixed range cannot follow a header that grows. Same sentinel, and same
+    # two-stage form, as scripts/build.sh.
+    -h|--help)    sed -n '2,/^# Exit non-zero on the first failing step\.$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)            die "unknown argument: $1" ;;
   esac
 done
