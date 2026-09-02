@@ -19,7 +19,7 @@ import (
 //
 // Rules enforced here: values-mapping and input-kinds, plus the eval-provider
 // constraint. The workload-requires-provider-workloadSchema constraint is
-// enforced at render time by the central input-kind gate (a synthesised Recipe
+// enforced at render time by the central input-kind gate (a synthesized Recipe
 // bound to a provider that does not implement workload synthesis halts loudly
 // there). The filename-collision rule (a collision across input-kind origins)
 // is enforced at emission time by feature rendering.

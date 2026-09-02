@@ -61,7 +61,7 @@ const (
 	// under 09-artifact-evaluation/<filename>.yaml.
 	PassPhaseB3 Pass = "09-artifact-evaluation"
 
-	// PassPhaseB4 captures the manifests the provider render synthesised
+	// PassPhaseB4 captures the manifests the provider render synthesized
 	// (per-emitted-file). Files land under 10-engine-synthesis/<filename>.yaml.
 	PassPhaseB4 Pass = "10-engine-synthesis"
 

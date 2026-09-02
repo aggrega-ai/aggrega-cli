@@ -126,7 +126,7 @@ func TestPushArtifactRoundTripsThroughFileBackedStore(t *testing.T) {
 // parses an entity envelope or dispatches on a Kind: the same opaque bytes
 // that the kind-dispatched entity push (pushRun) rejects for lacking a kind
 // field publish cleanly through pushArtifactRun. No fake entity Kind is
-// synthesised; MediaTypeForKind is never consulted.
+// synthesized; MediaTypeForKind is never consulted.
 func TestPushArtifactBypassesKindDispatch(t *testing.T) {
 	path, _ := makeDocsBundle(t)
 

@@ -36,7 +36,7 @@ import (
 //     determinism contract).
 //
 // TopologyResult's own fields are all author-declared; the
-// synthesised-derived discipline applies elsewhere.
+// synthesized-derived discipline applies elsewhere.
 //
 // FeatureAttachments is a per-node slice; the per-node iteration order is
 // the YAML attachment order from collectAttachments. ExportedComponents maps the alias an Aggregate
@@ -113,7 +113,7 @@ type StageAxes interface {
 //
 //   - Phase 1 (flattenAggregate): InstanceID, ComponentType, Values,
 //     SelfInject, SubsystemPath, SourceAggregate. InstanceID is the dot-
-//     notation ID synthesised by qualifiedID (the dot is reserved as
+//     notation ID synthesized by qualifiedID (the dot is reserved as
 //     the compiler-internal path separator); SubsystemPath is the
 //     dotted path of the subsystem the component sits in (empty at
 //     top level); SourceAggregate is the dotted prefix of the

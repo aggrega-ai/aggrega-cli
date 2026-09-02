@@ -126,7 +126,7 @@ func TestHandleValidateEmits1002WhenCascadeExhausted(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	srv := newTestServer(t, tmp, nil, nil)
-	// Synthesise the cascade-exhausted state: candidates found but
+	// Synthesize the cascade-exhausted state: candidates found but
 	// nothing selected (no marker, no config, multiple Release files).
 	srv.cascadeAttempt = cascadeAttempt{
 		ReleaseCandidatesFound: 2,

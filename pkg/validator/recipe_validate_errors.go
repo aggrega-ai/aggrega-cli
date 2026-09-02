@@ -15,7 +15,7 @@ import (
 //
 // Shape rules surfaced at Recipe load time: values-mapping and input-kinds.
 // The workload-requires-provider-workloadSchema constraint is enforced at
-// render time by the central input-kind gate (a synthesised Recipe bound to a
+// render time by the central input-kind gate (a synthesized Recipe bound to a
 // provider with no workload-synthesis capability halts loudly there).
 // The filename-collision rule is enforced once each emitting document's own
 // emission is complete, which is the earliest point the names a block produced

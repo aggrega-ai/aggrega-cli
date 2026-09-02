@@ -204,7 +204,7 @@ spec:
         core/compute/api-server: api-sourceonly:1.0.0
 `
 
-// releaseParityInputKindRecipe declares a synthesised workload but binds a
+// releaseParityInputKindRecipe declares a synthesized workload but binds a
 // capability whose serving plugin supports only the sourced input kind, so the
 // input-kind capability check reports it.
 const releaseParityInputKindRecipe = `apiVersion: aggrega.ai/v1alpha1

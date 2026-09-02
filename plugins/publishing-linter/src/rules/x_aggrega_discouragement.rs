@@ -8,7 +8,7 @@
 //! The platform's recommended authoring paths are the declarative
 //! `usesSchema` (dependency sockets) and `featuresSchema` (credential
 //! bindings) tables on `spec`. The schema-composition layer
-//! synthesises the inline `x-aggrega-*` extension form from those
+//! synthesizes the inline `x-aggrega-*` extension form from those
 //! declarative tables; authors writing the extension form directly
 //! bypass the declarative surface and lose the validation /
 //! tool-assist benefits the layer provides.

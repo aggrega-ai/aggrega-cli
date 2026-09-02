@@ -87,7 +87,7 @@ func TestAttachmentBinding_AbsentWhenTheSlotSetIsUnknown(t *testing.T) {
 
 // TestAttachmentLabels_AreTheFeaturesOwnAndAbsentWhenUnresolved pairs a Feature
 // that declares labels with one whose type resolves to no entity. The second is
-// what proves the carry reads the entity rather than synthesising a label set.
+// what proves the carry reads the entity rather than synthesizing a label set.
 func TestAttachmentLabels_AreTheFeaturesOwnAndAbsentWhenUnresolved(t *testing.T) {
 	t.Parallel()
 	attachments := buildSensitivity(t, []topology.FeatureAttachment{

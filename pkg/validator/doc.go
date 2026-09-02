@@ -9,7 +9,7 @@
 //     depth bound and unresolvable parents, and composes the chain's JSON
 //     Schemas. Inherited labels and annotations merge on the typed entity in
 //     ResolveComponentExtends / ResolveFeatureExtends, not here.
-//   - Split Schema Engine: synthesises a base JSON Schema from usesSchema and
+//   - Split Schema Engine: synthesizes a base JSON Schema from usesSchema and
 //     composes it with the entity's authored Schema content via the merger phase
 //
 // All validation errors pass through an Aggrega error translation layer; raw

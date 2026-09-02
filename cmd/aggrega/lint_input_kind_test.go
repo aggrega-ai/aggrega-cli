@@ -166,7 +166,7 @@ spec:
 	}
 	emitted := diag.String() + out.String()
 	t.Logf("emitted diagnostic:\n%s", emitted)
-	for _, want := range []string{`Recipe "api-terraform:1.0.0"`, `provider "terraform"`, "does not support synthesised recipes", "this provider supports: sourced, artifacts-only"} {
+	for _, want := range []string{`Recipe "api-terraform:1.0.0"`, `provider "terraform"`, "does not support synthesized recipes", "this provider supports: sourced, artifacts-only"} {
 		if !strings.Contains(emitted, want) {
 			t.Errorf("the emitted finding does not carry %q; got:\n%s", want, emitted)
 		}
@@ -267,7 +267,7 @@ func TestInputKindCapabilityErrors_FlagsWorkloadOnNonSynthesizingEngine(t *testi
 		t.Fatalf("expected 1 error for workload:+helm-chart; got %d: %v", len(errs), errs)
 	}
 	msg := errs[0].Error()
-	for _, want := range []string{`Recipe "api:1.0.0"`, `provider "helm-chart"`, "does not support synthesised recipes", "this provider supports: sourced"} {
+	for _, want := range []string{`Recipe "api:1.0.0"`, `provider "helm-chart"`, "does not support synthesized recipes", "this provider supports: sourced"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error missing %q; got: %s", want, msg)
 		}
@@ -318,7 +318,7 @@ func TestInputKindCapabilityErrors_FlagsWorkloadOnTerraform(t *testing.T) {
 		t.Fatalf("expected 1 error for workload:+terraform; got %d: %v", len(errs), errs)
 	}
 	msg := errs[0].Error()
-	for _, want := range []string{`Recipe "api:1.0.0"`, `provider "terraform"`, "does not support synthesised recipes", "this provider supports: sourced, artifacts-only"} {
+	for _, want := range []string{`Recipe "api:1.0.0"`, `provider "terraform"`, "does not support synthesized recipes", "this provider supports: sourced, artifacts-only"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error missing %q; got: %s", want, msg)
 		}
@@ -339,7 +339,7 @@ func TestInputKindCapabilityErrors_FlagsSourcePlusWorkloadOnNonSynthesizingProvi
 		t.Fatalf("expected 1 error for source:+workload:+terraform; got %d: %v", len(errs), errs)
 	}
 	msg := errs[0].Error()
-	for _, want := range []string{`Recipe "api:1.0.0"`, `provider "terraform"`, "does not support synthesised recipes", "this provider supports: sourced, artifacts-only"} {
+	for _, want := range []string{`Recipe "api:1.0.0"`, `provider "terraform"`, "does not support synthesized recipes", "this provider supports: sourced, artifacts-only"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("error missing %q; got: %s", want, msg)
 		}
@@ -364,8 +364,8 @@ func TestInputKindCapabilityErrors_FlagsSourcePlusWorkloadOnFeatureRecipe(t *tes
 	if !strings.Contains(errs[0].Error(), `FeatureRecipe "sidecar:1.0.0"`) {
 		t.Errorf("expected the finding to name the FeatureRecipe; got: %v", errs)
 	}
-	if !strings.Contains(errs[0].Error(), "does not support synthesised recipes") {
-		t.Errorf("expected the finding to name the synthesised kind; got: %v", errs)
+	if !strings.Contains(errs[0].Error(), "does not support synthesized recipes") {
+		t.Errorf("expected the finding to name the synthesized kind; got: %v", errs)
 	}
 }
 

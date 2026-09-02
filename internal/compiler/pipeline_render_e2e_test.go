@@ -11,7 +11,7 @@ import (
 )
 
 // pipelineRenderFixtureInput names the pipeline-render fixture for the
-// build-faithful harness: a single helm-synthesised component whose Recipe
+// build-faithful harness: a single helm-synthesized component whose Recipe
 // carries one pipeline step referencing a Plugin ENTITY URI. The step
 // content-selects the rendered Deployment, PATCHes it (own-scope annotation), and
 // EMITs an own-scope ConfigMap. The fixture exercises the production entity-front:

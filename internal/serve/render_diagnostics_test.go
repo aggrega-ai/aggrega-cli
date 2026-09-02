@@ -295,9 +295,9 @@ func TestPublishRenderDiagnostics_CarriesEveryDeclaredInputKindOfTheAdvisory(t *
 		{
 			name: "a node declaring two input kinds is described by both",
 			diag: rendercore.UnhonorableAnnotationDiagnostic(
-				"helm", "aggrega.ai/cluster-domain", "sourced", "synthesised"),
+				"helm", "aggrega.ai/cluster-domain", "sourced", "synthesized"),
 			want: `target "helm" does not support annotation aggrega.ai/cluster-domain ` +
-				`on sourced or synthesised input and ignored it`,
+				`on sourced or synthesized input and ignored it`,
 		},
 		{
 			name: "a node declaring one input kind is described by that one",
@@ -305,7 +305,7 @@ func TestPublishRenderDiagnostics_CarriesEveryDeclaredInputKindOfTheAdvisory(t *
 				"helm", "aggrega.ai/service-account", "sourced"),
 			want: `target "helm" does not support annotation aggrega.ai/service-account ` +
 				`on sourced input and ignored it`,
-			unwanted: "synthesised",
+			unwanted: "synthesized",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

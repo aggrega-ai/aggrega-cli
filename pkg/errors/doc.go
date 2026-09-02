@@ -17,7 +17,7 @@
 //   - CatalogError: a Recipe, Component, Feature, FeatureRecipe, or
 //     Plugin is at fault.
 //   - TranslationError: the provider engine cannot express the requested
-//     synthesised output (no authoring fix; the developer or operator
+//     synthesized output (no authoring fix; the developer or operator
 //     must change input shape).
 //   - FetchError: a remote-acquisition fault (registry or source-artifact
 //     fetch); the remediation is operational, not authoring.

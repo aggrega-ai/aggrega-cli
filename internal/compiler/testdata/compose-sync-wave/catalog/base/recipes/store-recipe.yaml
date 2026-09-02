@@ -9,7 +9,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
     port: 5432
-  # A health: block, so the synthesised service declares a healthcheck and a
+  # A health: block, so the synthesized service declares a healthcheck and a
   # wave-derived dependency on it can be gated on its health.
   workload: |
     apiVersion: aggrega.ai/v1alpha1

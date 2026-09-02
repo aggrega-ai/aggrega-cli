@@ -336,7 +336,7 @@ func TestWalkRecursesDefinitionsLegacyKeyword(t *testing.T) {
 	}
 }
 
-// TestWalkSchemaSerialisable confirms the synthesised schemas in this
+// TestWalkSchemaSerialisable confirms the synthesized schemas in this
 // test file serialise + round-trip via the library cleanly. Defensive
 // — verifies our synthetic *Schema constructions work with the
 // library's resolver.
@@ -355,9 +355,9 @@ func TestWalkSchemaSerialisable(t *testing.T) {
 	}
 	v, err := New(schema)
 	if err != nil {
-		t.Errorf("New on synthesised schema: %v", err)
+		t.Errorf("New on synthesized schema: %v", err)
 	}
 	if _, err := v.Validate(map[string]any{"name": "ok"}, nil); err != nil {
-		t.Errorf("Validate on synthesised schema: %v", err)
+		t.Errorf("Validate on synthesized schema: %v", err)
 	}
 }

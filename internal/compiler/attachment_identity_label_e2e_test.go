@@ -4,7 +4,7 @@
 // End-to-end coverage of the identity a per-component Feature attachment's
 // rendered resources carry, across the three ways a FeatureRecipe can deliver
 // them: a chart or fragment the author supplies, a workload the compiler
-// synthesises, and a standalone artifact set.
+// synthesizes, and a standalone artifact set.
 //
 // The fixture attaches all three to ONE component in one boundary, so the three
 // deliveries meet in one build and can be compared against each other rather
@@ -40,7 +40,7 @@ func attachmentIdentityInput(target string) pipelinetest.Input {
 // An attachment delivering a chart or a fragment its author supplied stamped the
 // HOST component's identity, which made its resources indistinguishable by label
 // from the resources the host emitted itself: anything selecting an attachment's
-// resources by identity found the synthesised and artifacts ones and silently
+// resources by identity found the synthesized and artifacts ones and silently
 // missed the sourced ones. All three now answer the same way.
 //
 // Asserted on both targets, because the composition happens once for the whole

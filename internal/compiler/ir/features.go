@@ -1179,7 +1179,7 @@ func featureCatalogLabelsAndAnnotations(catalogLookup resolver.CatalogLookup, fe
 // An attachment declaring no delivery mechanism — the shape a slot takes when
 // its Recipe consumes the material internally rather than delivering it to the
 // workload — has no delivery key, so the result is empty. That is the honest
-// answer rather than a synthesised key: there is nothing delivered to mark.
+// answer rather than a synthesized key: there is nothing delivered to mark.
 func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], sensitiveProvides map[string]bool) types.OrderedMap[types.OrderedMap[string]] {
 	out := types.OrderedMap[types.OrderedMap[string]]{}
 	if inject.Len() == 0 || len(sensitiveProvides) == 0 {

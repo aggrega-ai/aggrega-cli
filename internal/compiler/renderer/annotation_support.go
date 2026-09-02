@@ -27,7 +27,7 @@ type nodeInputKind struct {
 }
 
 // classifyNodeInputKind is the one home of the source > workload > artifacts
-// precedence: a node declaring a source or a workload is sourced or synthesised
+// precedence: a node declaring a source or a workload is sourced or synthesized
 // even when it ALSO declares artifacts (those ride through as composed artifacts),
 // and only a node with neither is artifacts-only. ok is false for a node
 // declaring none of the three, which classifies to no input kind at all.
@@ -43,7 +43,7 @@ func classifyNodeInputKind(hasSource, hasWorkload, hasArtifacts bool) (nodeInput
 	case hasSource:
 		return nodeInputKind{Scope: types.WellKnownAnnotationScopeSourced, Display: "sourced"}, true
 	case hasWorkload:
-		return nodeInputKind{Scope: types.WellKnownAnnotationScopeSynthesized, Display: "synthesised"}, true
+		return nodeInputKind{Scope: types.WellKnownAnnotationScopeSynthesized, Display: "synthesized"}, true
 	case hasArtifacts:
 		return nodeInputKind{Scope: types.WellKnownAnnotationScopeArtifactsStandalone, Display: "artifacts-only"}, true
 	}

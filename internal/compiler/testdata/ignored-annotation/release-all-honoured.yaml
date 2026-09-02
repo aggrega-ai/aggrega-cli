@@ -2,7 +2,7 @@
 # Copyright 2026 Cognitio S.r.l.
 #
 # Every crossing in this deployment renders at a kind the target's claim covers
-# for the authored annotation: the node synthesises its Workload, and so does its
+# for the authored annotation: the node synthesizes its Workload, and so does its
 # one attachment. Nothing is ignored, so a build must raise no advisory at all and
 # emit the same bytes every time.
 #

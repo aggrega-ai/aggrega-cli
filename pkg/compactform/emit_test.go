@@ -640,7 +640,7 @@ root:
 	}
 	// The dependent schema is a partial JSON Schema (properties +
 	// required) without an explicit type. Verify properties round-trip
-	// rather than asserting a synthesised type.
+	// rather than asserting a synthesized type.
 	props, ok := tls["properties"].(Schema)
 	if !ok {
 		t.Fatalf("dependent schema should carry properties; got %v", tls)

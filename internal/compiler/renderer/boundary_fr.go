@@ -468,7 +468,7 @@ func dispatchBoundaryScopeFR(
 	}
 
 	// 5-6. Render via the SAME input-kind machinery the per-component FR sites
-	// use — the central gate, then sourced engine.Render / synthesised workload
+	// use — the central gate, then sourced engine.Render / synthesized workload
 	// synthesis / artifacts emission — against the boundary-scope context (frCtx
 	// carries .boundary.* pillars, never .context.*; what the workload and
 	// artifacts templates may reference was decided by the rules over those

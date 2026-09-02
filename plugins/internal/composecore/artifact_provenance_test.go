@@ -89,7 +89,7 @@ func assertKeySet(t *testing.T, what string, got, want map[string]string) {
 // placer's positive contract: every service the fragment declares carries the
 // folded provenance set — the two host-computed halves unioned, minus the
 // Kubernetes-only keys — and no warning is returned. The expected set is computed
-// through the same fold the synthesised and source-rendered services use, so the
+// through the same fold the synthesized and source-rendered services use, so the
 // assertion cannot drift from what those services carry.
 func TestSpliceArtifactServiceProvenance_StampsEveryServiceWithTheFoldedSet(t *testing.T) {
 	t.Parallel()

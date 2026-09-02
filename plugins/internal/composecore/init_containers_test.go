@@ -446,7 +446,7 @@ func TestSynthesizeWorkload_InitContainersDeterministic(t *testing.T) {
 }
 
 // TestComposeAssemble_InitChainAndEdgeDependency proves the two orderings coexist
-// in one field in the assembled output: the init wait the synthesiser recorded
+// in one field in the assembled output: the init wait the synthesizer recorded
 // survives the fragment's marshal-and-parse round trip, and the edge-derived
 // dependency the assembler adds lands after it rather than interleaving with it.
 // It also pins that a service with no init chain keeps the short form.
@@ -553,7 +553,7 @@ func TestDependsOn_RequireIsIdempotentPerService(t *testing.T) {
 }
 
 // TestDependsOn_RoundTripsBothForms proves a fragment survives the marshal the
-// synthesiser does and the parse the assembler does, in both emitted forms — the
+// synthesizer does and the parse the assembler does, in both emitted forms — the
 // hop where a lost condition would silently become an ungated wait.
 func TestDependsOn_RoundTripsBothForms(t *testing.T) {
 	t.Parallel()

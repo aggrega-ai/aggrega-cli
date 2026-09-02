@@ -7,7 +7,7 @@
 // it takes the evaluated Workload, the per-slot secret provides, and the node's
 // render context, and returns the K8s manifest files. The helm provider Wasm
 // guest, which reconstructs the Workload from the payload's workload projection,
-// calls this one function, and nothing re-implements it, so a node's synthesised
+// calls this one function, and nothing re-implements it, so a node's synthesized
 // bytes have a single producer. This file carries no build tag: it compiles for
 // the host and for the wasip1 guest alike, so it imports no host-only capability
 // (no filesystem, no network).

@@ -14,7 +14,7 @@
 //
 // The merged compose document is emitted as one Intermediate=true
 // EmittedFile (`<nodeID>.compose-fragment.yaml`) so it joins the Release-
-// level merge alongside synthesised-mode fragments.
+// level merge alongside synthesized-mode fragments.
 //
 // RenderSourcedCore is the byte-identical-critical part of sourced-mode
 // rendering: it receives the base compose bytes in memory and never reads from
@@ -89,7 +89,7 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q: marshal merged source", nodeCtx.NodeID))
 	}
 
-	// Output path mirrors synthesised-mode: <nodeID>.compose-fragment.yaml.
+	// Output path mirrors synthesized-mode: <nodeID>.compose-fragment.yaml.
 	// Both flow into the same boundary merger via Intermediate=true. The
 	// orchestrator's per-node Phase B sub-passes wrap the file into an
 	// EmittedFile and tag origin/intermediate; sourced-mode origin is

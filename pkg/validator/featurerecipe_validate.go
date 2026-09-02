@@ -13,7 +13,7 @@ import (
 )
 
 // FeatureRecipe-validation sentinels. FeatureRecipes carry the same three
-// input kinds as Recipes (sourced, synthesised, artifacts) plus the
+// input kinds as Recipes (sourced, synthesized, artifacts) plus the
 // FeatureRecipe-only injectMapping, so the shape rules mirror the Recipe
 // rules — with one divergence: a FeatureRecipe is NOT required to declare a
 // render input kind. A FeatureRecipe declaring none (only provider +
@@ -23,7 +23,7 @@ import (
 // here, unlike a Recipe's input-kinds rule.
 //
 // The workload-requires-provider-workloadSchema constraint is enforced at
-// render time by the central input-kind gate (a synthesised FeatureRecipe
+// render time by the central input-kind gate (a synthesized FeatureRecipe
 // bound to a provider with no workload-synthesis capability halts loudly
 // there), not at load. Cross-input-kind filename collision is enforced at
 // emission time by feature rendering.

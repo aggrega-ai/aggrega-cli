@@ -1503,7 +1503,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// engine.Render (the source-based render) runs only for sourced mode;
-		// synthesised renders in Phase B.4, artifacts-only emits in Phase B.3.
+		// synthesized renders in Phase B.4, artifacts-only emits in Phase B.3.
 		runEngineRender := hasSource
 		var files []RenderedFile
 		if runEngineRender {
@@ -1987,7 +1987,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Compute the dispatch path for this boundary-scope FR. The FR is
 		// attached at the boundary level (no per-component BoundaryInfra
 		// entry), so look up the boundary's authored directory/subDirectory
-		// directly from the Release tree and synthesise a BoundaryInfra
+		// directly from the Release tree and synthesize a BoundaryInfra
 		// for computeFinalPath. Operator-authored templates on the boundary
 		// thus drive the FR's dispatch path the same way they drive
 		// per-component dispatch paths.
@@ -2623,7 +2623,7 @@ func UnsupportedInputKindMessage(providerName, mode string, caps ProviderContrac
 }
 
 // supportedKindsList renders a provider's supported input kinds for the
-// diagnostic, in source → synthesised → artifacts-only order. Returns "none"
+// diagnostic, in source → synthesized → artifacts-only order. Returns "none"
 // when the provider supports no input kind (not expected for a rendering
 // provider).
 func supportedKindsList(caps ProviderContract) string {
@@ -2632,7 +2632,7 @@ func supportedKindsList(caps ProviderContract) string {
 		kinds = append(kinds, "sourced")
 	}
 	if caps.Synthesized {
-		kinds = append(kinds, "synthesised")
+		kinds = append(kinds, "synthesized")
 	}
 	if caps.ArtifactsStandalone {
 		kinds = append(kinds, "artifacts-only")

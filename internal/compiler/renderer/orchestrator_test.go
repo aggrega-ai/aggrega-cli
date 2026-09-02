@@ -18,7 +18,7 @@ import (
 )
 
 // testHelmFactory returns an EngineFactory backed by the embedded provider
-// guests — used by orchestration tests that render synthesised or artifacts-only
+// guests — used by orchestration tests that render synthesized or artifacts-only
 // recipes through the production Wasm render path. It routes each provider name
 // to its embedded guest, so a helm node renders through the helm guest and a
 // mixed-provider graph resolves each provider independently.
@@ -72,7 +72,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 						Implements: "core/compute/api-server",
 						Provides:   provides,
 						Locals:     locals,
-						// Synthesised mode (a Workload) is the real compute path
+						// Synthesized mode (a Workload) is the real compute path
 						// for a helm Recipe; the removed renderSourceless
 						// synth-from-bare-values path is gone (Invariant 4).
 						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
@@ -120,7 +120,7 @@ func TestRenderAll_SimpleNode(t *testing.T) {
 // artifacts-only is a first-class input kind: a Recipe declaring only artifacts:
 // (no source:, no workload:) on a provider that supports standalone artifacts
 // (helm) renders by emitting its declared artifact files — templated against the
-// node context — and synthesises NO primary workload. No ghost compute.
+// node context — and synthesizes NO primary workload. No ghost compute.
 func TestRenderAll_ArtifactsOnlyRecipeRendersViaHelm(t *testing.T) {
 	t.Parallel()
 	art := types.OrderedMap[types.ArtifactEntry]{}
@@ -161,7 +161,7 @@ spec:
 			artFile = k
 		}
 		if strings.Contains(k, "deployment.yaml") || strings.Contains(k, "service.yaml") {
-			t.Errorf("artifacts-only node must not synthesise a primary workload, got: %s", k)
+			t.Errorf("artifacts-only node must not synthesize a primary workload, got: %s", k)
 		}
 	}
 	if artFile == "" {
@@ -180,7 +180,7 @@ spec:
 // TestRenderAll_ArtifactsOnlyRendersViaCompose is the end-to-end proof that the
 // compose provider renders an artifacts-only Recipe: a Recipe declaring only
 // artifacts: (no source:, no workload:) contributes the fragment it declares and
-// synthesises no service of its own. Compose assembles per dispatch group, so
+// synthesizes no service of its own. Compose assembles per dispatch group, so
 // the node's fragment is intermediate and the assembled docker-compose.yaml is
 // what a build writes — the assertions are therefore on the assembled document,
 // which is the surface an author sees.
@@ -244,11 +244,11 @@ volumes:
 	if !strings.Contains(body, "aggrega.ai/component-id: api") {
 		t.Errorf("artifact-supplied service not provenance-stamped, got:\n%s", body)
 	}
-	// No ghost compute: the node declared no Workload, so the synthesiser's own
+	// No ghost compute: the node declared no Workload, so the synthesizer's own
 	// service name for this node must not appear. The artifact's service starts
 	// with the same word, so the check is anchored on the whole mapping key.
 	if strings.Contains(body, "\n  api:\n") {
-		t.Errorf("artifacts-only node must not synthesise a service of its own, got:\n%s", body)
+		t.Errorf("artifacts-only node must not synthesize a service of its own, got:\n%s", body)
 	}
 }
 
@@ -487,8 +487,8 @@ containers:
 		},
 		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/monitoring" {
-				// A synthesised FeatureRecipe: it declares workload: and the
-				// helm provider synthesises its own compute (a Deployment)
+				// A synthesized FeatureRecipe: it declares workload: and the
+				// helm provider synthesizes its own compute (a Deployment)
 				// under features/api/mon/, named after the feature instance.
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "mon"},
@@ -515,7 +515,7 @@ containers:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The synthesised FR Deployment lands under features/api/mon/, and every name it
+	// The synthesized FR Deployment lands under features/api/mon/, and every name it
 	// carries — the output file key, metadata.name and the selector — is the
 	// identity composed for the attachment: the per-component scope, the host
 	// component ("api") and the instance ("mon"). The host is part of it so that
@@ -534,7 +534,7 @@ containers:
 		}
 	}
 	if frDep == "" {
-		t.Fatalf("missing synthesised FR deployment under features/api/mon/, keys: %v", fileKeys(result.Files))
+		t.Fatalf("missing synthesized FR deployment under features/api/mon/, keys: %v", fileKeys(result.Files))
 	}
 	if !strings.Contains(frDep, "features/api/mon/"+frIdentity+"-") {
 		t.Errorf("FR deployment should be named for the composed identity (%s-*), got %q", frIdentity, frDep)
@@ -560,7 +560,7 @@ containers:
 	}
 }
 
-// TestRenderAll_OneAttachmentNameOnTwoComponentsSynthesisesTwoWorkloads is the
+// TestRenderAll_OneAttachmentNameOnTwoComponentsSynthesizesTwoWorkloads is the
 // end-to-end proof, through the real provider guest, that one feature attached
 // under ONE name to two components in ONE boundary reaches two identities and
 // builds.
@@ -573,7 +573,7 @@ containers:
 //
 // The identities are written out here rather than composed, so this asserts the
 // spelling that reaches a cluster.
-func TestRenderAll_OneAttachmentNameOnTwoComponentsSynthesisesTwoWorkloads(t *testing.T) {
+func TestRenderAll_OneAttachmentNameOnTwoComponentsSynthesizesTwoWorkloads(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -654,7 +654,7 @@ containers:
 		t.Fatalf("one attachment name on two components must build, got: %v", err)
 	}
 
-	// Each attachment's synthesised workload carries the identity composed from
+	// Each attachment's synthesized workload carries the identity composed from
 	// ITS host, so the two never meet — in the output keys or in the cluster. The
 	// directory says the same thing the identity does, from the same two parts:
 	// the host it is attached to and the name it is attached under.
@@ -841,7 +841,7 @@ func monitoringFeatureInput(t *testing.T) renderer.RendererInput {
 }
 
 // hostWorkloadRecipeLookup returns a RecipeLookup whose host api-server Recipe
-// synthesises a trivial workload, with featureRecipe supplying the monitoring
+// synthesizes a trivial workload, with featureRecipe supplying the monitoring
 // FR under test.
 func hostWorkloadRecipeLookup(fr *types.FeatureRecipe) renderer.RecipeLookup {
 	return renderer.RecipeLookup{
@@ -874,7 +874,7 @@ containers:
 
 // TestRenderAll_FeatureRecipeComposedWorkloadAndArtifacts proves a FeatureRecipe
 // composes input kinds exactly as a Recipe does: a single FR declaring both
-// workload: and artifacts: emits the synthesised Deployment AND the artifact,
+// workload: and artifacts: emits the synthesized Deployment AND the artifact,
 // both under features/<host>/<instance>/.
 func TestRenderAll_FeatureRecipeComposedWorkloadAndArtifacts(t *testing.T) {
 	t.Parallel()
@@ -918,7 +918,7 @@ containers:
 		}
 	}
 	if !foundWorkload {
-		t.Errorf("composed FR missing synthesised workload under features/api/mon/, keys: %v", fileKeys(result.Files))
+		t.Errorf("composed FR missing synthesized workload under features/api/mon/, keys: %v", fileKeys(result.Files))
 	}
 	if !foundArtifact {
 		t.Errorf("composed FR missing artifact under features/api/mon/, keys: %v", fileKeys(result.Files))
@@ -950,9 +950,9 @@ containers:
 	// whose Capabilities report Sourced only.
 	_, err := renderer.RenderAll(context.Background(), input, hostWorkloadRecipeLookup(fr), wasmEngineFactory(t))
 	if err == nil {
-		t.Fatal("expected a gate error for a synthesised FR on a sourced-only provider, got nil")
+		t.Fatal("expected a gate error for a synthesized FR on a sourced-only provider, got nil")
 	}
-	if !strings.Contains(err.Error(), "does not support synthesised") {
+	if !strings.Contains(err.Error(), "does not support synthesized") {
 		t.Errorf("expected the uniform input-kind gate diagnostic, got: %v", err)
 	}
 }

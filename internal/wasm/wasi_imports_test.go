@@ -197,7 +197,7 @@ func importsForNames(namespace string, names []string) []functionImport {
 	return out
 }
 
-// buildWasmModuleWithImports synthesises a minimal Wasm 1.0 binary
+// buildWasmModuleWithImports synthesizes a minimal Wasm 1.0 binary
 // declaring the given function imports. The module has:
 //
 //   - Header (8 bytes): magic + version

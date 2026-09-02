@@ -8,9 +8,9 @@ import (
 )
 
 // Shared helm-render helpers and Kubernetes API-version constants used by the
-// sourced and synthesised (Workload) render paths. Workload synthesis itself
+// sourced and synthesized (Workload) render paths. Workload synthesis itself
 // lives in synth_core.go (SynthesizeWorkloadCore / Phase B.4); the engine never
-// synthesises compute from a bare values dict — that would invent compute the
+// synthesizes compute from a bare values dict — that would invent compute the
 // developer never declared (Invariant 4).
 
 const (

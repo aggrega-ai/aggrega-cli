@@ -148,7 +148,7 @@ func buildAggregaLabels(nodeCtx rendercore.NodeRenderContext) map[string]string 
 // foldComposeProvenanceSet folds a Kubernetes-shaped provenance split — the
 // label-safe half and the charset-unsafe half — into the single service-labels
 // map compose emits. Every compose surface reaches the fold through this one
-// function, so the services this package synthesises and merges and the services
+// function, so the services this package synthesizes and merges and the services
 // an artifact fragment contributes carry the same key set from the same rule
 // rather than from two agreeing copies of it.
 //

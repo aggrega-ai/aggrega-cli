@@ -19,7 +19,7 @@ import (
 // in its own words.
 //
 // The fixtures bind the terraform provider, which renders sourced input and
-// standalone artifacts and does not synthesise workloads. That makes it the one
+// standalone artifacts and does not synthesize workloads. That makes it the one
 // target where a combination is separable: a Recipe declaring a source AND a
 // workload has one kind the provider honours and one it does not, so a gate that
 // consults only the kind precedence names is satisfied while the build still
@@ -155,7 +155,7 @@ func writeTerraformModule(t *testing.T, dir string) {
 
 // tfWorkloadBlock is the workload: block the mixed-kind fixtures declare. It is
 // well-formed Workload content, so a build that halts halts on the provider's
-// inability to synthesise it rather than on anything wrong with the block.
+// inability to synthesize it rather than on anything wrong with the block.
 const tfWorkloadBlock = `  workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
@@ -254,13 +254,13 @@ func TestBuild_WorkloadPlusArtifactsOnTerraformHaltsAtGate(t *testing.T) {
 	releasePath, catalogRoot := writeTerraformGateWorkspace(t, root, tfWorkloadBlock+tfArtifactsBlock, "")
 
 	err := renderInMemory(t, root, releasePath, catalogRoot)
-	assertGateRefusal(t, err, "synthesised", "sourced, artifacts-only")
+	assertGateRefusal(t, err, "synthesized", "sourced, artifacts-only")
 }
 
 // TestBuild_SourcePlusWorkloadOnTerraformHaltsAtGate is the headline. The source
 // is a kind terraform honours and the workload is one it does not, so a gate
 // consulting only the kind the precedence names is satisfied and the build
-// proceeds — handing the workload to a guest that cannot synthesise it. The
+// proceeds — handing the workload to a guest that cannot synthesize it. The
 // author's mistake is the same one the control corpus makes, and it has to reach
 // the same refusal.
 func TestBuild_SourcePlusWorkloadOnTerraformHaltsAtGate(t *testing.T) {
@@ -272,7 +272,7 @@ func TestBuild_SourcePlusWorkloadOnTerraformHaltsAtGate(t *testing.T) {
 		"  source: "+moduleDir+"\n"+tfWorkloadBlock, "")
 
 	err := renderInMemory(t, root, releasePath, catalogRoot)
-	assertGateRefusal(t, err, "synthesised", "sourced, artifacts-only")
+	assertGateRefusal(t, err, "synthesized", "sourced, artifacts-only")
 }
 
 // TestBuild_AttachmentSourcePlusWorkloadOnTerraformHaltsAtGate carries the same
@@ -290,7 +290,7 @@ func TestBuild_AttachmentSourcePlusWorkloadOnTerraformHaltsAtGate(t *testing.T) 
 		"  source: "+moduleDir+"\n"+tfAttachmentWorkloadBlock)
 
 	err := renderInMemory(t, root, releasePath, catalogRoot)
-	assertGateRefusal(t, err, "synthesised", "sourced, artifacts-only")
+	assertGateRefusal(t, err, "synthesized", "sourced, artifacts-only")
 }
 
 // TestBuild_SourcePlusArtifactsOnTerraformStillBuilds holds the gate to the
@@ -349,7 +349,7 @@ func TestBuild_TerraformGateRefusalNamesTheDeclaredKindNotTheClassifiedOne(t *te
 	if strings.Contains(msg, "does not support sourced recipes") {
 		t.Errorf("the refusal names the classified kind rather than the unhonourable one: %v", err)
 	}
-	if !chainContains(err, "does not support synthesised recipes") {
-		t.Errorf("the refusal must name the synthesised kind the provider cannot honour; got: %v", err)
+	if !chainContains(err, "does not support synthesized recipes") {
+		t.Errorf("the refusal must name the synthesized kind the provider cannot honour; got: %v", err)
 	}
 }

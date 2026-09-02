@@ -17,10 +17,10 @@ import (
 // the engine to this interface when a Recipe has declared workload:, and an
 // engine that does not implement it produces a CATALOG_ERROR there.
 //
-// That assertion is not the check deciding whether a provider may synthesise.
+// That assertion is not the check deciding whether a provider may synthesize.
 // Which input kinds a provider may be handed is settled once per node, before any
 // render dispatch, by the central input-kind gate reading the provider's own
-// declared [ProviderContract]; a provider that does not claim synthesised input is
+// declared [ProviderContract]; a provider that does not claim synthesized input is
 // refused there. The assertion cannot refuse a provider this host ships at all,
 // because the host renders through a single provider adapter which satisfies this
 // interface by compile-time assertion whatever its guest declares.
@@ -54,7 +54,7 @@ type WorkloadSynthesizer interface {
 // A non-nil Workload reaching an engine that does not implement
 // WorkloadSynthesizer returns a CATALOG_ERROR-shaped error naming the provider.
 // That branch guards a state neither render path produces: the input-kind gate has
-// already refused any provider whose declared contract does not claim synthesised
+// already refused any provider whose declared contract does not claim synthesized
 // input, and the single provider adapter the host renders through implements the
 // interface by compile-time assertion. It is kept loud rather than reduced to an
 // empty file set because a dispatch emitting nothing for a declared workload would
@@ -73,7 +73,7 @@ func dispatchWorkloadSynthesis(
 	synth, ok := engine.(WorkloadSynthesizer)
 	if !ok {
 		inner := fmt.Errorf(
-			"provider %q has no synthesised-mode implementation; the Recipe declares a workload: block, which needs one",
+			"provider %q has no synthesized-mode implementation; the Recipe declares a workload: block, which needs one",
 			providerName,
 		)
 		return nil, cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())

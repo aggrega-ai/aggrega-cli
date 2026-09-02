@@ -297,7 +297,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe"},
 				Spec: types.RecipeSpec{
-					// Synthesised Workload templates read .values.port and
+					// Synthesized Workload templates read .values.port and
 					// .infra.replicas — the critical values/infra flow.
 					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload

@@ -19,7 +19,7 @@ import (
 
 // renderDialWorkspace builds a self-contained workspace whose single helm node
 // resolves end-to-end: a cached+pinned Component, a manifest that maps the
-// component type to a synthesised-mode helm Recipe, and a helm-renderer provider
+// component type to a synthesized-mode helm Recipe, and a helm-renderer provider
 // Plugin whose digest-free artifact identity resolves through the embed tier. So
 // the irGraph render (dial on) runs the helm guest to completion — the render
 // this test needs to actually execute to prove the graph is dial-invariant.

@@ -9,7 +9,7 @@
 // thing: which node they locate to merge into. The merge itself, the
 // alphabetical append order, the overwrite-on-collision rule and the refusal to
 // discard a `labels:` block written in a shape it cannot merge into all come
-// from the one shared primitive, so a fragment's service and a synthesised
+// from the one shared primitive, so a fragment's service and a synthesized
 // service cannot drift apart on any of them.
 //
 // This file carries no build tag: it compiles for the host and for the wasip1
@@ -39,7 +39,7 @@ import (
 // Placement. Compose label values are unconstrained and compose has no
 // annotation concept, so the two host-computed halves fold into one set and land
 // together on every service the fragment declares — the same set, from the same
-// fold, that a synthesised or source-rendered service carries. A fragment
+// fold, that a synthesized or source-rendered service carries. A fragment
 // declaring several services stamps all of them; a stream carrying several
 // documents is walked in full, so no document is stamped while another is
 // skipped unnoticed.

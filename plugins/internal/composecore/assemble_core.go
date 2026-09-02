@@ -39,7 +39,7 @@
 //   - depends_on inference. For each IR edge whose source and target both
 //     contribute services to this dispatch group, record an ungated
 //     dependency on the target service on the source service. It joins
-//     whatever the fragment already carried — a synthesised init-container
+//     whatever the fragment already carried — a synthesized init-container
 //     chain — through DependsOn, which owns the merge rule and the emitted
 //     shape.
 //   - depends_on from the deployment wave. When the contributing nodes carry
@@ -52,7 +52,7 @@
 //     boundary declared a wave emits byte-identical output.
 //   - Author order. Map-shaped top-level fields (services, volumes,
 //     networks) are alphabetised by yaml.v3 on marshal — the
-//     alphabetical-by-derivation-key principle for synthesised
+//     alphabetical-by-derivation-key principle for synthesized
 //     collections where no author order applies upstream. Within a
 //     service, per-service collections (ports, depends_on, volumes,
 //     networks) are kept in stable order: edges and IR nodes iterate
@@ -121,7 +121,7 @@ func AssembleBoundaryCore(
 
 	// waveByService records the deployment wave of the node that contributed
 	// each service, so wave-derived ordering reads a service's wave without
-	// re-walking the input. A node contributes every service it synthesised —
+	// re-walking the input. A node contributes every service it synthesized —
 	// its own and each init-container service — so all of them share its wave.
 	waveByService := map[string]int{}
 

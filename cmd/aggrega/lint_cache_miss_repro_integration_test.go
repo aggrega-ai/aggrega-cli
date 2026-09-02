@@ -60,7 +60,7 @@ func buildVersionedLinterWasm(t *testing.T, version string) string {
 	return artifact
 }
 
-// genNonEmbeddedLinterEntity synthesises a publish-valid Plugin entity for a
+// genNonEmbeddedLinterEntity synthesizes a publish-valid Plugin entity for a
 // NON-EMBEDDED linter from a real .wasm guest, using the production gen-catalog
 // path (describe() + .wasm-import derivation), so the entity's version, exports,
 // host-function stamp, and command mirror agree with the guest and the push-time

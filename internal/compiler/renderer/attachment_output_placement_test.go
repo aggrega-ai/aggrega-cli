@@ -245,7 +245,7 @@ func TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost(t *test
 
 // TestRenderAll_AttachmentPlacementIsOneShapeAcrossInputKinds pins the placement
 // as a property of the attachment rather than of the input kind it renders from.
-// Sourced, synthesised and artifacts output all land under
+// Sourced, synthesized and artifacts output all land under
 // features/<host>/<instance>/, so an author changing a FeatureRecipe's delivery
 // mode does not find their output paths moved.
 func TestRenderAll_AttachmentPlacementIsOneShapeAcrossInputKinds(t *testing.T) {

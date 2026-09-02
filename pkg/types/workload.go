@@ -332,7 +332,7 @@ type AttachmentRef struct {
 // field should be set; mutual exclusion is enforced by schema validation, not
 // Go-type structure. Programmatic construction can produce invalid states
 // (multiple variants set) that bypass validation if no explicit
-// validator.ValidateWorkload call follows — provider synthesisers should
+// validator.ValidateWorkload call follows — provider synthesizers should
 // treat "more than one variant set" as a render-time error.
 type VolumeSpec struct {
 	Ephemeral          *EphemeralVolume          `json:"ephemeral,omitempty" yaml:"ephemeral,omitempty"`

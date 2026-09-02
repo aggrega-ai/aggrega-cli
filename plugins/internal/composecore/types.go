@@ -27,7 +27,7 @@ type ComposeFile struct {
 // — omitempty on every field so per-node fragments stay minimal.
 //
 // The set of fields here is the currently synthesisable surface, and it grows
-// as needed: deploy is synthesised today, while a service-level secrets block
+// as needed: deploy is synthesized today, while a service-level secrets block
 // is not yet part of it.
 type Service struct {
 	Image           string                   `yaml:"image,omitempty"`
@@ -219,7 +219,7 @@ func (d *DependsOn) UnmarshalYAML(node *yaml.Node) error {
 }
 
 // Deploy is the compose service deploy block. Only the resources sub-block is
-// synthesised today: it is honored by `docker compose` in non-swarm mode
+// synthesized today: it is honored by `docker compose` in non-swarm mode
 // (unlike deploy.replicas, which is swarm-only). Workload container resource
 // limits map to deploy.resources.limits and requests map to
 // deploy.resources.reservations.

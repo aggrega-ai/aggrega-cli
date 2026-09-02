@@ -7,7 +7,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   # A Workload and nothing else, so this node's one declared input kind is the
-  # synthesised kind — which the target's claim DOES cover for the annotation this
+  # synthesized kind — which the target's claim DOES cover for the annotation this
   # corpus authors. It is the host that has to stay quiet.
   workload: |
     apiVersion: aggrega.ai/v1alpha1

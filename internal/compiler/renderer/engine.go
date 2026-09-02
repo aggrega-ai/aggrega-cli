@@ -119,7 +119,7 @@ func linksCrossBoundary(engine Provider) bool {
 // answering different questions.
 //
 //   - Sourced — renders a Recipe with a source: (sourced mode).
-//   - Synthesized — renders a Recipe with a workload: (synthesised mode).
+//   - Synthesized — renders a Recipe with a workload: (synthesized mode).
 //   - ArtifactsStandalone — renders an artifacts-only Recipe (no source:, no
 //     workload:) by emitting its declared artifacts as the node's output.
 //

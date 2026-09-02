@@ -239,7 +239,7 @@ func injectWhenWrapper(out Schema) {
 	}
 	if _, hasIf := out["if"]; hasIf {
 		// Explicit `if:` from authored content takes precedence; the
-		// wrapper is only synthesised when the author did not specify
+		// wrapper is only synthesized when the author did not specify
 		// an `if:` themselves.
 		return
 	}

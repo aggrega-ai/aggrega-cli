@@ -350,7 +350,7 @@ func TestRenderAll_TwoComponentsWithDifferentAttachmentNamesReachTwoIdentities(t
 // TestRenderAll_SourceOnlyAttachmentsCarryTheAttachmentIdentity pins the input
 // kind that used to be the exception. A FeatureRecipe delivering only source its
 // author wrote stamps the ATTACHMENT's composed identity on what it emits, the
-// same as a synthesised or an artifacts one — so a reader or a tool selecting an
+// same as a synthesized or an artifacts one — so a reader or a tool selecting an
 // attachment's resources by identity finds every resource the attachment
 // produced, whichever way it produced them.
 //
@@ -358,7 +358,7 @@ func TestRenderAll_TwoComponentsWithDifferentAttachmentNamesReachTwoIdentities(t
 // point: it previously asserted that a source-only attachment stamped the HOST
 // component's identity, which made an attachment's resources indistinguishable
 // by label from the resources the host emitted itself. Anything selecting by
-// identity found the synthesised and artifacts resources and silently missed the
+// identity found the synthesized and artifacts resources and silently missed the
 // sourced ones. That is what this input kind no longer does.
 //
 // The composed identities are written out by hand for the same reason every

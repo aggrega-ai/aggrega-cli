@@ -78,7 +78,7 @@ var carrierDelimiters = map[string][2]string{
 }
 
 // carrierSynthesizingProvider is a provider that places artifacts and also
-// synthesises a workload, which is what lets a fixture site declare a workload
+// synthesizes a workload, which is what lets a fixture site declare a workload
 // while another declares a source.
 type carrierSynthesizingProvider struct {
 	stubArtifactsEmitter
@@ -90,7 +90,7 @@ func (p *carrierSynthesizingProvider) SynthesizeWorkload(
 	return []EmittedFile{{
 		Name:   "carrier-synth.yaml",
 		Origin: EmitOriginWorkload,
-		Body:   []byte("kind: Synthesised\nsite: " + nodeCtx.LabelComponentID + "\n"),
+		Body:   []byte("kind: Synthesized\nsite: " + nodeCtx.LabelComponentID + "\n"),
 	}}, nil
 }
 

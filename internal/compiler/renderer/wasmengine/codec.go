@@ -47,7 +47,7 @@ func (e *Engine) PipelineCodec(yamlIndent int) (frp.Codec, bool) {
 
 // guestCodec is the host-side frp.Codec that carves and reassembles through a
 // provider guest's carve and reassemble exports. It carries the render-wide
-// indent so the guest's carving and any op-synthesised text match the render's
+// indent so the guest's carving and any op-synthesized text match the render's
 // indentation, and it holds the Engine whose loader, lookup, and memoized
 // descriptor drive the crossings. Segment and Reassemble use a background
 // context: the frp.Codec contract carries none, and the crossing is a

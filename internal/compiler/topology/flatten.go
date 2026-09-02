@@ -118,7 +118,7 @@ func evalActive(active *types.ActiveFlag, nodeID string) (bool, error) {
 // components (including sub-aggregate components) into a single flat
 // node map with dot-notation IDs. The dot is reserved as the
 // compiler-internal path separator; user-authored instance names cannot
-// contain dots, so synthesised dotted IDs are unambiguous. Author order
+// contain dots, so synthesized dotted IDs are unambiguous. Author order
 // is preserved at every level by iterating OrderedMap-backed
 // collections — root-topology blocks (`components`, `subsystems`,
 // `aggregates`) are YAML maps keyed by user-authored instance names so

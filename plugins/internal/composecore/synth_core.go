@@ -8,7 +8,7 @@
 // it takes the evaluated Workload and the node's render context and returns the
 // per-node compose fragment. The compose provider Wasm guest, which reconstructs
 // the Workload from the payload's workload projection, calls this one function,
-// and nothing re-implements it, so a node's synthesised bytes have a single
+// and nothing re-implements it, so a node's synthesized bytes have a single
 // producer. This file carries no build tag: it compiles for the host and for the
 // wasip1 guest alike, so it imports no host-only capability (no filesystem, no
 // network).
@@ -27,7 +27,7 @@
 // Volumes / Services iterated via OrderedMap.All(). Top-level maps
 // (Services, Volumes) inside ComposeFile are Go map[string]X — yaml.v3
 // sorts keys alphabetically on marshal, which is the
-// alphabetical-by-derivation-key choice for synthesised collections
+// alphabetical-by-derivation-key choice for synthesized collections
 // where no author order applies upstream.
 
 package composecore
@@ -113,12 +113,12 @@ func SynthesizeWorkloadCore(
 	// Translate every container into a service. Author-order isn't
 	// preserved across services in the YAML output (compose is map-shaped at
 	// the services: key) — the marshaler sorts alphabetically, the
-	// alphabetical-by-derivation-key choice for synthesised maps.
-	// componentID is the naming basis for the synthesised service, volumes, and
+	// alphabetical-by-derivation-key choice for synthesized maps.
+	// componentID is the naming basis for the synthesized service, volumes, and
 	// fragment file. It derives from ProvenanceComponentID: the raw NodeID for a
 	// component node (byte-identical to the prior behavior, since LabelComponentID
 	// is empty there), or the sanitized FR-instance id the caller sets for a
-	// FeatureRecipe-synthesised workload — so an FR's service/volumes are named
+	// FeatureRecipe-synthesized workload — so an FR's service/volumes are named
 	// after the feature instance, not the host component whose NodeID the FR node
 	// carries.
 	componentID := rendercore.ProvenanceComponentID(nodeCtx)
@@ -157,7 +157,7 @@ func SynthesizeWorkloadCore(
 	}
 
 	// Init containers become run-to-completion services the long-running services
-	// wait on. Synthesised after the containers above so a name a container
+	// wait on. Synthesized after the containers above so a name a container
 	// already claimed is detected rather than overwritten.
 	initDiags, err := synthesizeInitServices(&frag, w, nodeCtx, mainServiceName, appServiceNames)
 	if err != nil {
@@ -307,7 +307,7 @@ func pickMainContainerName(w *types.Workload) (string, bool) {
 
 // containerRole is the part a container plays in the workload, which the shared
 // container translation cannot read off the ContainerSpec itself. It decides two
-// things: whether the synthesised service shares the main service's network
+// things: whether the synthesized service shares the main service's network
 // namespace, and whether the service runs to completion.
 type containerRole int
 
@@ -344,7 +344,7 @@ const (
 // container names everywhere.
 //
 // Pod-level configuration is deliberately not applied. An init service is a
-// non-main service, and this synthesiser applies pod-level fields to the main
+// non-main service, and this synthesizer applies pod-level fields to the main
 // service only; a third policy would be a new rule with nothing behind it, and
 // re-running the pod-level pass per init container would also repeat every
 // pod-level diagnostic once per init container.
@@ -1175,7 +1175,7 @@ func sanitizeServiceName(name string) string {
 }
 
 // marshalDeterministic routes through the shared indent-aware marshal helper
-// at a single call point. yaml.v3 sorts map keys alphabetically — synthesised
+// at a single call point. yaml.v3 sorts map keys alphabetically — synthesized
 // top-level maps (services, volumes, networks) inherit alphabetical-by-
 // derivation-key ordering. byte-identical input produces byte-identical output
 // across compilations. indent is the configured YAML indentation width.

@@ -30,7 +30,7 @@ const stockYAMLMediaType = "application/yaml"
 // patch ops address.
 //
 // It implements [frp.Codec]. The indent width is carried for the rare op
-// that must synthesise new YAML text (an add of a structured value), so the
+// that must synthesize new YAML text (an add of a structured value), so the
 // inserted text matches the renderer's configured indentation.
 type StockYAMLCodec struct {
 	indent int
@@ -48,7 +48,7 @@ func newStockYAMLCodec(indent int) StockYAMLCodec {
 // structural YAML scaffold to this codec so the node-span surgical machinery —
 // comment, anchor, merge-key, and scalar-style preservation — is single-sourced
 // rather than re-implemented per provider. The indent width is clamped to the
-// renderer's supported range and used only when an op must synthesise new YAML
+// renderer's supported range and used only when an op must synthesize new YAML
 // text.
 func NewStockYAMLCodec(indent int) frp.Codec {
 	return newStockYAMLCodec(indent)

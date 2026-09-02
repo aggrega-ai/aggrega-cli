@@ -4,7 +4,7 @@
 // End-to-end coverage of the Recipe identity a per-component Feature
 // attachment's rendered documents are stamped with, across the three ways a
 // FeatureRecipe can deliver them: a chart or fragment the author supplies, a
-// workload the compiler synthesises, and a standalone artifact set.
+// workload the compiler synthesizes, and a standalone artifact set.
 //
 // The fixture attaches all three to ONE component in one boundary, so the three
 // deliveries meet in one build and are compared against each other rather than

@@ -53,7 +53,7 @@ const renderedNodePrefix = "rendered-node:"
 // input kind and the orchestrator's input-kind gate rejects every recipe routed
 // to it. This helper copies that example to a scratch module (leaving the
 // original untouched) and patches its describe() to declare
-// InputKinds.Synthesized so the guest accepts the fixture's synthesised
+// InputKinds.Synthesized so the guest accepts the fixture's synthesized
 // (workload-bearing) recipe, then builds it with the go toolchain (GOOS=wasip1).
 //
 // Paths resolve relative to the ORIGINAL cwd, so a caller invokes it BEFORE any
@@ -89,7 +89,7 @@ func ensureRenderProviderWasm(t *testing.T) string {
 			out = strings.Replace(out, "=> ../../../../aggrega-abi/go\n", "=> "+abiDir+"\n", 1)
 		case "main.go":
 			// Declare a ProviderContract so the guest advertises support for the
-			// synthesised (workload-bearing) recipe the fixture catalog authors.
+			// synthesized (workload-bearing) recipe the fixture catalog authors.
 			const anchor = "\t\tMetadata: &aggrega.PluginDescriptorMeta{"
 			if !strings.Contains(out, anchor) {
 				t.Fatalf("render example main.go descriptor shape changed; patch anchor %q absent", anchor)

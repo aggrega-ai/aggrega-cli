@@ -17,7 +17,7 @@
 //
 //   - Sourced. The Recipe references a Helm chart via source:. The chart is
 //     rendered through the Helm Go SDK with the Recipe's evaluated values.
-//   - Synthesised. The Recipe declares a workload: block, which is translated
+//   - Synthesized. The Recipe declares a workload: block, which is translated
 //     into a Deployment and an optional Service.
 //
 // A Recipe that declares neither source: nor workload: produces no compute.

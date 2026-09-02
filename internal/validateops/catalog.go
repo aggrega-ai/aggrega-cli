@@ -123,7 +123,7 @@ func InputKindCapabilityErrors(providerPlugin func(ref string) (types.Plugin, bo
 			return
 		}
 		errs = append(errs, fmt.Errorf("%s %q: %s", kind, identity,
-			renderer.UnsupportedInputKindMessage(provider, "synthesised", caps)))
+			renderer.UnsupportedInputKindMessage(provider, "synthesized", caps)))
 	}
 	for _, r := range recipes {
 		check("Recipe", r.Metadata.Name+":"+r.Metadata.Version, r.Spec.Capability, r.Spec.Workload)

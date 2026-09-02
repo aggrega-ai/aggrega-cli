@@ -34,7 +34,7 @@ import (
 // Both ends render through real wasm engines over compiled test guests, and the
 // linking claim is read off one of them by the same seam the link pass reads it
 // through. The link guest reports artifacts-standalone support, so the end bound
-// to it renders an artifacts-only Recipe; the other end renders a synthesised
+// to it renders an artifacts-only Recipe; the other end renders a synthesized
 // Recipe through the embedded provider guest. That pairing is what makes the row
 // end-to-end rather than a second stub in a longer harness.
 
@@ -100,7 +100,7 @@ func (c crossProviderCoordinates) Edges() []constraint.EdgeInstance { return c.e
 // Each end's input kind FOLLOWS its capability rather than being chosen per row,
 // because the input-kind gate is real: the linking guest advertises
 // artifacts-only and the embedded provider guests advertise sourced and
-// synthesised, so a row pairing a capability with an input kind its guest refuses
+// synthesized, so a row pairing a capability with an input kind its guest refuses
 // would be halted by that gate before this rule was ever asked. Both ends are
 // real renders either way — the row asserts on what the build reports, not on
 // what a stub was told to say.

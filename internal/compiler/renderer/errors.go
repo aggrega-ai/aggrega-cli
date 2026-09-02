@@ -726,7 +726,7 @@ var errCrossProviderLinkUnsupported = cerrors.Register("compiler-renderer/cross-
 // wrapping chain at the emission site names the offending node and provider.
 // The comparison is over the guest's raw emitted output, the same surface the
 // rendered artifacts are carved from. Category: TRANSLATION_ERROR (a
-// provider-side non-determinism in synthesised output). Match with
+// provider-side non-determinism in synthesized output). Match with
 // errors.Is(err, ErrRenderNondeterministic()).
 func ErrRenderNondeterministic() error { return errRenderNondeterministic }
 

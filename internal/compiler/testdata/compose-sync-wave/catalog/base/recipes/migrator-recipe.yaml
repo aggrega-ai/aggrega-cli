@@ -6,7 +6,7 @@ metadata:
 spec:
   capability: compose
   implements: core/migrator
-  # No health: block, so the synthesised service declares no healthcheck. That
+  # No health: block, so the synthesized service declares no healthcheck. That
   # is the case a wave-derived dependency cannot gate on health.
   workload: |
     apiVersion: aggrega.ai/v1alpha1

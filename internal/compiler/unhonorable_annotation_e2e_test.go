@@ -246,7 +246,7 @@ func TestUnhonorableAnnotation_MultiKindAdvisoryNamesEveryDeclaredKind(t *testin
 			len(multi), len(single))
 	}
 	for _, line := range multi {
-		for _, want := range []string{"sourced", "synthesised"} {
+		for _, want := range []string{"sourced", "synthesized"} {
 			if !strings.Contains(line, want) {
 				t.Errorf("the multi-kind node's advisory %q does not name the %s kind", line, want)
 			}
@@ -256,7 +256,7 @@ func TestUnhonorableAnnotation_MultiKindAdvisoryNamesEveryDeclaredKind(t *testin
 	// kinds everywhere would satisfy the assertion above while describing every
 	// node wrongly.
 	for _, line := range single {
-		if strings.Contains(line, "synthesised") {
+		if strings.Contains(line, "synthesized") {
 			t.Errorf("the single-kind node's advisory %q names a kind that node does not declare", line)
 		}
 		if !strings.Contains(line, "sourced") {
@@ -363,7 +363,7 @@ func TestUnhonorableAnnotation_AdvisedWhicheverCrossingRendersTheOutput(t *testi
 // TestUnhonorableAnnotation_AttachmentAdvisoryNamesTheKindTheAttachmentDeclares
 // asserts against the line a user reads, for a render reached through an
 // attachment. The kind named has to be the ATTACHMENT's own: on both of these
-// deployments the host component synthesises its Workload, which the target's
+// deployments the host component synthesizes its Workload, which the target's
 // claim covers, so naming the host's kind would describe a crossing that had the
 // annotation applied and would invite deleting one that is in fact working.
 func TestUnhonorableAnnotation_AttachmentAdvisoryNamesTheKindTheAttachmentDeclares(t *testing.T) {
@@ -392,7 +392,7 @@ func TestUnhonorableAnnotation_AttachmentAdvisoryNamesTheKindTheAttachmentDeclar
 			}
 			// The kind the HOST renders at must not be what the line says: the
 			// host had the annotation applied, and this advisory is not about it.
-			if strings.Contains(lines[0], "synthesised") {
+			if strings.Contains(lines[0], "synthesized") {
 				t.Errorf("displayed advisory %q names the kind the host renders at, not the attachment's", lines[0])
 			}
 		})

@@ -50,7 +50,7 @@ func runWorkloadPhaseB(t *testing.T, w types.WorkloadTemplate, wlibs map[string]
 // Invariant 8): a library-imported workload body renders byte-identically to the
 // equivalent inline body. The library indirection collapses in phaseB2 — the
 // resolver returns the entry body verbatim, then the SAME EvalTemplate + parse
-// runs — so equal parsed workloads guarantee byte-identical synthesised output
+// runs — so equal parsed workloads guarantee byte-identical synthesized output
 // (phaseB4 has no library-specific path). The proof compares both the deep struct
 // and its YAML serialisation.
 func TestWorkloadLibraryImport_ByteIdenticalToInline(t *testing.T) {

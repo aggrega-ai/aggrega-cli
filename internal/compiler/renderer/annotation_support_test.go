@@ -288,7 +288,7 @@ func TestWarnUnhonorableAnnotations_MultiKindNodeAsksAboutEveryDeclaredKind(t *t
 		t.Fatalf("the advisory names %q; the only key no declared kind honours is aggrega.ai/cluster-domain",
 			d.SourceRef)
 	}
-	for _, want := range []string{"sourced", "synthesised"} {
+	for _, want := range []string{"sourced", "synthesized"} {
 		if !strings.Contains(d.Message, want) {
 			t.Errorf("message %q does not name the %s kind; a node declaring two kinds must not be "+
 				"described by one of them", d.Message, want)
@@ -334,7 +334,7 @@ func TestClassifyNodeInputKind_Precedence(t *testing.T) {
 		{"source wins over workload and artifacts", true, true, true,
 			types.WellKnownAnnotationScopeSourced, "sourced", true},
 		{"workload wins over artifacts", false, true, true,
-			types.WellKnownAnnotationScopeSynthesized, "synthesised", true},
+			types.WellKnownAnnotationScopeSynthesized, "synthesized", true},
 		{"artifacts only when neither", false, false, true,
 			types.WellKnownAnnotationScopeArtifactsStandalone, "artifacts-only", true},
 		{"none", false, false, false, "", "", false},
@@ -371,7 +371,7 @@ func TestNodeInputKind_ClaimedBy(t *testing.T) {
 		t.Error("a contract claiming only sourced must not claim the other kinds")
 	}
 	if !synthesized.claimedBy(ProviderContract{Synthesized: true}) {
-		t.Error("synthesised.claimedBy({Synthesized:true}) = false, want true")
+		t.Error("synthesized.claimedBy({Synthesized:true}) = false, want true")
 	}
 	if !artifacts.claimedBy(ProviderContract{ArtifactsStandalone: true}) {
 		t.Error("artifacts-only.claimedBy({ArtifactsStandalone:true}) = false, want true")
@@ -411,12 +411,12 @@ func TestDeclaredNodeInputKinds_EveryCell(t *testing.T) {
 	}{
 		{"no input kind at all", false, false, false, nil},
 		{"source alone", true, false, false, []string{"sourced"}},
-		{"workload alone", false, true, false, []string{"synthesised"}},
+		{"workload alone", false, true, false, []string{"synthesized"}},
 		{"artifacts alone is the only artifacts-only node", false, false, true, []string{"artifacts-only"}},
-		{"source and workload", true, true, false, []string{"sourced", "synthesised"}},
+		{"source and workload", true, true, false, []string{"sourced", "synthesized"}},
 		{"source and artifacts: the artifacts ride through", true, false, true, []string{"sourced"}},
-		{"workload and artifacts: the artifacts ride through", false, true, true, []string{"synthesised"}},
-		{"all three: the artifacts ride through", true, true, true, []string{"sourced", "synthesised"}},
+		{"workload and artifacts: the artifacts ride through", false, true, true, []string{"synthesized"}},
+		{"all three: the artifacts ride through", true, true, true, []string{"sourced", "synthesized"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := declaredNodeInputKinds(tc.hasSource, tc.hasWorkload, tc.hasArtifs)
@@ -478,12 +478,12 @@ func TestGateInputKind_RefusesEveryDeclaredKind(t *testing.T) {
 	}{
 		{"nothing declared", false, false, false, ""},
 		{"sourced, which it claims", true, false, false, ""},
-		{"workload, which it does not", false, true, false, "synthesised"},
+		{"workload, which it does not", false, true, false, "synthesized"},
 		{"artifacts alone, which it does not", false, false, true, "artifacts-only"},
-		{"source and workload: refused for the workload", true, true, false, "synthesised"},
+		{"source and workload: refused for the workload", true, true, false, "synthesized"},
 		{"source and artifacts: the artifacts ride through", true, false, true, ""},
-		{"workload and artifacts: refused for the workload", false, true, true, "synthesised"},
-		{"all three: refused for the workload, reported before artifacts", true, true, true, "synthesised"},
+		{"workload and artifacts: refused for the workload", false, true, true, "synthesized"},
+		{"all three: refused for the workload, reported before artifacts", true, true, true, "synthesized"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := gateInputKind("node-1", "only-sourced", &contractEngine{caps: sourcedOnly},

@@ -26,7 +26,7 @@ import (
 )
 
 // frWorkloadBody carries a Go-template expression so the proof exercises the
-// full resolve → EvalTemplate → synthesise path, not a static string. `printf`
+// full resolve → EvalTemplate → synthesize path, not a static string. `printf`
 // is a Go-template builtin, so no external values context is needed for the
 // expression to evaluate.
 const frWorkloadBody = `apiVersion: aggrega.ai/v1alpha1

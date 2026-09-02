@@ -344,7 +344,7 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q workload synthesis", state.NodeID))
 	}
 	state.EmittedFiles = append(state.EmittedFiles, files...)
-	// Trace point: per-synthesised-file (slot 10). One trace event per file
+	// Trace point: per-synthesized-file (slot 10). One trace event per file
 	// emitted by phaseB4, named by the original filename. Filter by origin:
 	// EmitOriginWorkload (workload-mode synthesis) and EmitOriginSource
 	// (rare; sourced-and-workload coexistence) are the slot's contributors.
@@ -825,7 +825,7 @@ func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.
 // renderFeatureRecipeFiles runs the full input-kind render for a resource-
 // generating FeatureRecipe at a per-component site (feature or credential
 // attachment). It mirrors the component render path exactly: the central
-// input-kind gate, then sourced engine.Render / synthesised workload synthesis
+// input-kind gate, then sourced engine.Render / synthesized workload synthesis
 // / artifacts emission via the same Phase B leaf passes (phaseB2/B3/B4). Its
 // emission is then recorded and checked for two of its blocks meeting on one
 // output name, under the carrier this render belongs to rather than under the
@@ -966,8 +966,8 @@ func renderFeatureRecipeFiles(
 	// below is handed.
 	//
 	// What the copy deliberately does NOT set is the target-name basis. The
-	// synthesised and artifacts paths name their resources after the identity,
-	// which is what keeps an FR-synthesised Deployment from being named for the
+	// synthesized and artifacts paths name their resources after the identity,
+	// which is what keeps an FR-synthesized Deployment from being named for the
 	// host and colliding with the host's own workload. But a sourced attachment
 	// delivers a chart or a fragment its AUTHOR wrote, and that author's own
 	// templates render against the release name and name resources after it — so
@@ -1041,7 +1041,7 @@ func renderFeatureRecipeFiles(
 	// sourced identically from the render input — single source, no second map.
 	state.ArtifactsLibraries = artifactsLibs
 
-	// Sourced mode hits engine.Render; synthesised renders at B.4, artifacts at
+	// Sourced mode hits engine.Render; synthesized renders at B.4, artifacts at
 	// B.3. EmitOriginSource files accumulate by sorted filename for
 	// determinism. The Intermediate flag follows the same rule the component
 	// path uses: a BoundaryAssembler that does not place its own artifacts

@@ -18,7 +18,7 @@ import (
 // credentialPipelineInput builds a RendererInput whose "api" node carries one
 // credential attachment ("root_password") bound to a resource-generating
 // credential FeatureRecipe. The FeatureRecipe declares a pipeline step, and the
-// host component synthesises a workload so the step receives a host document
+// host component synthesizes a workload so the step receives a host document
 // root alongside its own.
 func credentialPipelineInput(t *testing.T) (renderer.RendererInput, renderer.RecipeLookup) {
 	t.Helper()

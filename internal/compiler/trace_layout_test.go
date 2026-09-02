@@ -74,7 +74,7 @@ func TestTrace_FullLayout_OnHelmSourcedWithArtifacts(t *testing.T) {
 // TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots exercises the
 // negative-presence assertions for slots that should be absent when the
 // Recipe is workload-only. Slots 05 (source) and 07 (valuesMapping) are absent
-// for helm-synthesized; slot 08 (workload) and 10 (per-synthesised-file) ARE
+// for helm-synthesized; slot 08 (workload) and 10 (per-synthesized-file) ARE
 // present. Pre-loop (01/02/03/04), 06 (locals — source resolution always emits
 // it), 11, 12 always present.
 func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
@@ -100,11 +100,11 @@ func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
 		// Absent slots for sourceless + no-valuesMapping:
 		assertTraceSlotAbsent(t, res.Trace, prefix, "05-source-resolution.yaml")
 		assertTraceSlotAbsent(t, res.Trace, prefix, "07-values-mapping.yaml")
-		// Slot 10 (per-synthesised-file): present because Recipe has workload:.
-		// Each component synthesises >= 1 file via WorkloadSynthesizer.
+		// Slot 10 (per-synthesized-file): present because Recipe has workload:.
+		// Each component synthesizes >= 1 file via WorkloadSynthesizer.
 		entries := traceSlotDirEntries(res.Trace, prefix, "10-engine-synthesis")
 		if len(entries) == 0 {
-			t.Errorf("node %s: 10-engine-synthesis is empty; expected per-synthesised-file entries", nodeID)
+			t.Errorf("node %s: 10-engine-synthesis is empty; expected per-synthesized-file entries", nodeID)
 		}
 	}
 }
@@ -113,7 +113,7 @@ func TestTrace_HelmSynthesized_OmitsSourceAndValuesMappingSlots(t *testing.T) {
 // for the compose engine (not just helm). The variant uses placeholder workload
 // + artifacts; asserts pre-loop slots, the source-resolution and
 // workload-synthesis slots, slot 09 (per-artifact), slot 10
-// (per-synthesised-file), and slot 11 (emission) all land for compose.
+// (per-synthesized-file), and slot 11 (emission) all land for compose.
 func TestTrace_ComposeWithArtifacts_LayoutPresent(t *testing.T) {
 	t.Parallel()
 	res := runFullstackAppVariant(t, variantFixture{
@@ -185,7 +185,7 @@ func assertTraceSlotDirAbsent(t *testing.T, tr map[string][]byte, prefix, dir st
 }
 
 // traceSlotDirEntries returns the trace keys representing per-file entries
-// under prefix/dir/ (e.g. the per-artifact or per-synthesised-file slots).
+// under prefix/dir/ (e.g. the per-artifact or per-synthesized-file slots).
 func traceSlotDirEntries(tr map[string][]byte, prefix, dir string) []string {
 	want := prefix + "/" + dir + "/"
 	var out []string

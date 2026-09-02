@@ -31,7 +31,7 @@ import (
 // Entry is one file in the archive, identified by its relative path
 // (forward-slash separated, never absolute) and the bytes to write.
 // Mode is intentionally absent: WriteTarGz enforces a fixed mode
-// (0644 for files, 0755 for any parent directories synthesised from
+// (0644 for files, 0755 for any parent directories synthesized from
 // the path) so adapters cannot accidentally introduce per-host or
 // per-umask variation.
 type Entry struct {
@@ -47,7 +47,7 @@ type Entry struct {
 // determinism test in this package).
 //
 // Parent directories implied by an entry's RelPath are NOT
-// synthesised as separate tar entries: the contract is "one tar
+// synthesized as separate tar entries: the contract is "one tar
 // entry per Entry," and consumers extract via go-standard tar
 // readers which create missing parents themselves. Adapters that
 // need explicit directory entries should construct them as Entry

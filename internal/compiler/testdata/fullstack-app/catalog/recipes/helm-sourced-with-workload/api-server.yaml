@@ -7,7 +7,7 @@ metadata:
     The api-server rendered by both of the helm provider's node-scoped paths at
     once: a vendored chart supplies the base file set, and a Workload alongside it
     is synthesized into further manifests. The two outputs are added together, so
-    this node's declared input kinds are sourced AND synthesised — which is what
+    this node's declared input kinds are sourced AND synthesized — which is what
     makes it the shape a per-kind reading of the node has to get right.
 spec:
   capability: helm

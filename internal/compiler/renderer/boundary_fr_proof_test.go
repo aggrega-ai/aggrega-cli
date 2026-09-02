@@ -24,7 +24,7 @@ func composeFactory(t *testing.T) renderer.EngineFactory {
 	return wasmEngineFactory(t)
 }
 
-// composeWorkloadRecipe builds a synthesised-mode compose Recipe — the
+// composeWorkloadRecipe builds a synthesized-mode compose Recipe — the
 // inline `workload:` body is the YAML shape Phase B.2 unmarshal expects.
 // SynthesizeWorkload at Phase B.4 produces the Intermediate=true fragment
 // the per-(path, provider) compose AssembleBoundary then merges.
@@ -113,7 +113,7 @@ func boundaryScopeBridgeFR(t *testing.T) *types.FeatureRecipe {
 
 // TestComposeBridge_SingleBoundary_Proof — variant A. One boundary holds
 // `api` and `db` plus a `core/compose-bridge` boundary-scope FR. The FR
-// runs once (deduped on (boundary_path, fr_instance)), and its synthesised
+// runs once (deduped on (boundary_path, fr_instance)), and its synthesized
 // `aggrega-gw` service merges with the api+db services into one
 // docker-compose.yaml at the boundary's evaluated assembly path. Exercises:
 //   - Pre-fix #1: the FR's evaluated path uses the FR-attached boundary's
@@ -559,10 +559,10 @@ func composeBridgeBoundaryInput() renderer.RendererInput {
 }
 
 // TestDispatchBoundaryScopeFR_SynthesizesWorkload proves a boundary-scope
-// FeatureRecipe declaring workload: synthesises its own compute once per
+// FeatureRecipe declaring workload: synthesizes its own compute once per
 // boundary, through the same machinery the per-component path uses. The
-// compose provider synthesises a service from the Workload; because compose is
-// a BoundaryAssembler the synthesised fragment is merged into the boundary's
+// compose provider synthesizes a service from the Workload; because compose is
+// a BoundaryAssembler the synthesized fragment is merged into the boundary's
 // docker-compose.yaml. The workload template references only .boundary.* /
 // .infra (boundary-scope context — no .context.* smuggled in), and the service
 // is named by the boundary-disambiguated component id.
@@ -613,10 +613,10 @@ containers:
 		t.Fatalf("expected merged compose at dist/cluster/compose/docker-compose.yaml; got %v", keysOfFiles(result.Files))
 	}
 	s := string(body.Content)
-	// The synthesised workload's image (templated from .infra.mappedPort, a
+	// The synthesized workload's image (templated from .infra.mappedPort, a
 	// boundary-scope pillar) must appear in the assembled compose — proving the
 	// boundary-scope FR ran workload synthesis against the boundary context.
 	if !strings.Contains(s, "gateway:15432") {
-		t.Errorf("boundary-scope FR workload not synthesised into merged compose:\n%s", s)
+		t.Errorf("boundary-scope FR workload not synthesized into merged compose:\n%s", s)
 	}
 }

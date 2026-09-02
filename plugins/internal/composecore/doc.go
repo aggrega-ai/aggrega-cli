@@ -25,7 +25,7 @@
 // A node reaches the merge through one of two paths, and both produce the same
 // intermediate shape, so the merge has one input format rather than two:
 //
-//   - Synthesised. A node whose Recipe declares workload: is translated into a
+//   - Synthesized. A node whose Recipe declares workload: is translated into a
 //     partial compose document holding just that node's contribution — one
 //     service for the main container plus one per sidecar, one top-level volume
 //     per persistent claim, and the per-container environment, probes and volume

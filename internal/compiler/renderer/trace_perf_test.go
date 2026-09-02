@@ -188,7 +188,7 @@ containers:
 			}
 		}
 		// Slot 10: per-emitted-file directory; helm sourceless mode emits
-		// at least one synthesised file (placeholder Deployment for
+		// at least one synthesized file (placeholder Deployment for
 		// workload-only Recipes), so the directory should be non-empty.
 		synthDir := filepath.Join(nodeDir, "10-engine-synthesis")
 		entries, err := os.ReadDir(synthDir)
@@ -197,7 +197,7 @@ containers:
 			continue
 		}
 		if len(entries) == 0 {
-			t.Errorf("slot 10 directory %s is empty; expected at least one synthesised file", synthDir)
+			t.Errorf("slot 10 directory %s is empty; expected at least one synthesized file", synthDir)
 		}
 	}
 

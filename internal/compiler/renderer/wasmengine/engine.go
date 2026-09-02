@@ -651,7 +651,7 @@ func advertisesExport(desc *wasm.PluginDescriptor, name string) bool {
 // name-only listing, the guest reconstructs the bytes it parses through the
 // pack-source host function, so the per-invocation source root is set before the
 // crossing exactly as it is for render. At the input-kind gate a sourced node has
-// its source resolved (the listing is available); a synthesised or artifacts-only
+// its source resolved (the listing is available); a synthesized or artifacts-only
 // node carries no source at that point, so the validate input carries the node
 // projection and render context alone.
 func (e *Engine) ValidateNodeInput(ctx context.Context, values map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.Diagnostic, error) {

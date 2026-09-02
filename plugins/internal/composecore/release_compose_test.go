@@ -186,8 +186,8 @@ func TestComposeAssemble_ServiceCollision_Errors(t *testing.T) {
 
 	// Two contributing nodes hand-roll fragments declaring a shared service
 	// name "shared". The merger surfaces TRANSLATION_ERROR naming every
-	// contributing (boundary, nodeID) tuple. (Workload-synthesised fragments
-	// can't collide naturally because the synthesiser keys services by
+	// contributing (boundary, nodeID) tuple. (Workload-synthesized fragments
+	// can't collide naturally because the synthesizer keys services by
 	// nodeID; this test uses hand-authored fragment bodies to construct the
 	// collision case directly.)
 	fragBody := func(image string) []byte {
