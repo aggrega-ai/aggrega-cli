@@ -142,12 +142,16 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 // AttachmentSatisfiesFeatureApplicability reports each attachment whose node
 // does not satisfy the applicability the attached Feature declares.
 //
-// A Feature declares applicability on two surfaces and both must hold. The
-// single constraint's requirements hold together; the alternatives hold
-// alternatively, any one of them being enough. An omitted surface is vacuously
-// satisfied, which is why the rule evaluates both unconditionally rather than
-// branching on presence: a constraint with no requirements admits every label
-// set, and an empty set of alternatives admits every label set too.
+// A Feature declares applicability on two surfaces, and whether a declared
+// pair admits a label set is not decided here: the rule hands both surfaces to
+// [selector.MatchApplicability], which is the one home for that composition
+// and states its semantics. Delegating is the point of this rule rather than
+// an indirection over it — every surface asking whether a Feature's
+// applicability admits a label set reaches the same answer for the same input
+// by construction, so what a build decides and what a read-only query reports
+// cannot drift apart. Re-deriving the composition here would agree with that
+// home on the inputs anyone thought to try and would reintroduce the drift
+// silently everywhere else.
 //
 // The type is read as the attachment's resolved type rather than the authored
 // one, because an attachment's type can be contributed at a scope above the
@@ -166,9 +170,10 @@ var AttachmentSatisfiesFeatureApplicability = constraint.Check[
 		}
 		labels := v.NodeLabels(s.NodeID())
 		appliesTo := v.FeatureAppliesTo(featureType)
-		allHold, allErr := selector.MatchString(appliesTo, labels)
-		anyHolds, anyErr := selector.MatchAnyOf(v.FeatureAppliesToAnyOf(featureType), labels)
-		if unevaluable := firstNonNil(allErr, anyErr); unevaluable != nil {
+		applies, unevaluable := selector.MatchApplicability(
+			appliesTo, v.FeatureAppliesToAnyOf(featureType), labels,
+		)
+		if unevaluable != nil {
 			return []constraint.Objection{s.RaiseWithAdvice(
 				ErrSelectorViolation(),
 				"Correct the appliesTo selector on the Feature's catalog entity.",
@@ -177,7 +182,7 @@ var AttachmentSatisfiesFeatureApplicability = constraint.Check[
 				constraint.Captioned("which could not be evaluated:", unevaluable.Error()),
 			)}
 		}
-		if allHold && anyHolds {
+		if applies {
 			return nil
 		}
 		return []constraint.Objection{s.RaiseWithAdvice(
@@ -604,15 +609,4 @@ var OverriddenAnnotationAdvisory = constraint.Check[
 		)
 		return []constraint.Objection{s.RaiseWith(ErrOverriddenAnnotation(), detail...)}
 	},
-}
-
-// firstNonNil is the first non-nil error of two, or nil when neither is set. It
-// exists because a rule evaluating two independent constraint surfaces reports
-// one reason rather than both: the first surface that could not be evaluated is
-// what the author has to fix before the rule can say anything about the second.
-func firstNonNil(first, second error) error {
-	if first != nil {
-		return first
-	}
-	return second
 }

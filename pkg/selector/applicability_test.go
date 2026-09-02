@@ -146,15 +146,17 @@ func TestMatchApplicabilityRequiresBothSurfaces(t *testing.T) {
 // cross-check that shares an implementation with the thing it checks cannot
 // disagree with it, and disagreement is the whole signal.
 //
-// What it pins is that the shared entry point's composition is the same one
-// the rule deciding an attachment during a build evaluates — both surfaces
-// conjoined, with an unparseable declaration refusing rather than admitting.
-// Changing the composition in one place without the other makes this fail.
+// What it pins is the composition the entry point implements — both surfaces
+// conjoined, with an unparseable declaration refusing rather than admitting,
+// and the first error reported in argument order. Changing the entry point
+// without changing the longhand above, or the reverse, makes this fail.
 //
-// It does not, and cannot, observe the build-time rule's own call: nothing
-// here reaches that rule. What it establishes is that the composition the
-// entry point implements is the one written above, so a later edit to the
-// entry point cannot quietly drift away from it.
+// The rule deciding an attachment during a build calls this entry point
+// rather than composing the surfaces itself, so what a build evaluates is
+// what is pinned here and there is no second implementation to compare
+// against. That is why the longhand side is written out in this file: it is
+// the only independent statement of the composition left, and it is kept
+// deliberately rather than folded into the entry point it checks.
 func TestMatchApplicabilityMatchesTheCompositionEvaluatedDuringABuild(t *testing.T) {
 	t.Parallel()
 	for _, tt := range applicabilityCases() {
