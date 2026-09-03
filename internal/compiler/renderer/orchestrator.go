@@ -2225,11 +2225,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				intermediates = append(intermediates, f)
 				continue
 			}
-			// Intermediate=false: emit directly under the attachment directory
-			// resolved above, followed by this attachment's instance name. The
+			// Intermediate=false: emit under the prefix the attachment directory
+			// resolved above and this attachment's instance name compose to. The
 			// instance alone identifies it because a boundary-scope attachment sits
 			// inside the boundary already, so naming a host would repeat what the
 			// location says — and such a feature has no host component to name.
+			//
+			// The prefix is composed through the same home the component-scope
+			// sub-pass composes its own through, so the two scopes differ only in
+			// the coordinates they hand it and never in the layout they lay out.
+			// Where the group's provider declared no directory, that home encodes
+			// the instance into a filename prefix rather than a directory segment,
+			// which lands this feature's files directly beside the boundary's own.
 			// These deliberately do NOT join the group's placed map, and the reason is
 			// the two things that map decides rather than anything about identity. It
 			// carries the emission order and the input-kind origin of each file, which
@@ -2248,7 +2255,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// Its Intermediate=true fragments still reach a fragment-merging assembler,
 			// which is the case where a boundary-scope feature's content is genuinely
 			// merged rather than placed.
-			nodeFiles[attachmentDir+key.FRInstance+"/"+f.Name] = f.Body
+			nodeFiles[attachmentOutputPrefix(attachmentDir, key.FRInstance)+f.Name] = f.Body
 		}
 		if len(intermediates) > 0 {
 			dispatch[dKey].intermediates[syntheticNodeID] = append(dispatch[dKey].intermediates[syntheticNodeID], intermediates...)

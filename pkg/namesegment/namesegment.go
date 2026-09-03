@@ -68,7 +68,7 @@ const escapeOpener = '-'
 // compete.
 const escapeMark = 'z'
 
-// segmentSeparator joins the encoded segments of an assembled name.
+// SegmentSeparator joins the encoded segments of an assembled name.
 //
 // It is two [escapeOpener] characters rather than one because an encoded segment
 // may contain a single one and never two: a hyphen is kept only where the
@@ -79,7 +79,23 @@ const escapeMark = 'z'
 // pair. A run of two or more therefore occurs only at a join, and the join is
 // its first two hyphens — which is what lets the segments be told apart again,
 // and so what makes an assembled name injective.
-const segmentSeparator = string(escapeOpener) + string(escapeOpener)
+//
+// # Why a caller needs it, rather than only [Encoding.Name]
+//
+// A caller that joins an assembled name to a further component — a suffix, or
+// text this package did not write — needs that boundary to be as unambiguous as
+// the joins inside the name, and this is the only sequence that is. Joining on
+// one hyphen is unsound: an encoded segment may end in an admitted character and
+// the appended text may begin with a hyphen, so one hyphen leaves the boundary
+// indistinguishable from a hyphen either side happens to carry, and two distinct
+// pairs assemble to one string. Joining on this instead keeps the assembled name
+// readable back out of the result whatever was appended, because no encoded
+// segment can contain it.
+//
+// It is exported for exactly that reason, and a caller spelling the two
+// characters for itself would be holding a second copy of the one rule the whole
+// encoding's injectivity rests on.
+const SegmentSeparator = string(escapeOpener) + string(escapeOpener)
 
 // Escape selectors. Each names what the escape stands for and fixes how much
 // payload follows it, so an escape is self-delimiting and the encoding of one
@@ -205,19 +221,22 @@ func (e *Encoding) Segment(s string) string {
 }
 
 // Name assembles a name from segments, encoding each with [Encoding.Segment] and
-// joining them with the two-hyphen separator no encoded segment contains.
+// joining them with [SegmentSeparator], which no encoded segment contains.
 //
 // Reading a name back at its joins yields exactly the segments it was built
 // from, so two calls produce one name only where both were given the same
 // segments in the same order — including where they were given different
 // numbers of them, since the joins say how many there were. The name is
 // byte-stable across calls with identical input.
+//
+// A caller appending anything to the result joins it with [SegmentSeparator]
+// too, for the reason stated there: any shorter boundary is ambiguous.
 func (e *Encoding) Name(segments ...string) string {
 	encoded := make([]string, len(segments))
 	for i, s := range segments {
 		encoded[i] = e.Segment(s)
 	}
-	return strings.Join(encoded, segmentSeparator)
+	return strings.Join(encoded, SegmentSeparator)
 }
 
 // keepsAuthoredOpener reports whether an authored hyphen may be emitted as a

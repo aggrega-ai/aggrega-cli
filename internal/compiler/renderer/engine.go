@@ -355,6 +355,13 @@ func (n BoundaryNesting) resolvedPrefix(provider string) (string, error) {
 // directly in a directory. A declared name is bounded first and then returned with
 // its separator.
 //
+// The empty prefix does not merely drop a directory level: it changes where each
+// composition puts the attachment's own coordinates, which move out of directory
+// segments and into an encoded filename prefix. Dropping the enclosing directory
+// alone would leave those coordinates as directory segments and so leave the
+// files nested after all. [attachmentOutputPrefix] is where both shapes are
+// composed, and it is what an attachment's placement should be read from.
+//
 // The empty prefix is returned rather than composed, because composing the
 // separator onto an empty directory would yield a leading "/" and root the
 // attachment's files instead of placing them.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -101,6 +102,19 @@ const (
 // drives a provider that declares nothing.
 func runSegmentRender(t *testing.T, segment *string) ([]string, error) {
 	t.Helper()
+	return runSegmentRenderWith(t, segment, nil)
+}
+
+// runSegmentRenderWith is the same driver with extra component-scope attachments
+// on the one host, named by the instance names given.
+//
+// Each extra attachment carries the SAME feature type as the first, so it runs
+// the same FeatureRecipe and renders the same file name. That is deliberate and
+// it is the shape the collision question is actually about: what separates two
+// such attachments is their instance name and nothing else, so if the placement
+// loses that coordinate their output meets on one path.
+func runSegmentRenderWith(t *testing.T, segment *string, extraInstances []string) ([]string, error) {
+	t.Helper()
 
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set(segmentHost, types.IRNode{Component: "core/api", BoundaryPath: segmentBoundary})
@@ -111,9 +125,15 @@ func runSegmentRender(t *testing.T, segment *string) ([]string, error) {
 	// boundary-scope attachment at all.
 	componentFeatures := types.OrderedMap[types.IRFeatureEntry]{}
 	componentFeatures.Set(segmentComponentFeature, types.IRFeatureEntry{Type: segmentComponentType})
+	for _, instance := range extraInstances {
+		componentFeatures.Set(instance, types.IRFeatureEntry{Type: segmentComponentType})
+	}
 	componentFeatures.Set(segmentBoundaryFeature, types.IRFeatureEntry{Type: segmentBoundaryType})
 	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	fvm.Set(segmentHost, componentFeatures)
+
+	featureOrder := append([]string{segmentComponentFeature}, extraInstances...)
+	featureOrder = append(featureOrder, segmentBoundaryFeature)
 
 	boundaryFeatures := types.OrderedMap[types.BoundaryFeature]{}
 	boundaryFeatures.Set(segmentBoundaryFeature, types.BoundaryFeature{Type: segmentBoundaryType, Infra: types.OrderedMap[any]{}})
@@ -144,7 +164,7 @@ func runSegmentRender(t *testing.T, segment *string) ([]string, error) {
 				Provenance:           types.IRProvenance{CompilerVersion: "test"},
 			},
 		},
-		FeatureOrder: ir.FeatureOrder{segmentHost: []string{segmentComponentFeature, segmentBoundaryFeature}},
+		FeatureOrder: ir.FeatureOrder{segmentHost: featureOrder},
 		ResolveResult: &resolver.ResolveResult{
 			Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "attachment-segment-app"}},
 			Release:   &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}},
@@ -288,6 +308,24 @@ func TestRenderAll_AttachmentSegmentAbsent_KeepsTheHostDefault(t *testing.T) {
 //
 // The declared-empty run is also the negative control for the bound below: an
 // empty value is not a path, so it must be accepted rather than refused.
+//
+// # The coordinates move into the FILENAME, and dropping the directory alone is
+// not the property
+//
+// The expected paths carry no directory level at all: an attachment's own
+// coordinates arrive as a filename prefix rather than as directory segments, so
+// its files sit in the very directory the component's own file sits in. That is
+// the whole point of the declaration — a target that reads only the files
+// sitting directly in a directory reads the attachment's too — and dropping the
+// enclosing directory while leaving the coordinates as directories would satisfy
+// the sentence and not the requirement, since the files would still be nested
+// two levels down and still unread.
+//
+// The prefix meets the file's own name at the segment separator the encoding
+// reserves, which is what keeps two contributors off one filename. The
+// separator is read from the encoding rather than written as a literal here:
+// spelling it would put a second copy of the one rule the derivation's
+// injectivity rests on into a test, where it could agree today and drift after.
 func TestRenderAll_AttachmentSegmentDeclaredEmpty_IsNotTheHostDefault(t *testing.T) {
 	t.Parallel()
 
@@ -295,14 +333,23 @@ func TestRenderAll_AttachmentSegmentDeclaredEmpty_IsNotTheHostDefault(t *testing
 	if err != nil {
 		t.Fatalf("declaring no enclosing directory is a claim, not a bound violation, and must render: %v", err)
 	}
+	sep := namesegment.SegmentSeparator
 	wantFlat := []string{
-		"dist/cluster/segprov/" + segmentHost + "/" + segmentComponentFeature + "/manifest.yaml",
-		"dist/cluster/segprov/" + segmentBoundaryFeature + "/manifest.yaml",
+		"dist/cluster/segprov/" + segmentHost + sep + segmentComponentFeature + sep + "manifest.yaml",
+		"dist/cluster/segprov/" + segmentBoundaryFeature + sep + "manifest.yaml",
 		"dist/cluster/segprov/manifest.yaml",
 	}
 	if strings.Join(flat, "\n") != strings.Join(wantFlat, "\n") {
-		t.Fatalf("a declared empty directory did not drop the enclosing directory\nwant:\n%s\ngot:\n%s",
+		t.Fatalf("a declared empty directory did not flatten the attachment beside the component\nwant:\n%s\ngot:\n%s",
 			strings.Join(wantFlat, "\n"), strings.Join(flat, "\n"))
+	}
+	// No emitted path may carry a directory level beyond the dispatch path
+	// itself, which is the requirement the expected paths above encode and the
+	// one a "dropped the enclosing directory" reading would miss.
+	for _, path := range flat {
+		if rest := strings.TrimPrefix(path, "dist/cluster/segprov/"); strings.Contains(rest, "/") {
+			t.Errorf("a declared empty directory still left a nested path: %s", path)
+		}
 	}
 
 	// The companion state, run through the same corpus and the same provider, so
@@ -325,6 +372,77 @@ func TestRenderAll_AttachmentSegmentDeclaredEmpty_IsNotTheHostDefault(t *testing
 			t.Errorf("a provider that declared no enclosing directory still received the host default: %s", path)
 		}
 	}
+}
+
+// TestRenderAll_TwoAttachmentsOnOneHostBothSurviveFlatPlacement is the direct
+// proof of the collision guarantee, driven end to end through RenderAll rather
+// than over the derivation.
+//
+// # Why it asserts BOTH files rather than that the flattening happened
+//
+// A test asserting that one expected file exists PASSES ON THE DEFECT. Two
+// attachments on one component render the same file name, so if the placement
+// dropped or folded the coordinate that separates them, one file would overwrite
+// the other and an assertion naming either would still find its file. Only
+// requiring both, and requiring the count, can tell the two apart.
+//
+// # And nothing else would have caught it
+//
+// The failure this refuses is SILENT. A component-scope attachment's files merge
+// into the bucket of the node hosting them, and that bucket is stamped with one
+// producer label computed per node — so both attachments arrive as a single
+// producer, the rule that refuses one output path written by more than one
+// contributor cannot fire, and the losing file is dropped by a plain map
+// assignment. No halt, no diagnostic, no warning: a Feature the author attached
+// is simply missing from the output. So this assertion is not a convenience over
+// a guard that would also catch it; it is the only thing watching.
+//
+// The nested run is included as the companion, because it is what establishes
+// that the two attachments were genuinely distinct contributors before the
+// flattening — a flat run alone could not distinguish "both survived" from "the
+// fixture only ever had one".
+func TestRenderAll_TwoAttachmentsOnOneHostBothSurviveFlatPlacement(t *testing.T) {
+	t.Parallel()
+
+	const second = "sec"
+	sep := namesegment.SegmentSeparator
+
+	flat, err := runSegmentRenderWith(t, declares(""), []string{second})
+	if err != nil {
+		t.Fatalf("two attachments on one host must render: %v", err)
+	}
+
+	// Both, named individually, so a failure says which one went missing.
+	first := "dist/cluster/segprov/" + segmentHost + sep + segmentComponentFeature + sep + "manifest.yaml"
+	other := "dist/cluster/segprov/" + segmentHost + sep + second + sep + "manifest.yaml"
+	present := map[string]bool{}
+	for _, path := range flat {
+		present[path] = true
+	}
+	for _, want := range []string{first, other} {
+		if !present[want] {
+			t.Errorf("an attachment's file is absent from the flat output: %s\nemitted:\n%s",
+				want, strings.Join(flat, "\n"))
+		}
+	}
+	if first == other {
+		t.Fatal("the two attachments derive one filename, so the assertion above cannot distinguish them")
+	}
+
+	// The nested companion: the same two attachments under the host default,
+	// where they are separated by directories instead. Both survive there too,
+	// which is what makes the flat result a preserved property rather than a
+	// coincidence of this fixture.
+	nested, err := runSegmentRenderWith(t, nil, []string{second})
+	if err != nil {
+		t.Fatalf("the nested companion run must render: %v", err)
+	}
+	if len(nested) != len(flat) {
+		t.Errorf("flattening changed how many files are emitted: nested %d, flat %d\nnested:\n%s\nflat:\n%s",
+			len(nested), len(flat), strings.Join(nested, "\n"), strings.Join(flat, "\n"))
+	}
+	t.Logf("flat output:\n%s", strings.Join(flat, "\n"))
+	t.Logf("nested output:\n%s", strings.Join(nested, "\n"))
 }
 
 // TestRenderAll_AttachmentSegmentOutsideOneDirectoryHalts is the bound firing.
