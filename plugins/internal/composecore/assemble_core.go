@@ -25,17 +25,27 @@
 //     author-boundary's network.
 //   - Service collisions. If two different nodes contribute services of
 //     the same name, AssembleBoundaryCore returns TRANSLATION_ERROR naming
-//     every contributing (boundary, nodeID, serviceName) tuple.
+//     every contributing (boundary, nodeID, serviceName) tuple. A service
+//     is refused on the name alone, which is where it differs from the
+//     body-carrying sections below: a compose service is a runtime
+//     singleton, so two nodes each wanting a container of their own reach
+//     one container even where their two definitions agree, and the loss is
+//     real however identical the bodies are.
 //   - Top-level volumes. Per-node volume entries union across the dispatch
-//     group; name collisions silently merge (named volumes are content-
-//     free in the current shape, so a collision means the same physical
-//     volume).
-//   - Top-level configs. Per-node config declarations union the same way.
-//     Every service-level configs: reference must resolve to one of them
-//     once the union is complete, or AssembleBoundaryCore returns
-//     TRANSLATION_ERROR naming each unresolved reference — the union is
-//     what makes the check honest, since one node may reference a config a
-//     different node in the dispatch group declares.
+//     group. Two nodes may declare one name, because a named volume is one
+//     physical volume and two identical declarations both ask for exactly
+//     that — so identical bodies merge into the single entry they describe.
+//     Bodies that differ are a disagreement about that one volume, and
+//     AssembleBoundaryCore returns TRANSLATION_ERROR naming the volume and
+//     every contributing (boundary, nodeID) tuple rather than keeping one
+//     body and discarding the other.
+//   - Top-level configs. Per-node config declarations union the same way and
+//     under the same conflict rule. Every service-level configs: reference
+//     must resolve to one of them once the union is complete, or
+//     AssembleBoundaryCore returns TRANSLATION_ERROR naming each unresolved
+//     reference — the union is what makes the check honest, since one node
+//     may reference a config a different node in the dispatch group
+//     declares.
 //   - depends_on inference. For each IR edge whose source and target both
 //     contribute services to this dispatch group, record an ungated
 //     dependency on the target service on the source service. It joins
@@ -77,12 +87,43 @@ import (
 // AssembleBoundaryCore at the dispatch path.
 const AssembledOutputFile = "docker-compose.yaml"
 
-// serviceContrib records one (boundary, nodeID) tuple that contributed a
-// service to the merged compose output. Used by collision detection to
-// name every contributor in TRANSLATION_ERROR output.
-type serviceContrib struct {
+// sectionContrib records one (boundary, nodeID) tuple that contributed an entry
+// to a section of the merged compose output. Used by collision detection to
+// name every contributor in TRANSLATION_ERROR output. It carries no body:
+// whether a shared name is a collision at all is the contributing section's own
+// question, and only the answer reaches the reporting side.
+type sectionContrib struct {
 	boundary string
 	nodeID   string
+}
+
+// bodyContrib records one contributor's declaration of a named entry in a
+// section whose entries carry a body — the declaring party, and the bytes that
+// entry would be emitted as.
+//
+// The emitted form rather than the parsed struct is what a conflict is decided
+// on, and the reason is that it is the property actually at stake: two bodies
+// emitting the same bytes have lost nothing between them, whatever their
+// in-memory shapes. Comparing the structs instead would report a conflict
+// between a contributor that wrote an empty `driver_opts:` mapping and one that
+// wrote no `driver_opts:` at all, because a nil map and an empty map are
+// distinct values — while `omitempty` emits neither, so the two declarations are
+// the same declaration as far as the assembled document is concerned. It also
+// keeps the comparison honest as the shape grows: a field added to Volume or
+// Config is compared because it is emitted, with nothing here to update.
+type bodyContrib struct {
+	party   sectionContrib
+	emitted string
+}
+
+// collisionClass carries the words one section's collision halt is worded with:
+// the headline naming what went wrong, the noun each colliding entry is named
+// by, and the remedy the author is pointed at (empty where the class admits
+// none).
+type collisionClass struct {
+	headline  string
+	entryNoun string
+	remedy    string
 }
 
 // AssembleBoundaryCore reads per-node fragments and emits a single
@@ -116,8 +157,14 @@ func AssembleBoundaryCore(
 	// Track which (boundary, nodeID) contributed each service for collision
 	// reporting. boundaryByService allows depends_on inference to look up a
 	// service's owning boundary without re-walking the input.
-	contribsByService := map[string][]serviceContrib{}
+	contribsByService := map[string][]sectionContrib{}
 	boundaryByService := map[string]string{}
+
+	// Track every contributor of each top-level volume and config name, with
+	// the bytes it declared, so a name two contributors disagree about is
+	// refused rather than resolved by whichever of them the walk reaches last.
+	contribsByVolume := map[string][]bodyContrib{}
+	contribsByConfig := map[string][]bodyContrib{}
 
 	// waveByService records the deployment wave of the node that contributed
 	// each service, so wave-derived ordering reads a service's wave without
@@ -155,21 +202,37 @@ func AssembleBoundaryCore(
 		networkName := networkNameByNode[nid]
 		merged.Networks[networkName] = Network{}
 
-		// Volumes: union (later contributors silently overwrite empty
-		// bodies — both are `<name>: {}` in the current shape).
+		party := sectionContrib{boundary: networkName, nodeID: nid}
+
+		// Volumes: union, recording each contributor's emitted body so a
+		// name two of them disagree about is refused after the walk. The
+		// assignment stays last-writer because it is only reached for names
+		// every contributor emitted identically, where either body is the
+		// one entry both of them described.
 		for k, v := range frag.Volumes {
+			emitted, err := marshalDeterministic(v, yamlIndent)
+			if err != nil {
+				return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nid}, fmt.Sprintf("compose: node %q volume %q: marshal for collision comparison", nid, k))
+			}
+			contribsByVolume[k] = append(contribsByVolume[k], bodyContrib{party: party, emitted: string(emitted)})
 			merged.Volumes[k] = v
 		}
 
 		// Configs: union (top-level config declarations, e.g. the
-		// compose-bridge gateway's generated nginx config).
+		// compose-bridge gateway's generated nginx config), under the same
+		// conflict rule and for the same reason.
 		for k, v := range frag.Configs {
+			emitted, err := marshalDeterministic(v, yamlIndent)
+			if err != nil {
+				return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nid}, fmt.Sprintf("compose: node %q config %q: marshal for collision comparison", nid, k))
+			}
+			contribsByConfig[k] = append(contribsByConfig[k], bodyContrib{party: party, emitted: string(emitted)})
 			merged.Configs[k] = v
 		}
 
 		// Services: collision-detect, then merge with the network attached.
 		for svcName, svc := range frag.Services {
-			contribsByService[svcName] = append(contribsByService[svcName], serviceContrib{boundary: networkName, nodeID: nid})
+			contribsByService[svcName] = append(contribsByService[svcName], party)
 			boundaryByService[svcName] = networkName
 			waveByService[svcName] = nodeSyncWave[nid]
 
@@ -186,8 +249,15 @@ func AssembleBoundaryCore(
 		}
 	}
 
-	// Collision check.
+	// Collision checks, in the order the sections are declared in the emitted
+	// document so the reported halt is the same one whatever the input order.
 	if err := checkServiceCollisions(contribsByService); err != nil {
+		return nil, nil, err
+	}
+	if err := checkBodyCollisions("volume", contribsByVolume); err != nil {
+		return nil, nil, err
+	}
+	if err := checkBodyCollisions("config", contribsByConfig); err != nil {
 		return nil, nil, err
 	}
 
@@ -416,36 +486,120 @@ func appendUnique(list []string, s string) []string {
 	return append(list, s)
 }
 
+// reportNameCollisions is the one home for the shape of a collision halt: how a
+// contributing party is named, how entries and parties are ordered, how the
+// message is built, and which severity it carries. Every collision-checked
+// section of the merged document reports through here, so two of them cannot
+// word the same kind of halt differently.
+//
+// What it deliberately does not own is which shared names count as collisions.
+// That predicate is each section's own and they genuinely differ — see
+// checkServiceCollisions and checkBodyCollisions — so unifying it would either
+// refuse a volume two contributors agree about or accept a service two
+// contributors both meant to own.
+//
+// Entries are reported in name order and each entry's parties in descriptor
+// order, so the message is a function of the collisions alone and not of the
+// order the walk happened to find them in.
+func reportNameCollisions(class collisionClass, colliding map[string][]sectionContrib) error {
+	if len(colliding) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(colliding))
+	for name := range colliding {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		descriptors := make([]string, 0, len(colliding[name]))
+		for _, party := range colliding[name] {
+			descriptors = append(descriptors, fmt.Sprintf("boundary=%q node=%q", party.boundary, party.nodeID))
+		}
+		sort.Strings(descriptors)
+		parts = append(parts, fmt.Sprintf("%s %q contributed by [%s]", class.entryNoun, name, strings.Join(descriptors, ", ")))
+	}
+
+	message := fmt.Sprintf("compose AssembleBoundary: %s: %s", class.headline, strings.Join(parts, "; "))
+	if class.remedy != "" {
+		message += "; " + class.remedy
+	}
+	return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, message, nil, nil)
+}
+
 // checkServiceCollisions walks contribsByService and returns
 // TRANSLATION_ERROR when any service is contributed by more than one
-// (boundary, node) tuple. The error message names every contributor in
-// alphabetical order so error output is deterministic.
-func checkServiceCollisions(contribsByService map[string][]serviceContrib) error {
-	type collision struct {
-		service     string
-		descriptors []string
-	}
-	var collisions []collision
+// (boundary, node) tuple.
+//
+// The predicate is the shared name alone, with no comparison of what the two
+// contributors declared, and that is deliberate rather than the weaker form of
+// the body-carrying sections' check. A compose service is a runtime singleton:
+// two nodes that each synthesized a service `web` each wanted a container, and
+// they get one between them, so a contributor's intent is lost even where the
+// two definitions are byte-identical. Nothing here is recoverable by comparing
+// bodies, which is why this predicate cannot be folded into the one below.
+func checkServiceCollisions(contribsByService map[string][]sectionContrib) error {
+	colliding := map[string][]sectionContrib{}
 	for svc, contribs := range contribsByService {
 		if len(contribs) <= 1 {
 			continue
 		}
-		descriptors := make([]string, 0, len(contribs))
-		for _, c := range contribs {
-			descriptors = append(descriptors, fmt.Sprintf("boundary=%q node=%q", c.boundary, c.nodeID))
+		colliding[svc] = contribs
+	}
+	return reportNameCollisions(collisionClass{
+		headline:  "service-name collisions across contributors",
+		entryNoun: "service",
+	}, colliding)
+}
+
+// checkBodyCollisions walks one body-carrying section's contributors and returns
+// TRANSLATION_ERROR for every name whose contributors did not all declare the
+// same thing. entryNoun is the singular the section's entries are named by in
+// the halt ("volume", "config").
+//
+// The predicate is a disagreement rather than a shared name, because a shared
+// name is legitimate here in a way it is not for a service: a named volume or
+// config is one object, so two contributors declaring it identically have both
+// asked for exactly the object the merged document ends up with and nothing is
+// lost. Two contributors declaring it differently is a disagreement about that
+// one object, and resolving it by keeping either body discards the other
+// contributor's declaration from a build that would otherwise succeed.
+//
+// Bodies are compared as the bytes they would be emitted as — see bodyContrib
+// for why that, rather than the parsed values.
+func checkBodyCollisions(entryNoun string, contribsByName map[string][]bodyContrib) error {
+	colliding := map[string][]sectionContrib{}
+	for name, contribs := range contribsByName {
+		if !bodiesDisagree(contribs) {
+			continue
 		}
-		sort.Strings(descriptors)
-		collisions = append(collisions, collision{service: svc, descriptors: descriptors})
+		parties := make([]sectionContrib, 0, len(contribs))
+		for _, c := range contribs {
+			parties = append(parties, c.party)
+		}
+		colliding[name] = parties
 	}
-	if len(collisions) == 0 {
-		return nil
+	return reportNameCollisions(collisionClass{
+		headline:  fmt.Sprintf("conflicting %s declarations across contributors", entryNoun),
+		entryNoun: entryNoun,
+		remedy:    fmt.Sprintf("two contributors declaring one %s name must declare it identically, or one of them must declare a different name", entryNoun),
+	}, colliding)
+}
+
+// bodiesDisagree reports whether the contributors of one name emitted anything
+// other than the same bytes. A single contributor never disagrees, and neither
+// does any number of contributors that all emitted the same body.
+func bodiesDisagree(contribs []bodyContrib) bool {
+	if len(contribs) <= 1 {
+		return false
 	}
-	sort.Slice(collisions, func(i, j int) bool { return collisions[i].service < collisions[j].service })
-	parts := make([]string, 0, len(collisions))
-	for _, c := range collisions {
-		parts = append(parts, fmt.Sprintf("service %q contributed by [%s]", c.service, strings.Join(c.descriptors, ", ")))
+	for _, c := range contribs[1:] {
+		if c.emitted != contribs[0].emitted {
+			return true
+		}
 	}
-	return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("compose AssembleBoundary: service-name collisions across contributors: %s", strings.Join(parts, "; ")), nil, nil)
+	return false
 }
 
 // checkConfigReferences walks every service's configs: references and halts when

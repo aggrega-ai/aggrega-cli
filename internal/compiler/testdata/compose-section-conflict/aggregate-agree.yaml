@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: compose-section-agree-app
+  version: "1.0.0"
+spec:
+  components:
+    # The same two-contributor shape as the conflicting Aggregate beside this
+    # one, with the two Recipes declaring `shared-data` identically. This is the
+    # positive control: a check that refused every shared name would halt here.
+    alpha:
+      type: core/alpha
+    gamma:
+      type: core/gamma

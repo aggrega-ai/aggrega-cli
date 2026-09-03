@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: alpha-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/alpha
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: alpha:1.0
+  # An artifacts: fragment declaring a top-level volume the other contributors
+  # at this assembly path also declare. The body is what decides whether the
+  # shared name is a conflict or the one entry both authors asked for.
+  artifacts:
+    "shared-volume.yaml": |
+      volumes:
+        shared-data:
+          driver: local
+          driver_opts:
+            device: /srv/shared

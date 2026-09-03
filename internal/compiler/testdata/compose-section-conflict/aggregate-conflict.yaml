@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: compose-section-conflict-app
+  version: "1.0.0"
+spec:
+  components:
+    # Two ordinary components, neither of them a Feature attachment. The defect
+    # this fixture covers is not attachment-specific: two components the
+    # developer declared directly reach one top-level volume name the same way.
+    # Their two Recipes declare `shared-data` with bodies that differ.
+    alpha:
+      type: core/alpha
+    beta:
+      type: core/beta
