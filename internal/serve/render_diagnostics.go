@@ -15,6 +15,13 @@ import (
 // replacement touched so a cleared advisory disappears from the editor as
 // reliably as a new one appears.
 //
+// extra carries advisories about the render that the render step did not itself
+// produce — a reference declined for want of a pin, which the host declined and
+// the guest never saw. They are passed in and published here rather than through
+// a call of their own because this function REPLACES the whole layer: a second
+// publication would erase this one's entries, so every advisory belonging to the
+// layer arrives in one call or not at all.
+//
 // The advisories are positioned at the head of the file rather than at the
 // authored key: a render advisory names a component and a delivery key, which
 // are graph coordinates, and mapping those back to a position in the authoring
@@ -38,10 +45,10 @@ import (
 // entry publishes whatever the advisory arrived carrying, verbatim, and carries
 // nothing where the advisory carried nothing — the empty string and the omitted
 // key being the same statement on this wire.
-func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diags []renderer.Diagnostic) {
+func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diags []renderer.Diagnostic, extra []Diagnostic) {
 	byFile := map[string][]Diagnostic{}
-	if file != "" && len(diags) > 0 {
-		mapped := make([]Diagnostic, 0, len(diags))
+	if file != "" && len(diags)+len(extra) > 0 {
+		mapped := make([]Diagnostic, 0, len(diags)+len(extra))
 		for _, d := range diags {
 			mapped = append(mapped, Diagnostic{
 				Line:     1,
@@ -51,6 +58,7 @@ func (s *Server) publishRenderDiagnostics(ctx context.Context, file string, diag
 				Code:     d.Code,
 			})
 		}
+		mapped = append(mapped, extra...)
 		byFile[file] = mapped
 	}
 	for _, f := range s.setRenderDiagnostics(byFile) {

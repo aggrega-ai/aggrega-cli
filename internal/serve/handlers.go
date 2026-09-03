@@ -637,6 +637,8 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	}
 	view := s.lazyCatalog.ForRequest(pins)
 
+	fetchSeam := s.irGraphExternalInputs(lf)
+
 	// 3. Run the one preview computation, in its inspection posture. It resolves
 	//    the closure itself, so this handler does not resolve one separately and
 	//    then render from a second resolution of the same Release. One resolution
@@ -654,19 +656,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    (that gate belongs to the surfaces that emit an artifact).
 	preview, err := compilerops.Preview(
 		ctx,
-		compilerops.PreviewInputs{
-			View:            view,
-			ReleasePath:     releasePath,
-			WorkspaceRoot:   s.workspaceRoot,
-			WorkspaceConfig: s.wsConfig,
-			Lockfile:        lf,
-			CompilerVersion: s.compilerVersion,
-			// The daemon never fills a lockfile, so one it holds was on disk before
-			// the request. The drift verify is off under this posture regardless —
-			// drift reaches the reader through the Problems panel above, not as a
-			// refusal — and the flag states the fact rather than the consequence.
-			LockfilePreexisted: lf != nil,
-		},
+		s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam),
 		// Inspection posture: the same computation the build runs, with the gates
 		// that would REFUSE left off. An editor that declines to draw the graph
 		// leaves the reader with nothing, where a build leaves them a diagnostic.
@@ -695,7 +685,13 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    to. Non-blocking, like drift: the graph is returned regardless. The
 	//    render only runs when the build-on-inspect dial is on, so with it off
 	//    this replaces an empty layer with an empty layer.
-	s.publishRenderDiagnostics(ctx, resolved.AggregatePath, result.RenderDiagnostics)
+	//
+	//    The declined external references travel in the SAME call rather than a
+	//    second one, and that is load-bearing: the publication replaces the whole
+	//    render layer, so a second call would erase whichever layer the first one
+	//    wrote. One call, one layer, both advisory classes.
+	s.publishRenderDiagnostics(ctx, resolved.AggregatePath, result.RenderDiagnostics,
+		externalInputDivergenceDiagnostics(fetchSeam.Declined(), releasePath))
 
 	graphBytes, err := json.Marshal(result.IRGraph)
 	if err != nil {

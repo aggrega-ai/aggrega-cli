@@ -603,7 +603,7 @@ func TestDeclineRecordingFetchRecordsOnlyTheFrozenClosureRefusal(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			f := &declineRecordingFetch{inner: stubFetch{err: tc.err}}
+			f := externalinputs.NewDeclineRecorder(stubFetch{err: tc.err})
 			_, err := f.Fetch(context.Background(), "https://example.com/a", "test")
 			if (err != nil) != (tc.err != nil) {
 				t.Fatalf("the recorder must pass the outcome through unchanged; got err=%v", err)

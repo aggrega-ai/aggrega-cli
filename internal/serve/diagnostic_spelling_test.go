@@ -170,7 +170,7 @@ func TestDiagnosticsAnswerTheFileHoweverTheRequestSpelledIt(t *testing.T) {
 				"helm", "aggrega.ai/namspace", "synthesized")
 			advisory.Location = &renderer.DiagnosticLocation{URI: "app", Kind: "helm"}
 			srv.publishRenderDiagnostics(ctx, pick(tc.renderRelative),
-				[]renderer.Diagnostic{advisory})
+				[]renderer.Diagnostic{advisory}, nil)
 			flush()
 
 			byRelative := diagnosticsResultOf(t,
@@ -236,7 +236,7 @@ func TestRenderPushCarriesTheAbsolutePathTheClientResolves(t *testing.T) {
 	advisory := rendercore.UnhonorableAnnotationDiagnostic(
 		"helm", "aggrega.ai/namspace", "synthesized")
 	advisory.Location = &renderer.DiagnosticLocation{URI: "app", Kind: "helm"}
-	srv.publishRenderDiagnostics(ctx, relSpelling, []renderer.Diagnostic{advisory})
+	srv.publishRenderDiagnostics(ctx, relSpelling, []renderer.Diagnostic{advisory}, nil)
 	flush()
 
 	body := pushed.String()

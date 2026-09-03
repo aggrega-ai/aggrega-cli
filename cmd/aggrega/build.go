@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
@@ -37,6 +36,12 @@ import (
 // loader's fetch seam; the assertion keeps the two packages' contracts
 // aligned at compile time.
 var _ wasm.FetchService = (*externalinputs.Service)(nil)
+
+// The decline recorder is injected in the store's place, so it owes the same
+// contract. It is declared against an interface of its own package rather than
+// against the loader's, so nothing else would notice the two drifting apart —
+// which is what this assertion is for.
+var _ wasm.FetchService = (*externalinputs.DeclineRecorder)(nil)
 
 // buildFlags carries the `build` command's flag state. It is constructed per
 // command so two invocations in one process cannot observe each other's flag
@@ -397,7 +402,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// service itself is still held directly, because the acquisition records the
 	// lockfile write below reads are the service's own and the recorder does not
 	// carry them.
-	fetchSeam := &declineRecordingFetch{inner: extInputs}
+	fetchSeam := externalinputs.NewDeclineRecorder(extInputs)
 
 	// The build's determinism-wired lazy lookup: EVERY dispatchBuild catalog
 	// consumer — guards, triad aggregate resolution, manifest-implements gate,
@@ -634,60 +639,6 @@ func writeDryRunReport(out io.Writer, outDir string, files map[string][]byte) {
 		}
 		fmt.Fprintln(out)
 	}
-}
-
-// declineRecordingFetch wraps the external-input seam to record which
-// references were declined for want of a pin. It is what lets the dry run report
-// where it diverges from a real build without comparing anything to anything:
-// the host knows a reference was declined because it is the code that declined
-// it, and it keeps the list.
-//
-// Recording here rather than reading it back off the build's failure is not a
-// preference. A guest asks for the input, so the refusal travels back out
-// through the guest, which reports a failure of its own — the registered
-// condition does not survive that crossing, and only its rendered text does. A
-// caller matching on the returned error would therefore be matching on message
-// text that a guest happens to have copied through, and would go silently blind
-// the moment a guest worded its own failure differently.
-//
-// Every method is safe for concurrent use: nodes render in parallel, so the
-// callbacks arrive from several goroutines.
-type declineRecordingFetch struct {
-	inner wasm.FetchService
-
-	mu       sync.Mutex
-	declined map[string]bool
-}
-
-// Fetch delegates, recording the URL when the refusal is the frozen-closure one.
-// Other failures — an unreachable host, a corrupt store blob, a rejected scheme
-// — are passed through unrecorded: they are not a divergence between a dry run
-// and a real build, because a real build fails on them identically.
-func (f *declineRecordingFetch) Fetch(ctx context.Context, url string, requiredBy string) ([]byte, error) {
-	b, err := f.inner.Fetch(ctx, url, requiredBy)
-	if err != nil && stderrors.Is(err, externalinputs.ErrAcquisitionDisabled()) {
-		f.mu.Lock()
-		if f.declined == nil {
-			f.declined = map[string]bool{}
-		}
-		f.declined[url] = true
-		f.mu.Unlock()
-	}
-	return b, err
-}
-
-// Declined returns the declined references, sorted, so the report a dry run
-// prints is the same for the same run rather than ordered by whichever node
-// happened to render first.
-func (f *declineRecordingFetch) Declined() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := make([]string, 0, len(f.declined))
-	for url := range f.declined {
-		out = append(out, url)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // writeDryRunDivergenceNote reports the one way a dry run can diverge from the
