@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: verbatim-store-recipe
+  version: "1.0.0"
+  description: >
+    A store rendered as a CloudFormation fragment whose resource logical id is
+    the component instance's own name, written through without any rewriting.
+    A Recipe is free to author whatever logical id it likes and the provider
+    emits it exactly as written, so this Recipe is what carries a component
+    name straight into the emitted template.
+  maintainers:
+    - name: "Massimiliano Ferrero"
+      email: "m.ferrero@cognitio.it"
+spec:
+  capability: cloudformation
+  implements: core/verbatim-store
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .context.instance_id }}:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "{{ .values.retention_seconds }}"
+
+      # The provider names each stack Output for the contributing component and
+      # the entry together, reading both as words and joining them, so this
+      # entry's name is the provider's own derivation rather than anything
+      # written here. Its separator therefore never reaches the emitted
+      # template, which is what the resource logical id above does not share.
+      provides:
+        queue_url: !Ref {{ .context.instance_id }}

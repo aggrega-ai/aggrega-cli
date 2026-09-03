@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-verbatim-logical-id-app
+  version: "1.0.0"
+  description: >
+    One component whose name carries a hyphen and an underscore, deployed
+    through a Recipe that writes the component's own name into the resource
+    logical id without rewriting it. A CloudFormation resource logical id
+    admits only letters and digits, so the name reaches a place that cannot
+    hold it.
+spec:
+  components:
+    payments-db_primary:
+      type: core/verbatim-store
+      values:
+        retention_seconds: "45"

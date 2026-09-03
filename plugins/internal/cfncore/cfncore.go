@@ -27,6 +27,17 @@
 // downstream holds the built name only, and so could refuse a collision without
 // being able to say which two entries produced it.
 //
+// A logical id also has an alphabet — letters and digits, and nothing else
+// ([isLogicalIDRune]) — and the two properties are independent: a set of ids can
+// be perfectly distinct and still name characters a template cannot hold. Output
+// names are legal by construction, because building one drops everything outside
+// the alphabet. An authored resource logical id is not, because this core reads
+// it verbatim, so it is refused where it carries such a character
+// ([resourceLogicalIDRefusal]) rather than emitted into a template the target
+// will not accept. It is refused and never repaired: a resource whose logical id
+// changes is replaced rather than updated, so a silent rewrite would change the
+// identity of a resource that may already be running.
+//
 // Resource names come from the Recipe that authored the fragment, which this core
 // reads and never rewrites; [DeclaredNames] collects them across everything the
 // node contributes, and the guest hands them to the host as the names it derived,
@@ -299,7 +310,9 @@ func isTemplateFile(path string) bool {
 // AssembleStack merges every node's fragments in dispatch-group order into one
 // CloudFormation stack template and returns its pure-JSON long-form bytes. Each
 // fragment's Resources fold into one Resources map under the logical ids the
-// fragment authored. Each fragment's provides entries become stack Outputs (a
+// fragment authored, and an id carrying a character a logical id does not admit
+// halts the assembly rather than reaching the emitted template
+// ([resourceLogicalIDRefusal]). Each fragment's provides entries become stack Outputs (a
 // provides value that is an intrinsic referencing a resource in the assembled
 // stack rides through as its long-form intrinsic — the intra-stack
 // cross-reference), and any explicit Outputs block merges in as well; both are
@@ -470,7 +483,10 @@ type fragmentClaim struct {
 
 // fragmentEntries reads one decoded fragment and returns what the assembled
 // stack carries for it, per key space: its resources under the logical ids the
-// fragment authored, which this core reads and never rewrites; its outputs — an
+// fragment authored, which this core reads and never rewrites — and refuses
+// where one of them lies outside the alphabet a logical id admits
+// ([resourceLogicalIDRefusal]), since reading it verbatim is what would carry it
+// into a template the target will not accept; its outputs — an
 // explicit Outputs block's entries, then the entries its provides keys project to
 // — each named for the contributing node and the entry together
 // ([OutputLogicalID]); and the entries of each carried section
@@ -482,7 +498,12 @@ type fragmentClaim struct {
 // This is the single derivation of which names a fragment claims. The merge
 // inserts these entries and [DeclaredNames] gathers them across a node's
 // fragments and reports their keys, so the set a node declares to the host is by
-// construction the set the merge writes. Two walks kept in step by eye could
+// construction the set the merge writes. It is also why the alphabet refusal
+// sits here rather than at the write into the assembled map: every path that
+// reads a fragment's resources arrives through this one derivation, so the
+// refusal reaches the declaration a node hands the host as well as the merge,
+// and it reaches both at the earliest point either holds the contributor and the
+// authored id together. Two walks kept in step by eye could
 // drift instead, and the host would then be checking one derivation for
 // duplicates while the merge wrote another — a divergence nothing would fail on,
 // because no comparison between the two exists to fail.
@@ -521,7 +542,11 @@ func fragmentEntries(nodeID string, frag map[string]any, mint *outputNameLedger)
 		if !ok {
 			return fragmentClaim{}, fmt.Errorf("cloudformation-provider: %s in node %q is not a mapping", sectionResources, nodeID)
 		}
-		for _, id := range sortedKeys(rmap) {
+		ids := sortedKeys(rmap)
+		if err := resourceLogicalIDRefusal(nodeID, ids); err != nil {
+			return fragmentClaim{}, err
+		}
+		for _, id := range ids {
 			claim.resources = append(claim.resources, stackEntry{key: id, value: rmap[id]})
 		}
 	}
@@ -1068,6 +1093,22 @@ func joinPhrases(phrases []string) string {
 	}
 }
 
+// isLogicalIDRune reports whether a CloudFormation logical id admits one
+// character. A logical id admits letters and digits and nothing else — no
+// separator, no punctuation, no character outside ASCII.
+//
+// It is the one statement of that alphabet in this core, and both things that
+// need it read it here: the derivation that builds a stack Output name treats
+// everything outside the alphabet as a word boundary ([capitalizedWords]), and
+// the refusal of an authored resource logical id asks whether every character
+// lies inside it ([resourceLogicalIDRefusal]). Those two are the same rule read
+// from opposite sides, so a second copy would agree today and drift the moment
+// either side's notion of the alphabet moved — with nothing failing while they
+// still agreed.
+func isLogicalIDRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
+}
+
 // capitalizedWords reads a string as words separated by runs of anything a
 // CloudFormation logical id does not admit, capitalises each word's first
 // letter, and joins them. A word's remaining characters are left as authored, so
@@ -1078,21 +1119,87 @@ func capitalizedWords(s string) string {
 	b.Grow(len(s))
 	atWordStart := true
 	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z':
-			if atWordStart {
+		if isLogicalIDRune(r) {
+			if atWordStart && r >= 'a' && r <= 'z' {
 				r -= 'a' - 'A'
 			}
 			b.WriteRune(r)
 			atWordStart = false
-		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			atWordStart = false
-		default:
+		} else {
 			atWordStart = true
 		}
 	}
 	return b.String()
+}
+
+// resourceLogicalIDRefusal reports why a CloudFormation template cannot address
+// one contributor's resources by the logical ids it authored, and reports nil
+// where every one of them lies inside the alphabet a logical id admits
+// ([isLogicalIDRune]).
+//
+// A logical id is what the emitted template addresses a resource by, and this
+// core reads the ids a Recipe authored verbatim — so an id carrying a character
+// the alphabet does not admit reaches the emitted template unchanged, and the
+// template it lands in is one the target will not accept. Refusing it here is
+// what turns that into something the author can act on at build time instead of
+// at deploy time, by someone who did not author the name.
+//
+// It is a refusal and never a repair, and that is the load-bearing half. A
+// resource whose logical id changes is REPLACED rather than updated, so quietly
+// rewriting an id would change the identity of a resource that may already be
+// running — a cost the author cannot see coming and cannot undo. A build that
+// stops is the smaller failure.
+//
+// Every id the contributor authored is reported together rather than the first,
+// so one build tells the author the whole picture instead of one name per
+// attempt. The ids are read in the order supplied and each id's characters in
+// the order they first appear, so the message is a function of its input alone.
+// The scope is what one contributor authored in one fragment, which is what the
+// caller holds; a contributor whose second fragment carries another such id is
+// answered for it once the first is fixed.
+func resourceLogicalIDRefusal(nodeID string, ids []string) error {
+	clauses := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			clauses = append(clauses, "one resource is named by the empty string, which addresses nothing")
+			continue
+		}
+		outside := charactersOutsideLogicalIDAlphabet(id)
+		if len(outside) == 0 {
+			continue
+		}
+		quoted := make([]string, 0, len(outside))
+		for _, r := range outside {
+			quoted = append(quoted, strconv.Quote(string(r)))
+		}
+		clauses = append(clauses, fmt.Sprintf("%q carries %s", id, joinPhrases(quoted)))
+	}
+	if len(clauses) == 0 {
+		return nil
+	}
+	return fmt.Errorf("cloudformation-provider: component %q names a resource the assembled stack cannot address: %s; a resource logical id admits only letters and digits, and this provider emits the id a Recipe authored rather than rewriting it — so name the resource in letters and digits alone, either by having the Recipe author a logical id of its own rather than passing a name straight through, or by naming whatever it does pass through in letters and digits alone",
+		nodeID, strings.Join(clauses, "; "))
+}
+
+// charactersOutsideLogicalIDAlphabet returns the distinct characters of a name
+// that a CloudFormation logical id does not admit, in the order they first
+// appear. An empty result means the whole name lies inside the alphabet.
+//
+// Distinct rather than one entry per occurrence, because what an author acts on
+// is which characters to stop writing rather than how many times each was
+// written; and in first-appearance order rather than sorted, so the answer is a
+// function of the name as authored and needs no comparison over runes.
+func charactersOutsideLogicalIDAlphabet(name string) []rune {
+	var outside []rune
+	seen := make(map[rune]bool)
+	for _, r := range name {
+		if isLogicalIDRune(r) || seen[r] {
+			continue
+		}
+		seen[r] = true
+		outside = append(outside, r)
+	}
+	return outside
 }
 
 // nodeDeclaration gathers what one node's fragments claim, across every fragment

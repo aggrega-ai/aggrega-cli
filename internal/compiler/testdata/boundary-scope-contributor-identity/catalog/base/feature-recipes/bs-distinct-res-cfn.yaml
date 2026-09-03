@@ -11,11 +11,17 @@ spec:
   # two distinct resource names and the resource comparison has nothing to
   # report. What they DO share is the entry name they publish, which is where the
   # Output name is built.
+  #
+  # The boundary name reaches the logical id with its separators dropped, because
+  # a CloudFormation logical id admits only letters and digits and this provider
+  # emits the id exactly as authored. The boundary names this fixture declares
+  # carry a hyphen deliberately — that is ordinary input — so the id is built from
+  # them rather than being the name itself.
   executionScope: boundary
   artifacts:
     audit-fragment.yaml: |
       Resources:
-        AuditTrail{{ .boundary.boundary_name }}:
+        AuditTrail{{ .boundary.boundary_name | replace "-" "" }}:
           Type: AWS::SQS::Queue
           Properties:
             MessageRetentionPeriod: "120"

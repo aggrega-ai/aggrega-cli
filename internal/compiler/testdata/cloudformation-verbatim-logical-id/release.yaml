@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-verbatim-logical-id-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: cloudformation-verbatim-logical-id-app
+  manifest: cloudformation-verbatim-logical-id-manifest
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      components:
+        payments-db_primary: {}

@@ -8,11 +8,13 @@ spec:
   implements: feature.bs/distinct-res-varying
   # The sibling above with one difference: the value it publishes names the
   # boundary it rendered for, so the two renders' bodies for that entry differ.
+  # The logical id drops the boundary name's separators for the same reason the
+  # sibling's does — a CloudFormation logical id admits only letters and digits.
   executionScope: boundary
   artifacts:
     audit-fragment.yaml: |
       Resources:
-        AuditTrail{{ .boundary.boundary_name }}:
+        AuditTrail{{ .boundary.boundary_name | replace "-" "" }}:
           Type: AWS::SQS::Queue
           Properties:
             MessageRetentionPeriod: "120"

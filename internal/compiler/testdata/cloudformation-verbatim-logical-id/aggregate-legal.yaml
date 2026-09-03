@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-verbatim-logical-id-legal-app
+  version: "1.0.0"
+  description: >
+    The same component and the same Recipe as the sibling Aggregate here, named
+    in letters and digits alone. It is the control: the Recipe writes the
+    component's name into the resource logical id untouched either way, so this
+    build is what shows that a name a CloudFormation template can hold reaches
+    the emitted stack unchanged.
+spec:
+  components:
+    paymentsdbprimary:
+      type: core/verbatim-store
+      values:
+        retention_seconds: "45"
