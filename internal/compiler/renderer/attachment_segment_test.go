@@ -38,8 +38,11 @@ import (
 // Flat output is the shape that reaches the placement under test: a provider
 // that folds its contributors into one document consumes an attachment's output
 // as fragments instead of placing it, so the directory would never be composed.
+// The declaration is held as a pointer so the fixture can drive all three states
+// the provider contract carries, rather than the two a string reaches: a named
+// directory, an explicitly empty one, and no declaration at all.
 type segmentEngine struct {
-	attachmentSegment string
+	attachmentSegment *string
 }
 
 func (e *segmentEngine) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
@@ -55,10 +58,24 @@ func (e *segmentEngine) Contract() renderer.ProviderContract {
 
 func (e *segmentEngine) BoundaryAssembly() string { return "none" }
 
-// AttachmentSegment is the declaration under test. An empty value declares none,
-// which is the shape every shipped provider has and the one the default-path
-// proof drives.
-func (e *segmentEngine) AttachmentSegment() string { return e.attachmentSegment }
+// AttachmentSegment is the declaration under test. A nil pointer declares
+// nothing, which is the shape every shipped provider has and the one the
+// default-path proof drives. A pointer to the empty string declares that no
+// enclosing directory is wanted, which is a claim about layout rather than the
+// absence of one.
+func (e *segmentEngine) AttachmentSegment() (string, bool) {
+	if e.attachmentSegment == nil {
+		return "", false
+	}
+	return *e.attachmentSegment, true
+}
+
+// declares builds the pointer a provider naming segment reports. Passing nil to
+// the driver instead is what a provider declaring nothing reports, and the two are
+// deliberately spelled differently at every call site: declares("") is a provider
+// asking for no enclosing directory, which is not the same claim as declaring
+// nothing at all.
+func declares(segment string) *string { return &segment }
 
 // The corpus every case below drives: one component with a Feature attached to
 // it and a second Feature attached to the boundary around it, so both attachment
@@ -80,8 +97,9 @@ const (
 )
 
 // runSegmentRender drives RenderAll over that corpus through a provider
-// declaring segment, and returns the emitted paths in path order.
-func runSegmentRender(t *testing.T, segment string) ([]string, error) {
+// declaring segment, and returns the emitted paths in path order. A nil segment
+// drives a provider that declares nothing.
+func runSegmentRender(t *testing.T, segment *string) ([]string, error) {
 	t.Helper()
 
 	nodes := types.OrderedMap[types.IRNode]{}
@@ -198,7 +216,7 @@ func runSegmentRender(t *testing.T, segment string) ([]string, error) {
 func TestRenderAll_AttachmentSegmentDeclared_ReachesBothScopes(t *testing.T) {
 	t.Parallel()
 
-	declared, err := runSegmentRender(t, "addons")
+	declared, err := runSegmentRender(t, declares("addons"))
 	if err != nil {
 		t.Fatalf("a provider declaring a directory must render: %v", err)
 	}
@@ -212,7 +230,7 @@ func TestRenderAll_AttachmentSegmentDeclared_ReachesBothScopes(t *testing.T) {
 			strings.Join(want, "\n"), strings.Join(declared, "\n"))
 	}
 
-	undeclared, err := runSegmentRender(t, "")
+	undeclared, err := runSegmentRender(t, nil)
 	if err != nil {
 		t.Fatalf("the undeclared companion run must render: %v", err)
 	}
@@ -237,7 +255,7 @@ func TestRenderAll_AttachmentSegmentDeclared_ReachesBothScopes(t *testing.T) {
 func TestRenderAll_AttachmentSegmentAbsent_KeepsTheHostDefault(t *testing.T) {
 	t.Parallel()
 
-	got, err := runSegmentRender(t, "")
+	got, err := runSegmentRender(t, nil)
 	if err != nil {
 		t.Fatalf("a provider declaring no directory must render: %v", err)
 	}
@@ -249,6 +267,63 @@ func TestRenderAll_AttachmentSegmentAbsent_KeepsTheHostDefault(t *testing.T) {
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("an undeclared provider's attachment layout moved\nwant:\n%s\ngot:\n%s",
 			strings.Join(want, "\n"), strings.Join(got, "\n"))
+	}
+}
+
+// TestRenderAll_AttachmentSegmentDeclaredEmpty_IsNotTheHostDefault is the proof
+// that the report's three states are three, and it is the reason the declaration
+// is carried by reference rather than as a string.
+//
+// A provider declaring an empty directory and a provider declaring nothing are
+// different claims: the first asks for no enclosing directory, the second leaves
+// the host its own default. Held in one string those two would be the same value,
+// so the difference would be unsayable — and the failure would be silent, because
+// a provider asking for no directory would simply receive the default and emit a
+// layout it never asked for.
+//
+// Both runs are driven side by side so the assertion is the DIFFERENCE rather than
+// a literal: an equality on the flat paths alone would pass if the default were
+// ever removed, and an equality on the default paths alone would pass if the empty
+// declaration were ignored. Neither passes here unless both states are honoured.
+//
+// The declared-empty run is also the negative control for the bound below: an
+// empty value is not a path, so it must be accepted rather than refused.
+func TestRenderAll_AttachmentSegmentDeclaredEmpty_IsNotTheHostDefault(t *testing.T) {
+	t.Parallel()
+
+	flat, err := runSegmentRender(t, declares(""))
+	if err != nil {
+		t.Fatalf("declaring no enclosing directory is a claim, not a bound violation, and must render: %v", err)
+	}
+	wantFlat := []string{
+		"dist/cluster/segprov/" + segmentHost + "/" + segmentComponentFeature + "/manifest.yaml",
+		"dist/cluster/segprov/" + segmentBoundaryFeature + "/manifest.yaml",
+		"dist/cluster/segprov/manifest.yaml",
+	}
+	if strings.Join(flat, "\n") != strings.Join(wantFlat, "\n") {
+		t.Fatalf("a declared empty directory did not drop the enclosing directory\nwant:\n%s\ngot:\n%s",
+			strings.Join(wantFlat, "\n"), strings.Join(flat, "\n"))
+	}
+
+	// The companion state, run through the same corpus and the same provider, so
+	// the only difference between the two results is the declaration itself.
+	undeclared, err := runSegmentRender(t, nil)
+	if err != nil {
+		t.Fatalf("the undeclared companion run must render: %v", err)
+	}
+	if strings.Join(flat, "\n") == strings.Join(undeclared, "\n") {
+		t.Fatalf("declaring an empty directory and declaring nothing emitted the same paths, so the two states are still one:\n%s",
+			strings.Join(flat, "\n"))
+	}
+	// Read from the host's own constant rather than written as a literal, which is
+	// the opposite choice from the expected paths above and deliberate: an absence
+	// claim should follow the default so that changing the default re-points the
+	// claim at the new one, whereas an expected path written as a literal is what
+	// catches the default moving in the first place.
+	for _, path := range flat {
+		if strings.Contains(path, "/"+renderer.DefaultAttachmentSegment+"/") {
+			t.Errorf("a provider that declared no enclosing directory still received the host default: %s", path)
+		}
 	}
 }
 
@@ -274,7 +349,7 @@ func TestRenderAll_AttachmentSegmentOutsideOneDirectoryHalts(t *testing.T) {
 		t.Run(segment, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := runSegmentRender(t, segment)
+			got, err := runSegmentRender(t, declares(segment))
 			if err == nil {
 				t.Fatalf("expected a halt for %q, got files: %v", segment, got)
 			}
@@ -306,7 +381,7 @@ func TestRenderAll_AttachmentSegmentBoundAcceptsAnOrdinaryDirectoryName(t *testi
 		t.Run(segment, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := runSegmentRender(t, segment)
+			got, err := runSegmentRender(t, declares(segment))
 			if err != nil {
 				t.Fatalf("%q is a single directory name and must be accepted: %v", segment, err)
 			}

@@ -198,7 +198,10 @@ func wasmContract(c *pluginpath.ProviderContractClaim) *wasm.ProviderContract {
 		ReusableInstance:     c.ReusableInstance,
 		CrossBoundaryLinking: c.CrossBoundaryLinking,
 		NestSegment:          c.NestSegment,
-		AttachmentSegment:    c.AttachmentSegment,
+		// Projected rather than assigned: the neutral claim carries the entity's
+		// two-state string while the contract carries a three-state carrier, and
+		// an authored empty value means the entity declared nothing.
+		AttachmentSegment: wasm.DeclaredSegment(c.AttachmentSegment),
 	}
 	if c.ArtifactDelimiters != nil {
 		caps.ArtifactDelimiters = &wasm.ArtifactDelimiters{

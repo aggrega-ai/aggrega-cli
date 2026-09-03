@@ -207,6 +207,137 @@ func TestCrossCheckContract_PluginLevel(t *testing.T) {
 	}
 }
 
+// TestCrossCheckContract_AttachmentSegment exercises the attachment-directory arm
+// of the plugin-level comparison, whose claim carries three states rather than
+// two: a named directory, an explicitly empty one, and no declaration.
+//
+// The comparison is on declaredness first and then on the directory named, so the
+// cases are enumerated as the grid rather than as a list — a per-axis pair would
+// specify the margins and leave the interior unstated, and the interior is where
+// the two empty-ish states meet.
+//
+// 🔴 The row that matters most is the last: a claim and a report that BOTH name
+// the empty string must AGREE. Comparing the two pointers directly type-checks and
+// reads like a match while testing identity, so that row fails on a pointer
+// comparison and passes on a value one. It is the reason this test exists.
+func TestCrossCheckContract_AttachmentSegment(t *testing.T) {
+	t.Parallel()
+
+	// declares builds the carrier a contract naming segment holds. A nil carrier
+	// declares nothing, and the two are spelled differently at every row because
+	// declares("") is a claim about layout rather than the absence of one.
+	declares := func(segment string) *string { return &segment }
+
+	descWith := func(segment *string) PluginDescriptor {
+		return PluginDescriptor{
+			AbiVersion: ABIVersionV1Alpha1,
+			PluginType: string(PluginTypeProvider),
+			Exports:    []PluginExport{{Name: "render_node"}},
+			Contract: &ProviderContract{
+				InputKinds:        InputKinds{Sourced: true},
+				BoundaryAssembly:  BoundaryAssemblyNone,
+				AttachmentSegment: segment,
+			},
+		}
+	}
+	capsWith := func(segment *string) *ProviderContract {
+		return &ProviderContract{
+			InputKinds:        InputKinds{Sourced: true},
+			BoundaryAssembly:  BoundaryAssemblyNone,
+			AttachmentSegment: segment,
+		}
+	}
+
+	cases := []struct {
+		name      string
+		entity    *string
+		plugin    *string
+		wantErr   bool
+		wantField string
+	}{
+		{
+			name:   "neither declares a directory: match",
+			entity: nil,
+			plugin: nil,
+		},
+		{
+			name:   "both name the same directory: match",
+			entity: declares("addons"),
+			plugin: declares("addons"),
+		},
+		{
+			name:      "both name a directory but they differ: halt",
+			entity:    declares("addons"),
+			plugin:    declares("charts"),
+			wantErr:   true,
+			wantField: "attachment_segment",
+		},
+		{
+			name:      "entity names a directory, plugin declares none: halt",
+			entity:    declares("addons"),
+			plugin:    nil,
+			wantErr:   true,
+			wantField: "attachment_segment",
+		},
+		{
+			name:      "plugin names a directory, entity declares none: halt",
+			entity:    nil,
+			plugin:    declares("addons"),
+			wantErr:   true,
+			wantField: "attachment_segment",
+		},
+		{
+			// The state an authored entity cannot reach, because its field is a
+			// plain string whose empty value means "declared nothing". A guest
+			// reporting it therefore disagrees with every entity, and the halt says
+			// so in terms of whether a directory was declared rather than by
+			// quoting two directory names the author would read as identical.
+			name:      "plugin declares no enclosing directory, entity declares nothing: halt",
+			entity:    nil,
+			plugin:    declares(""),
+			wantErr:   true,
+			wantField: "whether attachment_segment is declared",
+		},
+		{
+			// The row a pointer comparison fails. Two separately built carriers
+			// naming the same empty directory are equal in content and distinct in
+			// identity, so this passes only where the comparison dereferences.
+			name:   "both declare no enclosing directory: match",
+			entity: declares(""),
+			plugin: declares(""),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := CrossCheckContract(
+				"provider/helm:1.0.0",
+				EntityContractClaim{Contract: capsWith(tc.entity)},
+				descWith(tc.plugin),
+			)
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("expected nil, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !errors.Is(err, ErrWasmContractMismatch()) {
+				t.Fatalf("error does not wrap ErrWasmContractMismatch: %v", err)
+			}
+			if !strings.Contains(err.Error(), "provider/helm:1.0.0") {
+				t.Errorf("error should name the entity identity; got: %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantField) {
+				t.Errorf("error should mention %q; got: %v", tc.wantField, err)
+			}
+		})
+	}
+}
+
 // TestCrossCheckContract_CrossBoundaryLinking exercises the cross-boundary
 // linking arm of the plugin-level comparison: the entity's authored
 // crossBoundaryLinking claim is checked against the descriptor's self-reported

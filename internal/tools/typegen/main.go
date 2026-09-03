@@ -921,8 +921,12 @@ var codecTargets = map[string]codecTarget{
 	// realizes that self-declaration (the exports, the optional provider render
 	// contract, the optional CLI commands and flags, the settings schema, the
 	// authorship metadata). The abi Go codec references the helpers FRP owns in
-	// package abi (helpers: false, the default). The only non-scalar carry is the
-	// opaque settings_schema (json.RawMessage passthrough).
+	// package abi (helpers: false, the default). The annotated carries on this
+	// schema are of two kinds: an opaque JSON Schema document held verbatim as
+	// json.RawMessage, and a value held by reference so that omitting it stays
+	// distinguishable from declaring it empty. The schema's own annotations are the
+	// list of which fields those are; naming the kinds rather than the fields keeps
+	// this from going stale as the descriptor grows.
 	"describe_gen.go": {
 		schema:     schemas.WasmDescribeV1alpha1,
 		schemaFile: "wasm-describe-v1alpha1.schema.json",

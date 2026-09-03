@@ -14,6 +14,117 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
+// TestProviderContractAttachmentSegmentWireStates is the wire-level proof that
+// the attachment directory carries three states rather than two, on BOTH
+// encodings the descriptor travels over.
+//
+// The host reads this field from a guest's own describe() report, so the
+// distinction is only real if it survives a round trip: a guest asking for no
+// enclosing directory has to arrive as something the host can tell apart from a
+// guest that asked for nothing. Were the empty state to decode as an absent one,
+// the whole carrier would be inert while every type still checked and every other
+// test still passed — so the assertion is on the decoded shape, not on the type.
+//
+// Each state is checked in three places, because a gap in any one of them makes
+// the distinction unusable: whether the key is emitted at all, what the key's
+// value is, and what a decode of those bytes yields. Both encodings are driven
+// from one table for the same reason the two are generated from one schema.
+func TestProviderContractAttachmentSegmentWireStates(t *testing.T) {
+	t.Parallel()
+
+	declares := func(segment string) *string { return &segment }
+
+	cases := []struct {
+		name string
+		// segment is the state under test.
+		segment *string
+		// wantKey reports whether the encoding is expected to emit the key.
+		wantKey bool
+		// wantJSON is the fragment the JSON encoding must contain when it emits
+		// the key. Empty when no key is expected.
+		wantJSON string
+	}{
+		{
+			name:     "a named directory emits the key carrying that name",
+			segment:  declares("addons"),
+			wantKey:  true,
+			wantJSON: `"attachment_segment":"addons"`,
+		},
+		{
+			// The state that does not exist without the carrier. It must emit the
+			// key with an empty value: omitting it here is precisely the conflation
+			// this field's shape exists to remove.
+			name:     "a declared empty directory emits the key carrying nothing",
+			segment:  declares(""),
+			wantKey:  true,
+			wantJSON: `"attachment_segment":""`,
+		},
+		{
+			name:    "no declaration emits no key at all",
+			segment: nil,
+			wantKey: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			contract := ProviderContract{
+				InputKinds:        InputKinds{Sourced: true},
+				BoundaryAssembly:  BoundaryAssemblyNone,
+				AttachmentSegment: tc.segment,
+			}
+
+			raw, err := json.Marshal(contract)
+			if err != nil {
+				t.Fatalf("marshal JSON: %v", err)
+			}
+			gotKey := strings.Contains(string(raw), "attachment_segment")
+			if gotKey != tc.wantKey {
+				t.Fatalf("JSON key emitted=%t, want %t\nwire: %s", gotKey, tc.wantKey, raw)
+			}
+			if tc.wantKey && !strings.Contains(string(raw), tc.wantJSON) {
+				t.Errorf("JSON wire does not carry %s\nwire: %s", tc.wantJSON, raw)
+			}
+
+			var fromJSON ProviderContract
+			if err := json.Unmarshal(raw, &fromJSON); err != nil {
+				t.Fatalf("unmarshal JSON: %v", err)
+			}
+			assertSegmentEqual(t, "JSON", fromJSON.AttachmentSegment, tc.segment)
+
+			cbor, err := contract.EncodeCBOR()
+			if err != nil {
+				t.Fatalf("encode CBOR: %v", err)
+			}
+			var fromCBOR ProviderContract
+			if err := fromCBOR.DecodeCBOR(cbor); err != nil {
+				t.Fatalf("decode CBOR: %v", err)
+			}
+			assertSegmentEqual(t, "CBOR", fromCBOR.AttachmentSegment, tc.segment)
+		})
+	}
+}
+
+// assertSegmentEqual compares a decoded attachment directory against the one that
+// was encoded, on declaredness first and then on the directory named.
+//
+// It deliberately does NOT compare the pointers: they are separate allocations
+// either side of a round trip, so an identity comparison would fail on every
+// correct result. Declaredness is what the round trip has to preserve, and it is
+// asserted on its own so a failure says which of the two properties was lost.
+func assertSegmentEqual(t *testing.T, encoding string, got, want *string) {
+	t.Helper()
+	if (got == nil) != (want == nil) {
+		t.Fatalf("%s round trip lost declaredness: got declared=%t, want declared=%t",
+			encoding, got != nil, want != nil)
+	}
+	if want != nil && *got != *want {
+		t.Errorf("%s round trip changed the directory: got %q, want %q", encoding, *got, *want)
+	}
+}
+
 func TestPluginDescriptorRoundTrip(t *testing.T) {
 	t.Parallel()
 
