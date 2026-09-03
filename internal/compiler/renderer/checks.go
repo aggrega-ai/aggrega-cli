@@ -2611,20 +2611,27 @@ var AttachmentPipelineStepProviderCompatible = constraint.Check[
 // output as fragments: the discrete documents arrive only once the group is
 // merged. An attachment's pipeline against such a component therefore cannot
 // run while the component is rendered, and runs once the merge has produced
-// the documents instead. The attachment's OWN output is never part of that
-// merge — an attachment's documents are written under its own position, as
-// discrete files, whichever provider the component uses — so a step addressing
-// the attachment's own documents has no merged document waiting for it, and
-// nothing to address when it finally runs.
+// the documents instead. Whether the attachment's own output joins that merge
+// is a separate question with its own answer — it joins where the attachment
+// rendered for the same target the group assembles for — and this condition
+// does not turn on it: the deferral is keyed on the host's provider alone, so
+// an attachment on a merging host has its pipeline held back either way. A
+// step addressing the attachment's own documents therefore has
+// nothing to address while the component renders, which is the only point an
+// attachment's own scope is ever offered: the deferral to the post-assembly
+// phase carries the host scope alone, because that is the scope whose documents
+// the deferred replay is given.
 //
 // So the finding is a property of the component's provider paired with the
 // step's own scope, and the attachment's provider does not enter it. That is
 // what makes the condition readable here: both halves are declared facts at the
 // point every plugin and provider has described itself.
 //
-// The remedies are the ones the condition admits: give the attachment's own
-// output a provider that does not merge, address the component's documents
-// instead, or drop the step.
+// The remedies are the ones the condition admits: put the component on a
+// provider that does not merge, address the component's documents instead, or
+// drop the step. Changing the attachment's own provider is not among them, and
+// naming it would send an author to edit the one declaration that decides
+// nothing here.
 //
 // # The attachments this rule is not about
 //

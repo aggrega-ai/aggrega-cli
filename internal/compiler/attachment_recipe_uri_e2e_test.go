@@ -58,22 +58,23 @@ var hostRecipeURIWant = map[string]string{
 // a wrong identity there is worse than an absent one — an absent value is
 // visibly absent, while a wrong one is indistinguishable from a right one and is
 // read precisely when someone is tracing a document back to its producer.
+//
+// Which documents belong to which producer is read from the STAMP rather than
+// from the output path, and that is what makes the case target-independent: a
+// target whose provider folds its dispatch group into one document leaves no
+// per-producer path to read, while the pairing inside each provenance block says
+// the same thing on either layout.
 func TestAttachmentProvenance_EveryDeliveryNamesTheFeatureRecipeThatProducedIt(t *testing.T) {
 	t.Parallel()
 
 	for _, target := range []string{"helm", "compose"} {
 		res := pipelinetest.Build(t, attachmentIdentityInput(target))
+		byIdentity := provenanceAcrossArtifacts(res.Artifacts)
 
 		for _, instance := range []string{"src", "wl", "art"} {
 			want := attachmentRecipeURIWant[target][instance]
-			prefix := "features/alpha/" + instance + "/"
+			got := byIdentity["cfr--alpha--"+instance]
 
-			var got []string
-			for _, k := range sortedKeys(res.Artifacts) {
-				if strings.Contains(k, prefix) {
-					got = append(got, recipeURIValues(string(res.Artifacts[k]))...)
-				}
-			}
 			// An attachment that emitted no stamped document at all would make
 			// every comparison below vacuous, so the empty case fails on its own.
 			if len(got) == 0 {
@@ -99,6 +100,11 @@ func TestAttachmentProvenance_EveryDeliveryNamesTheFeatureRecipeThatProducedIt(t
 // attachment's provenance reaches them: the attachment identity is established
 // on the copy of the render context an attachment's render is handed, so the
 // component's own render is untouched by it.
+//
+// Read by the host's own identity rather than by "everything outside an
+// attachment directory", for the reason the case above is: where the target folds
+// its group into one document, the host's content and its attachments' content
+// sit in the same file, so the path separates nothing and only the stamp does.
 func TestAttachmentProvenance_TheHostComponentStillNamesItsOwnRecipe(t *testing.T) {
 	t.Parallel()
 
@@ -106,13 +112,7 @@ func TestAttachmentProvenance_TheHostComponentStillNamesItsOwnRecipe(t *testing.
 		res := pipelinetest.Build(t, attachmentIdentityInput(target))
 		want := hostRecipeURIWant[target]
 
-		var got []string
-		for _, k := range sortedKeys(res.Artifacts) {
-			if strings.Contains(k, "features/") {
-				continue
-			}
-			got = append(got, recipeURIValues(string(res.Artifacts[k]))...)
-		}
+		got := provenanceAcrossArtifacts(res.Artifacts)["alpha"]
 		if len(got) == 0 {
 			t.Errorf("%s: the host component emitted no document carrying a recipe-uri; keys:\n%s",
 				target, strings.Join(sortedKeys(res.Artifacts), "\n"))
@@ -124,6 +124,43 @@ func TestAttachmentProvenance_TheHostComponentStillNamesItsOwnRecipe(t *testing.
 			}
 		}
 	}
+}
+
+// provenanceAcrossArtifacts groups every recipe-uri a build emitted under the
+// component identity stamped in the same provenance block, across every rendered
+// document.
+//
+// Pairing the two stamps is what identifies a producer on any target. An output
+// path identifies one only where the provider writes a document per producer; a
+// provider that folds its dispatch group into one document writes a single path
+// carrying every producer's content, and the path then says nothing about which
+// of them wrote a given block.
+//
+// The pairing rests on the order the provenance map is written in, which is
+// sorted by key: aggrega.ai/component-id precedes aggrega.ai/recipe-uri inside one
+// block, so the identity most recently seen when a recipe-uri is read is that
+// block's own. A block carrying a recipe-uri and no identity would file under the
+// empty string rather than borrow the previous block's, which is a reading no
+// caller asks about and so cannot silently satisfy one.
+func provenanceAcrossArtifacts(artifacts map[string][]byte) map[string][]string {
+	const idKey = "aggrega.ai/component-id:"
+	const uriKey = "aggrega.ai/recipe-uri:"
+	out := map[string][]string{}
+	for _, k := range sortedKeys(artifacts) {
+		identity := ""
+		for _, line := range strings.Split(string(artifacts[k]), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if v, ok := strings.CutPrefix(trimmed, idKey); ok {
+				identity = strings.Trim(strings.TrimSpace(v), `"'`)
+				continue
+			}
+			if v, ok := strings.CutPrefix(trimmed, uriKey); ok {
+				out[identity] = append(out[identity], strings.Trim(strings.TrimSpace(v), `"'`))
+				identity = ""
+			}
+		}
+	}
+	return out
 }
 
 // TestAttachmentProvenance_ThreeDeliveriesNameThreeDifferentRecipes asserts the

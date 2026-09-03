@@ -398,6 +398,17 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // were snapshotted before this sub-pass ran, so write-back must flow through
 // the return value, not by mutating state.EmittedFiles (inert post-snapshot).
 //
+// The third return carries the attachments whose output is handed to the host's
+// dispatch group rather than written at the attachment's own position, one entry
+// per attachment, for the orchestrator to route as contributors of their own.
+// That output is deliberately ABSENT from the path map above: content handed to
+// an assembler and also written beside the assembled document would be delivered
+// twice. Which of the two an attachment's output takes needs both providers: the
+// host's decides whether its group folds anything, and the attachment's decides
+// whether what it rendered is in the shape that group's assembler reads. One
+// answer covers the whole of an attachment's output, so the two returns cannot
+// come to overlap.
+//
 // hostOwn is the host component's own emitted documents (the cross-entity
 // surface a component-scope FR pipeline reads as /host). hostIsAssembler
 // reports whether the host's provider renders pre-assembly fragments; a /host
@@ -424,9 +435,10 @@ func phaseB6(
 	hostIsAssembler bool,
 	hostProvider string,
 	renderCtx renderctx.RenderContext,
-) (map[string][]byte, map[string][]byte, []DeferredPatch, error) {
+) (map[string][]byte, map[string][]byte, []attachmentContribution, []DeferredPatch, error) {
 	out := map[string][]byte{}
 	hostPatched := map[string][]byte{}
+	var contributions []attachmentContribution
 	var deferred []DeferredPatch
 	nodeID := state.NodeID
 
@@ -481,7 +493,7 @@ func phaseB6(
 				ctx, fr, item.Instance, key, state, boundaryFRState,
 				nodeCtx, engineFactory, graph, release, boundaryAnnotations, allProvides, input,
 			); err != nil {
-				return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
+				return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
 			}
 			continue
 		}
@@ -492,7 +504,7 @@ func phaseB6(
 			fr, item.Instance, nodeID, frCtx.Values, frCtx.Infra,
 		)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q locals", nodeID, item.Instance))
+			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q locals", nodeID, item.Instance))
 		}
 		frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
 		// The delivery pipe and the resolved-fill provides are populated only
@@ -507,12 +519,12 @@ func phaseB6(
 
 		frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q", nodeID, item.Instance))
+			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q", nodeID, item.Instance))
 		}
 
 		frEngine, err := engineFactory(fr.Spec.Capability)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q: selecting its rendering plugin", nodeID, item.Instance))
+			return nil, nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q: selecting its rendering plugin", nodeID, item.Instance))
 		}
 
 		frNodeCtx := nodeCtx
@@ -525,27 +537,50 @@ func phaseB6(
 		// and a collision between them would read as one contributor restating
 		// itself, which the group check rules legitimate.
 		//
-		// Its output is placed standalone, and that is structural rather than
-		// configured: the loop below composes this attachment's own output prefix
-		// onto every file it rendered and writes them as discrete documents, so
-		// nothing this attachment emits is ever handed to the host component's
-		// dispatch group's assembler — whatever that group's provider does with the
-		// component output it IS handed. So the names declared here stand in files
-		// of the attachment's own, where no other contributor's name reaches them.
+		// Whether this attachment's output is handed to its host's dispatch group
+		// takes BOTH coordinates, and each one alone answers a different question
+		// wrongly.
+		//
+		// The HOST's provider decides whether the group folds its contributors into one
+		// document at all — the group is keyed by the host's evaluated path and the
+		// host's provider, so nothing the attachment declares changes what that group
+		// does with what it holds. Reading the attachment's engine alone therefore
+		// hands fragments to a group that folds nothing, and they are lost in silence,
+		// because such a group never reads the map they would travel in.
+		//
+		// The ATTACHMENT's provider decides whether what it rendered is something that
+		// group's assembler can read. An attachment names its own capability and need
+		// not name the host's; an assembler consumes fragments in its own target's
+		// shape, so a document rendered for a different target is not a contribution to
+		// it but an unrelated file. Handing one over is lost just as silently — the
+		// assembler parses it, finds none of the sections it models, and folds nothing.
+		//
+		// So the output is handed over only where the host's group folds AND this
+		// attachment rendered through the same target that group assembles for.
+		// Everything else writes under the attachment's own output prefix, which is
+		// where it has always been written.
+		//
+		// It is settled before the render because the sink below closes over the
+		// answer: a disposition settled after a crossing had already declared into the
+		// sink would label that crossing's names with the wrong answer.
 		//
 		// 🔴 The disposition is stated, never inferred from the label. A
-		// boundary-scope attachment carries a label of the same shape and its
-		// fragments DO reach the assembler, so a reader keying on the shape would
-		// answer the same for both and would be wrong for one of them.
+		// boundary-scope attachment carries a label of the same shape and reaches its
+		// assembler by a different route — its own dispatch group, under its own
+		// provider — so a reader keying on the shape would answer the same for both and
+		// would be wrong for one of them.
+		attachmentJoinsHostAssembly := hostIsAssembler &&
+			ProviderEngineKind(fr.Spec.Capability) == hostProvider
+		attachmentPlacedStandalone := !attachmentJoinsHostAssembly
 		attachmentProducer := derivedKeyProducerFor(producerKindComponent, nodeID, item.Instance)
-		attachmentContributor := derivedKeyContributorFor(attachmentProducer, true)
+		attachmentContributor := derivedKeyContributorFor(attachmentProducer, attachmentPlacedStandalone)
 		frNodeCtx.DerivedKeySink = func(declared types.OrderedMap[[]string]) {
 			state.DerivedKeys.declare(attachmentContributor, declared)
 		}
 		frNodeCtx.OriginalSource = fr.Spec.Source
 		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, fr.Spec.SourceDigests)
 		if err != nil {
-			return nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("node %q attachment %q source resolution", nodeID, item.Instance))
+			return nil, nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("node %q attachment %q source resolution", nodeID, item.Instance))
 		}
 		frNodeCtx.Source = resolvedSrc
 
@@ -563,7 +598,7 @@ func phaseB6(
 			featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries,
 			nodeAnnotations, input.CatalogLookup.ProviderPlugin)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		// The label value that render derived joins this node's own declaration
 		// set, which is where its dispatch group reads every declaration this node
@@ -650,7 +685,7 @@ func phaseB6(
 				// recipe engine kind (threaded in from the orchestrator).
 				pres, perr := runNodePipeline(ctx, fr.Spec.Pipeline, frFiles, runningHost, hostIsAssembler, ProviderEngineKind(fr.Spec.Capability), hostProvider, renderCtx, &frCtx, input.YAMLIndent, input.PluginPathLookup, engineFactory, nodeID)
 				if perr != nil {
-					return nil, nil, nil, perr
+					return nil, nil, nil, nil, perr
 				}
 				frFiles = pres.Own
 				state.Warnings = append(state.Warnings, pres.Warnings...)
@@ -661,13 +696,65 @@ func phaseB6(
 			}
 		}
 
-		for _, f := range frFiles {
-			out[item.Identity.outputPrefix()+f.Name] = f.Body
+		// Route this attachment's output by the disposition settled above, which is
+		// the host's. Handed to the group, it is NOT written here; written here, it
+		// lands under the attachment's own output prefix exactly where it has always
+		// landed. The two arms are complements, so nothing is delivered twice and no
+		// path moves.
+		//
+		// The whole of the attachment's output takes one arm rather than each file
+		// taking its own, because the question is what the group does with what it
+		// holds and the group answers once for this attachment. Splitting per file
+		// would ask each rendered file a question only the pair of providers answers.
+		var fragments []EmittedFile
+		if attachmentJoinsHostAssembly {
+			fragments = frFiles
+		} else {
+			for _, f := range frFiles {
+				out[item.Identity.outputPrefix()+f.Name] = f.Body
+			}
+		}
+		if len(fragments) > 0 {
+			// The coordinates travel with the fragments rather than being recovered
+			// downstream: the dispatch identity joins its parts with characters either
+			// part may contain, so cutting it apart cannot return what went in. The
+			// basis is the identity this attachment's render derived its own names
+			// from, read through the one home of that fallback — so the name declared
+			// while rendering and the name the assembled artifact addresses that
+			// content by come from one identity rather than two that happen to agree.
+			contributions = append(contributions, attachmentContribution{
+				nodeID:    item.Identity.dispatchNodeID(),
+				producer:  attachmentProducer,
+				nameBasis: TargetNameBasis(frNodeCtx),
+				fragments: fragments,
+			})
 		}
 	}
 
 	state.PhaseReached = 6
-	return out, hostPatched, deferred, nil
+	return out, hostPatched, contributions, deferred, nil
+}
+
+// attachmentContribution is one component-scope attachment's output where that
+// attachment rendered for the target its host's group assembles into one
+// document, carried out of the attachment render loop with every coordinate the
+// group needs to hold it as a contributor of its own.
+//
+// It travels as a value rather than being routed inside the render loop because
+// the loop holds no dispatch group: the group is keyed by the host component's
+// evaluated path and provider, which the orchestrator settles around the loop.
+// Routing here would need that key composed a second time, and a second
+// composition of a routing key is the drift the key's own home exists to remove.
+//
+// nameBasis is the identity the assembled artifact addresses this contribution's
+// content by. It is present rather than optional because nodeID is a marker no
+// target's name alphabet accepts, so a contributor arriving without it would have
+// its names derived from the marker.
+type attachmentContribution struct {
+	nodeID    string
+	producer  derivedKeyProducer
+	nameBasis string
+	fragments []EmittedFile
 }
 
 // attachmentRenderItem is one attachment queued for the Phase B.6 render loop —

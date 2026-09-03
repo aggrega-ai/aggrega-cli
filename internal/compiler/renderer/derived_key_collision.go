@@ -92,11 +92,12 @@ func derivedKeyProducerFor(kind, name, scope string) derivedKeyProducer {
 // 🔴 The disposition is NOT derivable from the label, and the case that proves it
 // is the one a reader is most likely to assume away. An attachment's label looks
 // identical whether the render handed its output to the group's assembler or
-// wrote it beside the assembled document — a boundary-scope attachment's
-// fragments do reach the assembler, a component-scope attachment's output never
-// does — so a predicate keyed on the label's shape would answer the same for both
-// and would be wrong for one of them. The routing is what decides, so the routing
-// is what is carried.
+// wrote it beside the assembled document, and BOTH answers are reachable from one
+// label: the same component-scope attachment hands its output over where its
+// provider folds a group into one document and writes it beside the assembled
+// document where its provider folds nothing. So a predicate keyed on the label's
+// shape would answer the same for two contributions that went to different places.
+// The routing is what decides, so the routing is what is carried.
 type derivedKeyContributor struct {
 	producer derivedKeyProducer
 

@@ -62,13 +62,16 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // own, and the directory the guest names for those sub-directories. The adapter
 // passes that name through untouched; the orchestrator supplies the default when
 // the guest names none and bounds what a named one may be.
-// A dispatch group's contributors are every node per-node render produced files
-// for, whichever way those files travel: the fragments a merging assembler is
-// handed, and the files the orchestrator places itself at a nesting assembler's
-// per-node position. Both reach the wire's rendered-node list, because a group's
+// A dispatch group's contributors are everything a render produced files for,
+// whichever way those files travel: the fragments a merging assembler is handed,
+// and the files the orchestrator places itself at a nesting assembler's per-node
+// position. Both reach the wire's rendered-node list, because a group's
 // contributor list is a property of the group and not of how one provider routes
 // its output — take only the fragments and a nesting provider is handed an empty
-// list and cannot see the nodes it is assembling for.
+// list and cannot see the nodes it is assembling for. A contributor is not always
+// one of the graph's nodes: a Feature attached to a component contributes its own
+// fragments under a dispatch identity of its own, carrying the identity it derives
+// its names from beside it.
 //
 // Rendered nodes are emitted in sorted-by-id order and each node's annotations and
 // values are inserted in sorted-key order, so the wire payload is byte-identical

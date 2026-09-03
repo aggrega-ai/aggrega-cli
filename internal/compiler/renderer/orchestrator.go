@@ -1911,7 +1911,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// /host documents. renderCtx is the render-time context every pipeline
 		// step receives.
 		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
-		frFiles, hostPatched, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, pipelineRenderCtx)
+		frFiles, hostPatched, attachmentContribs, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, pipelineRenderCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -1957,6 +1957,48 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// snapshotted host doc; an EMIT adds a new entry.
 		for path, content := range hostPatched {
 			dispatch[key].files[nodeID][path] = content
+		}
+		// Route each attachment that handed its output over into this node's dispatch
+		// group as a contributor of its own, so the group's assembler is told about it
+		// alongside the components. The sub-pass hands over nothing at all where this
+		// group's provider folds nothing: such an attachment wrote discrete documents
+		// under its own position above, and its output is exactly what it always was.
+		//
+		// It joins the intermediates map rather than the placed one, which is the
+		// same split the host component's own emission takes: the intermediates map
+		// is the half an assembler folds, and the placed half is also the half the
+		// flush writes at the group's own position — so content placed there would
+		// be delivered twice, once inside the assembled document and once beside it.
+		//
+		// The coordinates are STATED here from the values the render carried out,
+		// never recovered from the key. The key is a routing marker joining two
+		// authored coordinates with characters either coordinate may itself contain,
+		// so cutting it apart cannot return what went in. The annotations and the wave
+		// are the host node's own: an attachment renders into the host's boundary and
+		// its output lands in the host's group, so the scope it is assembled under is
+		// the host's — and these are the same values its render was handed, which is
+		// what keeps one contributor from being described two ways on the two
+		// crossings.
+		for _, contrib := range attachmentContribs {
+			// Two attachments reaching one dispatch identity halt rather than merge,
+			// the same guardrail the boundary-scope routing carries and for the same
+			// reason: the identity joins the host to the instance with a character
+			// neither part is constrained to exclude, so an attachment named `a@b` on
+			// host `c` and one named `a` on host `b@c` spell one identity — and the
+			// map would then take the second silently, folding two contributors'
+			// fragments into one with nothing in the output recording that two were
+			// declared.
+			if _, alreadyHere := dispatch[key].nodeProducer[contrib.nodeID]; alreadyHere {
+				inner := fmt.Errorf("%w: dispatch path %q provider %q already holds output from %s, which reaches the same dispatch identity as %s; two contributors to one assembly group must be distinguishable",
+					ErrInstanceIDCollision(), key.Path, key.Provider,
+					nodeProducerLabel(dispatch[key].producerOf(contrib.nodeID)), nodeProducerLabel(contrib.producer))
+				return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
+			}
+			dispatch[key].nodeProducer[contrib.nodeID] = contrib.producer
+			dispatch[key].nodeNameBasis[contrib.nodeID] = contrib.nameBasis
+			dispatch[key].nodeAnnotations[contrib.nodeID] = nodeCtx.Annotations
+			dispatch[key].nodeSyncWave[contrib.nodeID] = nodeCtx.SyncWave
+			dispatch[key].intermediates[contrib.nodeID] = append(dispatch[key].intermediates[contrib.nodeID], contrib.fragments...)
 		}
 		// Trace point: Phase B.6 — FeatureRecipe Resource Generation. The
 		// snapshot captures the post-B.6 TemplateContext for this node;

@@ -485,9 +485,12 @@ type BoundaryInfo struct {
 	// NodeNameBasis is the identity each contributor derives its own names from
 	// inside the assembled artifact, keyed by node id exactly as the maps above are.
 	// An entry is present only where that identity is not the node id itself, which
-	// is the case for a contributor that is not one of the graph's nodes: a Feature
-	// attached at a boundary reaches its group under a dispatch identity the compiler
-	// built, and no target's name alphabet accepts it.
+	// is the case for every contributor that is not one of the graph's nodes: an
+	// attached Feature reaches its group under a dispatch identity the compiler
+	// built, and no target's name alphabet accepts it. Both attachment scopes do,
+	// and each carries the identity its own render derived names from — a
+	// boundary-scope one the composed identity settled for it, a component-scope one
+	// the host component it renders against.
 	//
 	// It travels to the assembler because the alternative is an assembler deriving
 	// its names from the dispatch identity while the render that produced the content

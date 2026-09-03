@@ -128,21 +128,59 @@ func identityLabelValues(body string) []string {
 }
 
 // TestAttachmentIdentity_EachAttachmentWritesUnderItsOwnDirectory pins the other
-// half of the separation: two attachments on one component write to two places,
-// named for the host and for the key the Feature is attached under. The
-// directory is what tells two attachments apart where their emitted filenames
-// cannot — an artifact's filename is the author's map key verbatim.
+// half of the separation, for a target that writes discrete documents: two
+// attachments on one component write to two places, named for the host and for
+// the key the Feature is attached under. The directory is what tells two
+// attachments apart where their emitted filenames cannot — an artifact's filename
+// is the author's map key verbatim.
+//
+// The Kubernetes target alone, and that is the separation's own shape rather than
+// a gap: a target whose provider folds its dispatch group into ONE document has no
+// per-producer directory for anything to be separated by, and the sibling case
+// below is where that target's answer is pinned. The identity every attachment's
+// resources carry is asserted on both targets above, which is the separation that
+// survives either layout.
 func TestAttachmentIdentity_EachAttachmentWritesUnderItsOwnDirectory(t *testing.T) {
 	t.Parallel()
 
-	for _, target := range []string{"helm", "compose"} {
-		res := pipelinetest.Build(t, attachmentIdentityInput(target))
-		keys := strings.Join(sortedKeys(res.Artifacts), "\n")
-		for _, instance := range []string{"src", "wl", "art"} {
-			want := "features/alpha/" + instance + "/"
-			if !strings.Contains(keys, want) {
-				t.Errorf("%s: no output is placed under %q\nkeys:\n%s", target, want, keys)
-			}
+	res := pipelinetest.Build(t, attachmentIdentityInput("helm"))
+	keys := strings.Join(sortedKeys(res.Artifacts), "\n")
+	for _, instance := range []string{"src", "wl", "art"} {
+		want := "features/alpha/" + instance + "/"
+		if !strings.Contains(keys, want) {
+			t.Errorf("no output is placed under %q\nkeys:\n%s", want, keys)
+		}
+	}
+}
+
+// TestAttachmentIdentity_AMergingTargetCarriesItsAttachmentsInTheAssembledDocument
+// is the same question asked of a target whose provider folds its dispatch group
+// into one document: every attachment's output is INSIDE that document, and there
+// is no discrete file beside it.
+//
+// Both halves are asserted, and the absent half is the one that matters. A build
+// that folded each attachment's fragment into the assembled document AND left the
+// attachment's own file beside it would satisfy the presence read on its own,
+// while delivering every one of those resources twice — once merged and once
+// standalone. The standalone file is also not a deployable document by itself: it
+// carries a fragment of the target's format rather than a whole one, which is why
+// the answer here is that it is gone rather than that it is correct.
+func TestAttachmentIdentity_AMergingTargetCarriesItsAttachmentsInTheAssembledDocument(t *testing.T) {
+	t.Parallel()
+
+	res := pipelinetest.Build(t, attachmentIdentityInput("compose"))
+	keys := sortedKeys(res.Artifacts)
+	for _, k := range keys {
+		if strings.Contains(k, "features/") {
+			t.Errorf("a discrete attachment file survives at %q; its fragment was merged, so writing it too delivers the same content twice\nkeys:\n%s",
+				k, strings.Join(keys, "\n"))
+		}
+	}
+	bodies := joinArtifactBodies(res.Artifacts)
+	for _, instance := range []string{"src", "wl", "art"} {
+		want := "aggrega.ai/component-id: cfr--alpha--" + instance + "\n"
+		if !strings.Contains(bodies, want) {
+			t.Errorf("the assembled document does not carry attachment %q; it must be merged in, not dropped\n%s", instance, bodies)
 		}
 	}
 }

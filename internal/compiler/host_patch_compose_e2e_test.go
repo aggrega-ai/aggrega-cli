@@ -77,6 +77,17 @@ func TestHostPatchCompose_PostAssemblyHostPatch(t *testing.T) {
 	// The FeatureRecipe's own resource-generating output rendered alongside the
 	// host (proving the pipeline ran from within a resource-generating FR and
 	// the FR's additive own output is unaffected by the deferred host PATCH).
+	//
+	// 🔴 It stands as a discrete file rather than inside the merged document, and
+	// that is the point rather than an accident of this fixture. The attachment
+	// renders through a DIFFERENT target from its host: the host assembles a
+	// compose document, and this FeatureRecipe emits a Kubernetes manifest. An
+	// assembler reads fragments in its own target's shape, so handing it one
+	// written for another target does not merge that content — the assembler finds
+	// none of the sections it models and folds nothing, and the file would leave
+	// the build with nothing reporting it. An attachment's output joins its host's
+	// assembly only where it rendered for the same target; otherwise it is written
+	// under its own position, which is what this asserts.
 	_ = findArtifactBySuffix(t, result.Artifacts, "features/api/guardrail/guardrail-config.yaml")
 }
 

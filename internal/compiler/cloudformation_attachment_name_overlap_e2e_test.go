@@ -69,53 +69,61 @@ func cfnOverlapFindings(t *testing.T, err error) []string {
 	return []string{envelope.Error()}
 }
 
-// TestCloudFormationAttachmentOverlappingName_Builds is the direction that
-// changed, and the comment says why rather than leaving the inversion to be
-// guessed at.
+// TestCloudFormationAttachmentOverlappingName_Halts covers a component and one
+// of its own attachments deriving the same resource logical id, on a provider
+// that folds its dispatch group into one document.
 //
 // The shape is one component whose own artifact declares a resource logical id,
 // carrying one attachment whose fragment declares the same id. On a stack
-// provider the component's own output is folded into the one assembled stack and
-// the attachment's is written as discrete files under the attachment's own
-// position — which the sibling case below reads directly out of the emitted bytes
-// — so the two ids stand in two documents that never meet. There is no rename
-// available to an author here, because nothing is displacing anything, which is
-// why refusing this build was a wall rather than a guardrail.
+// provider BOTH contributions are folded into the one assembled stack, so the two
+// ids genuinely meet: one of them would displace the other inside a single
+// Resources map, and the author has a real remedy — rename the resource one of
+// the two declares.
 //
-// 🔴 This does NOT weaken the condition, and the two cases that prove it are in
-// this file: the two-host build below still halts on its genuine findings, and
-// the Kubernetes corpus, whose provider folds nothing, still halts on the same
-// topology.
-func TestCloudFormationAttachmentOverlappingName_Builds(t *testing.T) {
+// The two contributors are named separately in the halt, one finding each, and
+// the attachment's finding carries the attachment key as well as the host, so an
+// author reading it knows which of the two files to edit.
+func TestCloudFormationAttachmentOverlappingName_Halts(t *testing.T) {
 	t.Parallel()
 
-	res := pipelinetest.Build(t, cfnOverlapInput("overlapping"))
-
-	paths := make([]string, 0, len(res.Artifacts))
-	for p := range res.Artifacts {
-		paths = append(paths, p)
+	_, err := pipelinetest.BuildE(t, cfnOverlapInput("overlapping"))
+	if err == nil {
+		t.Fatal("a component and its own attachment naming one resource in one merged stack built cleanly")
 	}
-	sort.Strings(paths)
-	t.Logf("emitted output paths (%d):\n  %s", len(paths), strings.Join(paths, "\n  "))
-
-	// The build having produced output is the half a clean exit does not state:
-	// the two contributors both rendered, and their two HostQueue ids stand in two
-	// separate documents.
-	stack, _ := findCfnStack(t, res.Artifacts, "stack")
-	resources := mustCfnMap(t, stack, "Resources")
-	if _, present := resources["HostQueue"]; !present {
-		t.Errorf("the assembled stack does not carry the host component's own HostQueue; it carries %v", mapKeys(resources))
+	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
+		t.Fatalf("the build failed for a different reason than the derived-name collision: %v", err)
 	}
-	var fragmentCarriers []string
-	for _, p := range paths {
-		if strings.Contains(p, "features/") && strings.Contains(string(res.Artifacts[p]), "HostQueue") {
-			fragmentCarriers = append(fragmentCarriers, p)
+	findings := cfnOverlapFindings(t, err)
+	t.Logf("the halt carries %d finding(s):\n%s", len(findings), strings.Join(findings, "\n"))
+
+	if len(findings) != 2 {
+		t.Fatalf("expected one finding per contributor that met on the name, got %d\nfindings:\n%s",
+			len(findings), strings.Join(findings, "\n"))
+	}
+	for _, f := range findings {
+		if !strings.Contains(f, `"HostQueue"`) {
+			t.Errorf("a finding does not name the resource id the two contributors met on\ngot: %s", f)
 		}
 	}
-	if len(fragmentCarriers) == 0 {
-		t.Errorf("no discrete attachment file carries HostQueue; the two ids are not in two documents after all: %v", paths)
+	// Both sides are named, and the attachment's is named by BOTH its coordinates
+	// — asserting the host alone would pass on a report that lost the attachment
+	// key, which is the coordinate telling an author which file to open.
+	var host, attachment bool
+	for _, f := range findings {
+		if strings.Contains(f, `derived by component "store", carrying attachment "aux"`) {
+			attachment = true
+			continue
+		}
+		if strings.Contains(f, `derived by component "store"`) {
+			host = true
+		}
 	}
-	t.Logf("the attachment's own file(s) carrying HostQueue: %v", fragmentCarriers)
+	if !host {
+		t.Errorf("the host component's own derivation is not named\nfindings:\n%s", strings.Join(findings, "\n"))
+	}
+	if !attachment {
+		t.Errorf("the attachment's derivation is not named with both its coordinates\nfindings:\n%s", strings.Join(findings, "\n"))
+	}
 }
 
 // TestCloudFormationAttachmentOnTwoHosts_HaltsOnTheGenuineFindingsOnly is the
@@ -124,14 +132,16 @@ func TestCloudFormationAttachmentOverlappingName_Builds(t *testing.T) {
 // contributors differ only in where their output landed.
 //
 //   - HostBucket and HostQueue are each declared by the two host components, whose
-//     own output really is folded into the one assembled stack. They must still
-//     halt, one finding per contributor, so four findings.
+//     own output is folded into the one assembled stack. One finding per
+//     contributor, so four.
 //   - AuxAlarm is declared by the one attachment as rendered on each of the two
-//     hosts. Each of those renders is written under its own host's position, so the
-//     two ids stand in two file sets that never meet and must raise nothing.
+//     hosts. Each of those renders is a contributor of its own and BOTH are folded
+//     into the same stack, so the two ids meet in one Resources map exactly as the
+//     host components' do — two more findings, each naming its own host as well as
+//     the attachment key, which is what separates them for the author.
 //
-// Both halves are asserted — presence of the four and absence of the two — because
-// a count alone would pass on the wrong four.
+// Every finding is counted by the name it is about as well as in total, because a
+// count alone would pass on the wrong six.
 func TestCloudFormationAttachmentOnTwoHosts_HaltsOnTheGenuineFindingsOnly(t *testing.T) {
 	t.Parallel()
 
@@ -161,24 +171,41 @@ func TestCloudFormationAttachmentOnTwoHosts_HaltsOnTheGenuineFindingsOnly(t *tes
 				name, byName[name], strings.Join(findings, "\n"))
 		}
 	}
-	if byName["AuxAlarm"] != 0 {
-		t.Errorf("AuxAlarm is derived by one attachment rendered on two hosts, each written under its own position: expected 0 findings, got %d\nfindings:\n%s",
+	if byName["AuxAlarm"] != 2 {
+		t.Errorf("AuxAlarm is derived by one attachment rendered on two hosts, both folded into one stack: expected 2 findings, got %d\nfindings:\n%s",
 			byName["AuxAlarm"], strings.Join(findings, "\n"))
 	}
-	if len(findings) != 4 {
-		t.Errorf("expected exactly the four genuine findings, got %d\nfindings:\n%s",
+	if len(findings) != 6 {
+		t.Errorf("expected exactly the six genuine findings, got %d\nfindings:\n%s",
 			len(findings), strings.Join(findings, "\n"))
+	}
+	// The two AuxAlarm findings are told apart by their host, which is the
+	// coordinate an author edits against — a report naming the attachment key
+	// alone would name one thing twice.
+	for _, host := range []string{"alpha", "beta"} {
+		want := `derived by component "` + host + `", carrying attachment "aux"`
+		found := false
+		for _, f := range findings {
+			if strings.Contains(f, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("no finding names the attachment as rendered on host %q\nfindings:\n%s", host, strings.Join(findings, "\n"))
+		}
 	}
 }
 
 // TestCloudFormationAttachmentRepeatingOneName_Halts is the half of the condition
-// the narrowing does not touch, driven end to end on a contributor whose output is
-// placed standalone — which is the axis it would be lost on.
+// that is INDEPENDENT of where a contributor's output landed, which is the axis it
+// would be lost on.
 //
 // The attachment's own single fragment names one resource twice inside one
-// document of its own. That is its own derivation failing to be injective rather
-// than a meeting between two contributors, so it halts wherever its output landed,
-// and the author's remedy is real: rename one of the two resources it declares.
+// declaration of its own. That is its own derivation failing to be injective
+// rather than a meeting between two contributors, so it halts wherever its output
+// landed — folded into an assembled document or written beside one — and the
+// author's remedy is real either way: rename one of the two resources it declares.
 func TestCloudFormationAttachmentRepeatingOneName_Halts(t *testing.T) {
 	t.Parallel()
 
@@ -200,8 +227,10 @@ func TestCloudFormationAttachmentRepeatingOneName_Halts(t *testing.T) {
 	if !strings.Contains(findings[0], `derived more than once by component "store", carrying attachment "aux"`) {
 		t.Errorf("the finding does not read as one contributor's own derivation failing\ngot: %s", findings[0])
 	}
-	// And it is the attachment, whose output the render placed standalone, that is
-	// named — which is the axis this case exists to cover.
+	// And it is the ATTACHMENT that is named rather than its host, which is the
+	// axis this case exists to cover: the repeat is inside one contributor's own
+	// declaration, so the report has to reach the contributor rather than stop at
+	// the component whose group assembled it.
 	if !strings.Contains(findings[0], `"AuxAlarm"`) {
 		t.Errorf("the finding does not name the repeated resource id\ngot: %s", findings[0])
 	}
@@ -237,14 +266,16 @@ func TestCloudFormationAttachmentOnOneHost_ReadsTheEmittedOutput(t *testing.T) {
 			inStack = true
 		}
 	}
-	if inStack {
-		t.Errorf("the attachment's resource AuxAlarm IS carried by the assembled stack; the two names would genuinely meet in one merged document")
+	if !inStack {
+		t.Errorf("the attachment's resource AuxAlarm is NOT carried by the assembled stack; it carries %v", stackIDs)
 	} else {
-		t.Logf("the attachment's resource AuxAlarm is absent from the assembled stack")
+		t.Logf("the attachment's resource AuxAlarm is carried by the assembled stack")
 	}
 
-	// Where the attachment's resource actually landed, read from the emitted bytes
-	// rather than from any log line.
+	// The attachment's resource is in the stack and NOWHERE ELSE. Asserted as
+	// well as its presence, because a build that both merged the fragment and
+	// left the discrete file beside it would satisfy the presence read alone —
+	// and that build delivers the same resource twice.
 	var carriers []string
 	for _, p := range paths {
 		if strings.Contains(string(res.Artifacts[p]), "AuxAlarm") {
@@ -254,6 +285,21 @@ func TestCloudFormationAttachmentOnOneHost_ReadsTheEmittedOutput(t *testing.T) {
 	t.Logf("the file(s) carrying AuxAlarm: %v", carriers)
 	for _, p := range carriers {
 		t.Logf("--- %s ---\n%s", p, res.Artifacts[p])
+	}
+	if len(carriers) != 1 {
+		t.Errorf("AuxAlarm must be carried by the assembled stack alone; it is carried by %v", carriers)
+	}
+	for _, p := range carriers {
+		if strings.Contains(p, "features/") {
+			t.Errorf("a discrete attachment file still carries AuxAlarm at %q; the fragment was merged and written both", p)
+		}
+	}
+
+	// The attachment's resource keeps its own provenance identity inside the
+	// merged stack — the merge carries the contribution, it does not re-attribute
+	// it to the host whose group assembled it.
+	if !strings.Contains(string(raw), `"aggrega.ai/component-id": "cfr--alpha--aux"`) {
+		t.Errorf("the merged stack does not stamp the attachment's own identity on its resource:\n%s", raw)
 	}
 
 	// Same reading for the host component's own two resources, so the two
