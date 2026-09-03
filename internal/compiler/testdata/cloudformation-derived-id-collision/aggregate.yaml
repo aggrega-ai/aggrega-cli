@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-derived-id-collision-app
+  version: "1.0.0"
+  description: >
+    Four stores whose instance names differ only in which separator they use and
+    in the case of their letters, deployed through a Recipe that derives each
+    resource logical ID from the instance name. A CloudFormation logical ID
+    admits neither separator and the derivation normalizes case, so all four
+    instances arrive at one logical ID — the case the build has to refuse rather
+    than emit one resource where four stores were declared.
+
+    A fifth store, whose name shares neither shape, arrives at a logical ID of
+    its own. It is declared in the same stack on purpose: it is what shows that
+    the refusal names the instances whose names actually met and leaves out one
+    that met nobody.
+spec:
+  components:
+    my-id:
+      type: core/folded-store
+    my_id:
+      type: core/folded-store
+    My-Id:
+      type: core/folded-store
+    MY_ID:
+      type: core/folded-store
+    orders:
+      type: core/folded-store

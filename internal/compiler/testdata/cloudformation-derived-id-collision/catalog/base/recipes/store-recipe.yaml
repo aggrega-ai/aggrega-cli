@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: folded-store-recipe
+  version: "1.0.0"
+  description: >
+    A store rendered as a CloudFormation fragment whose resource logical ID is
+    derived from the component instance's own name rather than written as a
+    literal. The derivation reads the name's separators as word boundaries and
+    normalizes each word's case, so two instance names differing only in a
+    separator, or only in case, reach one logical ID.
+  maintainers:
+    - name: "Massimiliano Ferrero"
+      email: "m.ferrero@cognitio.it"
+spec:
+  capability: cloudformation
+  implements: core/folded-store
+
+  artifacts:
+    template.yaml: |
+      # The resource logical ID is derived from the component instance's name by
+      # a single template function that reads separators as word boundaries and
+      # normalizes each word's case. That is what lets two instances whose names
+      # differ only in a separator, or only in case, arrive at one logical ID.
+      #
+      # It is deliberately ONE function rather than the multi-stage
+      # separators-to-spaces, capitalize-each-word, join pipeline the published
+      # CloudFormation Recipes use. This fixture needs only that two instance
+      # names can arrive at one logical ID; it does not need the published
+      # spelling of how, and restating that pipeline here would add one more
+      # hand-written copy of a derivation that already has several homes. The
+      # two are observably different rather than a re-spelling of each other:
+      # an all-capitals instance name arrives at MyId under this function and
+      # at MYID under that pipeline.
+      #
+      # The resource BODY interpolates nothing that varies per instance, so
+      # every instance's body is byte-identical. That is deliberate: it is the
+      # case where comparing the bodies cannot tell two contributors apart, so
+      # the only thing that can still distinguish them is each contributor's own
+      # claim on the name.
+      Resources:
+        {{ .context.instance_id | camelcase }}:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: "{{ .values.retention_seconds }}"

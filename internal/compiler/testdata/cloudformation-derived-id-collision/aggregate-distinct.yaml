@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-derived-id-collision-distinct-app
+  version: "1.0.0"
+  description: >
+    Four stores through the same deriving Recipe, whose instance names differ by
+    more than a separator or a letter's case, so each arrives at a logical ID of
+    its own and the stack carries one resource per store. It is the control for
+    the colliding Aggregate beside it: the Recipe, the Manifest and the boundary
+    are identical, and only what the stores are named moves between them.
+spec:
+  components:
+    orders:
+      type: core/folded-store
+    payments:
+      type: core/folded-store
+    ledger:
+      type: core/folded-store
+    reporting:
+      type: core/folded-store

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-derived-id-collision-distinct-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: cloudformation-derived-id-collision-distinct-app
+  manifest: cloudformation-derived-id-collision-manifest
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      components:
+        orders: {}
+        payments: {}
+        ledger: {}
+        reporting: {}
