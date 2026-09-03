@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-carried-section-name-app
+  version: "1.0.0"
+  description: >
+    One component whose name carries a hyphen, deployed through a Recipe that
+    writes the component's own name into a template parameter's name without
+    rewriting it. A name in the Parameters section of a CloudFormation template
+    admits only letters and digits, so the name reaches a place that cannot hold
+    it.
+spec:
+  components:
+    payments-db:
+      type: core/carried-store
+      values:
+        retention_seconds: "45"

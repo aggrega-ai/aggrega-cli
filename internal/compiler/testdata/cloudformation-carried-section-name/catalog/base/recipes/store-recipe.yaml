@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: carried-store-recipe
+  version: "1.0.0"
+  description: >
+    A store rendered as a CloudFormation fragment that declares a template
+    parameter named after the component instance, written through without any
+    rewriting. The assembled stack carries a Parameters section under exactly
+    the names its author wrote, so this Recipe is what carries a component name
+    straight into a parameter name.
+  maintainers:
+    - name: "Massimiliano Ferrero"
+      email: "m.ferrero@cognitio.it"
+spec:
+  capability: cloudformation
+  implements: core/carried-store
+
+  artifacts:
+    template.yaml: |
+      # The parameter name is the component instance's own name with a suffix,
+      # so the name a template parameter is declared under is whatever the
+      # instance is called. The resource logical id below is a literal instead,
+      # so this fragment carries exactly one authored name that can fall outside
+      # the alphabet a CloudFormation template admits.
+      Parameters:
+        {{ .context.instance_id }}Retention:
+          Type: String
+          Default: "{{ .values.retention_seconds }}"
+
+      Resources:
+        StoreQueue:
+          Type: AWS::SQS::Queue
+          Properties:
+            MessageRetentionPeriod: !Ref {{ .context.instance_id }}Retention
+
+      # The provider names each stack Output for the contributing component and
+      # the entry together, reading both as words and joining them, so this
+      # entry's name is the provider's own derivation rather than anything
+      # written here.
+      provides:
+        queue_url: !Ref StoreQueue

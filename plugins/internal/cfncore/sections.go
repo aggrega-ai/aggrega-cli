@@ -81,6 +81,12 @@ var mergedSections = []string{sectionResources, sectionOutputs}
 // declaring one name are reconciled by the same rule the resource and output
 // spaces already use ([assembledSpace.insert]).
 //
+// Carrying a name verbatim is also what makes its alphabet this core's business:
+// nothing between the author and the emitted bytes would repair a name the target
+// cannot hold. Which of these sections are held to the logical-id alphabet, which
+// are not, and why, is [alphabetCheckedSections] and [alphabetUncheckedSections] —
+// a partition of this list rather than a condition written at the read.
+//
 // Each is carried on its own terms rather than as a set, because each is authored
 // independently of the others: a rule asserts over a parameter of the same
 // document, a condition may reference no parameter at all — a pseudo-parameter or
@@ -107,6 +113,57 @@ var carriedSections = []string{
 	sectionMappings,
 	sectionMetadata,
 	sectionParameters,
+	sectionRules,
+}
+
+// alphabetCheckedSections are the carried sections whose authored names this core
+// holds to the alphabet a CloudFormation logical id admits, refusing a name that
+// carries anything else ([carriedSectionNameRefusal]).
+//
+// A name in one of these sections is a logical id: the template language admits
+// letters and digits in it and requires it unique within the template, which is
+// the same rule the resource logical ids follow. So a name outside that alphabet
+// reaches a template the target will not accept, exactly as an authored resource
+// logical id does — and these sections are carried verbatim, so nothing between
+// the author and the emitted bytes would have repaired it.
+//
+// 🔴 Only the section's OWN keys are held to it, and never the keys nested inside
+// an entry's body. A mapping's second-level keys are map keys rather than logical
+// ids — a region name such as us-east-1 is ordinary and legitimate there — and a
+// parameter's or a condition's body is keyed by attribute and intrinsic names the
+// author does not choose. Descending would refuse legal input, which is the same
+// failure excluding a section outright avoids.
+//
+// Together with [alphabetUncheckedSections] this partitions [carriedSections], and
+// a test holds the partition to that list from both sides: a section added to the
+// carried set without a name disposition fails rather than landing unchecked in
+// silence, and a section named here that no longer halts fails too.
+var alphabetCheckedSections = []string{
+	sectionConditions,
+	sectionMappings,
+	sectionParameters,
+}
+
+// alphabetUncheckedSections are the carried sections whose authored names this
+// core reads without asking anything about their characters. Each is here for its
+// own reason, and neither reason carries to the other.
+//
+// Metadata is excluded because the template language does not name a logical id
+// in it at all: the section stores additional information as objects of
+// user-defined key-value pairs, so the names in it are free-form and a
+// letters-and-digits check would refuse input the target accepts. That is the
+// exclusion this list exists for.
+//
+// Rules is here because the alphabet its names lie in is NOT established — not by
+// the template language's logical-id rule, which does not reach it, and not by
+// anything in this core. Leaving it unchecked is the honest answer to an
+// unmeasured alphabet: a check over one nobody established is how a refusal comes
+// to reject legal input. It is deliberately not folded into the reason above
+// either, since the metadata exclusion rests on a documented property of that one
+// section and reading it across would be inventing a second exclusion out of an
+// argument about the first.
+var alphabetUncheckedSections = []string{
+	sectionMetadata,
 	sectionRules,
 }
 

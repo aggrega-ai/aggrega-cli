@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-carried-section-name-legal-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: cloudformation-carried-section-name-legal-app
+  manifest: cloudformation-carried-section-name-manifest
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      components:
+        paymentsdb: {}

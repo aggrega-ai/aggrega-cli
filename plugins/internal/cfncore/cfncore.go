@@ -31,12 +31,14 @@
 // ([isLogicalIDRune]) — and the two properties are independent: a set of ids can
 // be perfectly distinct and still name characters a template cannot hold. Output
 // names are legal by construction, because building one drops everything outside
-// the alphabet. An authored resource logical id is not, because this core reads
-// it verbatim, so it is refused where it carries such a character
-// ([resourceLogicalIDRefusal]) rather than emitted into a template the target
-// will not accept. It is refused and never repaired: a resource whose logical id
-// changes is replaced rather than updated, so a silent rewrite would change the
-// identity of a resource that may already be running.
+// the alphabet. Every name this core reads verbatim is not, so each is refused
+// where it carries such a character rather than emitted into a template the
+// target will not accept: an authored resource logical id
+// ([resourceLogicalIDRefusal]), and an authored name in a carried section that
+// holds a logical id ([carriedSectionNameRefusal], over
+// [alphabetCheckedSections]). Both are refused and never repaired: a resource
+// whose logical id changes is replaced rather than updated, so a silent rewrite
+// would change the identity of a resource that may already be running.
 //
 // Resource names come from the Recipe that authored the fragment, which this core
 // reads and never rewrites; [DeclaredNames] collects them across everything the
@@ -75,6 +77,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -490,20 +493,22 @@ type fragmentClaim struct {
 // explicit Outputs block's entries, then the entries its provides keys project to
 // — each named for the contributing node and the entry together
 // ([OutputLogicalID]); and the entries of each carried section
-// ([carriedSections]) under exactly the names the fragment authored. A provides
-// value that is an intrinsic referencing a resource in the assembled stack rides
-// through as its long-form intrinsic. A fragment carrying none of these sections
-// claims nothing, which is a valid answer rather than an error.
+// ([carriedSections]) under exactly the names the fragment authored — refused,
+// for a section that carries a logical id, on the same alphabet and by the same
+// reasoning ([carriedSectionNameRefusal], over [alphabetCheckedSections]). A
+// provides value that is an intrinsic referencing a resource in the assembled
+// stack rides through as its long-form intrinsic. A fragment carrying none of
+// these sections claims nothing, which is a valid answer rather than an error.
 //
 // This is the single derivation of which names a fragment claims. The merge
 // inserts these entries and [DeclaredNames] gathers them across a node's
 // fragments and reports their keys, so the set a node declares to the host is by
-// construction the set the merge writes. It is also why the alphabet refusal
-// sits here rather than at the write into the assembled map: every path that
-// reads a fragment's resources arrives through this one derivation, so the
-// refusal reaches the declaration a node hands the host as well as the merge,
-// and it reaches both at the earliest point either holds the contributor and the
-// authored id together. Two walks kept in step by eye could
+// construction the set the merge writes. It is also why both alphabet refusals
+// sit here rather than at the write into the assembled map: every path that reads
+// a fragment's sections arrives through this one derivation, so a refusal reaches
+// the declaration a node hands the host as well as the merge, and it reaches both
+// at the earliest point either holds the contributor, the section and the
+// authored name together. Two walks kept in step by eye could
 // drift instead, and the host would then be checking one derivation for
 // duplicates while the merge wrote another — a divergence nothing would fail on,
 // because no comparison between the two exists to fail.
@@ -512,7 +517,10 @@ type fragmentClaim struct {
 // part of the declaration: the declaration is a name-only check the host performs
 // for spaces whose names must be globally distinct, and these are spaces where two
 // contributors declaring one name identically is a merge rather than a collision.
-// [carriedSections] states why that check cannot be the host's.
+// [carriedSections] states why that check cannot be the host's. Their entries are
+// dropped from what the node declares and NOT from what it reads, so the alphabet
+// refusal over them still reaches every path: it raises from inside this
+// derivation, before any claim is returned for a caller to keep or discard.
 //
 // A fragment reaches one key space through more than one section, so it can name
 // one key twice: an explicit Outputs block and the projected provides entries
@@ -579,8 +587,19 @@ func fragmentEntries(nodeID string, frag map[string]any, mint *outputNameLedger)
 		if !ok {
 			return fragmentClaim{}, fmt.Errorf("cloudformation-provider: %s in node %q is not a mapping", section, nodeID)
 		}
+		names := sortedKeys(smap)
+		// A section carrying a logical id under a name its author wrote is held to
+		// the alphabet a logical id admits, and one carrying free-form or
+		// unestablished names is not — [alphabetCheckedSections] states which is
+		// which and why. Asked from the declared list rather than from a condition
+		// written here, so the sections that are checked stay one statement.
+		if slices.Contains(alphabetCheckedSections, section) {
+			if err := carriedSectionNameRefusal(nodeID, section, names); err != nil {
+				return fragmentClaim{}, err
+			}
+		}
 		entries := make([]stackEntry, 0, len(smap))
-		for _, k := range sortedKeys(smap) {
+		for _, k := range names {
 			entries = append(entries, stackEntry{key: k, value: smap[k]})
 		}
 		if claim.sections == nil {
@@ -1158,13 +1177,71 @@ func capitalizedWords(s string) string {
 // caller holds; a contributor whose second fragment carries another such id is
 // answered for it once the first is fixed.
 func resourceLogicalIDRefusal(nodeID string, ids []string) error {
-	clauses := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if id == "" {
-			clauses = append(clauses, "one resource is named by the empty string, which addresses nothing")
+	clauses := alphabetClauses("resource", ids)
+	if len(clauses) == 0 {
+		return nil
+	}
+	return fmt.Errorf("cloudformation-provider: component %q names a resource the assembled stack cannot address: %s; a resource logical id admits only letters and digits, and this provider emits the id a Recipe authored rather than rewriting it — so name the resource in letters and digits alone, either by having the Recipe author a logical id of its own rather than passing a name straight through, or by naming whatever it does pass through in letters and digits alone",
+		nodeID, strings.Join(clauses, "; "))
+}
+
+// carriedSectionNameRefusal reports why a CloudFormation template cannot address
+// one contributor's entries in a carried section by the names it authored, and
+// reports nil where every one of them lies inside the alphabet a logical id
+// admits ([isLogicalIDRune]).
+//
+// It is the same rule the resource logical ids follow, on the sections that carry
+// a logical id under a name their author wrote ([alphabetCheckedSections]) — so
+// the alphabet, the character enumeration and the clause list are the resource
+// refusal's, read from one place rather than restated. What differs is the
+// remedy, and it differs because it has to: the resource remedy offers a Recipe
+// the option of authoring a logical id instead of passing a name through, which
+// is a statement about resource logical ids and would be wrong about a parameter.
+// A carried name's remedy is to name the entry differently, because the name IS
+// what the author wrote there.
+//
+// The section is named in the message, and that is the word the author acts on:
+// these names are carried under exactly the section their author wrote them in,
+// so the section is what they can search their own files for. [assembledSpace]
+// names it for the same reason.
+//
+// The scope is the names one contributor authored in one section of one fragment,
+// which is what the caller holds. A contributor whose second fragment, or whose
+// second checked section, carries another such name is answered for it once the
+// first is fixed.
+func carriedSectionNameRefusal(nodeID, section string, names []string) error {
+	clauses := alphabetClauses("entry", names)
+	if len(clauses) == 0 {
+		return nil
+	}
+	return fmt.Errorf("cloudformation-provider: component %q names a %s entry the assembled stack cannot address: %s; a name in the %s section admits only letters and digits, and this provider carries the section under exactly the names its author wrote — so name the entry in letters and digits alone",
+		nodeID, section, strings.Join(clauses, "; "), section)
+}
+
+// alphabetClauses reports one clause per name a CloudFormation template cannot
+// address, and nothing for a name that lies inside the alphabet a logical id
+// admits ([isLogicalIDRune]). An empty result means every name is addressable.
+//
+// subject is the noun a clause calls the thing a name addresses — a resource, an
+// entry of a carried section — so one derivation serves every space whose names
+// are read verbatim while each still reads as what it is. It is the only thing
+// that varies: the empty-name case, the distinct-characters case and their order
+// are one rule, and a second copy of them would agree today and drift the moment
+// either refusal's notion of what to report moved, with nothing failing while
+// they still agreed.
+//
+// Every offending name is reported rather than the first, so one build tells the
+// author the whole picture instead of one name per attempt. The names are read in
+// the order supplied and each name's characters in the order they first appear,
+// so the result is a function of its input alone.
+func alphabetClauses(subject string, names []string) []string {
+	clauses := make([]string, 0, len(names))
+	for _, name := range names {
+		if name == "" {
+			clauses = append(clauses, fmt.Sprintf("one %s is named by the empty string, which addresses nothing", subject))
 			continue
 		}
-		outside := charactersOutsideLogicalIDAlphabet(id)
+		outside := charactersOutsideLogicalIDAlphabet(name)
 		if len(outside) == 0 {
 			continue
 		}
@@ -1172,13 +1249,9 @@ func resourceLogicalIDRefusal(nodeID string, ids []string) error {
 		for _, r := range outside {
 			quoted = append(quoted, strconv.Quote(string(r)))
 		}
-		clauses = append(clauses, fmt.Sprintf("%q carries %s", id, joinPhrases(quoted)))
+		clauses = append(clauses, fmt.Sprintf("%q carries %s", name, joinPhrases(quoted)))
 	}
-	if len(clauses) == 0 {
-		return nil
-	}
-	return fmt.Errorf("cloudformation-provider: component %q names a resource the assembled stack cannot address: %s; a resource logical id admits only letters and digits, and this provider emits the id a Recipe authored rather than rewriting it — so name the resource in letters and digits alone, either by having the Recipe author a logical id of its own rather than passing a name straight through, or by naming whatever it does pass through in letters and digits alone",
-		nodeID, strings.Join(clauses, "; "))
+	return clauses
 }
 
 // charactersOutsideLogicalIDAlphabet returns the distinct characters of a name

@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: cloudformation-carried-section-name-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/carried-store: carried-store-recipe:1.0.0

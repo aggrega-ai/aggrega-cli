@@ -200,15 +200,20 @@ func TestResourceLogicalIDRefusalReturnsAnErrorRatherThanPanicking(t *testing.T)
 }
 
 // TestTheLogicalIDAlphabetHasOneHome asserts the alphabet the Output-name
-// derivation carries a character through on is the same alphabet the resource
-// refusal admits, character by character.
+// derivation carries a character through on is the same alphabet each refusal of
+// a verbatim-read name admits, character by character.
 //
-// Both read one predicate today, so this is the guard that keeps them reading
-// it: a later edit re-stating the character class inside either one compiles,
-// passes every other test, and leaves two copies that agree until one of them
-// moves. Nothing else in the package would fail on that, because there is no
-// comparison between the two for anything to fail on — which is exactly what
-// this supplies.
+// All of them read one predicate today, so this is the guard that keeps them
+// reading it: a later edit re-stating the character class inside any one of them
+// compiles, passes every other test, and leaves two copies that agree until one
+// of them moves. Nothing else in the package would fail on that, because there is
+// no comparison between them for anything to fail on — which is exactly what this
+// supplies. Every side is asserted in one loop over one oracle, so widening the
+// alphabet reddens all of them at once rather than one at a time.
+//
+// The carried-section side is asserted once per section held to the alphabet,
+// read from the declared list, so a section added there is covered without anyone
+// remembering to list it here.
 //
 // The oracle is deliberately written out here rather than taken from the
 // predicate under test: a cross-check that shares the implementation it verifies
@@ -229,12 +234,20 @@ func TestTheLogicalIDAlphabetHasOneHome(t *testing.T) {
 			t.Fatalf("the Output-name derivation %s %q, but the alphabet says %v",
 				map[bool]string{true: "carries", false: "drops"}[carried], r, want)
 		}
-		// The refusal's side: it objects to exactly the characters the alphabet
-		// does not admit.
+		// The resource refusal's side: it objects to exactly the characters the
+		// alphabet does not admit.
 		refused := resourceLogicalIDRefusal("payments", []string{"A" + string(r)}) != nil
 		if refused == want {
 			t.Fatalf("the resource refusal %s %q, but the alphabet says %v",
 				map[bool]string{true: "refuses", false: "admits"}[refused], r, want)
+		}
+		// And the carried sections' side, per section held to the alphabet.
+		for _, section := range alphabetCheckedSections {
+			refusedInSection := carriedSectionNameRefusal("payments", section, []string{"A" + string(r)}) != nil
+			if refusedInSection == want {
+				t.Fatalf("the %s name refusal %s %q, but the alphabet says %v", section,
+					map[bool]string{true: "refuses", false: "admits"}[refusedInSection], r, want)
+			}
 		}
 	}
 }
