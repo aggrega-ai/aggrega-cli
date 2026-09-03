@@ -88,7 +88,21 @@ func TestHostPatchCompose_PostAssemblyHostPatch(t *testing.T) {
 	// the build with nothing reporting it. An attachment's output joins its host's
 	// assembly only where it rendered for the same target; otherwise it is written
 	// under its own position, which is what this asserts.
-	_ = findArtifactBySuffix(t, result.Artifacts, "features/api/guardrail/guardrail-config.yaml")
+	//
+	// Asserted on the body rather than on the key alone. A key assertion reports
+	// only that a file was emitted at that path, which a FeatureRecipe that
+	// emitted an empty or unevaluated file also satisfies — so it cannot separate
+	// output that carries the attachment's resource from output that carries
+	// nothing.
+	guardrail := string(findArtifactBySuffix(t, result.Artifacts, "features/api/guardrail/guardrail-config.yaml"))
+	if !strings.Contains(guardrail, "kind: ConfigMap") {
+		t.Errorf("the FeatureRecipe's own output is not the resource it declares; got:\n%s", guardrail)
+	}
+	// The attachment's own values reached its own render: the FeatureRecipe
+	// templates label from .values.label, which the Aggregate sets to "injected".
+	if !strings.Contains(guardrail, `label: "injected"`) {
+		t.Errorf("the attachment's values did not reach its own rendered resource; got:\n%s", guardrail)
+	}
 }
 
 // TestHostPatchCompose_Deterministic compiles the host-patch-compose fixture

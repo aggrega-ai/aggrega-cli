@@ -28,7 +28,7 @@ func writeNamedChart(t *testing.T, dir, manifestName, marker string) {
 	t.Helper()
 	writeFileMkdir(t, filepath.Join(dir, chartMetadataFileName),
 		"apiVersion: v2\nname: "+manifestName+"\nversion: 0.1.0\n")
-	writeFileMkdir(t, filepath.Join(dir, "values.yaml"), "secret: \"NO-VALUES-REACHED-THIS-SUBCHART\"\n")
+	writeFileMkdir(t, filepath.Join(dir, "values.yaml"), "secret: \""+unreachedSubChartSecret+"\"\n")
 	writeFileMkdir(t, filepath.Join(dir, "templates", "cm.yaml"),
 		"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: \"{{ .Chart.Name }}\"\ndata:\n"+
 			"  source: \""+marker+"\"\n  secret: \"{{ .Values.secret }}\"\n")
@@ -199,7 +199,7 @@ func TestPlacingASourcedChartRawLeavesItsValuesUnaddressable(t *testing.T) {
 			t.Errorf("the raw control propagated %q's mapped value, so the positive rows prove nothing:\n%s", id, rendered)
 		}
 	}
-	if !strings.Contains(rendered, "NO-VALUES-REACHED-THIS-SUBCHART") {
+	if !strings.Contains(rendered, unreachedSubChartSecret) {
 		t.Errorf("the raw control should render the vendored default, showing values reached nothing:\n%s", rendered)
 	}
 }

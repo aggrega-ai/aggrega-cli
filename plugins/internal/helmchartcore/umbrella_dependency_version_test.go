@@ -6,14 +6,11 @@ package helmchartcore
 import (
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/charttest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"helm.sh/helm/v3/pkg/chart/loader"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/engine"
 )
 
 func writeFileMkdir(t *testing.T, path, content string) {
@@ -26,51 +23,43 @@ func writeFileMkdir(t *testing.T, path, content string) {
 	}
 }
 
+// unreachedSubChartSecret is the value every vendored test chart in this package
+// defaults its secret to: a string no mapped value would ever be, so a sub-chart
+// the umbrella's values never reached renders THIS rather than something that
+// reads like a success.
+//
+// It is declared once because a chart's default and the assertion that reads it
+// back are two halves of one fact. An empty default is the shape to avoid: a
+// chart that silently fell back to its own defaults renders an empty value,
+// which is indistinguishable from a delivered empty string — and a chart with
+// unaddressable values renders its defaults and reports success, so an
+// assertion that only checks the chart rendered would pass on values going
+// nowhere.
+const unreachedSubChartSecret = "NO-VALUES-REACHED-THIS-SUBCHART"
+
 // writeVendoredChart writes a minimal sourced chart whose ConfigMap template
-// reads .Values.secret. A rendered non-empty secret proves the umbrella's
-// alias-keyed values reached this sub-chart — i.e. Helm bound the dependency.
+// reads .Values.secret. A rendered secret other than unreachedSubChartSecret
+// proves the umbrella's alias-keyed values reached this sub-chart — i.e. Helm
+// bound the dependency.
 func writeVendoredChart(t *testing.T, dir, name, version string) {
 	t.Helper()
 	writeFileMkdir(t, filepath.Join(dir, "Chart.yaml"), "apiVersion: v2\nname: "+name+"\nversion: "+version+"\n")
-	writeFileMkdir(t, filepath.Join(dir, "values.yaml"), "secret: \"\"\n")
+	writeFileMkdir(t, filepath.Join(dir, "values.yaml"), "secret: \""+unreachedSubChartSecret+"\"\n")
 	writeFileMkdir(t, filepath.Join(dir, "templates", "cm.yaml"),
 		"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: "+name+"\ndata:\n  secret: \"{{ .Values.secret }}\"\n")
 }
 
-// renderThroughDependencyPipeline assembles a chart from disk and renders it
-// through the SAME dependency pipeline `helm template` uses:
-// ProcessDependenciesWithMerge applies the Chart.yaml dependency aliases — and
-// only binds a dependency whose name AND version match the vendored sub-chart —
-// then CoalesceValues (inside ToRenderValues) scopes the alias-keyed value block
-// into that sub-chart. A bare engine.Render would skip this and prove nothing.
+// renderThroughDependencyPipeline renders an assembled chart from disk through
+// the same dependency pipeline `helm template` drives. The pipeline itself is
+// single-sourced in charttest; this wrapper only carries the fatal-on-error
+// behaviour a test wants.
 func renderThroughDependencyPipeline(t *testing.T, chartDir string) string {
 	t.Helper()
-	ch, err := loader.Load(chartDir)
+	rendered, err := charttest.RenderThroughDependencyPipeline(chartDir)
 	if err != nil {
-		t.Fatalf("load chart: %v", err)
+		t.Fatalf("rendering the assembled chart at %q: %v", chartDir, err)
 	}
-	if err := chartutil.ProcessDependenciesWithMerge(ch, ch.Values); err != nil {
-		t.Fatalf("ProcessDependenciesWithMerge: %v", err)
-	}
-	rv, err := chartutil.ToRenderValues(ch, ch.Values, chartutil.ReleaseOptions{Name: "demo", Namespace: "default"}, chartutil.DefaultCapabilities)
-	if err != nil {
-		t.Fatalf("ToRenderValues: %v", err)
-	}
-	out, err := engine.Render(ch, rv)
-	if err != nil {
-		t.Fatalf("Render: %v", err)
-	}
-	keys := make([]string, 0, len(out))
-	for k := range out {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var b strings.Builder
-	for _, k := range keys {
-		b.WriteString(out[k])
-		b.WriteString("\n")
-	}
-	return b.String()
+	return rendered
 }
 
 // assembleUmbrellaOnDisk writes BuildUmbrella's Chart.yaml + values.yaml plus the

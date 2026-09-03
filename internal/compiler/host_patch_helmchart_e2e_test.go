@@ -110,7 +110,21 @@ func TestHostPatchHelmchart_PerNodeHostPatch(t *testing.T) {
 
 	// The FeatureRecipe's own resource-generating output rendered alongside the
 	// host (proving the pipeline ran from within a resource-generating FR).
-	_ = findArtifactBySuffix(t, result.Artifacts, "features/api/guardrail/guardrail-config.yaml")
+	//
+	// Asserted on the body rather than on the key alone. A key assertion reports
+	// only that a file was emitted at that path, which a FeatureRecipe that
+	// emitted an empty or unevaluated file also satisfies — so it cannot separate
+	// output that carries the attachment's resource from output that carries
+	// nothing.
+	guardrail := string(findArtifactBySuffix(t, result.Artifacts, "features/api/guardrail/guardrail-config.yaml"))
+	if !strings.Contains(guardrail, "kind: ConfigMap") {
+		t.Errorf("the FeatureRecipe's own output is not the resource it declares; got:\n%s", guardrail)
+	}
+	// The attachment's own values reached its own render: the FeatureRecipe
+	// templates label from .values.label, which the Aggregate sets to "injected".
+	if !strings.Contains(guardrail, `label: "injected"`) {
+		t.Errorf("the attachment's values did not reach its own rendered resource; got:\n%s", guardrail)
+	}
 }
 
 // TestHostPatchHelmchart_Deterministic compiles the host-patch-helmchart
