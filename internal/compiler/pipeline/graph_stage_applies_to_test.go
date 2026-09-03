@@ -491,14 +491,21 @@ func TestTheFeatureApplicabilityRuleReportsAnApplicabilityItCannotEvaluate(t *te
 	}
 	detail := objections[0].Detail()
 	if len(detail) != 3 {
-		t.Fatalf("detail = %v, want the Feature type, the declared applicability and why it could not be evaluated", detail)
+		t.Fatalf("detail = %v, want the declared applicability, the Feature type and why it could not be evaluated", detail)
 	}
-	// The reason the applicability could not be evaluated is the last element,
-	// and its presence is what tells this apart from an evaluated-and-false
-	// finding.
 	if detail[len(detail)-1] == "" {
 		t.Error("the finding carries no reason the applicability could not be evaluated")
 	}
+	// What tells this apart from an evaluated-and-false finding is not that a
+	// third value is present — that arm carries three too — but the caption the
+	// rule puts on it and the advice this occurrence carries, so both are pinned
+	// rather than inferred from the count. This drives the unevaluable arm alone,
+	// so it proves what that arm reports and not the discrimination itself; the
+	// comparison of one arm's pair against the other's is taken where both arms
+	// are driven from one table.
+	discriminatorsOf(t, objections[0],
+		[]string{"", "declared by Feature", "which could not be evaluated:"},
+		"Correct the appliesTo selector on the Feature's catalog entity.")
 	violations := analyzer.ErrorsFromObjections(objections)
 	if len(violations) != 1 || violations[0].Field != ".spec.components.web.features.bad" {
 		t.Errorf("violation = %+v, want one positioned on the offending attachment", violations)

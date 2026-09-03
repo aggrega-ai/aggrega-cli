@@ -223,6 +223,80 @@ func slotsTheGraphHolds(
 	return held
 }
 
+// armCaptions is the caption the rule put on each of a finding's detail values,
+// in the order the rule supplied them and empty where the rule left a value
+// uncaptioned.
+//
+// The captions are not exposed on their own, so they are recovered from the
+// rendered form, which is the caption, a space and the quoted value — and the
+// unrendered value sits beside it, so the caption is what is left when the quoted
+// value comes off the end. It fails rather than returning a prefix it could not
+// account for: a rendered element not ending in its own quoted value means the
+// spelling convention moved, and a silently truncated caption would then read as a
+// discriminator that no longer discriminates.
+func armCaptions(t *testing.T, objection constraint.Objection) []string {
+	t.Helper()
+	detail, rendered := objection.Detail(), objection.RenderedDetail()
+	if len(detail) != len(rendered) {
+		t.Fatalf("the finding carries %d detail value(s) and %d rendered one(s); the two cannot be read against each other", len(detail), len(rendered))
+	}
+	captions := make([]string, 0, len(detail))
+	for i, value := range detail {
+		quoted := fmt.Sprintf("%q", value)
+		if rendered[i] == quoted {
+			captions = append(captions, "")
+			continue
+		}
+		caption, captioned := strings.CutSuffix(rendered[i], " "+quoted)
+		if !captioned {
+			t.Fatalf("the rendered detail %q does not end in the quoted value %q it was rendered from", rendered[i], quoted)
+		}
+		captions = append(captions, caption)
+	}
+	return captions
+}
+
+// armDiscriminators is what tells two violation classes of one rule apart, read
+// off a finding that rule raised: the advice, which names the edit this
+// occurrence calls for, and the captions, which name what each value the finding
+// carries is.
+//
+// Neither the sentinel nor the number of detail values does that job. Two classes
+// of one rule share the sentinel by construction, and a class raising a value the
+// other does not carry is the exception rather than the rule — so a count is
+// equally the same on both sides of the discrimination, and a proof reading the
+// classes apart by it is reading something the rule never promised.
+type armDiscriminators struct {
+	advice   string
+	captions []string
+}
+
+// discriminatorsOf asserts a finding carries the advice and the captions the
+// violation class it came from is meant to carry, and returns them.
+//
+// It returns them so one class's pair can be compared against another's, which is
+// the assertion a per-class expectation structurally cannot make: a rule that gave
+// two classes one advice and one caption would satisfy expectations written to
+// match it, and its classes would then be indistinguishable to every caller while
+// the proof stayed green. A proof driving one class alone has nothing to compare
+// against and discards the result.
+func discriminatorsOf(
+	t *testing.T,
+	objection constraint.Objection,
+	wantCaptions []string,
+	wantAdvice string,
+) armDiscriminators {
+	t.Helper()
+	got := armDiscriminators{advice: objection.Advice(), captions: armCaptions(t, objection)}
+	if got.advice != wantAdvice {
+		t.Errorf("advice = %q, want the edit this violation class calls for: %q", got.advice, wantAdvice)
+	}
+	if !slices.Equal(got.captions, wantCaptions) {
+		t.Errorf("captions = %q, want %q", got.captions, wantCaptions)
+	}
+	return got
+}
+
 // nodesCarryingASlot counts the distinct nodes the yardstick spreads over.
 func nodesCarryingASlot(held []string) int {
 	seen := map[string]bool{}
@@ -431,22 +505,47 @@ func TestTheSlotFillRuleHaltsThroughTheViolationChannel(t *testing.T) {
 // the rule reports: a declared constraint the label matcher cannot parse at all,
 // as against one it parses and finds unsatisfied.
 //
-// The two arms share one sentinel, so what tells them apart is the finding's own
-// detail — the reason the constraint could not be evaluated is its last element,
-// and its absence means the constraint was evaluated and came out false. Both
-// arms are asserted from one mechanism, because the evaluated arm is what stops
-// the unevaluable one being satisfied by a rule that reports on everything.
+// The two arms share one sentinel and carry the same number of detail values, so
+// neither the identity nor the count separates them. What does is the pair the
+// framework carries per occurrence: the advice, which names a different edit for
+// each arm — correct the declaration, versus give the fill the labels it is asked
+// for — and the caption the rule puts on the value that differs, which says which
+// of the two things that value is. So each leg pins both, and no leg infers an arm
+// from how long the detail list is.
+//
+// Both arms are asserted from one mechanism, because the evaluated arm is what
+// stops the unevaluable one being satisfied by a rule that reports on everything.
+// And the two arms' discriminators are compared with each other once both have
+// been read, which is the assertion a per-leg pin structurally cannot make: a rule
+// that gave both arms one advice and one caption would satisfy per-leg
+// expectations written to match it, and the arms would then be indistinguishable
+// to every caller while the proof stayed green.
 func TestTheSlotFillRuleReportsAConstraintItCannotEvaluate(t *testing.T) {
 	filled := fillBothSlots(t, readAggregate(t))
 
-	for _, leg := range []struct {
-		name        string
-		declaration string
-		wantDetail  int
+	legs := []struct {
+		name         string
+		declaration  string
+		wantCaptions []string
+		wantAdvice   string
 	}{
-		{"a constraint the matcher rejects carries the reason it could not be evaluated", `"!"`, 3},
-		{"a constraint the matcher evaluates and finds unsatisfied carries no reason", offendedSlotConstraint, 2},
-	} {
+		{
+			name:         "a constraint the matcher rejects names the reason it could not be evaluated",
+			declaration:  `"!"`,
+			wantCaptions: []string{"", "declared on slot", "which could not be evaluated:"},
+			wantAdvice:   "Correct the selector on the slot's declaration in the component's catalog entity.",
+		},
+		{
+			name:         "a constraint the matcher evaluates and finds unsatisfied names the fill that failed it",
+			declaration:  offendedSlotConstraint,
+			wantCaptions: []string{"", "declared on slot", "not satisfied by the labels of the Feature filling it,"},
+			wantAdvice: "Add the labels the slot's selector requires to the Feature's labels, " +
+				"or fill the slot with a Feature that already carries them.",
+		},
+	}
+
+	var read []armDiscriminators
+	for _, leg := range legs {
 		t.Run(leg.name, func(t *testing.T) {
 			out, catalogLookup := compileSlotWorkspace(t, leg.declaration, filled)
 			objections, err := constraint.RunOnNodeSlots(
@@ -462,18 +561,44 @@ func TestTheSlotFillRuleReportsAConstraintItCannotEvaluate(t *testing.T) {
 			if len(objections) != 2 {
 				t.Fatalf("objections = %d, want one per offending fill", len(objections))
 			}
+			// A content check and no longer the switch. Both arms carry the
+			// constraint, the slot it is declared on, and one value naming what went
+			// wrong with it, so this number is the same on both sides of the
+			// discrimination and cannot perform it.
 			detail := objections[0].Detail()
-			if len(detail) != leg.wantDetail {
-				t.Fatalf("detail = %v, want %d element(s)", detail, leg.wantDetail)
+			if len(detail) != 3 {
+				t.Fatalf("detail = %v, want the constraint, the slot and the value naming what went wrong", detail)
 			}
-			if leg.wantDetail == 3 && detail[len(detail)-1] == "" {
-				t.Error("the finding carries no reason the constraint could not be evaluated")
+			if detail[len(detail)-1] == "" {
+				t.Errorf("the value this arm's own caption names is empty: %v", detail)
 			}
+			read = append(read, discriminatorsOf(t, objections[0], leg.wantCaptions, leg.wantAdvice))
+
 			violations := analyzer.ErrorsFromObjections(objections)
 			if len(violations) != 2 || violations[0].Field != ".spec.components.backend.features."+slotName {
 				t.Errorf("violations = %+v, want two positioned on the offending slots", violations)
 			}
 		})
+	}
+
+	// The cross-arm comparison, which is what the per-leg pins above cannot do.
+	// It is stated as a failure rather than skipped when an arm did not report,
+	// because a comparison over one arm is vacuous and reads exactly like a
+	// comparison that passed.
+	if len(read) != len(legs) {
+		t.Fatalf("%d of the %d arms yielded a discriminator; comparing them would be vacuous", len(read), len(legs))
+	}
+	for i := range read {
+		for j := i + 1; j < len(read); j++ {
+			if read[i].advice == read[j].advice {
+				t.Errorf("the arms %q and %q carry one advice, %q; the rule tells its own violation classes apart by it",
+					legs[i].name, legs[j].name, read[i].advice)
+			}
+			if slices.Equal(read[i].captions, read[j].captions) {
+				t.Errorf("the arms %q and %q carry one caption list, %q; the rule tells its own violation classes apart by it",
+					legs[i].name, legs[j].name, read[i].captions)
+			}
+		}
 	}
 }
 

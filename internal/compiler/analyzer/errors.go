@@ -42,10 +42,13 @@ var errSelectorViolation = cerrors.Register("compiler-analyzer/selector-violatio
 // which of the three label constraints went unsatisfied.
 //
 // The rule reports both an unsatisfied constraint and one the label matcher
-// cannot evaluate at all, under this one identity. What tells them apart is the
-// finding's own detail: the reason the constraint could not be evaluated is
-// carried as its last element, and its absence means the constraint was
-// evaluated and came out false.
+// cannot evaluate at all, under this one identity. Both carry the same number of
+// detail values — the constraint, the slot declaring it, and one value naming
+// what went wrong with it — so the count separates nothing. What tells them apart
+// is the caption on that third value, which names the reason the constraint could
+// not be evaluated in the one case and the Feature whose labels failed it in the
+// other, and the advice the finding carries, which is a different edit for each:
+// correct the declaration, or give the fill the labels the declaration asks for.
 func ErrSlotSelectorUnsatisfied() error { return errSlotSelectorUnsatisfied }
 
 var errSlotSelectorUnsatisfied = cerrors.Register("compiler-analyzer/slot-selector-unsatisfied", cerrors.Meta{

@@ -256,13 +256,21 @@ func TestTheSocketConstraintRuleReportsAConstraintItCannotEvaluate(t *testing.T)
 	}
 	detail := objections[0].Detail()
 	if len(detail) != 3 {
-		t.Fatalf("detail = %v, want the constraint, the target and why it could not be evaluated", detail)
+		t.Fatalf("detail = %v, want the constraint, the socket and why it could not be evaluated", detail)
 	}
-	// The reason the constraint could not be evaluated is the last element, and
-	// its presence is what tells this apart from an evaluated-and-false finding.
 	if detail[len(detail)-1] == "" {
 		t.Error("the finding carries no reason the constraint could not be evaluated")
 	}
+	// What tells this apart from an evaluated-and-false finding is not that a
+	// third value is present — that arm carries three too — but the caption the
+	// rule puts on it and the advice this occurrence carries, so both are pinned
+	// rather than inferred from the count. This drives the unevaluable arm alone,
+	// so it proves what that arm reports and not the discrimination itself; the
+	// comparison of one arm's pair against the other's is taken where both arms
+	// are driven from one table.
+	discriminatorsOf(t, objections[0],
+		[]string{"", "declared on socket", "which could not be evaluated:"},
+		"Correct the selector on the socket's declaration in the component type's usesSchema.")
 	violations := analyzer.ErrorsFromObjections(objections)
 	if len(violations) != 1 || violations[0].Field != ".spec.components.backend.uses.databases" {
 		t.Errorf("violation = %+v, want one positioned on the offending socket", violations)

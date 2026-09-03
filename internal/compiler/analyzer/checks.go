@@ -62,11 +62,11 @@ import (
 // graph already has, and the remedy for a broken declaration is in the catalog
 // rather than in the document the later rules are about.
 //
-// Where a rule evaluates an authored label constraint, the last element of its
-// detail is why that constraint could not be evaluated at all, and its absence
-// means the constraint was evaluated and came out false. A detail carries fact
-// values and never a rendering of them: turning an objection into a message is
-// the framework's job, and a rule that formatted one would be doing it twice.
+// Where a rule evaluates an authored label constraint, the caption on the last
+// element of its detail says whether that constraint could not be evaluated or
+// was evaluated and came out false. A detail carries fact values and never a
+// rendering of them: turning an objection into a message is the framework's job,
+// and a rule that formatted one would be doing it twice.
 
 // EdgeTargetSatisfiesSocketSelector reports each edge whose target does not
 // satisfy the label constraint declared on the socket the edge wires.
