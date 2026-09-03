@@ -127,11 +127,31 @@ var carriedSections = []string{
 // logical id does — and these sections are carried verbatim, so nothing between
 // the author and the emitted bytes would have repaired it.
 //
+// Rules is held to the same alphabet on a weaker footing than the other three, and
+// the difference is written down here because it is the one thing about this list a
+// reader cannot recover from the code. For the parameters, the mappings and the
+// conditions the template language states the character constraint outright. For
+// the rules it states no character rule at all: what it states is that each rule is
+// keyed by a "Logical ID (also called logical name)" giving "a unique identifier
+// for each rule" — the same term whose alphanumeric constraint IS documented for
+// the parameters and the resources — and every example it publishes for that
+// section names a rule in letters and digits alone. So holding the section to the
+// alphabet is an inference from the template language's own vocabulary rather than
+// a quoted character rule.
+//
+// That makes Rules the member to look at first if an author ever meets a refusal
+// here on a name the target does in fact accept: the inference is why the refusal
+// exists and it is the part of the reasoning that could be wrong. It is written as
+// a refusal anyway because the alternative is emitting a name the target may reject
+// to whoever deploys the stack, which is discovered later and by someone who did
+// not author it.
+//
 // 🔴 Only the section's OWN keys are held to it, and never the keys nested inside
 // an entry's body. A mapping's second-level keys are map keys rather than logical
-// ids — a region name such as us-east-1 is ordinary and legitimate there — and a
+// ids — a region name such as us-east-1 is ordinary and legitimate there — a
 // parameter's or a condition's body is keyed by attribute and intrinsic names the
-// author does not choose. Descending would refuse legal input, which is the same
+// author does not choose, and a rule's body is keyed by assertion and intrinsic
+// names the same way. Descending would refuse legal input, which is the same
 // failure excluding a section outright avoids.
 //
 // Together with [alphabetUncheckedSections] this partitions [carriedSections], and
@@ -142,29 +162,26 @@ var alphabetCheckedSections = []string{
 	sectionConditions,
 	sectionMappings,
 	sectionParameters,
+	sectionRules,
 }
 
 // alphabetUncheckedSections are the carried sections whose authored names this
-// core reads without asking anything about their characters. Each is here for its
-// own reason, and neither reason carries to the other.
+// core reads without asking anything about their characters.
 //
-// Metadata is excluded because the template language does not name a logical id
-// in it at all: the section stores additional information as objects of
-// user-defined key-value pairs, so the names in it are free-form and a
+// Metadata is the only one. It is here because the template language does not name
+// a logical id in it at all: the section stores additional information as objects
+// of user-defined key-value pairs, so the names in it are free-form and a
 // letters-and-digits check would refuse input the target accepts. That is the
 // exclusion this list exists for.
 //
-// Rules is here because the alphabet its names lie in is NOT established — not by
-// the template language's logical-id rule, which does not reach it, and not by
-// anything in this core. Leaving it unchecked is the honest answer to an
-// unmeasured alphabet: a check over one nobody established is how a refusal comes
-// to reject legal input. It is deliberately not folded into the reason above
-// either, since the metadata exclusion rests on a documented property of that one
-// section and reading it across would be inventing a second exclusion out of an
-// argument about the first.
+// 🔴 That reason rests on a documented property of this one section and does not
+// carry to any other. A section added here needs its own reason, read from the
+// template language's own documentation — reading this one across would be
+// inventing a second exclusion out of an argument about the first, and an
+// exclusion nobody grounded is how a name the target rejects reaches an emitted
+// template.
 var alphabetUncheckedSections = []string{
 	sectionMetadata,
-	sectionRules,
 }
 
 // namedSections are the sections a merge cannot fold, so the assembled stack
