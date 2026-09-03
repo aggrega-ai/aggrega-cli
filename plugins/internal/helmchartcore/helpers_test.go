@@ -199,7 +199,9 @@ func TestHelmDerivedNameDeterministic(t *testing.T) {
 
 // TestRenderSourcedChart_HappyPath pins the sourced-render success path: a packed
 // chart projection is rebuilt into the file map by RenderSourcedChartCore — the
-// same render core the provider guest runs on the projection the host packs.
+// same render core the provider guest runs on the projection the host packs —
+// with the manifest name taken over by the instance identity and every other
+// file's bytes passed through.
 func TestRenderSourcedChart_HappyPath(t *testing.T) {
 	t.Parallel()
 	chartYAML := `apiVersion: v2
@@ -210,12 +212,18 @@ version: 0.1.0
 		{Path: "Chart.yaml", Content: []byte(chartYAML)},
 		{Path: "templates/deploy.yaml", Content: []byte("kind: Deployment\n")},
 	}}
-	files := RenderSourcedChartCore(proj)
+	files, err := RenderSourcedChartCore(proj, "web", 2)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
 	if _, has := files["Chart.yaml"]; !has {
 		t.Errorf("Chart.yaml missing; got keys=%v", keys(files))
 	}
-	if _, has := files["templates/deploy.yaml"]; !has {
-		t.Errorf("templates/deploy.yaml missing")
+	if got := string(files["Chart.yaml"]); got != "apiVersion: v2\nname: web\nversion: 0.1.0\n" {
+		t.Errorf("manifest should carry the derived name with everything else verbatim; got\n%s", got)
+	}
+	if got := string(files["templates/deploy.yaml"]); got != "kind: Deployment\n" {
+		t.Errorf("a non-manifest file must pass through untouched; got %q", got)
 	}
 }
 
@@ -280,7 +288,10 @@ func TestRenderSourcedChart_NestedFiles(t *testing.T) {
 		{Path: "Chart.yaml", Content: []byte("apiVersion: v2\nname: n\nversion: 0.1.0\n")},
 		{Path: "templates/deep/nested.yaml", Content: []byte("nested: true\n")},
 	}}
-	files := RenderSourcedChartCore(proj)
+	files, err := RenderSourcedChartCore(proj, "n", 2)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
 	if _, has := files["templates/deep/nested.yaml"]; !has {
 		t.Errorf("nested file missing; got keys=%v", keys(files))
 	}
@@ -410,8 +421,20 @@ func TestBuildUmbrella_AllBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sourced: %v", err)
 	}
-	if !strings.Contains(string(files["Chart.yaml"]), "name: real-name") {
-		t.Errorf("sourced dependency should use chart's name; got\n%s", files["Chart.yaml"])
+	// The dependency names the alias, not the name the chart's author wrote: the
+	// render that placed this sub-chart rewrote its manifest to the same alias, and
+	// a dependency naming the author's spelling is what let two instances whose
+	// charts share a name bind both dependencies to one of them.
+	if !strings.Contains(string(files["Chart.yaml"]), "name: sourced-i") {
+		t.Errorf("sourced dependency should name the alias; got\n%s", files["Chart.yaml"])
+	}
+	if strings.Contains(string(files["Chart.yaml"]), "name: real-name") {
+		t.Errorf("sourced dependency must not name the vendored chart's own name; got\n%s", files["Chart.yaml"])
+	}
+	// The version still comes from the vendored chart, which is what binds the
+	// alias at install time.
+	if !strings.Contains(string(files["Chart.yaml"]), "version: 0.1.0") {
+		t.Errorf("sourced dependency version should come from the vendored chart; got\n%s", files["Chart.yaml"])
 	}
 
 	// Sourced sub-chart with missing Chart.yaml → propagates error.

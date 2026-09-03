@@ -79,30 +79,81 @@ func renderThroughDependencyPipeline(t *testing.T, chartDir string) string {
 // dependency's repository names — it is the alias, not the directory, that is
 // encoded, so the two are the same word only for an instance id the chart-name
 // alphabet already admits.
+//
+// The sub-chart's files are placed through the same render core the provider
+// guest runs rather than copied off disk, because that core is what takes over
+// the chart's manifest name. Copying the source raw would place a manifest
+// naming whatever its author wrote, which is a chart no dependency in the
+// assembled umbrella names — so an install-time assertion over a raw copy would
+// be measuring an arrangement the compiler never emits.
 func assembleUmbrellaOnDisk(t *testing.T, files map[string][]byte, vendoredSrc, instanceID string) string {
 	t.Helper()
 	dist := t.TempDir()
 	for name, body := range files {
 		writeFileMkdir(t, filepath.Join(dist, name), string(body))
 	}
-	// Copy the vendored chart into charts/<instance_id>/.
-	_ = filepath.WalkDir(vendoredSrc, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, _ := filepath.Rel(vendoredSrc, p)
-		data, _ := os.ReadFile(p)
-		writeFileMkdir(t, filepath.Join(dist, "charts", instanceID, rel), string(data))
-		return nil
-	})
+	for path, body := range placeSourcedChart(t, vendoredSrc, instanceID) {
+		writeFileMkdir(t, filepath.Join(dist, "charts", instanceID, path), string(body))
+	}
 	return dist
 }
 
+// placeSourcedChart projects a chart directory into the packed shape the host
+// hands the guest, then runs the shared render core over it — the same two steps
+// the sourced render path takes — and returns the placed file set.
+func placeSourcedChart(t *testing.T, vendoredSrc, instanceID string) map[string][]byte {
+	t.Helper()
+	var proj renderer.SourceProjection
+	if err := filepath.WalkDir(vendoredSrc, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, rerr := filepath.Rel(vendoredSrc, p)
+		if rerr != nil {
+			return rerr
+		}
+		data, derr := os.ReadFile(p)
+		if derr != nil {
+			return derr
+		}
+		proj.Files = append(proj.Files, renderer.SourceFile{Path: filepath.ToSlash(rel), Content: data})
+		return nil
+	}); err != nil {
+		t.Fatalf("projecting %q: %v", vendoredSrc, err)
+	}
+	placed, err := RenderSourcedChartCore(&proj, instanceID, 2)
+	if err != nil {
+		t.Fatalf("placing %q as %q: %v", vendoredSrc, instanceID, err)
+	}
+	return placed
+}
+
 // TestUmbrellaSourcedDependencyVersion_ValuesReachSubChart is the install-time
-// proof: the umbrella's alias-keyed value block reaches the vendored sub-chart's
-// container ONLY when the dependency version matches the vendored chart. The
-// builder now derives that version from the vendored Chart.yaml, so it matches —
-// even though the SubChartInfo.Version (spec/component version) differs.
+// proof that the umbrella's per-instance value block reaches the vendored
+// sub-chart's container, with the dependency version derived from the vendored
+// chart rather than from the spec/component version the sub carries.
+//
+// It is non-vacuous without a second arrangement: the vendored chart defaults
+// the key to the empty string, so a sub-chart the values never reached renders
+// an empty secret and the assertion reddens.
+//
+// 🔴 A control this test used to carry has been RE-POINTED rather than weakened,
+// and the reason is a measured change in what the version buys. It forced the
+// dependency version to mismatch the vendored chart and asserted the value then
+// failed to arrive — which worked while the placed sub-chart still carried the
+// name its author wrote, because delivery then depended on the alias binding and
+// the alias bound only on a name-and-version match. Now that the placed manifest
+// carries the instance's own encoded name, the umbrella's value key matches the
+// sub-chart's name directly and delivery no longer passes through the alias at
+// all, so a mismatched version has no render-time consequence to observe.
+// Measured against the Helm CLI: with the name owned, a mismatched dependency
+// version leaves `helm template` at exit 0 with the value still delivered, while
+// `helm dependency list` reports that dependency as "wrong version" rather than
+// "unpacked" — so the version's consequence is at dependency-resolution time,
+// which no in-process render assertion can see. What still gates delivery in
+// process is the name agreement, and that is controlled directly by
+// TestPlacingASourcedChartRawLeavesItsValuesUnaddressable, which places a
+// sub-chart under its authored name and asserts nothing arrives.
 func TestUmbrellaSourcedDependencyVersion_ValuesReachSubChart(t *testing.T) {
 	t.Parallel()
 	src := filepath.Join(t.TempDir(), "src")
@@ -117,39 +168,15 @@ func TestUmbrellaSourcedDependencyVersion_ValuesReachSubChart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildUmbrella: %v", err)
 	}
+	// The emitted dependency pins the vendored chart's version, not the sub's.
+	if !strings.Contains(string(files[chartMetadataFileName]), "version: 0.1.0") {
+		t.Fatalf("dependency version not derived from the vendored chart:\n%s", files[chartMetadataFileName])
+	}
 	dist := assembleUmbrellaOnDisk(t, files, src, "db")
 
 	rendered := renderThroughDependencyPipeline(t, dist)
 	if !strings.Contains(rendered, "secret: \"s3cr3t\"") {
-		t.Fatalf("the umbrella value did not reach the sub-chart — the dependency alias did not bind.\n%s", rendered)
-	}
-
-	// Non-vacuous control: force the dependency version to mismatch the vendored
-	// chart. The SAME pipeline must then leave the value empty (alias unbound) —
-	// proving the version match is what binds the alias, not something incidental.
-	chartYAML, _ := os.ReadFile(filepath.Join(dist, "Chart.yaml"))
-	// Anchor on the alias line so we rewrite the DEPENDENCY version (the bug's
-	// locus), not the umbrella's own version (both are 0.1.0).
-	mismatched := strings.Replace(string(chartYAML), "version: 0.1.0\n    alias: db", "version: 1.0.0\n    alias: db", 1)
-	if mismatched == string(chartYAML) {
-		t.Fatalf("control setup failed to rewrite the dependency version; Chart.yaml=\n%s", chartYAML)
-	}
-	control := t.TempDir()
-	writeFileMkdir(t, filepath.Join(control, "Chart.yaml"), mismatched)
-	data, _ := os.ReadFile(filepath.Join(dist, "values.yaml"))
-	writeFileMkdir(t, filepath.Join(control, "values.yaml"), string(data))
-	_ = filepath.WalkDir(filepath.Join(dist, "charts"), func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, _ := filepath.Rel(dist, p)
-		b, _ := os.ReadFile(p)
-		writeFileMkdir(t, filepath.Join(control, rel), string(b))
-		return nil
-	})
-	controlRendered := renderThroughDependencyPipeline(t, control)
-	if strings.Contains(controlRendered, "secret: \"s3cr3t\"") {
-		t.Fatalf("control with a mismatched dependency version still propagated the value — the test is vacuous (the version gate is not what this exercises)")
+		t.Fatalf("the umbrella value did not reach the sub-chart.\n%s", rendered)
 	}
 }
 

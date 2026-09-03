@@ -94,12 +94,18 @@ func ReadChartMetaBytes(data []byte, label string) (name, version string, err er
 // source). When empty, the name is derived from the dispatch path.
 //
 // Per sub-chart: a sourced sub-chart (ChartYAML non-empty) draws its dependency
-// name AND version from the vendored chart's own Chart.yaml — Helm binds a
-// dependency to a vendored sub-chart by that chart's own name and version rather
-// than by the directory it sits in, so a version drawn from the spec/component
-// version would leave the alias unbound and the umbrella's per-instance values
-// would never reach the sub-chart. A generative sub-chart (ChartYAML empty) uses
-// name == alias and version from the sub's Version (or the default).
+// VERSION from the vendored chart's own Chart.yaml — Helm binds a dependency to
+// a vendored sub-chart by that chart's own name and version rather than by the
+// directory it sits in, so a version drawn from the spec/component version would
+// leave the alias unbound and the umbrella's per-instance values would never
+// reach the sub-chart. Its NAME is the alias, and that is where the two halves
+// part company: the render that placed the sub-chart rewrote its manifest name to
+// the same encoded identity, so the name on both sides is derived from the
+// instance rather than written by the chart's author. That is what keeps two
+// instances whose vendored charts declare one name from binding both
+// dependencies to one of them — a shared version is harmless, a shared name is
+// not. A generative sub-chart (ChartYAML empty) uses version from the sub's
+// Version (or the default), so the name is the alias on every path.
 //
 // The alias is the encoded instance id, so Helm scopes the umbrella's
 // per-instance values under that key. Because the encoding is injective, two
@@ -137,18 +143,25 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 	deps := make([]umbrellaChartDependency, 0, len(subs))
 	values := make(map[string]any, len(subs))
 	for _, sc := range subs {
+		// The alias is also the dependency's name, on every path: a generative
+		// sub-chart has no vendored manifest to take one from, and a sourced one
+		// had its placed manifest's name rewritten to this same value at render.
 		alias := helmNameEncoding.Segment(sc.InstanceID)
-		depName := alias
 		version := sc.Version
 		if version == "" {
 			version = defaultChartVersion
 		}
 		if len(sc.ChartYAML) > 0 {
-			metaName, metaVersion, err := ReadChartMetaBytes(sc.ChartYAML, sc.InstanceID)
+			// The version comes from the vendored chart and the name deliberately
+			// does not. The render that placed this sub-chart rewrote its manifest
+			// name to the same encoded identity the alias is built from, so the
+			// dependency names that instead of the name the chart's author wrote —
+			// which is what stops two instances whose charts declare one name from
+			// binding both dependencies to one of them.
+			_, metaVersion, err := ReadChartMetaBytes(sc.ChartYAML, sc.InstanceID)
 			if err != nil {
 				return nil, err
 			}
-			depName = metaName
 			version = metaVersion
 		}
 		// The repository names the sub-chart's own directory under the umbrella,
@@ -161,7 +174,7 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 		// whenever they differ, which `helm dependency build` and
 		// `helm dependency update` resolve and refuse.
 		deps = append(deps, umbrellaChartDependency{
-			Name:       depName,
+			Name:       alias,
 			Version:    version,
 			Alias:      alias,
 			Repository: "file://charts/" + sc.InstanceID,

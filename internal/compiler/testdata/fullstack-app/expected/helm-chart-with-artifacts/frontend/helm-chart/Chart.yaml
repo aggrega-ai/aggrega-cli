@@ -3,7 +3,7 @@ name: fullstack-app--dist-zsfrontend-zshelm-chart
 version: 0.1.0
 description: Aggrega umbrella chart for boundary "dist/frontend/helm-chart"
 dependencies:
-  - name: web-ui
+  - name: frontend
     version: 0.1.0
     alias: frontend
     repository: file://charts/frontend

@@ -294,14 +294,22 @@ func TestFullstackApp_ComposeWithArtifacts(t *testing.T) {
 }
 
 // assertSourcedUmbrellaProof covers the helm-chart sourced variant. The user's
-// chart is placed under charts/<instance_id>/ verbatim, so templates still
-// reference {{ .Values.* }}. We verify propagation through umbrella files:
+// chart is placed under charts/<instance_id>/ with their own bytes, except the
+// chart's own name, which the umbrella owns — so templates still reference
+// {{ .Values.* }}. We verify propagation through umbrella files:
 //
-//   - umbrella Chart.yaml declares dependencies using the user's chart name
-//     with alias=<instance_id>
-//   - sub-chart Chart.yaml preserves the user's original chart name
+//   - the sub-chart Chart.yaml carries the name derived from the instance
+//     identity rather than the name the chart's author wrote
+//   - umbrella Chart.yaml declares its dependency under that same derived name,
+//     with alias=<instance_id>, so the two sides agree
 //   - umbrella values.yaml scopes per-instance values (replicas, port,
 //     environment.API_HOST) under the instance alias
+//
+// The name is derived rather than preserved because a chart's name is the key
+// Helm binds a dependency by, and it is written by whoever authored the chart:
+// two components vendoring charts that declare one name would otherwise leave
+// both dependencies resolving to one of them, with one chart's templates
+// rendering twice and the other's never, and every value still arriving.
 //
 // Namespace injection is out of scope here: in sourced mode the user's chart
 // controls metadata.namespace (typically via .Release.Namespace), which the
@@ -317,19 +325,27 @@ func assertSourcedUmbrellaProof(t *testing.T, res *fullstackAppResult) {
 		t.Fatalf("frontend sub-chart nesting missing; files: %v", sortedKeys(res.Files))
 	}
 
-	// Sub-chart preserves user's original chart name
+	// The sub-chart carries the derived name, not the one its author wrote.
 	subChart, subPath := findFile(res.Files, "dist/frontend/helm-chart/charts/frontend/Chart.yaml")
 	if subChart == "" {
 		t.Fatalf("frontend sub-chart Chart.yaml not found; files: %v", sortedKeys(res.Files))
 	}
-	if !strings.Contains(subChart, "name: web-ui") {
-		t.Errorf("sourced sub-chart did not preserve user's chart name `web-ui` (%s):\n%s", subPath, subChart)
+	if !strings.Contains(subChart, "name: frontend") {
+		t.Errorf("sourced sub-chart does not carry the derived name `frontend` (%s):\n%s", subPath, subChart)
+	}
+	if strings.Contains(subChart, "name: web-ui") {
+		t.Errorf("sourced sub-chart still carries the authored chart name `web-ui`, so two components vendoring one chart name would collide (%s):\n%s", subPath, subChart)
 	}
 
-	// Umbrella dep uses original chart name with alias = instance_id
+	// The umbrella's dependency names that same derived name, with alias =
+	// instance_id. A dependency naming anything else points at a chart that is
+	// not in charts/, which `helm template` refuses outright.
 	umbrella, umbrellaPath := findFile(res.Files, "dist/frontend/helm-chart/Chart.yaml")
-	if !strings.Contains(umbrella, "- name: web-ui") {
-		t.Errorf("umbrella dep missing original chart name `web-ui` (%s):\n%s", umbrellaPath, umbrella)
+	if !strings.Contains(umbrella, "- name: frontend") {
+		t.Errorf("umbrella dep does not name the placed sub-chart `frontend` (%s):\n%s", umbrellaPath, umbrella)
+	}
+	if strings.Contains(umbrella, "- name: web-ui") {
+		t.Errorf("umbrella dep still names the authored chart name `web-ui` (%s):\n%s", umbrellaPath, umbrella)
 	}
 	if !strings.Contains(umbrella, "alias: frontend") {
 		t.Errorf("umbrella dep missing alias=frontend (%s):\n%s", umbrellaPath, umbrella)

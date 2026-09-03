@@ -1,4 +1,4 @@
 apiVersion: v2
-name: web-ui
+name: frontend
 version: 0.1.0
 description: fullstack-app sourced chart for core/compute/web-ui.

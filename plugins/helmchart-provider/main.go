@@ -11,16 +11,18 @@
 // them, so identical input produces byte-identical output.
 //
 // The helm-chart provider is sourced-only: it copies a user's local Helm chart
-// verbatim into a sub-chart file set (umbrella + sub-chart composition). It
-// synthesizes nothing from a Workload — workload synthesis is the helm provider's
-// concern — so the guest handles a source projection alone and rejects a payload
-// that carries none.
+// into a sub-chart file set (umbrella + sub-chart composition), verbatim except
+// for the chart's own name, which the umbrella owns. It synthesizes nothing from
+// a Workload — workload synthesis is the helm provider's concern — so the guest
+// handles a source projection alone and rejects a payload that carries none.
 //
 // The render_node guest decodes a RenderNodeInput, resolves the sub-chart from
 // the payload's name-only SourceListing, asks the host to pack the chart's file
 // tree through the pack-source host function (the guest touches no filesystem
-// itself), and returns each file's bytes verbatim as a
-// RenderedFile. The assemble_boundary guest decodes an AssembleBoundaryInput,
+// itself), and returns each file's bytes as a RenderedFile — every one of them
+// the author's own bytes, except the chart manifest's name, which is derived
+// from the node's identity so that two instances vendoring charts that declare
+// one name remain addressable apart. The assemble_boundary guest decodes an AssembleBoundaryInput,
 // reconstructs each sub-chart's pure-data view from the payload (identity,
 // per-instance values, and the pristine bytes of the vendored chart's Chart.yaml
 // the host read at compile time), and assembles the umbrella Chart.yaml +
@@ -173,15 +175,33 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 		"helmchart-provider: render_node input carries neither a source listing nor an artifacts projection")
 }
 
-// renderSourcedFromInput copies the sourced sub-chart verbatim into a sub-chart
-// file set via the shared render core, returning each file's bytes keyed by its
-// chart-root-relative path in deterministic order.
+// renderSourcedFromInput copies the sourced sub-chart into a sub-chart file set
+// via the shared render core, returning each file's bytes keyed by its
+// chart-root-relative path in deterministic order. Every file's bytes are the
+// author's own except the chart's manifest name, which the render core derives
+// from this node's identity so that two instances vendoring charts that declare
+// one name stay addressable apart.
+//
+// The identity is the basis the node carries for names a guest derives from
+// source an author wrote, falling back to the node id where the node carries
+// none — which is the value for an ordinary component, and the same identity the
+// umbrella's own assembly derives that sub-chart's alias from. A contributor
+// reaching a render under a dispatch identity the compiler built carries the
+// basis explicitly, because that identity opens with a character a chart name
+// refuses.
 func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	proj, err := packSourcedChart(in.SourceListing)
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
-	rendered := helmchartcore.RenderSourcedChartCore(proj)
+	identity := in.Node.DerivedNameBasis
+	if identity == "" {
+		identity = in.Node.ID
+	}
+	rendered, err := helmchartcore.RenderSourcedChartCore(proj, identity, in.Context.YAMLIndent)
+	if err != nil {
+		return rendercore.RenderNodeOutput{}, err
+	}
 
 	out := rendercore.RenderNodeOutput{Files: make([]rendercore.RenderedFile, 0, len(rendered))}
 	for _, path := range sortedKeys(rendered) {

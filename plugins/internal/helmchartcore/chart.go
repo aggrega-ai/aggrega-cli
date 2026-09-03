@@ -8,6 +8,12 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 const (
 	helmChartAPIVersion = "v2"
 	defaultChartVersion = "0.1.0"
+	// chartMetadataFileName is the file a chart declares its own name and
+	// version in, at the chart root. It is named once because three paths in this
+	// package reach it — validating an acquired listing, rewriting the placed
+	// manifest's name, and reading the dependency's version — and a literal
+	// repeated across them is a literal that can come to disagree.
+	chartMetadataFileName = "Chart.yaml"
 )
 
 // helmNameEncoding is the segment encoding the umbrella chart name and the

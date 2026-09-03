@@ -23,8 +23,8 @@ func ValidateSourcedChartListing(listing *rendercore.SourceListing) error {
 	if !listing.RootIsDir {
 		return fmt.Errorf("helmchart sourced: source %q is not a directory", listing.Root)
 	}
-	if !listingHasFile(listing, "Chart.yaml") {
-		return fmt.Errorf("helmchart sourced: %q has no Chart.yaml", listing.Root)
+	if !listingHasFile(listing, chartMetadataFileName) {
+		return fmt.Errorf("helmchart sourced: %q has no %s", listing.Root, chartMetadataFileName)
 	}
 	return nil
 }
