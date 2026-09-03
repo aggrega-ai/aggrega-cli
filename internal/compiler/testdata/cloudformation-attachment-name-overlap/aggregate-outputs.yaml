@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cfn-attachment-outputs-app
+  version: "1.0.0"
+  description: >
+    One host that declares an Outputs entry of its own, carrying one attachment
+    that declares an Outputs entry of its own. What the assembled stack's Outputs
+    section then carries, and under which names, is the measurement.
+spec:
+  components:
+    alpha:
+      type: core/cfn-outputs-host
+      features:
+        aux:
+          type: feature.id/cfn-aux-outputs

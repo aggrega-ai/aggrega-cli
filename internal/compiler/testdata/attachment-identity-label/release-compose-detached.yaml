@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: identity-release-compose-detached
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: identity-app-detached
+  manifest: identity-manifest-compose
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        alpha: {}

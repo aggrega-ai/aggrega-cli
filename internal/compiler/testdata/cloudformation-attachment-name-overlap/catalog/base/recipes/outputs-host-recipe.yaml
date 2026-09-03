@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: cfn-outputs-host-recipe
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: core/cfn-outputs-host
+  # A host that declares an Outputs entry of its own as well as a resource, so a
+  # stack assembled from this component and an attachment carries an output from
+  # each of them. Two outputs in one section is what makes the section's naming
+  # observable: one arriving under the other's name, or displacing it, is a
+  # different stack from one carrying both.
+  artifacts:
+    outputs-host.yaml: |
+      Resources:
+        OutputsHostBucket:
+          Type: AWS::S3::Bucket
+      Outputs:
+        Endpoint:
+          Description: Where the host component's own bucket is reached.
+          Value: !Ref OutputsHostBucket

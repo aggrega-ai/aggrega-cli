@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: cfn-aux-outputs
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: feature.id/cfn-aux-outputs
+  # The fragment declares an Outputs entry as well as a resource. The entry name
+  # is deliberately NOT the one the host declares, so the two land under distinct
+  # names and the stack can be read for both — an attachment whose entry name
+  # matched the host's would test the reconciliation of one name instead, which is
+  # a different question.
+  artifacts:
+    aux-fragment.yaml: |
+      Resources:
+        AuxOutputsAlarm:
+          Type: AWS::CloudWatch::Alarm
+          Properties:
+            ComparisonOperator: GreaterThanThreshold
+            EvaluationPeriods: 1
+      Outputs:
+        AlarmName:
+          Description: Which alarm this attachment installed on its host.
+          Value: !Ref AuxOutputsAlarm

@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cfn-attachment-outputs-overlapping-app
+  version: "1.0.0"
+  description: >
+    The outputs shape with the attachment declaring its Outputs entry under
+    exactly the name the host component declares one. A component-scope
+    attachment derives its names from the host it renders against, so the two
+    entries reach one Output name.
+spec:
+  components:
+    alpha:
+      type: core/cfn-outputs-host
+      features:
+        aux:
+          type: feature.id/cfn-aux-outputs-overlapping

@@ -318,3 +318,289 @@ func TestCloudFormationAttachmentOnOneHost_ReadsTheEmittedOutput(t *testing.T) {
 	}
 	t.Logf("assembled stack top-level sections: %v", mapKeys(reread))
 }
+
+// TestCloudFormationAttachmentDetached_TheStackLacksExactlyTheAttachmentsResources
+// is the other direction of the same measurement, and it is the direction a
+// presence read structurally cannot supply.
+//
+// The case above finds the attachment's resource inside the assembled stack. On
+// its own that says nothing about the merge: a stack carrying AuxAlarm whatever
+// was attached — because the host's own template declared it, or because the
+// assembler emits a fixed set — satisfies every presence read in this file. So
+// the same shape is built a second time with the Feature detached and nothing
+// else changed, and the two stacks' resource sets are compared.
+//
+// The comparison is a set difference that NAMES what moved rather than a count,
+// and it is asserted both ways. The detached stack must lack exactly the
+// attachment's resource; it must also still carry every resource the host
+// declares itself. That second half is what a fixture rendering nothing would
+// fail — a build emitting an empty Resources map equally "lacks the attachment's
+// resource", and would pass an absence read written on its own.
+//
+// What a planted defect does to it, so the failure mode is demonstrated rather
+// than assumed: routing the attachment into the dispatch group without regard to
+// whether the Feature is attached puts AuxAlarm into the detached stack, and the
+// difference then names an unexpected member. Dropping the merge instead empties
+// the difference, which this case reports as removing the wrong set. Emitting the
+// fragment beside the stack rather than into it leaves the difference correct and
+// is caught by the whole-output read at the end.
+func TestCloudFormationAttachmentDetached_TheStackLacksExactlyTheAttachmentsResources(t *testing.T) {
+	t.Parallel()
+
+	attached := pipelinetest.Build(t, cfnOverlapInput("single-host"))
+	detached := pipelinetest.Build(t, cfnOverlapInput("detached"))
+
+	attachedDoc, _ := findCfnStack(t, attached.Artifacts, "stack")
+	detachedDoc, detachedRaw := findCfnStack(t, detached.Artifacts, "stack")
+	t.Logf("the stack assembled with the Feature detached:\n%s", detachedRaw)
+
+	attachedIDs := mapKeys(mustCfnMap(t, attachedDoc, "Resources"))
+	detachedIDs := mapKeys(mustCfnMap(t, detachedDoc, "Resources"))
+	sort.Strings(attachedIDs)
+	sort.Strings(detachedIDs)
+	t.Logf("attached stack resource logical ids: %v", attachedIDs)
+	t.Logf("detached stack resource logical ids: %v", detachedIDs)
+
+	inDetached := make(map[string]bool, len(detachedIDs))
+	for _, id := range detachedIDs {
+		inDetached[id] = true
+	}
+	var removed []string
+	for _, id := range attachedIDs {
+		if !inDetached[id] {
+			removed = append(removed, id)
+		}
+	}
+	t.Logf("detaching the Feature removed: %v", removed)
+	if len(removed) != 1 || removed[0] != "AuxAlarm" {
+		t.Errorf("detaching the Feature must remove exactly the attachment's resource AuxAlarm; it removed %v\nattached %v\ndetached %v",
+			removed, attachedIDs, detachedIDs)
+	}
+
+	// The host's own resources survive the detachment. Without this, a stack with
+	// an empty Resources map would satisfy the difference read above.
+	for _, id := range []string{"HostBucket", "HostQueue"} {
+		if !inDetached[id] {
+			t.Errorf("the host component's own resource %q must survive detaching the Feature; the detached stack carries %v",
+				id, detachedIDs)
+		}
+	}
+
+	// The attachment is gone from the WHOLE emitted output, not merely from the
+	// stack: a build that stopped merging the fragment but still wrote it beside
+	// the stack would satisfy the set difference above while shipping the same
+	// resource. Its identity stamp is read alongside its resource id, because the
+	// two travel separately — the merge carries the contribution's own identity
+	// rather than re-attributing it, so a leak could surface as either.
+	for _, p := range sortedKeys(detached.Artifacts) {
+		body := string(detached.Artifacts[p])
+		for _, gone := range []string{"AuxAlarm", "cfr--alpha--aux"} {
+			if strings.Contains(body, gone) {
+				t.Errorf("the detached build still emits %q at %q:\n%s", gone, p, body)
+			}
+		}
+	}
+}
+
+// TestCloudFormationAttachmentOutputs_TheStackCarriesEachContributorsEntry
+// covers the stack's Outputs section, which is the other space the merge folds
+// under names it derives rather than reading verbatim.
+//
+// The cases above are all about the Resources space, whose logical ids the merge
+// reads exactly as their author wrote them. An Output name is the opposite: the
+// merge builds it from the contributing node's name basis and the authored entry
+// name together, so what an author gets depends on which basis the assembler
+// read for the contributor.
+//
+// For a component-scope attachment that basis is the HOST COMPONENT it renders
+// against rather than the attachment's own dispatch identity, and the two facts
+// that makes true are asserted side by side here, because reading either alone
+// misdescribes the model:
+//
+//   - The attachment is a contributor of its own. Its resource carries its own
+//     provenance identity, and the collision case below names it apart from its
+//     host.
+//   - Its Output name is scoped to the host all the same. So a host and its own
+//     attachment share one Output namespace, which is why a name they both reach
+//     has to halt rather than merge — the case below.
+//
+// The shape is one host declaring an Outputs entry of its own, carrying one
+// attachment declaring an Outputs entry of its own, with DIFFERENT entry names.
+// Different names is what makes this case a statement about what the section
+// carries; one name is the separate question the collision case answers.
+//
+// Both expected names are written out in full rather than built here from the
+// basis and the entry. A name composed in the test would be composed by the same
+// rule the assembler uses, so it would follow the assembler wherever it moved and
+// the assertion would keep passing through a rename that changed every author's
+// output names.
+//
+// What a planted defect does to it, so the failure mode is demonstrated rather
+// than assumed: renaming the entry the attachment authors moves its Output name,
+// and the exact-set read reports the expected name missing and the moved one
+// unexpected. Dropping the host's own Outputs block leaves the attachment's entry
+// alone in the section, which the host-entry read reports directly. Emitting the
+// fragment beside the stack rather than into it leaves both reads correct and is
+// caught by the whole-output read at the end.
+func TestCloudFormationAttachmentOutputs_TheStackCarriesEachContributorsEntry(t *testing.T) {
+	t.Parallel()
+
+	res := pipelinetest.Build(t, cfnOverlapInput("outputs"))
+
+	stack, raw := findCfnStack(t, res.Artifacts, "stack")
+	t.Logf("assembled stack template:\n%s", raw)
+
+	outputs := mustCfnMap(t, stack, "Outputs")
+	names := mapKeys(outputs)
+	sort.Strings(names)
+	t.Logf("assembled stack Output names: %v", names)
+
+	// Each contributor's entry, under the name the merge builds from that
+	// contributor's name basis and the entry it authored. Both bases read "alpha"
+	// here — the host's own identity, and, for a component-scope attachment, the
+	// host it renders against — so the two entries are told apart by the entry
+	// names their authors chose rather than by their scopes.
+	const (
+		hostEntry       = "AlphaEndpoint"
+		attachmentEntry = "AlphaAlarmName"
+	)
+
+	if _, present := outputs[attachmentEntry]; !present {
+		t.Errorf("the assembled stack does not carry the attachment's Outputs entry at %q; it carries %v",
+			attachmentEntry, names)
+	}
+	// The host's own entry survives alongside it. Without this the presence read
+	// above passes on a stack whose Outputs section holds the attachment's entry
+	// and nothing else — a merge that displaced the host's own entry rather than
+	// folding both.
+	if _, present := outputs[hostEntry]; !present {
+		t.Errorf("the assembled stack does not carry the host component's own Outputs entry at %q; it carries %v",
+			hostEntry, names)
+	}
+	// The exact set, as a difference that names what moved in each direction
+	// rather than a count — both sides short by one still agree on a count.
+	want := map[string]bool{hostEntry: true, attachmentEntry: true}
+	var unexpected []string
+	for _, n := range names {
+		if !want[n] {
+			unexpected = append(unexpected, n)
+		}
+	}
+	if len(unexpected) > 0 {
+		t.Errorf("the assembled stack carries Output name(s) neither contributor accounts for: %v\nit carries %v",
+			unexpected, names)
+	}
+
+	// The attachment's entry carries the attachment's OWN body. The name and the
+	// body travel separately, so a merge that folded one contributor's name over
+	// another's value would satisfy every read above — and with both entries
+	// scoped to one basis, that is the shape a mis-reconciliation would take.
+	attachmentBody := mustCfnMap(t, outputs, attachmentEntry)
+	t.Logf("the attachment's Output body: %#v", attachmentBody)
+	if !strings.Contains(string(raw), "AuxOutputsAlarm") {
+		t.Errorf("the assembled stack does not reference the attachment's own resource from anywhere:\n%s", raw)
+	}
+	// And the attachment is a contributor of its own inside the merged document,
+	// which is the half of the model the shared name basis does not describe.
+	if !strings.Contains(string(raw), `"aggrega.ai/component-id": "cfr--alpha--aux"`) {
+		t.Errorf("the merged stack does not stamp the attachment's own identity on its resource:\n%s", raw)
+	}
+
+	// And the attachment's entry reached the stack alone rather than the stack and
+	// a file beside it. Read over the whole emitted output for the same reason the
+	// resource case reads it: a build that merged the fragment AND wrote it out
+	// delivers the same content twice, and every read above would pass.
+	var carriers []string
+	for _, p := range sortedKeys(res.Artifacts) {
+		if strings.Contains(string(res.Artifacts[p]), "AuxOutputsAlarm") {
+			carriers = append(carriers, p)
+		}
+	}
+	t.Logf("the file(s) carrying the attachment's resource: %v", carriers)
+	if len(carriers) != 1 {
+		t.Errorf("the attachment's contribution must be carried by the assembled stack alone; it is carried by %v", carriers)
+	}
+	for _, p := range carriers {
+		if strings.Contains(p, "features/") {
+			t.Errorf("a discrete attachment file still carries the attachment's contribution at %q; the fragment was merged and written both", p)
+		}
+	}
+}
+
+// TestCloudFormationAttachmentOutputsOverlappingEntry_Halts is what makes the
+// case above a statement rather than an observation, and it is the direction the
+// shared name basis makes necessary.
+//
+// A component-scope attachment derives its Output names from the host component
+// it renders against, so a host and its own attachment share one Output
+// namespace. Two entries an author named differently stay apart in it — the case
+// above — and two an author named identically reach one name, where one body
+// would displace the other and the output the displaced entry described would
+// leave the stack with nothing said about it.
+//
+// So the build halts, and the halt carries ONE FINDING PER CONTRIBUTOR rather
+// than one per name. That is the part worth pinning: the two contributors share
+// a name basis and are not the same contributor, so a report naming the basis
+// alone would name one thing twice and leave an author unable to tell which of
+// the two files to open. The attachment's finding carries the attachment key as
+// well as the host, exactly as the Resources cases above require.
+//
+// What a planted defect does to it: pointing this release at the aggregate whose
+// attachment authors a DIFFERENT entry name removes the collision, the build
+// succeeds, and the first assertion fires. Reporting the collision once rather
+// than per contributor fails the count; dropping the attachment key from its
+// finding fails the coordinate read.
+func TestCloudFormationAttachmentOutputsOverlappingEntry_Halts(t *testing.T) {
+	t.Parallel()
+
+	_, err := pipelinetest.BuildE(t, cfnOverlapInput("outputs-overlapping"))
+	if err == nil {
+		t.Fatal("a host and its own attachment authoring one Outputs entry name built cleanly; one of the two bodies is lost in a merged stack")
+	}
+	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
+		t.Fatalf("the build failed for a different reason than the derived-name collision: %v", err)
+	}
+	findings := cfnOverlapFindings(t, err)
+	t.Logf("the halt carries %d finding(s):\n%s", len(findings), strings.Join(findings, "\n"))
+
+	if len(findings) != 2 {
+		t.Fatalf("expected one finding per contributor that met on the Output name, got %d\nfindings:\n%s",
+			len(findings), strings.Join(findings, "\n"))
+	}
+	for _, f := range findings {
+		// The DERIVED name rather than the entry name either author wrote: it is
+		// what the stack would have addressed one output by, and it is the string
+		// an author will not find by searching their own files, which is why the
+		// report has to carry it.
+		if !strings.Contains(f, `"AlphaEndpoint"`) {
+			t.Errorf("a finding does not name the Output name the two contributors met on\ngot: %s", f)
+		}
+		// And the key space, so the report is not read as a resource collision.
+		// Both spaces are folded by one rule and refused by one check, so the
+		// space is the only thing separating the two reports.
+		if !strings.Contains(f, "output-logical-ids") {
+			t.Errorf("a finding does not name the key space the collision is in\ngot: %s", f)
+		}
+	}
+
+	// One finding per contributor, each named by its own coordinates. The
+	// attachment's is named by BOTH — asserting the host alone would pass on a
+	// report that lost the attachment key, and with the two contributors sharing
+	// the basis "alpha" that key is the only thing telling them apart.
+	var host, attachment bool
+	for _, f := range findings {
+		if strings.Contains(f, `derived by component "alpha", carrying attachment "aux"`) {
+			attachment = true
+			continue
+		}
+		if strings.Contains(f, `derived by component "alpha"`) {
+			host = true
+		}
+	}
+	if !host {
+		t.Errorf("the host component's own derivation is not named\nfindings:\n%s", strings.Join(findings, "\n"))
+	}
+	if !attachment {
+		t.Errorf("the attachment's derivation is not named with both its coordinates\nfindings:\n%s", strings.Join(findings, "\n"))
+	}
+}

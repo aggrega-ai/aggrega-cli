@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cfn-attachment-detached-app
+  version: "1.0.0"
+  description: >
+    The single-host shape with the Feature attachment removed and nothing else
+    changed. The host component still declares both its own resources, so what
+    the assembled stack then lacks is attributable to the detachment rather than
+    to a build that rendered nothing.
+spec:
+  components:
+    alpha:
+      type: core/cfn-host

@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: cfn-aux-outputs-overlapping
+  version: "1.0.0"
+spec:
+  capability: cloudformation
+  implements: feature.id/cfn-aux-outputs-overlapping
+  # The fragment declares its Outputs entry under exactly the name the host
+  # component declares one, with a different body. A component-scope attachment
+  # derives its names from the host component it renders against, so the two
+  # entries reach one Output name and one of the two bodies would be lost.
+  artifacts:
+    aux-fragment.yaml: |
+      Resources:
+        AuxOverlappingAlarm:
+          Type: AWS::CloudWatch::Alarm
+          Properties:
+            ComparisonOperator: GreaterThanThreshold
+            EvaluationPeriods: 1
+      Outputs:
+        Endpoint:
+          Description: Which alarm this attachment installed on its host.
+          Value: !Ref AuxOverlappingAlarm

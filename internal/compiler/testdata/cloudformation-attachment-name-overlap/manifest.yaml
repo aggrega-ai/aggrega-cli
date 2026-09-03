@@ -8,8 +8,11 @@ spec:
     components:
       type:
         core/cfn-host: cfn-host-recipe:1.0.0
+        core/cfn-outputs-host: cfn-outputs-host-recipe:1.0.0
     features:
       type:
         feature.id/cfn-aux-overlapping: cfn-aux-overlapping:1.0.0
         feature.id/cfn-aux-distinct: cfn-aux-distinct:1.0.0
         feature.id/cfn-aux-self-repeating: cfn-aux-self-repeating:1.0.0
+        feature.id/cfn-aux-outputs: cfn-aux-outputs:1.0.0
+        feature.id/cfn-aux-outputs-overlapping: cfn-aux-outputs-overlapping:1.0.0

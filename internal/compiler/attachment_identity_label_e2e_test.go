@@ -16,6 +16,7 @@
 package compiler_test
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
@@ -226,6 +227,96 @@ func TestAttachmentIdentity_AnAuthorsChartKeepsTheHostReleaseName(t *testing.T) 
 	if !strings.HasSuffix(key, "/alpha-service-alpha.yaml") {
 		t.Errorf("the sourced render's emitted file key must stay prefixed with the host's name; got %q", key)
 	}
+}
+
+// TestAttachmentIdentity_DetachingTheFeaturesRemovesExactlyTheirContributions is
+// the other direction of the case above, and it is the direction a presence read
+// structurally cannot supply.
+//
+// That case finds each attachment's identity inside the assembled document. On
+// its own that says nothing about the merge: a document carrying those values
+// whatever was attached — because the host's own render emitted them, or because
+// the assembler emits a fixed set — satisfies the presence read. So the same
+// shape is built a second time with every Feature detached and nothing else
+// changed, and the two documents' identity sets are compared.
+//
+// The comparison is a set difference that NAMES what moved rather than a count,
+// and it is asserted both ways. The detached document must lack exactly the three
+// attachment identities; it must also still carry the host component's own. That
+// second half is what a fixture rendering nothing would fail — a build emitting
+// an empty document equally "lacks the attachment identities", and would pass an
+// absence read written on its own.
+//
+// What a planted defect does to it: routing an attachment into the dispatch group
+// without regard to whether its Feature is attached leaves its identity in the
+// detached document, and the difference then comes up short by that member and
+// names it. Dropping the merge instead widens the difference beyond the three,
+// because the host's own identity goes missing too.
+func TestAttachmentIdentity_DetachingTheFeaturesRemovesExactlyTheirContributions(t *testing.T) {
+	t.Parallel()
+
+	attached := pipelinetest.Build(t, attachmentIdentityInput("compose"))
+	detached := pipelinetest.Build(t, attachmentIdentityInput("compose-detached"))
+
+	t.Logf("the document assembled with every Feature detached:\n%s", joinArtifactBodies(detached.Artifacts))
+
+	attachedIDs := distinctIdentityValues(attached.Artifacts)
+	detachedIDs := distinctIdentityValues(detached.Artifacts)
+	t.Logf("attached document identities: %v", attachedIDs)
+	t.Logf("detached document identities: %v", detachedIDs)
+
+	inDetached := make(map[string]bool, len(detachedIDs))
+	for _, id := range detachedIDs {
+		inDetached[id] = true
+	}
+	var removed []string
+	for _, id := range attachedIDs {
+		if !inDetached[id] {
+			removed = append(removed, id)
+		}
+	}
+	t.Logf("detaching the Features removed: %v", removed)
+
+	want := []string{"cfr--alpha--art", "cfr--alpha--src", "cfr--alpha--wl"}
+	if strings.Join(removed, ",") != strings.Join(want, ",") {
+		t.Errorf("detaching the Features must remove exactly the three attachment identities\nremoved  %v\nexpected %v\nattached %v\ndetached %v",
+			removed, want, attachedIDs, detachedIDs)
+	}
+
+	// The host component's own contribution survives the detachment. Without this
+	// an empty document would satisfy the difference read above.
+	if !inDetached["alpha"] {
+		t.Errorf("the host component's own identity must survive detaching the Features; the detached document carries %v", detachedIDs)
+	}
+
+	// And no attachment output survives anywhere in the emitted set, merged or
+	// beside it — a build that stopped merging the fragment but still wrote it
+	// discretely would satisfy the identity difference while shipping the content.
+	for _, k := range sortedKeys(detached.Artifacts) {
+		if strings.Contains(k, "features/") {
+			t.Errorf("the detached build still emits an attachment file at %q\nkeys:\n%s",
+				k, strings.Join(sortedKeys(detached.Artifacts), "\n"))
+		}
+	}
+}
+
+// distinctIdentityValues collects every aggrega.ai/component-id value the build
+// emitted, deduplicated and ordered, so two builds' identity sets can be compared
+// as sets. Read from the emitted text through identityLabelValues, for the reason
+// stated there.
+func distinctIdentityValues(artifacts map[string][]byte) []string {
+	seen := map[string]bool{}
+	for _, k := range sortedKeys(artifacts) {
+		for _, v := range identityLabelValues(string(artifacts[k])) {
+			seen[v] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for v := range seen {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // joinArtifactBodies concatenates every rendered body so a case can assert on

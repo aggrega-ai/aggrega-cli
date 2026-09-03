@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: identity-app-detached
+  version: "1.0.0"
+  description: >
+    The three-delivery shape with every Feature attachment removed and nothing
+    else changed. The host component still declares its own workload, so what
+    the assembled document then lacks is attributable to the detachment rather
+    than to a build that rendered nothing.
+spec:
+  components:
+    alpha:
+      type: core/host
