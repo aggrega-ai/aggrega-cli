@@ -186,6 +186,39 @@ func (e *Engine) AssemblyNameAnnotation() (annotation string, requireUnique bool
 	return a.Annotation, a.RequireUnique
 }
 
+// NestSegment reports the directory the provider guest's target places each
+// contributor's own sub-directory under, read from its live describe()
+// self-report (contract.nest_segment). The descriptor is loaded and cached on
+// first use; an empty directory is returned when the guest declares none or
+// cannot be loaded or described. It satisfies renderer.NestSegmentReporter, so
+// the orchestrator composes a group's layout from the guest's own claim.
+func (e *Engine) NestSegment() string {
+	desc, err := e.describe()
+	if err != nil || desc.Contract == nil {
+		return ""
+	}
+	return desc.Contract.NestSegment
+}
+
+// AttachmentSegment reports the directory the provider guest's target places an
+// attached Feature's rendered files under, read from its live describe()
+// self-report (contract.attachment_segment). The descriptor is loaded and cached
+// on first use; an empty directory is returned when the guest declares none or
+// cannot be loaded or described, and the orchestrator then applies its own
+// default. It satisfies renderer.AttachmentSegmentReporter.
+//
+// It is read from the static self-report rather than from an assemble reply, and
+// that is what makes it usable at all: an attachment's files are placed while its
+// host renders, which is before any assembly runs, and a provider that exports no
+// assembler never replies.
+func (e *Engine) AttachmentSegment() string {
+	desc, err := e.describe()
+	if err != nil || desc.Contract == nil {
+		return ""
+	}
+	return desc.Contract.AttachmentSegment
+}
+
 // describe loads the provider guest, reads and validates its describe()
 // self-report, and caches the result (or the failure) on the Engine so the
 // input-kind gate and the render classification read the guest's plugin-level

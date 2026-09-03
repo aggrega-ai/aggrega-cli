@@ -1576,7 +1576,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Engines that implement BoundaryAssembler but place per-node
 		// content at engine-controlled positions (today: helm-chart,
 		// signalled by the engine's artifacts capability — its sub-charts land
-		// under the per-node sub-directory its assembler names) keep
+		// under the per-node sub-directory its provider declares) keep
 		// Render output Intermediate=false so the orchestrator nests their
 		// files under the per-node prefix rather than routing them to
 		// AssembleBoundary's IntermediatesByNode. Engines that are not
@@ -1892,8 +1892,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		})
 
 		// Phase B.6 — FeatureRecipe Resource Generation for every attachment on
-		// the node. Returns prefixed paths ("features/<host>/<instance>/<file>")
-		// merged into the per-node files map alongside source/workload outputs.
+		// the node. Returns paths prefixed with the attachment's own position —
+		// the directory the group's provider names for an attached Feature's files,
+		// then the host and the instance — merged into the per-node files map
+		// alongside source/workload outputs.
 		var releaseForFR *types.Release
 		var boundaryAnnotationsForFR map[string]types.OrderedMap[string]
 		if input.ResolveResult != nil {
@@ -1911,7 +1913,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// /host documents. renderCtx is the render-time context every pipeline
 		// step receives.
 		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
-		frFiles, hostPatched, attachmentContribs, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, pipelineRenderCtx)
+		// The directory this node's attachments write their own files under, read
+		// from the provider whose dispatch group holds them — this node's own, since
+		// a component-scope attachment's output lands in its host's group. Resolved
+		// once per node, through the one home of that directory's default and its
+		// one-directory bound, so a declared value becomes a path in exactly one
+		// place and no composition can reach it unbounded.
+		attachmentDir, aerr := attachmentPrefixFor(engine, providerName)
+		if aerr != nil {
+			// The refusal's own text becomes the frame's message so the provider and
+			// the value reach a reader of one frame as well as of the whole chain.
+			return nil, cerrors.Wrap(aerr, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, aerr.Error())
+		}
+		frFiles, hostPatched, attachmentContribs, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, attachmentDir, pipelineRenderCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -2182,6 +2196,28 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		dispatch[dKey].nodeProducer[syntheticNodeID] = frProducer
 		dispatch[dKey].nodeNameBasis[syntheticNodeID] = boundaryFRState.ComponentIDs[key]
+		// The directory this attachment's own files sit under, read from the provider
+		// whose group holds them. It is asked of the provider rather than written here
+		// because two providers that combine their contributors the same way can need
+		// opposite answers — one whose target reads only the files sitting directly in
+		// a directory, one whose target discovers its units in a named child directory
+		// — and nothing else either of them declares tells the two apart.
+		//
+		// The engine is resolved for the group's own provider, which is this
+		// attachment's: a boundary-scope attachment forms its dispatch group under the
+		// capability its own FeatureRecipe names. Resolving it cannot fail for a
+		// provider this render already rendered through, so a failure here is an
+		// injection fault rather than an authoring one and is reported as it arrives.
+		frEngineForPlacement, ferr := engineFactory(frProvider)
+		if ferr != nil {
+			return nil, cerrors.Wrap(ferr, cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("boundary-scope attachment %q: selecting the plugin its output is placed by", key.FRInstance))
+		}
+		attachmentDir, aerr := attachmentPrefixFor(frEngineForPlacement, frProvider)
+		if aerr != nil {
+			// The refusal's own text becomes the frame's message so the provider and
+			// the value reach a reader of one frame as well as of the whole chain.
+			return nil, cerrors.Wrap(aerr, cerrors.TranslationError, cerrors.SourceLocation{}, aerr.Error())
+		}
 		intermediates := []EmittedFile{}
 		nodeFiles := map[string][]byte{}
 		for _, f := range files {
@@ -2189,13 +2225,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				intermediates = append(intermediates, f)
 				continue
 			}
-			// Intermediate=false: emit directly under features/<instance>/.
+			// Intermediate=false: emit directly under the attachment directory
+			// resolved above, followed by this attachment's instance name. The
+			// instance alone identifies it because a boundary-scope attachment sits
+			// inside the boundary already, so naming a host would repeat what the
+			// location says — and such a feature has no host component to name.
 			// These deliberately do NOT join the group's placed map, and the reason is
 			// the two things that map decides rather than anything about identity. It
 			// carries the emission order and the input-kind origin of each file, which
 			// the flat flush reads to decide which files move under a contributor's own
 			// directory; a boundary-scope attachment's output is already pre-keyed at
-			// the boundary's own features position, so a second placement decision
+			// its own position inside the boundary, so a second placement decision
 			// would relocate output nothing forced. And it is half the contributor list
 			// an assembler is handed, alongside the fragments — so joining it would
 			// hand a merging assembler this contribution twice.
@@ -2208,7 +2248,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// Its Intermediate=true fragments still reach a fragment-merging assembler,
 			// which is the case where a boundary-scope feature's content is genuinely
 			// merged rather than placed.
-			nodeFiles["features/"+key.FRInstance+"/"+f.Name] = f.Body
+			nodeFiles[attachmentDir+key.FRInstance+"/"+f.Name] = f.Body
 		}
 		if len(intermediates) > 0 {
 			dispatch[dKey].intermediates[syntheticNodeID] = append(dispatch[dKey].intermediates[syntheticNodeID], intermediates...)
@@ -2370,7 +2410,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		var groupFiles assembledFileSet
 
 		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
-		// nest per-node under the sub-directory the assembler names and emit assembled files at
+		// nest per-node under the sub-directory the provider declares and emit assembled files at
 		// the dispatch path.
 		if pd.assembler != nil && key.Path != "" {
 			edges := make([]IREdgeInfo, 0, len(graph.Spec.Edges))
@@ -2411,10 +2451,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				ChartName:              chartName,
 				WarningSink:            func(d Diagnostic) { result.Warnings = append(result.Warnings, d) },
 			}
-			boundaryFiles, nesting, err := pd.assembler.AssembleBoundary(ctx, info)
+			boundaryFiles, err := pd.assembler.AssembleBoundary(ctx, info)
 			if err != nil {
 				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, fmt.Sprintf("dispatch %q assemble", key.Path))
 			}
+			// Where this group's contributors sit is read from the elected provider's
+			// own self-description rather than from the reply above, and the reading is
+			// the same one the render already made for the attachment position: both are
+			// static properties of the provider, so both are answerable before any node
+			// renders. A reply cannot answer the second at all — an attachment's files
+			// are placed while its host renders, which is hundreds of lines and one
+			// whole pass before an assembler is called.
+			nesting := boundaryNestingOf(groupAssemblerEngine(pd))
 			// Post-assembly PATCH replay (scope-symmetric). A pipeline against
 			// this assembler node deferred per-node because the merged documents
 			// were not discrete yet: a component-scope FeatureRecipe's /host
@@ -2439,11 +2487,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			for p, af := range boundaryFiles {
 				groupFiles.put(p, af, assemblyProducer)
 			}
-			// Node files go under the per-node sub-directory the assembler named
-			// (or flat if it says no nesting). The segment is the assembler's own
-			// vocabulary: the orchestrator joins it with the contributor's
-			// authoring-level name and supplies only the default for an assembler
-			// that names none, so no target's directory vocabulary is fixed here.
+			// Node files go under the per-node sub-directory the provider declared
+			// (or flat where it declares no nesting). The segment is the provider's
+			// own vocabulary: the orchestrator joins it with the contributor's
+			// authoring-level name without reading it, so no target's directory
+			// vocabulary is fixed here. A provider that declares none gets no
+			// enclosing directory — there is no host default for this position.
 			// The name rather than the per-node key, because a boundary-scope
 			// feature's key is a dispatch marker whose characters a path refuses.
 			// The segment is resolved once per dispatch group rather than once per
@@ -2453,14 +2502,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// position, so their records leave Format empty.
 			nestPrefix := ""
 			if nesting.PerNode {
-				segment, serr := nesting.resolvedSegment(key.Provider)
+				prefix, serr := nesting.resolvedPrefix(key.Provider)
 				if serr != nil {
 					// The refusal's own text becomes the frame's message so the
 					// provider and the value reach a reader of one frame as well
 					// as a reader of the whole chain.
 					return nil, cerrors.Wrap(serr, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, serr.Error())
 				}
-				nestPrefix = segment + "/"
+				nestPrefix = prefix
 			}
 			for nodeID, nodeFiles := range pd.files {
 				nodeRel := ""

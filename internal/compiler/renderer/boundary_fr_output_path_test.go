@@ -22,10 +22,10 @@ import (
 
 // The output path a boundary-scope FeatureRecipe's files land at, proved through
 // the shipped provider guests rather than through a stand-in assembler, because
-// which directory a contributor's files sit under is the assembler's own answer
+// which directory a contributor's files sit under is the provider's own answer
 // and a stand-in would be free to answer differently from the guest that ships.
 //
-// A provider whose assembler places each contributor in its own sub-directory is
+// A provider that places each contributor in its own sub-directory is
 // the case worth proving: the directory name is a path segment a reader opens,
 // and the per-node key the render groups a boundary-scope attachment under is a
 // marker the compiler built for its own dispatch. That marker opens with an

@@ -282,27 +282,43 @@ func TestDiagnostic_OmitemptyAndRoundTrip(t *testing.T) {
 	}
 }
 
-// TestAssembleBoundaryOutput_ForkedShape guards the assemble output's forked
-// shape: AssembleBoundaryOutput is a distinct type from RenderNodeOutput,
-// carrying the assembled files and diagnostics plus a nest-per-node signal the
-// render output does not. It round-trips byte-identically, and its nest-per-node
-// flag survives the boundary. A regression that re-aliases it to RenderNodeOutput
-// (dropping the signal) breaks the distinctness assertion.
-func TestAssembleBoundaryOutput_ForkedShape(t *testing.T) {
+// TestAssembleBoundaryOutput_CarriesNoPlacementClaim guards what the assemble
+// reply is NOT: it carries the assembled files and the diagnostics raised while
+// assembling, and it carries nothing about where a contributor's own files sit.
+//
+// The absence is the assertion, and it is asserted by name rather than left to
+// the reply's shape being unremarkable. Where a group's contributors sit is a
+// static property of the provider, declared on its describe() contract and so in
+// hand before any node renders; carrying it back on this reply instead would put
+// the answer hundreds of lines after the render that has to ask the question, and
+// out of reach entirely for a provider that exports no assembler at all. A
+// regression re-adding either field to the reply would compile and would quietly
+// re-create that ordering, so the field names are named here.
+//
+// It also holds the reply byte-identical across a round-trip, which is the
+// determinism contract for the wire shape.
+func TestAssembleBoundaryOutput_CarriesNoPlacementClaim(t *testing.T) {
 	t.Parallel()
 
-	if reflect.TypeOf(renderer.AssembleBoundaryOutput{}) == reflect.TypeOf(renderer.RenderNodeOutput{}) {
-		t.Fatal("AssembleBoundaryOutput must be a distinct type from RenderNodeOutput (it carries the nest-per-node signal)")
+	for _, gone := range []string{"NestPerNode", "NestSegment", "AttachmentSegment"} {
+		if _, present := reflect.TypeOf(renderer.AssembleBoundaryOutput{}).FieldByName(gone); present {
+			t.Errorf("AssembleBoundaryOutput carries %q; where a contributor's files sit is the "+
+				"provider's static declaration, which a reply arrives too late to answer", gone)
+		}
 	}
-	if _, ok := reflect.TypeOf(renderer.AssembleBoundaryOutput{}).FieldByName("NestPerNode"); !ok {
-		t.Fatal("AssembleBoundaryOutput must carry a NestPerNode field")
+	// The positive control. An absence claim over a type with no fields at all
+	// would hold for every name there is, so the reply has to be shown to carry
+	// what it is for before its not carrying a placement claim means anything.
+	for _, want := range []string{"Files", "Diagnostics"} {
+		if _, present := reflect.TypeOf(renderer.AssembleBoundaryOutput{}).FieldByName(want); !present {
+			t.Fatalf("AssembleBoundaryOutput carries no %q field, so the absence claim above is vacuous", want)
+		}
 	}
 
 	render := sampleRenderNodeOutput(t)
 	fixture := renderer.AssembleBoundaryOutput{
 		Files:       render.Files,
 		Diagnostics: render.Diagnostics,
-		NestPerNode: true,
 	}
 
 	first, err := json.Marshal(fixture)
@@ -319,9 +335,6 @@ func TestAssembleBoundaryOutput_ForkedShape(t *testing.T) {
 	}
 	if string(first) != string(second) {
 		t.Errorf("round-trip not byte-identical:\n  first:  %s\n  second: %s", first, second)
-	}
-	if !round.NestPerNode {
-		t.Error("NestPerNode did not survive the round-trip")
 	}
 }
 

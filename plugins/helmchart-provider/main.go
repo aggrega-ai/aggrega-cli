@@ -98,8 +98,12 @@ func descriptor() aggrega.PluginDescriptor {
 			},
 		},
 		Contract: &aggrega.ProviderContract{
-			InputKinds:             aggrega.InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: false},
-			BoundaryAssembly:       "nest",
+			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: false},
+			BoundaryAssembly: "nest",
+			// Each contributor is a sub-chart, and `charts` is what Helm calls the
+			// directory it discovers those in — this target's word, declared here so
+			// the host composes the layout without holding it.
+			NestSegment:            "charts",
 			ArtifactDelimiters:     &aggrega.ArtifactDelimiters{Left: "[[", Right: "]]"},
 			AssemblyNameAnnotation: &aggrega.AssemblyNameAnnotation{Annotation: "aggrega.ai/chart-name", RequireUnique: true},
 			ReusableInstance:       true,
@@ -257,8 +261,8 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 // Chart.yaml the host read at compile time; the core draws the dependency's name
 // and version from those bytes. The boundary path is the dispatch path the core
 // names the chart from when no chart-name is supplied; the render context carries
-// the indentation width. helm-chart nests each contributor's per-node files under
-// a per-node sub-directory, so NestPerNode is true, and it names that
+// the indentation width. Where a contributor's files sit is declared on this
+// guest's describe() contract rather than returned here, so the host holds the
 // sub-directory's parent `charts` — the directory a Helm umbrella keeps its child
 // charts in — so the host places each node's files where Helm looks for them.
 func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
@@ -282,8 +286,6 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 	for _, path := range sortedKeys(files) {
 		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path], Format: assembledFileFormat(path)})
 	}
-	out.NestPerNode = true
-	out.NestSegment = "charts"
 	return out, nil
 }
 

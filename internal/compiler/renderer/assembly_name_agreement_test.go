@@ -43,11 +43,15 @@ func (namingAssemblerEngine) Contract() renderer.ProviderContract {
 
 func (namingAssemblerEngine) BoundaryAssembly() string { return "nest" }
 
+// NestSegment names the directory this provider's contributors sit under, which a
+// nesting provider declares for itself.
+func (namingAssemblerEngine) NestSegment() string { return "charts" }
+
 func (e namingAssemblerEngine) AssemblyNameAnnotation() (string, bool) {
 	return e.annotation, e.mustAgree
 }
 
-func (namingAssemblerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
+func (namingAssemblerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, error) {
 	var b strings.Builder
 	b.WriteString("assembly: " + info.ChartName + "\n")
 	for _, bp := range info.ContributingBoundaries {
@@ -55,7 +59,7 @@ func (namingAssemblerEngine) AssembleBoundary(_ context.Context, info renderer.B
 	}
 	return map[string]renderer.AssembledFile{
 		"assembly.yaml": {Content: []byte(b.String()), Format: "yaml"},
-	}, renderer.BoundaryNesting{PerNode: true}, nil
+	}, nil
 }
 
 // namingGraphFacts stands in for the presentation the graph finalisation produces,

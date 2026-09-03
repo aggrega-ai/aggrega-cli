@@ -66,7 +66,12 @@ type contributionAssemblerEngine struct {
 
 func (e *contributionAssemblerEngine) BoundaryAssembly() string { return "nest" }
 
-func (e *contributionAssemblerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
+// NestSegment names the directory this provider's contributors sit under. A
+// nesting provider names its own, because the host invents none: any name the
+// host could supply would be some target's word in the provider-agnostic core.
+func (e *contributionAssemblerEngine) NestSegment() string { return "charts" }
+
+func (e *contributionAssemblerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, error) {
 	// The merged document names every boundary that fed the group, in the order
 	// the group recorded them, so the assembled bytes themselves carry evidence
 	// of a many-to-one merge.
@@ -77,7 +82,7 @@ func (e *contributionAssemblerEngine) AssembleBoundary(_ context.Context, info r
 	}
 	return map[string]renderer.AssembledFile{
 		"assembly.yaml": {Content: []byte(b.String()), Format: "yaml"},
-	}, renderer.BoundaryNesting{PerNode: true}, nil
+	}, nil
 }
 
 // runContributionCase drives the full render pipeline over one corpus case.

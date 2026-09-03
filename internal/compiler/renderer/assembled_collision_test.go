@@ -44,9 +44,9 @@ func (e *collisionEngine) Contract() renderer.ProviderContract {
 // a fixed merged set and controls whether per-node files nest under the
 // contributing instance. nest=true is the shape that keeps two contributors'
 // identically-named files apart; nest=false is the shape that does not.
-// nestSegment is the per-node sub-directory this assembler names; empty leaves
-// the host to apply its own default, which is the shape every pre-existing
-// nesting assembler has.
+// nestSegment is the per-node sub-directory this provider names; empty names no
+// enclosing directory at all, so each contributor sits directly at the dispatch
+// position.
 type collisionAssemblerEngine struct {
 	collisionEngine
 	merged      map[string]renderer.AssembledFile
@@ -61,12 +61,17 @@ func (e *collisionAssemblerEngine) BoundaryAssembly() string {
 	return "merge"
 }
 
-func (e *collisionAssemblerEngine) AssembleBoundary(_ context.Context, _ renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
+// NestSegment names the directory this provider's contributors sit under, read
+// by the orchestrator from the provider's own self-description rather than from
+// the assemble reply.
+func (e *collisionAssemblerEngine) NestSegment() string { return e.nestSegment }
+
+func (e *collisionAssemblerEngine) AssembleBoundary(_ context.Context, _ renderer.BoundaryInfo) (map[string]renderer.AssembledFile, error) {
 	out := map[string]renderer.AssembledFile{}
 	for k, v := range e.merged {
 		out[k] = v
 	}
-	return out, renderer.BoundaryNesting{PerNode: e.nest, Segment: e.nestSegment}, nil
+	return out, nil
 }
 
 // collisionGraphFacts stands in for the presentation the graph finalisation
@@ -265,7 +270,8 @@ func TestRenderAll_AssemblyAndContributorCollisionNamesBoth(t *testing.T) {
 		merged: map[string]renderer.AssembledFile{
 			"charts/solo/shared.yaml": {Content: []byte("merged: true\n"), Format: "yaml"},
 		},
-		nest: true,
+		nest:        true,
+		nestSegment: "charts",
 	}
 	_, err := runCollisionRender([]string{"solo"}, engine)
 	if err == nil {
@@ -300,7 +306,8 @@ func TestRenderAll_NestedContributorsWithOneFilenameDoNotCollide(t *testing.T) {
 		merged: map[string]renderer.AssembledFile{
 			"Chart.yaml": {Content: []byte("name: collide\n")},
 		},
-		nest: true,
+		nest:        true,
+		nestSegment: "charts",
 	}
 	res, err := runCollisionRender([]string{"alpha", "beta"}, engine)
 	if err != nil {

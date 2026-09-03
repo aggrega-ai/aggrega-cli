@@ -150,6 +150,9 @@ func descriptor() aggrega.PluginDescriptor {
 			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: true},
 			BoundaryAssembly: "nest",
 			ReusableInstance: true,
+			// Each contributor is a module of its own, and the directory Terraform
+			// calls those is this target's word rather than the host's.
+			NestSegment: terraformcore.ModulesDirName,
 		},
 		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}
@@ -335,8 +338,6 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 			out.Files[i].Format = terraformFileFormat(out.Files[i].Path)
 		}
 	}
-	out.NestPerNode = true
-	out.NestSegment = terraformcore.ModulesDirName
 	return out, nil
 }
 

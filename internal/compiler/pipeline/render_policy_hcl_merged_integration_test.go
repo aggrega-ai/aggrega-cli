@@ -42,12 +42,12 @@ func (a *mergeFormatAssembler) Contract() renderer.ProviderContract {
 
 func (a *mergeFormatAssembler) BoundaryAssembly() string { return "merge" }
 
-func (a *mergeFormatAssembler) AssembleBoundary(_ context.Context, _ renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
+func (a *mergeFormatAssembler) AssembleBoundary(_ context.Context, _ renderer.BoundaryInfo) (map[string]renderer.AssembledFile, error) {
 	out := map[string]renderer.AssembledFile{}
 	for k, v := range a.merged {
 		out[k] = v
 	}
-	return out, renderer.BoundaryNesting{}, nil
+	return out, nil
 }
 
 // runMergedRender drives the full Step 5 pipeline through a single merge-boundary

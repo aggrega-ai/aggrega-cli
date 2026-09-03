@@ -212,7 +212,9 @@ func IsZeroContract(c wasm.ProviderContract) bool {
 		len(c.SourceFilter) == 0 &&
 		c.AssemblyNameAnnotation == nil &&
 		!c.ReusableInstance &&
-		!c.CrossBoundaryLinking
+		!c.CrossBoundaryLinking &&
+		c.NestSegment == "" &&
+		c.AttachmentSegment == ""
 }
 
 // descriptorContract maps the describe() provider render-behavior self-report
@@ -245,6 +247,8 @@ func descriptorContract(c *wasm.ProviderContract) *types.ProviderContract {
 		SourceFilter:         c.SourceFilter,
 		ReusableInstance:     c.ReusableInstance,
 		CrossBoundaryLinking: c.CrossBoundaryLinking,
+		NestSegment:          c.NestSegment,
+		AttachmentSegment:    c.AttachmentSegment,
 	}
 	if c.ArtifactDelimiters != nil {
 		out.ArtifactDelimiters = &types.PluginArtifactDelimiters{

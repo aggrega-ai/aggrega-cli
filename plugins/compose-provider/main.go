@@ -212,8 +212,9 @@ func boundaryEnvOverrides() int32 {
 // deployment wave (read for wave-derived ordering between the contributors); the
 // graph's uses edges feed depends_on inference; the boundary path is the
 // network-name fallback for a node with no namespace annotation; the render
-// context carries the indentation width. Compose emits a flat assembled file, so
-// NestPerNode is false.
+// context carries the indentation width. Compose folds its contributors into one
+// document, so no contributor has a position of its own — which the guest states
+// on its describe() contract rather than on this reply.
 //
 // The merge's advisories travel back on the output's diagnostics, which the host
 // routes to the build's advisory stream. They never affect the emitted bytes.
@@ -253,7 +254,6 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 		// extension.
 		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path], Format: "yaml"})
 	}
-	out.NestPerNode = false
 	return out, nil
 }
 

@@ -214,6 +214,16 @@ func crossCheckProviderContract(entityIdentity string, want, got ProviderContrac
 			"entity %q declares cross_boundary_linking %t but the plugin's describe() reports %t: %w",
 			entityIdentity, want.CrossBoundaryLinking, got.CrossBoundaryLinking, ErrWasmContractMismatch())
 	}
+	if want.NestSegment != got.NestSegment {
+		return fmt.Errorf(
+			"entity %q declares nest_segment %q but the plugin's describe() reports %q: %w",
+			entityIdentity, want.NestSegment, got.NestSegment, ErrWasmContractMismatch())
+	}
+	if want.AttachmentSegment != got.AttachmentSegment {
+		return fmt.Errorf(
+			"entity %q declares attachment_segment %q but the plugin's describe() reports %q: %w",
+			entityIdentity, want.AttachmentSegment, got.AttachmentSegment, ErrWasmContractMismatch())
+	}
 	return nil
 }
 

@@ -25,11 +25,16 @@ type contributorCaptureEngine struct {
 
 func (e *contributorCaptureEngine) BoundaryAssembly() string { return e.mode }
 
-func (e *contributorCaptureEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
+// NestSegment names the directory this engine's contributors sit under. It is
+// declared on the engine rather than returned from AssembleBoundary because the
+// orchestrator reads a group's layout from the provider's own self-description.
+func (e *contributorCaptureEngine) NestSegment() string { return "units" }
+
+func (e *contributorCaptureEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, error) {
 	e.got = info
 	return map[string]renderer.AssembledFile{
 		"assembled.txt": {Content: []byte("assembled\n")},
-	}, renderer.BoundaryNesting{PerNode: e.mode == "nest", Segment: "units"}, nil
+	}, nil
 }
 
 // filesFor returns the recorded per-node file names for one node, drawn from

@@ -56,12 +56,13 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 
 // AssembleBoundary projects the host BoundaryInfo onto the assemble_boundary wire
 // input, drives the guest export, and folds the guest's per-file output back into
-// the BoundaryAssembler's path→AssembledFile map — carrying each file's
-// producer-declared format alongside its bytes — plus the guest's nesting claim:
-// whether each contributor's per-node files sit under a sub-directory of their
-// own, and the directory the guest names for those sub-directories. The adapter
-// passes that name through untouched; the orchestrator supplies the default when
-// the guest names none and bounds what a named one may be.
+// the BoundaryAssembler's path→AssembledFile map, carrying each file's
+// producer-declared format alongside its bytes.
+//
+// Where a contributor's own per-node files sit is not part of this reply and is
+// deliberately not asked for here: it is a static property of the provider, which
+// the orchestrator reads from the same describe() self-report this adapter reads
+// its assembly mode from.
 // A dispatch group's contributors are everything a render produced files for,
 // whichever way those files travel: the fragments a merging assembler is handed,
 // and the files the orchestrator places itself at a nesting assembler's per-node
@@ -95,7 +96,7 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // umbrella from pure data alone. Each sub-chart's values are inserted in sorted
 // key order for the determinism contract. A provider that does not project
 // sub-charts contributes none of these carriers.
-func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, renderer.BoundaryNesting, error) {
+func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, error) {
 	seen := map[string]struct{}{}
 	nodeIDs := make([]string, 0, len(info.IntermediatesByNode)+len(info.PlacedByNode))
 	for _, byNode := range []map[string][]renderer.EmittedFile{info.IntermediatesByNode, info.PlacedByNode} {
@@ -157,7 +158,7 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 	if e.BoundaryAssembly() == wasm.BoundaryAssemblyNest {
 		projs, err := projectSubCharts(info.SubCharts)
 		if err != nil {
-			return nil, renderer.BoundaryNesting{}, err
+			return nil, err
 		}
 		subCharts := make([]renderer.SubChart, 0, len(projs))
 		for _, p := range projs {
@@ -175,20 +176,20 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 
 	out, err := e.invokeAssemble(ctx, AssembleBoundaryExport, input)
 	if err != nil {
-		return nil, renderer.BoundaryNesting{}, err
+		return nil, err
 	}
 	if err := surfaceAssembleDiagnostics(info.BoundaryPath, out.Diagnostics, info.WarningSink); err != nil {
-		return nil, renderer.BoundaryNesting{}, err
+		return nil, err
 	}
 
 	files := make(map[string]renderer.AssembledFile, len(out.Files))
 	for _, f := range out.Files {
 		if _, dup := files[f.Path]; dup {
-			return nil, renderer.BoundaryNesting{}, renderer.DuplicateRenderPathErr(f.Path, info.BoundaryPath)
+			return nil, renderer.DuplicateRenderPathErr(f.Path, info.BoundaryPath)
 		}
 		files[f.Path] = renderer.AssembledFile{Content: f.Content, Format: f.Format}
 	}
-	return files, renderer.BoundaryNesting{PerNode: out.NestPerNode, Segment: out.NestSegment}, nil
+	return files, nil
 }
 
 // invokeAssemble acquires a guest instance through the shared loader, calls the

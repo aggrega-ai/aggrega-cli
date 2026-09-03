@@ -218,8 +218,9 @@ type PluginContractClaim struct {
 
 // ProviderContractClaim is the neutral, pluginpath-owned shape of an entity's
 // authored provider render-behavior contract: the input kinds the plugin renders,
-// how it assembles a dispatch group's per-node output, the artifact-template
-// delimiter pair, and any source-file restriction. It carries no dependency on
+// how it assembles a dispatch group's per-node output and which directories that
+// output sits under, the artifact-template delimiter pair, and any source-file
+// restriction. It carries no dependency on
 // internal/wasm; the loader's caller maps it onto the wasm-side claim shape.
 type ProviderContractClaim struct {
 	// InputKinds is the authored input-kind claim.
@@ -245,6 +246,14 @@ type ProviderContractClaim struct {
 	// groups through its paired link_publish and link_resolve exports. False when
 	// the plugin wires no cross-boundary edges.
 	CrossBoundaryLinking bool
+	// NestSegment is the authored directory each contributor's own sub-directory
+	// sits under, for a plugin whose boundary assembly nests. Empty when the
+	// plugin names none.
+	NestSegment string
+	// AttachmentSegment is the authored directory an attached Feature's rendered
+	// files sit under, within the position of whatever it is attached to. Empty
+	// when the plugin names none, in which case the host applies its own default.
+	AttachmentSegment string
 }
 
 // PluginAssemblyNameAnnotationClaim is an entity's authored assembly-name

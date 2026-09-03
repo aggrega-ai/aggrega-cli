@@ -19,8 +19,9 @@ import (
 // "templates/deployment.yaml"), its file contents, and the producer-declared
 // format the guest rendered it in (empty when the guest declares none).
 // Per-node files are later prefixed by the orchestrator with the boundary path
-// (and, for an engine whose assembler nests per node, the per-node sub-directory
-// prefix that assembler names — see [BoundaryNesting]). The per-file format
+// (and, for an engine whose provider declares that it nests per node, the
+// per-node sub-directory prefix that provider declares — see [BoundaryNesting]).
+// The per-file format
 // travels with its file so a downstream consumer can prefer the producer's
 // format over the path extension; it never affects the emitted bytes.
 type Provider interface {
@@ -208,10 +209,13 @@ type BoundaryAssembler interface {
 	// AssembleBoundary returns assembled files relative to the dispatch path.
 	// The orchestrator prefixes them with `boundaries/<evaluated_path>/`
 	// (or, post path-template-evaluation, the operator-authored path).
-	// The returned [BoundaryNesting] says whether each contributor's per-node
-	// files are nested under a per-node sub-directory, and which directory
-	// those sub-directories sit under.
-	AssembleBoundary(ctx context.Context, info BoundaryInfo) (files map[string]AssembledFile, nesting BoundaryNesting, err error)
+	//
+	// Where a contributor's own per-node files sit is deliberately NOT part of
+	// this reply. It is a static property of the provider, read from its
+	// self-description through [boundaryNestingOf] and so in hand before any node
+	// renders — which is what lets the orchestrator place output whose position is
+	// decided during render rather than after assembly.
+	AssembleBoundary(ctx context.Context, info BoundaryInfo) (files map[string]AssembledFile, err error)
 }
 
 // AssembledFile is one output of a boundary assembly, keyed by its dispatch-path-
@@ -228,54 +232,129 @@ type AssembledFile struct {
 	Format  string
 }
 
-// BoundaryNesting is how a boundary assembler wants its dispatch group's
-// per-node files placed. PerNode says whether each contributor's files sit under
-// a sub-directory of their own rather than flat at the dispatch path; Segment
-// names the directory those per-node sub-directories sit under, and is empty when
-// the assembler names none.
+// BoundaryNesting is how a dispatch group's per-node files are placed. PerNode
+// says whether each contributor's files sit under a sub-directory of their own
+// rather than flat at the dispatch path; Segment names the directory those
+// per-node sub-directories sit under, and is empty when the provider names none.
 //
 // The two travel as one carrier because they answer one question — where a
 // contributor's files go — and a caller reading the flag has to read the segment
 // with it. Keeping them apart would let a segment reach a caller that never
 // asked whether nesting was on, which is how the two would drift.
 //
-// Segment is the assembler's own vocabulary: an assembler that composes an
+// Segment is the provider's own vocabulary: a provider that composes an
 // enclosing chart names the directory that target calls its child units, one
 // that composes a root module names the directory that target calls its own, and
 // the orchestrator places the files without reading either word. What the
-// orchestrator supplies is the default for an assembler that names nothing, and
-// the bound that keeps a named segment inside the dispatch position.
+// orchestrator supplies is the bound that keeps a named segment inside the
+// dispatch position.
+//
+// Both halves are read from the provider's static self-description rather than
+// from the reply its assembler returns, through [boundaryNestingOf]. That is what
+// makes the whole of a group's layout answerable before any node renders, which
+// a reply cannot be: an attachment's files are placed during render, and a
+// provider without an assembler export never replies at all.
 type BoundaryNesting struct {
 	PerNode bool
 	Segment string
 }
 
-// DefaultNestSegment is the directory the orchestrator nests per-node files under
-// when a nesting assembler names no segment of its own. It carries no claim about
-// any target: it is the layout nesting assemblers already emitted before the
-// segment could be named, retained so an assembler that names nothing keeps
-// emitting exactly what it emitted before.
-const DefaultNestSegment = "charts"
-
-// resolvedSegment returns the directory to nest per-node files under: the
-// segment the assembler named, or [DefaultNestSegment] when it named none.
+// boundaryNestingOf reads where a dispatch group's per-node files sit from the
+// elected provider's own self-description. Only a provider that nests places its
+// contributors under sub-directories, and the derivation is exactly that: nesting
+// is the declared assembly mode, and the directory those sub-directories sit
+// under is the segment the provider declares beside it.
 //
-// It refuses a segment that is not a single directory name. The orchestrator
-// composes the node's identity into the segment, so a value carrying a path
-// separator — or naming the current or the parent directory — would place a
-// node's files somewhere other than beneath its own position in the dispatch
-// group. provider names the provider whose assembler returned the value, so the
-// refusal says which one to fix and what it returned.
-func (n BoundaryNesting) resolvedSegment(provider string) (string, error) {
+// PerNode is derived rather than declared separately because a separate
+// declaration would be a second statement of the mode, free to contradict it —
+// and a provider claiming per-node placement while declaring that it folds its
+// contributors into one document would be describing two layouts at once.
+func boundaryNestingOf(engine Provider) BoundaryNesting {
+	if !boundaryAssemblyNests(boundaryAssemblyOf(engine)) {
+		return BoundaryNesting{}
+	}
+	return BoundaryNesting{PerNode: true, Segment: nestSegmentOf(engine)}
+}
+
+// DefaultAttachmentSegment is the directory an attached Feature's files sit under
+// when the provider whose dispatch group holds them declares none.
+//
+// The word is in the provider-agnostic host on purpose rather than by omission:
+// `features:` is the block an author writes to attach one, so the default names
+// the authoring surface the output came from and belongs to no target's
+// vocabulary. A provider whose target needs those files somewhere its own loader
+// looks declares that directory instead.
+//
+// The nesting position has no counterpart default, and the asymmetry is the point
+// rather than an oversight: every directory that could enclose a contributor is
+// some target's word, so a host default there would be one provider's vocabulary
+// applied to every other.
+const DefaultAttachmentSegment = "features"
+
+// namesOneDirectory reports whether a provider-declared value is a single
+// directory name rather than a path.
+//
+// It is the one home of what that means, because both declared directories are
+// bounded by the same rule for the same reason — the host composes an identity
+// into each, so a value carrying a path separator, or naming the current or the
+// parent directory, would place files somewhere other than beneath the position
+// they belong to. A second spelling of the comparison would agree on the day it
+// was written and be free to drift afterwards, silently, since nothing compares
+// two spellings of one rule.
+func namesOneDirectory(declared string) bool {
+	return !strings.ContainsAny(declared, `/\`) && declared != "." && declared != ".."
+}
+
+// notOneDirectoryErr wraps condition into the refusal both declared directories
+// share: which provider declared the value, which declaration it was, what the
+// value was, and what a conforming one looks like.
+//
+// The condition is an ARGUMENT rather than a field on a shared descriptor, and
+// that is deliberate rather than incidental. A condition reached through a value
+// held in a struct is raised by nothing any census of raise sites can see, and
+// this project's published condition reference is built from exactly such a
+// census — so a shared descriptor holding the two conditions would quietly drop
+// both of them from the reference while every test still passed. Passing the
+// condition in keeps each raise a call the census reads, and still leaves the
+// sentence with one home.
+func notOneDirectoryErr(condition error, provider, declaration, declared string) error {
+	return fmt.Errorf(
+		"%w: provider %q declared %s %q; the value must name one directory, carrying no path separator and naming neither the current nor the parent directory",
+		condition, provider, declaration, declared)
+}
+
+// resolvedPrefix returns the path prefix each contributor's own sub-directory
+// sits beneath, empty for a group whose provider names no enclosing directory.
+func (n BoundaryNesting) resolvedPrefix(provider string) (string, error) {
 	if n.Segment == "" {
-		return DefaultNestSegment, nil
+		return "", nil
 	}
-	if strings.ContainsAny(n.Segment, `/\`) || n.Segment == "." || n.Segment == ".." {
-		return "", fmt.Errorf(
-			"%w: provider %q returned %q; the value must name one directory, carrying no path separator and naming neither the current nor the parent directory",
-			ErrNestSegmentNotOneDirectory(), provider, n.Segment)
+	if !namesOneDirectory(n.Segment) {
+		return "", notOneDirectoryErr(ErrNestSegmentNotOneDirectory(), provider, "nest_segment", n.Segment)
 	}
-	return n.Segment, nil
+	return n.Segment + "/", nil
+}
+
+// attachmentPrefixFor returns the directory an attached Feature's files sit under
+// within the position of whatever it is attached to, for the provider whose
+// dispatch group holds that output.
+//
+// This is the single home of that directory — its default and its bound — and
+// both attachment scopes compose their own coordinates onto what it returns. The
+// scopes differ in which coordinates those are (a component-scope attachment
+// names its host as well as its instance; a boundary-scope one sits inside the
+// boundary already, so the instance alone identifies it), and that difference is
+// one of scope rather than of layout, so it stays at each composition while the
+// directory stays here.
+func attachmentPrefixFor(engine Provider, provider string) (string, error) {
+	declared := attachmentSegmentOf(engine)
+	if declared == "" {
+		return DefaultAttachmentSegment + "/", nil
+	}
+	if !namesOneDirectory(declared) {
+		return "", notOneDirectoryErr(ErrAttachmentSegmentNotOneDirectory(), provider, "attachment_segment", declared)
+	}
+	return declared + "/", nil
 }
 
 // BoundaryAssemblyReporter is the optional interface an engine implements to
@@ -297,6 +376,50 @@ type BoundaryAssemblyReporter interface {
 func boundaryAssemblyOf(engine Provider) string {
 	if r, ok := engine.(BoundaryAssemblyReporter); ok {
 		return r.BoundaryAssembly()
+	}
+	return ""
+}
+
+// NestSegmentReporter is the optional interface an engine implements to report
+// the directory its target places each contributor's own sub-directory under. A
+// provider routed to a Wasm guest reports the value from the guest's live
+// describe() self-report, so the directory is the target's contract term stated
+// once, in the guest that serves that target.
+type NestSegmentReporter interface {
+	NestSegment() string
+}
+
+// nestSegmentOf returns engine's reported nesting directory, or the empty string
+// when engine reports none. It is the single seam every reader of that report
+// goes through, so the value resolves from the engine's own claim independently
+// of its concrete type.
+func nestSegmentOf(engine Provider) string {
+	if r, ok := engine.(NestSegmentReporter); ok {
+		return r.NestSegment()
+	}
+	return ""
+}
+
+// AttachmentSegmentReporter is the optional interface an engine implements to
+// report the directory its target places an attached Feature's rendered files
+// under, within the position of whatever that Feature is attached to.
+//
+// It is a report of its own rather than something read off the assembly mode,
+// because the mode does not determine it: two providers that both compose an
+// enclosing structure can need opposite answers, one whose target reads only the
+// files sitting directly in a directory and one whose target discovers its units
+// in a named child directory. The host cannot tell those two apart from anything
+// else they declare, so the answer is the guest's to state.
+type AttachmentSegmentReporter interface {
+	AttachmentSegment() string
+}
+
+// attachmentSegmentOf returns engine's reported attachment directory, or the
+// empty string when engine reports none — in which case the host applies its own
+// default. It is the single seam every reader of that report goes through.
+func attachmentSegmentOf(engine Provider) string {
+	if r, ok := engine.(AttachmentSegmentReporter); ok {
+		return r.AttachmentSegment()
 	}
 	return ""
 }
@@ -370,6 +493,19 @@ func boundaryAssemblyFolds(mode string) bool {
 	return mode == wasm.BoundaryAssemblyMerge
 }
 
+// boundaryAssemblyNests reports whether a declared boundary-assembly mode places
+// each of a dispatch group's contributors under a position of its own inside an
+// enclosing structure. Only the nesting mode does; folding produces one document
+// with no per-contributor position, and a flat mode and an absent claim produce
+// no enclosing structure at all.
+//
+// It is the third of the mode predicates rather than a negation of the other two,
+// for the reason they are separate from each other: each answers a different
+// question, and the three questions do not partition the modes the same way.
+func boundaryAssemblyNests(mode string) bool {
+	return mode == wasm.BoundaryAssemblyNest
+}
+
 // AssemblesBoundary reports whether an engine assembles its dispatch group's
 // per-node output into a combined artifact — true for a provider that folds
 // fragments into one document ("merge") or nests each node under its own umbrella
@@ -417,7 +553,7 @@ func boundaryAssemblyCombines(mode string) bool {
 // PlacedByNode is its exact complement: the per-contributor
 // Intermediate=false EmittedFiles produced by per-node Render — the files
 // the orchestrator places itself, at the per-node position a nesting
-// assembler names. Together the two maps are every file per-node Render
+// provider declares. Together the two maps are every file per-node Render
 // produced for the group, which is what an assembler is handed as its
 // contributor list; a fragment-merging assembler's contributors are all in
 // IntermediatesByNode and a nesting assembler's are all in PlacedByNode, so

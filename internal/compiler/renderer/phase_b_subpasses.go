@@ -409,6 +409,12 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // answer covers the whole of an attachment's output, so the two returns cannot
 // come to overlap.
 //
+// attachmentDir is the directory an attachment's own files sit under, resolved
+// from the host provider's own declaration and already carrying its trailing
+// separator. It is handed in rather than read here because it is a property of
+// the dispatch group this node's output joins, which the orchestrator settles
+// around this loop; the loop composes each attachment's coordinates onto it.
+//
 // hostOwn is the host component's own emitted documents (the cross-entity
 // surface a component-scope FR pipeline reads as /host). hostIsAssembler
 // reports whether the host's provider renders pre-assembly fragments; a /host
@@ -434,6 +440,7 @@ func phaseB6(
 	hostOwn []EmittedFile,
 	hostIsAssembler bool,
 	hostProvider string,
+	attachmentDir string,
 	renderCtx renderctx.RenderContext,
 ) (map[string][]byte, map[string][]byte, []attachmentContribution, []DeferredPatch, error) {
 	out := map[string][]byte{}
@@ -711,7 +718,7 @@ func phaseB6(
 			fragments = frFiles
 		} else {
 			for _, f := range frFiles {
-				out[item.Identity.outputPrefix()+f.Name] = f.Body
+				out[item.Identity.outputPrefix(attachmentDir)+f.Name] = f.Body
 			}
 		}
 		if len(fragments) > 0 {

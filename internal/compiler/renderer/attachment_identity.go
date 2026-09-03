@@ -37,6 +37,15 @@ package renderer
 // directory unreadable for no gain. So a host whose id carries a dot gives a
 // directory carrying that dot as written.
 //
+// # What ENCLOSES those segments is the provider's, not this value's
+//
+// The directory the two segments sit under is declared by the provider whose
+// dispatch group holds the output, so it arrives as an argument rather than
+// being written here. Two providers that combine their contributors the same way
+// can need opposite answers — one whose target reads only the files sitting
+// directly in a directory, one whose target discovers its units in a named child
+// directory — and nothing else either of them declares tells the two apart.
+//
 // # The boundary-scope sibling keeps a different shape, by SCOPE
 //
 // A feature attached to a BOUNDARY rather than to a component writes its output
@@ -62,14 +71,21 @@ func (a attachmentIdentity) named() bool { return a.instance != "" }
 func (a attachmentIdentity) parts() []string { return []string{a.host, a.instance} }
 
 // outputPrefix returns the directory every file the attachment emits is written
-// beneath: one segment naming the host, one naming the instance.
+// beneath: the directory the group's provider names for an attached Feature's
+// files, then one segment naming the host and one naming the instance.
 //
-// Two segments rather than one composed token. They are collision-free for the
-// same reason a composed identity is — the host is what separates one instance
-// name attached to several components — while staying legible, which a composed
-// token is not.
-func (a attachmentIdentity) outputPrefix() string {
-	return "features/" + a.host + "/" + a.instance + "/"
+// attachmentDir is resolved from that provider's own declaration and already
+// carries its trailing separator, so it is joined rather than re-composed here.
+// It is the provider's word, or the host's default where the provider names none,
+// and this function reads neither — which is what keeps a target's directory
+// vocabulary out of the composition.
+//
+// Two identity segments rather than one composed token. They are collision-free
+// for the same reason a composed identity is — the host is what separates one
+// instance name attached to several components — while staying legible, which a
+// composed token is not.
+func (a attachmentIdentity) outputPrefix(attachmentDir string) string {
+	return attachmentDir + a.host + "/" + a.instance + "/"
 }
 
 // attachmentNodePrefix marks a synthetic per-node key that carries a
