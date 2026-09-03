@@ -252,8 +252,10 @@ type RenderedNode struct {
 	// Type The node's component-type label, carried on this shape — unlike the per-node render projection, which withholds it. Opaque metadata rather than a behavior switch: it is here so an assembler can group and label the nodes it merges, not so a guest can branch on it.
 	Type string `json:"type" yaml:"type" cbor:"type"`
 	// DerivedNameBasis The identity this contributor derives its own names from inside the assembled artifact — a logical id an assembler mints for one of the contributor's published entries, a per-contributor scope in a merged document. Empty means the id is used directly, which is the value for an ordinary component. It is the same carry the render_node call for this contributor received, and carrying it on both is what keeps the two answers equal: a name the contributor declared while rendering and the name the assembled artifact ends up addressing that content by are derived from one identity rather than from two that happen to agree. A contributor whose id is a dispatch identity a target's name alphabet refuses carries this explicitly, so the assembled artifact addresses its content by a name the target accepts, and two contributors an author can tell apart cannot arrive under one.
-	DerivedNameBasis string           `json:"derived_name_basis,omitempty" yaml:"derived_name_basis,omitempty" cbor:"derived_name_basis,omitempty"`
-	Rendered         RenderNodeOutput `json:"rendered" yaml:"rendered" cbor:"rendered"`
+	DerivedNameBasis string `json:"derived_name_basis,omitempty" yaml:"derived_name_basis,omitempty" cbor:"derived_name_basis,omitempty"`
+	// OutputDirectory The directory this contributor's rendered files sit in, relative to the assembled artifact's own position, carrying no trailing separator. A guest that has to name a contributor's files from inside the assembled artifact — the source path of a module block, an include directive — reads the position from here rather than composing one from the contributor's identity, so the path the assembled artifact points at is the path the files were written to. The two are not always one directory apart: a contributor the host placed inside another contributor's position sits deeper than the contributors placed directly beneath the assembly. Present only where the assembling provider places each contributor under a position of its own; a provider that folds its contributors into one document places no per-contributor directory and receives none.
+	OutputDirectory string           `json:"output_directory,omitempty" yaml:"output_directory,omitempty" cbor:"output_directory,omitempty"`
+	Rendered        RenderNodeOutput `json:"rendered" yaml:"rendered" cbor:"rendered"`
 	// Annotations The node's merged annotations, so a boundary assembler can attribute per-node placement (e.g. the compose network derived from the aggrega.ai/namespace annotation).
 	Annotations types.OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty" cbor:"annotations,omitempty"`
 	// SyncWave The deployment wave this node inherited from its containing boundary (default 0; negative permitted), so a boundary assembler can order the contributors it merges relative to one another. A dispatch group can merge contributors from several boundaries, each carrying its own wave, so the wave travels with every node here rather than once for the whole payload. An assembler whose output shape expresses no ordering ignores it.
@@ -2917,6 +2919,14 @@ func (t RenderedNode) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"derived_name_basis\":")
 		writeJSONString(&buf, t.DerivedNameBasis)
 	}
+	if t.OutputDirectory != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"output_directory\":")
+		writeJSONString(&buf, t.OutputDirectory)
+	}
 	if !first {
 		buf.WriteByte(',')
 	}
@@ -2995,6 +3005,12 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 			} else {
 				t.DerivedNameBasis = s
 			}
+		case "output_directory":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.OutputDirectory = s
+			}
 		case "rendered":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
@@ -3048,7 +3064,7 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *RenderedNode) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "id", "type", "derived_name_basis", "rendered", "annotations", "sync_wave", "values"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "id", "type", "derived_name_basis", "output_directory", "rendered", "annotations", "sync_wave", "values"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -7776,6 +7792,9 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	if !t.Annotations.IsZero() {
 		n++
 	}
+	if t.OutputDirectory != "" {
+		n++
+	}
 	if t.DerivedNameBasis != "" {
 		n++
 	}
@@ -7823,6 +7842,10 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 			}
 		}
 	}
+	if t.OutputDirectory != "" {
+		dst = appendCBORTextString(dst, "output_directory")
+		dst = appendCBORTextString(dst, t.OutputDirectory)
+	}
 	if t.DerivedNameBasis != "" {
 		dst = appendCBORTextString(dst, "derived_name_basis")
 		dst = appendCBORTextString(dst, t.DerivedNameBasis)
@@ -7865,6 +7888,12 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 				return err
 			} else {
 				t.DerivedNameBasis = s
+			}
+		case "output_directory":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.OutputDirectory = s
 			}
 		case "rendered":
 			if err := (&t.Rendered).decodeCBOR(dec); err != nil {
@@ -7940,7 +7969,7 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *RenderedNode) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "id", "type", "derived_name_basis", "rendered", "annotations", "sync_wave", "values"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "id", "type", "derived_name_basis", "output_directory", "rendered", "annotations", "sync_wave", "values"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

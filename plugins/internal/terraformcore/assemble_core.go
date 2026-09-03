@@ -51,9 +51,23 @@ const ModulesDirName = "modules"
 // literal text. Carried into the `module` block instead, the same value arrives
 // where the engine resolves it.
 type RootComponent struct {
-	// ID is the component's identifier, which names both its `module` block and
-	// the sub-directory that block's source points at.
+	// ID is the component's identifier. It attributes a refusal to something the
+	// author can find; it does not name the component's `module` block, because a
+	// contributor that is not one of the graph's own components carries a dispatch
+	// identity here that no module name accepts.
 	ID string
+	// OutputDirectory is the directory this contributor's own files sit in,
+	// relative to this configuration, as reported by whatever placed them. Both
+	// the `module` block's source and its name derive from it, so the block and
+	// the directory it points at cannot drift.
+	//
+	// It is read rather than composed from [ModulesDirName] and the identifier
+	// above. A contributor placed inside another contributor's position sits
+	// deeper than one directory below this configuration, and a source composed
+	// from an identifier alone would name a directory holding none of its files —
+	// which Terraform accepts in silence, because a module whose directory holds
+	// no top-level configuration file is an empty module rather than an error.
+	OutputDirectory string
 	// SyncWave is the deployment wave the component inherited from its boundary
 	// (default 0; negative permitted).
 	SyncWave int
@@ -108,11 +122,33 @@ func AssembleRoot(components []RootComponent) ([]rendercore.RenderedFile, error)
 	moduleNames := make([]string, len(components))
 	claimedBy := make(map[string]string, len(components))
 	for i, c := range components {
-		name := ModuleName(c.ID)
-		if first, taken := claimedBy[name]; taken {
-			return nil, fmt.Errorf("components %q and %q both name the Terraform module %q in this boundary; a module name is unique within a configuration, so rename one of the components", first, c.ID, name)
+		// A contributor with no reported position cannot be declared: every
+		// candidate source would be wrong rather than merely imprecise. This
+		// configuration's own directory would make the block reference the
+		// configuration that declares it, and a position composed from the
+		// identifier would name a directory holding none of this contributor's
+		// files — which Terraform reads as an empty module and accepts in silence,
+		// so the configuration would be reported valid while nothing this
+		// contributor rendered was ever read. Refusing names the one thing that
+		// would have to change.
+		//
+		// Both refusals here name a contributor by the DIRECTORY its files sit in
+		// rather than by the identifier it arrives under, and that is a correctness
+		// point rather than a stylistic one. A contributor that is not one of the
+		// graph's own components arrives under a dispatch identity the compiler
+		// built for its own routing, which no author ever wrote and which opens and
+		// joins with characters a path refuses — so quoting it would put a marker in
+		// front of a reader who has no way to look it up. The directory is composed
+		// entirely of names the author did write, and it locates the files as well
+		// as identifying them.
+		if c.OutputDirectory == "" {
+			return nil, fmt.Errorf("a contributor to this boundary's root configuration reports no directory its own files sit in, so no module block can be written for it: a module's source has to name the directory holding that module's configuration files")
 		}
-		claimedBy[name] = c.ID
+		name := ModuleName(moduleNameBasis(c.OutputDirectory))
+		if first, taken := claimedBy[name]; taken {
+			return nil, fmt.Errorf("the contributors whose files sit in %q and %q both name the Terraform module %q in this boundary; a module name is unique within a configuration, so rename one of them", first, c.OutputDirectory, name)
+		}
+		claimedBy[name] = c.OutputDirectory
 		moduleNames[i] = name
 	}
 	// Encode every argument before writing any of them, so a value that cannot
@@ -135,7 +171,7 @@ func AssembleRoot(components []RootComponent) ([]rendercore.RenderedFile, error)
 	buf.WriteString("# what lets a reference or a depends_on reach from one component to another.\n")
 
 	for i, c := range components {
-		fmt.Fprintf(&buf, "\nmodule %q {\n  source = \"./%s/%s\"\n", moduleNames[i], ModulesDirName, c.ID)
+		fmt.Fprintf(&buf, "\nmodule %q {\n  source = %q\n", moduleNames[i], moduleSource(c.OutputDirectory))
 		// The component's own inputs, one argument per value, before any meta
 		// argument. Names are padded to a common width, which is how the engine's
 		// own formatter lays out a run of single-line arguments, so a reader
@@ -175,6 +211,44 @@ func AssembleRoot(components []RootComponent) ([]rendercore.RenderedFile, error)
 		Path:    RootConfigFileName,
 		Content: []byte(buf.String()),
 	}}, nil
+}
+
+// moduleSource is the `source` a `module` block carries for a contributor whose
+// own files sit in outputDirectory, relative to the configuration this block is
+// written in.
+//
+// Terraform reads a source beginning with `./` or `../` as a local path and
+// anything else as a module address to fetch, so the prefix is what makes the
+// value name a directory beside this configuration at all.
+func moduleSource(outputDirectory string) string {
+	return "./" + outputDirectory
+}
+
+// moduleNameBasis is the identity a contributor's `module` block is named from,
+// derived from the directory that contributor's own files sit in.
+//
+// The directory is what identifies a contributor here rather than the identifier
+// it arrives under, and the reason is that two of the three things a name has to
+// be cannot be met by the identifier. A name must be unique within the
+// configuration, and a contributor that is not one of the graph's own components
+// arrives under a dispatch identity that is unique but that no name alphabet
+// accepts. A name must also be stable against the position, since the block and
+// the directory it points at are read together. The directory is unique per
+// contributor by construction — two contributors sharing one would be writing
+// their files over each other — so naming from it satisfies both at once.
+//
+// The enclosing segment is dropped because it is this target's own word for the
+// place a configuration keeps the modules it composes, so it is the same for
+// every contributor and contributes nothing to telling them apart. What remains
+// is the contributor's position within that place, which is exactly what does.
+//
+// The result is a basis rather than a name: it may still hold separators and
+// other bytes a module name refuses, and [ModuleName] is what maps it into the
+// grammar. That mapping is not injective, which is why [AssembleRoot] refuses a
+// boundary whose contributors collide rather than emitting a configuration with
+// two modules of one name.
+func moduleNameBasis(outputDirectory string) string {
+	return strings.TrimPrefix(outputDirectory, ModulesDirName+"/")
 }
 
 // moduleArgument is one encoded argument of a `module` block: the name it is

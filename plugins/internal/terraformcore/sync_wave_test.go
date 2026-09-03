@@ -13,12 +13,32 @@ import (
 // oneWave builds the contributor list for a boundary in which every component
 // carries the wave field's default, which is the shape of every boundary whose
 // Release declared no wave at all.
+//
+// Each contributor's directory is the position a component placed directly
+// beneath the assembly gets — the enclosing segment followed by the component's
+// own identifier. It is spelled out here rather than defaulted inside the
+// assembler, because a component's directory is the one case where the position
+// happens to be derivable from the identifier, and a default would let every
+// case in this package pass while a contributor whose position is NOT derivable
+// that way silently reached the shape this fixture models.
 func oneWave(ids ...string) []terraformcore.RootComponent {
 	out := make([]terraformcore.RootComponent, 0, len(ids))
 	for _, id := range ids {
-		out = append(out, terraformcore.RootComponent{ID: id})
+		out = append(out, terraformcore.RootComponent{ID: id, OutputDirectory: componentDir(id)})
 	}
 	return out
+}
+
+// componentDir is the directory a component placed directly beneath the
+// assembly has its own files in, as the host composes it.
+func componentDir(id string) string {
+	return terraformcore.ModulesDirName + "/" + id
+}
+
+// atWave builds one contributor carrying a wave, at the position a component
+// placed directly beneath the assembly gets.
+func atWave(id string, wave int) terraformcore.RootComponent {
+	return terraformcore.RootComponent{ID: id, OutputDirectory: componentDir(id), SyncWave: wave}
 }
 
 // rootBody assembles one boundary and returns the root configuration's bytes,
@@ -52,10 +72,10 @@ func TestAssembleRootChainsToPrecedingPopulatedWave(t *testing.T) {
 	// Waves -5, 0 and 7 are populated; 3 is not. Two components share wave 0 so
 	// the fan-out is visible in the wave that follows it.
 	body := rootBody(t, []terraformcore.RootComponent{
-		{ID: "bootstrap", SyncWave: -5},
-		{ID: "db", SyncWave: 0},
-		{ID: "cache", SyncWave: 0},
-		{ID: "app", SyncWave: 7},
+		atWave("bootstrap", -5),
+		atWave("db", 0),
+		atWave("cache", 0),
+		atWave("app", 7),
 	})
 
 	for _, want := range []string{
@@ -99,9 +119,9 @@ func TestAssembleRootWaveOrderingIsWaveOrderNotContributorOrder(t *testing.T) {
 	t.Parallel()
 
 	body := rootBody(t, []terraformcore.RootComponent{
-		{ID: "last", SyncWave: 2},
-		{ID: "middle", SyncWave: 1},
-		{ID: "first", SyncWave: 0},
+		atWave("last", 2),
+		atWave("middle", 1),
+		atWave("first", 0),
 	})
 
 	for _, want := range []string{
@@ -170,11 +190,11 @@ func TestAssembleRootWaveOrderingIsDeterministic(t *testing.T) {
 	t.Parallel()
 
 	components := []terraformcore.RootComponent{
-		{ID: "a", SyncWave: -3},
-		{ID: "b", SyncWave: 0},
-		{ID: "c", SyncWave: 0},
-		{ID: "d", SyncWave: 2},
-		{ID: "e", SyncWave: 9},
+		atWave("a", -3),
+		atWave("b", 0),
+		atWave("c", 0),
+		atWave("d", 2),
+		atWave("e", 9),
 	}
 	first := rootBody(t, components)
 	for i := 0; i < 32; i++ {
@@ -192,8 +212,8 @@ func TestAssembleRootWaveOrderingSurvivesModuleNameMapping(t *testing.T) {
 	t.Parallel()
 
 	body := rootBody(t, []terraformcore.RootComponent{
-		{ID: "platform.db", SyncWave: 0},
-		{ID: "1app", SyncWave: 1},
+		atWave("platform.db", 0),
+		atWave("1app", 1),
 	})
 
 	want := "module \"_1app\" {\n  source = \"./modules/1app\"\n\n  depends_on = [module.platform_db]\n}\n"

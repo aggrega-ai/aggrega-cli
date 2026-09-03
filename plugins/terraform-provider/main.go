@@ -306,11 +306,13 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 }
 
 // assembleBoundaryFromInput writes the boundary's root configuration from the
-// contributors the payload names, and reports how the host should place their
-// files. The root declares one `module` block per contributing component, each
-// pointing at that component's own sub-directory; the guest names the directory
-// those sub-directories sit under and nests per component, so the host places
-// every component's output inside the configuration that declares it.
+// contributors the payload names. The root declares one `module` block per
+// contributor, each pointing at the directory that contributor's own files sit
+// in — the position the host reports on the payload, which is the position the
+// host wrote them to, so the block and the directory cannot drift. The guest
+// names the directory those sub-directories sit under on its describe()
+// contract, because the host places a contributor's files while that
+// contributor renders, a whole pass before this export is called.
 //
 // The contributors are read from the payload's rendered-node list in the order
 // the host supplies, which is fixed deterministically, so identical input yields
@@ -324,7 +326,7 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
 	components := make([]terraformcore.RootComponent, 0, len(in.RenderedNodes))
 	for _, n := range in.RenderedNodes {
-		components = append(components, terraformcore.RootComponent{ID: n.ID, SyncWave: n.SyncWave, Values: n.Values})
+		components = append(components, terraformcore.RootComponent{ID: n.ID, OutputDirectory: n.OutputDirectory, SyncWave: n.SyncWave, Values: n.Values})
 	}
 
 	files, err := terraformcore.AssembleRoot(components)

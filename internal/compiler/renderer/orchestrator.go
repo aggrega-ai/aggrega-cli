@@ -461,6 +461,14 @@ type dispatchKey struct {
 // come from one identity, and the key cannot be it for a contributor whose key is a
 // marker no target's alphabet accepts.
 //
+// nodeEnclosed records, for a contributor whose files were written inside
+// another contributor's own position rather than directly beneath the group's,
+// which key's position encloses it and what prefix its files were keyed under
+// there. An attached Feature is the case: its files are keyed into the enclosing
+// key's file map, so the group's own placement reaches them through that key and
+// this is the only record of where within it they sit. A contributor placed
+// directly beneath the group's position holds no entry.
+//
 // contributingBoundaries records every boundary path whose components fed
 // into this dispatch group — used for diagnostic messages on collision /
 // chart-name-mismatch errors and for chart-name cascade lookups against
@@ -480,11 +488,32 @@ type pendingDispatch struct {
 	nodeValues             map[string]map[string]any
 	nodeProducer           map[string]derivedKeyProducer
 	nodeNameBasis          map[string]string
+	nodeEnclosed           map[string]enclosedPlacement
 	subCharts              []SubChartInfo
 	assembler              BoundaryAssembler
 	assemblerCandidates    []assemblerCandidate
 	engineByNode           map[string]Provider
 	contributingBoundaries []string
+}
+
+// enclosedPlacement is where one contributor's files sit inside another
+// contributor's own position: the enclosing contributor's per-node key, and the
+// prefix this contributor's files were keyed under within that key's file map.
+//
+// The two travel together because neither locates the files on its own. The
+// enclosing key resolves to a position only through the group's own placement,
+// which is where the enclosing segment is composed; the prefix is relative to
+// that position and says nothing about where the position is. A reader holding
+// one of them can compose no path at all.
+//
+// The prefix is the value the routing ALREADY keyed the files under rather than
+// a second spelling of it, so the position this record composes and the position
+// the files were written to cannot come to disagree. An enclosing key of its own
+// key is the ordinary shape for a contributor that owns its file map and was
+// still keyed under a prefix inside it.
+type enclosedPlacement struct {
+	withinNode string
+	prefix     string
 }
 
 // assemblerCandidate is one node's contribution to its dispatch group's
@@ -646,6 +675,63 @@ func nodeProducerLabel(producer derivedKeyProducer) string {
 // cannot come to disagree.
 func nodeOutputSegment(producer derivedKeyProducer) string {
 	return producer.name
+}
+
+// nodeRelFor is the position a nesting dispatch group writes the files keyed
+// under one of its per-node keys: the group's declared enclosing segment
+// followed by that key's own output segment, with a trailing separator.
+//
+// It is the single home of that composition. Both the group's own placement and
+// the position reported to the group's assembler read it, so a contributor's
+// files are written where the assembler was told they are — rather than at a
+// position one side composed and the other re-derived, which agree for a
+// contributor placed directly beneath the group's position and diverge for one
+// placed inside another contributor's.
+func (pd *pendingDispatch) nodeRelFor(nestPrefix, nodeID string) string {
+	return nestPrefix + nodeOutputSegment(pd.producerOf(nodeID)) + "/"
+}
+
+// contributorDirFor is the directory one of a nesting dispatch group's
+// contributors has its own files in, relative to the group's assembled
+// position, with a trailing separator.
+//
+// It composes the position the files were keyed at from the two values that
+// keyed them: the per-node key whose file map holds them, and the prefix they
+// were keyed under inside it. A contributor placed directly beneath the group's
+// position holds no enclosing record and reaches its own key, so this is that
+// key's position and nothing further.
+func (pd *pendingDispatch) contributorDirFor(nestPrefix, nodeID string) string {
+	if enc, ok := pd.nodeEnclosed[nodeID]; ok {
+		return pd.nodeRelFor(nestPrefix, enc.withinNode) + enc.prefix
+	}
+	return pd.nodeRelFor(nestPrefix, nodeID)
+}
+
+// contributorKeys is every per-node key this dispatch group holds output or a
+// placement record for.
+//
+// The four maps are read rather than any one of them, because no single map
+// holds the whole set and which one a contributor lands in is decided by how its
+// output was routed. A contributor handed to the group's assembler is in
+// intermediates alone; one the group places is in placed and in files; one whose
+// files the group keyed inside another contributor's map is in neither file map
+// and is known only from its enclosing record. Reading fewer maps drops exactly
+// the contributor whose routing the reader did not have in mind.
+func (pd *pendingDispatch) contributorKeys() map[string]struct{} {
+	keys := make(map[string]struct{}, len(pd.files)+len(pd.nodeEnclosed))
+	for id := range pd.files {
+		keys[id] = struct{}{}
+	}
+	for id := range pd.intermediates {
+		keys[id] = struct{}{}
+	}
+	for id := range pd.placed {
+		keys[id] = struct{}{}
+	}
+	for id := range pd.nodeEnclosed {
+		keys[id] = struct{}{}
+	}
+	return keys
 }
 
 // producerOf is the recorded label for one of a dispatch group's per-node keys.
@@ -1808,6 +1894,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				nodeValues:      map[string]map[string]any{},
 				nodeProducer:    map[string]derivedKeyProducer{},
 				nodeNameBasis:   map[string]string{},
+				nodeEnclosed:    map[string]enclosedPlacement{},
 				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, key)
@@ -1925,7 +2012,13 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// the value reach a reader of one frame as well as of the whole chain.
 			return nil, cerrors.Wrap(aerr, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, aerr.Error())
 		}
-		frFiles, hostPatched, attachmentContribs, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, attachmentDir, pipelineRenderCtx)
+		// Whether this node's dispatch group gives each contributor a position of
+		// its own, read from the same static self-description the attachment
+		// directory above is read from. An attachment's files are placed while this
+		// node renders, so the answer has to be in hand here rather than at the
+		// group's own assembly, which runs a whole pass later.
+		hostNestsContributors := boundaryNestingOf(engine).PerNode
+		frFiles, hostPatched, attachmentContribs, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, attachmentDir, hostNestsContributors, pipelineRenderCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -1972,17 +2065,22 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		for path, content := range hostPatched {
 			dispatch[key].files[nodeID][path] = content
 		}
-		// Route each attachment that handed its output over into this node's dispatch
-		// group as a contributor of its own, so the group's assembler is told about it
-		// alongside the components. The sub-pass hands over nothing at all where this
-		// group's provider folds nothing: such an attachment wrote discrete documents
-		// under its own position above, and its output is exactly what it always was.
+		// Route each attachment into this node's dispatch group as a contributor of
+		// its own, so the group's assembler is told about it alongside the
+		// components. Every attachment the sub-pass reports is routed, whichever way
+		// its output travelled, because the contributor list is a property of the
+		// group: an attachment absent from it is one no assembled artifact can name,
+		// even where its files sit in the group's own output.
 		//
-		// It joins the intermediates map rather than the placed one, which is the
-		// same split the host component's own emission takes: the intermediates map
-		// is the half an assembler folds, and the placed half is also the half the
-		// flush writes at the group's own position — so content placed there would
-		// be delivered twice, once inside the assembled document and once beside it.
+		// Output handed over joins the intermediates map rather than the placed one,
+		// which is the same split the host component's own emission takes: the
+		// intermediates map is the half an assembler folds, and the placed half is
+		// also the half the flush writes at the group's own position — so content
+		// placed there would be delivered twice, once inside the assembled document
+		// and once beside it. An attachment that wrote its own files hands over
+		// nothing and adds no entry to either map; what it adds is where it wrote
+		// them, which is the only record of a position the group holds under the
+		// host's key rather than the attachment's.
 		//
 		// The coordinates are STATED here from the values the render carried out,
 		// never recovered from the key. The key is a routing marker joining two
@@ -2012,7 +2110,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			dispatch[key].nodeNameBasis[contrib.nodeID] = contrib.nameBasis
 			dispatch[key].nodeAnnotations[contrib.nodeID] = nodeCtx.Annotations
 			dispatch[key].nodeSyncWave[contrib.nodeID] = nodeCtx.SyncWave
-			dispatch[key].intermediates[contrib.nodeID] = append(dispatch[key].intermediates[contrib.nodeID], contrib.fragments...)
+			if len(contrib.fragments) > 0 {
+				dispatch[key].intermediates[contrib.nodeID] = append(dispatch[key].intermediates[contrib.nodeID], contrib.fragments...)
+			}
+			if contrib.placement.withinNode != "" {
+				dispatch[key].nodeEnclosed[contrib.nodeID] = contrib.placement
+			}
 		}
 		// Trace point: Phase B.6 — FeatureRecipe Resource Generation. The
 		// snapshot captures the post-B.6 TemplateContext for this node;
@@ -2167,6 +2270,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				nodeValues:      map[string]map[string]any{},
 				nodeProducer:    map[string]derivedKeyProducer{},
 				nodeNameBasis:   map[string]string{},
+				nodeEnclosed:    map[string]enclosedPlacement{},
 				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, dKey)
@@ -2220,6 +2324,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		intermediates := []EmittedFile{}
 		nodeFiles := map[string][]byte{}
+		// The prefix this feature's own files are keyed under inside its own file
+		// map, composed once here and used both to key them below and to report
+		// where they went. Its own key rather than another contributor's: a
+		// boundary-scope feature owns the map its files are keyed into, and is still
+		// keyed under a prefix within it, so its position is its key's position
+		// followed by that prefix.
+		//
+		// Reported only where the group's provider gives each contributor a position
+		// of its own AND declares a directory for an attachment. Where it declares
+		// none, the composition below returns a filename prefix rather than a
+		// directory segment, which names no position for this feature to be reported
+		// at.
+		featureOutputPrefix := attachmentOutputPrefix(attachmentDir, key.FRInstance)
 		for _, f := range files {
 			if f.Intermediate {
 				intermediates = append(intermediates, f)
@@ -2255,7 +2372,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// Its Intermediate=true fragments still reach a fragment-merging assembler,
 			// which is the case where a boundary-scope feature's content is genuinely
 			// merged rather than placed.
-			nodeFiles[attachmentOutputPrefix(attachmentDir, key.FRInstance)+f.Name] = f.Body
+			nodeFiles[featureOutputPrefix+f.Name] = f.Body
+		}
+		if len(nodeFiles) > 0 && featureOutputPrefix != "" && boundaryNestingOf(frEngineForPlacement).PerNode {
+			dispatch[dKey].nodeEnclosed[syntheticNodeID] = enclosedPlacement{withinNode: syntheticNodeID, prefix: featureOutputPrefix}
 		}
 		if len(intermediates) > 0 {
 			dispatch[dKey].intermediates[syntheticNodeID] = append(dispatch[dKey].intermediates[syntheticNodeID], intermediates...)
@@ -2441,6 +2561,46 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 					}
 				}
 			}
+			// Where this group's contributors sit is read from the elected provider's
+			// own self-description rather than from the reply below, and the reading is
+			// the same one the render already made for the attachment position: both are
+			// static properties of the provider, so both are answerable before any node
+			// renders. A reply cannot answer the second at all — an attachment's files
+			// are placed while its host renders, which is hundreds of lines and one
+			// whole pass before an assembler is called.
+			//
+			// It is resolved before the assembler is called rather than after, because
+			// the assembler is told where each of its contributors sits and cannot be
+			// told from a value derived after it has replied.
+			nesting := boundaryNestingOf(groupAssemblerEngine(pd))
+			nestPrefix := ""
+			if nesting.PerNode {
+				prefix, serr := nesting.resolvedPrefix(key.Provider)
+				if serr != nil {
+					// The refusal's own text becomes the frame's message so the
+					// provider and the value reach a reader of one frame as well
+					// as a reader of the whole chain.
+					return nil, cerrors.Wrap(serr, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, serr.Error())
+				}
+				nestPrefix = prefix
+			}
+			// Each contributor's own directory, composed once from the values that
+			// keyed its files and read by both the placement below and the assembler
+			// above. Filled only where the provider places contributors under
+			// positions of their own: a folding provider has no per-contributor
+			// position for this to name.
+			//
+			// The contributor set is every key the group holds output or an enclosing
+			// record for. The two file maps alone would miss a contributor whose files
+			// the group keyed into another contributor's map, which is exactly the
+			// contributor whose position an assembler cannot otherwise learn.
+			var nodeOutputDirectory map[string]string
+			if nesting.PerNode {
+				nodeOutputDirectory = make(map[string]string, len(pd.files)+len(pd.nodeEnclosed))
+				for nodeID := range pd.contributorKeys() {
+					nodeOutputDirectory[nodeID] = strings.TrimSuffix(pd.contributorDirFor(nestPrefix, nodeID), "/")
+				}
+			}
 			info := BoundaryInfo{
 				BoundaryPath:           key.Path,
 				AggregateName:          graph.Metadata.AggregateName,
@@ -2453,6 +2613,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				NodeSyncWave:           pd.nodeSyncWave,
 				NodeValues:             pd.nodeValues,
 				NodeNameBasis:          pd.nodeNameBasis,
+				NodeOutputDirectory:    nodeOutputDirectory,
 				ContributingBoundaries: pd.contributingBoundaries,
 				Edges:                  edges,
 				ChartName:              chartName,
@@ -2462,14 +2623,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			if err != nil {
 				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, fmt.Sprintf("dispatch %q assemble", key.Path))
 			}
-			// Where this group's contributors sit is read from the elected provider's
-			// own self-description rather than from the reply above, and the reading is
-			// the same one the render already made for the attachment position: both are
-			// static properties of the provider, so both are answerable before any node
-			// renders. A reply cannot answer the second at all — an attachment's files
-			// are placed while its host renders, which is hundreds of lines and one
-			// whole pass before an assembler is called.
-			nesting := boundaryNestingOf(groupAssemblerEngine(pd))
 			// Post-assembly PATCH replay (scope-symmetric). A pipeline against
 			// this assembler node deferred per-node because the merged documents
 			// were not discrete yet: a component-scope FeatureRecipe's /host
@@ -2507,21 +2660,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// placed no per-node files at all.
 			// These per-node fragments carry no producer format at this nesting
 			// position, so their records leave Format empty.
-			nestPrefix := ""
-			if nesting.PerNode {
-				prefix, serr := nesting.resolvedPrefix(key.Provider)
-				if serr != nil {
-					// The refusal's own text becomes the frame's message so the
-					// provider and the value reach a reader of one frame as well
-					// as a reader of the whole chain.
-					return nil, cerrors.Wrap(serr, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, serr.Error())
-				}
-				nestPrefix = prefix
-			}
+			//
+			// The position comes from the one home of that composition, which the
+			// assembler was already told each contributor's position from — so the
+			// directory named inside the assembled artifact and the directory the
+			// files are written to are one value rather than two.
 			for nodeID, nodeFiles := range pd.files {
 				nodeRel := ""
 				if nesting.PerNode {
-					nodeRel = nestPrefix + nodeOutputSegment(pd.producerOf(nodeID)) + "/"
+					nodeRel = pd.nodeRelFor(nestPrefix, nodeID)
 				}
 				producer := nodeProducerLabel(pd.producerOf(nodeID))
 				for p, c := range nodeFiles {

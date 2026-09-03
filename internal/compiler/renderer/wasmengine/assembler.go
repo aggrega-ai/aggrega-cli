@@ -59,20 +59,24 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // the BoundaryAssembler's path→AssembledFile map, carrying each file's
 // producer-declared format alongside its bytes.
 //
-// Where a contributor's own per-node files sit is not part of this reply and is
-// deliberately not asked for here: it is a static property of the provider, which
-// the orchestrator reads from the same describe() self-report this adapter reads
-// its assembly mode from.
+// Which directory a contributor's own files sit in is not asked of this reply
+// either, and travels the other way: the orchestrator composed that position when
+// it placed the files, so it is supplied to the guest rather than returned by it.
+// A reply could not carry it at all — an attachment's files are placed while its
+// host renders, a whole pass before any assembler is called.
 // A dispatch group's contributors are everything a render produced files for,
 // whichever way those files travel: the fragments a merging assembler is handed,
-// and the files the orchestrator places itself at a nesting assembler's per-node
-// position. Both reach the wire's rendered-node list, because a group's
-// contributor list is a property of the group and not of how one provider routes
-// its output — take only the fragments and a nesting provider is handed an empty
-// list and cannot see the nodes it is assembling for. A contributor is not always
-// one of the graph's nodes: a Feature attached to a component contributes its own
-// fragments under a dispatch identity of its own, carrying the identity it derives
-// its names from beside it.
+// the files the orchestrator places itself at a nesting assembler's per-node
+// position, and the files it keyed inside another contributor's position. All
+// three reach the wire's rendered-node list, because a group's contributor list
+// is a property of the group and not of how one provider routes its output —
+// take only the fragments and a nesting provider is handed an empty list and
+// cannot see the nodes it is assembling for, and take only the two file maps and
+// a contributor placed inside another's position is missing from the list
+// entirely, since neither map holds a key for it. A contributor is not always
+// one of the graph's nodes: a Feature attached to a component contributes under a
+// dispatch identity of its own, carrying the identity it derives its names from
+// beside it.
 //
 // Rendered nodes are emitted in sorted-by-id order and each node's annotations and
 // values are inserted in sorted-key order, so the wire payload is byte-identical
@@ -98,7 +102,7 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // sub-charts contributes none of these carriers.
 func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, error) {
 	seen := map[string]struct{}{}
-	nodeIDs := make([]string, 0, len(info.IntermediatesByNode)+len(info.PlacedByNode))
+	nodeIDs := make([]string, 0, len(info.IntermediatesByNode)+len(info.PlacedByNode)+len(info.NodeOutputDirectory))
 	for _, byNode := range []map[string][]renderer.EmittedFile{info.IntermediatesByNode, info.PlacedByNode} {
 		for id := range byNode {
 			if _, dup := seen[id]; dup {
@@ -107,6 +111,19 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 			seen[id] = struct{}{}
 			nodeIDs = append(nodeIDs, id)
 		}
+	}
+	// A contributor whose files the group keyed inside another contributor's
+	// position holds no key in either file map, so the positions the group
+	// composed are what name it. Read after both file maps rather than instead of
+	// them: it is filled only by a group that places its contributors under
+	// positions of their own, so a folding group's contributor list comes entirely
+	// from the maps above.
+	for id := range info.NodeOutputDirectory {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		nodeIDs = append(nodeIDs, id)
 	}
 	sort.Strings(nodeIDs)
 
@@ -129,10 +146,15 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 			// guest asks the same fallback question of the pair, and the value it falls
 			// back to is the id it already holds.
 			DerivedNameBasis: info.NodeNameBasis[id],
-			Rendered:         renderer.RenderNodeOutput{Files: files},
-			Annotations:      orderedAnnotations(info.NodeAnnotations[id]),
-			SyncWave:         info.NodeSyncWave[id],
-			Values:           valuesToOrdered(info.NodeValues[id]),
+			// The directory this contributor's files were written to, composed by
+			// the placement that wrote them. Absent where the group's provider
+			// places no per-contributor position, which is the same state as a
+			// contributor that has none.
+			OutputDirectory: info.NodeOutputDirectory[id],
+			Rendered:        renderer.RenderNodeOutput{Files: files},
+			Annotations:     orderedAnnotations(info.NodeAnnotations[id]),
+			SyncWave:        info.NodeSyncWave[id],
+			Values:          valuesToOrdered(info.NodeValues[id]),
 		})
 	}
 

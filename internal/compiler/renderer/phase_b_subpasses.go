@@ -398,22 +398,29 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // were snapshotted before this sub-pass ran, so write-back must flow through
 // the return value, not by mutating state.EmittedFiles (inert post-snapshot).
 //
-// The third return carries the attachments whose output is handed to the host's
-// dispatch group rather than written at the attachment's own position, one entry
-// per attachment, for the orchestrator to route as contributors of their own.
-// That output is deliberately ABSENT from the path map above: content handed to
-// an assembler and also written beside the assembled document would be delivered
+// The third return carries every attachment the orchestrator has to route as a
+// contributor of the host's dispatch group, one entry per attachment. An entry
+// carries either the output handed to that group's assembler or the position the
+// output was written at instead, never both — and the output handed over is
+// deliberately ABSENT from the path map above, because content handed to an
+// assembler and also written beside the assembled document would be delivered
 // twice. Which of the two an attachment's output takes needs both providers: the
 // host's decides whether its group folds anything, and the attachment's decides
 // whether what it rendered is in the shape that group's assembler reads. One
-// answer covers the whole of an attachment's output, so the two returns cannot
-// come to overlap.
+// answer covers the whole of an attachment's output, so the two cannot overlap.
 //
 // attachmentDir is the directory an attachment's own files sit under, resolved
 // from the host provider's own declaration and already carrying its trailing
 // separator. It is handed in rather than read here because it is a property of
 // the dispatch group this node's output joins, which the orchestrator settles
 // around this loop; the loop composes each attachment's coordinates onto it.
+//
+// hostNestsContributors reports whether the host's dispatch group places each of
+// its contributors under a position of its own. It decides whether an
+// attachment's written position is worth reporting: a group that places no
+// per-contributor position has none for an attachment either, so the report
+// would name a directory the group never composes. Like the two above, it is a
+// property of the group rather than of this loop and is settled around it.
 //
 // hostOwn is the host component's own emitted documents (the cross-entity
 // surface a component-scope FR pipeline reads as /host). hostIsAssembler
@@ -441,6 +448,7 @@ func phaseB6(
 	hostIsAssembler bool,
 	hostProvider string,
 	attachmentDir string,
+	hostNestsContributors bool,
 	renderCtx renderctx.RenderContext,
 ) (map[string][]byte, map[string][]byte, []attachmentContribution, []DeferredPatch, error) {
 	out := map[string][]byte{}
@@ -714,14 +722,35 @@ func phaseB6(
 		// holds and the group answers once for this attachment. Splitting per file
 		// would ask each rendered file a question only the pair of providers answers.
 		var fragments []EmittedFile
+		var placement enclosedPlacement
 		if attachmentJoinsHostAssembly {
 			fragments = frFiles
 		} else {
+			outputPrefix := item.Identity.outputPrefix(attachmentDir)
 			for _, f := range frFiles {
-				out[item.Identity.outputPrefix(attachmentDir)+f.Name] = f.Body
+				out[outputPrefix+f.Name] = f.Body
+			}
+			// Where a nesting host places its contributors under positions of their
+			// own, this attachment's position is one of them and the group is told
+			// so — the prefix its files were just keyed under, inside the host's own
+			// position. Without it the group holds this attachment's files under the
+			// host's key and can name no position for the attachment itself, so an
+			// assembled artifact addressing its contributors by position addresses
+			// this one not at all.
+			//
+			// The prefix is the value the write above used rather than a second
+			// spelling of it, so the position reported and the position written to
+			// are one string. It is reported only where the host's declaration puts
+			// the attachment in a directory: where the host declares that its target
+			// reads only the files sitting directly in a directory, that same
+			// composition returns a FILENAME prefix instead, which names no position
+			// of its own — the attachment's files sit in the host's own position, and
+			// the host's own entry already names it.
+			if hostNestsContributors && attachmentDir != "" && len(frFiles) > 0 {
+				placement = enclosedPlacement{withinNode: nodeID, prefix: outputPrefix}
 			}
 		}
-		if len(fragments) > 0 {
+		if len(fragments) > 0 || placement.withinNode != "" {
 			// The coordinates travel with the fragments rather than being recovered
 			// downstream: the dispatch identity joins its parts with characters either
 			// part may contain, so cutting it apart cannot return what went in. The
@@ -734,6 +763,7 @@ func phaseB6(
 				producer:  attachmentProducer,
 				nameBasis: TargetNameBasis(frNodeCtx),
 				fragments: fragments,
+				placement: placement,
 			})
 		}
 	}
@@ -757,11 +787,22 @@ func phaseB6(
 // content by. It is present rather than optional because nodeID is a marker no
 // target's name alphabet accepts, so a contributor arriving without it would have
 // its names derived from the marker.
+//
+// A contribution carries EITHER fragments or a placement, never both, and which
+// one is the disposition the render settled. fragments are the output handed to
+// the host's group to fold into one document. A placement says the output was
+// written at the attachment's own position inside the host's, and records where —
+// so the group can name a contributor whose files it holds under the host's key
+// rather than under the attachment's own. A contribution is made in both cases
+// because the group's contributor list is a property of the group: an attachment
+// left out of it is one no assembled artifact can name, whichever way its files
+// travelled.
 type attachmentContribution struct {
 	nodeID    string
 	producer  derivedKeyProducer
 	nameBasis string
 	fragments []EmittedFile
+	placement enclosedPlacement
 }
 
 // attachmentRenderItem is one attachment queued for the Phase B.6 render loop —

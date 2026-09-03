@@ -75,10 +75,16 @@ func TestAssembleRootEmitsInSuppliedOrder(t *testing.T) {
 }
 
 // TestAssembleRootRefusesCollidingModuleNames is the Loud Guardrail: two
-// components whose identifiers map onto one Terraform module name would produce a
+// contributors whose positions map onto one Terraform module name would produce a
 // configuration the engine rejects, so the build halts here instead, naming both
-// components. The check is capable of refusing — the sibling case below shows the
-// same shape passing — so a green result is not decoration.
+// positions and the name they collided on. The check is capable of refusing — the
+// sibling case below shows the same shape passing — so a green result is not
+// decoration.
+//
+// The halt names each contributor by the DIRECTORY its files sit in, which is
+// asserted rather than assumed: a contributor that is not one of the graph's own
+// components arrives under a dispatch identity no author wrote, so a message
+// quoting the identifier would hand a reader a marker they cannot look up.
 func TestAssembleRootRefusesCollidingModuleNames(t *testing.T) {
 	t.Parallel()
 
@@ -86,7 +92,7 @@ func TestAssembleRootRefusesCollidingModuleNames(t *testing.T) {
 	if err == nil {
 		t.Fatal("two components mapping onto one module name must halt")
 	}
-	for _, want := range []string{"a.b", "a_b", "a_b"} {
+	for _, want := range []string{componentDir("a.b"), componentDir("a_b"), "a_b"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("halt message must name %q; got: %v", want, err)
 		}
@@ -161,7 +167,7 @@ func TestModulesDirNameReachesBothSides(t *testing.T) {
 // order given, so a case fixes the order it asserts against.
 func withValues(t *testing.T, id string, wave int, pairs ...any) terraformcore.RootComponent {
 	t.Helper()
-	return terraformcore.RootComponent{ID: id, SyncWave: wave, Values: omOf(t, pairs...)}
+	return terraformcore.RootComponent{ID: id, OutputDirectory: componentDir(id), SyncWave: wave, Values: omOf(t, pairs...)}
 }
 
 // TestAssembleRootEmitsValuesAsModuleArguments pins the whole block byte for

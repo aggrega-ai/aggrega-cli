@@ -672,7 +672,30 @@ type BoundaryInfo struct {
 	// identities, where the name the assembled artifact addresses content by is not
 	// the name anything declared. Nothing fails on that: each side is
 	// self-consistent, and only a reader holding both sees the mismatch.
-	NodeNameBasis          map[string]string
+	NodeNameBasis map[string]string
+	// NodeOutputDirectory is the directory each contributor's own files sit in,
+	// relative to the assembled artifact's own position and carrying no trailing
+	// separator, keyed by node id exactly as the maps above are. It is populated
+	// only for a group whose provider places each contributor under a position of
+	// its own; a provider that folds its contributors into one document places no
+	// per-contributor directory, so the map is empty and every contributor reads
+	// no position.
+	//
+	// It is the group's own placement that fills this, from the same composition
+	// that writes the files, so an assembler naming a contributor's files from
+	// inside the assembled artifact names the directory they were written to. The
+	// alternative is an assembler composing a position from the contributor's
+	// identity while the placement composed one from the contributor's enclosing
+	// key — two derivations that agree for a contributor placed directly beneath
+	// the assembly and diverge for one placed inside another contributor's
+	// position, where the assembled artifact would point at a directory holding
+	// none of that contributor's files.
+	//
+	// It also carries the group's whole contributor set for an assembler that
+	// nests: a contributor whose files the group keyed into another contributor's
+	// map appears in neither of the two file maps above, so this is where such a
+	// contributor is named at all.
+	NodeOutputDirectory    map[string]string
 	ContributingBoundaries []string
 	Edges                  []IREdgeInfo
 	ChartName              string

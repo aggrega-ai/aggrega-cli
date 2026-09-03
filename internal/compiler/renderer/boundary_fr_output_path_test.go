@@ -231,8 +231,16 @@ func renderBoundaryFROutputPathCase(t *testing.T, c boundaryFROutputPathCase) ma
 		frRecipe.Spec.Artifacts = oneInlineArtifact("aux-config.yaml",
 			"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: aux\ndata:\n  marker: \"x\"\n")
 	default:
-		componentRecipe.Spec.Artifacts = oneInlineArtifact("api.tf.json", "{\"output\":{}}\n")
-		frRecipe.Spec.Artifacts = oneInlineArtifact("aux.tf.json", "{\"output\":{}}\n")
+		// Each artifact is a document this target actually accepts, carrying an
+		// output under a name of its own. The path set below is what this file
+		// asserts and is indifferent to the content — which is exactly why the
+		// content has to be right here rather than merely present: a fixture
+		// modelling a document the target would reject exercises a shape the
+		// product cannot produce, and no assertion in this file can see it. The
+		// names differ per contributor because this target merges every top-level
+		// file in a directory into one namespace.
+		componentRecipe.Spec.Artifacts = oneInlineArtifact("api.tf.json", "{\"output\":{\"api_marker\":{\"value\":\"api\"}}}\n")
+		frRecipe.Spec.Artifacts = oneInlineArtifact("aux.tf.json", "{\"output\":{\"aux_marker\":{\"value\":\"aux\"}}}\n")
 	}
 
 	lookup := renderer.RecipeLookup{
