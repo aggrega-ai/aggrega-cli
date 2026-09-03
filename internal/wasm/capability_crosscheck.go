@@ -235,11 +235,11 @@ func crossCheckProviderContract(entityIdentity string, want, got ProviderContrac
 // one directory would disagree. The dereference is what makes the comparison mean
 // what the message claims.
 //
-// An entity's authored claim reaches this function through the two-state
-// projection in [DeclaredSegment], so a `want` carrying an explicitly empty
-// directory cannot arise from authoring. A guest reporting one is therefore a real
-// disagreement, and it is reported as a difference in whether a directory was
-// declared rather than as a difference between two directory names — quoting two
+// Both operands carry all three states end to end: the entity's authored claim
+// reaches this function without passing through a projection that could collapse
+// one, so an author declaring no directory and an author declaring nothing arrive
+// distinct and are compared as such. A declaredness difference is reported as
+// one, rather than as a difference between two directory names — quoting two
 // empty strings at an author would name nothing they could act on.
 func crossCheckAttachmentSegment(entityIdentity string, want, got *string) error {
 	if (want == nil) != (got == nil) {

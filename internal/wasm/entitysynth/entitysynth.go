@@ -248,12 +248,7 @@ func descriptorContract(c *wasm.ProviderContract) *types.ProviderContract {
 		ReusableInstance:     c.ReusableInstance,
 		CrossBoundaryLinking: c.CrossBoundaryLinking,
 		NestSegment:          c.NestSegment,
-		// The entity's field is a plain string and cannot hold the carrier's
-		// explicitly-empty state, so a guest reporting one synthesizes an entity
-		// that reads as declaring nothing. The load-gate cross-check refuses that
-		// pair rather than letting it pass, so the loss is loud at the point it
-		// matters instead of silent here.
-		AttachmentSegment: wasm.SegmentDirectory(c.AttachmentSegment),
+		AttachmentSegment:    c.AttachmentSegment,
 	}
 	if c.ArtifactDelimiters != nil {
 		out.ArtifactDelimiters = &types.PluginArtifactDelimiters{

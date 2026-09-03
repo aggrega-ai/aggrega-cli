@@ -215,48 +215,6 @@ const (
 	BoundaryAssemblyNest  = "nest"
 )
 
-// DeclaredSegment and SegmentDirectory convert between an authoring surface's
-// two-state directory string and the contract's three-state carrier, and they are
-// the one home of that mapping.
-//
-// The contract distinguishes three states: a named directory, an explicitly empty
-// one meaning the target wants no enclosing directory, and an absent declaration
-// leaving the host its own default. An entity's authored claim is a plain string
-// and so carries only two, because an author writing an empty value in YAML
-// produces a value indistinguishable from omitting the key. So the projection is
-// asymmetric by necessity rather than by oversight, and the asymmetry is written
-// once here: an empty authored string means "declared nothing", and an absent
-// carrier reads back as the empty string.
-//
-// Both directions live together because they are one mapping, and a round trip
-// through the authoring surface has to be stable. Two copies would agree the day
-// they were written and be free to drift afterwards, silently, since nothing
-// compares two spellings of one rule — and the drift would surface as a contract
-// cross-check rejecting a plugin that matches its entity.
-//
-// 🔴 The empty-string state is therefore reachable only from a guest's own
-// describe() report, never from an authored entity. A guest reporting it against
-// an entity that cannot express it disagrees, and the cross-check says so.
-func DeclaredSegment(authored string) *string {
-	if authored == "" {
-		return nil
-	}
-	return &authored
-}
-
-// SegmentDirectory returns the directory a contract carrier names, and the empty
-// string when it declares none. It collapses the carrier's absent and
-// explicitly-empty states, which is correct only where the destination cannot
-// express the difference — an entity's authored claim. Do not reach for it to
-// decide layout: a consumer that acts on the directory reads the carrier itself,
-// so that declaring none stays distinct from declaring nothing.
-func SegmentDirectory(carrier *string) string {
-	if carrier == nil {
-		return ""
-	}
-	return *carrier
-}
-
 // operatesPatch and operatesEmit are the two pipeline operations an
 // export may declare via [PluginExport.Operates]. The shape validator
 // accepts these two values or the empty string; it does not require the

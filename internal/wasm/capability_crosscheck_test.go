@@ -287,11 +287,11 @@ func TestCrossCheckContract_AttachmentSegment(t *testing.T) {
 			wantField: "attachment_segment",
 		},
 		{
-			// The state an authored entity cannot reach, because its field is a
-			// plain string whose empty value means "declared nothing". A guest
-			// reporting it therefore disagrees with every entity, and the halt says
-			// so in terms of whether a directory was declared rather than by
-			// quoting two directory names the author would read as identical.
+			// A genuine disagreement between two reachable states: the plugin
+			// declares that its target wants no enclosing directory while the
+			// entity declares nothing at all. The halt says so in terms of whether
+			// a directory was declared rather than by quoting two directory names
+			// the author would read as identical.
 			name:      "plugin declares no enclosing directory, entity declares nothing: halt",
 			entity:    nil,
 			plugin:    declares(""),
