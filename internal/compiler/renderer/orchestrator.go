@@ -442,6 +442,25 @@ type dispatchKey struct {
 // assembled artifact; one whose contributors already carry their own inputs
 // reads none of it.
 //
+// nodeProducer records, per the same key, the authoring-level coordinates of
+// whatever placed that key's files: the kind of contributor it is and the name or
+// names an author wrote for it. It is STATED at the site that routes a
+// contributor's output, never recovered from the key, and that is the property
+// rather than a convenience. The key is a routing identity, and a boundary-scope
+// contributor's is a marker joining two authored coordinates with characters either
+// coordinate may itself contain — so cutting it apart cannot return what went in,
+// and a reader that cut it dropped one coordinate silently. Two contributors
+// differing only in the dropped coordinate then arrive under one label, and every
+// surface that compares contributors by label reads one where there are two.
+//
+// nodeNameBasis records, per the same key again, the identity that contributor
+// derives its own names from inside an assembled artifact, or nothing where the key
+// itself is that identity. It travels to the assembler beside the key for the
+// reason the render carries the same pair: the name a contributor declared while
+// rendering and the name the assembled artifact addresses that content by have to
+// come from one identity, and the key cannot be it for a contributor whose key is a
+// marker no target's alphabet accepts.
+//
 // contributingBoundaries records every boundary path whose components fed
 // into this dispatch group — used for diagnostic messages on collision /
 // chart-name-mismatch errors and for chart-name cascade lookups against
@@ -459,6 +478,8 @@ type pendingDispatch struct {
 	nodeComponent          map[string]string
 	nodeSyncWave           map[string]int
 	nodeValues             map[string]map[string]any
+	nodeProducer           map[string]derivedKeyProducer
+	nodeNameBasis          map[string]string
 	subCharts              []SubChartInfo
 	assembler              BoundaryAssembler
 	assemblerCandidates    []assemblerCandidate
@@ -571,60 +592,72 @@ func (s *assembledFileSet) resolve() (map[string]AssembledFile, map[string][]str
 	return files, producers
 }
 
-// nodeProducerKind classifies a per-node contributor in authoring terms: what
-// kind of thing it is, and the name it carries in the author's own input.
-//
-// The kind is the word an author reads, and it is what says where the name is
-// written — a component's under the components it declares, a boundary-scope
-// feature's under that boundary's features. The two are returned apart rather
-// than composed so that the composition is the caller's: a caller spelling them
-// into a sentence it is building and a caller handing them to a surface that
-// quotes what it is given need different shapes, and a pre-composed label serves
-// only the first.
-//
-// It is the single home of the classification, so a further kind of contributor
-// is one edit here instead of a decision several sites make separately and agree
-// on until they do not.
-func nodeProducerKind(nodeID string) (kind, instance string) {
-	if instance, isFeature := strings.CutPrefix(nodeID, boundaryFRNodePrefix); isFeature {
-		return "feature", instance
-	}
-	return "component", nodeID
-}
-
 // nodeProducerLabel names a per-node contributor in authoring terms, so a
 // finding about what it wrote points at something the author can find in their
 // own input.
 //
-// The name is not quoted here. The label is retained as a contributor's
+// 🔴 It carries EVERY coordinate the contributor's label holds, and dropping one is
+// not a matter of how much detail a message wants. The attribution this label
+// becomes is compared for equality by whatever reads it — a path several
+// contributors wrote at reports the distinct producers that met there — so two
+// contributors differing only in a coordinate this label omitted arrive as one
+// producer, and the surface that exists to report them reports nothing, which is
+// exactly what a build with no collision reports. The same reasoning is recorded at
+// length on [derivedKeyProducer], whose coordinates these are.
+//
+// The kind is the word an author reads, and it is what says where the name is
+// written — a component's under the components the aggregate declares, a
+// boundary-scope feature's under that boundary's features. The further coordinate
+// is spelled through the same caption the rule over derived names uses, so one
+// contributor is called the same thing by both surfaces.
+//
+// The values are not quoted here. The label is retained as a contributor's
 // attribution and reaches a reader through a diagnostic surface that quotes each
 // value it is handed, so quoting at both ends would show the name inside two
 // layers of quotation.
-func nodeProducerLabel(nodeID string) string {
-	kind, instance := nodeProducerKind(nodeID)
-	return kind + " " + instance
+func nodeProducerLabel(producer derivedKeyProducer) string {
+	label := producer.kind + " " + producer.name
+	if producer.scope == "" {
+		return label
+	}
+	return label + " " + derivedNameScopeCaption(producer.kind) + " " + producer.scope
 }
 
 // nodeOutputSegment is the directory a nesting assembler's dispatch group places
 // one contributor's files under: the name that contributor carries in the
 // author's own input.
 //
-// A component's per-node key already is that name, so it passes through. A
-// boundary-scope feature's key is a marker the compiler built for its own
-// dispatch, and the characters that marker opens and joins with — angle
-// brackets, a colon — are refused in a path on some platforms and have to be
-// escaped in a URL, so the marker itself can never be a directory name. What
-// distinguishes one boundary-scope attachment from another at the boundary the
-// group assembles is the instance name alone, because the boundary IS the
-// enclosing directory here: the marker carries nothing else a reader of the
-// output could act on.
+// It is the label's own name coordinate and nothing else — a component's declared
+// name, a boundary-scope attachment's instance name — so the directory a reader
+// opens is a name they wrote. The per-node key is never it: a boundary-scope
+// contributor's key is a marker the compiler built for its own dispatch, and the
+// characters that marker opens and joins with — angle brackets, a colon, an at sign
+// — are refused in a path on some platforms and have to be escaped in a URL.
 //
-// It reads the name through the same classification a diagnostic does, so the
+// The further coordinate is deliberately absent, and the reason is positional: the
+// boundary a contributor is attached at IS the enclosing directory at this
+// position, so repeating it inside the segment would name it twice. Two
+// contributors that genuinely meet at one path are separated by the attribution
+// above rather than by the segment, which is what keeps a reader's directory
+// spelling free of a coordinate the directory already states.
+//
+// It reads the name from the same recorded label a diagnostic does, so the
 // directory a reader opens and the name a finding calls that contributor by
 // cannot come to disagree.
-func nodeOutputSegment(nodeID string) string {
-	_, instance := nodeProducerKind(nodeID)
-	return instance
+func nodeOutputSegment(producer derivedKeyProducer) string {
+	return producer.name
+}
+
+// producerOf is the recorded label for one of a dispatch group's per-node keys.
+//
+// A key reaching any of the group's own flush paths was registered when its files
+// were routed, so the recorded label is present for every key those paths walk. The
+// zero label is returned for anything else rather than a name reconstructed from
+// the key, because reconstructing one is the lossy cut this whole registration
+// exists to remove — a label that named the wrong contributor would be worse than
+// one that names none.
+func (pd *pendingDispatch) producerOf(nodeID string) derivedKeyProducer {
+	return pd.nodeProducer[nodeID]
 }
 
 func joinWithAnd(items []string) string {
@@ -1773,6 +1806,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				nodeComponent:   map[string]string{},
 				nodeSyncWave:    map[string]int{},
 				nodeValues:      map[string]map[string]any{},
+				nodeProducer:    map[string]derivedKeyProducer{},
+				nodeNameBasis:   map[string]string{},
 				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, key)
@@ -1818,6 +1853,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		dispatch[key].files[nodeID] = nodeFileMap
 		dispatch[key].formats[nodeID] = nodeFormatMap
+		// The label this node's own declarations were recorded under is the label its
+		// files are attributed by, read from the value composed above rather than
+		// composed a second time here. A component's own render needs no name basis:
+		// its key is the name it deploys under, so a target derives names from the key
+		// directly and an entry stating that again would be a second copy of it.
+		dispatch[key].nodeProducer[nodeID] = nodeProducer
 		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
 		dispatch[key].nodeComponent[nodeID] = node.Component
 		dispatch[key].nodeSyncWave[nodeID] = nodeCtx.SyncWave
@@ -2028,12 +2069,36 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		// Use the FR's provider for the {{ .capability }} substitution
 		// instead of any per-component provider.
+		//
+		// The identity handed to the path evaluation is the instance-only marker, and
+		// it stays that way deliberately. It reaches the author-facing `.component_id`
+		// path-template variable, so the value here is one an operator's own
+		// `subDirectory:` template may read — and it is what decides which dispatch
+		// group this contribution joins. Two boundaries whose declared directories
+		// evaluate alike are MEANT to feed one group; sending them to two by
+		// disambiguating this value would not separate two contributors, it would
+		// separate two groups and take the whole question off the table.
 		finalPath, err := computeFinalPath(boundaryFRNodePrefix+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, fmt.Sprintf("boundary-scope FR %q path eval", key.FRInstance))
 		}
 		dKey := dispatchKey{Path: finalPath, Provider: frProvider}
-		syntheticNodeID := boundaryFRNodePrefix + key.FRInstance
+		// Both coordinates the author wrote, through the one home that spells this
+		// contributor's dispatch identity — the same call the render that produced
+		// these files made for the same tuple, so the identity the group holds this
+		// contribution under is the identity the render declared its names under.
+		//
+		// The instance name alone identifies one contributor per name across every
+		// boundary feeding this group, so two boundaries' output occupies one entry
+		// there and one of them is lost.
+		syntheticNodeID := boundaryFRNodeID(key)
+		// The authoring-level coordinates and the settled composed identity, stated
+		// once here and read by every surface that names this contributor or derives
+		// a name for its content. The producer is the same value the derived-name
+		// declarations below are recorded under, so the label a path collision reports
+		// this contributor by and the label a name collision reports it by are one
+		// value rather than two that agree.
+		frProducer := derivedKeyProducerFor(producerKindFeature, key.FRInstance, key.BoundaryPath)
 		if _, ok := dispatch[dKey]; !ok {
 			dispatch[dKey] = &pendingDispatch{
 				files:           map[string]map[string][]byte{},
@@ -2044,10 +2109,37 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				nodeComponent:   map[string]string{},
 				nodeSyncWave:    map[string]int{},
 				nodeValues:      map[string]map[string]any{},
+				nodeProducer:    map[string]derivedKeyProducer{},
+				nodeNameBasis:   map[string]string{},
 				engineByNode:    map[string]Provider{},
 			}
 			orderedDispatch = append(orderedDispatch, dKey)
 		}
+		// Two tuples reaching one dispatch identity halt rather than merge, the same
+		// guardrail the per-component routing above carries and for a sharper reason
+		// than defensiveness. The identity joins the instance name to the boundary path
+		// with a character neither part is constrained to exclude, so an attachment
+		// named `a@b` at boundary `c` and one named `a` at boundary `b@c` spell one
+		// identity — and either map would then take the second silently, one by
+		// replacing a whole boundary's rendered output and the other by folding two
+		// boundaries' fragments into one contributor, with nothing in the output
+		// recording that two were declared.
+		//
+		// It is asked of the label registry rather than of either output map, because
+		// that is the one entry every contributor makes whatever it emitted: a
+		// contributor whose whole output is pre-assembly fragments writes no file map,
+		// and one that emitted nothing at all writes neither, so a guard on an output
+		// map would let exactly those through. The contributors are named by their own
+		// labels, which carry both coordinates, so the message names the two things an
+		// author would have to edit.
+		if _, alreadyHere := dispatch[dKey].nodeProducer[syntheticNodeID]; alreadyHere {
+			inner := fmt.Errorf("%w: dispatch path %q provider %q already holds output from %s, which reaches the same dispatch identity as %s; two contributors to one assembly group must be distinguishable",
+				ErrInstanceIDCollision(), dKey.Path, dKey.Provider,
+				nodeProducerLabel(dispatch[dKey].producerOf(syntheticNodeID)), nodeProducerLabel(frProducer))
+			return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
+		}
+		dispatch[dKey].nodeProducer[syntheticNodeID] = frProducer
+		dispatch[dKey].nodeNameBasis[syntheticNodeID] = boundaryFRState.ComponentIDs[key]
 		intermediates := []EmittedFile{}
 		nodeFiles := map[string][]byte{}
 		for _, f := range files {
@@ -2056,12 +2148,23 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				continue
 			}
 			// Intermediate=false: emit directly under features/<instance>/.
-			// These deliberately do NOT join the group's placed map: that map is
-			// the contributor list an assembler is handed, and a boundary-scope
-			// FeatureRecipe is not one of the group's nodes — it has no component
-			// identity, no version and no wave of its own. Its Intermediate=true
-			// fragments still reach a fragment-merging assembler below, which is
-			// the case where a boundary-scope feature's content is genuinely
+			// These deliberately do NOT join the group's placed map, and the reason is
+			// the two things that map decides rather than anything about identity. It
+			// carries the emission order and the input-kind origin of each file, which
+			// the flat flush reads to decide which files move under a contributor's own
+			// directory; a boundary-scope attachment's output is already pre-keyed at
+			// the boundary's own features position, so a second placement decision
+			// would relocate output nothing forced. And it is half the contributor list
+			// an assembler is handed, alongside the fragments — so joining it would
+			// hand a merging assembler this contribution twice.
+			//
+			// Staying out of that map says nothing about this contributor's identity: it
+			// has one, composed from the instance name and the boundary path and settled
+			// against its own plugin, recorded against this key above. Every placement it
+			// makes is kept and attributed by the assembled-file set below, which is where
+			// two contributors meeting on one path is answered.
+			// Its Intermediate=true fragments still reach a fragment-merging assembler,
+			// which is the case where a boundary-scope feature's content is genuinely
 			// merged rather than placed.
 			nodeFiles["features/"+key.FRInstance+"/"+f.Name] = f.Body
 		}
@@ -2073,17 +2176,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		// This boundary-scope feature's derived-name declarations join the same
 		// per-group check its files do, under the same authoring-level producer name
-		// a path collision would report it by. Recorded unconditionally rather than
-		// alongside the file routing above: a contributor whose output is entirely
-		// pre-assembly fragments still derived the names it declared, and those
-		// names still meet the other contributors' names in the merged output.
+		// a path collision reports it by — the one composed above and recorded against
+		// this contribution's own key, so the two surfaces read one value rather than
+		// two that agree. Recorded unconditionally rather than alongside the file
+		// routing above: a contributor whose output is entirely pre-assembly fragments
+		// still derived the names it declared, and those names still meet the other
+		// contributors' names in the merged output.
 		//
 		// The label carries the boundary path as well as the instance name, and both
 		// are read from the accumulator's own key rather than recovered from the
 		// synthetic node identity above. That identity joins the two parts with
 		// characters either part may itself contain, so cutting it apart again
-		// cannot return what went in — and it drops the path entirely, which is what
-		// let one instance name written at two boundaries arrive as one declarer.
+		// cannot return what went in.
 		//
 		// Where this contributor's output landed travels with the label, read from
 		// the routing performed immediately above rather than from any claim about
@@ -2092,7 +2196,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// output was written under its own features/ position does not. A feature
 		// that emitted nothing reached no document either, which is the same answer
 		// and the same reason.
-		frProducer := derivedKeyProducerFor(producerKindFeature, key.FRInstance, key.BoundaryPath)
 		frContributor := derivedKeyContributorFor(frProducer, len(intermediates) == 0)
 		dispatch[dKey].derivedKeys.putAll(boundaryFRState.DerivedKeys[key], boundaryFRState.DerivedKeyRepeats[key], frContributor)
 		// Record the boundary as a contributor for the dispatch group's
@@ -2260,6 +2363,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				NodeComponent:          pd.nodeComponent,
 				NodeSyncWave:           pd.nodeSyncWave,
 				NodeValues:             pd.nodeValues,
+				NodeNameBasis:          pd.nodeNameBasis,
 				ContributingBoundaries: pd.contributingBoundaries,
 				Edges:                  edges,
 				ChartName:              chartName,
@@ -2319,9 +2423,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			for nodeID, nodeFiles := range pd.files {
 				nodeRel := ""
 				if nesting.PerNode {
-					nodeRel = nestPrefix + nodeOutputSegment(nodeID) + "/"
+					nodeRel = nestPrefix + nodeOutputSegment(pd.producerOf(nodeID)) + "/"
 				}
-				producer := nodeProducerLabel(nodeID)
+				producer := nodeProducerLabel(pd.producerOf(nodeID))
 				for p, c := range nodeFiles {
 					groupFiles.put(nodeRel+p, AssembledFile{Content: c}, producer)
 				}
@@ -2358,8 +2462,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// what leaves a boundary-scope attachment's own layout untouched.
 			for nodeID, nodeFiles := range pd.files {
 				nodeFormats := pd.formats[nodeID]
-				producer := nodeProducerLabel(nodeID)
-				artifactsDir := nodeOutputSegment(nodeID) + "/"
+				producer := nodeProducerLabel(pd.producerOf(nodeID))
+				artifactsDir := nodeOutputSegment(pd.producerOf(nodeID)) + "/"
 				fromArtifacts := make(map[string]struct{}, len(pd.placed[nodeID]))
 				for _, f := range pd.placed[nodeID] {
 					if f.Origin == EmitOriginArtifactsInline || f.Origin == EmitOriginArtifactsImport {

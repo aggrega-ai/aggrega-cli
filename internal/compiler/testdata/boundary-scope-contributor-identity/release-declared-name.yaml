@@ -18,4 +18,4 @@ spec:
           type: feature.bs/constant
       components:
         store-a: {}
-        boundary-fr-audit-zone-a: {}
+        bfr-zone-a-audit: {}

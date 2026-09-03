@@ -6,6 +6,7 @@ package renderer_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -350,6 +351,16 @@ func TestBoundaryScopeFROutputPathNamesTheAttachmentInstance(t *testing.T) {
 // The four characters are the ones a path refuses on some platforms and a URL
 // has to escape, and the rendered tree lands in cross-platform repositories that
 // are cloned on all of them.
+//
+// It bounds the DIAGNOSTIC text by the same four, over the same corpus and in the
+// same test, because a path and a halt are two readings of one identity and only
+// one of them was ever held to account. The emitted path is built from the name an
+// author wrote and so never carried the marker; a halt names the contributor, and
+// naming it by the compiler's own dispatch identity puts the marker in front of a
+// reader with no file to open and nothing in their own input to match it against.
+// Bounding only the paths leaves that half unasserted and reads as though the
+// character set were the property, when the property is that no surface a reader
+// meets is spelled from the marker.
 func TestBoundaryScopeFROutputPathCarriesNoDispatchMarker(t *testing.T) {
 	t.Parallel()
 
@@ -362,13 +373,222 @@ func TestBoundaryScopeFROutputPathCarriesNoDispatchMarker(t *testing.T) {
 				t.Fatal("the render emitted nothing, so an absence claim over it is vacuous")
 			}
 			for p := range files {
-				for _, bad := range []string{"<", ">", ":", "@"} {
-					if strings.Contains(p, bad) {
-						t.Errorf("emitted path %q carries %q, which a path refuses on some platforms and a "+
-							"URL must escape", p, bad)
-					}
-				}
+				assertCarriesNoDispatchMarker(t, "emitted path", p)
 			}
 		})
 	}
+
+	t.Run("a halt names the contributors without the dispatch marker", func(t *testing.T) {
+		t.Parallel()
+		text := boundaryFRCollisionHaltText(t)
+		// The positive control. An absence claim over an empty string holds for every
+		// character there is, so the text has to be shown to name the contributors
+		// before its not naming the marker means anything.
+		for _, want := range []string{
+			"feature aux attached at boundary zone-a",
+			"feature aux attached at boundary zone-b",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("the halt does not carry %q, so an absence claim over it is vacuous\ngot: %s", want, text)
+			}
+		}
+		// The four are bounded over the values the halt QUOTES rather than over the
+		// whole sentence, and the narrowing is the rule rather than a concession. The
+		// framework quotes each value it is handed, so a quoted span is where an
+		// identity appears and the prose around it is the diagnostic's own English —
+		// which carries a colon after every caption. Bounding the sentence would fail
+		// on that punctuation while saying nothing about the identity, so it would be
+		// an assertion that cannot pass and does not test its subject.
+		quoted := quotedValuesOf(text)
+		if len(quoted) == 0 {
+			t.Fatalf("the halt quotes no value, so there is no identity to bound\ngot: %s", text)
+		}
+		for _, v := range quoted {
+			assertCarriesNoDispatchMarker(t, "halt value", v)
+		}
+	})
+}
+
+// quotedValuesOf is every double-quoted span of a diagnostic's text — the values
+// the framework quoted, which is where a contributor identity appears.
+func quotedValuesOf(s string) []string {
+	var out []string
+	for rest := s; ; {
+		open := strings.Index(rest, `"`)
+		if open < 0 {
+			return out
+		}
+		rest = rest[open+1:]
+		close := strings.Index(rest, `"`)
+		if close < 0 {
+			return out
+		}
+		out = append(out, rest[:close])
+		rest = rest[close+1:]
+	}
+}
+
+// assertCarriesNoDispatchMarker holds one string clear of every character the
+// dispatch marker opens or joins with. One home for the four, so a path and a
+// quoted diagnostic value are bounded by one set rather than by two that agree.
+func assertCarriesNoDispatchMarker(t *testing.T, what, s string) {
+	t.Helper()
+	for _, bad := range []string{"<", ">", ":", "@"} {
+		if strings.Contains(s, bad) {
+			t.Errorf("%s %q carries %q, which a path refuses on some platforms and a URL must escape",
+				what, s, bad)
+		}
+	}
+}
+
+// boundaryFRCollisionHaltText renders two boundaries that declare one directory and
+// attach one feature under one instance name, and returns the halt.
+//
+// Both contributors' files land at that instance's own features position, which the
+// two share because the instance name is shared — so two renders produce one path
+// and the build refuses rather than letting one of them replace the other. It is
+// the shortest input that puts a boundary-scope contributor's identity into a
+// message a reader reads, which is what this file has to bound.
+func boundaryFRCollisionHaltText(t *testing.T) string {
+	t.Helper()
+
+	const (
+		frInstance = "aux"
+		featType   = "core/aux:1.0.0"
+		directory  = "dist/shared"
+	)
+	zones := []string{"zone-a", "zone-b"}
+
+	nodes := types.OrderedMap[types.IRNode]{}
+	boundaries := types.OrderedMap[types.Boundary]{}
+	bfProj := types.OrderedMap[types.OrderedMap[types.IRBoundaryFeature]]{}
+	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	order := ir.FeatureOrder{}
+	boundaryInfra := map[string]*resolver.BoundaryInfra{}
+
+	for _, zone := range zones {
+		nodeID := "api-" + zone
+		nodes.Set(nodeID, types.IRNode{Component: "core/api", BoundaryPath: zone})
+		boundaryInfra[nodeID] = &resolver.BoundaryInfra{BoundaryPath: zone, Directory: directory}
+
+		boundaryFeatures := types.OrderedMap[types.BoundaryFeature]{}
+		boundaryFeatures.Set(frInstance, types.BoundaryFeature{Type: featType, Infra: types.OrderedMap[any]{}})
+		proj := types.OrderedMap[types.IRBoundaryFeature]{}
+		proj.Set(frInstance, types.IRBoundaryFeature{Type: featType, Infra: types.OrderedMap[any]{}})
+		bfProj.Set(zone, proj)
+
+		nodeFV := types.OrderedMap[types.IRFeatureEntry]{}
+		nodeFV.Set(frInstance, types.IRFeatureEntry{Type: featType})
+		fvm.Set(nodeID, nodeFV)
+		order[nodeID] = []string{frInstance}
+
+		boundary := types.Boundary{
+			Directory:  directory,
+			Features:   boundaryFeatures,
+			Components: types.OrderedMap[types.BoundaryComponent]{},
+			Boundaries: types.OrderedMap[types.Boundary]{},
+		}
+		boundary.Components.Set(nodeID, types.BoundaryComponent{})
+		boundaries.Set(zone, boundary)
+	}
+
+	input := renderer.RendererInput{
+		Graph: &types.IRGraph{
+			Metadata: types.IRMetadata{AggregateName: "boundary-fr-collision-app"},
+			Spec: types.IRSpec{
+				Nodes:                nodes,
+				ValuesMapping:        types.OrderedMap[json.RawMessage]{},
+				InfraMapping:         types.OrderedMap[json.RawMessage]{},
+				FeatureValuesMapping: fvm,
+				BoundaryFeatures:     bfProj,
+				Provenance:           types.IRProvenance{CompilerVersion: "test"},
+			},
+		},
+		FeatureOrder: order,
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "boundary-fr-collision-app"}},
+			Release:       &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}},
+			BoundaryInfra: boundaryInfra,
+		},
+		// The rules declared over what a dispatch group assembled are invoked against
+		// axes built from the graph facts, so a render handed none runs none of them —
+		// and the collision this case exists to read would go unreported while the
+		// output quietly held one file where two were written.
+		GraphView: derivedKeyGraphFacts{},
+	}
+
+	// Every resource this fixture emits is named for the boundary it came from, so
+	// the ONLY thing two contributors here arrive at together is the output path.
+	// Without that, both boundaries' ConfigMaps carry one metadata name and the rule
+	// over derived names refuses first — a different rule, over a different fault,
+	// leaving the path collision this case exists to read unreached and the halt it
+	// bounds never produced.
+	configMap := func(name string) string {
+		return "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: " + name + "\ndata:\n  marker: \"x\"\n"
+	}
+	lookup := renderer.RecipeLookup{
+		Recipe: func(nodeID, componentType string) (*types.Recipe, bool) {
+			if componentType != "core/api" {
+				return nil, false
+			}
+			return &types.Recipe{
+				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
+				Spec: types.RecipeSpec{
+					Capability: "helm", Implements: "core/api",
+					Artifacts: oneInlineArtifact(nodeID+"-config.yaml", configMap(nodeID)),
+				},
+			}, true
+		},
+		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
+			if !strings.HasPrefix(featureType, "core/aux") {
+				return nil, false
+			}
+			return &types.FeatureRecipe{
+				Metadata: types.FeatureRecipeMetadata{Name: "aux-fr", Version: "1.0.0"},
+				Spec: types.FeatureRecipeSpec{
+					Capability: "helm", Implements: featType, ExecutionScope: "boundary",
+					ValuesMapping: types.ValuesMapping{Inline: `{}`},
+					// The file NAME is shared — that is the collision — while the
+					// resource inside it is named for the boundary, so the two
+					// contributors meet on the path and on nothing else.
+					Artifacts: oneInlineArtifact("aux-config.yaml",
+						configMap("aux-{{ .boundary.boundary_name }}")),
+				},
+			}, true
+		},
+	}
+
+	res, err := renderer.RenderAll(context.Background(), input, lookup, wasmEngineFactory(t))
+	if err == nil {
+		t.Fatalf("expected a halt; emitted: %v", sortedEmittedPaths(res.Files))
+	}
+	return errorChainText(err)
+}
+
+// errorChainText is every frame of an error's wrap tree, joined.
+//
+// The whole tree rather than the outermost frame, because a categorised report puts
+// its findings in the values it wraps and the top frame names only the class. An
+// absence claim read off the top frame alone would be a claim about a sentence that
+// names no contributor at all, and would hold however the frames beneath it were
+// spelled — which is the reading this bound exists to refuse.
+func errorChainText(err error) string {
+	var b strings.Builder
+	var walk func(e error)
+	walk = func(e error) {
+		if e == nil {
+			return
+		}
+		b.WriteString(e.Error())
+		b.WriteString("\n")
+		if joined, isMulti := e.(interface{ Unwrap() []error }); isMulti {
+			for _, m := range joined.Unwrap() {
+				walk(m)
+			}
+			return
+		}
+		walk(errors.Unwrap(e))
+	}
+	walk(err)
+	return b.String()
 }

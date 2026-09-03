@@ -69,6 +69,38 @@ import (
 // attachment once while a rule reported on it per component.
 const executionScopeBoundary = "boundary"
 
+// boundaryFRNodeID is the dispatch identity the compiler holds one boundary-scope
+// FeatureRecipe contribution under: a marker that says what kind of contributor it
+// is, followed by both coordinates an author wrote for it.
+//
+// It is the single home of that identity, and both the render that produces the
+// contribution and the routing that places its output reach it rather than
+// spelling a marker of their own. Two spellings is not a stylistic matter here: the
+// render declares the names its output carries under the identity it was given, and
+// the assembled artifact addresses that content by the identity the routing held, so
+// two spellings mean the name declared and the name emitted are derived from two
+// different identities — which is a mismatch nothing fails on, because each side is
+// self-consistent.
+//
+// Both coordinates are present because either alone identifies the wrong thing. The
+// instance name alone is shared by every boundary that attaches the same feature
+// under it, and two boundaries' declared directories can evaluate alike and feed one
+// dispatch group — so an identity without the path arrives at that group as one
+// contributor where two were declared, and one of them is lost. The path alone is
+// shared by every attachment at that boundary.
+//
+// 🔴 It is a marker for the compiler's own dispatch and is NEVER a name a target
+// accepts: it opens with an angle bracket and joins with a colon and an at sign,
+// which a path refuses on some platforms and a name alphabet refuses outright.
+// Nothing reads it back apart, either — it joins its two parts with characters
+// either part may itself contain, so cutting it cannot return what went in. What
+// a reader meets instead is the composed identity settled for the same tuple
+// ([BoundaryFRState.ComponentIDs]) and the coordinates recorded beside the
+// contribution.
+func boundaryFRNodeID(key boundaryFRKey) string {
+	return boundaryFRNodePrefix + key.FRInstance + "@" + key.BoundaryPath
+}
+
 // boundaryFRKey identifies a (boundary_path, FR-instance) tuple for
 // boundary-scope FR deduplication and provides storage. The boundary path
 // is the slash-separated traversal path to the boundary that holds the FR
@@ -109,6 +141,26 @@ type BoundaryFRState struct {
 	// leave the check covering components and silently skipping features.
 	DerivedKeys map[boundaryFRKey]types.OrderedMap[[]string]
 
+	// ComponentIDs carries the composed component identity settled for each
+	// (boundary_path, FR-instance) tuple — the identity every resource that
+	// FeatureRecipe's output carries, composed from the instance name and the
+	// segments of the boundary path and shortened to whatever bound its own target
+	// accepts.
+	//
+	// It is recorded here rather than recomputed where it is read, and the reason is
+	// that recomputing it is not a cheaper spelling of the same thing: the
+	// composition is settled against the FeatureRecipe's own rendering plugin, so a
+	// second composition would have to ask that plugin again to reach the same
+	// answer, and one that skipped the asking would spell the identity differently
+	// from the one the resources already carry. Keyed exactly as Files is, so a
+	// reader iterating the emitted output reaches the identity for the contributor
+	// that emitted it.
+	//
+	// A tuple whose render derived no identity carries none, which is the same state
+	// as absent: an empty value means the contributor's own dispatch identity is
+	// used as-is.
+	ComponentIDs map[boundaryFRKey]string
+
 	// DerivedKeyRepeats carries, per the same key, the names one of that
 	// FeatureRecipe's declarations held more than once inside a single one of its
 	// key spaces. Kept beside DerivedKeys for the reason the per-node accumulator
@@ -132,6 +184,7 @@ func NewBoundaryFRState() *BoundaryFRState {
 		Dedup:                map[boundaryFRKey]bool{},
 		Provides:             map[boundaryFRKey]map[string]any{},
 		Files:                map[boundaryFRKey][]EmittedFile{},
+		ComponentIDs:         map[boundaryFRKey]string{},
 		DerivedKeys:          map[boundaryFRKey]types.OrderedMap[[]string]{},
 		DerivedKeyRepeats:    map[boundaryFRKey][]derivedKeyRepeat{},
 		ConsumerEnvOverrides: map[string]map[string]string{},
@@ -375,7 +428,7 @@ func dispatchBoundaryScopeFR(
 	// passes through and establishes it there, so both attachment scopes name the
 	// producing FeatureRecipe from a single site rather than from two that agree.
 	frNodeCtx := nodeCtx
-	frNodeCtx.NodeID = "<boundary-fr>:" + frInstance + "@" + key.BoundaryPath
+	frNodeCtx.NodeID = boundaryFRNodeID(key)
 	frNodeCtx.BoundaryPath = key.BoundaryPath
 	// The component identity is COMPOSED from the two things an author wrote —
 	// the instance name this feature is attached under, and the segments of the
@@ -408,6 +461,14 @@ func dispatchBoundaryScopeFR(
 	// per-component attachment is the opposite case and leaves the basis empty, so
 	// its author's own chart keeps rendering against the host component's name.
 	frNodeCtx.DerivedNameBasis = frComponentID
+	// The same settled value is recorded against this tuple, because the surfaces
+	// that place this contribution's output and hand it to an assembler run after
+	// this render has returned and hold the tuple rather than this context. Recorded
+	// rather than re-composed there: the composition is settled against this
+	// FeatureRecipe's own plugin, so a second composition either asks that plugin a
+	// second time for one answer or skips the asking and spells the identity
+	// differently from the one the emitted resources already carry.
+	boundaryFRState.ComponentIDs[key] = frComponentID
 	// That label value is a name the compiler derived, and it lands on every
 	// resource this feature's output carries — so it joins the injectivity check
 	// the names a guest declares go through. Two features whose identities reach

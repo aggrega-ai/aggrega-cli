@@ -481,7 +481,21 @@ type BoundaryInfo struct {
 	// its own files resolved the values into those files, so it has no entry here
 	// and an assembler supplies it nothing — offering inputs a node's files never
 	// declare is an assembled artifact its target may reject.
-	NodeValues             map[string]map[string]any
+	NodeValues map[string]map[string]any
+	// NodeNameBasis is the identity each contributor derives its own names from
+	// inside the assembled artifact, keyed by node id exactly as the maps above are.
+	// An entry is present only where that identity is not the node id itself, which
+	// is the case for a contributor that is not one of the graph's nodes: a Feature
+	// attached at a boundary reaches its group under a dispatch identity the compiler
+	// built, and no target's name alphabet accepts it.
+	//
+	// It travels to the assembler because the alternative is an assembler deriving
+	// its names from the dispatch identity while the render that produced the content
+	// declared them from the composed one — two derivations of one name from two
+	// identities, where the name the assembled artifact addresses content by is not
+	// the name anything declared. Nothing fails on that: each side is
+	// self-consistent, and only a reader holding both sees the mismatch.
+	NodeNameBasis          map[string]string
 	ContributingBoundaries []string
 	Edges                  []IREdgeInfo
 	ChartName              string

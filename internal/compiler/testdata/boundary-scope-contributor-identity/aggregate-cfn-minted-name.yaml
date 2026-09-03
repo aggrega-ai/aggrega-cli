@@ -14,7 +14,7 @@ spec:
       values:
         resource_id: "StoreAQueue"
         endpoint_value: "store-a-endpoint"
-    boundary-fr-audit:
+    bfr-zone-a-audit:
       type: core/bs-host
       values:
         resource_id: "ClaimantQueue"

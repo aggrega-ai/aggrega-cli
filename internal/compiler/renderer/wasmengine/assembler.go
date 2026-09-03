@@ -118,12 +118,17 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 			files = append(files, renderer.RenderedFile{Path: f.Name, Content: f.Body})
 		}
 		renderedNodes = append(renderedNodes, renderer.RenderedNode{
-			ID:          id,
-			Type:        info.NodeComponent[id],
-			Rendered:    renderer.RenderNodeOutput{Files: files},
-			Annotations: orderedAnnotations(info.NodeAnnotations[id]),
-			SyncWave:    info.NodeSyncWave[id],
-			Values:      valuesToOrdered(info.NodeValues[id]),
+			ID:   id,
+			Type: info.NodeComponent[id],
+			// The identity this contributor derives its own names from, absent where
+			// that is the id itself. It is passed through rather than derived here: the
+			// guest asks the same fallback question of the pair, and the value it falls
+			// back to is the id it already holds.
+			DerivedNameBasis: info.NodeNameBasis[id],
+			Rendered:         renderer.RenderNodeOutput{Files: files},
+			Annotations:      orderedAnnotations(info.NodeAnnotations[id]),
+			SyncWave:         info.NodeSyncWave[id],
+			Values:           valuesToOrdered(info.NodeValues[id]),
 		})
 	}
 

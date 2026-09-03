@@ -247,11 +247,13 @@ type AssembleBoundaryInput struct {
 
 // RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, its deployment wave, the values the compiler resolved for it where those are the compiler's to supply, and the render output the render_node export produced for it.
 type RenderedNode struct {
-	// ID The node's absolute id within the topology graph.
+	// ID The node's absolute id within the topology graph. A contributor that is not one of the graph's nodes — a Feature attached at a boundary rather than at a component — carries the compiler's own dispatch identity for it here instead, which is the same identity the render_node call for that contributor carried; it distinguishes one contributor from another and is not a name any target accepts. What such a contributor derives names from inside the assembled artifact is a separate carry, derived_name_basis.
 	ID string `json:"id" yaml:"id" cbor:"id"`
 	// Type The node's component-type label, carried on this shape — unlike the per-node render projection, which withholds it. Opaque metadata rather than a behavior switch: it is here so an assembler can group and label the nodes it merges, not so a guest can branch on it.
-	Type     string           `json:"type" yaml:"type" cbor:"type"`
-	Rendered RenderNodeOutput `json:"rendered" yaml:"rendered" cbor:"rendered"`
+	Type string `json:"type" yaml:"type" cbor:"type"`
+	// DerivedNameBasis The identity this contributor derives its own names from inside the assembled artifact — a logical id an assembler mints for one of the contributor's published entries, a per-contributor scope in a merged document. Empty means the id is used directly, which is the value for an ordinary component. It is the same carry the render_node call for this contributor received, and carrying it on both is what keeps the two answers equal: a name the contributor declared while rendering and the name the assembled artifact ends up addressing that content by are derived from one identity rather than from two that happen to agree. A contributor whose id is a dispatch identity a target's name alphabet refuses carries this explicitly, so the assembled artifact addresses its content by a name the target accepts, and two contributors an author can tell apart cannot arrive under one.
+	DerivedNameBasis string           `json:"derived_name_basis,omitempty" yaml:"derived_name_basis,omitempty" cbor:"derived_name_basis,omitempty"`
+	Rendered         RenderNodeOutput `json:"rendered" yaml:"rendered" cbor:"rendered"`
 	// Annotations The node's merged annotations, so a boundary assembler can attribute per-node placement (e.g. the compose network derived from the aggrega.ai/namespace annotation).
 	Annotations types.OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty" cbor:"annotations,omitempty"`
 	// SyncWave The deployment wave this node inherited from its containing boundary (default 0; negative permitted), so a boundary assembler can order the contributors it merges relative to one another. A dispatch group can merge contributors from several boundaries, each carrying its own wave, so the wave travels with every node here rather than once for the whole payload. An assembler whose output shape expresses no ordering ignores it.
@@ -2911,6 +2913,14 @@ func (t RenderedNode) MarshalJSON() ([]byte, error) {
 	first = false
 	buf.WriteString("\"type\":")
 	writeJSONString(&buf, t.Type)
+	if t.DerivedNameBasis != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"derived_name_basis\":")
+		writeJSONString(&buf, t.DerivedNameBasis)
+	}
 	if !first {
 		buf.WriteByte(',')
 	}
@@ -2983,6 +2993,12 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 			} else {
 				t.Type = s
 			}
+		case "derived_name_basis":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.DerivedNameBasis = s
+			}
 		case "rendered":
 			if raw, err := readRaw(dec, data); err != nil {
 				return err
@@ -3036,7 +3052,7 @@ func (t *RenderedNode) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *RenderedNode) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "id", "type", "rendered", "annotations", "sync_wave", "values"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "id", "type", "derived_name_basis", "rendered", "annotations", "sync_wave", "values"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -7796,6 +7812,9 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 	if !t.Annotations.IsZero() {
 		n++
 	}
+	if t.DerivedNameBasis != "" {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
 	dst = appendCBORTextString(dst, "id")
@@ -7840,6 +7859,10 @@ func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
 			}
 		}
 	}
+	if t.DerivedNameBasis != "" {
+		dst = appendCBORTextString(dst, "derived_name_basis")
+		dst = appendCBORTextString(dst, t.DerivedNameBasis)
+	}
 	return dst, nil
 }
 
@@ -7872,6 +7895,12 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 				return err
 			} else {
 				t.Type = s
+			}
+		case "derived_name_basis":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.DerivedNameBasis = s
 			}
 		case "rendered":
 			if err := (&t.Rendered).decodeCBOR(dec); err != nil {
@@ -7947,7 +7976,7 @@ func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *RenderedNode) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "id", "type", "rendered", "annotations", "sync_wave", "values"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "id", "type", "derived_name_basis", "rendered", "annotations", "sync_wave", "values"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

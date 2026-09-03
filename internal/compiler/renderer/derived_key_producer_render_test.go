@@ -201,11 +201,30 @@ func TestRenderAll_OneFeatureNameAtTwoBoundariesDerivingOneNameHalts(t *testing.
 	}
 }
 
-// TestRenderAll_TwoBoundaryFeaturesWithNoSharedNameRender is that halt's
-// negative direction. The same two boundaries, the same one instance name, and
-// each feature's guest declaring a name of its own: nothing collides, so the
-// build completes. Without it the case above would pass equally well against a
-// guard that refused every feature attached at more than one boundary.
+// TestRenderAll_TwoBoundaryFeaturesWithNoSharedNameRender is that halt's negative
+// direction: the same two boundaries and the same one instance name, with each
+// feature's guest declaring a name of its own. Without it the case above would pass
+// equally well against a guard that refused every feature attached at more than one
+// boundary, so what is under test is that the name check answers on the NAMES.
+//
+// This fixture's two contributors also meet on one output path, and that is a
+// second, separate collision rather than a flaw in the negative direction. Both
+// boundaries declare one directory — which is what puts their contributors in one
+// group at all — and a boundary-scope attachment's files land at its instance's own
+// features position, which the two share because the instance name is shared. So
+// two renders each produce a cache.yaml for one path, and one path holds one file.
+//
+// The build therefore halts, on the assembled-output rule and not on the name rule,
+// and the assertion is written against the sentinels rather than against whether the
+// build completed. Asserting completion would tie this case to a second rule it is
+// not about, and would go red the next time anything changed there.
+//
+// 🔴 The halt naming both boundaries is the property, not an incidental. The
+// contributors' attributions are compared for equality by the rule that reports who
+// met at one path, so an attribution carrying only the shared instance name would
+// make the two one producer and the rule would report nothing — which reads exactly
+// like a build with no collision, while one boundary's rendered output silently
+// leaves the build.
 func TestRenderAll_TwoBoundaryFeaturesWithNoSharedNameRender(t *testing.T) {
 	t.Parallel()
 
@@ -222,8 +241,24 @@ func TestRenderAll_TwoBoundaryFeaturesWithNoSharedNameRender(t *testing.T) {
 				hostComponentIDSpace: {sharedGuestDerivedName + "-us"},
 			},
 		})
-	if err != nil {
-		t.Fatalf("expected the build to complete, got: %v", err)
+	if err == nil {
+		t.Fatal("expected the output-path halt: two contributors write one path here")
+	}
+	if errors.Is(err, renderer.ErrDerivedKeyCollision()) {
+		t.Fatalf("the name rule fired on two DIFFERENT names, which would make it a guard against "+
+			"attaching one feature at two boundaries: %v", err)
+	}
+	if !errors.Is(err, renderer.ErrAssembledOutputCollision()) {
+		t.Fatalf("expected ErrAssembledOutputCollision, got: %v", err)
+	}
+	for _, want := range []string{
+		twoBoundaryGroupPath + "/features/" + sharedFeatureInstance,
+		"feature " + sharedFeatureInstance + " attached at boundary " + twoBoundaryPathA,
+		"feature " + sharedFeatureInstance + " attached at boundary " + twoBoundaryPathB,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not carry %q, so a reader cannot tell which two attachments met\ngot: %v", want, err)
+		}
 	}
 }
 

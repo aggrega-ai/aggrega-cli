@@ -69,6 +69,7 @@ import (
 	"strings"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -115,10 +116,19 @@ const StackTemplateName = "cloudformation-stack.json"
 const templateFormatVersion = "2010-09-09"
 
 // NodeFragment is one node's contribution to a dispatch group's assembled stack:
-// the node id, the serialized bytes of each per-node fragment the render pass
-// produced for it, and the deployment wave its boundary declared. The node id
-// scopes the output names the fragment's provides and Outputs entries land under,
-// so two nodes contributing the same entry name address separate outputs.
+// the node id, the identity the node's own names are derived from, the serialized
+// bytes of each per-node fragment the render pass produced for it, and the
+// deployment wave its boundary declared.
+//
+// NameBasis scopes the output names the fragment's provides and Outputs entries
+// land under, so two nodes contributing the same entry name address separate
+// outputs. It is empty for a node whose id is already that identity, which is the
+// ordinary case; a contributor that is not one of the graph's nodes reaches the
+// assembly under a dispatch identity no target's alphabet accepts, and carries the
+// identity it derives names from here instead. The same value reached that
+// contributor's render, so the names it declared while rendering and the names this
+// assembly addresses its content by come from one identity — read through
+// [ContributorNameIdentity], which is the one place the fallback is spelled.
 //
 // SyncWave travels per node rather than once per assembly because a dispatch
 // group can merge contributors from several boundaries, each declaring its own
@@ -126,9 +136,23 @@ const templateFormatVersion = "2010-09-09"
 // one. A node whose boundary declares no wave carries 0, the field's documented
 // default, so a missing wave and a declared zero are the same state.
 type NodeFragment struct {
-	NodeID   string
-	Files    [][]byte
-	SyncWave int
+	NodeID    string
+	NameBasis string
+	Files     [][]byte
+	SyncWave  int
+}
+
+// ContributorNameIdentity is the identity one contributor's stack Output names are
+// built from: its carried name basis, falling back to its node id.
+//
+// It exists so the render-time declaration and the assemble-time mint ask one
+// question of one implementation. Those two derivations produce the name an author
+// is told their content carries and the name the stack actually addresses it by; a
+// contributor for whom they read different identities has both answers
+// self-consistent and neither one true, which no assertion on either side alone can
+// see.
+func ContributorNameIdentity(n NodeFragment) string {
+	return rendercore.ContributorNameBasis(n.NodeID, n.NameBasis)
 }
 
 // Key spaces the guest declares its derived names into. Each is a name this core
@@ -326,6 +350,11 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 	sets := make([]fragmentClaimSet, 0, len(nodes))
 
 	for _, node := range nodes {
+		// The identity this contributor's names are built from, which is the identity
+		// its render declared them from. Read once per contributor rather than at each
+		// use, so the names built here and the identity a refusal reports cannot come
+		// from two readings.
+		identity := ContributorNameIdentity(node)
 		for _, raw := range node.Files {
 			frag, err := decodeToValue(raw)
 			if err != nil {
@@ -333,13 +362,13 @@ func AssembleStack(nodes []NodeFragment) ([]byte, error) {
 			}
 			m, ok := frag.(map[string]any)
 			if !ok {
-				return nil, fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", node.NodeID)
+				return nil, fmt.Errorf("cloudformation-provider: fragment from node %q is not a mapping", identity)
 			}
-			claim, err := fragmentEntries(node.NodeID, m, &mint)
+			claim, err := fragmentEntries(identity, m, &mint)
 			if err != nil {
 				return nil, err
 			}
-			sets = append(sets, fragmentClaimSet{nodeID: node.NodeID, wave: node.SyncWave, claim: claim})
+			sets = append(sets, fragmentClaimSet{nodeID: identity, wave: node.SyncWave, claim: claim})
 		}
 	}
 

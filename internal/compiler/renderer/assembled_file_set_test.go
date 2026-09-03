@@ -86,34 +86,54 @@ func TestAssembledFileSet_DistinctPathsResolve(t *testing.T) {
 	}
 }
 
+// TestNodeProducerLabel holds the attribution a finding names a contributor by to
+// every coordinate that contributor's label carries.
+//
+// The two-boundary row is the load-bearing one, and it is an equality between two
+// labels rather than a spelling: the attribution is compared for equality by the
+// surface that reports the producers meeting at one path, so two contributors
+// arriving under one label are reported as one producer and a collision between
+// them is reported as nothing at all.
 func TestNodeProducerLabel(t *testing.T) {
 	t.Parallel()
 
-	if got, want := nodeProducerLabel("api"), "component api"; got != want {
-		t.Errorf("nodeProducerLabel(api) = %q, want %q", got, want)
+	component := derivedKeyProducerFor(producerKindComponent, "api", "")
+	if got, want := nodeProducerLabel(component), "component api"; got != want {
+		t.Errorf("nodeProducerLabel(component) = %q, want %q", got, want)
 	}
-	if got, want := nodeProducerLabel(boundaryFRNodePrefix+"logging"), "feature logging"; got != want {
+	attachment := derivedKeyProducerFor(producerKindComponent, "api", "logging")
+	if got, want := nodeProducerLabel(attachment), "component api carrying attachment logging"; got != want {
+		t.Errorf("nodeProducerLabel(component attachment) = %q, want %q", got, want)
+	}
+	zoneA := derivedKeyProducerFor(producerKindFeature, "logging", "zone-a")
+	if got, want := nodeProducerLabel(zoneA), "feature logging attached at boundary zone-a"; got != want {
 		t.Errorf("nodeProducerLabel(boundary feature) = %q, want %q", got, want)
+	}
+	zoneB := derivedKeyProducerFor(producerKindFeature, "logging", "zone-b")
+	if nodeProducerLabel(zoneA) == nodeProducerLabel(zoneB) {
+		t.Errorf("one instance name at two boundaries reaches one label %q, so the two are "+
+			"one producer to every surface that compares attributions", nodeProducerLabel(zoneA))
 	}
 }
 
 // TestNodeOutputSegment holds the directory a nesting assembler places a
 // contributor's files under to the name that contributor carries in the author's
-// input. The boundary-feature row is the load-bearing one: the per-node key it
-// is derived from opens with an angle bracket and joins with a colon, and a
-// directory named for that key would be refused on some platforms and would have
-// to be escaped in a URL.
+// input. The boundary-feature row is the load-bearing one: the per-node key that
+// contributor is held under opens with an angle bracket and joins with a colon and
+// an at sign, and a directory named for that key would be refused on some platforms
+// and would have to be escaped in a URL.
 func TestNodeOutputSegment(t *testing.T) {
 	t.Parallel()
 
-	if got, want := nodeOutputSegment("api"), "api"; got != want {
-		t.Errorf("nodeOutputSegment(api) = %q, want %q", got, want)
+	if got, want := nodeOutputSegment(derivedKeyProducerFor(producerKindComponent, "api", "")), "api"; got != want {
+		t.Errorf("nodeOutputSegment(component) = %q, want %q", got, want)
 	}
-	if got, want := nodeOutputSegment(boundaryFRNodePrefix+"logging"), "logging"; got != want {
+	feature := derivedKeyProducerFor(producerKindFeature, "logging", "zone-a")
+	if got, want := nodeOutputSegment(feature), "logging"; got != want {
 		t.Errorf("nodeOutputSegment(boundary feature) = %q, want %q", got, want)
 	}
-	for _, bad := range []string{"<", ">", ":"} {
-		if strings.Contains(nodeOutputSegment(boundaryFRNodePrefix+"logging"), bad) {
+	for _, bad := range []string{"<", ">", ":", "@"} {
+		if strings.Contains(nodeOutputSegment(feature), bad) {
 			t.Errorf("the segment for a boundary feature carries %q, which a path refuses on some platforms", bad)
 		}
 	}

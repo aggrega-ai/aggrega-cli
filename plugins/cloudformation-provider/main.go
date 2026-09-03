@@ -278,7 +278,15 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 			fragments = append(fragments, stamped)
 			out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: stamped})
 		}
-		declaredRes, declaredOut, err := cfncore.DeclaredNames(in.Node.ID, fragments)
+		// Declared under the identity this node's names are BUILT from, which is what
+		// the assembly will build them from too. The node id alone is that identity for
+		// an ordinary component and for an attachment rendered against its host, and
+		// is not for a contributor whose id is a dispatch marker: declaring under the
+		// id there would offer the author names the assembled stack never carries,
+		// while the names it does carry would be declared by nobody.
+		declaredRes, declaredOut, err := cfncore.DeclaredNames(
+			cfncore.ContributorNameIdentity(cfncore.NodeFragment{NodeID: in.Node.ID, NameBasis: in.Node.DerivedNameBasis}),
+			fragments)
 		if err != nil {
 			return rendercore.RenderNodeOutput{}, err
 		}
@@ -321,7 +329,12 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 		for _, warning := range provWarnings {
 			out.Diagnostics = append(out.Diagnostics, rendercore.ArtifactProvenanceSkippedDiagnostic(warning))
 		}
-		resourceIDs, outputIDs, err = cfncore.DeclaredNamesSourced(in.Node.ID, normalized, in.SourceListing.RootIsDir)
+		// The same identity the fragment path declares under, for the same reason: the
+		// assembly builds this node's names from it whichever input kind produced the
+		// templates.
+		resourceIDs, outputIDs, err = cfncore.DeclaredNamesSourced(
+			cfncore.ContributorNameIdentity(cfncore.NodeFragment{NodeID: in.Node.ID, NameBasis: in.Node.DerivedNameBasis}),
+			normalized, in.SourceListing.RootIsDir)
 		if err != nil {
 			return rendercore.RenderNodeOutput{}, err
 		}
@@ -466,7 +479,9 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 		for _, f := range rn.Rendered.Files {
 			files = append(files, f.Content)
 		}
-		nodes = append(nodes, cfncore.NodeFragment{NodeID: rn.ID, Files: files, SyncWave: rn.SyncWave})
+		nodes = append(nodes, cfncore.NodeFragment{
+			NodeID: rn.ID, NameBasis: rn.DerivedNameBasis, Files: files, SyncWave: rn.SyncWave,
+		})
 	}
 
 	stack, err := cfncore.AssembleStack(nodes)

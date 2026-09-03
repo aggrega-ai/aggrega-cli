@@ -97,10 +97,31 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 // value is passed as authored, once, and every reader that needs a narrower
 // alphabet applies its own.
 func TargetNameBasis(nodeCtx NodeRenderContext) string {
-	if nodeCtx.DerivedNameBasis != "" {
-		return nodeCtx.DerivedNameBasis
+	return ContributorNameBasis(nodeCtx.NodeID, nodeCtx.DerivedNameBasis)
+}
+
+// ContributorNameBasis resolves the basis-over-id fallback from the two carried
+// strings, for a reader holding them apart from any node context.
+//
+// It is the one implementation of that fallback, and [TargetNameBasis] is a
+// reading of it against a render context. The assemble side needs the same answer
+// and holds no render context: a contributor reaching an assembler arrives as the
+// two carried values, and the identity the assembler derives its names from has to
+// be the identity the render derived its declarations from. Two spellings of the
+// fallback would agree while both were being written and would stop agreeing at
+// whichever of them was changed — and the two answers meeting is the whole of what
+// makes a declared name and an assembled name comparable, so a divergence there is
+// silent on both sides.
+//
+// Which of the two carried identities a caller passes is the caller's own answer
+// and is not decided here: a surface naming a resource an author's own source
+// declared and a surface naming one the assembler minted read different carries,
+// for the reasons stated on [TargetNameBasis] and [ProvenanceComponentID].
+func ContributorNameBasis(nodeID, derivedNameBasis string) string {
+	if derivedNameBasis != "" {
+		return derivedNameBasis
 	}
-	return nodeCtx.NodeID
+	return nodeID
 }
 
 // BuildAggregaProvenanceLabels produces the label-safe `aggrega.ai/*` + standard
