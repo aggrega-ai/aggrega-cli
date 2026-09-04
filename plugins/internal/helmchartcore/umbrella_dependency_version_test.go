@@ -62,6 +62,23 @@ func renderThroughDependencyPipeline(t *testing.T, chartDir string) string {
 	return rendered
 }
 
+// refusalFromDependencyPipeline is the same pipeline in the other direction: it
+// requires the assembled chart to be REFUSED and returns the refusal text.
+//
+// An arrangement the tool rejects produces no output to assert over, so a test
+// pinning such an arrangement asserts the verdict and the ground it names. It
+// fails when the pipeline accepts the chart, because a control that stops being
+// refused has stopped controlling anything.
+func refusalFromDependencyPipeline(t *testing.T, chartDir string) string {
+	t.Helper()
+	rendered, err := charttest.RenderThroughDependencyPipeline(chartDir)
+	if err == nil {
+		t.Fatalf("the dependency pipeline accepted the assembled chart at %q, which this test exists to see "+
+			"refused; it rendered:\n%s", chartDir, rendered)
+	}
+	return err.Error()
+}
+
 // assembleUmbrellaOnDisk writes BuildUmbrella's Chart.yaml + values.yaml plus the
 // vendored sub-chart under charts/<instance_id>/, mirroring what the orchestrator
 // nests. The directory carries the instance id as authored, which is what the
@@ -142,7 +159,8 @@ func placeSourcedChart(t *testing.T, vendoredSrc, instanceID string) map[string]
 // which no in-process render assertion can see. What still gates delivery in
 // process is the name agreement, and that is controlled directly by
 // TestPlacingASourcedChartRawLeavesItsValuesUnaddressable, which places a
-// sub-chart under its authored name and asserts nothing arrives.
+// sub-chart under its authored name and asserts the pipeline refuses the
+// arrangement, naming the dependency that then resolves to nothing.
 func TestUmbrellaSourcedDependencyVersion_ValuesReachSubChart(t *testing.T) {
 	t.Parallel()
 	src := filepath.Join(t.TempDir(), "src")

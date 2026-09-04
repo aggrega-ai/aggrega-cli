@@ -176,11 +176,16 @@ func TestSourcedSubChartsWithDistinctAuthoredNames_StillRenderEachOwnContent(t *
 // control that keeps every assertion above from being vacuous.
 //
 // It places the sub-charts by copying the source bytes — skipping the name the
-// umbrella owns — and asserts the opposite outcome: the dependency then names a
-// chart that is not there, so no alias binds, no mapped value arrives, and each
-// sub-chart renders its own vendored default. Without this row, a positive
-// assertion could pass on an arrangement where values reach nothing, because a
-// chart with unaddressable values renders defaults and reports success.
+// umbrella owns — so both placed manifests keep the name their author wrote and
+// each of the umbrella's dependencies names a chart that is not there. The tool
+// refuses that arrangement outright, before any value could reach any
+// sub-chart, and the refusal names both unresolved dependencies.
+//
+// The refusal is a STRONGER statement of unaddressable than a defaults-render
+// would be, and it is the tool's own verdict rather than an inference from what
+// the arrangement happened to render: an umbrella whose dependencies resolve to
+// nothing is not installable at all. Without this row, a positive assertion
+// could pass on an arrangement where values reach nothing.
 func TestPlacingASourcedChartRawLeavesItsValuesUnaddressable(t *testing.T) {
 	t.Parallel()
 	base := t.TempDir()
@@ -193,14 +198,16 @@ func TestPlacingASourcedChartRawLeavesItsValuesUnaddressable(t *testing.T) {
 		t.Fatalf("the raw control must leave the authored name in place on both (%q, %q)", placedDB, placedCache)
 	}
 
-	rendered := renderThroughDependencyPipeline(t, root)
-	for _, id := range []string{"db", "cache"} {
-		if strings.Contains(rendered, `secret: "`+id+`-secret"`) {
-			t.Errorf("the raw control propagated %q's mapped value, so the positive rows prove nothing:\n%s", id, rendered)
-		}
+	refusal := refusalFromDependencyPipeline(t, root)
+	if !strings.Contains(refusal, "missing in charts/ directory") {
+		t.Errorf("the raw control was refused on some other ground, so it no longer pins the unresolved "+
+			"dependency it exists for: %s", refusal)
 	}
-	if !strings.Contains(rendered, unreachedSubChartSecret) {
-		t.Errorf("the raw control should render the vendored default, showing values reached nothing:\n%s", rendered)
+	for _, id := range []string{"db", "cache"} {
+		if !strings.Contains(refusal, id) {
+			t.Errorf("the refusal does not name %q, so this control does not show that instance's "+
+				"dependency resolving to nothing: %s", id, refusal)
+		}
 	}
 }
 
