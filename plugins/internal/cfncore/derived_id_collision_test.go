@@ -42,10 +42,10 @@ func TestFourNamesDifferingOnlyBySeparatorAndCaseStayApart(t *testing.T) {
 	// mark no authored entry can produce, so the four names below differ in
 	// exactly the instance half.
 	want := map[string]string{
-		"my-id": "myQzhidQQQze",
-		"my_id": "myQzuidQQQze",
-		"My-Id": "MyQzhIdQQQze",
-		"MY_ID": "MYQzuIDQQQze",
+		"my-id": "myXzhidXXXze",
+		"my_id": "myXzuidXXXze",
+		"My-Id": "MyXzhIdXXXze",
+		"MY_ID": "MYXzuIDXXXze",
 	}
 
 	seen := map[string]string{}
@@ -88,7 +88,7 @@ func outputNameCorpus() []string {
 	extended := append(namesegmenttest.Corpus(outputLogicalIDOpener),
 		"a__b", "a..b", "a//b", "a--b", "___", "...", "//", "--",
 		"1st", "9", "0-9",
-		"QaQ", "qQq", "QQQ", "Qq", "qQ",
+		"XaX", "xXx", "XXX", "Xx", "xX",
 		"payments-db", "payments_db", "payments.db", "payments/db",
 		"host", "Host", "HOST", "db-host", "db_host", "db.host",
 	)

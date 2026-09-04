@@ -198,8 +198,8 @@ func bsAssertTheTwoIdentitiesStayApart(t *testing.T, variant string) {
 	// because a name computed through the derivation would agree with the
 	// derivation whatever it did.
 	const (
-		componentOutput  = "bfrQzhzoneQzhaQzhauditQQendpoint"
-		attachmentOutput = "bfrQzhQzhzoneQzhaQzhQzhauditQQendpoint"
+		componentOutput  = "bfrXzhzoneXzhaXzhauditXXendpoint"
+		attachmentOutput = "bfrXzhXzhzoneXzhaXzhXzhauditXXendpoint"
 	)
 	if componentOutput == attachmentOutput {
 		t.Fatal("the two names this case holds apart are one string, so every assertion below " +
@@ -263,7 +263,7 @@ func TestReproDeclaredNameControl(t *testing.T) {
 	// can produce could only ever report the same answer. The whole emitted output
 	// is read rather than the stack alone, because a name travels further than the
 	// document it is declared in.
-	const pathLess = "bfrQzhQzhauditQQendpoint"
+	const pathLess = "bfrXzhXzhauditXXendpoint"
 	t.Logf("does the whole emitted output contain %q, the name the attachment reaches "+
 		"when its identity drops the boundary? %v",
 		pathLess, bsAnyArtifactContains(res.Artifacts, pathLess))
@@ -337,8 +337,8 @@ func TestReproDistinctResIdenticalValue(t *testing.T) {
 	// entry name into the alphabet an Output name admits, so each hyphen of the
 	// composition arrives as an escape rather than being dropped.
 	for _, want := range []string{
-		"bfrQzhQzhzoneQzhaQzhQzhauditQQendpoint",
-		"bfrQzhQzhzoneQzhbQzhQzhauditQQendpoint",
+		"bfrXzhXzhzoneXzhaXzhXzhauditXXendpoint",
+		"bfrXzhXzhzoneXzhbXzhXzhauditXXendpoint",
 	} {
 		if _, present := outputs[want]; !present {
 			t.Errorf("the assembled stack carries no Output %q: two contributors declared an entry "+
@@ -351,8 +351,8 @@ func TestReproDistinctResIdenticalValue(t *testing.T) {
 	// travels to. It is written out under the same derivation the two names above
 	// are, so it remains a name the emitted output could actually carry: a control
 	// spelling a name no derivation can produce could never fire.
-	if bsAnyArtifactContains(res.Artifacts, "bfrQzhQzhauditQQendpoint") {
-		t.Error(`the emitted output still carries "bfrQzhQzhauditQQendpoint", the name two ` +
+	if bsAnyArtifactContains(res.Artifacts, "bfrXzhXzhauditXXendpoint") {
+		t.Error(`the emitted output still carries "bfrXzhXzhauditXXendpoint", the name two ` +
 			`contributors reach when the identity drops the boundary`)
 	}
 }

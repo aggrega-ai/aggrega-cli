@@ -59,7 +59,7 @@ func TestEntriesThatUsedToMeetReachDistinctNames(t *testing.T) {
 			nodes: []NodeFragment{{NodeID: "orders", Files: [][]byte{
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  db-host: first\n  db_host: second\n"),
 			}}},
-			wantOutputs: []string{"ordersQQdbQzhhost", "ordersQQdbQzuhost"},
+			wantOutputs: []string{"ordersXXdbXzhhost", "ordersXXdbXzuhost"},
 		},
 		{
 			// A letter is carried in the case it was authored in, so two keys
@@ -68,7 +68,7 @@ func TestEntriesThatUsedToMeetReachDistinctNames(t *testing.T) {
 			nodes: []NodeFragment{{NodeID: "orders", Files: [][]byte{
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  host: first\n  Host: second\n"),
 			}}},
-			wantOutputs: []string{"ordersQQHost", "ordersQQhost"},
+			wantOutputs: []string{"ordersXXHost", "ordersXXhost"},
 		},
 		{
 			// The two sections reach the outputs space independently, so the pair
@@ -77,7 +77,7 @@ func TestEntriesThatUsedToMeetReachDistinctNames(t *testing.T) {
 			nodes: []NodeFragment{{NodeID: "orders", Files: [][]byte{
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nOutputs:\n  db_host:\n    Value: explicit\nprovides:\n  db-host: projected\n"),
 			}}},
-			wantOutputs: []string{"ordersQQdbQzhhost", "ordersQQdbQzuhost"},
+			wantOutputs: []string{"ordersXXdbXzhhost", "ordersXXdbXzuhost"},
 		},
 		{
 			// The same straddle with bodies that agree. This is the row that
@@ -88,7 +88,7 @@ func TestEntriesThatUsedToMeetReachDistinctNames(t *testing.T) {
 			nodes: []NodeFragment{{NodeID: "orders", Files: [][]byte{
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nOutputs:\n  db_host:\n    Value: same\nprovides:\n  db-host: same\n"),
 			}}},
-			wantOutputs: []string{"ordersQQdbQzhhost", "ordersQQdbQzuhost"},
+			wantOutputs: []string{"ordersXXdbXzhhost", "ordersXXdbXzuhost"},
 		},
 		{
 			// Two of one component's fragments, rather than one fragment's two
@@ -98,7 +98,7 @@ func TestEntriesThatUsedToMeetReachDistinctNames(t *testing.T) {
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  db-host: first\n"),
 				[]byte("Resources:\n  B:\n    Type: AWS::SQS::Queue\nprovides:\n  db.host: second\n"),
 			}}},
-			wantOutputs: []string{"ordersQQdbQzdhost", "ordersQQdbQzhhost"},
+			wantOutputs: []string{"ordersXXdbXzdhost", "ordersXXdbXzhhost"},
 		},
 		{
 			// The join, which is a separate failure surface from the segment: the
@@ -114,7 +114,7 @@ func TestEntriesThatUsedToMeetReachDistinctNames(t *testing.T) {
 					[]byte("Resources:\n  B:\n    Type: AWS::SQS::Queue\nprovides:\n  db-host: second\n"),
 				}},
 			},
-			wantOutputs: []string{"paymentsQQdbQzhhost", "paymentsQzhdbQQhost"},
+			wantOutputs: []string{"paymentsXXdbXzhhost", "paymentsXzhdbXXhost"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestEntriesThatUsedToMeetReachDistinctNames(t *testing.T) {
 func TestTwoEntriesAreDeclaredApartAtDeclaration(t *testing.T) {
 	t.Parallel()
 	frag := []byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  db-host: first\n  db_host: second\n")
-	want := []string{"ordersQQdbQzhhost", "ordersQQdbQzuhost"}
+	want := []string{"ordersXXdbXzhhost", "ordersXXdbXzuhost"}
 
 	t.Run("fragments", func(t *testing.T) {
 		t.Parallel()
@@ -260,11 +260,11 @@ func TestTheRetainedLedgerReportsEveryCollisionDeterministically(t *testing.T) {
 	t.Parallel()
 	seeded := func() *outputNameLedger {
 		return &outputNameLedger{sources: map[string][]authoredOutputEntry{
-			"ordersQQdbQzhhost": {
+			"ordersXXdbXzhhost": {
 				{component: "orders", section: sectionProvides, entry: "db-host"},
 				{component: "orders", section: sectionExplicitOutputs, entry: "db_host"},
 			},
-			"ordersQQqueueQzhurl": {
+			"ordersXXqueueXzhurl": {
 				{component: "orders", section: sectionProvides, entry: "queue-url"},
 				{component: "orders", section: sectionProvides, entry: "queue_url"},
 			},
@@ -288,7 +288,7 @@ func TestTheRetainedLedgerReportsEveryCollisionDeterministically(t *testing.T) {
 	// Every collision is reported rather than the first one found, and each
 	// carries both authored ends so an author would have something to search for.
 	for _, want := range []string{
-		`"ordersQQdbQzhhost"`, `"ordersQQqueueQzhurl"`,
+		`"ordersXXdbXzhhost"`, `"ordersXXqueueXzhurl"`,
 		`"db-host"`, `"db_host"`, `"queue-url"`, `"queue_url"`,
 		"provides", "Outputs", `"orders"`,
 	} {
@@ -425,7 +425,7 @@ func TestDuplicateMappingKeyAdmitsOneKeyPerMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AssembleStack: %v", err)
 	}
-	for _, want := range []string{`"Bucket"`, `"Queue"`, `"ordersQQfirst"`, `"ordersQQsecond"`} {
+	for _, want := range []string{`"Bucket"`, `"Queue"`, `"ordersXXfirst"`, `"ordersXXsecond"`} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("assembled stack is missing %s:\n%s", want, out)
 		}

@@ -46,7 +46,7 @@ const (
 	// admits and joined by a sequence neither can carry; the entry is authored
 	// `queue_url`, and its underscore is written as an escape rather than
 	// dropped, so two entries differing only in punctuation stay apart.
-	cfnVerbatimIDLegalOutput = "paymentsdbprimaryQQqueueQzuurl"
+	cfnVerbatimIDLegalOutput = "paymentsdbprimaryXXqueueXzuurl"
 )
 
 func cfnVerbatimIDInput(release string) pipelinetest.Input {

@@ -51,7 +51,7 @@ const (
 	// the entry is authored `queue_url`, and its underscore is written as an
 	// escape rather than dropped, so two entries differing only in punctuation
 	// stay apart.
-	cfnCarriedNameLegalOutput = "paymentsdbQQqueueQzuurl"
+	cfnCarriedNameLegalOutput = "paymentsdbXXqueueXzuurl"
 )
 
 func cfnCarriedNameInput(release string) pipelinetest.Input {

@@ -167,7 +167,7 @@ func TestCloudFormationAuthoredExport_ShadowingDerivedNameHaltsTheBuild(t *testi
 		// Recipe wrote, because the authored entry key cannot be read back out
 		// of it.
 		"already declares that same export name",
-		`stack output "appQzhaQQdbQzuendpoint"`,
+		`stack output "appXzhaXXdbXzuendpoint"`,
 		"a name this provider assembles rather than one a Recipe wrote",
 		// The two edits that resolve it.
 		"rename the export name the entry declares",
@@ -205,7 +205,7 @@ func TestCloudFormationAuthoredExport_NameCollidingWithNothingShips(t *testing.T
 
 	// The authored entry survived as written, under the output name the
 	// assembly gives an entry of this component.
-	authored := mustCfnMap(t, outputs, "appQzhaQQdbQzuendpoint")
+	authored := mustCfnMap(t, outputs, "appXzhaXXdbXzuendpoint")
 	authoredExport := mustCfnMap(t, authored, "Export")
 	if got := authoredExport["Name"]; got != "platform-team--app-a--db-endpoint" {
 		t.Fatalf("authored Export.Name = %#v, want the name the Recipe wrote", got)
@@ -213,7 +213,7 @@ func TestCloudFormationAuthoredExport_NameCollidingWithNothingShips(t *testing.T
 
 	// The link's own export is published alongside it, and it is the string the
 	// shadowing fixture spells — the pin that keeps that fixture colliding.
-	hostOut := mustCfnMap(t, outputs, "dbQQhost")
+	hostOut := mustCfnMap(t, outputs, "dbXXhost")
 	derivedExport := mustCfnMap(t, hostOut, "Export")
 	derivedName, ok := derivedExport["Name"].(string)
 	if !ok {
@@ -255,12 +255,12 @@ func TestCloudFormationAuthoredExport_TwoDifferingNamesShip(t *testing.T) {
 	}{
 		{
 			scenario:   "a name in the derived shape for a provides key no edge injects",
-			outputName: "appQzhaQQdbQzuportQzuendpoint",
+			outputName: "appXzhaXXdbXzuportXzuendpoint",
 			wantExport: "aggrega--cloudformation-two-boundary--dist-zsstack-a-zscloudformation--db--port",
 		},
 		{
 			scenario:   "a one-character near miss of the derived name",
-			outputName: "appQzhaQQdbQzuhostQzuendpoint",
+			outputName: "appXzhaXXdbXzuhostXzuendpoint",
 			wantExport: "aggrega--cloudformation-two-boundary--dist-zsstack-a-zscloudformation--db--hosts",
 		},
 	} {
@@ -273,7 +273,7 @@ func TestCloudFormationAuthoredExport_TwoDifferingNamesShip(t *testing.T) {
 
 	// Both authored names are different from the derived one, and the derived
 	// export is published as well.
-	hostOut := mustCfnMap(t, outputs, "dbQQhost")
+	hostOut := mustCfnMap(t, outputs, "dbXXhost")
 	derivedExport := mustCfnMap(t, hostOut, "Export")
 	if got := derivedExport["Name"]; got != cfnDerivedDbHostExportName {
 		t.Fatalf("Outputs.DbHost.Export.Name = %#v, want %q", got, cfnDerivedDbHostExportName)

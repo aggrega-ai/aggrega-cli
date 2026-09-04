@@ -965,10 +965,10 @@ func isCustomTag(tag string) bool {
 // letters and digits and nothing else, so the opener has to be spared from
 // inside the alphabet, and whichever character is spared stops being carried as
 // authored. Any letter or digit would be sound, so the choice is only about
-// which names stay legible — an uppercase Q is the rarest character in an
-// authored component or entry name, and sparing it leaves the lowercase q of
-// queue and sqs carried as written.
-const outputLogicalIDOpener = 'Q'
+// which names stay legible — an uppercase X is the rarest character in an
+// authored component or entry name, and only the uppercase letter is reserved,
+// so the lowercase x of nginx and proxy is carried as written.
+const outputLogicalIDOpener = 'X'
 
 // outputLogicalIDEncoding is the segment encoding a stack Output's logical id is
 // built with. Its admitted alphabet is the logical-id alphabet less the one
@@ -990,7 +990,7 @@ func isOutputLogicalIDRune(r rune) bool {
 // OutputLogicalID names the stack Output one node's entry lands at: the node's
 // identity and the entry name, each encoded into the logical-id alphabet and
 // joined by a sequence no encoded segment can contain — node payments-db
-// exporting host reaches paymentsQzhdbQQhost.
+// exporting host reaches paymentsXzhdbXXhost.
 //
 // The derivation is injective: two calls produce one name only where the node
 // and the entry both match. A logical id admits only letters and digits, so a

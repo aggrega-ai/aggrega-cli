@@ -86,7 +86,7 @@ func TestAssembleStackMergeAndOutputs(t *testing.T) {
 	if err := json.Unmarshal(top["Outputs"], &outputs); err != nil {
 		t.Fatalf("Outputs not an object: %v", err)
 	}
-	for _, k := range []string{"dataQzsbucketQQbucketQzuarn", "workQzsqueueQQbucketQzuref", "workQzsqueueQQqueueQzuurl"} {
+	for _, k := range []string{"dataXzsbucketXXbucketXzuarn", "workXzsqueueXXbucketXzuref", "workXzsqueueXXqueueXzuurl"} {
 		if _, ok := outputs[k]; !ok {
 			t.Fatalf("Outputs missing %q; got keys %v", k, keysOf(outputs))
 		}
@@ -168,11 +168,11 @@ func TestDeclaredNamesScopesOutputsPerNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeclaredNames(beta-two): %v", err)
 	}
-	if len(alphaOut) != 1 || alphaOut[0] != "alphaQQhost" {
-		t.Fatalf("alpha declared outputs %v, want [alphaQQhost]", alphaOut)
+	if len(alphaOut) != 1 || alphaOut[0] != "alphaXXhost" {
+		t.Fatalf("alpha declared outputs %v, want [alphaXXhost]", alphaOut)
 	}
-	if len(betaOut) != 1 || betaOut[0] != "betaQzhtwoQQhost" {
-		t.Fatalf("beta-two declared outputs %v, want [betaQzhtwoQQhost]", betaOut)
+	if len(betaOut) != 1 || betaOut[0] != "betaXzhtwoXXhost" {
+		t.Fatalf("beta-two declared outputs %v, want [betaXzhtwoXXhost]", betaOut)
 	}
 }
 
@@ -192,20 +192,20 @@ func TestOutputLogicalID(t *testing.T) {
 		entry string
 		want  string
 	}{
-		{name: "plain", node: "db", entry: "host", want: "dbQQhost"},
-		{name: "hyphen in node", node: "payments-db", entry: "host", want: "paymentsQzhdbQQhost"},
-		{name: "underscore in node", node: "payments_db", entry: "host", want: "paymentsQzudbQQhost"},
-		{name: "dot in node", node: "shop.payments", entry: "port", want: "shopQzdpaymentsQQport"},
-		{name: "underscore in entry", node: "db", entry: "queue_url", want: "dbQQqueueQzuurl"},
-		{name: "digits kept", node: "db2-primary", entry: "host", want: "db2QzhprimaryQQhost"},
-		{name: "authored capitals kept", node: "orders-DB", entry: "host", want: "ordersQzhDBQQhost"},
-		{name: "separator position is significant", node: "payments.d.b", entry: "host", want: "paymentsQzddQzdbQQhost"},
-		{name: "empty entry", node: "db", entry: "", want: "dbQQQze"},
+		{name: "plain", node: "db", entry: "host", want: "dbXXhost"},
+		{name: "hyphen in node", node: "payments-db", entry: "host", want: "paymentsXzhdbXXhost"},
+		{name: "underscore in node", node: "payments_db", entry: "host", want: "paymentsXzudbXXhost"},
+		{name: "dot in node", node: "shop.payments", entry: "port", want: "shopXzdpaymentsXXport"},
+		{name: "underscore in entry", node: "db", entry: "queue_url", want: "dbXXqueueXzuurl"},
+		{name: "digits kept", node: "db2-primary", entry: "host", want: "db2XzhprimaryXXhost"},
+		{name: "authored capitals kept", node: "orders-DB", entry: "host", want: "ordersXzhDBXXhost"},
+		{name: "separator position is significant", node: "payments.d.b", entry: "host", want: "paymentsXzddXzdbXXhost"},
+		{name: "empty entry", node: "db", entry: "", want: "dbXXXze"},
 		// The reserved character is the one letter the derivation does not carry
 		// through, so an author who writes it gets it back as an escape while the
 		// lowercase letter beside it is carried as written.
-		{name: "the reserved letter is escaped", node: "queueQ", entry: "url", want: "queueQzx000051QQurl"},
-		{name: "the lowercase letter beside it is carried", node: "sqs-q", entry: "url", want: "sqsQzhqQQurl"},
+		{name: "the reserved letter is escaped", node: "queueX", entry: "url", want: "queueXzx000058XXurl"},
+		{name: "the lowercase letter beside it is carried", node: "nginx-proxy", entry: "url", want: "nginxXzhproxyXXurl"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := OutputLogicalID(tc.node, tc.entry); got != tc.want {
@@ -215,7 +215,7 @@ func TestOutputLogicalID(t *testing.T) {
 	}
 
 	// Every produced name is a legal logical id: letters and digits only.
-	for _, node := range []string{"payments-db", "shop.payments", "a_b-c.d", "db2", "cachéQ", "-", ""} {
+	for _, node := range []string{"payments-db", "shop.payments", "a_b-c.d", "db2", "cachéX", "-", ""} {
 		got := OutputLogicalID(node, "queue_url")
 		for _, r := range got {
 			isAlnum := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
@@ -251,7 +251,7 @@ func TestAssembleStackScopesAnExplicitOutputsBlock(t *testing.T) {
 	if err := json.Unmarshal(top["Outputs"], &outputs); err != nil {
 		t.Fatalf("Outputs not an object: %v", err)
 	}
-	for _, want := range []string{"alphaQQBucketArn", "betaQQBucketArn"} {
+	for _, want := range []string{"alphaXXBucketArn", "betaXXBucketArn"} {
 		if _, ok := outputs[want]; !ok {
 			t.Fatalf("Outputs missing %q; got keys %v", want, keysOf(outputs))
 		}
@@ -278,8 +278,8 @@ func TestDeclaredNamesSourced(t *testing.T) {
 	if len(dirRes) != 1 || dirRes[0] != "DataBucket" {
 		t.Fatalf("directory source declared resources %v, want [DataBucket]", dirRes)
 	}
-	if len(dirOut) != 1 || dirOut[0] != "apiQQBucketArn" {
-		t.Fatalf("directory source declared outputs %v, want [apiQQBucketArn]", dirOut)
+	if len(dirOut) != 1 || dirOut[0] != "apiXXBucketArn" {
+		t.Fatalf("directory source declared outputs %v, want [apiXXBucketArn]", dirOut)
 	}
 
 	fileRes, fileOut, err := DeclaredNamesSourced("api", []SourcedFile{
@@ -291,8 +291,8 @@ func TestDeclaredNamesSourced(t *testing.T) {
 	if len(fileRes) != 1 || fileRes[0] != "DataBucket" {
 		t.Fatalf("single-file source declared resources %v, want [DataBucket]", fileRes)
 	}
-	if len(fileOut) != 1 || fileOut[0] != "apiQQBucketArn" {
-		t.Fatalf("single-file source declared outputs %v, want [apiQQBucketArn]", fileOut)
+	if len(fileOut) != 1 || fileOut[0] != "apiXXBucketArn" {
+		t.Fatalf("single-file source declared outputs %v, want [apiXXBucketArn]", fileOut)
 	}
 }
 
@@ -515,7 +515,7 @@ func TestAssembleStackRefusesANameAlreadyCarryingDifferentContent(t *testing.T) 
 				[]byte("Resources:\n  B:\n    Type: AWS::SQS::Queue\nOutputs:\n  host:\n    Value: second\n"),
 			},
 			wantSpace: KeySpaceOutputLogicalIDs,
-			wantName:  "apiQQhost",
+			wantName:  "apiXXhost",
 		},
 		{
 			name: "two fragments project one provides key",
@@ -524,7 +524,7 @@ func TestAssembleStackRefusesANameAlreadyCarryingDifferentContent(t *testing.T) 
 				[]byte("Resources:\n  B:\n    Type: AWS::SQS::Queue\nprovides:\n  host: second\n"),
 			},
 			wantSpace: KeySpaceOutputLogicalIDs,
-			wantName:  "apiQQhost",
+			wantName:  "apiXXhost",
 		},
 		{
 			// One fragment reaches the outputs space through both doors: an
@@ -535,7 +535,7 @@ func TestAssembleStackRefusesANameAlreadyCarryingDifferentContent(t *testing.T) 
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nOutputs:\n  host:\n    Value: explicit\n    Description: the explicit one\nprovides:\n  host: projected\n"),
 			},
 			wantSpace: KeySpaceOutputLogicalIDs,
-			wantName:  "apiQQhost",
+			wantName:  "apiXXhost",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -652,8 +652,8 @@ func TestAssembleStackMergesEveryDistinctNameFromEveryFragment(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"ordersQQhost", "ordersQQqueueQzuurl", "ordersQQbucketQzuarn",
-		"paymentsQzhdbQQhost", "paymentsQzhdbQQqueueQzuurl",
+		"ordersXXhost", "ordersXXqueueXzuurl", "ordersXXbucketXzuarn",
+		"paymentsXzhdbXXhost", "paymentsXzhdbXXqueueXzuurl",
 	} {
 		if _, ok := outputs[want]; !ok {
 			t.Errorf("output %q is missing from the assembled stack; got %v", want, keysOf(outputs))
@@ -764,7 +764,7 @@ func TestDeclaredNamesReportsOneNameOnceWhenTwoProjectionsAgree(t *testing.T) {
 		t.Fatalf("DeclaredNames: %v", err)
 	}
 	t.Logf("declared output ids: %v", outs)
-	if want := []string{"apiQQhost"}; !reflect.DeepEqual(outs, want) {
+	if want := []string{"apiXXhost"}; !reflect.DeepEqual(outs, want) {
 		t.Fatalf("declared output ids = %v, want %v — one name the stack carries once", outs, want)
 	}
 
@@ -782,7 +782,7 @@ func TestDeclaredNamesReportsOneNameOnceWhenTwoProjectionsAgree(t *testing.T) {
 	if err := json.Unmarshal(top["Outputs"], &outputs); err != nil {
 		t.Fatalf("Outputs not an object: %v", err)
 	}
-	if want := []string{"apiQQhost"}; !reflect.DeepEqual(sortedCopy(keysOf(outputs)), want) {
+	if want := []string{"apiXXhost"}; !reflect.DeepEqual(sortedCopy(keysOf(outputs)), want) {
 		t.Fatalf("the stack carries outputs %v, want %v", sortedCopy(keysOf(outputs)), want)
 	}
 }
@@ -806,7 +806,7 @@ func TestDeclaredNamesKeepsTheRepeatWhenTwoProjectionsDisagree(t *testing.T) {
 		t.Fatalf("DeclaredNames: %v", err)
 	}
 	t.Logf("declared output ids: %v", outs)
-	if want := []string{"apiQQhost", "apiQQhost"}; !reflect.DeepEqual(outs, want) {
+	if want := []string{"apiXXhost", "apiXXhost"}; !reflect.DeepEqual(outs, want) {
 		t.Fatalf("declared output ids = %v, want %v — a lossy repeat stays visible", outs, want)
 	}
 
@@ -975,7 +975,7 @@ func TestDeclaredNamesKeepsACrossFragmentRepeatWhoseBodiesDiffer(t *testing.T) {
 				"Resources:\n  Other:\n    Type: AWS::SQS::Queue\nprovides:\n  host: two\n",
 			},
 			wantRes:     []string{"Thing", "Other"},
-			wantOutputs: []string{"apiQQhost", "apiQQhost"},
+			wantOutputs: []string{"apiXXhost", "apiXXhost"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1034,7 +1034,7 @@ func TestDeclaredNamesAcrossFragmentsKeepsEveryDistinctName(t *testing.T) {
 	if want := []string{"Alpha", "Zeta", "Beta"}; !reflect.DeepEqual(res, want) {
 		t.Errorf("declared resources = %v, want %v", res, want)
 	}
-	if want := []string{"apiQQalfa", "apiQQzulu", "apiQQbravo", "apiQQyankee"}; !reflect.DeepEqual(outs, want) {
+	if want := []string{"apiXXalfa", "apiXXzulu", "apiXXbravo", "apiXXyankee"}; !reflect.DeepEqual(outs, want) {
 		t.Errorf("declared outputs = %v, want %v", outs, want)
 	}
 
@@ -1073,7 +1073,7 @@ func TestDeclaredNamesSourcedFoldsARestatementAcrossFiles(t *testing.T) {
 	if want := []string{"Shared", "Extra"}; !reflect.DeepEqual(res, want) {
 		t.Errorf("declared resources = %v, want %v — the restated name is carried once", res, want)
 	}
-	if want := []string{"apiQQhost"}; !reflect.DeepEqual(outs, want) {
+	if want := []string{"apiXXhost"}; !reflect.DeepEqual(outs, want) {
 		t.Errorf("declared outputs = %v, want %v — the restated name is carried once", outs, want)
 	}
 
