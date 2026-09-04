@@ -1,0 +1,69 @@
+# Developer intent for the two published cloudformation FeatureRecipes: a
+# component-scope attachment that brings a resource of its own, and a
+# boundary-scope attachment that brings one resource per boundary.
+#
+# Two databases are declared so that a boundary can carry more than one
+# component. That is what makes the boundary-scope attachment's rendering count
+# a real assertion: a realization that rendered per component rather than per
+# boundary would emit two parameters in a boundary holding two components, and a
+# fixture with one component per boundary could not tell the two apart.
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-published-feature-recipes
+  version: "1.0.0"
+  description: >
+    Two managed databases, each carrying an alarm attachment that watches its own
+    free storage, plus an application that reads one of them. A Release splits the
+    databases across two boundaries and attaches the boundary-wide settings
+    parameter to each, so both attachment scopes are exercised in one build.
+spec:
+  components:
+    payments-db:
+      type: core/datastore/mariadb
+      values:
+        database: appdb
+        user: appuser
+        charset: utf8mb4
+        collation: utf8mb4_general_ci
+      features:
+        # The engine owns the master password on a managed instance, so the slot
+        # the Component declares is delegated rather than filled.
+        root_password:
+          type: core/generated-secret
+        # The component-scope attachment. The developer states the headroom the
+        # application needs; where the alarm notifies is decided Release-side.
+        storage-headroom:
+          type: example/storage-alarm
+          values:
+            free_storage_bytes: 21474836480
+
+    orders-db:
+      type: core/datastore/mariadb
+      values:
+        database: ordersdb
+        user: ordersuser
+        charset: utf8mb4
+        collation: utf8mb4_general_ci
+      features:
+        root_password:
+          type: core/generated-secret
+        # The same attachment on a second host, left without operator sizing in
+        # the Release, so this one renders the realization's own fallbacks.
+        storage-headroom:
+          type: example/storage-alarm
+          values:
+            free_storage_bytes: 10737418240
+
+    reporting-app:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /reporting/db-host
+      uses:
+        database:
+          primary:
+            target: orders-db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host

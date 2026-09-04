@@ -1,0 +1,75 @@
+# Both published FeatureRecipes, in every flavour they ship, in one build.
+#
+# The two boundaries differ in exactly what the realizations branch on:
+#
+#   data — the alarm attachment carries operator sizing (both optional infra
+#          fields authored), so the rendered alarm carries a notification action
+#          and the authored evaluation count. The boundary attachment carries an
+#          authored tier.
+#
+#   app  — the alarm attachment carries no operator sizing at all, so the
+#          rendered alarm falls back to the realization's own evaluation count
+#          and carries no notification action. This boundary holds TWO
+#          components, which is what makes the boundary attachment's rendering
+#          count discriminating rather than incidental.
+#
+# Both boundaries author the settings tier, and they author DIFFERENT values.
+# That is deliberate: the tier is what proves each boundary's parameter carries
+# its own resolved settings rather than a copy of one render, and identical
+# values would satisfy a presence check while proving nothing.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-published-feature-recipes
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    data:
+      directory: ./dist/data
+      features:
+        shared-settings:
+          type: core/shared-config
+          infra:
+            tier: production-data
+      components:
+        payments-db:
+          features:
+            storage-headroom:
+              infra:
+                evaluation_periods: 3
+                notify_target: "arn:aws:sns:eu-west-1:123456789012:payments-oncall"
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+    app:
+      directory: ./dist/app
+      features:
+        shared-settings:
+          type: core/shared-config
+          infra:
+            tier: production-app
+      components:
+        orders-db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 50Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 7
+        reporting-app: {}

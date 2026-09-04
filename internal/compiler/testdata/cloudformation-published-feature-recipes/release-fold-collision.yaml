@@ -1,0 +1,41 @@
+# One boundary, so the two components' fragments fold into one assembled stack
+# and their alarm resource names genuinely meet inside one Resources map. Split
+# across two boundaries they would land in two documents and would not be a
+# collision at all.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-published-feature-recipes-fold-collision
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-fold-collision.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    data:
+      directory: ./dist/fold-collision
+      components:
+        payments-db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+        payments:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14

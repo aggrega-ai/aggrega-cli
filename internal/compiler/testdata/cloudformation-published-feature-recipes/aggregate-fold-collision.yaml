@@ -1,0 +1,59 @@
+# The pair-boundary collision, authored the way an operator would reach it.
+#
+# The component-scope realization derives its resource name by joining the host
+# instance name and the attachment name with a space and folding the result into
+# the alphabet a CloudFormation logical id admits. That alphabet excludes the
+# space exactly as it excludes the hyphen, so the join character is read as a
+# word boundary like any other and the boundary between the two authored fields
+# is gone by the time the name exists.
+#
+# So the two components below reach one name. Neither shares an instance name
+# with the other and neither shares an attachment name with the other — what they
+# share is where the split between the pair falls:
+#
+#   payments-db + storage-headroom    -> "payments-db storage-headroom"
+#   payments    + db-storage-headroom -> "payments db-storage-headroom"
+#
+# Both fold to PaymentsDbStorageHeadroom. Every other derived name in this build
+# stays distinct, so the resource name space is the only one that meets.
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-published-feature-recipes-fold-collision
+  version: "1.0.0"
+  description: >
+    Two databases carrying one alarm attachment each, whose host names and
+    attachment names both differ yet whose alarm resource names meet. This build
+    is expected to halt: it is here to show that a name reached twice through the
+    fold is reported rather than emitted once.
+spec:
+  components:
+    payments-db:
+      type: core/datastore/mariadb
+      values:
+        database: appdb
+        user: appuser
+        charset: utf8mb4
+        collation: utf8mb4_general_ci
+      features:
+        root_password:
+          type: core/generated-secret
+        storage-headroom:
+          type: example/storage-alarm
+          values:
+            free_storage_bytes: 21474836480
+
+    payments:
+      type: core/datastore/mariadb
+      values:
+        database: ledgerdb
+        user: ledgeruser
+        charset: utf8mb4
+        collation: utf8mb4_general_ci
+      features:
+        root_password:
+          type: core/generated-secret
+        db-storage-headroom:
+          type: example/storage-alarm
+          values:
+            free_storage_bytes: 53687091200

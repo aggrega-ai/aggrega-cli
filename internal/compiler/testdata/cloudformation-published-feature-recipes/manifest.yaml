@@ -1,0 +1,20 @@
+# Ops mapping for the CloudFormation target. Every component type and every
+# attached Feature binds to the published Recipe that implements it there.
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: cloudformation-published-feature-recipes-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/datastore/mariadb:1.0.0: cloudformation/mariadb-rds:1.0.0
+        example/compute/db-reader:1.0.0: cloudformation/db-reader:1.0.0
+    features:
+      type:
+        core/generated-secret:1.0.0: cloudformation/generated-secret:1.0.0
+        # The component-scope realization: one alarm per attached component.
+        example/storage-alarm:1.0.0: cloudformation/storage-alarm:1.0.0
+        # The boundary-scope realization: one parameter per boundary.
+        core/shared-config:1.0.0: cloudformation/shared-config:1.0.0
