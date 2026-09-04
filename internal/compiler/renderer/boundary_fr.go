@@ -169,6 +169,21 @@ type BoundaryFRState struct {
 	// restated at two crossings, so it is recorded as the declaration arrives.
 	DerivedKeyRepeats map[boundaryFRKey][]derivedKeyRepeat
 
+	// Values carries what each (boundary_path, FR-instance) tuple's own
+	// valuesMapping resolved to, keyed exactly as Files is so a reader routing the
+	// emitted output to a dispatch group reaches the values for the contributor
+	// that emitted it.
+	//
+	// It is recorded here rather than re-evaluated where it is read for the reason
+	// ComponentIDs is: the evaluation runs against this FeatureRecipe's own
+	// boundary-scoped context, which the surfaces that route its output no longer
+	// hold, so a second evaluation there would either rebuild that context or
+	// resolve against a different one and supply values the render never used.
+	//
+	// A tuple whose FeatureRecipe resolved no values carries none, which is the
+	// same state as absent.
+	Values map[boundaryFRKey]map[string]any
+
 	// ConsumerEnvOverrides carries per-consumer environment overrides a
 	// boundary-scope FeatureRecipe's resource-gen emits, keyed
 	// consumer-nodeID -> {envVar: value}. The orchestrator applies each named
@@ -185,6 +200,7 @@ func NewBoundaryFRState() *BoundaryFRState {
 		Provides:             map[boundaryFRKey]map[string]any{},
 		Files:                map[boundaryFRKey][]EmittedFile{},
 		ComponentIDs:         map[boundaryFRKey]string{},
+		Values:               map[boundaryFRKey]map[string]any{},
 		DerivedKeys:          map[boundaryFRKey]types.OrderedMap[[]string]{},
 		DerivedKeyRepeats:    map[boundaryFRKey][]derivedKeyRepeat{},
 		ConsumerEnvOverrides: map[string]map[string]string{},
@@ -527,6 +543,16 @@ func dispatchBoundaryScopeFR(
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q valuesMapping", frInstance))
 	}
+	// Recorded against this tuple as the render is handed them, because the
+	// surfaces that route this contribution's output run after this render has
+	// returned and hold the tuple rather than this context — and the context is
+	// what the evaluation above resolves against, so a second evaluation there
+	// would supply a value this render never used. Recorded at the evaluation
+	// rather than beside the emitted files below for the same reason: nothing
+	// between the two touches the values, and reading them from the one site that
+	// produced them is what keeps the assembled artifact supplying exactly what
+	// the render was given.
+	boundaryFRState.Values[key] = frValues
 
 	// 5-6. Render via the SAME input-kind machinery the per-component FR sites
 	// use — the central gate, then sourced engine.Render / synthesized workload

@@ -2142,11 +2142,20 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				// placed. A source restated here would be resolved against a
 				// different moment than the render that placed the files.
 				//
-				// It carries NO values either. Making the attachment a child of its
-				// own creates the address its values would be written at, and filling
-				// that address is a separate question from having one — so the entry
-				// establishes the address and supplies nothing through it.
-				dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{InstanceID: contrib.nodeID})
+				// It carries the values this attachment's own valuesMapping resolved
+				// to, which is what the address the entry establishes exists to
+				// deliver. They are needed here and nowhere else: an attachment on a
+				// group that places its contributors is one whose files were vendored
+				// in verbatim from what its author shipped, so nothing wrote the
+				// resolved values into them and the assembled artifact is the only
+				// surface left that can supply them. Without them the placed content
+				// renders whatever defaults its author shipped and reports success,
+				// which is the same reading-nothing outcome as files at a position no
+				// entry names — one level further in.
+				dispatch[key].subCharts = append(dispatch[key].subCharts, SubChartInfo{
+					InstanceID: contrib.nodeID,
+					Values:     contrib.values,
+				})
 			}
 		}
 		// Trace point: Phase B.6 — FeatureRecipe Resource Generation. The
@@ -2419,9 +2428,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			dispatch[dKey].placed[syntheticNodeID] = append(dispatch[dKey].placed[syntheticNodeID], placedOwn...)
 			// Named among the group's children, for the same reason the
 			// component-scope routing does it: files at a position no entry names
-			// are files nothing loads. No source, no version and no values — see
-			// that routing for why each is absent rather than forgotten.
-			dispatch[dKey].subCharts = append(dispatch[dKey].subCharts, SubChartInfo{InstanceID: syntheticNodeID})
+			// are files nothing loads. No source and no version — see that routing
+			// for why each is absent rather than forgotten. The values it carries
+			// are this feature's own, on the same terms: the files it placed were
+			// vendored in verbatim from what its author shipped, so the assembled
+			// artifact is the only surface that can supply them, and read from the
+			// tuple's own record rather than re-evaluated here.
+			dispatch[dKey].subCharts = append(dispatch[dKey].subCharts, SubChartInfo{
+				InstanceID: syntheticNodeID,
+				Values:     boundaryFRState.Values[key],
+			})
 		}
 		if len(nodeFiles) > 0 {
 			dispatch[dKey].files[syntheticNodeID] = nodeFiles

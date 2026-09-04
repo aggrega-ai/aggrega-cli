@@ -760,6 +760,7 @@ func phaseB6(
 				nameBasis: TargetNameBasis(frNodeCtx),
 				fragments: fragments,
 				files:     ownFiles,
+				values:    frValues,
 			})
 		}
 	}
@@ -799,12 +800,21 @@ func phaseB6(
 // put them below the position the group gives this contributor, and a group's
 // target discovers its contributors AT those positions — so output below one is
 // not a contributor and is read by nothing.
+//
+// values is what this attachment's own valuesMapping resolved to, carried out for
+// a group whose assembler supplies each contributor's values from the assembled
+// artifact rather than from the contributor's own files. It travels because the
+// files this attachment placed are the ones its author shipped, vendored in
+// verbatim: nothing wrote the resolved values into them, so a group that does not
+// carry them here has no other way to reach them and the placed content renders
+// its own defaults instead.
 type attachmentContribution struct {
 	nodeID    string
 	producer  derivedKeyProducer
 	nameBasis string
 	fragments []EmittedFile
 	files     []EmittedFile
+	values    map[string]any
 }
 
 // attachmentRenderItem is one attachment queued for the Phase B.6 render loop —
