@@ -526,18 +526,22 @@ containers:
 	// spelling that actually reaches a cluster rather than agreeing with whatever
 	// the composition produced.
 	const frIdentity = "cfr--api--mon"
+	// The contributor prefix the compiler puts in front of whatever the provider
+	// named the file. It is the flat shape's whole separator, so it is what the
+	// search keys on.
+	const frPrefix = "api--mon--"
 	var frDep string
 	for k := range result.Files {
-		if strings.Contains(k, "features/api/mon/") && strings.Contains(k, "deployment.yaml") {
+		if strings.Contains(k, frPrefix) && strings.Contains(k, "deployment.yaml") {
 			frDep = k
 			break
 		}
 	}
 	if frDep == "" {
-		t.Fatalf("missing synthesized FR deployment under features/api/mon/, keys: %v", fileKeys(result.Files))
+		t.Fatalf("missing synthesized FR deployment carrying %q, keys: %v", frPrefix, fileKeys(result.Files))
 	}
-	if !strings.Contains(frDep, "features/api/mon/"+frIdentity+"-") {
-		t.Errorf("FR deployment should be named for the composed identity (%s-*), got %q", frIdentity, frDep)
+	if !strings.Contains(frDep, frPrefix+frIdentity+"-") {
+		t.Errorf("FR deployment should be named for the composed identity (%s%s-*), got %q", frPrefix, frIdentity, frDep)
 	}
 	body := string(result.Files[frDep].Content)
 	if !strings.Contains(body, "prom/mon:v1") {
@@ -656,14 +660,14 @@ containers:
 
 	// Each attachment's synthesized workload carries the identity composed from
 	// ITS host, so the two never meet — in the output keys or in the cluster. The
-	// directory says the same thing the identity does, from the same two parts:
-	// the host it is attached to and the name it is attached under.
+	// filename prefix says the same thing the identity does, from the same two
+	// parts: the host it is attached to and the name it is attached under.
 	joined := strings.Join(fileKeys(result.Files), "\n")
 	for _, want := range []struct{ host, identity string }{
 		{"api", apiIdentity},
 		{"worker", workerIdentity},
 	} {
-		if !strings.Contains(joined, "features/"+want.host+"/"+sharedInstance+"/"+want.identity+"-") {
+		if !strings.Contains(joined, want.host+"--"+sharedInstance+"--"+want.identity+"-") {
 			t.Errorf("no output key carries the identity %q under its host %q; the two attachments have not reached two identities\nkeys: %v",
 				want.identity, want.host, fileKeys(result.Files))
 		}
@@ -905,9 +909,14 @@ containers:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	// Both crossings carry ONE contributor prefix, which is the property worth
+	// pinning here: a composed FeatureRecipe's synthesized and artifacts output
+	// are one attachment's, so they are separated from everything else by the same
+	// prefix rather than each acquiring a position of its own.
+	const frPrefix = "api--mon--"
 	foundWorkload, foundArtifact := false, false
 	for k := range result.Files {
-		if !strings.Contains(k, "features/api/mon/") {
+		if !strings.Contains(k, frPrefix) {
 			continue
 		}
 		if strings.Contains(k, "deployment.yaml") {
@@ -918,10 +927,10 @@ containers:
 		}
 	}
 	if !foundWorkload {
-		t.Errorf("composed FR missing synthesized workload under features/api/mon/, keys: %v", fileKeys(result.Files))
+		t.Errorf("composed FR missing synthesized workload carrying %q, keys: %v", frPrefix, fileKeys(result.Files))
 	}
 	if !foundArtifact {
-		t.Errorf("composed FR missing artifact under features/api/mon/, keys: %v", fileKeys(result.Files))
+		t.Errorf("composed FR missing artifact carrying %q, keys: %v", frPrefix, fileKeys(result.Files))
 	}
 }
 

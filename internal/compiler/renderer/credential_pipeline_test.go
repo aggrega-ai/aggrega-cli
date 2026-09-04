@@ -116,10 +116,16 @@ func TestRenderAll_CredentialFeatureRecipePipelineExecutes(t *testing.T) {
 	}
 	sort.Strings(keys)
 
+	// The attachment's own-scope output carries its contributor prefix, and the
+	// instance name's underscore is escaped there because the coordinates become
+	// part of a filename rather than a directory segment of their own. Written out
+	// rather than composed, so the spelling that actually reaches a consumer is
+	// what this asserts.
+	const ownPrefix = "api--root-zupassword--"
 	var ownEmit, hostEmit string
 	for _, k := range keys {
 		switch {
-		case strings.Contains(k, "features/api/root_password/") && strings.HasSuffix(k, "pipeline-configmap.yaml"):
+		case strings.Contains(k, ownPrefix) && strings.HasSuffix(k, "pipeline-configmap.yaml"):
 			ownEmit = k
 		case strings.HasSuffix(k, "pipeline-host-marker.yaml"):
 			hostEmit = k

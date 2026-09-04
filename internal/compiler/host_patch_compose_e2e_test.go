@@ -89,12 +89,19 @@ func TestHostPatchCompose_PostAssemblyHostPatch(t *testing.T) {
 	// assembly only where it rendered for the same target; otherwise it is written
 	// under its own position, which is what this asserts.
 	//
+	// 🔴 Its own position is a FILENAME prefix, not a directory, and that follows
+	// from the host's assembly rather than from anything this attachment declares.
+	// A host that folds its group into one document gives no contributor a
+	// position of its own, so there is no directory for a contribution it places
+	// instead of folding — the contributor's coordinates go into the filename and
+	// the file lands directly beside the assembled document.
+	//
 	// Asserted on the body rather than on the key alone. A key assertion reports
 	// only that a file was emitted at that path, which a FeatureRecipe that
 	// emitted an empty or unevaluated file also satisfies — so it cannot separate
 	// output that carries the attachment's resource from output that carries
 	// nothing.
-	guardrail := string(findArtifactBySuffix(t, result.Artifacts, "features/api/guardrail/guardrail-config.yaml"))
+	guardrail := string(findArtifactBySuffix(t, result.Artifacts, "api--guardrail--guardrail-config.yaml"))
 	if !strings.Contains(guardrail, "kind: ConfigMap") {
 		t.Errorf("the FeatureRecipe's own output is not the resource it declares; got:\n%s", guardrail)
 	}

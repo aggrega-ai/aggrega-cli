@@ -131,18 +131,25 @@ func boundaryFROutputPathCases() []boundaryFROutputPathCase {
 			wantAttachmentDir: "dist/cluster/helm-chart/charts/aux/",
 		},
 		{
-			// The control. This provider elects no assembler and so names no
-			// per-contributor directory of its own: the attachment's files sit at
-			// the boundary directory's own features position, exactly where they
-			// were pre-keyed, and there is no assembler-named directory to report.
+			// The control. This provider elects no assembler and so gives no
+			// contributor a position of its own: there is no directory an
+			// attachment could sit in, so its instance name is encoded into the
+			// filename and the file lands directly in the boundary's own
+			// directory, beside what it is attached to. That is the whole point of
+			// the flat shape — a consumer reading only the files sitting directly
+			// in a directory picks the attachment up without being told to recurse.
+			//
 			// The component's artifact beside it sits under the component's name —
-			// not the assembler's doing, but the artifacts placement's, which is
-			// what keeps two components in one boundary from writing one path.
-			name:     "helm names no assembler directory, and the attachment stays at its own features position",
+			// not an assembler's doing, but the artifacts placement's, which is
+			// what keeps two components in one boundary from writing one path. So
+			// this case also holds the two positions apart: the attachment's
+			// coordinates moved into a filename and the component's artifact
+			// directory did not move at all.
+			name:     "helm gives no contributor a position, so the attachment's instance is encoded into its filename",
 			provider: "helm",
 			wantPaths: []string{
 				"dist/cluster/helm/api/api-config.yaml",
-				"dist/cluster/helm/features/aux/aux-config.yaml",
+				"dist/cluster/helm/aux--aux-config.yaml",
 			},
 			wantAttachmentDir: "",
 		},

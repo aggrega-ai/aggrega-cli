@@ -409,11 +409,13 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // whether what it rendered is in the shape that group's assembler reads. One
 // answer covers the whole of an attachment's output, so the two cannot overlap.
 //
-// attachmentDir is the directory an attachment's own files sit under, resolved
-// from the host provider's own declaration and already carrying its trailing
-// separator. It is handed in rather than read here because it is a property of
-// the dispatch group this node's output joins, which the orchestrator settles
-// around this loop; the loop composes each attachment's coordinates onto it.
+// attachmentDir is the directory an attachment's own files sit under, already
+// carrying its trailing separator, and empty where the host's group gives no
+// contributor a position of its own — in which case the coordinates become a
+// filename prefix instead. It is handed in rather than read here because it is a
+// property of the dispatch group this node's output joins, which the orchestrator
+// settles around this loop; the loop composes each attachment's coordinates onto
+// it.
 //
 // hostNestsContributors reports whether the host's dispatch group places each of
 // its contributors under a position of its own. It decides whether an
@@ -740,12 +742,12 @@ func phaseB6(
 			//
 			// The prefix is the value the write above used rather than a second
 			// spelling of it, so the position reported and the position written to
-			// are one string. It is reported only where the host's declaration puts
-			// the attachment in a directory: where the host declares that its target
-			// reads only the files sitting directly in a directory, that same
-			// composition returns a FILENAME prefix instead, which names no position
-			// of its own — the attachment's files sit in the host's own position, and
-			// the host's own entry already names it.
+			// are one string. It is reported only where the host's group puts the
+			// attachment in a directory: where that group gives no contributor a
+			// position of its own, the same composition returns a FILENAME prefix
+			// instead, which names no position of its own — the attachment's files
+			// sit in the host's own position, and the host's own entry already names
+			// it.
 			if hostNestsContributors && attachmentDir != "" && len(frFiles) > 0 {
 				placement = enclosedPlacement{withinNode: nodeID, prefix: outputPrefix}
 			}

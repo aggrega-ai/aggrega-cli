@@ -31,6 +31,32 @@ func attachmentIdentityInput(target string) pipelinetest.Input {
 	}
 }
 
+// attachmentFilePrefix is the prefix the compiler puts in front of whatever a
+// provider named an attachment's file, where the provider's group gives no
+// contributor a position of its own. The host and the attachment key, joined and
+// closed by the encoding's own two-character separator.
+//
+// Written out here rather than derived from the composition, so a change to the
+// separator arrives as a failure in these cases rather than being tracked
+// silently. The fixture's host component is "alpha" throughout.
+func attachmentFilePrefix(instance string) string { return "alpha--" + instance + "--" }
+
+// isAttachmentArtifact reports whether an emitted key belongs to one of the
+// fixture's three attachments rather than to the host component's own render.
+//
+// Keyed on the attachment prefixes rather than on the absence of some marker: the
+// flat shape leaves an attachment's files in the same directory as the host's, so
+// there is no directory left to tell them apart and the prefix is the only thing
+// that does.
+func isAttachmentArtifact(key string) bool {
+	for _, instance := range []string{"src", "wl", "art"} {
+		if strings.Contains(key, attachmentFilePrefix(instance)) {
+			return true
+		}
+	}
+	return false
+}
+
 // TestAttachmentIdentity_EveryDeliveryCarriesTheAttachmentIdentity pins the
 // value a per-component attachment's resources are stamped with: it is composed
 // from the component the Feature is attached to and the key it is attached
@@ -91,11 +117,11 @@ func TestAttachmentIdentity_TheSourcedAttachmentIsSelectableApartFromItsHost(t *
 	var hostIDs, sourcedIDs []string
 	for _, k := range sortedKeys(res.Artifacts) {
 		ids := identityLabelValues(string(res.Artifacts[k]))
-		if strings.Contains(k, "features/alpha/src/") {
+		if strings.Contains(k, attachmentFilePrefix("src")) {
 			sourcedIDs = append(sourcedIDs, ids...)
 			continue
 		}
-		if !strings.Contains(k, "features/") {
+		if !isAttachmentArtifact(k) {
 			hostIDs = append(hostIDs, ids...)
 		}
 	}
@@ -128,28 +154,43 @@ func identityLabelValues(body string) []string {
 	return out
 }
 
-// TestAttachmentIdentity_EachAttachmentWritesUnderItsOwnDirectory pins the other
-// half of the separation, for a target that writes discrete documents: two
-// attachments on one component write to two places, named for the host and for
-// the key the Feature is attached under. The directory is what tells two
-// attachments apart where their emitted filenames cannot — an artifact's filename
-// is the author's map key verbatim.
+// TestAttachmentIdentity_EachAttachmentCarriesItsOwnFilenamePrefix pins the other
+// half of the separation, for a target that writes discrete documents: three
+// attachments on one component reach three distinct filename prefixes, each named
+// for the host and for the key the Feature is attached under. The prefix is what
+// tells two attachments apart where their emitted filenames cannot — an artifact's
+// filename is the author's map key verbatim.
+//
+// 🔴 The files sit in the host's own directory, which is the whole point: this
+// target reads only the files sitting directly in a directory, so an attachment
+// under a sub-directory of its own is one a consumer misses at its defaults while
+// reporting success. Both halves are asserted — the prefix is present, and no
+// output opens a directory level.
 //
 // The Kubernetes target alone, and that is the separation's own shape rather than
-// a gap: a target whose provider folds its dispatch group into ONE document has no
-// per-producer directory for anything to be separated by, and the sibling case
-// below is where that target's answer is pinned. The identity every attachment's
-// resources carry is asserted on both targets above, which is the separation that
-// survives either layout.
-func TestAttachmentIdentity_EachAttachmentWritesUnderItsOwnDirectory(t *testing.T) {
+// a gap: a target whose provider folds its dispatch group into ONE document has
+// nothing to separate, and the sibling case below is where that target's answer is
+// pinned. The identity every attachment's resources carry is asserted on both
+// targets above, which is the separation that survives either layout.
+func TestAttachmentIdentity_EachAttachmentCarriesItsOwnFilenamePrefix(t *testing.T) {
 	t.Parallel()
 
 	res := pipelinetest.Build(t, attachmentIdentityInput("helm"))
-	keys := strings.Join(sortedKeys(res.Artifacts), "\n")
+	sorted := sortedKeys(res.Artifacts)
+	keys := strings.Join(sorted, "\n")
 	for _, instance := range []string{"src", "wl", "art"} {
-		want := "features/alpha/" + instance + "/"
+		want := attachmentFilePrefix(instance)
 		if !strings.Contains(keys, want) {
-			t.Errorf("no output is placed under %q\nkeys:\n%s", want, keys)
+			t.Errorf("no output carries the contributor prefix %q\nkeys:\n%s", want, keys)
+		}
+	}
+	// The flatness itself, asserted rather than implied by the prefixes above: a
+	// build that emitted both a prefixed name AND kept an enclosing directory
+	// would satisfy the reads above while leaving the omission in place.
+	for _, k := range sorted {
+		if strings.Contains(k, "/features/") {
+			t.Errorf("attachment output %q still sits under an enclosing directory, so a consumer reading "+
+				"only the files directly in a directory still misses it\nkeys:\n%s", k, keys)
 		}
 	}
 }
@@ -172,7 +213,7 @@ func TestAttachmentIdentity_AMergingTargetCarriesItsAttachmentsInTheAssembledDoc
 	res := pipelinetest.Build(t, attachmentIdentityInput("compose"))
 	keys := sortedKeys(res.Artifacts)
 	for _, k := range keys {
-		if strings.Contains(k, "features/") {
+		if isAttachmentArtifact(k) {
 			t.Errorf("a discrete attachment file survives at %q; its fragment was merged, so writing it too delivers the same content twice\nkeys:\n%s",
 				k, strings.Join(keys, "\n"))
 		}
@@ -210,7 +251,7 @@ func TestAttachmentIdentity_AnAuthorsChartKeepsTheHostReleaseName(t *testing.T) 
 	res := pipelinetest.Build(t, attachmentIdentityInput("helm"))
 	var key, body string
 	for _, k := range sortedKeys(res.Artifacts) {
-		if strings.Contains(k, "features/alpha/src/") {
+		if strings.Contains(k, attachmentFilePrefix("src")) {
 			key, body = k, string(res.Artifacts[k])
 			break
 		}
@@ -221,11 +262,12 @@ func TestAttachmentIdentity_AnAuthorsChartKeepsTheHostReleaseName(t *testing.T) 
 	if !strings.Contains(body, "name: alpha\n") {
 		t.Errorf("the chart's own resource must keep the host's release name; got:\n%s", body)
 	}
-	// The file key the sourced render emitted, prefixed with the same basis. The
-	// expected name is written out rather than composed from anything the render
+	// The name the sourced render itself emitted, which the chart derived from the
+	// host's release name and which the contributor prefix sits in front of rather
+	// than replacing. Written out rather than composed from anything the render
 	// produced, so it cannot agree with a derivation that moved.
-	if !strings.HasSuffix(key, "/alpha-service-alpha.yaml") {
-		t.Errorf("the sourced render's emitted file key must stay prefixed with the host's name; got %q", key)
+	if !strings.HasSuffix(key, "alpha--src--alpha-service-alpha.yaml") {
+		t.Errorf("the sourced render's emitted file key must keep the host's name in the name the chart derived; got %q", key)
 	}
 }
 

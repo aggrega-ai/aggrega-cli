@@ -250,15 +250,15 @@ func hostLabelArtifactsFR() types.FeatureRecipeSpec {
 
 // TestRenderAll_OneAttachmentNameOnTwoComponentsPlacesEachUnderItsHost pins the
 // artifacts-bearing shape of one instance name attached to two components in ONE
-// boundary: it builds, and each attachment's files land under the component
-// hosting it.
+// boundary: it builds, and each attachment's files carry the component hosting it
+// in their own filename.
 //
 // The shape needs pinning on the ARTIFACTS crossing specifically, because that is
 // the crossing whose emitted names cannot separate the two on their own. An
 // artifact's output filename is the author's map key verbatim, so both
 // attachments emit the same filename however the identity is composed — the
-// directory is the only thing that can tell them apart, and it does so by naming
-// the host.
+// contributor prefix the compiler puts in front of it is the only thing that can
+// tell them apart, and it does so by naming the host.
 //
 // Both nodes sit in one boundary and render through one engine, so they land in
 // one dispatch group and their output paths genuinely meet rather than being kept
@@ -279,9 +279,9 @@ func TestRenderAll_OneAttachmentNameOnTwoComponentsPlacesEachUnderItsHost(t *tes
 	}
 	joined := strings.Join(keys, "\n")
 	for _, host := range []string{"alpha", "beta"} {
-		want := "features/" + host + "/" + hostPlainInstance + "/"
+		want := host + "--" + hostPlainInstance + "--"
 		if !strings.Contains(joined, want) {
-			t.Errorf("no output key is placed under %q; the two attachments have not been separated\nkeys: %v",
+			t.Errorf("no output key carries the prefix %q; the two attachments have not been separated\nkeys: %v",
 				want, keys)
 		}
 	}

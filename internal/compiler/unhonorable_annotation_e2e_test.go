@@ -430,7 +430,7 @@ func TestUnhonorableAnnotation_AttachmentCrossingNeverHalts(t *testing.T) {
 	if len(annotationAdvisories(result.RenderDiagnostics)) == 0 {
 		t.Fatal("build raised no advisory, so it does not exercise the non-halting path")
 	}
-	const emitted = "dist/app/helm/features/app/art/aux-config.yaml"
+	const emitted = "dist/app/helm/app--art--aux-config.yaml"
 	if _, ok := result.Artifacts[emitted]; !ok {
 		t.Errorf("the advised attachment emitted no %s; files: %v", emitted, sortedKeys(result.Artifacts))
 	}

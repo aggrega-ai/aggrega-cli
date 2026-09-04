@@ -252,7 +252,7 @@ func TestRenderAll_TwoBoundaryFeaturesWithNoSharedNameRender(t *testing.T) {
 		t.Fatalf("expected ErrAssembledOutputCollision, got: %v", err)
 	}
 	for _, want := range []string{
-		twoBoundaryGroupPath + "/features/" + sharedFeatureInstance,
+		twoBoundaryGroupPath + "/" + sharedFeatureInstance + "--",
 		"feature " + sharedFeatureInstance + " attached at boundary " + twoBoundaryPathA,
 		"feature " + sharedFeatureInstance + " attached at boundary " + twoBoundaryPathB,
 	} {

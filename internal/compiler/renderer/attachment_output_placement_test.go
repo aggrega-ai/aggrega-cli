@@ -95,6 +95,202 @@ containers:
 	}
 }
 
+// placementTwoAttachmentsOnOneHostInput returns a render input attaching TWO
+// features to ONE component, under two instance names and two feature types.
+//
+// Two TYPES rather than two instances of one type, so the corpus cannot be
+// deflected by any rule about attaching one feature twice: the subject here is
+// two contributors whose emitted filenames agree, and the types are only the way
+// to get two independent FeatureRecipes onto one host.
+func placementTwoAttachmentsOnOneHostInput(host string, instanceTypes [][2]string) renderer.RendererInput {
+	input := testInput()
+
+	componentLabels := types.OrderedMap[string]{}
+	componentLabels.Set("component.aggrega.ai/type", "server")
+
+	nodes := types.OrderedMap[types.IRNode]{}
+	nodes.Set(host, types.IRNode{
+		Component: "core/compute/api-server", Labels: componentLabels,
+		ResolvedVersion: "1.0.0", BoundaryPath: "local/default",
+	})
+	valuesMapping := types.OrderedMap[json.RawMessage]{}
+	valuesMapping.Set(host, json.RawMessage(`{"port":8080}`))
+
+	inner := types.OrderedMap[types.IRFeatureEntry]{}
+	var order []string
+	for _, it := range instanceTypes {
+		vals := types.OrderedMap[any]{}
+		vals.Set("scrape_port", float64(9090))
+		inner.Set(it[0], types.IRFeatureEntry{Type: it[1], Values: vals})
+		order = append(order, it[0])
+	}
+	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	fvm.Set(host, inner)
+
+	input.Graph.Spec.Nodes = nodes
+	input.Graph.Spec.ValuesMapping = valuesMapping
+	input.Graph.Spec.FeatureValuesMapping = fvm
+	input.FeatureOrder = ir.FeatureOrder{host: order}
+	input.GraphView = placementGraphFacts{}
+	return input
+}
+
+// placementMultiTypeLookup binds every named component to a workload Recipe
+// rendered by hostCapability, and each feature type to a FeatureRecipe of its own
+// rendered by frCapability.
+//
+// The two capabilities are separate parameters because the placement shape is the
+// HOST group's answer, so a case needs to be able to set the host's provider and
+// the attachment's independently — a merging host carrying an attachment that
+// rendered for another target is exactly the configuration that reaches the
+// placed arm.
+func placementMultiTypeLookup(hostCapability, frCapability string, featureTypes []string) renderer.RecipeLookup {
+	return renderer.RecipeLookup{
+		Recipe: func(_, componentType string) (*types.Recipe, bool) {
+			if componentType != "core/compute/api-server" {
+				return nil, false
+			}
+			return &types.Recipe{
+				Metadata: types.RecipeMetadata{Name: "api-recipe"},
+				Spec: types.RecipeSpec{
+					Capability: hostCapability,
+					Implements: "core/compute/api-server",
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: myapp:latest
+    ports:
+      web: 8080
+`},
+				},
+			}, true
+		},
+		FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
+			for _, want := range featureTypes {
+				if ft != want {
+					continue
+				}
+				fr := artifactsHostComposedFR(ft)
+				fr.Spec.Capability = frCapability
+				return fr, true
+			}
+			return nil, false
+		},
+	}
+}
+
+// TestRenderAll_TwoAttachmentsOnOneHostBothSurvive is the collision proof the
+// flat shape rests on, and it is stated directly rather than by appeal to a
+// guard.
+//
+// 🔴 NOTHING WOULD CATCH THE FAILURE THIS REFUSES. The rule that refuses one
+// output path written by more than one contributor needs to see two producers at
+// that path, and a component-scope attachment defeats it: its files merge into
+// the bucket of the node hosting them, and that bucket carries ONE producer label
+// computed per node — so two attachments on one component arrive as a single
+// producer and the predicate never fires. Earlier still, both attachments write
+// into one map inside the attachment loop itself, so the loser's bytes are gone
+// before any producer label exists. No halt, no diagnostic, a file simply absent.
+//
+// Which is why BOTH files are required present. An assertion that one of them
+// exists passes on exactly the defect this covers, and so does a count of one.
+//
+// The two attachments emit the SAME filename on purpose: an artifact's output
+// filename is the author's map key verbatim, so the only thing that can separate
+// them is the contributor prefix the compiler composes in front of it. Their
+// resource NAMES differ because the bodies compose the host and the attachment
+// key — otherwise the build halts on the names instead, and the path property
+// would go untested behind a refusal.
+func TestRenderAll_TwoAttachmentsOnOneHostBothSurvive(t *testing.T) {
+	t.Parallel()
+
+	const host = "api"
+	instanceTypes := [][2]string{{"aux", "core/aux"}, {"bux", "core/bux"}}
+	input := placementTwoAttachmentsOnOneHostInput(host, instanceTypes)
+
+	result, err := renderer.RenderAll(context.Background(), input,
+		placementMultiTypeLookup("helm", "helm", []string{"core/aux", "core/bux"}), testHelmFactory(t))
+	if err != nil {
+		t.Fatalf("two attachments on one component with distinct resource names must build, got: %v", err)
+	}
+
+	keys := fileKeys(result.Files)
+	for _, it := range instanceTypes {
+		want := "boundaries/local/default/helm/" + host + "--" + it[0] + "--policy.yaml"
+		if _, present := result.Files[want]; !present {
+			t.Errorf("the emitted set carries no %q; one attachment's file was dropped with nothing reporting it\nkeys: %v",
+				want, keys)
+		}
+	}
+	// The count is asserted beside the two presence reads, because a build that
+	// somehow emitted a THIRD prefixed file would mean the coordinates stopped
+	// identifying one contributor each.
+	var prefixed int
+	for _, k := range keys {
+		if strings.Contains(k, host+"--") {
+			prefixed++
+		}
+	}
+	if prefixed != len(instanceTypes) {
+		t.Errorf("%d files carry a contributor prefix, want %d — one per attachment\nkeys: %v",
+			prefixed, len(instanceTypes), keys)
+	}
+	t.Logf("both attachments survived: %v", keys)
+}
+
+// TestRenderAll_MergingHostPlacesAForeignAttachmentFlat is the merge row's placed
+// arm, built deliberately because the configuration is reachable and was covered
+// only incidentally.
+//
+// A host whose provider FOLDS its dispatch group into one document has no
+// per-contributor position to offer. Where the attachment rendered for that same
+// target its output is folded in and needs no position at all; where it rendered
+// for a DIFFERENT target the assembler cannot read it, so the file is written
+// beside the assembled document instead — and it is that arm which needs a
+// position and gets the flat one.
+//
+// So the assertion is two-sided: the attachment's file exists, carrying its
+// contributor prefix, and it opens no directory level. A merging host that gave a
+// placed attachment an enclosing directory would satisfy a presence read while
+// putting the file back where a consumer reading one directory misses it.
+func TestRenderAll_MergingHostPlacesAForeignAttachmentFlat(t *testing.T) {
+	t.Parallel()
+
+	const (
+		host        = "api"
+		instance    = "guard"
+		featureType = "core/guard"
+	)
+	input := placementTwoAttachmentsOnOneHostInput(host, [][2]string{{instance, featureType}})
+
+	// A compose host folds its group into one document; the attachment renders a
+	// Kubernetes manifest, so it rendered for another target and cannot be folded.
+	result, err := renderer.RenderAll(context.Background(), input,
+		placementMultiTypeLookup("compose", "helm", []string{featureType}), testHelmFactory(t))
+	if err != nil {
+		t.Fatalf("a merging host carrying an attachment for another target must build, got: %v", err)
+	}
+
+	keys := fileKeys(result.Files)
+	want := host + "--" + instance + "--policy.yaml"
+	var found string
+	for _, k := range keys {
+		if strings.HasSuffix(k, want) {
+			found = k
+			break
+		}
+	}
+	if found == "" {
+		t.Fatalf("no emitted key ends in %q; a placed contribution under a merging host must carry its contributor prefix\nkeys: %v",
+			want, keys)
+	}
+	if strings.Contains(found, "/features/") {
+		t.Errorf("the placed contribution %q sits under an enclosing directory; a merging host offers no position, so there is none to put it in", found)
+	}
+	t.Logf("the merging host placed the foreign attachment at: %s", found)
+}
+
 // artifactsOnlyFR is a FeatureRecipe declaring artifacts: and nothing else,
 // naming its resource with a literal. The artifact's output filename is the
 // author's map key verbatim, so nothing in the emitted PATH separates one host's
@@ -202,8 +398,9 @@ func TestRenderAll_ArtifactsAttachmentOnTwoComponentsWithOneNameHalts(t *testing
 
 // TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost pins the
 // placement of a two-host artifacts attachment: each attachment's output lands
-// under the component hosting it, and the directory is what separates the two
-// copies because the filename is the author's map key verbatim.
+// beside the component hosting it, carrying that host in its filename, and the
+// filename prefix is what separates the two copies because the name the author
+// wrote is the same for both.
 //
 // One instance key on two components is ordinary authoring, and a cascade that
 // mints one instance name across many components by design produces it without
@@ -214,9 +411,14 @@ func TestRenderAll_ArtifactsAttachmentOnTwoComponentsWithOneNameHalts(t *testing
 // substance rather than an incidental choice: placement is a property of the
 // attachment and not of what its body names, so proving it needs a two-host
 // corpus that builds — and a two-host corpus builds when its resource names are
-// distinct. The paths asserted here are the same paths the literal-named corpus
-// produced before it was refused, which is what makes this the placement
-// behaviour unchanged rather than a new one.
+// distinct.
+//
+// 🔴 Both files are required present, not one. Two contributors meeting on one
+// output path is refused where the group can see two producers, and a
+// component-scope attachment is exactly the case it cannot: its files merge into
+// the bucket of the node hosting it, which is stamped with one producer label, so
+// the refusal's predicate never fires and the loser is dropped by a plain map
+// assignment. An assertion that one of the two exists would pass on that defect.
 func TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost(t *testing.T) {
 	t.Parallel()
 
@@ -235,9 +437,9 @@ func TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost(t *test
 	keys := fileKeys(result.Files)
 	joined := strings.Join(keys, "\n")
 	for _, host := range []string{"api", "worker"} {
-		want := "features/" + host + "/" + instance + "/policy.yaml"
+		want := host + "--" + instance + "--policy.yaml"
 		if !strings.Contains(joined, want) {
-			t.Errorf("no output key carries %q; the two attachments have not been placed under their hosts\nkeys: %v",
+			t.Errorf("no output key carries %q; the two attachments have not been separated by their filename prefixes\nkeys: %v",
 				want, keys)
 		}
 	}
@@ -245,9 +447,10 @@ func TestRenderAll_ArtifactsAttachmentOnTwoComponentsPlacesUnderEachHost(t *test
 
 // TestRenderAll_AttachmentPlacementIsOneShapeAcrossInputKinds pins the placement
 // as a property of the attachment rather than of the input kind it renders from.
-// Sourced, synthesized and artifacts output all land under
-// features/<host>/<instance>/, so an author changing a FeatureRecipe's delivery
-// mode does not find their output paths moved.
+// Under a provider that gives no contributor a position of its own, sourced,
+// synthesized and artifacts output all land beside the host's own files behind
+// one <host>--<instance>-- filename prefix, so an author changing a
+// FeatureRecipe's delivery mode does not find their output paths moved.
 func TestRenderAll_AttachmentPlacementIsOneShapeAcrossInputKinds(t *testing.T) {
 	t.Parallel()
 
@@ -255,7 +458,7 @@ func TestRenderAll_AttachmentPlacementIsOneShapeAcrossInputKinds(t *testing.T) {
 		host        = "api"
 		instance    = "aux"
 		featureType = "core/aux"
-		wantPrefix  = "features/" + host + "/" + instance + "/"
+		wantPrefix  = host + "--" + instance + "--"
 	)
 
 	sourcedFR := func(t *testing.T) *types.FeatureRecipe {
@@ -318,18 +521,23 @@ containers:
 			}
 			var placed []string
 			for _, k := range fileKeys(result.Files) {
-				if strings.Contains(k, "features/") {
+				if strings.Contains(k, wantPrefix) {
 					placed = append(placed, k)
 				}
 			}
 			sort.Strings(placed)
 			if len(placed) == 0 {
-				t.Fatalf("%s attachment emitted nothing under an attachment directory; keys: %v",
-					tc.kind, fileKeys(result.Files))
+				t.Fatalf("%s attachment emitted nothing carrying the contributor prefix %q; keys: %v",
+					tc.kind, wantPrefix, fileKeys(result.Files))
 			}
-			for _, k := range placed {
-				if !strings.Contains(k, wantPrefix) {
-					t.Errorf("%s attachment output %q is not placed under %q", tc.kind, k, wantPrefix)
+			// No output opens a directory level under this provider: the whole
+			// point of the shape is that a consumer reading only the files sitting
+			// directly in a directory finds the attachment's, so a surviving
+			// features/ directory would leave the defect in place while the prefix
+			// assertion above passed.
+			for _, k := range fileKeys(result.Files) {
+				if strings.Contains(k, "/features/") {
+					t.Errorf("%s attachment output %q still sits under an enclosing directory", tc.kind, k)
 				}
 			}
 			t.Logf("%s attachment emitted: %v", tc.kind, placed)
@@ -337,12 +545,23 @@ containers:
 	}
 }
 
-// TestRenderAll_DottedHostPlacesAnUnescapedPathSegment pins that a host whose id
-// carries a dot reaches a directory carrying that dot as written. A dot in a
-// directory name is legal on every filesystem, so no escaping is applied to a
-// path segment — the identity encoder writes label values, and a path segment is
-// not one.
-func TestRenderAll_DottedHostPlacesAnUnescapedPathSegment(t *testing.T) {
+// TestRenderAll_DottedHostEscapesTheDotIntoTheFilenamePrefix pins that a host
+// whose id carries a dot reaches a filename prefix with that dot ESCAPED, under a
+// provider that gives no contributor a position of its own.
+//
+// The escape is not tidiness. A coordinate becomes part of a filename here rather
+// than a path segment of its own, so a dot carried through as authored would let
+// the prefix read as a relative-path reference and would let a derived filename
+// begin with the character that hides a file. The file's own name keeps whatever
+// dots it carries, which is why the suffix still reads as a suffix.
+//
+// 🔴 The opposite property — a dot written into a DIRECTORY segment as authored,
+// unescaped, because every character an author may put in a component identity is
+// legal in a directory name — is still the behaviour for a provider whose group
+// gives each contributor a position of its own, and it is held to account by the
+// directory-shape row in TestAttachmentOutputPrefixKeepsTheDirectoryShapeUnchanged.
+// The two shapes escape differently on purpose; neither assertion covers the other.
+func TestRenderAll_DottedHostEscapesTheDotIntoTheFilenamePrefix(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -358,10 +577,18 @@ func TestRenderAll_DottedHostPlacesAnUnescapedPathSegment(t *testing.T) {
 		t.Fatalf("a dotted host must render, got: %v", err)
 	}
 
-	want := "features/" + host + "/" + instance + "/policy.yaml"
 	keys := fileKeys(result.Files)
-	if !strings.Contains(strings.Join(keys, "\n"), want) {
-		t.Errorf("no output key carries %q — a path segment must be written as authored\nkeys: %v", want, keys)
+	joined := strings.Join(keys, "\n")
+	if strings.Contains(joined, host+"--") {
+		t.Errorf("an output key carries the host's dot as authored; a filename prefix must escape it\nkeys: %v", keys)
+	}
+	// Written out rather than computed from the encoding under test. A name
+	// derived by calling the composition would agree with it whatever it did, so
+	// the assertion could not fail; the literal is what makes a change to the
+	// escape rule arrive as a failure a reader has to look at.
+	const want = "data-zdmain-db--aux--policy.yaml"
+	if !strings.Contains(joined, want) {
+		t.Errorf("no output key carries %q — the dotted host must reach an escaped filename prefix\nkeys: %v", want, keys)
 	}
 	t.Logf("dotted host emitted: %v", keys)
 }

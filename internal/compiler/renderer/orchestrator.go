@@ -2000,15 +2000,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// /host documents. renderCtx is the render-time context every pipeline
 		// step receives.
 		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
-		// The directory this node's attachments write their own files under,
-		// taken from the one home of that directory so this scope and the boundary
-		// scope cannot come to lay their output out differently.
-		attachmentDir := attachmentPrefixFor()
+		// The directory this node's attachments write their own files under, empty
+		// where they sit directly beside this node's own files. Taken from the one
+		// home of that shape so this scope and the boundary scope cannot come to lay
+		// their output out differently, and asked of the engine that rendered THIS
+		// node: a component-scope attachment is placed by its host's dispatch group,
+		// so the shape is that group's provider's answer and not the attachment's.
+		attachmentDir := attachmentPrefixFor(engine)
 		// Whether this node's dispatch group gives each contributor a position of
 		// its own, read from the same static self-description the attachment
-		// directory above is read from. An attachment's files are placed while this
-		// node renders, so the answer has to be in hand here rather than at the
-		// group's own assembly, which runs a whole pass later.
+		// directory above is read from — so the two answers come from one mode and
+		// cannot disagree about whether this group nests. An attachment's files are
+		// placed while this node renders, so the answer has to be in hand here
+		// rather than at the group's own assembly, which runs a whole pass later.
 		hostNestsContributors := boundaryNestingOf(engine).PerNode
 		frFiles, hostPatched, attachmentContribs, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, attachmentDir, hostNestsContributors, pipelineRenderCtx)
 		if err != nil {
@@ -2292,12 +2296,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		dispatch[dKey].nodeProducer[syntheticNodeID] = frProducer
 		dispatch[dKey].nodeNameBasis[syntheticNodeID] = boundaryFRState.ComponentIDs[key]
-		// The directory this attachment's own files sit under, read from the provider
-		// whose group holds them. It is asked of the provider rather than written here
-		// because two providers that combine their contributors the same way can need
-		// opposite answers — one whose target reads only the files sitting directly in
-		// a directory, one whose target discovers its units in a named child directory
-		// — and nothing else either of them declares tells the two apart.
+		// The directory this attachment's own files sit under, empty where they sit
+		// directly beside the boundary's own files. It follows from how the provider
+		// whose group holds them assembles that group: one that gives each
+		// contributor a position of its own has a directory to put an attachment in,
+		// and one that writes its output directly at the dispatch path or folds it
+		// into a single document has none.
 		//
 		// The engine is resolved for the group's own provider, which is this
 		// attachment's: a boundary-scope attachment forms its dispatch group under the
@@ -2308,7 +2312,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if ferr != nil {
 			return nil, cerrors.Wrap(ferr, cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("boundary-scope attachment %q: selecting the plugin its output is placed by", key.FRInstance))
 		}
-		attachmentDir := attachmentPrefixFor()
+		attachmentDir := attachmentPrefixFor(frEngineForPlacement)
 		intermediates := []EmittedFile{}
 		nodeFiles := map[string][]byte{}
 		// The prefix this feature's own files are keyed under inside its own file

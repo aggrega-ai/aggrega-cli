@@ -184,13 +184,22 @@ func TestAttachmentFlatFilenameJoinsOnTheEncodingsSeparator(t *testing.T) {
 }
 
 // TestAttachmentOutputPrefixKeepsTheDirectoryShapeUnchanged is the
-// nothing-moved half, and it is what makes the flat shape additive.
+// nothing-moved half: the arm a provider takes when its group gives each
+// contributor a position of its own, which is where an attachment still sits in
+// a directory.
 //
-// Every shipped provider resolves to a directory — the host's default or its own
-// declared name — so this is the arm every existing output takes. It composes
-// the coordinates as directory segments, each as authored and none encoded,
-// which is why a host whose identity carries a dot still gives a directory
-// carrying that dot.
+// It composes the coordinates as directory segments, each as authored and none
+// encoded, which is why a host whose identity carries a dot still gives a
+// directory carrying that dot. That is the opposite of what the filename arm
+// does with the same character, and the reason is the position rather than the
+// character: a directory segment stands alone, so every character an author may
+// put in a component identity is legal in it, while a filename prefix shares one
+// string with the file's own name and has no separator to fall back on.
+//
+// The dotted row is the one that would otherwise lose its cover. The end-to-end
+// case that used to hold the unescaped-directory property runs under a provider
+// whose group gives no contributor a position, so it now asserts the escaped
+// filename instead — and this row is where the directory answer is held.
 func TestAttachmentOutputPrefixKeepsTheDirectoryShapeUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -211,6 +220,55 @@ func TestAttachmentOutputPrefixKeepsTheDirectoryShapeUnchanged(t *testing.T) {
 
 			if got := attachmentOutputPrefix(tc.dir, tc.coords...); got != tc.want {
 				t.Errorf("attachmentOutputPrefix(%q, %q) = %q, want %q", tc.dir, tc.coords, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAttachmentFlatFilenamePinsTheWorkedExampleCoordinates pins the filename
+// prefixes that the worked example pages for this target print as output.
+//
+// Those pages quote emitted paths, and a reader is invited to build the example
+// and compare their own output against the page line by line — so a page whose
+// quoted path no longer matches what the build writes is not a stale note, it is
+// an instruction that fails. The pages are hand-written and nothing captures
+// them, so this is what makes the derivation behind them fail loudly instead.
+//
+// 🔴 It catches a REGRESSION and cannot catch a page that was wrong when
+// written. If a row here changes, the page named beside it has to be rebuilt and
+// re-captured; the row moving on its own only means the prefix moved.
+//
+// The coordinates are the real ones from those pages, and each is chosen because
+// it exercises a character the filename alphabet refuses: an underscore in an
+// authored attachment key, and the dots and slash of an attachment key an
+// annotation mints rather than an author typing it.
+func TestAttachmentFlatFilenamePinsTheWorkedExampleCoordinates(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		page   string
+		coords []string
+		want   string
+	}{
+		{"examples/ai-agent-and-model-router", []string{"router", "master_key"}, "router--master-zukey--"},
+		{"examples/ai-agent-and-model-router", []string{"router", "provider_key"}, "router--provider-zukey--"},
+		{"examples/ai-agent-and-model-router", []string{"router", "published"}, "router--published--"},
+		{"examples/ai-agent-and-model-router", []string{"router", "metrics"}, "router--metrics--"},
+		{"examples/ai-agent-and-model-router", []string{"agent", "model_api_key"}, "agent--model-zuapi-zukey--"},
+		{"examples/model-api-key-sharing", []string{"researcher", "model_api_key"}, "researcher--model-zuapi-zukey--"},
+		{"examples/model-api-key-sharing", []string{"writer", "model_api_key"}, "writer--model-zuapi-zukey--"},
+		{"examples/credential-secretkeyref", []string{"db", "password"}, "db--password--"},
+		{"examples/mariadb-bitnami-credential-set", []string{"db", "root_password"}, "db--root-zupassword--"},
+		{"examples/credential-shape-per-target", []string{"db", "app_user_password"}, "db--app-zuuser-zupassword--"},
+		{"examples/annotation-driven-monitoring", []string{"api", "feature.aggrega.ai/monitoring"},
+			"api--feature-zdaggrega-zdai-zsmonitoring--"},
+	} {
+		t.Run(tc.page+" "+strings.Join(tc.coords, "/"), func(t *testing.T) {
+			t.Parallel()
+
+			if got := attachmentOutputPrefix("", tc.coords...); got != tc.want {
+				t.Errorf("%s quotes output built on %q, which now composes to %q, want %q — rebuild that example and re-capture its page",
+					tc.page, tc.coords, got, tc.want)
 			}
 		})
 	}

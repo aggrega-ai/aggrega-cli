@@ -50,14 +50,15 @@ import (
 // parts and the file's own name then share one string, and only an encoding
 // keeps two distinct part lists at two distinct filenames.
 //
-// # What ENCLOSES those segments is the provider's, not this value's
+// # What ENCLOSES those segments is the group's, not this value's
 //
-// The directory the two segments sit under is declared by the provider whose
-// dispatch group holds the output, so it arrives as an argument rather than
-// being written here. Two providers that combine their contributors the same way
-// can need opposite answers — one whose target reads only the files sitting
-// directly in a directory, one whose target discovers its units in a named child
-// directory — and nothing else either of them declares tells the two apart.
+// Whether the two parts become directory segments at all follows from how the
+// provider whose dispatch group holds the output assembles that group, so it
+// arrives as an argument rather than being decided here. A group that gives each
+// of its contributors a position of its own has a directory an attachment can sit
+// in; a group written directly at the dispatch path, and one folded into a single
+// document, have none — and this value composes what it is handed rather than
+// asking which case it is in.
 //
 // # The boundary-scope sibling keeps a different shape, by SCOPE
 //
@@ -86,13 +87,13 @@ func (a attachmentIdentity) parts() []string { return []string{a.host, a.instanc
 // outputPrefix returns the prefix every file the attachment emits is written
 // under, within the position of the component hosting it.
 //
-// attachmentDir is resolved from the group provider's own declaration and, where
-// it names a directory, already carries its trailing separator — so it is joined
-// rather than re-composed here. It is the provider's word, or the host's default
-// where the provider names none, and this function reads neither, which is what
-// keeps a target's directory vocabulary out of the composition. Where the
-// provider declares no directory at all it is empty, and the coordinates move
-// into the filename; [attachmentOutputPrefix] carries both shapes.
+// attachmentDir follows from how the group's provider assembles its output and,
+// where it names a directory, already carries its trailing separator — so it is
+// joined rather than re-composed here. Where that assembly gives no contributor a
+// position of its own it is empty, and the coordinates move into the filename;
+// [attachmentOutputPrefix] carries both shapes. This function reads neither the
+// mode nor the directory's spelling, which is what keeps a target's layout
+// vocabulary out of the composition.
 //
 // Two identity coordinates rather than one composed token. They are
 // collision-free for the same reason a composed identity is — the host is what
@@ -153,11 +154,11 @@ func isAttachmentFileRune(r rune) bool {
 // # The two shapes, and which one the provider asked for
 //
 // Where attachmentDir names a directory, the coordinates follow it as directory
-// segments, each as authored. Where it is empty the provider has declared that
-// its target reads only the files sitting directly in a directory, so there is
-// no enclosing directory to put them in: the coordinates are encoded into a
-// FILENAME prefix instead and joined to the file's own name, which lands the
-// attachment's files directly beside the files of whatever it is attached to.
+// segments, each as authored. Where it is empty the group's assembly gives no
+// contributor a position of its own, so there is no enclosing directory to put
+// them in: the coordinates are encoded into a FILENAME prefix instead and joined
+// to the file's own name, which lands the attachment's files directly beside the
+// files of whatever it is attached to.
 //
 // # What the flat shape guarantees, and what it does NOT
 //

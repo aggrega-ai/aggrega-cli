@@ -478,8 +478,8 @@ func TestReproHelmTwoBoundaries(t *testing.T) {
 		t.Logf("--- %s ---\n%s", p, res.Artifacts[p])
 	}
 	for _, want := range []string{
-		"dist/app/helm/features/audit/audit-a.yaml",
-		"dist/app/helm/features/audit/audit-b.yaml",
+		"dist/app/helm/audit--audit-a.yaml",
+		"dist/app/helm/audit--audit-b.yaml",
 	} {
 		if _, present := res.Artifacts[want]; !present {
 			t.Errorf("the emitted tree carries no %q: a boundary's rendered output left the build "+
