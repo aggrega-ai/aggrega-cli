@@ -36,11 +36,18 @@ import (
 //
 // # The per-component case is the one worth reading twice
 //
-// A chart an attachment brings renders against its HOST component's name, so a
-// chart attached to a component named "api" is placed declaring "api" — the same
-// name as that host component's own placed chart. That is deliberate. The two
-// sit at different positions, so nothing addresses them together, and the shared
-// name reads as a defect only to someone meeting it without this paragraph.
+// Two different names belong to a chart an attachment brings, and this file
+// asserts one of them. What the chart's own templates RENDER AGAINST stays its
+// HOST component's name, because the author's templates name resources after it
+// and a different one would rename resources already deployed. What its placed
+// manifest DECLARES is the attachment's own identity — composed from the host
+// and the name it is attached under — so the chart is addressable apart from
+// every other chart placed beside it, its host's own included.
+//
+// So a chart attached to a component named "api" renders against "api" and is
+// placed declaring the composed identity instead. The two answers differ on
+// purpose; a reader who expects one value to serve both has merged two questions
+// this split exists to keep apart.
 //
 // # Locating the chart, and why not by its emitted path
 //
@@ -72,14 +79,13 @@ import (
 // umbrella addresses it by, in dependency resolution and in values, at which
 // point the same name becomes load-bearing.
 //
-// That change moves the REASONING for both rows — and, measured rather than
-// predicted, it moves the per-component row's expected VALUE as well. Once the
-// two charts are discovered siblings, both declaring "api" leaves the umbrella
-// able to address neither: a dependency binds to a sub-chart by the name that
-// sub-chart declares, so two siblings declaring one name is the same collision
-// this rewrite exists to remove, reappearing one level up. That row's expectation
-// therefore has to become the contributor's own identity rather than its host's.
-// Which spelling it takes is not settled here.
+// That change moves the REASONING for both rows. It also moved the per-component
+// row's expected VALUE, and that half has already happened: a chart declaring its
+// host's name would leave the umbrella able to address neither once the two are
+// discovered siblings, because a dependency binds to a sub-chart by the name that
+// sub-chart declares — the same collision this rewrite exists to remove,
+// reappearing one level up. So that row now expects the contributor's own
+// composed identity, and the remaining expiry is the reasoning alone.
 //
 // So do not delete this file on the grounds that the premise behind it moved: it
 // will be pinning a contract rather than a consistency, which is a stronger
@@ -135,17 +141,19 @@ func attachmentChartNameCases() []attachmentChartNameCase {
 			wantPlacedName: "bfr-zh-cluster-zh-aux",
 		},
 		{
-			// Attached to a component, so the chart is addressed by that
-			// component's own identity: the author's templates name resources
-			// after the host's name, and a different one would rename resources
-			// already deployed.
-			name:           "a per-component attachment's placed chart is named for its host component",
+			// Attached to a component, so the chart is addressed by an identity
+			// composed from the component hosting it and the name it is attached
+			// under — the host being what separates one instance name attached to
+			// several components. The join is a character a chart name refuses,
+			// which is why the placed name carries escapes.
+			name:           "a per-component attachment's placed chart is named for its composed identity",
 			render:         renderComponentScopeAttachmentOnChartHost,
 			templateMarker: attachmentMarker,
 			authoredName:   "guardrail",
-			// The host component's own id, which a chart name's alphabet admits
-			// whole, so it is carried through with nothing escaped.
-			wantPlacedName: "api",
+			// The host and the instance, joined; each join is a character a chart
+			// name refuses, so each arrives as an escape. Distinct from the host
+			// component's own placed chart, which declares "api".
+			wantPlacedName: "cfr-zh-api-zh-guardrail",
 		},
 	}
 }

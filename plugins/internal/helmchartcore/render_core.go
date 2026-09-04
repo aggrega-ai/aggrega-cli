@@ -36,11 +36,15 @@ import "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 // renders under its alias, so a template reading its chart's own name already
 // read the alias before this rewrite and reads the same value after it.
 //
-// identity is the identity the sub-chart is addressed by — the same one the
-// umbrella's alias is derived from — and it is encoded through the one shared
-// encoding rather than a second derivation, so the placed name and the
-// dependency entry cannot come to disagree. indent is the document indentation
-// width, carried for the edit path and unused by a scalar replacement.
+// identity is the identity the placed chart is addressed by, and it is the
+// CONTRIBUTOR's own. For a component that is the same identity the umbrella's
+// alias is derived from, so there the placed name and the dependency entry
+// cannot come to disagree. A Feature attachment is a contributor in its own
+// right and carries its own composed identity here, so an attachment's chart
+// and its host's declare different names rather than both declaring the host's.
+// Either way the value is encoded through the one shared encoding rather than a
+// second derivation. indent is the document indentation width, carried for the
+// edit path and unused by a scalar replacement.
 //
 // A projection carrying no Chart.yaml is returned unchanged: this core does not
 // require one, because the loud guardrail for a chart source genuinely missing

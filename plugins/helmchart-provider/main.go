@@ -182,19 +182,35 @@ func renderNodeOutput() (rendercore.RenderNodeOutput, error) {
 // from this node's identity so that two instances vendoring charts that declare
 // one name stay addressable apart.
 //
-// The identity is the basis the node carries for names a guest derives from
-// source an author wrote, falling back to the node id where the node carries
-// none — which is the value for an ordinary component, and the same identity the
-// umbrella's own assembly derives that sub-chart's alias from. A contributor
-// reaching a render under a dispatch identity the compiler built carries the
-// basis explicitly, because that identity opens with a character a chart name
-// refuses.
+// The identity is the CONTRIBUTOR's own — which chart this is, rather than which
+// name its content renders against — because the manifest name is how a chart is
+// addressed apart from every other chart placed beside it.
+//
+// Three carries answer that in turn. The component identity the host composed is
+// read first: it is the value that names a contributor whose chart arrives
+// through another component, so a feature attached to a component declares its
+// own identity rather than repeating its host's and leaving the two
+// indistinguishable. Failing that, the basis the node carries for names a guest
+// derives from source an author wrote, which a contributor reaching a render
+// under a dispatch identity the compiler built carries explicitly because that
+// identity opens with a character a chart name refuses. Failing both, the node
+// id, which is the value for an ordinary component and the same identity the
+// umbrella's own assembly derives that sub-chart's alias from.
+//
+// Only the name a manifest DECLARES is chosen this way. What the author's own
+// templates render against is a separate question with a separate answer, and it
+// is deliberately not read here: a chart an attachment's author supplied names
+// its resources after the release name, so deriving that from the contributor
+// identity instead would rename resources already deployed.
 func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	proj, err := packSourcedChart(in.SourceListing)
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
-	identity := in.Node.DerivedNameBasis
+	identity := in.Node.LabelComponentID
+	if identity == "" {
+		identity = in.Node.DerivedNameBasis
+	}
 	if identity == "" {
 		identity = in.Node.ID
 	}
