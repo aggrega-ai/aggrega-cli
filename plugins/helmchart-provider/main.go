@@ -302,14 +302,32 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 // sub-directory's parent `charts` — the directory a Helm umbrella keeps its child
 // charts in — so the host places each node's files where Helm looks for them.
 func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.AssembleBoundaryOutput, error) {
+	// Each contributor arrives on two carriers: the sub-chart projection, which
+	// holds the pristine bytes of the chart its author shipped, and the rendered
+	// node, which holds where the placement wrote that chart and what the placed
+	// manifest declares. The dependency entry needs one value from each, so they
+	// are correlated by the key both carry rather than either being derived from
+	// the other.
+	placedByNode := make(map[string]rendercore.RenderedNode, len(in.RenderedNodes))
+	for i := range in.RenderedNodes {
+		placedByNode[in.RenderedNodes[i].ID] = in.RenderedNodes[i]
+	}
+
 	subs := make([]helmchartcore.CoreSubChart, 0, len(in.SubCharts))
 	for i := range in.SubCharts {
 		sc := in.SubCharts[i]
+		node := placedByNode[sc.InstanceID]
 		subs = append(subs, helmchartcore.CoreSubChart{
 			InstanceID: sc.InstanceID,
 			Version:    sc.Version,
 			Values:     rendercore.OrderedMapToPlain(&sc.Values),
 			ChartYAML:  sc.ChartYaml,
+			// The manifest as PLACED, which is where the name the dependency binds
+			// to lives: the render rewrote it to the identity this contributor is
+			// addressed by, and the pristine bytes above still carry the name its
+			// author wrote.
+			PlacedChartYAML: placedChartManifest(node),
+			OutputDirectory: node.OutputDirectory,
 		})
 	}
 
@@ -323,6 +341,24 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path], Format: assembledFileFormat(path)})
 	}
 	return out, nil
+}
+
+// placedChartManifest returns the bytes of the chart manifest a contributor's
+// render actually placed, or nothing where that contributor placed none.
+//
+// It reads the rendered file set rather than the pristine source projection,
+// because the two carry different documents: the render rewrote the manifest's
+// name to the identity the placed chart is addressed by, and the dependency has
+// to bind to that name rather than to the one the chart's author wrote. A
+// contributor that placed no manifest is a generative one, for which there is no
+// declared name to read and the identity is all there is.
+func placedChartManifest(node rendercore.RenderedNode) []byte {
+	for i := range node.Rendered.Files {
+		if node.Rendered.Files[i].Path == helmchartcore.ChartMetadataFileName {
+			return node.Rendered.Files[i].Content
+		}
+	}
+	return nil
 }
 
 // assembledFileFormat reports the honest output syntax of an assembled umbrella

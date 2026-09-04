@@ -51,15 +51,23 @@ const notesSuffix = "NOTES.txt"
 //     applies aliases and conditions, and a chart whose declared sub-chart is
 //     absent passes through it without complaint. Reading the processing call
 //     as the dependency check is the mistake this paragraph exists to prevent.
+//
 //   - Values that violate the chart's own values.schema.json, through
 //     ToRenderValues, which validates them rather than skipping validation.
-//   - A rendered document that is not parseable YAML, or that parses to
-//     something other than a manifest, through releaseutil.SortManifests — the
-//     same sorter call the command parses its own render with, and the reason a
-//     bogus render is caught before its manifests reach a cluster. Every
-//     NOTES.txt is dropped before that parse, as the command drops it: notes
-//     are prose, the sorter rejects prose, and keeping them in the parse set
-//     would refuse charts the command accepts.
+//
+//   - A rendered document that is not parseable YAML, through
+//     releaseutil.SortManifests — the same sorter call the command parses its
+//     own render with, and the reason a bogus render is caught before its
+//     manifests reach a cluster. Every NOTES.txt is dropped before that parse,
+//     as the command drops it: notes are prose, the sorter rejects prose, and
+//     keeping them in the parse set would refuse charts the command accepts.
+//
+//     🔴 A PARSE error and nothing more. The sorter's only failure on a
+//     document is the unmarshal into its own head type, so a well-formed
+//     mapping carrying no kind at all is not refused — it is collected as a
+//     generic manifest with a zero head. So this step does not establish that
+//     what rendered is a Kubernetes resource, only that it is YAML, and a
+//     caller wanting the stronger claim asserts the content itself.
 //
 // Refusals the command makes and this helper does not, so a chart carrying only
 // these is accepted here and rejected by the command. The two below are
@@ -126,10 +134,14 @@ func RenderThroughDependencyPipeline(chartDir string) (string, error) {
 	return b.String(), nil
 }
 
-// parseVerdict reports whether the rendered files parse as manifests, by asking
-// the manifest sorter the command parses its own render with. Only the verdict
-// is taken: the sorted result is discarded, so what this package returns to a
-// caller stays the whole render map in template-name order.
+// parseVerdict reports whether the rendered files PARSE, by asking the manifest
+// sorter the command parses its own render with. Only the verdict is taken: the
+// sorted result is discarded, so what this package returns to a caller stays the
+// whole render map in template-name order.
+//
+// The name is the strongest honest one: the sorter's only failure on a document
+// is the unmarshal into its own head type, so this says the render is YAML and
+// does not say any of it is a resource.
 //
 // rendered is left unmodified — the caller assembles its output from it — so
 // the notes are excluded through a copy rather than by deleting from it.

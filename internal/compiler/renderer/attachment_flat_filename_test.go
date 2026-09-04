@@ -89,7 +89,7 @@ func TestAttachmentFlatFilenameIsInjectiveAcrossCoordinatesAndScopes(t *testing.
 
 			seen := make(map[string][]string, len(lists))
 			for _, coords := range lists {
-				name := attachmentOutputPrefix("", coords...) + tail
+				name := attachmentOutputPrefix(coords...) + tail
 				if prior, clash := seen[name]; clash {
 					t.Fatalf("coordinates %q and %q both reach the filename %q", prior, coords, name)
 				}
@@ -123,8 +123,8 @@ func TestAttachmentFlatFilenameSeparatesTheSingleHyphenCollision(t *testing.T) {
 	leftCoords, leftTail := []string{"a", "b"}, "c-x.yaml"
 	rightCoords, rightTail := []string{"a", "b-c"}, "x.yaml"
 
-	left := attachmentOutputPrefix("", leftCoords...) + leftTail
-	right := attachmentOutputPrefix("", rightCoords...) + rightTail
+	left := attachmentOutputPrefix(leftCoords...) + leftTail
+	right := attachmentOutputPrefix(rightCoords...) + rightTail
 	if left == right {
 		t.Fatalf("(%q,%q) and (%q,%q) both reach %q, so the boundary between the prefix and the file name is ambiguous",
 			leftCoords, leftTail, rightCoords, rightTail, left)
@@ -157,7 +157,7 @@ func TestAttachmentFlatFilenameOpensNoDirectoryLevel(t *testing.T) {
 	t.Parallel()
 
 	for _, coords := range attachmentFlatCoordinateLists() {
-		prefix := attachmentOutputPrefix("", coords...)
+		prefix := attachmentOutputPrefix(coords...)
 		if strings.ContainsAny(prefix, `/\`) {
 			t.Errorf("coordinates %q reached a prefix carrying a path separator: %q", coords, prefix)
 		}
@@ -174,7 +174,7 @@ func TestAttachmentFlatFilenameOpensNoDirectoryLevel(t *testing.T) {
 func TestAttachmentFlatFilenameJoinsOnTheEncodingsSeparator(t *testing.T) {
 	t.Parallel()
 
-	prefix := attachmentOutputPrefix("", "host", "instance")
+	prefix := attachmentOutputPrefix("host", "instance")
 	if !strings.HasSuffix(prefix, attachmentFileEncoding.SegmentSeparator()) {
 		t.Errorf("the prefix does not end at the encoding's own separator: %q", prefix)
 	}
@@ -183,45 +183,87 @@ func TestAttachmentFlatFilenameJoinsOnTheEncodingsSeparator(t *testing.T) {
 	}
 }
 
-// TestAttachmentOutputPrefixKeepsTheDirectoryShapeUnchanged is the
-// nothing-moved half: the arm a provider takes when its group gives each
-// contributor a position of its own, which is where an attachment still sits in
-// a directory.
+// TestContributorDirSegmentSpellsTheDirectoryAContributorSitsAt holds the
+// directory answer for a group that gives each contributor a position of its
+// own, which is the other arm from the filename prefix above.
 //
-// It composes the coordinates as directory segments, each as authored and none
-// encoded, which is why a host whose identity carries a dot still gives a
-// directory carrying that dot. That is the opposite of what the filename arm
-// does with the same character, and the reason is the position rather than the
-// character: a directory segment stands alone, so every character an author may
-// put in a component identity is legal in it, while a filename prefix shares one
-// string with the file's own name and has no separator to fall back on.
-//
-// The dotted row is the one that would otherwise lose its cover. The end-to-end
-// case that used to hold the unescaped-directory property runs under a provider
-// whose group gives no contributor a position, so it now asserts the escaped
-// filename instead — and this row is where the directory answer is held.
-func TestAttachmentOutputPrefixKeepsTheDirectoryShapeUnchanged(t *testing.T) {
+// It is the readable-spelling half. The alphabet admits what a person reads in a
+// directory name and what a pointer to that directory can carry, so an ordinary
+// identity reaches the directory it always reached and a capital or a dot
+// survives as written — which is the whole reason this segment is not written in
+// the filename alphabet, where the same capital becomes a run of hex digits.
+func TestContributorDirSegmentSpellsTheDirectoryAContributorSitsAt(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
 		name   string
-		dir    string
 		coords []string
 		want   string
 	}{
-		{"component scope under the host default", "features/", []string{"api", "mon"}, "features/api/mon/"},
-		{"boundary scope under the host default", "features/", []string{"aux"}, "features/aux/"},
-		{"component scope under a declared directory", "addons/", []string{"api", "mon"}, "addons/api/mon/"},
-		{"boundary scope under a declared directory", "addons/", []string{"aux"}, "addons/aux/"},
-		{"a coordinate carrying a dot is not escaped", "features/", []string{"my.api", "mon"}, "features/my.api/mon/"},
+		{"a component's own name passes through", []string{"api"}, "api"},
+		{"a boundary-scope attachment is its instance alone", []string{"aux"}, "aux"},
+		{"a component-scope attachment joins host and instance", []string{"api", "mon"}, "api--mon"},
+		{"an authored hyphen is kept where the next character is admitted", []string{"web-api", "mon"}, "web-api--mon"},
+		{"a dot is admitted rather than escaped", []string{"my.api", "mon"}, "my.api--mon"},
+		{"an underscore is admitted", []string{"my_api", "mon"}, "my_api--mon"},
+		// The row the alphabet exists for: under an alphabet admitting only
+		// lowercase this pair reaches a name opening with a hyphen, which a
+		// command line reads as a flag.
+		{"an upper-cased coordinate stays readable", []string{"API", "aux"}, "API--aux"},
+		// A doubled hyphen is the one hyphen that has to escape, because the
+		// pair is the join.
+		{"a doubled hyphen escapes so the join stays readable back", []string{"a--b", "c"}, "a-zh-b--c"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := attachmentOutputPrefix(tc.dir, tc.coords...); got != tc.want {
-				t.Errorf("attachmentOutputPrefix(%q, %q) = %q, want %q", tc.dir, tc.coords, got, tc.want)
+			if got := contributorDirSegment(tc.coords...); got != tc.want {
+				t.Errorf("contributorDirSegment(%q) = %q, want %q", tc.coords, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestContributorDirSegmentSeparatesEveryDISTINCTCoordinateList is the
+// injectivity half, and it is what stops two contributors sharing one directory.
+//
+// Two contributors that meet at one directory do NOT collide on any path when
+// their file names differ, so the attribution that reports two producers meeting
+// at one path reports nothing at all — the meet is silent, and each contributor's
+// files sit in a directory holding the other's. Nothing else in the pipeline
+// catches it, which is why the property is asserted here rather than assumed.
+//
+// The two rows that matter are the ones a naive join gets wrong: a raw
+// two-hyphen join maps ("a--b","c") and ("a","b--c") to one string, and taking a
+// single coordinate as its raw name maps a component called "a--b" onto the
+// attachment "b" of host "a".
+func TestContributorDirSegmentSeparatesEveryDISTINCTCoordinateList(t *testing.T) {
+	t.Parallel()
+
+	lists := [][]string{
+		{"api"}, {"api", "mon"}, {"api", "aux"}, {"aux"},
+		{"a--b"}, {"a", "b"}, {"a--b", "c"}, {"a", "b--c"},
+		{"API"}, {"api", ""}, {""}, {"my.api", "mon"}, {"my", "api--mon"},
+	}
+	seen := map[string][]string{}
+	for _, list := range lists {
+		got := contributorDirSegment(list...)
+		if prior, clash := seen[got]; clash {
+			t.Errorf("%q and %q both reach the directory %q, so one contributor's files "+
+				"would sit in a directory holding another's and no path would collide",
+				prior, list, got)
+			continue
+		}
+		seen[got] = list
+	}
+	// A positive control on the control itself: the clash above has to be
+	// reachable, or this test passes on a set that could not have collided.
+	if a, b := contributorDirSegment("a", "b"), contributorDirSegment("a", "b"); a != b {
+		t.Errorf("the composition is not deterministic: %q then %q", a, b)
+	}
+	if raw := "a--b" + "--" + "c"; raw != "a"+"--"+"b--c" {
+		t.Errorf("the raw join this composition replaces is no longer ambiguous, so the "+
+			"injectivity rows above no longer pin anything: %q", raw)
 	}
 }
 
@@ -266,7 +308,7 @@ func TestAttachmentFlatFilenamePinsTheWorkedExampleCoordinates(t *testing.T) {
 		t.Run(tc.page+" "+strings.Join(tc.coords, "/"), func(t *testing.T) {
 			t.Parallel()
 
-			if got := attachmentOutputPrefix("", tc.coords...); got != tc.want {
+			if got := attachmentOutputPrefix(tc.coords...); got != tc.want {
 				t.Errorf("%s quotes output built on %q, which now composes to %q, want %q — rebuild that example and re-capture its page",
 					tc.page, tc.coords, got, tc.want)
 			}

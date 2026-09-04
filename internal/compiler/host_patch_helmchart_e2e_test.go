@@ -116,7 +116,10 @@ func TestHostPatchHelmchart_PerNodeHostPatch(t *testing.T) {
 	// emitted an empty or unevaluated file also satisfies — so it cannot separate
 	// output that carries the attachment's resource from output that carries
 	// nothing.
-	guardrail := string(findArtifactBySuffix(t, result.Artifacts, "features/api/guardrail/guardrail-config.yaml"))
+	// The suffix names the attachment's own child-chart directory, one level
+	// under the umbrella's charts directory and beside the component it is
+	// attached to — the position this target discovers a child chart at.
+	guardrail := string(findArtifactBySuffix(t, result.Artifacts, "charts/api--guardrail/guardrail-config.yaml"))
 	if !strings.Contains(guardrail, "kind: ConfigMap") {
 		t.Errorf("the FeatureRecipe's own output is not the resource it declares; got:\n%s", guardrail)
 	}

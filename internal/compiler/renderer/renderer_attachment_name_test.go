@@ -78,13 +78,13 @@ data:
 
 	var key string
 	for k := range result.Files {
-		if strings.Contains(k, "features/api/scrape_target/") && strings.Contains(k, "scrape.yaml") {
+		if strings.Contains(k, "charts/api--scrape_target/") && strings.Contains(k, "scrape.yaml") {
 			key = k
 			break
 		}
 	}
 	if key == "" {
-		t.Fatalf("missing feature FR artifact under features/api/scrape_target/, keys: %v", fileKeys(result.Files))
+		t.Fatalf("missing feature FR artifact under charts/api--scrape_target/, keys: %v", fileKeys(result.Files))
 	}
 
 	body := string(result.Files[key].Content)

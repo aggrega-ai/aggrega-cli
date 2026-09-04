@@ -44,6 +44,22 @@ type CoreSubChart struct {
 	Version    string
 	Values     map[string]any
 	ChartYAML  []byte
+
+	// PlacedChartYAML is the manifest of the chart as PLACED under the umbrella,
+	// which is a different document from ChartYAML above: the render rewrote its
+	// name to the identity the placed chart is addressed by, while ChartYAML holds
+	// the pristine bytes the author shipped. The dependency's name is read from
+	// this one, because a dependency binds to a sub-chart by the name that
+	// sub-chart declares — so reading it here is what keeps the entry and the chart
+	// from being two derivations that merely agree.
+	PlacedChartYAML []byte
+
+	// OutputDirectory is where the assembly's own output sits relative to itself,
+	// as composed by the placement that actually wrote the files. It is read rather
+	// than rebuilt from the identity: a contributor placed beside another rather
+	// than beneath the position its identity names is at a directory no identity
+	// spells.
+	OutputDirectory string
 }
 
 // ReadChartMetaBytes parses a chart's Chart.yaml bytes and returns its `name` and
@@ -107,13 +123,17 @@ func ReadChartMetaBytes(data []byte, label string) (name, version string, err er
 // not. A generative sub-chart (ChartYAML empty) uses version from the sub's
 // Version (or the default), so the name is the alias on every path.
 //
-// The alias is the encoded instance id, so Helm scopes the umbrella's
-// per-instance values under that key. Because the encoding is injective, two
-// instances reach one alias only where their instance ids are the same string —
-// so no instance's values can arrive at another instance's sub-chart, however
-// the instance ids are punctuated. The dependency's repository is the one place
-// the instance id appears as authored rather than encoded; the comment at the
-// dependency says why.
+// The alias is the name the placed chart declares, so Helm scopes the umbrella's
+// per-instance values under that key. Two contributors reach one alias only where
+// their placed charts declare one name, which the render that placed them derives
+// injectively from each contributor's own identity — so no contributor's values
+// can arrive at another's sub-chart, however the identities are punctuated.
+//
+// The dependency's repository is a LOCATION and the alias is a NAME, and they are
+// different strings by design rather than by accident: the location is where the
+// placement wrote the files, and the name is what the chart there declares. Both
+// are read rather than derived, which is what keeps a dependency entry from being
+// a second derivation that merely agrees with the chart it points at.
 func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChart, chartNameOverride string, indent int) (map[string][]byte, error) {
 	if boundaryName == "" {
 		return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{}, "helmchart umbrella: empty boundary name", nil, nil)
@@ -143,21 +163,40 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 	deps := make([]umbrellaChartDependency, 0, len(subs))
 	values := make(map[string]any, len(subs))
 	for _, sc := range subs {
-		// The alias is also the dependency's name, on every path: a generative
-		// sub-chart has no vendored manifest to take one from, and a sourced one
-		// had its placed manifest's name rewritten to this same value at render.
+		// The alias is the name the PLACED chart declares, read from that chart's
+		// own manifest rather than derived a second time from the instance id.
+		// A dependency binds to a sub-chart by the name the sub-chart declares, so
+		// this is the one value that can be right — and for a contributor whose
+		// placed name is not derived from its instance id, a second derivation from
+		// the instance id would name a chart that is not there. A generative
+		// sub-chart declares no manifest, so there the instance id is all there is
+		// and the alias is derived from it.
 		alias := helmNameEncoding.Segment(sc.InstanceID)
 		version := sc.Version
 		if version == "" {
 			version = defaultChartVersion
 		}
+		if len(sc.PlacedChartYAML) > 0 {
+			placedName, placedVersion, err := ReadChartMetaBytes(sc.PlacedChartYAML, sc.InstanceID)
+			if err != nil {
+				return nil, err
+			}
+			alias = placedName
+			// The version too, and only where no vendored manifest is projected
+			// below. The two documents carry the same version — the render rewrote
+			// the name and nothing else — so this changes nothing for a contributor
+			// whose pristine bytes the host read, and it is the only statement of
+			// the version for one whose bytes it did not.
+			if len(sc.ChartYAML) == 0 {
+				version = placedVersion
+			}
+		}
 		if len(sc.ChartYAML) > 0 {
-			// The version comes from the vendored chart and the name deliberately
-			// does not. The render that placed this sub-chart rewrote its manifest
-			// name to the same encoded identity the alias is built from, so the
-			// dependency names that instead of the name the chart's author wrote —
-			// which is what stops two instances whose charts declare one name from
-			// binding both dependencies to one of them.
+			// The version comes from the vendored chart. Helm binds a dependency to
+			// a vendored sub-chart by that chart's own name and version, so a
+			// version drawn from the spec or component version would leave the alias
+			// unbound and the umbrella's per-instance values would never reach the
+			// sub-chart.
 			_, metaVersion, err := ReadChartMetaBytes(sc.ChartYAML, sc.InstanceID)
 			if err != nil {
 				return nil, err
@@ -165,19 +204,27 @@ func AssembleUmbrellaCore(boundaryName, aggregateName string, subs []CoreSubChar
 			version = metaVersion
 		}
 		// The repository names the sub-chart's own directory under the umbrella,
-		// and that directory carries the instance id verbatim — the orchestrator
-		// places a nesting provider's per-node files at charts/<instance_id>/ and
-		// knows nothing of what Helm accepts in a name, so it encodes nothing.
-		// The alias is encoded and the directory is not, so the two are the same
-		// word only for an instance id the alphabet already admits: pointing the
-		// repository at the alias would name a directory that is not there
-		// whenever they differ, which `helm dependency build` and
-		// `helm dependency update` resolve and refuse.
+		// read from the position the placement composed rather than rebuilt from
+		// the identity. The two are the same string for a contributor placed
+		// beneath the position its own identity names, and different for one placed
+		// BESIDE another — an attached Feature's chart, whose directory joins the
+		// coordinates that identify it. Rebuilding from the identity would name a
+		// directory that is not there in exactly that case, which `helm dependency
+		// build` and `helm dependency update` resolve and refuse.
+		//
+		// The alias is never it: the alias is a name and this is a location, and
+		// they are different strings by design. Pointing the repository at the
+		// alias is accepted by a render and refused by dependency resolution, so
+		// the mistake survives the tools an author reaches for first.
+		if sc.OutputDirectory == "" {
+			return nil, cerrors.New(cerrors.OpsError, cerrors.SourceLocation{File: boundaryName},
+				fmt.Sprintf("helmchart umbrella: sub-chart %q carries no output directory, so the dependency has no directory to point at", sc.InstanceID), nil, nil)
+		}
 		deps = append(deps, umbrellaChartDependency{
 			Name:       alias,
 			Version:    version,
 			Alias:      alias,
-			Repository: "file://charts/" + sc.InstanceID,
+			Repository: "file://" + sc.OutputDirectory,
 		})
 		if sc.Values != nil {
 			values[alias] = sc.Values

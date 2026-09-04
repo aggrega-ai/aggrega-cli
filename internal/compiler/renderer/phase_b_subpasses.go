@@ -409,20 +409,15 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 // whether what it rendered is in the shape that group's assembler reads. One
 // answer covers the whole of an attachment's output, so the two cannot overlap.
 //
-// attachmentDir is the directory an attachment's own files sit under, already
-// carrying its trailing separator, and empty where the host's group gives no
-// contributor a position of its own — in which case the coordinates become a
-// filename prefix instead. It is handed in rather than read here because it is a
-// property of the dispatch group this node's output joins, which the orchestrator
-// settles around this loop; the loop composes each attachment's coordinates onto
-// it.
-//
 // hostNestsContributors reports whether the host's dispatch group places each of
-// its contributors under a position of its own. It decides whether an
-// attachment's written position is worth reporting: a group that places no
-// per-contributor position has none for an attachment either, so the report
-// would name a directory the group never composes. Like the two above, it is a
-// property of the group rather than of this loop and is settled around it.
+// its contributors under a position of its own. It selects which of the two
+// placements an attachment's own output takes: where the group does, the
+// attachment is a contributor with a position of its own and its files are
+// carried out under their bare names to be keyed at it; where it does not, there
+// is no position to be given, so the coordinates go into the filename and the
+// files are written into the host's map here. It is a property of the dispatch
+// group this node's output joins rather than of this loop, which the orchestrator
+// settles around it.
 //
 // hostOwn is the host component's own emitted documents (the cross-entity
 // surface a component-scope FR pipeline reads as /host). hostIsAssembler
@@ -449,7 +444,6 @@ func phaseB6(
 	hostOwn []EmittedFile,
 	hostIsAssembler bool,
 	hostProvider string,
-	attachmentDir string,
 	hostNestsContributors bool,
 	renderCtx renderctx.RenderContext,
 ) (map[string][]byte, map[string][]byte, []attachmentContribution, []DeferredPatch, error) {
@@ -724,35 +718,35 @@ func phaseB6(
 		// holds and the group answers once for this attachment. Splitting per file
 		// would ask each rendered file a question only the pair of providers answers.
 		var fragments []EmittedFile
-		var placement enclosedPlacement
+		var ownFiles []EmittedFile
 		if attachmentJoinsHostAssembly {
 			fragments = frFiles
+		} else if hostNestsContributors {
+			// A host whose group places each contributor at a position of its own
+			// places this attachment at one too — BESIDE the host rather than
+			// inside it. So the files are carried out under their own names and
+			// keyed under the attachment's own key, and the group composes the
+			// position from the coordinates that identify it.
+			//
+			// Beside rather than within, because within is not a position the
+			// host's target reads: a group's target discovers its contributors at
+			// the positions the group gives them, and output sitting below one of
+			// those positions belongs to that contributor rather than being a
+			// contributor. Keying these files inside the host's map is what left
+			// them unread — present in the output, addressed by nothing, with the
+			// build reporting success.
+			ownFiles = frFiles
 		} else {
-			outputPrefix := item.Identity.outputPrefix(attachmentDir)
+			// A group giving no contributor a position of its own has nowhere to
+			// put this attachment, so its coordinates go into the FILENAME and its
+			// files land beside the host's own, in the host's map, under the host's
+			// key. The host's own entry is what names that position.
+			outputPrefix := item.Identity.outputPrefix()
 			for _, f := range frFiles {
 				out[outputPrefix+f.Name] = f.Body
 			}
-			// Where a nesting host places its contributors under positions of their
-			// own, this attachment's position is one of them and the group is told
-			// so — the prefix its files were just keyed under, inside the host's own
-			// position. Without it the group holds this attachment's files under the
-			// host's key and can name no position for the attachment itself, so an
-			// assembled artifact addressing its contributors by position addresses
-			// this one not at all.
-			//
-			// The prefix is the value the write above used rather than a second
-			// spelling of it, so the position reported and the position written to
-			// are one string. It is reported only where the host's group puts the
-			// attachment in a directory: where that group gives no contributor a
-			// position of its own, the same composition returns a FILENAME prefix
-			// instead, which names no position of its own — the attachment's files
-			// sit in the host's own position, and the host's own entry already names
-			// it.
-			if hostNestsContributors && attachmentDir != "" && len(frFiles) > 0 {
-				placement = enclosedPlacement{withinNode: nodeID, prefix: outputPrefix}
-			}
 		}
-		if len(fragments) > 0 || placement.withinNode != "" {
+		if len(fragments) > 0 || len(ownFiles) > 0 {
 			// The coordinates travel with the fragments rather than being recovered
 			// downstream: the dispatch identity joins its parts with characters either
 			// part may contain, so cutting it apart cannot return what went in. The
@@ -765,7 +759,7 @@ func phaseB6(
 				producer:  attachmentProducer,
 				nameBasis: TargetNameBasis(frNodeCtx),
 				fragments: fragments,
-				placement: placement,
+				files:     ownFiles,
 			})
 		}
 	}
@@ -790,21 +784,27 @@ func phaseB6(
 // target's name alphabet accepts, so a contributor arriving without it would have
 // its names derived from the marker.
 //
-// A contribution carries EITHER fragments or a placement, never both, and which
-// one is the disposition the render settled. fragments are the output handed to
-// the host's group to fold into one document. A placement says the output was
-// written at the attachment's own position inside the host's, and records where —
-// so the group can name a contributor whose files it holds under the host's key
-// rather than under the attachment's own. A contribution is made in both cases
-// because the group's contributor list is a property of the group: an attachment
-// left out of it is one no assembled artifact can name, whichever way its files
-// travelled.
+// A contribution carries EITHER fragments or files, never both, and which one is
+// the disposition the render settled. fragments are the output handed to the
+// host's group to fold into one document. files are the output the attachment
+// emitted under its own names, for a group that places each contributor at a
+// position of its own — the group keys them under this contribution's own key and
+// composes the position, so the attachment sits beside its host rather than
+// inside it. A contribution is made in both cases because the group's contributor
+// list is a property of the group: an attachment left out of it is one no
+// assembled artifact can name, whichever way its files travelled.
+//
+// The files are carried out under their BARE names rather than under a prefix,
+// and that is the placement rather than a detail of the carrying. A prefix would
+// put them below the position the group gives this contributor, and a group's
+// target discovers its contributors AT those positions — so output below one is
+// not a contributor and is read by nothing.
 type attachmentContribution struct {
 	nodeID    string
 	producer  derivedKeyProducer
 	nameBasis string
 	fragments []EmittedFile
-	placement enclosedPlacement
+	files     []EmittedFile
 }
 
 // attachmentRenderItem is one attachment queued for the Phase B.6 render loop —

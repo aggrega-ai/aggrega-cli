@@ -3,11 +3,7 @@
 
 package renderer
 
-import (
-	"strings"
-
-	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
-)
+import "github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 
 // attachmentIdentity names the two authored parts a feature attached to ONE
 // component is identified by: the identity of the component hosting it, and the
@@ -39,26 +35,27 @@ import (
 // admits a narrow character set and two parts differing at all must reach two
 // values.
 //
-// [attachmentIdentity.outputPrefix] writes the same parts, and whether it
-// escapes them follows from which position its provider asked for. Where the
-// parts become DIRECTORY segments no writing is applied: a path segment is not a
-// label value, every character an author may put in a component identity is
-// legal in a directory name, and escaping one would leave the directory
-// unreadable for no gain — so a host whose id carries a dot gives a directory
-// carrying that dot as written. Where instead they become a FILENAME prefix,
-// they are encoded, because a filename has no separator to fall back on: the
-// parts and the file's own name then share one string, and only an encoding
-// keeps two distinct part lists at two distinct filenames.
+// [attachmentIdentity.outputPrefix] writes the same parts into a FILENAME
+// prefix, and it is encoded because a filename has no separator to fall back on:
+// the parts and the file's own name share one string, and only an encoding keeps
+// two distinct part lists at two distinct filenames.
 //
-// # What ENCLOSES those segments is the group's, not this value's
+// # Where the parts become a DIRECTORY they are composed by the group, not here
 //
-// Whether the two parts become directory segments at all follows from how the
-// provider whose dispatch group holds the output assembles that group, so it
-// arrives as an argument rather than being decided here. A group that gives each
-// of its contributors a position of its own has a directory an attachment can sit
-// in; a group written directly at the dispatch path, and one folded into a single
-// document, have none — and this value composes what it is handed rather than
-// asking which case it is in.
+// A provider that gives each of its contributors a position of its own places an
+// attachment at a position of its own too, beside the contributor it is attached
+// to rather than inside it — so there the parts are one directory segment the
+// dispatch group composes for every contributor alike, through
+// [contributorDirSegment], and this value contributes no prefix at all. A
+// provider that writes its group's output directly at the dispatch path, and one
+// that folds it into a single document, have no such position, and that is the
+// case this prefix answers.
+//
+// The two are not two spellings of one composition. A segment beside a target's
+// own names is written in an alphabet drawn for a directory and a pointer to it,
+// while a filename prefix is written in one drawn for a file — and each escapes
+// what the other admits, which is why they are declared beside one another and
+// reached separately.
 //
 // # The boundary-scope sibling keeps a different shape, by SCOPE
 //
@@ -84,16 +81,14 @@ func (a attachmentIdentity) named() bool { return a.instance != "" }
 // is assembled from, in the order the composition writes them.
 func (a attachmentIdentity) parts() []string { return []string{a.host, a.instance} }
 
-// outputPrefix returns the prefix every file the attachment emits is written
-// under, within the position of the component hosting it.
+// outputPrefix returns the FILENAME prefix every file the attachment emits is
+// written under, beside the files of the component hosting it.
 //
-// attachmentDir follows from how the group's provider assembles its output and,
-// where it names a directory, already carries its trailing separator — so it is
-// joined rather than re-composed here. Where that assembly gives no contributor a
-// position of its own it is empty, and the coordinates move into the filename;
-// [attachmentOutputPrefix] carries both shapes. This function reads neither the
-// mode nor the directory's spelling, which is what keeps a target's layout
-// vocabulary out of the composition.
+// It is the shape for a group whose provider gives no contributor a position of
+// its own. Where the provider does give each contributor a position, the
+// attachment gets one too — beside its host rather than inside it — and the
+// coordinates become that position's directory segment instead, composed by the
+// group through [contributorDirSegment]; this prefix is not used there at all.
 //
 // Two identity coordinates rather than one composed token. They are
 // collision-free for the same reason a composed identity is — the host is what
@@ -103,8 +98,8 @@ func (a attachmentIdentity) parts() []string { return []string{a.host, a.instanc
 // composed identity name this attachment from one value: a second listing could
 // come to disagree about which coordinates identify it, with nothing comparing
 // the two.
-func (a attachmentIdentity) outputPrefix(attachmentDir string) string {
-	return attachmentOutputPrefix(attachmentDir, a.parts()...)
+func (a attachmentIdentity) outputPrefix() string {
+	return attachmentOutputPrefix(a.parts()...)
 }
 
 // attachmentFileEncoding is the segment encoding an attachment's filename prefix
@@ -139,8 +134,108 @@ func isAttachmentFileRune(r rune) bool {
 	return r >= 'a' && r <= 'z' || r >= '0' && r <= '9'
 }
 
-// attachmentOutputPrefix returns the prefix every file an attachment emits is
-// written under, for a contributor the given coordinates identify.
+// contributorDirEncoding is the segment encoding a contributor's own directory is
+// written in, declared here beside the filename encoding because the two answer
+// the same question for two different positions and a reader comparing them
+// should not have to go looking.
+//
+// It is ONE encoding reached by every nesting provider rather than one per
+// provider, and that is the whole reason a third instance of this mechanic is
+// accepted: a directory segment sits beside a target's own names, so were each
+// guest to encode its own the targets would disagree about the spelling of a
+// position the host composed.
+var contributorDirEncoding = namesegment.NewEncoding('-', isContributorDirRune)
+
+// isContributorDirRune reports whether a character is carried into a
+// contributor's directory segment as itself: an ASCII letter of either case, a
+// digit, a full stop, or an underscore. Every other character is escaped.
+//
+// # Why the set is drawn at the unreserved characters rather than at what a filesystem tolerates
+//
+// The segment is not only a path component. It is also carried inside a
+// file-scheme URL, as the pointer an assembled artifact addresses this
+// contributor's directory by — so a character legal in a filename and unsafe in a
+// URL would make the directory legal on disk and wrong in the value that names
+// it. The set is therefore the characters a URL leaves alone, less the two below:
+// a number sign or a question mark would truncate the pointer, a percent sign
+// would make it re-decode to something else, and each is a perfectly legal
+// filename.
+//
+// A tilde is legal in both and is still escaped, because a leading one expands to
+// a home directory at a shell and these segments are typed by people.
+//
+// # Uppercase is ADMITTED here and escaped in the filename encoding, deliberately
+//
+// The filename encoding escapes an uppercase letter because a
+// case-insensitive filesystem would fold two distinct coordinates onto one FILE.
+// A directory segment is not exposed to that: it is the position a contributor's
+// whole set of files sits at, and two contributors reaching one position is
+// answered by the attribution the assembled-file set carries rather than by the
+// spelling. Escaping case here would buy nothing and would cost the readability
+// that is the reason this encoding exists — an identity carrying a capital would
+// otherwise reach a directory whose name is a run of hex digits.
+//
+// # The hyphen is the escape opener, so an authored one is mostly KEPT
+//
+// The opener is not a free choice: the separator between two coordinates is two
+// openers, and a segment joining a host to an instance is written to read as
+// `host--instance`, which fixes the opener as the hyphen. An authored hyphen is
+// still carried through wherever the character after it is admitted, so an
+// ordinary hyphenated identity reaches an identical directory name; only a
+// doubled or trailing hyphen escapes, which is what keeps the join unambiguous.
+//
+// # Two edges the alphabet has to decide, and where each one lands
+//
+// A full stop is ADMITTED mid-name, so a dotted identity reaches a directory
+// carrying that dot as written rather than a name interrupted by an escape. The
+// names "." and ".." are not names at all, and for a segment composed from more
+// than one coordinate they are unreachable rather than guarded: such a segment
+// always carries the separator, and neither of those two strings does. For a
+// segment composed from a single coordinate they ARE reachable — from a
+// coordinate that is itself "." or ".." — and so is a segment opening with the
+// escape opener, from a coordinate opening with a hyphen. Neither is introduced
+// by this encoding: the same coordinate reaches the same directory name where no
+// encoding is applied at all, because an admitted character is carried through as
+// authored. Refusing them belongs to whatever guards a contributor's directory
+// for every provider rather than to the alphabet, which cannot refuse a character
+// it is required to carry.
+func isContributorDirRune(r rune) bool {
+	return r >= 'a' && r <= 'z' ||
+		r >= 'A' && r <= 'Z' ||
+		r >= '0' && r <= '9' ||
+		r == '.' || r == '_'
+}
+
+// contributorDirSegment returns the directory segment one contributor's files sit
+// under, composed from the coordinates that identify it.
+//
+// The coordinates are encoded PER PART and joined by the encoding's own
+// multi-part entry point rather than run together, and that is what makes the
+// segment injective: a raw two-hyphen join is not. The pair ("a--b", "c") and the
+// pair ("a", "b--c") both reach "a--b--c" when the parts are concatenated, so one
+// directory would hold two contributors; encoding each part first separates them
+// as "a-zh-b--c" and "a--b-zh-c".
+//
+// # One function for every arity, which is what keeps the arities apart
+//
+// A contributor identified by one coordinate and a contributor identified by two
+// both compose here, and the encoding's assembled name records how many there
+// were — so a component whose own name is "a--b" and an attachment "b" on host
+// "a" reach different segments rather than meeting at one directory. Composing
+// only the two-coordinate case here and leaving the one-coordinate case as the
+// raw name would reintroduce exactly that meet, and it would be invisible: two
+// contributors sharing a directory with different file names collide on no path,
+// so the attribution that reports two producers meeting at one path would report
+// nothing.
+//
+// For a coordinate the alphabet already admits the result is the coordinate
+// itself, so an ordinary name reaches the directory it always reached.
+func contributorDirSegment(parts ...string) string {
+	return contributorDirEncoding.Name(parts...)
+}
+
+// attachmentOutputPrefix returns the FILENAME prefix every file an attachment
+// emits is written under, for a contributor the given coordinates identify.
 //
 // It is the one home of that composition because both attachment scopes make it
 // and they differ only in the coordinates they pass: a component-scope
@@ -151,14 +246,41 @@ func isAttachmentFileRune(r rune) bool {
 // would let the two scopes come to lay their output out differently for no
 // reason either could state.
 //
-// # The two shapes, and which one the provider asked for
+// # It answers for ONE assembly shape, and the other has no prefix at all
 //
-// Where attachmentDir names a directory, the coordinates follow it as directory
-// segments, each as authored. Where it is empty the group's assembly gives no
-// contributor a position of its own, so there is no enclosing directory to put
-// them in: the coordinates are encoded into a FILENAME prefix instead and joined
-// to the file's own name, which lands the attachment's files directly beside the
-// files of whatever it is attached to.
+// This is the shape for a group whose provider gives no contributor a position of
+// its own — one writing its output directly at the dispatch path, or folding it
+// into a single document. There is no enclosing directory to put the coordinates
+// in, so they are encoded into a filename prefix and joined to the file's own
+// name, which lands the attachment's files directly beside the files of whatever
+// it is attached to.
+//
+// A group whose provider DOES give each contributor a position places the
+// attachment at one too, beside its host rather than inside it, and the
+// coordinates become that position's directory segment. That composition is
+// [contributorDirSegment] and it is written in a different alphabet, for the
+// reason recorded there: a directory segment and a filename admit different
+// characters. Nothing here is reached in that case.
+//
+// # There is no enclosing directory for an attachment, on any assembly shape
+//
+// Neither shape puts an attachment's output inside a directory named for the
+// authoring surface it came from, and the host holds no word for one. Beside is
+// what a nesting group's target can read: it discovers its contributors at the
+// positions the group gives them, so an attachment one level below one of those
+// positions is not a contributor at all — it is content belonging to whichever
+// contributor's position encloses it, addressed by nothing and loaded by nothing.
+// A flat or folding group has no per-contributor position to be beside, which is
+// what leaves the coordinates nowhere to go but the filename.
+//
+// So there is nothing left for a provider to declare here either. A provider
+// states how it assembles a dispatch group and, where that assembly gives each
+// contributor a position, what directory those positions sit under — and those
+// two are the whole of what it declares about layout. A third declaration naming
+// an attachment's enclosing directory would be free to contradict the first: a
+// provider declaring that its target reads only what sits directly in a
+// directory, and a directory for its attachments, would be describing two layouts
+// at once.
 //
 // # What the flat shape guarantees, and what it does NOT
 //
@@ -183,11 +305,8 @@ func isAttachmentFileRune(r rune) bool {
 // that differ only where that name folds still meet, and they meet before this
 // composition sees them — which is why the provider that derives such a name is
 // where that collision is answered.
-func attachmentOutputPrefix(attachmentDir string, parts ...string) string {
-	if attachmentDir == "" {
-		return attachmentFileEncoding.Name(parts...) + attachmentFileEncoding.SegmentSeparator()
-	}
-	return attachmentDir + strings.Join(parts, "/") + "/"
+func attachmentOutputPrefix(parts ...string) string {
+	return attachmentFileEncoding.Name(parts...) + attachmentFileEncoding.SegmentSeparator()
 }
 
 // attachmentNodePrefix marks a synthetic per-node key that carries a

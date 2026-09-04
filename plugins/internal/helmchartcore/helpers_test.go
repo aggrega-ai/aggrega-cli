@@ -30,16 +30,41 @@ func readChartMeta(dir string) (name, version string, err error) {
 // filesystem-free CoreSubChart — mirroring the generic host projection the
 // assembler now runs — then assembles through AssembleUmbrellaCore, the same core
 // the provider guest runs.
+//
+// It supplies the two values the guest reads from the contributor's rendered node
+// rather than deriving them: the position the placement wrote to, and the manifest
+// as PLACED. The placed manifest is produced by running the real sourced-render
+// core over the pristine bytes, so the helper cannot come to disagree with the
+// render about what name the placed chart declares — deriving it here by encoding
+// the instance id would be a second derivation, and it is precisely the
+// derivation these tests exist to check the assembly no longer makes.
+//
+// The position mirrors the host's own composition for a component: a contributor
+// placed beneath the position its identity names. A contributor placed BESIDE
+// another is the case that needs the real host, and it is covered where the host
+// composes it rather than here.
 func buildUmbrella(boundaryName, aggregateName string, subCharts []renderer.SubChartInfo, chartNameOverride string, indent int) (map[string][]byte, error) {
 	subs := make([]CoreSubChart, 0, len(subCharts))
 	for _, sc := range subCharts {
-		cs := CoreSubChart{InstanceID: sc.InstanceID, Version: sc.Version, Values: sc.Values}
+		cs := CoreSubChart{
+			InstanceID:      sc.InstanceID,
+			Version:         sc.Version,
+			Values:          sc.Values,
+			OutputDirectory: "charts/" + sc.InstanceID,
+		}
 		if s, ok := sc.Source.(string); ok && s != "" {
 			data, err := os.ReadFile(filepath.Join(s, "Chart.yaml"))
 			if err != nil {
 				return nil, err
 			}
 			cs.ChartYAML = data
+			placed, perr := RenderSourcedChartCore(
+				&renderer.SourceProjection{Files: []renderer.SourceFile{{Path: chartMetadataFileName, Content: data}}},
+				sc.InstanceID, indent)
+			if perr != nil {
+				return nil, perr
+			}
+			cs.PlacedChartYAML = placed[chartMetadataFileName]
 		}
 		subs = append(subs, cs)
 	}

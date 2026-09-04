@@ -109,8 +109,8 @@ func boundaryFROutputPathCases() []boundaryFROutputPathCase {
 				"dist/cluster/terraform/aggrega.modules.tf",
 				"dist/cluster/terraform/modules/api/aggrega.provenance.tf",
 				"dist/cluster/terraform/modules/api/api.tf.json",
-				"dist/cluster/terraform/modules/aux/features/aux/aggrega.provenance.tf",
-				"dist/cluster/terraform/modules/aux/features/aux/aux.tf.json",
+				"dist/cluster/terraform/modules/aux/aggrega.provenance.tf",
+				"dist/cluster/terraform/modules/aux/aux.tf.json",
 			},
 			wantAttachmentDir: "dist/cluster/terraform/modules/aux/",
 		},
@@ -123,9 +123,9 @@ func boundaryFROutputPathCases() []boundaryFROutputPathCase {
 				"dist/cluster/helm-chart/charts/api/Chart.yaml",
 				"dist/cluster/helm-chart/charts/api/templates/configmap.yaml",
 				"dist/cluster/helm-chart/charts/api/values.yaml",
-				"dist/cluster/helm-chart/charts/aux/features/aux/Chart.yaml",
-				"dist/cluster/helm-chart/charts/aux/features/aux/templates/configmap.yaml",
-				"dist/cluster/helm-chart/charts/aux/features/aux/values.yaml",
+				"dist/cluster/helm-chart/charts/aux/Chart.yaml",
+				"dist/cluster/helm-chart/charts/aux/templates/configmap.yaml",
+				"dist/cluster/helm-chart/charts/aux/values.yaml",
 				"dist/cluster/helm-chart/values.yaml",
 			},
 			wantAttachmentDir: "dist/cluster/helm-chart/charts/aux/",
@@ -343,15 +343,31 @@ func TestBoundaryScopeFROutputPathNamesTheAttachmentInstance(t *testing.T) {
 			if c.wantAttachmentDir == "" {
 				return
 			}
-			// The attachment's files sit under a directory named for the instance,
-			// reported on its own so a failure names the segment.
+			// The attachment's files sit AT a position of their own named for the
+			// instance, beside the component's rather than below anything, reported
+			// on its own so a failure names the segment.
+			//
+			// The check is that at least one emitted path sits under it AND that
+			// nothing sits deeper than one level within it. The second half is the
+			// one that matters: a directory named for the instance with the files a
+			// further level down is exactly the shape a nesting target does not
+			// discover, and it satisfies a prefix check perfectly.
+			under := 0
 			for _, p := range got {
-				if !strings.Contains(p, "/features/aux/") {
+				rest, ok := strings.CutPrefix(p, c.wantAttachmentDir)
+				if !ok {
 					continue
 				}
-				if !strings.HasPrefix(p, c.wantAttachmentDir) {
-					t.Errorf("attachment output %q does not sit under %q", p, c.wantAttachmentDir)
+				under++
+				if strings.Contains(rest, "/") && !strings.HasPrefix(rest, "templates/") {
+					t.Errorf("attachment output %q sits at %q within its own position %q; a nesting target "+
+						"discovers its contributors AT their positions, so a further directory level here is "+
+						"content belonging to something else and is read by nothing", p, rest, c.wantAttachmentDir)
 				}
+			}
+			if under == 0 {
+				t.Errorf("no emitted path sits under the attachment's own position %q, so this case asserts "+
+					"nothing about where the attachment went: %v", c.wantAttachmentDir, got)
 			}
 		})
 	}

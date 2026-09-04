@@ -117,20 +117,46 @@ func TestNodeProducerLabel(t *testing.T) {
 }
 
 // TestNodeOutputSegment holds the directory a nesting assembler places a
-// contributor's files under to the name that contributor carries in the author's
-// input. The boundary-feature row is the load-bearing one: the per-node key that
-// contributor is held under opens with an angle bracket and joins with a colon and
-// an at sign, and a directory named for that key would be refused on some platforms
-// and would have to be escaped in a URL.
+// contributor's files under to the coordinates that contributor carries in the
+// author's input.
+//
+// Two rows are load-bearing for different reasons. The boundary-feature row: the
+// per-node key that contributor is held under opens with an angle bracket and
+// joins with a colon and an at sign, and a directory named for that key would be
+// refused on some platforms and would have to be escaped in a URL. The
+// component-scope attachment row: its further coordinate is the instance name,
+// which the enclosing directory does NOT state, so a segment dropping it hands
+// the attachment the segment its host already has — and the two then compose one
+// directory, each holding the other's files, with nothing reporting it because
+// the coordinate that told them apart was discarded before any comparison.
 func TestNodeOutputSegment(t *testing.T) {
 	t.Parallel()
 
 	if got, want := nodeOutputSegment(derivedKeyProducerFor(producerKindComponent, "api", "")), "api"; got != want {
 		t.Errorf("nodeOutputSegment(component) = %q, want %q", got, want)
 	}
+	// A component producer with a NON-EMPTY scope is a component-scope
+	// attachment, and it must not reach its host's segment.
+	host := derivedKeyProducerFor(producerKindComponent, "api", "")
+	attachment := derivedKeyProducerFor(producerKindComponent, "api", "logging")
+	if got, want := nodeOutputSegment(attachment), "api--logging"; got != want {
+		t.Errorf("nodeOutputSegment(component-scope attachment) = %q, want %q", got, want)
+	}
+	if nodeOutputSegment(attachment) == nodeOutputSegment(host) {
+		t.Errorf("an attachment on %q reaches its host's own segment %q, so both would be placed at one "+
+			"directory and each would hold the other's files",
+			host.name, nodeOutputSegment(host))
+	}
 	feature := derivedKeyProducerFor(producerKindFeature, "logging", "zone-a")
 	if got, want := nodeOutputSegment(feature), "logging"; got != want {
 		t.Errorf("nodeOutputSegment(boundary feature) = %q, want %q", got, want)
+	}
+	// A boundary-scope feature keeps its instance alone: its further coordinate
+	// is the boundary, which IS the position this segment sits inside, so
+	// carrying it would state that boundary twice.
+	if got := nodeOutputSegment(feature); strings.Contains(got, "zone-a") {
+		t.Errorf("the segment for a boundary feature is %q, which repeats the boundary the position "+
+			"already names", got)
 	}
 	for _, bad := range []string{"<", ">", ":", "@"} {
 		if strings.Contains(nodeOutputSegment(feature), bad) {

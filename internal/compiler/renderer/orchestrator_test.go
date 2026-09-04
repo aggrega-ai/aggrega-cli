@@ -806,13 +806,13 @@ stringData:
 	// placement every attachment's output takes, whatever input kind it renders from.
 	var secretArt string
 	for k := range result.Files {
-		if strings.Contains(k, "features/api/root_password/") && strings.Contains(k, "secret.yaml") {
+		if strings.Contains(k, "charts/api--root_password/") && strings.Contains(k, "secret.yaml") {
 			secretArt = k
 			break
 		}
 	}
 	if secretArt == "" {
-		t.Fatalf("missing credential FR artifact under features/api/root_password/, keys: %v", fileKeys(result.Files))
+		t.Fatalf("missing credential FR artifact under charts/api--root_password/, keys: %v", fileKeys(result.Files))
 	}
 	body := string(result.Files[secretArt].Content)
 	// .attachment_name propagates into the rendered manifest.

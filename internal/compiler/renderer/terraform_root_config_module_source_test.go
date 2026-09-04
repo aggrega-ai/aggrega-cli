@@ -140,14 +140,14 @@ func terraformRootConfigCases() []terraformRootConfigCase {
 	return []terraformRootConfigCase{
 		{
 			name:              "an attachment declared on a component is called beside its host",
-			wantModuleSources: []string{"./modules/api/features/api/aux", "./modules/api"},
-			wantModuleNames:   []string{"api_features_api_aux", "api"},
+			wantModuleSources: []string{"./modules/api--aux", "./modules/api"},
+			wantModuleNames:   []string{"api--aux", "api"},
 		},
 		{
 			name:              "an attachment declared on a boundary is called beside the component",
 			boundaryScope:     true,
-			wantModuleSources: []string{"./modules/aux/features/aux", "./modules/api"},
-			wantModuleNames:   []string{"aux_features_aux", "api"},
+			wantModuleSources: []string{"./modules/aux", "./modules/api"},
+			wantModuleNames:   []string{"aux", "api"},
 		},
 	}
 }

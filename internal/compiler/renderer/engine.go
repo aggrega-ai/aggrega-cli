@@ -276,41 +276,6 @@ func boundaryNestingOf(engine Provider) BoundaryNesting {
 	return BoundaryNesting{PerNode: true, Segment: nestSegmentOf(engine)}
 }
 
-// DefaultAttachmentSegment is the directory an attached Feature's files sit
-// under within the position a NESTING provider gives each of its contributors.
-// It is the answer for that assembly mode alone: the other two give an
-// attachment's coordinates no directory at all, and [attachmentPrefixFor] is
-// where that follows from the mode.
-//
-// It is the host's own answer rather than a fallback behind a provider's, because
-// no declaration names an attachment's enclosing directory: a provider states how
-// it assembles a dispatch group's output, and where that assembly nests it names
-// the directory enclosing a contributor, and those two are the whole of what it
-// declares about layout.
-//
-// The word is in the provider-agnostic host on purpose rather than by omission:
-// `features:` is the block an author writes to attach one, so the directory names
-// the authoring surface the output came from and belongs to no target's
-// vocabulary — which is what makes one host-side answer defensible for every
-// target at once.
-//
-// The nesting position itself has no counterpart default, and the asymmetry is
-// the point rather than an oversight: every directory that could enclose a
-// contributor is some target's word, so a host default there would be one
-// provider's vocabulary applied to every other.
-//
-// # Why a nesting provider keeps an enclosing directory rather than one segment
-//
-// Under a nesting provider an attachment sits one level deeper than it needs to:
-// its coordinates could be a single encoded segment beside the contributors
-// rather than a directory holding a level per coordinate. That shape needs an
-// encoding for a directory segment, which is a different question from the
-// filename encoding [attachmentFileEncoding] answers — a segment sits beside a
-// target's own names, so which characters it may carry is that target's contract
-// rather than a filesystem's. Until that is settled the enclosing directory
-// stands, and this word names it.
-const DefaultAttachmentSegment = "features"
-
 // namesOneDirectory reports whether a provider-declared value is a single
 // directory name rather than a path.
 //
@@ -353,46 +318,6 @@ func (n BoundaryNesting) resolvedPrefix(provider string) (string, error) {
 		return "", notOneDirectoryErr(ErrNestSegmentNotOneDirectory(), provider, "nest_segment", n.Segment)
 	}
 	return n.Segment + "/", nil
-}
-
-// attachmentPrefixFor returns the directory an attached Feature's files sit under
-// within the position of whatever it is attached to, empty where they sit
-// directly beside the files of whatever they are attached to.
-//
-// This is the single home of that directory, and both attachment scopes compose
-// their own coordinates onto what it returns. The scopes differ in which
-// coordinates those are (a component-scope attachment names its host as well as
-// its instance; a boundary-scope one sits inside the boundary already, so the
-// instance alone identifies it), and that difference is one of scope rather than
-// of layout, so it stays at each composition while the directory stays here.
-//
-// # The shape follows from how the provider assembles its group
-//
-// A provider that gives each of its group's contributors a position of its own
-// has somewhere to put an attachment: a directory alongside the contributors,
-// which is what this returns. A provider that writes its group's output directly
-// at the dispatch path has no such structure, and one that folds its group into a
-// single document has none either — so for both of those an attachment's
-// coordinates cannot be a directory, and the empty answer moves them into the
-// filename instead.
-//
-// That is read from the assembly mode the provider already declares rather than
-// from a declaration of its own, because a third declaration naming an
-// attachment's enclosing directory would be free to contradict the mode: a
-// provider declaring that its target reads only the files sitting directly in a
-// directory, and a directory for its attachments, would be describing two
-// layouts at once.
-//
-// It cannot fail, because it returns either the host's own word or nothing, and
-// neither can be out of bounds.
-//
-// [attachmentOutputPrefix] is where the coordinates are composed onto this
-// prefix, and it is what an attachment's placement should be read from.
-func attachmentPrefixFor(engine Provider) string {
-	if !boundaryAssemblyNests(boundaryAssemblyOf(engine)) {
-		return ""
-	}
-	return DefaultAttachmentSegment + "/"
 }
 
 // BoundaryAssemblyReporter is the optional interface an engine implements to
