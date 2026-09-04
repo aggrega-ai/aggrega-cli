@@ -1040,6 +1040,13 @@ var subjectKindBindings = map[SubjectKind]struct {
 				"spec", "artifacts", "cm.yaml")
 		},
 	},
+	SubjectNodeAttachmentTemplateField: {
+		iface: reflect.TypeOf((*NodeAttachmentTemplateFieldSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newNodeAttachmentTemplateFieldSubject(f, "web", "tls", "pipeline[stamp].when",
+				"spec", "pipeline", "stamp", "when")
+		},
+	},
 	SubjectBoundaryAttachmentTemplateField: {
 		iface: reflect.TypeOf((*BoundaryAttachmentTemplateFieldSubject)(nil)).Elem(),
 		make: func(f string) Subject {

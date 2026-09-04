@@ -18,21 +18,26 @@ import (
 // identities through, and renderedNameContextKey is the key beneath it that names
 // the value a target renders author-supplied source under.
 //
-// They are constants because four surfaces compare against the same two
-// spellings: the rule declared over an authored provides entry, and the three
+// They are constants because every surface that watches for this key compares
+// against the same two spellings: the rules declared over authored text, and the
 // scopes that refuse the key rather than resolving it away. A spelling written
 // out at each would agree on the day it was written, and a rename would then
 // leave a rule watching a key no context defines — which reports exactly what a
 // rule that ran and approved reports. The guard beside the context types holds
 // both to those types' own json tags.
+//
+// How many such surfaces there are is deliberately not written here. A count
+// beside the structure it counts is a second statement of what the structure
+// already says, and the copy is what goes stale: a surface added later leaves the
+// number wrong with nothing able to notice, and correcting it only resets the
+// clock for the surface after that.
 const (
 	identityContextRoot    = "context"
 	renderedNameContextKey = "rendered_name"
 )
 
-// renderedNameReference reports the first reference a parsed template makes to
-// the name its target renders author-supplied source under, and whether it makes
-// one.
+// renderedNameRootRef reports the first root access a parsed template makes to the
+// name its target renders author-supplied source under, and whether it makes one.
 //
 // The reference is recovered from the collected root accesses rather than by
 // matching the authored keystrokes, so every spelling that resolves to the same
@@ -40,13 +45,29 @@ const (
 // identity pillar, and a read through a variable bound to it. Matching text would
 // cover the first and miss the others, and the value would then reach an emitted
 // artifact through exactly the spellings a defensive author reaches for.
-func renderedNameReference(tree parse.Node) (string, bool) {
+//
+// It yields the whole access rather than only its path, because a surface that
+// refuses the key through the scope machinery needs the access itself in order to
+// name the set it was consulted against. The path-only reading below is the same
+// walk, and both are here so the two-segment comparison has one home.
+func renderedNameRootRef(tree parse.Node) (gotmpl.RootRef, bool) {
 	for _, ref := range gotmpl.CollectRootRefs(tree) {
 		if len(ref.Segs) >= 2 && ref.Segs[0] == identityContextRoot && ref.Segs[1] == renderedNameContextKey {
-			return ref.Path, true
+			return ref, true
 		}
 	}
-	return "", false
+	return gotmpl.RootRef{}, false
+}
+
+// renderedNameReference reports the path of the first reference a parsed template
+// makes to the name its target renders author-supplied source under, and whether
+// it makes one.
+func renderedNameReference(tree parse.Node) (string, bool) {
+	ref, reads := renderedNameRootRef(tree)
+	if !reads {
+		return "", false
+	}
+	return ref.Path, true
 }
 
 // RenderedNameReporter is the optional capability a provider engine implements to

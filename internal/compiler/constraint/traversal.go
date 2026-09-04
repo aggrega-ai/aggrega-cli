@@ -1083,6 +1083,50 @@ func RunOnNodeTemplateFields[V View](
 	})
 }
 
+// RunOnNodeAttachmentTemplateFields invokes check once per inline template field
+// the FeatureRecipe each attachment binds on a node writes, in node order, then
+// attachment order, then the order that FeatureRecipe's fields are enumerated in.
+//
+// The locator is the authored field inside the FeatureRecipe's own file, spelled
+// from the keys the enumerator supplied. Neither the node nor the attachment
+// contributes a locator segment, on the reading every kind whose locator names a
+// FeatureRecipe carries: the fault is in that document's text rather than in any
+// one node or attachment that binds it, so a node or attachment key spliced onto a
+// FeatureRecipe-rooted locator would spell a path the file does not contain and
+// would point an author at an instance when the edit is in the entry every instance
+// shares. Both remain coordinates — the attachment selects the document, the node
+// selects the render context its text is judged against, and together they are what
+// the facts a rule over this kind reads are keyed by.
+//
+// # The field is enumerated, which is what makes coverage assertable
+//
+// The innermost coordinate is the authored field label, so a FeatureRecipe gaining
+// a template field gains a subject with no kind, fact, traversal entry or
+// declaration moving. That is the property the family is for: what a rule over this
+// kind covers is read off the enumeration rather than counted from how many
+// declarations somebody remembered to write.
+func RunOnNodeAttachmentTemplateFields[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	attachments AttachmentEnumerator,
+	fields AttachmentTemplateFieldEnumerator,
+	view V,
+	check Check[V, NodeAttachmentTemplateFieldSubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentTemplateFieldSubject {
+		var out []NodeAttachmentTemplateFieldSubject
+		for _, attachment := range attachments.Attachments(node.ID) {
+			for _, entry := range fields.AttachmentTemplateFields(node.ID, attachment) {
+				out = append(out, newNodeAttachmentTemplateFieldSubject(
+					entry.SourceFile, node.ID, attachment, entry.Value,
+					authoredFieldSegments(entry.AuthoredKeys)...,
+				))
+			}
+		}
+		return out
+	})
+}
+
 // RunOnBoundaryAttachmentTemplateFields invokes check once per inline template
 // field the FeatureRecipe each attachment declared on a boundary writes, in
 // boundary order, then attachment order, then the order that FeatureRecipe's

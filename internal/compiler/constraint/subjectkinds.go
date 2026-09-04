@@ -992,6 +992,73 @@ func newNodeTemplateFieldSubject(
 	}
 }
 
+// NodeAttachmentTemplateFieldSubject is the subject of a check invoked once per
+// inline template field the FeatureRecipe one attachment binds on a node writes.
+//
+// The innermost coordinate is the AUTHORED FIELD LABEL, on the reading the two
+// sibling template-field kinds set out: a FeatureRecipe carries several such
+// fields and gains more over time, so a kind per field would put the field
+// identity in structure and a field added later would be silently ungated if any
+// of its four declarations were forgotten.
+//
+// It carries BOTH the node and the attachment, and neither is redundant. The
+// attachment says which FeatureRecipe's text is being asked about; the node says
+// which render context that text is judged against, because a per-component
+// attachment is evaluated once for each component it reaches and its context is
+// derived from that component's. A kind carrying only the attachment could name
+// the document and not the surface.
+//
+// One reference set serves the whole carrier, which is the condition that makes
+// this family pay: every field this kind reaches is evaluated against the
+// attachment's own render context, one type, so what a template on any of them may
+// name is one question with one answer. The fields differ in the delimiter pair
+// their text is parsed with rather than in what they may name, and that difference
+// is a property of the field the reading beside the enumeration answers.
+type NodeAttachmentTemplateFieldSubject interface {
+	Subject
+
+	// NodeID identifies the node carrying the attachment, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// AttachmentName is the attachment whose FeatureRecipe writes the field.
+	AttachmentName() string
+
+	// TemplateField is the inline template field the check was invoked for,
+	// labelled the way an author reads it back — the authored key, carrying the
+	// entry's own key or the step's id where the block is keyed.
+	TemplateField() string
+
+	nodeAttachmentTemplateField()
+}
+
+type nodeAttachmentTemplateFieldSubject struct {
+	provenance
+	node       string
+	attachment string
+	field      string
+}
+
+func (nodeAttachmentTemplateFieldSubject) nodeAttachmentTemplateField() {}
+
+func (s nodeAttachmentTemplateFieldSubject) NodeID() string { return s.node }
+
+func (s nodeAttachmentTemplateFieldSubject) AttachmentName() string { return s.attachment }
+
+func (s nodeAttachmentTemplateFieldSubject) TemplateField() string { return s.field }
+
+func newNodeAttachmentTemplateFieldSubject(
+	sourceFile, node, attachment, field string,
+	segments ...string,
+) NodeAttachmentTemplateFieldSubject {
+	return nodeAttachmentTemplateFieldSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		attachment: attachment,
+		field:      field,
+	}
+}
+
 // BoundaryAttachmentTemplateFieldSubject is the subject of a check invoked once
 // per inline template field the FeatureRecipe one attachment declared on a
 // boundary writes.

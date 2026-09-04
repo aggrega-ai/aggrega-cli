@@ -362,7 +362,27 @@ func (c *describedStageCoordinates) NodeTemplateFields(node string) []constraint
 	if !held || recipe == nil {
 		return nil
 	}
-	fields := RecipeTemplateFields(recipe)
+	return templateFieldCoordinatesOf(RecipeTemplateFields(recipe), recipe.Metadata.Name)
+}
+
+// templateFieldCoordinatesOf presents an enumerated inline-template-field set as
+// the coordinate shape the template-field traversals take, keeping the order the
+// enumeration declared.
+//
+// One home because two axes need it — a node's own Recipe and an attachment's
+// FeatureRecipe, which are enumerated through one shared body and therefore arrive
+// in one shape. A second reading would be free to differ on which of the three
+// carried readings it promotes to the coordinate's value, and the traversal spells
+// its locator from the authored keys rather than from that value, so a divergence
+// there would leave a finding positioned at a path the file does not contain.
+//
+// The boundary-rooted axis beside them keeps its own loop, and that is a property
+// of its carrier rather than an inconsistency: it enumerates a different struct
+// type, over a set that includes two blocks these two deliberately leave to their
+// own axes.
+func templateFieldCoordinatesOf(
+	fields []RecipeTemplateField, sourceFile string,
+) []constraint.TemplateFieldCoordinate {
 	if len(fields) == 0 {
 		return nil
 	}
@@ -370,11 +390,42 @@ func (c *describedStageCoordinates) NodeTemplateFields(node string) []constraint
 	for _, field := range fields {
 		out = append(out, constraint.TemplateFieldCoordinate{
 			Value:        field.Label,
-			SourceFile:   recipe.Metadata.Name,
+			SourceFile:   sourceFile,
 			AuthoredKeys: field.AuthoredKeys,
 		})
 	}
 	return out
+}
+
+// AttachmentTemplateFields returns the inline template fields the FeatureRecipe
+// one attachment binds on a node writes, in the order that FeatureRecipe's fields
+// are enumerated in.
+//
+// The enumeration is [AttachmentTemplateFields] in the renderer — the one home of
+// that set — so a field presented here is a field the presentation beside it can
+// answer, and a field added to the set arrives on both surfaces at once.
+// Reproducing the set here would let the axis and the presentation cover different
+// fields, and the field whichever of them omitted would be unchecked with nothing
+// reporting it.
+//
+// Every attachment the node carries is enumerated, whatever scope its FeatureRecipe
+// states. The axis presents what the document writes; which of those attachments a
+// given rule is about is the rule's to select, from the execution-scope fact keyed
+// at this same coordinate. Narrowing here instead would make the axis mean one rule
+// rather than the document.
+//
+// Each coordinate is positioned at the FeatureRecipe rather than at the Aggregate
+// the attachment was written in, because the field is written in the FeatureRecipe
+// and that is the document an author edits. The FeatureRecipe's name stands in for
+// its path, for the reason the provides axis states.
+func (c *describedStageCoordinates) AttachmentTemplateFields(
+	node string, attachment string,
+) []constraint.TemplateFieldCoordinate {
+	fr, held := c.attachmentFeatureRecipe(node, attachment)
+	if !held {
+		return nil
+	}
+	return templateFieldCoordinatesOf(AttachmentTemplateFields(fr), fr.Metadata.Name)
 }
 
 // BoundaryAttachmentTemplateFields returns the inline template fields the

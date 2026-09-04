@@ -98,6 +98,77 @@ func RecipeTemplateFields(recipe *types.Recipe) []RecipeTemplateField {
 	if recipe == nil {
 		return nil
 	}
+	return inlineTemplateFieldsOf(
+		recipe.Spec.ValuesMapping, recipe.Spec.Workload, recipe.Spec.Artifacts, recipe.Spec.Pipeline,
+	)
+}
+
+// AttachmentTemplateFields presents every inline template field the FeatureRecipe
+// one per-component attachment binds declares whose text is evaluated against the
+// attachment's render context, as the one enumeration of that set.
+//
+// # Why an attachment has its own enumeration rather than sharing the node's
+//
+// The set of BLOCKS is the same, and the body below is therefore shared — but the
+// carrier is a different document and the surface is a different reference set, so
+// the two are separate readings of one body rather than one reading used twice. A
+// caller asking about a node gets the Recipe's fields and a caller asking about an
+// attachment gets that attachment's FeatureRecipe's, and neither can be handed the
+// other's by mistake because the argument types differ.
+//
+// # What it covers, and what it deliberately leaves to another surface
+//
+// The set is the fields evaluated against the attachment's own render context: the
+// values mapping, the workload body, each artifacts entry, and each pipeline step's
+// input and its gate. The FeatureRecipe's provides and locals entries are NOT here,
+// for the reason a Recipe's are not on the node's own enumeration: each already has
+// its own refusal at this stage — the scope those two surfaces are evaluated against
+// narrows the reference directly — so enumerating them again would report one
+// authoring fault against two subjects and give a reader two positions for one edit.
+// Its inject mapping is absent for a different reason: it is evaluated against the
+// consuming node's pipe rather than against this context, so a reference set derived
+// from this one would be the wrong set for it.
+//
+// A field whose content is imported from a file or a library carries no text here
+// and is absent from the set, exactly as it is on the node's own enumeration: that
+// content is disk-resident or resolved when the render reaches it, so there is
+// nothing to read before then. The inline forms are the whole of what this set
+// covers, and a caller stating its coverage states that bound with it.
+//
+// The order is the document's own within each keyed block and fixed between the
+// blocks, so a caller reporting the first offending field reports the same field on
+// every run.
+func AttachmentTemplateFields(fr *types.FeatureRecipe) []RecipeTemplateField {
+	if fr == nil {
+		return nil
+	}
+	return inlineTemplateFieldsOf(
+		fr.Spec.ValuesMapping, fr.Spec.Workload, fr.Spec.Artifacts, fr.Spec.Pipeline,
+	)
+}
+
+// inlineTemplateFieldsOf builds the enumeration for one carrier's four
+// template-bearing blocks, in the fixed order every caller presents them in.
+//
+// It is one body because a Recipe and a FeatureRecipe declare these four blocks
+// identically — the same field types, the same three authoring modes, the same
+// key-to-output rule — so what counts as an inline field, how its label is spelled
+// and which authored keys locate it is one question with one answer. Two spellings
+// of that would agree on the day they were written and drift afterwards, and the
+// drift would be silent in the worst way available: a block one copy stopped
+// enumerating would be a surface no rule was invoked over, which reports exactly
+// what a rule that ran and approved reports.
+//
+// It takes the four blocks rather than a carrier so that neither carrier type
+// appears here. A signature naming one of them would make the other's call an
+// adaptation of somebody else's reading; naming both through an interface would put
+// a declaration in the way of a set whose whole point is that it is enumerated.
+func inlineTemplateFieldsOf(
+	valuesMapping types.ValuesMapping,
+	workload types.WorkloadTemplate,
+	artifacts types.OrderedMap[types.ArtifactEntry],
+	pipeline []types.PipelineStep,
+) []RecipeTemplateField {
 	var out []RecipeTemplateField
 	add := func(label, text string, keys ...string) {
 		if text == "" {
@@ -105,12 +176,12 @@ func RecipeTemplateFields(recipe *types.Recipe) []RecipeTemplateField {
 		}
 		out = append(out, RecipeTemplateField{Label: label, Text: text, AuthoredKeys: keys})
 	}
-	add(recipeFieldValuesMapping, recipe.Spec.ValuesMapping.Inline, recipeFieldValuesMapping)
-	add(recipeFieldWorkload, recipe.Spec.Workload.Inline, recipeFieldWorkload)
-	for k, v := range recipe.Spec.Artifacts.All() {
+	add(recipeFieldValuesMapping, valuesMapping.Inline, recipeFieldValuesMapping)
+	add(recipeFieldWorkload, workload.Inline, recipeFieldWorkload)
+	for k, v := range artifacts.All() {
 		add(artifactsLabelPrefix+k+"]", v.Inline, recipeFieldArtifacts, k)
 	}
-	for _, step := range recipe.Spec.Pipeline {
+	for _, step := range pipeline {
 		add(recipeFieldPipeline+"["+step.ID+"]."+recipeFieldPipelineWith,
 			step.With, recipeFieldPipeline, step.ID, recipeFieldPipelineWith)
 		add(recipeFieldPipeline+"["+step.ID+"]."+recipeFieldPipelineWhen,

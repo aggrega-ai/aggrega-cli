@@ -368,6 +368,8 @@ type renderedNameAxes interface {
 	constraint.NodeEnumerator
 	constraint.ProvidesKeyEnumerator
 	constraint.NodeTemplateFieldEnumerator
+	constraint.AttachmentEnumerator
+	constraint.AttachmentTemplateFieldEnumerator
 }
 
 // runRenderedNameRule invokes the rules declared over an authored template that
@@ -379,14 +381,25 @@ type renderedNameAxes interface {
 // The value reaches a Recipe's provides entries and its inline template fields
 // alike — the values mapping, the workload body, each artifacts entry, and each
 // pipeline step's input and its gate — because all of them render against the
-// node's own context. So both axes are walked here, in one call, rather than a
-// surface being covered at whatever later point happens to hold its text: a
-// surface left to a later reading is a surface whose reference resolves away into
-// emitted output before anything asks about it.
+// node's own context. It reaches the same fields on a per-component ATTACHMENT's
+// FeatureRecipe too, because an attachment's render context is derived from its
+// host node's and carries that node's answer. So every one of those axes is walked
+// here, in one call, rather than a surface being covered at whatever later point
+// happens to hold its text: a surface left to a later reading is a surface whose
+// reference resolves away into emitted output before anything asks about it.
 //
-// The two axes are two invocations because a check is invoked once per instance of
-// its declared subject and the two subjects are different kinds. They share one
-// predicate, so an author reading either finding is told the same thing.
+// Each axis is its own invocation because a check is invoked once per instance of
+// its declared subject and the subjects are different kinds. How many there are is
+// not written here, and the omission is deliberate: a count beside the calls it
+// counts is a second statement of what the calls already say, and a surface added
+// later would leave it wrong with nothing able to notice.
+//
+// The node-rooted axes share one predicate, so an author reading either finding is
+// told the same thing. The attachment axis does NOT, and that is the finding rather
+// than an inconsistency: on a node's own surface the reference is wrong only where
+// that node's provider reports no name, while on an attachment's surface it is the
+// wrong node's answer whatever the host reports. Two different faults, so two
+// conditions and two remedies.
 //
 // # Why here, and in this order
 //
@@ -443,8 +456,20 @@ func runRenderedNameRule(
 	if err != nil {
 		return err
 	}
-	return objectionsAsHalt(
+	if halt := objectionsAsHalt(
 		raised, "templates reading a name the node's provider does not report",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnNodeAttachmentTemplateFields(
+		ctx.Err, coordinates, coordinates, coordinates, view,
+		AttachmentTemplateReadsNoHostRenderedName,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(
+		raised, "attachment templates reading a name that is not the attachment's own",
 	)
 }
 

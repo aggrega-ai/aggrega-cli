@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -146,6 +147,86 @@ func existingPipeDeliveries(inject types.InjectPipe) []constraint.InjectDelivery
 var attachmentFRScope = templateScope{
 	data:    ProvidesContext{},
 	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},
+}
+
+// attachmentFRRenderScope is the reference set an attachment FeatureRecipe's
+// RENDER templates are checked against — its values mapping, its workload body,
+// each of its artifacts entries, and each of its pipeline steps' input and gate.
+// The universe is the full render context, because that is what those fields are
+// evaluated against: an attachment's context is derived from its host node's, with
+// the values and infra pillars replaced by the attachment's own and the attachment
+// instance named.
+//
+// It carries the SAME single narrowing as the locals-and-provides scope above and
+// for the same reason, which is the whole point of it being a second scope rather
+// than a second rule: context.rendered_name on any of these fields is the HOST
+// node's answer — the name the host's own bound provider reports for the output it
+// renders from the host Recipe's source — and an attachment is not that node. It
+// binds its own recipe and therefore its own provider, so the value is absent
+// whenever the HOST Recipe supplies no source even where the attachment's own
+// author did supply one, and it comes from a different target entirely whenever the
+// attachment's declared capability differs from its host's.
+//
+// A rule that refused the reference on two of an attachment's surfaces while
+// admitting it on the rest would be an inconsistency rather than a coverage bound:
+// the value has the same wrong provenance on all of them. Two scopes rather than
+// one is a consequence of the two surfaces being evaluated against two different
+// context TYPES — the locals and provides pass renders against the provides
+// context, these fields against the whole render context — and the narrowing they
+// share is declared identically at both so neither can be relaxed alone.
+//
+// It is deliberately NOT narrowed on the grounds that an attachment's supplied
+// source renders under the attachment's own identity, which is what a reader
+// reasonably assumes and is not what happens: for a chart-delivering attachment the
+// name those templates render against stays the host's, precisely so the resources
+// the chart's author declared are not renamed. The narrowing rests on where the
+// answer comes from rather than on which identity it spells.
+var attachmentFRRenderScope = templateScope{
+	data:    &types.TemplateContext{},
+	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},
+}
+
+// classifyAttachmentTemplateRenderedName decides whether one authored template
+// field on a per-component attachment reads the name its host node's target
+// renders author-supplied source under, and returns the refusal where it does.
+//
+// It is the ONE home of that decision, so the rule declared over these fields and
+// any later reader reach the same verdict. The refused reference is recovered from
+// the collected root accesses rather than from the keystrokes, so a read through a
+// with body or a variable bound to the identity pillar is refused exactly as the
+// direct spelling is.
+//
+// It looks for that ONE key rather than running the scope's whole admission walk,
+// and the narrowness is deliberate. These fields have never been checked against a
+// reference set, so a full walk would begin refusing references that render today —
+// a stale root resolving to an empty value is a defect, but it is a different
+// defect with a different remedy, and turning it into a halt here would reject
+// authoring on the strength of a rule nobody declared over this surface. The set
+// the author is told about is still derived from the scope rather than restated, so
+// what is refused and what is reported cannot disagree.
+//
+// A template that does not parse yields no refusal: evaluation reports the parse
+// error against the same text, so refusing it here as well would report one
+// authoring fault twice.
+func classifyAttachmentTemplateRenderedName(
+	text, leftDelim, rightDelim string,
+) *templateScopeViolation {
+	if text == "" {
+		return nil
+	}
+	tree, err := gotmpl.ParseTree(text, leftDelim, rightDelim)
+	if err != nil {
+		return nil
+	}
+	ref, reads := renderedNameRootRef(tree)
+	if !reads {
+		return nil
+	}
+	keys, gated := attachmentFRRenderScope.admittedKeys(identityContextRoot)
+	if !gated {
+		return nil
+	}
+	return &templateScopeViolation{Ref: ref, Admitted: keys, Level: scopeLevelKey}
 }
 
 // evalAttachmentFRProvides evaluates the attachment FeatureRecipe's provides

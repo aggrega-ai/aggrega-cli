@@ -786,6 +786,36 @@ type NodeTemplateFieldEnumerator interface {
 	NodeTemplateFields(node string) []TemplateFieldCoordinate
 }
 
+// AttachmentTemplateFieldEnumerator supplies the inline template fields the
+// FeatureRecipe one attachment binds on a node writes.
+//
+// The fields an attachment carries are supplied here and never through
+// [NodeTemplateFieldEnumerator], for the reason the attachment locals axis is its
+// own: an implementation folding an attachment's fields into a node's answer would
+// present two independently authored documents under one key, and a rule reading
+// the authored text off that answer would be handed whichever document was asked
+// last. The labels inside the two are chosen independently, so no node-rooted key
+// can name a field authored in a FeatureRecipe.
+//
+// The axis is keyed per node as well as per attachment, and that is what tells it
+// from the boundary-rooted axis below rather than a preference: a per-component
+// attachment is evaluated once for each component it reaches, against that
+// component's own render context, so the node is what selects the context the
+// fields are judged against.
+//
+// It enumerates what the DOCUMENT declares and never what some rule is about. An
+// implementation narrowing the set to the fields one rule cares for would make the
+// axis mean that rule rather than the document, and the coverage a caller reads off
+// the axis would then be a claim about the rule's own selection — which is the
+// unenumerable shape a field-keyed axis exists to remove. A rule with something to
+// select on reads a fact and selects.
+type AttachmentTemplateFieldEnumerator interface {
+	// AttachmentTemplateFields returns the inline template fields one attachment's
+	// FeatureRecipe writes on a node, in a deterministic order the implementation
+	// declares.
+	AttachmentTemplateFields(node string, attachment string) []TemplateFieldCoordinate
+}
+
 // BoundaryAttachmentTemplateFieldEnumerator supplies the inline template fields
 // the FeatureRecipe one attachment declared on a boundary writes.
 //

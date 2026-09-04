@@ -107,13 +107,22 @@ var recipeLocalsScope = templateScope{
 // is checked against. An attachment IS being resolved during that pass, so
 // .attachment_name names it and is admitted here.
 //
-// One narrowing: context.rendered_name. The identity an attachment's own supplied
-// source renders against is not the host node's — that is the whole reason the
-// two identities are carried separately through a render — so a value naming the
-// host's would name resources the attachment does not emit. An attachment
-// publishing an address for a resource its own chart named is a question this
-// surface does not answer yet, and refusing the reference says so rather than
-// resolving it to the wrong node's name.
+// One narrowing: context.rendered_name. The value on this surface is the HOST
+// node's answer — the name the host's own bound provider reports for the output it
+// renders from the host Recipe's source — and an attachment is not that node: it
+// binds its own recipe and therefore its own provider. So the value is not an
+// answer about the attachment's own output at all. It is absent whenever the HOST
+// Recipe supplies no source, even where the attachment's own author did supply one,
+// and it comes from a different target entirely whenever the attachment's declared
+// capability differs from its host's.
+//
+// It is deliberately NOT narrowed on the grounds that an attachment's supplied
+// source renders under the attachment's own identity, which is what a reader
+// reasonably assumes and is not what happens: for a chart-delivering attachment the
+// name those templates render against stays the host's, precisely so the resources
+// the chart's author declared are not renamed. The two coincide on that target and
+// part on the two counts above, so the narrowing rests on where the answer comes
+// from rather than on which identity it spells.
 var featureRecipeLocalsScope = templateScope{
 	data:    LocalsContext{},
 	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},

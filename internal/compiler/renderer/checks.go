@@ -1021,6 +1021,88 @@ var TemplateFieldRenderedNameAvailable = constraint.Check[
 	},
 }
 
+// AttachmentTemplateReadsNoHostRenderedName reports each inline template field a
+// per-component attachment's FeatureRecipe writes that reads the name a target
+// renders author-supplied source under.
+//
+// # Why the refusal is unconditional here, where the node's own rules read a fact
+//
+// On a node's own surfaces the reference is refused only where that node's provider
+// reports no such name, because where one IS reported the value is the right answer
+// for that node. On an attachment's surfaces there is no such case. The attachment's
+// render context is derived from its host node's, so the value standing at the key
+// is the HOST's answer whatever it is — the name the host's own bound provider
+// reports for output rendered from the HOST Recipe's source. An attachment binds its
+// own recipe and therefore its own provider, so that value is not an answer about
+// the attachment's own output at all: it is absent whenever the host supplies no
+// source even where the attachment's author did, and it comes from a different
+// target entirely whenever the two declared capabilities differ.
+//
+// So the fault is the reference's PROVENANCE rather than the host's report, and
+// reading the host's report would make the refusal fire on some hosts and not
+// others for one authored mistake.
+//
+// # Why it is this refusal rather than the one the node's surfaces raise
+//
+// It raises the reference-not-admitted condition every template surface shares,
+// which is what the attachment's locals and provides surfaces already raise for
+// this same key through their own scope. That is the honest identity: the surface
+// does not offer the reference, which is a different statement from the node-rooted
+// one that a provider reports no name — and telling an attachment author their
+// provider is at fault would send them to change a capability that is not the
+// problem. It also promises nothing: a refusal phrased as an absent report reads as
+// a report that might arrive, and whether an attachment should instead be served its
+// OWN provider's answer is a question this surface does not answer.
+//
+// # Why a boundary-scope attachment ends the rule
+//
+// Such an attachment renders once for a boundary rather than once per component,
+// against a context whose identity pillar is excluded whole — so the reference is
+// already refused there by the rules declared over that surface, and reporting it
+// here as well would give one authoring fault two positions.
+//
+// Its detail carries the offending reference bare, the field it was written in
+// captioned, and the set this surface defines captioned. The last two are derived
+// from the admission itself rather than restated, so what the build refuses and what
+// the author is told cannot disagree. The field is named as well as positioned
+// because the position cannot always name it: an artifacts entry's key is an output
+// filename, so it carries the character the locator separates its segments with and
+// the position stops at the block holding the entry.
+var AttachmentTemplateReadsNoHostRenderedName = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeAttachmentTemplateFieldSubject,
+]{
+	Sentinel: ErrTemplateUnknownRoot(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeAttachmentTemplateFieldSubject,
+	) []constraint.Objection {
+		if v.AttachmentExecutionScope(s.NodeID(), s.AttachmentName()) == executionScopeBoundary {
+			return nil
+		}
+		left, right := "{{", "}}"
+		if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
+			delims := v.AttachmentProviderArtifactTemplateDelimiters(s.NodeID(), s.AttachmentName())
+			left, right = delims.Left, delims.Right
+		}
+		violation := classifyAttachmentTemplateRenderedName(
+			v.AttachmentAuthoredTemplateText(s.NodeID(), s.AttachmentName(), s.TemplateField()),
+			left, right,
+		)
+		if violation == nil {
+			return nil
+		}
+		caption, phrase := templateAdmittedSetPhrase(violation)
+		return []constraint.Objection{s.RaiseWith(
+			ErrTemplateUnknownRoot(),
+			constraint.Uncaptioned(violation.Ref.Path),
+			constraint.Captioned("written in", s.TemplateField()),
+			constraint.Captioned(caption, phrase),
+		)}
+	},
+}
+
 // renderedNameSubject is the surface the rendered-name predicate needs of a
 // subject: the node whose provider is asked about, and the raising every subject
 // carries.

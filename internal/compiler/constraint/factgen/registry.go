@@ -3149,6 +3149,49 @@ var facts = []factDecl{
 			"this document to hand over.",
 	},
 	{
+		Name:        "attachment-authored-template-text",
+		Stage:       "described",
+		SourceField: "renderer.AttachmentTemplateFields(fr)",
+		Subject:     []string{"node", "attachment", "template-field"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+			{Name: "field", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "AttachmentAuthoredTemplateText is the template text the FeatureRecipe " +
+			"one attachment binds on a node writes for one of its inline template " +
+			"fields, as written and before anything is evaluated.\n\nThe field is a " +
+			"coordinate rather than part of this fact's name, on the reading both " +
+			"sibling authored-template-text facts carry: a FeatureRecipe carries " +
+			"several template fields and gains more over time, so naming each in its " +
+			"own fact would put the field identity in structure and a field added " +
+			"later would be silently ungated if any of its declarations were " +
+			"forgotten. Keyed by the field, the axis is data.\n\nIt is keyed by the " +
+			"node as well as the attachment, and neither coordinate is redundant. The " +
+			"attachment selects the document the text was written in; the node selects " +
+			"the render context that text is judged against, because a per-component " +
+			"attachment is evaluated once for each component it reaches and its " +
+			"context is derived from that component's own. This is what separates it " +
+			"from the boundary-rooted fact beside it, where one authored document " +
+			"reaches every component the boundary holds and no single component " +
+			"selects a context.\n\nThe fact is the text and not an analysis of it, on " +
+			"the reading every authored-text fact carries: a collected reference set " +
+			"is a judgement whose direction decides which rules may consume it, and " +
+			"handing over the text leaves that direction to the rule that needs " +
+			"it.\n\nWhat it does NOT reach is stated because an unstated bound reads " +
+			"as coverage. The FeatureRecipe's provides and locals entries are absent, " +
+			"each already refused directly by the scope those two surfaces are " +
+			"evaluated against, so a reference one of them makes is reported against " +
+			"its own surface rather than twice. Its inject mapping is absent because " +
+			"that surface is evaluated against the consuming node's delivery pipe " +
+			"rather than against this context, so a reference set derived from this " +
+			"one would be the wrong set for it. And a field whose content is imported " +
+			"from a file or a library is not enumerated, because that content is " +
+			"resolved when the render reaches it and there is nothing authored in this " +
+			"document to hand over.",
+	},
+	{
 		Name:        "boundary-attachment-authored-template-text",
 		Stage:       "described",
 		SourceField: "renderer.BoundaryScopeFRTemplateFields(fr)",

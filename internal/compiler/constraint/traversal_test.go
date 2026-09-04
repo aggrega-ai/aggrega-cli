@@ -92,6 +92,11 @@ type traversalFixture struct {
 	// read back out of the label.
 	nodeFields map[string][]TemplateFieldCoordinate
 
+	// attachFields is that shape again on the per-component attachment carrier,
+	// keyed by node AND attachment: the attachment says which FeatureRecipe wrote
+	// the field, the node says which render context it is judged against.
+	attachFields map[string][]TemplateFieldCoordinate
+
 	// boundaryPathFields carries bare names where the axis above carries a
 	// coordinate, and the difference is the carrier's rather than an
 	// inconsistency: a path field's name IS its authored key, one segment at the
@@ -175,6 +180,12 @@ func (f traversalFixture) BoundaryAttachmentTemplateFields(
 
 func (f traversalFixture) NodeTemplateFields(node string) []TemplateFieldCoordinate {
 	return f.nodeFields[fixtureKey(node)]
+}
+
+func (f traversalFixture) AttachmentTemplateFields(
+	node, attachment string,
+) []TemplateFieldCoordinate {
+	return f.attachFields[fixtureKey(node, attachment)]
 }
 
 func (f traversalFixture) BoundaryPathTemplateFields(boundary string) []string {
@@ -643,6 +654,31 @@ func newTraversalFixture() traversalFixture {
 				},
 			},
 		},
+		// The template fields the FeatureRecipe one per-component attachment binds
+		// writes, keyed by node AND attachment. The first two shapes are the ones the
+		// axes above carry; the third is deliberately a pipeline step's GATE, which
+		// the boundary-rooted enumeration does not carry at all — so a record for one
+		// here is what shows this axis is its own enumeration rather than the
+		// boundary one reached at a different key.
+		attachFields: map[string][]TemplateFieldCoordinate{
+			fixtureKey("web", "tls"): {
+				{
+					Value:        "valuesMapping",
+					SourceFile:   "featurerecipes/tls.yaml",
+					AuthoredKeys: []string{"valuesMapping"},
+				},
+				{
+					Value:        "artifacts[values.yaml]",
+					SourceFile:   "featurerecipes/tls.yaml",
+					AuthoredKeys: []string{"artifacts", "values.yaml"},
+				},
+				{
+					Value:        "pipeline[stamp].when",
+					SourceFile:   "featurerecipes/tls.yaml",
+					AuthoredKeys: []string{"pipeline", "stamp", "when"},
+				},
+			},
+		},
 		// The path fields the same scope writes. Both are carried because the two
 		// are separate subjects over one scope, which is what shows the axis is
 		// keyed by the field and not by the scope — a traversal invoking once per
@@ -963,6 +999,25 @@ func traversalCases() []traversalCase {
 				"featurerecipes/shared-db.yaml|.spec.valuesMapping",
 				"featurerecipes/shared-db.yaml|.spec.provides.dsn",
 				"featurerecipes/shared-db.yaml|.spec.artifacts",
+			},
+		},
+		{
+			// The same axis on the per-component attachment carrier. The records show
+			// the locator spelled inside the FEATURERECIPE and carrying neither the
+			// node nor the attachment: the field is written in that document, so a
+			// coordinate key spliced into the locator would spell a path the file does
+			// not contain. Both coordinates still reach the subject, which is what a
+			// rule over this kind reads its facts by. The artifacts record positions at
+			// the block and stops, its key carrying the dialect's own separator.
+			kind: SubjectNodeAttachmentTemplateField,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeAttachmentTemplateFields(cancelled, f, f, f, v,
+					raisingCheck[NodeAttachmentTemplateFieldSubject]())
+			},
+			want: []string{
+				"featurerecipes/tls.yaml|.spec.valuesMapping",
+				"featurerecipes/tls.yaml|.spec.artifacts",
+				"featurerecipes/tls.yaml|.spec.pipeline.stamp.when",
 			},
 		},
 		{
@@ -1742,6 +1797,22 @@ func coordinateFlowCases() []coordinateFlowCase {
 				"prod/edge|shared-db|valuesMapping",
 				"prod/edge|shared-db|provides[dsn]",
 				"prod/edge|shared-db|artifacts[cm.yaml]",
+			},
+		},
+		{
+			kind: SubjectNodeAttachmentTemplateField,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeAttachmentTemplateFieldSubject]) ([]Objection, error) {
+					return RunOnNodeAttachmentTemplateFields(nil, f, f, f, traversalView{}, c)
+				}, func(s NodeAttachmentTemplateFieldSubject) string {
+					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.TemplateField()
+				})
+			},
+			want: []string{
+				"web|tls|valuesMapping",
+				"web|tls|artifacts[values.yaml]",
+				"web|tls|pipeline[stamp].when",
 			},
 		},
 		{

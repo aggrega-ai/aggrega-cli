@@ -269,12 +269,19 @@ spec:
 		// alphabetically, because author order is the contract on that axis: the
 		// second entry reads the first, which is legal precisely because the first
 		// stands above it in this document.
+		// Its valuesMapping and its step's gate are both carried because the
+		// template-field axis over this carrier reaches them: a top-level scalar
+		// whose locator is one segment, and a field of a step whose locator descends
+		// through the step's id. The gate in particular is a field the
+		// boundary-rooted enumeration does not carry at all, so a locator over one
+		// resolving here is what shows the two axes are separate enumerations.
 		"featurerecipes/tls.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: FeatureRecipe
 metadata:
   name: tls
 spec:
+  valuesMapping: "issuer: {{ .locals.issuer }}"
   locals:
     issuer: "{{ .values.app.issuer }}"
     fullname: "{{ .attachment_name }}-{{ .locals.issuer }}"
@@ -282,6 +289,7 @@ spec:
     - id: stamp
       plugin: core/stamper:1.0.0
       function: mutate
+      when: "{{ .values.app.stamp }}"
   artifacts:
     values.yaml: "replicas: 2"
 `,
