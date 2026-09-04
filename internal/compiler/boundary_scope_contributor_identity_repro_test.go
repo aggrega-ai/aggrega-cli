@@ -37,7 +37,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
 // bsErrorChain walks an error's whole wrap tree and returns every frame's own
@@ -128,78 +127,114 @@ func TestReproDifferingBodiesHalt(t *testing.T) {
 	t.Logf("assembled stack:\n%s", raw)
 }
 
-// TestReproDeclaredNameClaimant drives the variant whose component publishes the
-// stack Output name the boundary-scope render DECLARES.
+// TestReproDeclaredNameClaimant drives the variant whose component is named so
+// that its own published endpoint reads almost the same as the identity the
+// boundary-scope render DECLARES, and holds the two apart.
 //
-// It is the false-positive shape: the host's check compared the name the render
-// declared against the other contributors' declarations, while the assembled stack
-// addressed that content by a different name — so it halted over a name the stack
-// never carried, and no edit an author could make would answer it.
+// This case witnesses separation. The stack Output name is derived by writing an
+// identity and an entry name into the alphabet an Output name admits, escaping
+// what that alphabet refuses rather than dropping it, so the derivation is
+// injective in the two together: one name is reached by one such pair and by no
+// other. A component reaching the attachment's name would therefore have to be
+// named exactly as the attachment's composed identity is written,
+// "bfr--zone-a--audit" — and an authored component identity opening on a reserved
+// scope is refused, so no author can write it. There is no input that puts the two
+// on one name, and so no halt available to assert here.
 //
-// It halts now, and the halt is a true positive: the name the render declares is
-// the name the stack carries, so a component publishing it really does reach the
-// same name. Both contributors are named in the author's own terms.
+// The host's refusal of two contributors reaching one derived name is exercised
+// end to end next door, by TestCloudFormationAttachmentOutputsOverlappingEntry_Halts:
+// a component-scope attachment derives its Output names from the component it is
+// attached to, so that component and its attachment meet on an entry name an
+// author wrote, which is a collision an author can still reach.
 func TestReproDeclaredNameClaimant(t *testing.T) {
 	t.Parallel()
-	bsAssertHostCatchesTheClaim(t, "declared-name")
+	bsAssertTheTwoIdentitiesStayApart(t, "declared-name")
 }
 
-// TestReproMintedNameClaimant drives the variant whose component publishes the
-// stack Output name the assembled stack actually carries for the boundary-scope
-// attachment.
+// TestReproMintedNameClaimant drives the variant whose component is named so that
+// its own published endpoint reads almost the same as the stack Output name the
+// assembled stack actually carries for the boundary-scope attachment, and holds
+// the two apart.
 //
-// It is the false-negative shape's component-versus-attachment form. The pair that
-// genuinely landed on one name reached the host's check under two different names,
-// so the host stayed silent and the only thing that objected was the guest's own
-// ledger, at merge time and in the guest's vocabulary.
+// The name a render declares and the name the assembled stack carries are derived
+// from one identity, so this variant and the one above ask one question. The pair
+// is kept because a regression splitting those two derivations would answer them
+// differently, and only the pair shows it.
 //
-// The two questions this and the case above ask have become one question, which is
-// the whole of what the fix does: the name declared and the name minted are derived
-// from one identity. Both are kept because a regression re-splitting the two
-// derivations would answer them differently again, and the pair is what shows it.
+// This case witnesses separation, for the same reason its sibling does: the
+// derivation is injective in the identity and the entry name together, so reaching
+// the attachment's name would need a component named exactly
+// "bfr--zone-a--audit", and an authored component identity opening on a reserved
+// scope is refused. The collision is unconstructible, so there is no halt to
+// assert here.
+//
+// The host's refusal of two contributors reaching one derived name is exercised
+// end to end next door, by TestCloudFormationAttachmentOutputsOverlappingEntry_Halts,
+// where a component-scope attachment and its host component meet on an entry name
+// an author wrote.
 func TestReproMintedNameClaimant(t *testing.T) {
 	t.Parallel()
-	bsAssertHostCatchesTheClaim(t, "minted-name")
+	bsAssertTheTwoIdentitiesStayApart(t, "minted-name")
 }
 
-// bsAssertHostCatchesTheClaim holds one claimant variant to a halt raised by the
-// HOST's derived-name check, naming both contributors in the author's own terms.
+// bsAssertTheTwoIdentitiesStayApart holds one claimant variant to the separation
+// the stack Output derivation guarantees, asserted on the assembled stack's own
+// names.
 //
-// Which side raises it is the property, not an implementation detail. The guest's
-// own ledger also refuses two entries reaching one name, at merge time — but it
-// speaks in the guest's vocabulary about a name it built, while the host's check
-// names the feature, the boundary it is attached at, and the component beside it,
-// which is what an author edits. A regression that let the host miss this would
-// still halt, so asserting only that the build failed would not see it.
-func bsAssertHostCatchesTheClaim(t *testing.T, variant string) {
+// The variant puts an authored component beside a boundary-scope attachment whose
+// composed identity reads almost the same, and both publish one entry name. Each
+// identity is written into the alphabet an Output name admits by escaping the
+// separators that alphabet refuses rather than dropping them, so the two arrive as
+// two names and the stack addresses both.
+//
+// Both names are asserted present, and asserted to be two names rather than one. A
+// case asserting only that the build completed would pass just as well if the
+// attachment published nothing at all.
+func bsAssertTheTwoIdentitiesStayApart(t *testing.T, variant string) {
 	t.Helper()
 
-	res, err := pipelinetest.BuildE(t, bsIdentityInput(variant))
-	if err == nil {
-		t.Fatalf("expected a halt: a component publishes the same Output name the attachment "+
-			"derives\nemitted: %v", bsSortedPaths(res.Artifacts))
+	// The name the component's own identity reaches, and the name the attachment's
+	// composed identity reaches. Both are written out rather than derived here,
+	// because a name computed through the derivation would agree with the
+	// derivation whatever it did.
+	const (
+		componentOutput  = "bfrQzhzoneQzhaQzhauditQQendpoint"
+		attachmentOutput = "bfrQzhQzhzoneQzhaQzhQzhauditQQendpoint"
+	)
+	if componentOutput == attachmentOutput {
+		t.Fatal("the two names this case holds apart are one string, so every assertion below " +
+			"reads one name twice and the separation is not under test")
 	}
-	chain := bsErrorChain(err)
-	t.Logf("BUILD HALTED, full chain:\n%s", chain)
 
-	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
-		t.Errorf("the halt is not the host's derived-name refusal, so the host is still missing "+
-			"a pair that lands on one name: %v", err)
+	res, err := pipelinetest.BuildE(t, bsIdentityInput(variant))
+	if err != nil {
+		t.Fatalf("expected the build to complete: a component and a boundary-scope attachment "+
+			"whose identities read alike reach two Output names\n%s", bsErrorChain(err))
 	}
-	for _, want := range []string{
-		`"BfrZoneAAuditEndpoint"`,
-		`derived by component "bfr-zone-a-audit"`,
-		`derived by feature "audit", attached at boundary "zone-a"`,
-	} {
-		if !strings.Contains(chain, want) {
-			t.Errorf("the halt does not carry %q, so a reader cannot tell which two things met", want)
+	t.Logf("emitted paths:\n  %s", strings.Join(bsSortedPaths(res.Artifacts), "\n  "))
+	stack, raw := findCfnStack(t, res.Artifacts, "stack")
+	t.Logf("assembled stack:\n%s", raw)
+	bsReportOutputs(t, stack)
+
+	outputs, ok := stack["Outputs"].(map[string]any)
+	if !ok {
+		t.Fatal("the assembled stack carries no Outputs section, so neither name is there to hold apart")
+	}
+	for _, want := range []string{componentOutput, attachmentOutput} {
+		if _, present := outputs[want]; !present {
+			t.Errorf("the assembled stack carries no Output %q: a component and a boundary-scope "+
+				"attachment each published an entry and the stack addresses fewer than two\ngot: %v",
+				want, mapKeys(outputs))
 		}
 	}
-	// The marker the compiler routes this contributor under reaches no reader.
+	// The marker the compiler routes this contributor under reaches no reader. The
+	// readable surface here is the emitted output rather than a halt, and both
+	// spellings are ones the compiler really builds: the synthetic node id is the
+	// marker followed by the instance and the boundary it was attached at.
 	for _, bad := range []string{"<boundary-fr>", "@zone-a"} {
-		if strings.Contains(chain, bad) {
-			t.Errorf("the halt carries %q, which is a marker the compiler built for its own "+
-				"dispatch and names nothing in the author's input", bad)
+		if bsAnyArtifactContains(res.Artifacts, bad) {
+			t.Errorf("the emitted output carries %q, which is a marker the compiler built for its "+
+				"own dispatch and names nothing in the author's input", bad)
 		}
 	}
 }
@@ -221,10 +256,17 @@ func TestReproDeclaredNameControl(t *testing.T) {
 	stack, raw := findCfnStack(t, res.Artifacts, "stack")
 	t.Logf("assembled stack:\n%s", raw)
 	bsReportOutputs(t, stack)
-	for _, absent := range []string{"BoundaryFrAuditZoneAEndpoint", "BfrZoneAAuditEndpoint"} {
-		t.Logf("does the whole emitted output contain %q anywhere? %v",
-			absent, bsAnyArtifactContains(res.Artifacts, absent))
-	}
+	// The path-less name is the one the attachment reaches when its identity drops
+	// the boundary, leaving the scope and the instance alone. It is written out
+	// under the same derivation the reported names are, so it stays a name the
+	// emitted output could actually carry: a probe naming a string no derivation
+	// can produce could only ever report the same answer. The whole emitted output
+	// is read rather than the stack alone, because a name travels further than the
+	// document it is declared in.
+	const pathLess = "bfrQzhQzhauditQQendpoint"
+	t.Logf("does the whole emitted output contain %q, the name the attachment reaches "+
+		"when its identity drops the boundary? %v",
+		pathLess, bsAnyArtifactContains(res.Artifacts, pathLess))
 }
 
 // bsReportOutputs reports the assembled stack's Outputs section, name by name
@@ -290,19 +332,28 @@ func TestReproDistinctResIdenticalValue(t *testing.T) {
 		t.Fatal("the assembled stack carries no Outputs section, so there is nothing to hold to account")
 	}
 	// Both boundaries' published entries, each under the identity composed from the
-	// boundary it was attached at.
-	for _, want := range []string{"BfrZoneAAuditEndpoint", "BfrZoneBAuditEndpoint"} {
+	// boundary it was attached at. The composed identity is the boundary-feature
+	// scope, the boundary and the instance; the provider writes it and the authored
+	// entry name into the alphabet an Output name admits, so each hyphen of the
+	// composition arrives as an escape rather than being dropped.
+	for _, want := range []string{
+		"bfrQzhQzhzoneQzhaQzhQzhauditQQendpoint",
+		"bfrQzhQzhzoneQzhbQzhQzhauditQQendpoint",
+	} {
 		if _, present := outputs[want]; !present {
 			t.Errorf("the assembled stack carries no Output %q: two contributors declared an entry "+
 				"and the stack addresses fewer than two\ngot: %v", want, mapKeys(outputs))
 		}
 	}
-	// The path-less name is the one the two used to collapse onto. Nothing may land
+	// The path-less name is the one two contributors reach when the identity drops
+	// the boundary, leaving the scope and the instance alone. Nothing may land
 	// there, in any emitted file — the assembled stack is not the only place a name
-	// travels to.
-	if bsAnyArtifactContains(res.Artifacts, "BoundaryFrAuditEndpoint") {
-		t.Error(`the emitted output still carries "BoundaryFrAuditEndpoint", the name two ` +
-			`contributors reached when the identity dropped the boundary`)
+	// travels to. It is written out under the same derivation the two names above
+	// are, so it remains a name the emitted output could actually carry: a control
+	// spelling a name no derivation can produce could never fire.
+	if bsAnyArtifactContains(res.Artifacts, "bfrQzhQzhauditQQendpoint") {
+		t.Error(`the emitted output still carries "bfrQzhQzhauditQQendpoint", the name two ` +
+			`contributors reach when the identity drops the boundary`)
 	}
 }
 

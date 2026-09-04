@@ -137,12 +137,12 @@ func TestCloudFormationFragment_IntraStackAndProjection(t *testing.T) {
 	// provides → Outputs projection: the fragment's provides block became stack
 	// Outputs, with the short-form intrinsics expanded to long form.
 	outputs := mustCfnMap(t, stack, "Outputs")
-	hostOut := mustCfnMap(t, outputs, "DbHost")
+	hostOut := mustCfnMap(t, outputs, "dbQQhost")
 	hostVal, ok := hostOut["Value"].(map[string]any)
 	if !ok || hostVal["Fn::GetAtt"] == nil {
-		t.Fatalf("Outputs.DbHost.Value is not an Fn::GetAtt intrinsic; got %#v", hostOut["Value"])
+		t.Fatalf("Outputs.dbQQhost.Value is not an Fn::GetAtt intrinsic; got %#v", hostOut["Value"])
 	}
-	for _, want := range []string{"DbPort", "DbProtocol"} {
+	for _, want := range []string{"dbQQport", "dbQQprotocol"} {
 		if _, present := outputs[want]; !present {
 			t.Fatalf("Outputs missing projected provides entry %q; got %v", want, mapKeys(outputs))
 		}
@@ -232,15 +232,15 @@ func TestCloudFormationTwoBoundary_CrossStackWiring(t *testing.T) {
 	// projection as its Value AND an Export.Name that the consumer stack can
 	// import. The output is named for the producing node and the entry together.
 	producerOutputs := mustCfnMap(t, producer, "Outputs")
-	hostOut := mustCfnMap(t, producerOutputs, "DbHost")
+	hostOut := mustCfnMap(t, producerOutputs, "dbQQhost")
 	hostVal, ok := hostOut["Value"].(map[string]any)
 	if !ok || hostVal["Fn::GetAtt"] == nil {
-		t.Fatalf("producer Outputs.DbHost.Value is not an Fn::GetAtt intrinsic; got %#v", hostOut["Value"])
+		t.Fatalf("producer Outputs.dbQQhost.Value is not an Fn::GetAtt intrinsic; got %#v", hostOut["Value"])
 	}
 	exportBlock := mustCfnMap(t, hostOut, "Export")
 	exportName, ok := exportBlock["Name"].(string)
 	if !ok || exportName == "" {
-		t.Fatalf("producer Outputs.DbHost.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
+		t.Fatalf("producer Outputs.dbQQhost.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
 	}
 	for _, seg := range []string{"aggrega-", "db", "host"} {
 		if !strings.Contains(exportName, seg) {
@@ -350,8 +350,8 @@ func TestCloudFormationTwoBoundary_CrossAccountGetStackOutput(t *testing.T) {
 	// The read targets the injected provides key, in the producer's region, under
 	// the producer's assume-role — all carried from the producer's placement
 	// annotations, all deterministic pointer strings the runtime resolves.
-	if getStackOutput["OutputName"] != "DbHost" {
-		t.Fatalf("Fn::GetStackOutput.OutputName = %#v, want \"DbHost\"", getStackOutput["OutputName"])
+	if getStackOutput["OutputName"] != "dbQQhost" {
+		t.Fatalf("Fn::GetStackOutput.OutputName = %#v, want \"dbQQhost\"", getStackOutput["OutputName"])
 	}
 	if getStackOutput["Region"] != "eu-west-1" {
 		t.Fatalf("Fn::GetStackOutput.Region = %#v, want \"eu-west-1\"", getStackOutput["Region"])
@@ -368,11 +368,11 @@ func TestCloudFormationTwoBoundary_CrossAccountGetStackOutput(t *testing.T) {
 	// Producer: the database's host output STILL carries an Export.Name even on the
 	// cross-account path — the publish adds the Export unconditionally.
 	producerOutputs := mustCfnMap(t, producer, "Outputs")
-	hostOut := mustCfnMap(t, producerOutputs, "DbHost")
+	hostOut := mustCfnMap(t, producerOutputs, "dbQQhost")
 	exportBlock := mustCfnMap(t, hostOut, "Export")
 	exportName, ok := exportBlock["Name"].(string)
 	if !ok || exportName == "" {
-		t.Fatalf("producer Outputs.DbHost.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
+		t.Fatalf("producer Outputs.dbQQhost.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
 	}
 	t.Logf("producer export name (present even on the cross-account path): %s", exportName)
 
@@ -444,11 +444,11 @@ func TestCloudFormationTwoBoundary_SameAccountDeclaredImportValue(t *testing.T) 
 	// Producer: the database's host output carries an Export.Name the consumer
 	// stack can import.
 	producerOutputs := mustCfnMap(t, producer, "Outputs")
-	hostOut := mustCfnMap(t, producerOutputs, "DbHost")
+	hostOut := mustCfnMap(t, producerOutputs, "dbQQhost")
 	exportBlock := mustCfnMap(t, hostOut, "Export")
 	exportName, ok := exportBlock["Name"].(string)
 	if !ok || exportName == "" {
-		t.Fatalf("producer Outputs.DbHost.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
+		t.Fatalf("producer Outputs.dbQQhost.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
 	}
 	t.Logf("producer export name: %s", exportName)
 

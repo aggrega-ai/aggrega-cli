@@ -46,9 +46,12 @@ const (
 	cfnCarriedNameLegalParameter   = "paymentsdbRetention"
 
 	// The stack Output name the provider derives for the legal build's one
-	// provides entry. The entry is authored `queue_url`; its underscore is a word
-	// boundary to the derivation, so the emitted name carries none.
-	cfnCarriedNameLegalOutput = "PaymentsdbQueueUrl"
+	// provides entry. The component and the entry are each written into the
+	// alphabet an Output name admits and joined by a sequence neither can carry;
+	// the entry is authored `queue_url`, and its underscore is written as an
+	// escape rather than dropped, so two entries differing only in punctuation
+	// stay apart.
+	cfnCarriedNameLegalOutput = "paymentsdbQQqueueQzuurl"
 )
 
 func cfnCarriedNameInput(release string) pipelinetest.Input {
@@ -118,8 +121,10 @@ func TestCloudFormationCarriedSectionName_RefusesANameTheTemplateCannotHold(t *t
 //
 // It also asserts the asymmetry in the same document. The parameter's name is the
 // author's text verbatim; the Output name beside it is the provider's own
-// derivation, which drops the separator its authored entry carried. That is why
-// one surface needs a refusal and the other cannot.
+// derivation, which writes the separator its authored entry carried as an
+// escape. That is why one surface needs a refusal and the other cannot: a
+// derived name can always be written into the alphabet, an authored one can only
+// be refused.
 func TestCloudFormationCarriedSectionName_ALegalNameIsEmittedUnchanged(t *testing.T) {
 	t.Parallel()
 	result := pipelinetest.Build(t, cfnCarriedNameInput(cfnCarriedNameLegalRelease))

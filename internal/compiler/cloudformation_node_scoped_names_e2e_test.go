@@ -261,7 +261,7 @@ func TestCloudFormationMixedEngines_EachEngineCarriesItsInstance(t *testing.T) {
 	}
 
 	outputs := mustCfnMap(t, stack, "Outputs")
-	for _, want := range []string{"ReportingPgHost", "ReportingPgProtocol", "LedgerMyHost", "LedgerMyProtocol"} {
+	for _, want := range []string{"reportingQzhpgQQhost", "reportingQzhpgQQprotocol", "ledgerQzhmyQQhost", "ledgerQzhmyQQprotocol"} {
 		if _, present := outputs[want]; !present {
 			t.Fatalf("Outputs missing %q; got %v", want, mapKeys(outputs))
 		}

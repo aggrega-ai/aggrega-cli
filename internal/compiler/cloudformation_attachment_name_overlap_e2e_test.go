@@ -461,8 +461,8 @@ func TestCloudFormationAttachmentOutputs_TheStackCarriesEachContributorsEntry(t 
 	// host it renders against — so the two entries are told apart by the entry
 	// names their authors chose rather than by their scopes.
 	const (
-		hostEntry       = "AlphaEndpoint"
-		attachmentEntry = "AlphaAlarmName"
+		hostEntry       = "alphaQQEndpoint"
+		attachmentEntry = "alphaQQAlarmName"
 	)
 
 	if _, present := outputs[attachmentEntry]; !present {
@@ -572,7 +572,7 @@ func TestCloudFormationAttachmentOutputsOverlappingEntry_Halts(t *testing.T) {
 		// what the stack would have addressed one output by, and it is the string
 		// an author will not find by searching their own files, which is why the
 		// report has to carry it.
-		if !strings.Contains(f, `"AlphaEndpoint"`) {
+		if !strings.Contains(f, `"alphaQQEndpoint"`) {
 			t.Errorf("a finding does not name the Output name the two contributors met on\ngot: %s", f)
 		}
 		// And the key space, so the report is not read as a resource collision.

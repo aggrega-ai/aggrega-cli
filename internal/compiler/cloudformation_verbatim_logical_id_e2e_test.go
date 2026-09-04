@@ -14,9 +14,12 @@
 //
 // The legal build's emitted Outputs is what makes the asymmetry readable in one
 // document rather than argued: the provider derives every Output name itself,
-// reading the contributing component and the entry as words and joining them, so
-// a separator in either never reaches an Output name. The resource logical id
-// passes through instead, which is why it is the surface that needs a refusal.
+// writing the contributing component and the entry into the alphabet an Output
+// name admits and joining them, so a separator in either arrives as an escape
+// and the provider always has a legal name to emit. The resource logical id
+// passes through as authored instead, so there is no name for the provider to
+// derive and refusing is the only thing left — which is why it is the surface
+// that needs a refusal.
 
 package compiler_test
 
@@ -39,9 +42,11 @@ const (
 
 	// The stack Output name the provider derives for the legal build's one
 	// provides entry, written as the literal the emitted template carries. The
-	// entry is authored `queue_url`; its underscore is a word boundary to the
-	// derivation, so the emitted name carries none.
-	cfnVerbatimIDLegalOutput = "PaymentsdbprimaryQueueUrl"
+	// component and the entry are each written into the alphabet an Output name
+	// admits and joined by a sequence neither can carry; the entry is authored
+	// `queue_url`, and its underscore is written as an escape rather than
+	// dropped, so two entries differing only in punctuation stay apart.
+	cfnVerbatimIDLegalOutput = "paymentsdbprimaryQQqueueQzuurl"
 )
 
 func cfnVerbatimIDInput(release string) pipelinetest.Input {
@@ -107,8 +112,9 @@ func TestCloudFormationVerbatimLogicalID_RefusesAnIDTheTemplateCannotHold(t *tes
 //
 // It also asserts the asymmetry in the same document. The resource logical id is
 // the author's text verbatim; the Output name is the provider's own derivation,
-// which drops the separator its authored entry carried. That is why one surface
-// needs a refusal and the other cannot.
+// which writes the separator its authored entry carried as an escape. That is
+// why one surface needs a refusal and the other cannot: a derived name can
+// always be written into the alphabet, an authored one can only be refused.
 func TestCloudFormationVerbatimLogicalID_ALegalIDIsEmittedUnchanged(t *testing.T) {
 	t.Parallel()
 	result := pipelinetest.Build(t, cfnVerbatimIDInput(cfnVerbatimIDLegalRelease))
