@@ -1,0 +1,33 @@
+# One boundary, holding both components and the boundary-wide settings
+# attachment, with no infra authored anywhere.
+#
+# Everything lands in a single boundary deliberately: the three declared
+# defaults have to be readable off ONE assembled stack, because the claim being
+# made is that one build answers the same question differently depending on
+# which authoring surface declared the default. Split across boundaries, each
+# half would be a separate stack and the comparison would rest on the reader
+# joining two artifacts.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-attachment-defaults
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-attachment-defaults.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    edge:
+      directory: ./dist/edge
+      features:
+        # Attached with no infra block. The Feature declares an infra default
+        # for the tier, and the realization folds that tier into the parameter
+        # value, so a default that does not arrive renders an empty fold.
+        shared-settings:
+          type: core/shared-config
+      components:
+        # No infra on either component. The database's own Component declares
+        # defaults for its whole operational surface, and the consumer declares
+        # one for its parameter tier.
+        payments-db: {}
+        reporting-app: {}

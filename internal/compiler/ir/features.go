@@ -400,6 +400,14 @@ func aggregateCanonicalPath(topoNode *topology.TopologyNode) string {
 // mergeContribution body, whatever the attachment produces. There is no
 // second construction path for a credential to drift down, and no second
 // precedence semantic for one to be governed by.
+//
+// # Declared defaults
+//
+// Once every tier has folded, each attachment's schema-declared pillar defaults
+// fill the leaves the cascade left absent, so a declared default reaches the
+// rendered output instead of being read only by the conformance gate. It runs
+// after the cascade rather than as a tier of its own, and fillAttachmentSchemaDefaults
+// states why that ordering is the contract rather than an implementation detail.
 func collectNodeFeatures(
 	nodeID string,
 	topoNode *topology.TopologyNode,
@@ -523,6 +531,36 @@ func collectNodeFeatures(
 		}
 	}
 
+	// One compiled Feature schema per attachment type, for the whole of this
+	// node's post-cascade work. Both passes below read what an attachment's
+	// Feature declares, so compiling once is what makes it structural rather
+	// than incidental that they cannot hold different answers for one type: a
+	// materialised default and the sensitivity marking over it are read off the
+	// same schema, and a second compile could in principle answer differently.
+	schemaCache := map[string]compactform.Schema{}
+	schemaMiss := map[string]bool{}
+	compiledFor := func(featureType string) (compactform.Schema, bool) {
+		if c, cached := schemaCache[featureType]; cached {
+			return c, true
+		}
+		if schemaMiss[featureType] {
+			return nil, false
+		}
+		compiled, ok := CompileFeatureSchema(catalogLookup, featureType)
+		if !ok {
+			schemaMiss[featureType] = true
+			return nil, false
+		}
+		schemaCache[featureType] = compiled
+		return compiled, true
+	}
+
+	// Materialise each attachment's schema-declared pillar defaults. Both
+	// halves of where this sits are the contract rather than an ordering
+	// convenience: after the whole cascade, and before the two derivations
+	// below. fillAttachmentSchemaDefaults states why for each half.
+	fillAttachmentSchemaDefaults(result, compiledFor)
+
 	// Derive top-level Origin / AnnotationKey / AnnotationSource per
 	// IRFeatureEntry from the per-leaf provenance maps.
 	finalizeTopLevelOrigin(result)
@@ -530,7 +568,7 @@ func collectNodeFeatures(
 	// Complete the declaration-derived per-attachment facts — the attached
 	// Feature's labels, the declared slot the attachment fills, and the two
 	// sensitivity facts — over the merged attachments.
-	finalizeAttachmentFacts(result, topoNode, catalogLookup)
+	finalizeAttachmentFacts(result, topoNode, catalogLookup, compiledFor)
 
 	return result, nil
 }
@@ -931,6 +969,76 @@ func mergeLeaf(
 	take(incomingProv.toFieldProvenance())
 }
 
+// fillAttachmentSchemaDefaults materialises every merged attachment's
+// schema-declared pillar defaults into that attachment's values and infra, for
+// the leaves nothing authored. An authored value always wins and the default
+// fills only its omitted siblings, which is the same contract a Component's own
+// pillars and a socket's per-edge pillars are filled under — a declared default
+// reaches the rendered output rather than being read only by the gate that
+// validates against it.
+//
+// # Why this runs at graph build rather than at rendering
+//
+// The three inputs converge here and nowhere later: the attachment's resolved
+// Feature, that Feature's compiled schema, and the merged pillar maps. The
+// rendering side is deliberately free of catalog knowledge, so reaching a
+// Feature's schema there would mean carrying the catalog into the render
+// context — and then a default would arrive by a route no other pillar's does.
+//
+// # Why it runs AFTER the whole cascade, and not as a tier
+//
+// A default is not an authoring act competing for a leaf; it is what stands
+// where no authoring act reached. Folded in as a contribution it would enter
+// the precedence contest, where mergeLeaf hands a first-sight contribution the
+// leaf and lets a later contribution of equal or higher scope take it — so the
+// default would be displaceable by scope rank, and worse, could itself displace
+// a tier that had not yet been visited. Running it once over the completed
+// merge means the question it answers is exactly "did anything supply this
+// leaf", which is the question a default is for.
+//
+// # Why it runs BEFORE the two derivations that follow it
+//
+// The per-attachment facts derived after this pass include which leaves the
+// attachment holds at a path its Feature declares sensitive. A materialised
+// default is a datum the graph carries, so a marking read off the pre-fill
+// payload would leave a default sitting at a declared-sensitive leaf unnamed —
+// the same reasoning that makes a node's own marking read its filled pillars
+// rather than the blocks they were built from.
+//
+// # Why a filled leaf records no provenance
+//
+// The provenance maps answer which authoring act produced a leaf, and their
+// vocabulary is explicit authoring versus annotation-driven expansion. A
+// schema default is neither, so stamping either onto a filled leaf would assert
+// something nobody wrote — and an attachment whose every leaf came from a
+// default would then report itself as explicitly authored. Leaving the record
+// absent is the honest answer and is the one every reader of these maps already
+// handles: a leaf they hold nothing for reads as naming no authoring act and no
+// site, which is what a default is.
+func fillAttachmentSchemaDefaults(
+	result *featureResult,
+	compiledFor func(featureType string) (compactform.Schema, bool),
+) {
+	for name, entry := range result.Features.All() {
+		compiled, ok := compiledFor(entry.Type)
+		if !ok {
+			continue
+		}
+		changed := false
+		if defs := compactform.PillarDefaults(compiled, pillarValues); defs.Len() > 0 {
+			entry.Values = mergeSchemaDefaults(entry.Values, defs)
+			changed = true
+		}
+		if defs := compactform.PillarDefaults(compiled, pillarInfra); defs.Len() > 0 {
+			entry.Infra = mergeSchemaDefaults(entry.Infra, defs)
+			changed = true
+		}
+		if changed {
+			result.Features.Set(name, entry)
+		}
+	}
+}
+
 // finalizeTopLevelOrigin walks every IRFeatureEntry in the per-node
 // result and derives the top-level Origin / AnnotationKey /
 // AnnotationSource fields from per-leaf FieldProvenance across both
@@ -1075,7 +1183,18 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 // Every input is a declaration or a mapping the compiler itself built. No value
 // is inspected, and no meaning is read out of a name: the attachment's name is
 // used as an exact key against the declared slot map, nothing more.
-func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyNode, catalogLookup resolver.CatalogLookup) {
+// The compiled schema arrives through the caller's memo rather than being
+// resolved here, so the declarations this pass reads are the same ones the
+// default-materialisation pass filled from. Two independent compiles of one
+// Feature would agree on the day they were written, and that agreement is
+// exactly what would hide a divergence between a materialised default and the
+// marking asked of it.
+func finalizeAttachmentFacts(
+	result *featureResult,
+	topoNode *topology.TopologyNode,
+	catalogLookup resolver.CatalogLookup,
+	compiledFor func(featureType string) (compactform.Schema, bool),
+) {
 	if result.Features.Len() == 0 {
 		return
 	}
@@ -1093,7 +1212,7 @@ func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyN
 			return d
 		}
 		var declared resolver.SensitiveLeaves
-		if compiled, ok := CompileFeatureSchema(catalogLookup, featureType); ok {
+		if compiled, ok := compiledFor(featureType); ok {
 			declared = resolver.DeclaredSensitiveLeaves(compiled)
 		}
 		declaredCache[featureType] = declared
@@ -1467,6 +1586,27 @@ func collectCompFeaturesRecursive(
 // Only the infra pillar is offered to the derivation, because a boundary-level
 // attachment authors no values — the Release pillar-split forbids a values block
 // at boundary level, and [types.IRBoundaryFeature] has no field for one.
+//
+// # Declared defaults, and why this surface fills its own
+//
+// The attached Feature's schema-declared infra defaults materialise here, for
+// the keys the boundary authored nothing at. It is the same contract every other
+// pillar is filled under — the author wins and the default fills the omitted
+// siblings — and it has to be applied here rather than inherited, because a
+// boundary-level attachment does not reach the graph through the per-node
+// cascade at all: it is projected by this walk and read straight from the
+// projection by the boundary-scope dispatch. So the per-node fill cannot reach
+// it and a surface that looked covered would render an empty value.
+//
+// Filling at projection time is also what keeps the two readers of this infra in
+// agreement. The rendered artifact and the pinned source identity are both
+// resolved against this same field, so a default introduced any later would
+// leave a build resolving one source and a pin naming another.
+//
+// The values pillar is deliberately not filled: there is no field to hold it,
+// and the boundary-scope context supplies an empty values pillar by
+// construction, so a default materialised for it would be carrying a value
+// nothing can read.
 func buildBoundaryFeaturesProjection(
 	boundaries types.OrderedMap[types.Boundary],
 	catalogLookup resolver.CatalogLookup,
@@ -1476,13 +1616,36 @@ func buildBoundaryFeaturesProjection(
 	// uncached, and two boundaries attaching one Feature type read the same
 	// answer. The memo's lifetime is this projection, so it cannot outlive the
 	// catalog it was read from.
+	//
+	// The compiled schema is memoised rather than the derived sensitivity,
+	// because two readers now need it: the default materialisation below and the
+	// marking asked of what that materialisation produced. Compiling once is
+	// what makes it structural that the two cannot disagree about what one
+	// Feature declares.
+	schemaCache := map[string]compactform.Schema{}
+	schemaMiss := map[string]bool{}
+	compiledFor := func(featureType string) (compactform.Schema, bool) {
+		if c, cached := schemaCache[featureType]; cached {
+			return c, true
+		}
+		if schemaMiss[featureType] {
+			return nil, false
+		}
+		compiled, ok := CompileFeatureSchema(catalogLookup, featureType)
+		if !ok {
+			schemaMiss[featureType] = true
+			return nil, false
+		}
+		schemaCache[featureType] = compiled
+		return compiled, true
+	}
 	declaredCache := map[string]resolver.SensitiveLeaves{}
 	declaredFor := func(featureType string) resolver.SensitiveLeaves {
 		if d, cached := declaredCache[featureType]; cached {
 			return d
 		}
 		var declared resolver.SensitiveLeaves
-		if compiled, ok := CompileFeatureSchema(catalogLookup, featureType); ok {
+		if compiled, ok := compiledFor(featureType); ok {
 			declared = resolver.DeclaredSensitiveLeaves(compiled)
 		}
 		declaredCache[featureType] = declared
@@ -1498,11 +1661,21 @@ func buildBoundaryFeaturesProjection(
 			if boundary.Features.Len() > 0 {
 				inner := types.OrderedMap[types.IRBoundaryFeature]{}
 				for fname, bf := range boundary.Features.All() {
+					infra := bf.Infra
+					if compiled, ok := compiledFor(bf.Type); ok {
+						if defs := compactform.PillarDefaults(compiled, pillarInfra); defs.Len() > 0 {
+							infra = mergeSchemaDefaults(bf.Infra, defs)
+						}
+					}
 					inner.Set(fname, types.IRBoundaryFeature{
 						Type:  bf.Type,
-						Infra: bf.Infra,
+						Infra: infra,
+						// Marked over the FILLED pillar, not the authored block. A
+						// default the schema materialised at a declared-sensitive
+						// leaf is a datum the projection carries, so a marking read
+						// off the authored block alone would leave it unnamed.
 						SensitiveAuthoredLeaves: deriveAuthoredSensitiveLeaves(
-							types.OrderedMap[any]{}, bf.Infra, declaredFor(bf.Type),
+							types.OrderedMap[any]{}, infra, declaredFor(bf.Type),
 						),
 					})
 				}

@@ -1,0 +1,59 @@
+# Developer intent authored so that every schema-declared default in play is
+# OMITTED rather than restated. The point of the fixture is what arrives when
+# nothing is written down, so a fixture that re-authored a declared default
+# would render the right bytes while proving nothing about where they came from.
+#
+# Three declared defaults meet in one build here, and each sits on a different
+# authoring surface:
+#
+#   - the consumer Component declares an infra default, and the deployment
+#     authors no infra for that component at all;
+#   - the alarm attachment's Feature declares a values default, and this
+#     document attaches it without authoring that value;
+#   - the settings attachment's Feature declares an infra default, and the
+#     deployment attaches it without authoring any infra.
+#
+# The first is the control. It renders from a surface whose defaults already
+# materialise, so a build in which it is empty means the fixture is broken
+# rather than that the subject regressed — which is what makes the other two
+# readable as statements about the attachment surface specifically.
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-attachment-defaults
+  version: "1.0.0"
+  description: >
+    A managed database carrying a storage alarm, and an application that reads
+    it. Every schema-declared default the deployment relies on is left
+    unauthored, so the rendered output shows which authoring surfaces
+    materialise a declared default and which do not.
+spec:
+  components:
+    payments-db:
+      type: core/datastore/mariadb
+      values:
+        database: appdb
+        user: appuser
+      features:
+        # The engine owns the master password on a managed instance, so the slot
+        # the Component declares is delegated rather than filled.
+        root_password:
+          type: core/generated-secret
+        # Attached with no values at all. The Feature declares a default for the
+        # headroom, and the realization renders that headroom into two places
+        # in the alarm, so a default that does not arrive is visible twice.
+        storage-headroom:
+          type: example/storage-alarm
+
+    reporting-app:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /reporting/db-host
+      uses:
+        database:
+          primary:
+            target: payments-db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host
