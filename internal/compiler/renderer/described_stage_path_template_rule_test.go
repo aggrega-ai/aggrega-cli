@@ -84,6 +84,7 @@ func declaredPathTemplateHalt(t *testing.T, directory, subDirectory string) erro
 	view := newDescribedView(
 		context.Background(), graph, stubGraphFacts{},
 		recipes, lookup, resolved.Release, newStepDescriptorMemo(), nil, nil,
+		nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built; there is nothing for the rules to read")

@@ -14,12 +14,18 @@ import (
 // for the duration of the render and never persisted — so what this function
 // puts on it is exactly what a template can read.
 //
-// It fills the node's identity and topology (instance_id, labels, the three
-// cascading annotation buckets, the pre-hydrated inject pipe, and the enriched
-// uses map keyed by the alias the developer gave each edge), the evaluated
-// values and infra dictionaries, the node's own resolved provides, its
+// It fills the node's identity and topology (instance_id, the name its provider
+// reports for the output it renders from author-supplied source, labels, the
+// three cascading annotation buckets, the pre-hydrated inject pipe, and the
+// enriched uses map keyed by the alias the developer gave each edge), the
+// evaluated values and infra dictionaries, the node's own resolved provides, its
 // attachments in author order, and the immutable inject_raw record of what the
 // developer actually authored.
+//
+// The reported name is taken from the pass that collected it before any node was
+// rendered rather than asked for here, so every surface that reads it reads one
+// answer. A node whose provider reports none carries an empty value, and the rule
+// declared over authored text refuses a template that reads it in that case.
 //
 // Several fields are deliberately left empty here and filled by whoever owns
 // them, which is the trap for a reader who assumes the returned context is
@@ -35,6 +41,7 @@ func AssembleNodeContext(
 	declaredProvides NodeDeclaredProvides,
 	inject types.InjectPipe,
 	injectRaw any,
+	renderedNames NodeRenderedNames,
 ) *types.TemplateContext {
 	node, _ := graph.Spec.Nodes.Get(nodeID)
 
@@ -80,11 +87,15 @@ func AssembleNodeContext(
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{
-			InstanceID:  encodeNodeIdentity(nodeID),
-			Labels:      node.Labels,
-			Annotations: annotations,
-			Inject:      inject,
-			Uses:        uses,
+			InstanceID: encodeNodeIdentity(nodeID),
+			// Empty where the node's provider reports no such name, which is the
+			// answer rather than an omission: what the compiler built for the node is
+			// named after the identity above.
+			RenderedName: renderedNames[nodeID],
+			Labels:       node.Labels,
+			Annotations:  annotations,
+			Inject:       inject,
+			Uses:         uses,
 		},
 		Values: values,
 		Infra:  infra,

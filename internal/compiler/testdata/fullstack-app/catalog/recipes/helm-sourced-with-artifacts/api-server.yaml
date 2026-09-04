@@ -8,7 +8,11 @@ spec:
   implements: core/compute/api-server
   source: ./charts/api-server
   provides:
-    host: "{{ .context.instance_id }}.svc.cluster.local"
+    # The chart's own Service is named after the release name, so the address a
+    # consumer dials is built from the name this target renders that chart under
+    # rather than from the node's identity. The two are written in different
+    # alphabets and differ for an identity carrying an underscore or a capital.
+    host: "{{ .context.rendered_name }}.svc.cluster.local"
     service_port: "{{ optional .infra `port` 8080 }}"
   locals:
     primary_compute: api

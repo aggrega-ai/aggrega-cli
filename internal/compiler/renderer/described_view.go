@@ -128,6 +128,19 @@ type describedView struct {
 	// which carries that provider's own retained self-report.
 	engineFactory EngineFactory
 
+	// renderedNames is the name each node's own provider reported for the output
+	// it renders from that node's author-supplied source, as the pass ahead of
+	// this presentation collected it. A node whose provider reported none is
+	// absent.
+	//
+	// It is TAKEN rather than asked for here, and that is what keeps the fact
+	// single-sourced. The answers reach two readers — the rule declared over a
+	// provides template that names the value, and the evaluation that renders one
+	// — and a presentation asking the guest again would be a second producer of
+	// one fact, free to disagree with the first about a name neither of them
+	// composed.
+	renderedNames NodeRenderedNames
+
 	// refusals records the plugin self-reports the accessors below asked for and
 	// could not obtain. It is a value rather than a pointer so every presentation
 	// has one without a constructor supplying it: a nil record would put the
@@ -172,6 +185,7 @@ func newDescribedView(
 	descriptors *stepDescriptorMemo,
 	lookup pluginpath.Lookup,
 	engineFactory EngineFactory,
+	renderedNames NodeRenderedNames,
 ) constraint.DescribedView {
 	if graph == nil || earlier == nil || descriptors == nil {
 		return nil
@@ -186,7 +200,31 @@ func newDescribedView(
 		describe:      stepDescriberOver(descriptors, lookup),
 		lookup:        lookup,
 		engineFactory: engineFactory,
+		renderedNames: renderedNames,
 	}
+}
+
+// NodeRenderedName returns the name the provider rendering a node's own documents
+// reported it will give the resources it renders from source the author supplied,
+// empty when it reported none.
+//
+// It answers from the collection taken ahead of this presentation rather than by
+// asking the guest again, so the name a rule reads and the name a provides
+// template resolves to are one answer. A node absent from that collection has no
+// such name — the same answer a node with no bound Recipe gives, and the same
+// answer for the author, who has nothing of this kind to read either way.
+func (v *describedView) NodeRenderedName(node string) string {
+	return v.renderedNames[node]
+}
+
+// NodeDeclaresAuthoredSource reports whether a node's Recipe declares source the
+// author supplied, read from the text that Recipe wrote.
+//
+// It reads the authored value through the same predicate the render's own source
+// resolution is gated on, so the presented fact is the one the render acts on. A
+// node with no bound Recipe declares none.
+func (v *describedView) NodeDeclaresAuthoredSource(node string) bool {
+	return recipeSourceDeclared(v.recipes[node])
 }
 
 // StepPluginCompatibleCapabilities returns the provider capabilities the plugin

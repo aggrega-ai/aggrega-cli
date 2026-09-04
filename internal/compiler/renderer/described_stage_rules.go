@@ -354,6 +354,45 @@ func runAuthoredProvidesRule(
 	return objectionsAsHalt(raised, "provides entries that reach outside the data they are evaluated against")
 }
 
+// runRenderedNameRule invokes the rule declared over a provides entry that reads
+// the name its target renders author-supplied source under, and returns what it
+// raised as the render's halt.
+//
+// It is a separate call from the self-containment reading above rather than a
+// second rule inside it, because the two refuse different things and an author
+// fixes them differently: that one is about a reference reaching outside the data
+// the surface carries at all, this one about a reference the surface does carry
+// and this node's provider has nothing to fill. Folding them into one invocation
+// would report one identity for two faults and give a reader one remedy for both.
+//
+// It is asked immediately after that reading, and the order is the coarse-first
+// order the block already keeps: a template reaching outside its data is refused
+// before one that reads a value inside it. It runs before anything is evaluated,
+// for the reason every rule in this block does — the value a refusal exists to
+// prevent is exactly the one evaluation would produce.
+//
+// It carries no plugin-resolution guard, and that is deliberate rather than an
+// oversight. A render that resolved no plugin reports no name for any node, so
+// every provides entry reading the key is refused there — which is the honest
+// answer rather than an over-refusal: such a render has no provider to supply
+// the value and would resolve the reference away.
+func runRenderedNameRule(
+	ctx context.Context,
+	view constraint.DescribedView,
+	coordinates authoredProvidesAxes,
+) error {
+	if view == nil || coordinates == nil {
+		return nil
+	}
+	raised, err := constraint.RunOnNodeProvidesKeys(
+		ctx.Err, coordinates, coordinates, view, ProvidesTemplateRenderedNameAvailable,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(raised, "provides entries reading a name the node's provider does not report")
+}
+
 // authoredLocalsAxes is the axis pair the rules over an authored locals entry are
 // invoked once per: the node set, and the locals each node's Recipe declares.
 //

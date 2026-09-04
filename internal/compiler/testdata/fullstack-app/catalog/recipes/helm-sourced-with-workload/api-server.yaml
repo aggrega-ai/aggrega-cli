@@ -14,7 +14,13 @@ spec:
   implements: core/compute/api-server
   source: ./charts/api-server
   provides:
-    host: "{{ .context.instance_id }}.svc.cluster.local"
+    # This node emits two differently named sets of resources, and the published
+    # address names the one a consumer dials: the vendored chart's own Service,
+    # named after the release name this target renders that chart under. The
+    # manifests synthesized from the workload beside it are named after the
+    # node's identity instead, which is what `.context.instance_id` carries —
+    # so the two names are both correct and neither stands in for the other.
+    host: "{{ .context.rendered_name }}.svc.cluster.local"
     service_port: "{{ optional .infra `port` 8080 }}"
   locals:
     primary_compute: api

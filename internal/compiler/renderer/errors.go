@@ -1068,3 +1068,30 @@ var errPipelineSideEffectKindUndefined = cerrors.Register("compiler-renderer/pip
 	Message: "side effect declares a kind the plugin contract does not define; " +
 		"a conforming side effect declares emit_file or emit_crd",
 })
+
+// ErrRenderedNameUnavailable fires when a Recipe publishes a value built from the
+// name its provider gives the output it renders from author-supplied source, and
+// that provider reports no such name for the node.
+//
+// It halts rather than resolving the reference away, and the reason is the defect
+// it exists to remove. An empty value here does not fail: it renders, the build
+// finishes, and the address the Recipe published names a resource that was never
+// emitted — a fault that surfaces at deployment time, far from the template that
+// caused it. Refusing the reference reports it where the author can act on it.
+//
+// It is a fact rather than a guess, which is what makes halting the honest
+// reading: whether the node's provider reports such a name is settled once the
+// Recipe binding selects that provider, before anything is evaluated.
+//
+// The remedy names what to write instead, because in most cases there is a
+// correct answer and it is already reachable: a node whose output the compiler
+// built is named after the node's identity. A refusal that only refuses sends an
+// author looking for a key that does not exist.
+// Category: CATALOG_ERROR.
+func ErrRenderedNameUnavailable() error { return errRenderedNameUnavailable }
+
+var errRenderedNameUnavailable = cerrors.Register("compiler-renderer/rendered-name-unavailable", cerrors.Meta{
+	ShortCode: "E0273",
+	Message: "provides entry reads the name the target renders author-supplied source under, and this node's " +
+		"provider reports no such name; a conforming entry reads a value the node's own provider supplies",
+})

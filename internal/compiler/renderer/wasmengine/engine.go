@@ -54,6 +54,17 @@ const BoundaryEnvOverridesExport = "boundary_env_overrides"
 // would refuse every provider plugin built before it existed.
 const NameBoundExport = "name_bound"
 
+// RenderedNameExport is the optional guest export this adapter drives to ask what
+// name the guest's target will give the resources it renders from a node's
+// author-supplied source. A guest whose target derives such a name advertises it;
+// a guest whose describe() omits it is never invoked here, and no name reaches a
+// recipe author for any node that guest renders.
+//
+// It is deliberately absent from every minimum-export rule, for the reason
+// [NameBoundExport] is: those are load-time requirements, and requiring this one
+// would refuse every provider plugin built before it existed.
+const RenderedNameExport = "rendered_name"
+
 // Engine renders one node through a provider Wasm guest, implementing the host
 // renderer.Provider and renderer.WorkloadSynthesizer interfaces. It resolves the
 // guest's bytes via lookup and loads them through the injected shared loader once
@@ -108,6 +119,7 @@ var (
 	_ renderer.ArtifactsEmitter               = (*Engine)(nil)
 	_ renderer.BoundaryEnvOverrider           = (*Engine)(nil)
 	_ renderer.NameBounder                    = (*Engine)(nil)
+	_ renderer.RenderedNameReporter           = (*Engine)(nil)
 	_ renderer.BoundaryAssemblyReporter       = (*Engine)(nil)
 	_ renderer.AssemblyNameAnnotationReporter = (*Engine)(nil)
 	_ renderer.CodecProvider                  = (*Engine)(nil)
@@ -844,6 +856,60 @@ func (e *Engine) NameBound(ctx context.Context, in renderer.NameBoundInput) (ren
 		ShortCode: out.ConditionShortCode,
 	}); err != nil {
 		return renderer.NameBoundOutput{}, fmt.Errorf("wasmengine: %w", err)
+	}
+	return out, nil
+}
+
+// RenderedName drives the guest's optional rendered_name export to ask what name
+// its target will give the resources it renders from a node's author-supplied
+// source, returning the guest's answer.
+//
+// It is advertised-only: a guest that does not declare the export in describe()
+// is never invoked, and this returns an empty output and no error — which is the
+// same answer a guest that derives no such name gives, and the same consequence:
+// a recipe author has no such name to read for that node.
+//
+// The direction is the reverse of [Engine.NameBound] and the distinction is the
+// whole of what keeps this legal. There the host proposes a name and the guest
+// answers with a constraint, because a name travelling back would put the host in
+// the business of composing names for a target it knows nothing about. Here the
+// guest composed the name and the host carries the string without reading it, so
+// nothing about the target's naming crosses into the core: no alphabet, no
+// grammar, no length. AssemblerEngine embeds *Engine and inherits this method.
+func (e *Engine) RenderedName(ctx context.Context, in renderer.RenderedNameInput) (renderer.RenderedNameOutput, error) {
+	desc, err := e.describe()
+	if err != nil {
+		return renderer.RenderedNameOutput{}, err
+	}
+	if !advertisesExport(desc, RenderedNameExport) {
+		return renderer.RenderedNameOutput{}, nil
+	}
+
+	plugin, release, err := e.acquireInstance(ctx)
+	if err != nil {
+		return renderer.RenderedNameOutput{}, err
+	}
+	defer release()
+
+	payload, err := in.MarshalJSON()
+	if err != nil {
+		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: marshal rendered_name input: %w", err)
+	}
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, RenderedNameExport, payload)
+	if err != nil {
+		return renderer.RenderedNameOutput{}, err
+	}
+
+	var out renderer.RenderedNameOutput
+	if err := out.UnmarshalJSON(raw); err != nil {
+		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: decode rendered_name output: %w", err)
+	}
+	if err := wasm.GuestReturnedError(RenderedNameExport, wasm.GuestFailure{
+		Message:   out.Error,
+		Code:      out.ConditionCode,
+		ShortCode: out.ConditionShortCode,
+	}); err != nil {
+		return renderer.RenderedNameOutput{}, fmt.Errorf("wasmengine: %w", err)
 	}
 	return out, nil
 }

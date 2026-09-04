@@ -2457,6 +2457,62 @@ type DescribedView interface {
 	// Keyed by node; read from wasm.ProviderContract.CrossBoundaryLinking.
 	ProviderCrossBoundaryLinking(node string) bool
 
+	// NodeDeclaresAuthoredSource reports whether a node's Recipe declares
+	// source the author supplied, taking the text that Recipe wrote rather
+	// than anything the build resolved.
+	//
+	// It is the authored reading on purpose, and the two part: a Recipe whose
+	// source entry is a template evaluating to nothing declares source and
+	// renders none. The authored reading is the one available before anything
+	// is evaluated, which is where a rule over authored text runs, and it is
+	// also the one an author can act on — the entry they wrote is the entry
+	// they would change.
+	//
+	// What it is for is telling two absences apart where the remedy differs. A
+	// node with no supplied source has its output named after its own
+	// identity, so an author reaching for a name that does not exist there has
+	// a correct value already available; a node that DOES supply source and
+	// whose target still reports no name has no such substitute, and a rule
+	// offering one would send its reader to a value that is wrong for them.
+	//
+	// False is a real answer and covers a node with no bound Recipe as well as
+	// one whose Recipe declares no source: neither supplies source for a
+	// target to name output from, which is the one question this fact is
+	// asked.
+	//
+	// Keyed by node; read from types.RecipeSpec.Source.
+	NodeDeclaresAuthoredSource(node string) bool
+
+	// NodeRenderedName is the name the provider rendering a node's own
+	// documents reports it will give the resources it renders from source the
+	// author supplied, empty when it reports none.
+	//
+	// It is the name an author's own templates render against — what a chart
+	// reads as its release name — and it is a different value from the
+	// identity the compiler stamps on the resources it built itself. The two
+	// are separate facts because they answer separate questions, and a single
+	// value answering both is what leaves a published address naming a
+	// resource that does not exist: the two are written in different
+	// alphabets, so for some authored identities they differ.
+	//
+	// Emptiness is one answer rather than several, and the reason is what the
+	// rule reading it asks. A node with no bound Recipe, a provider that
+	// reports no such name, a provider that reports one only for a node whose
+	// Recipe supplies source, and a binding the build could not resolve to a
+	// provider all leave an author with no such name to read. That is one
+	// answer to the question the fact is asked for, and distinguishing them
+	// would put a second condition on it that the reading cannot act on
+	// differently.
+	//
+	// The value is composed inside the provider's own guest and is carried
+	// here unread, so nothing about what that target accepts in a name — its
+	// alphabet, its grammar, its length — reaches a rule through this fact.
+	// A rule may ask whether a name exists and may spend the string; it cannot
+	// learn the target's naming from it.
+	//
+	// Keyed by node; read from rendercore.RenderedNameOutput.Name.
+	NodeRenderedName(node string) string
+
 	// NodeRenderingProvider is the provider that renders a node's own
 	// documents, as the engine kind its Recipe's declared capability projects
 	// to.

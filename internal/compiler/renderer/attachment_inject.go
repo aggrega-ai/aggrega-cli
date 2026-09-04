@@ -121,14 +121,20 @@ func existingPipeDeliveries(inject types.InjectPipe) []constraint.InjectDelivery
 
 // attachmentFRScope is the reference set the attachment FeatureRecipe path's
 // templates are checked against — its own locals entries and then its provides.
-// The universe is ProvidesContext, the type both stages are evaluated against, and
-// the surface declares no narrowing: an attachment IS being resolved here, so
-// .attachment_name names it and .context.instance_id names the host component the
-// attachment is resolving for. One scope covers both stages because they render
-// against one context shape; two would be free to disagree about what the path
-// admits.
+// The universe is ProvidesContext, the type both stages are evaluated against: an
+// attachment IS being resolved here, so .attachment_name names it and
+// .context.instance_id names the host component the attachment is resolving for.
+// One scope covers both stages because they render against one context shape; two
+// would be free to disagree about what the path admits.
+//
+// One narrowing: context.rendered_name. The name is the host node's, and an
+// attachment delivering source its own author supplied renders that source
+// against its own identity rather than the host's — which is why a render carries
+// the two identities separately. Admitting the reference here would hand an
+// attachment author the host's name for resources the attachment itself emitted.
 var attachmentFRScope = templateScope{
-	data: ProvidesContext{},
+	data:    ProvidesContext{},
+	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},
 }
 
 // evalAttachmentFRProvides evaluates the attachment FeatureRecipe's provides

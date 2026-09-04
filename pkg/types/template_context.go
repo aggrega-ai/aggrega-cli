@@ -49,11 +49,26 @@ type TemplateContext struct {
 // ContextBlock is the compiler-assembled execution context providing identity, topology, and delivery data.
 // Schema: template-context-v1alpha1.schema.json#/properties/context
 type ContextBlock struct {
-	InstanceID  string                   `json:"instance_id" yaml:"instance_id"`
-	Labels      OrderedMap[string]       `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
-	Annotations *AnnotationBuckets       `json:"annotations,omitempty" yaml:"annotations,omitempty"`
-	Inject      InjectPipe               `json:"inject" yaml:"inject"`
-	Uses        OrderedMap[EnrichedEdge] `json:"uses" yaml:"uses"`
+	InstanceID string `json:"instance_id" yaml:"instance_id"`
+	// RenderedName is the name the node's own provider gives the resources it
+	// renders from source the author supplied — the name those supplied templates
+	// render against, such as a chart's release name.
+	//
+	// It is empty where the bound provider derives no such name, and empty is an
+	// answer rather than a gap: what the compiler BUILT for a node — a synthesized
+	// workload, a placed artifact set — is named after InstanceID instead, because
+	// there are no author templates for this name to reach. The two are separate
+	// concepts and neither stands in for the other, which is why there is one name
+	// for each rather than one value answering both.
+	//
+	// The value is composed inside the provider's own guest and carried here
+	// unread: no alphabet, grammar or length from any target reaches the compiler
+	// through it.
+	RenderedName string                   `json:"rendered_name,omitempty" yaml:"rendered_name,omitempty"`
+	Labels       OrderedMap[string]       `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
+	Annotations  *AnnotationBuckets       `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Inject       InjectPipe               `json:"inject" yaml:"inject"`
+	Uses         OrderedMap[EnrichedEdge] `json:"uses" yaml:"uses"`
 }
 
 // AnnotationBuckets holds the three cascading annotation origins for a node.

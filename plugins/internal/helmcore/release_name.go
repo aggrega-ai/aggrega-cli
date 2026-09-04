@@ -68,7 +68,26 @@ func isReleaseNameRune(r rune) bool {
 // because moving it would rename resources the chart's author declared and that
 // are already deployed under those names.
 func releaseName(nodeCtx rendercore.NodeRenderContext) string {
-	return releaseNameEncoding.Segment(rendercore.TargetNameBasis(nodeCtx))
+	return ReleaseNameFor(nodeCtx.NodeID, nodeCtx.DerivedNameBasis)
+}
+
+// ReleaseNameFor derives the release name from the two carried identities alone,
+// for a caller holding them apart from any render context.
+//
+// It is the one derivation, and [releaseName] is a reading of it against a render
+// context. A caller that answers what this target will name a node's resources —
+// before that node is rendered, so that the answer can reach the templates the
+// node's own Recipe publishes from — holds the two strings and no context, and a
+// second derivation over the same alphabet would agree on the day it was written
+// and drift afterwards. The drift would be silent in the worst way: the name a
+// chart's templates render against lives inside the rendered bytes, so an author
+// publishing an address from a name derived the other way would hand a consumer
+// a name for a resource that does not exist, at exit zero.
+//
+// The basis-over-id fallback is resolved through the shared reading rather than
+// spelled here, so this side of the answer cannot part from the render side's.
+func ReleaseNameFor(nodeID, derivedNameBasis string) string {
+	return releaseNameEncoding.Segment(rendercore.ContributorNameBasis(nodeID, derivedNameBasis))
 }
 
 // ReleaseNameKind is what a verdict about a Helm release name calls itself. It

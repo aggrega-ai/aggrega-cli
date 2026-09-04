@@ -70,6 +70,7 @@ var providesScope = templateScope{
 func EvaluateAllProvides(
 	graph *types.IRGraph,
 	recipes map[string]*types.Recipe, // nodeID → resolved Recipe
+	renderedNames NodeRenderedNames, // nodeID → the name its provider reports; absent where none
 ) (NodeProvides, NodeLocals, error) {
 	allProvides := make(NodeProvides)
 	allLocals := make(NodeLocals)
@@ -118,10 +119,17 @@ func EvaluateAllProvides(
 		}
 
 		pCtx := ProvidesContext{
-			Context: ProvidesContextBlock{InstanceID: encodeNodeIdentity(nodeID)},
-			Values:  values,
-			Infra:   infra,
-			Locals:  nodeLocals,
+			Context: ProvidesContextBlock{
+				InstanceID: encodeNodeIdentity(nodeID),
+				// Absent where the node's provider reports no such name. The rule
+				// declared over the same authored text refuses a template that reads
+				// the key in that case, so a value reaching evaluation empty is a
+				// template the rule already passed — one that never mentions it.
+				RenderedName: renderedNames[nodeID],
+			},
+			Values: values,
+			Infra:  infra,
+			Locals: nodeLocals,
 		}
 
 		// Evaluate each provides template in author order, against the scope this

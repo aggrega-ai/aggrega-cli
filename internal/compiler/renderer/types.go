@@ -259,9 +259,21 @@ type ProvidesContext struct {
 	AttachmentName string `json:"attachment_name,omitempty"`
 }
 
-// ProvidesContextBlock holds only the instance_id for provides evaluation.
+// ProvidesContextBlock holds the two node-scoped identities a provides template
+// may read: the node's own identity, and the name its provider gives the output
+// it renders from source the author supplied.
 type ProvidesContextBlock struct {
 	InstanceID string `json:"instance_id"`
+	// RenderedName is the name the node's own provider gives the resources it
+	// renders from source the author supplied. Empty where the bound provider
+	// derives no such name, which is why the surfaces that cannot supply it refuse
+	// the reference rather than rendering it away — see the scopes below.
+	//
+	// It is the value a producer publishes an address from when the resource being
+	// addressed was named by a chart or module its author wrote. What the compiler
+	// built for the node is named after InstanceID instead, and the two are
+	// separate concepts rather than two readings of one.
+	RenderedName string `json:"rendered_name,omitempty"`
 }
 
 // PathTemplateContext is the render context a Release boundary's `directory:` and

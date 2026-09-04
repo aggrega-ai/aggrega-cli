@@ -167,7 +167,7 @@ func TestStep5b_LocalsAvailableInContext(t *testing.T) {
 		},
 	}
 	nodeRecipes := map[string]*types.Recipe{"web": recipe}
-	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes)
+	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes, nil)
 	if err != nil {
 		t.Fatalf("Pass 1: %v", err)
 	}

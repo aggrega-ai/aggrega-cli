@@ -921,6 +921,83 @@ var ProvidesTemplateSelfContained = constraint.Check[
 	},
 }
 
+// ProvidesTemplateRenderedNameAvailable reports each provides entry that reads
+// the name its target renders author-supplied source under, on a node whose
+// provider reports no such name.
+//
+// The refusal is what keeps the value from being worse than its absence. The name
+// reaches a template as a plain string, so a node with none renders the reference
+// away and the entry publishes an address one segment short — a name no emitted
+// resource carries — at exit zero and with nothing to read. Refusing before
+// anything is evaluated reports it against the entry the author wrote.
+//
+// It is a fact and not a heuristic, which is why it halts rather than advising:
+// whether the node's provider reports such a name is settled by the Recipe
+// binding, ahead of every evaluation, so nothing here is guessed.
+//
+// It reads two facts and derives its own references from the authored text, for
+// the reason the self-containment rule beside it does: a template this rule
+// refuses is exactly one whose value is never produced, so the resolved value
+// cannot serve as the input.
+//
+// A template that does not parse is not this rule's finding, and neither is one
+// the self-containment rule already refuses: evaluation reports the parse error
+// against the same entry, and a reference this surface does not admit at all is
+// that rule's subject rather than this one's.
+var ProvidesTemplateRenderedNameAvailable = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeProvidesKeySubject,
+]{
+	Sentinel: ErrRenderedNameUnavailable(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeProvidesKeySubject,
+	) []constraint.Objection {
+		if v.NodeRenderedName(s.NodeID()) != "" {
+			return nil
+		}
+		text := v.AuthoredNodeProvides(s.NodeID(), s.ProvidesKey())
+		if text == "" {
+			return nil
+		}
+		tree, err := gotmpl.ParseTree(text, "{{", "}}")
+		if err != nil {
+			return nil
+		}
+		ref, reads := renderedNameReference(tree)
+		if !reads {
+			return nil
+		}
+		return []constraint.Objection{s.RaiseWithAdvice(
+			ErrRenderedNameUnavailable(),
+			renderedNameRemedy(v.NodeDeclaresAuthoredSource(s.NodeID())),
+			constraint.Uncaptioned(ref),
+			constraint.Captioned("provider", v.NodeRenderingProvider(s.NodeID())),
+		)}
+	},
+}
+
+// renderedNameRemedy is what to write instead of a name the node's provider does
+// not report, and it differs by whether the node supplies source of its own.
+//
+// The remedy is a property of the occurrence rather than of the rule, which is
+// what makes stating it worth the branch. A node that supplies no source has its
+// output named after its own identity, so there IS a correct value and naming it
+// closes the question; a node that does supply source and whose target still
+// reports no name has no substitute, and offering the identity there would send
+// its reader to a value that names none of that node's resources. Stating the
+// wrong remedy is worse than stating none, which is why the two are separate
+// sentences rather than one that covers both loosely.
+func renderedNameRemedy(declaresAuthoredSource bool) string {
+	if declaresAuthoredSource {
+		return "publish a value this target does supply: this one names its resources " +
+			"from what a Recipe wrote rather than from a name it derives, so the names are already known here"
+	}
+	return "publish {{ .context.instance_id }} instead: this node supplies no source of its own, " +
+		"so its resources are named after the node's identity"
+}
+
 // localsReferenceFault classifies the reference one locals entry makes, given the
 // block's declared key order, the entry's own key, and the text standing at it.
 //

@@ -379,6 +379,28 @@ type NameBoundOutput struct {
 	ConditionShortCode string `json:"condition_short_code,omitempty" yaml:"condition_short_code,omitempty" cbor:"condition_short_code,omitempty"`
 }
 
+// RenderedNameInput The payload a Provider guest receives on its optional rendered_name export: the two identities a target derives its own names from, and whether the node's Recipe declares source the author supplied. The guest answers with the name its target will give the resources it renders from that supplied source — the name the author's own templates render against, such as the release name a chart reads. A guest that derives no such name reports none, which is the honest answer for a target whose resource names a Recipe writes verbatim, and for one whose name is a function of where the files are placed rather than of the node. This export reports a name the guest itself composes and is not the exchange that asks the guest to judge a name the host proposes; those are different questions and each has its own export.
+type RenderedNameInput struct {
+	// NodeID The node's own identity, as authored. It is carried unencoded: a target narrows it through its own alphabet, so encoding it first would put one escape inside another and spell the name differently from the one a recipe author predicts it by.
+	NodeID string `json:"node_id" yaml:"node_id" cbor:"node_id"`
+	// DerivedNameBasis The identity a contributor's own source renders against when it is not the node's own — set for a contributor whose identity a target's name alphabet refuses, absent otherwise. A guest resolves the pair the same way every other surface does: this value when it is present, the node id when it is not.
+	DerivedNameBasis string `json:"derived_name_basis,omitempty" yaml:"derived_name_basis,omitempty" cbor:"derived_name_basis,omitempty"`
+	// Sourced Whether the node's bound Recipe declares source the author supplied, read from the text the author wrote. It is carried so the question can be asked of any node and answered correctly: a guest reports no name for a node whose output it composes from a workload or an artifact set alone, because such output carries no author templates for a name to render against and is named after the node's identity instead.
+	Sourced bool `json:"sourced,omitempty" yaml:"sourced,omitempty" cbor:"sourced,omitempty"`
+}
+
+// RenderedNameOutput The payload a Provider guest returns from its rendered_name export: the name its target gives the resources it renders from the node's author-supplied source, or no name at all. An absent or empty name is a positive answer rather than a failure — it says this target derives no such name — and the host spends what it was told without reading it, so no knowledge of the target's naming crosses the boundary.
+type RenderedNameOutput struct {
+	// Name The name the guest will itself render this node's author-supplied source under, already written into whatever alphabet its target accepts in that position. Empty or absent means the guest derives no such name.
+	Name string `json:"name,omitempty" yaml:"name,omitempty" cbor:"name,omitempty"`
+	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from reporting no name: no name is an answer about the target, while error reports that the question itself could not be answered. The host surfaces a present error as a failed plugin invocation.
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
+	// ConditionCode The descriptive, machine-matchable identity of the condition the failure names — the code the condition is registered under, in the same open set the compiler registers its own halting conditions in. Set beside the human error message; absent on success, and absent when the guest names no such condition. The host carries the value verbatim onto the structured diagnostic it publishes and derives nothing from it. This identifier and condition_short_code are reported together, because they name one condition in two forms: a guest that sets one and not the other has named a condition the host cannot resolve, and the host then reports its own generic plugin-failure condition instead while the message still carries the whole failure.
+	ConditionCode string `json:"condition_code,omitempty" yaml:"condition_code,omitempty" cbor:"condition_code,omitempty"`
+	// ConditionShortCode The compact identifier of the same condition — the letter E and four digits, the form a reader quotes, searches for and pastes into a report — set beside the human error message; absent on success, and absent when the guest names no such condition. The host prints it in the bracketed head of the diagnostic it renders for this failure, so a condition a guest raises is quotable exactly as one the compiler raises is. The host carries the value verbatim and never derives one, so a value of another shape reaches the reader as the guest wrote it. It is reported together with condition_code, for the reason stated there.
+	ConditionShortCode string `json:"condition_short_code,omitempty" yaml:"condition_short_code,omitempty" cbor:"condition_short_code,omitempty"`
+}
+
 // LinkEndpoint One endpoint of a cross-boundary link: the node, the boundary path its rendered output assembles into, and the provider that rendered it. The two endpoints of a link name the consuming and consumed ends of a uses edge whose ends assemble into different dispatch groups.
 type LinkEndpoint struct {
 	// Node The endpoint node's absolute id within the topology graph.
@@ -4373,6 +4395,204 @@ func (t *NameBoundOutput) UnmarshalJSON(data []byte) error {
 // check reads the object's own keys and does not descend.
 func (t *NameBoundOutput) UnmarshalJSONStrict(data []byte) error {
 	if err := refuseUndeclaredJSONKeys(data, "names", "error", "condition_code", "condition_short_code"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
+// MarshalJSON encodes RenderedNameInput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t RenderedNameInput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"node_id\":")
+	writeJSONString(&buf, t.NodeID)
+	if t.DerivedNameBasis != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"derived_name_basis\":")
+		writeJSONString(&buf, t.DerivedNameBasis)
+	}
+	if t.Sourced != false {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"sourced\":")
+		if t.Sourced {
+			buf.WriteString("true")
+		} else {
+			buf.WriteString("false")
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes RenderedNameInput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *RenderedNameInput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "node_id":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.NodeID = s
+			}
+		case "derived_name_basis":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.DerivedNameBasis = s
+			}
+		case "sourced":
+			if v, err := readBool(dec); err != nil {
+				return err
+			} else {
+				t.Sourced = v
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes RenderedNameInput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *RenderedNameInput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "node_id", "derived_name_basis", "sourced"); err != nil {
+		return err
+	}
+	return t.UnmarshalJSON(data)
+}
+
+// MarshalJSON encodes RenderedNameOutput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t RenderedNameOutput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if t.Name != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"name\":")
+		writeJSONString(&buf, t.Name)
+	}
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
+	if t.ConditionCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"condition_code\":")
+		writeJSONString(&buf, t.ConditionCode)
+	}
+	if t.ConditionShortCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"condition_short_code\":")
+		writeJSONString(&buf, t.ConditionShortCode)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes RenderedNameOutput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *RenderedNameOutput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "condition_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ConditionCode = s
+			}
+		case "condition_short_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ConditionShortCode = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// UnmarshalJSONStrict decodes RenderedNameOutput exactly as UnmarshalJSON does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the object's own keys and does not descend.
+func (t *RenderedNameOutput) UnmarshalJSONStrict(data []byte) error {
+	if err := refuseUndeclaredJSONKeys(data, "name", "error", "condition_code", "condition_short_code"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -9287,6 +9507,202 @@ func (t *NameBoundOutput) decodeCBOR(dec *cborDec) error {
 // check reads the map's own keys and does not descend.
 func (t *NameBoundOutput) DecodeCBORStrict(data []byte) error {
 	if err := refuseUndeclaredCBORKeys(data, "names", "error", "condition_code", "condition_short_code"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes RenderedNameInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t RenderedNameInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends RenderedNameInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t RenderedNameInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if t.Sourced != false {
+		n++
+	}
+	if t.DerivedNameBasis != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "node_id")
+	dst = appendCBORTextString(dst, t.NodeID)
+	if t.Sourced != false {
+		dst = appendCBORTextString(dst, "sourced")
+		dst = appendCBORBool(dst, t.Sourced)
+	}
+	if t.DerivedNameBasis != "" {
+		dst = appendCBORTextString(dst, "derived_name_basis")
+		dst = appendCBORTextString(dst, t.DerivedNameBasis)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes RenderedNameInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *RenderedNameInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *RenderedNameInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "node_id":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.NodeID = s
+			}
+		case "derived_name_basis":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.DerivedNameBasis = s
+			}
+		case "sourced":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.Sourced = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes RenderedNameInput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *RenderedNameInput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "node_id", "derived_name_basis", "sourced"); err != nil {
+		return err
+	}
+	return t.DecodeCBOR(data)
+}
+
+// EncodeCBOR encodes RenderedNameOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t RenderedNameOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends RenderedNameOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t RenderedNameOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if t.Name != "" {
+		n++
+	}
+	if t.Error != "" {
+		n++
+	}
+	if t.ConditionCode != "" {
+		n++
+	}
+	if t.ConditionShortCode != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if t.Name != "" {
+		dst = appendCBORTextString(dst, "name")
+		dst = appendCBORTextString(dst, t.Name)
+	}
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
+	if t.ConditionCode != "" {
+		dst = appendCBORTextString(dst, "condition_code")
+		dst = appendCBORTextString(dst, t.ConditionCode)
+	}
+	if t.ConditionShortCode != "" {
+		dst = appendCBORTextString(dst, "condition_short_code")
+		dst = appendCBORTextString(dst, t.ConditionShortCode)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes RenderedNameOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *RenderedNameOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *RenderedNameOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "condition_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ConditionCode = s
+			}
+		case "condition_short_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ConditionShortCode = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DecodeCBORStrict decodes RenderedNameOutput exactly as DecodeCBOR does, except
+// that a top-level key this shape does not declare is refused rather than
+// skipped, naming the offending key. It is the entry point for a payload
+// whose identity is carried by the keys it holds, where skipping an unknown
+// key would yield an empty value indistinguishable from a real one. The
+// check reads the map's own keys and does not descend.
+func (t *RenderedNameOutput) DecodeCBORStrict(data []byte) error {
+	if err := refuseUndeclaredCBORKeys(data, "name", "error", "condition_code", "condition_short_code"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

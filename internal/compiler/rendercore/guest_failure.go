@@ -97,6 +97,19 @@ func NameBoundFailure(err error) NameBoundOutput {
 	return NameBoundOutput{Error: f.Message, ConditionCode: f.Code, ConditionShortCode: f.ShortCode}
 }
 
+// RenderedNameFailure is the rendered_name output a guest returns when it could
+// not answer at all, as distinct from answering that it derives no such name.
+//
+// The two are different answers and the envelope keeps them apart: no name is a
+// fact about the target and leaves the failure fields empty, while a failure says
+// the question could not be answered and carries the condition. A guest folding
+// the first into the second would report a defect where it meant to report a
+// naming rule, and the host would stop a build the target had no objection to.
+func RenderedNameFailure(err error) RenderedNameOutput {
+	f := FailureOf(err)
+	return RenderedNameOutput{Error: f.Message, ConditionCode: f.Code, ConditionShortCode: f.ShortCode}
+}
+
 // LinkPublishFailure is the link_publish output a guest returns when it could not
 // publish the link: the in-band failure derived from err, no handle and no wiring.
 func LinkPublishFailure(err error) LinkPublishOutput {

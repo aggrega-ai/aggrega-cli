@@ -78,26 +78,45 @@ type LocalsContext struct {
 // — so the roots the check admits are derived from that type rather than
 // enumerated here.
 //
-// The surface declares one narrowing, and it is a deliberately kept exclusion:
-// attachment_name. No attachment is being resolved during a base Recipe's locals
-// pass, so the name would render empty. The type carries the field because a
-// FeatureRecipe's own locals populate it, and this surface refuses it because its
-// own pass cannot supply it.
+// The surface declares two narrowings, and each is a deliberately kept refusal
+// because the type carries the field for a surface that CAN supply it:
+//
+//   - attachment_name. No attachment is being resolved during a base Recipe's
+//     locals pass, so the name would render empty. The type carries the field
+//     because a FeatureRecipe's own locals populate it.
+//   - context.rendered_name. Whether a node HAS a name of that kind depends on
+//     whether its Recipe supplies source at all — and on this surface a `source:`
+//     template is the very thing being evaluated to decide what that source is.
+//     So the name's existence is not a settled fact here, and a reference to it
+//     would render empty. A provides template reads it, which is the surface it
+//     is published for.
 //
 // The Recipe source surface shares this scope rather than declaring a second one
 // with the same content. Both are the base Recipe's node-local surface, evaluated
-// against the same type with the same reason for the same exclusion, so one
-// declaration is what keeps them from drifting into disagreement.
+// against the same type with the same reasons for the same refusals, so one
+// declaration is what keeps them from drifting into disagreement — and the second
+// refusal above is a property of the source surface in particular, which sharing
+// carries to both rather than leaving one of them to state it.
 var recipeLocalsScope = templateScope{
 	data:    LocalsContext{},
 	exclude: []string{"attachment_name"},
+	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},
 }
 
 // featureRecipeLocalsScope is the reference set a FeatureRecipe's own locals entry
-// is checked against: the same context type with no narrowing. An attachment IS
-// being resolved during that pass, so .attachment_name names it.
+// is checked against. An attachment IS being resolved during that pass, so
+// .attachment_name names it and is admitted here.
+//
+// One narrowing: context.rendered_name. The identity an attachment's own supplied
+// source renders against is not the host node's — that is the whole reason the
+// two identities are carried separately through a render — so a value naming the
+// host's would name resources the attachment does not emit. An attachment
+// publishing an address for a resource its own chart named is a question this
+// surface does not answer yet, and refusing the reference says so rather than
+// resolving it to the wrong node's name.
 var featureRecipeLocalsScope = templateScope{
-	data: LocalsContext{},
+	data:    LocalsContext{},
+	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},
 }
 
 // localsContextRoot is the context root a template reads a resolved local through.

@@ -71,6 +71,12 @@ func descriptor() aggrega.PluginDescriptor {
 				Stability:    "experimental",
 				Description:  "reports whether a proposed component identity yields a release name and a component-id label value this target accepts, and how short it would have to be",
 			},
+			{
+				Name:         "rendered_name",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "reports the release name a chart's own templates render against, so a Recipe can publish an address naming what that chart emits",
+			},
 		},
 		Contract: &aggrega.ProviderContract{
 			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
@@ -201,6 +207,38 @@ func nameBound() int32 {
 		out = rendercore.NameBoundFailure(err)
 	} else {
 		out = helmcore.NameBoundOutput(in.Proposed, in.Authored)
+	}
+	encoded, mErr := out.MarshalJSON()
+	if mErr != nil {
+		pdk.SetError(mErr)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// renderedName reports the name this target gives the resources it renders from
+// a node's author-supplied source: the release name, which is what a chart's own
+// templates read as .Release.Name and what those templates routinely name their
+// resources after.
+//
+// It reports NO name for a node with no author-supplied source, and that is the
+// answer rather than an omission. What this guest emits for a workload or an
+// artifact set is named after the node's identity instead — there are no author
+// templates for a release name to reach — so reporting one here would hand a
+// recipe author a name none of that node's emitted resources carries.
+//
+// The name is derived through the one derivation the sourced render itself uses,
+// so what is reported and what is rendered cannot part.
+//
+//go:wasmexport rendered_name
+func renderedName() int32 {
+	var in rendercore.RenderedNameInput
+	out := rendercore.RenderedNameOutput{}
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		out = rendercore.RenderedNameFailure(err)
+	} else if in.Sourced {
+		out.Name = helmcore.ReleaseNameFor(in.NodeID, in.DerivedNameBasis)
 	}
 	encoded, mErr := out.MarshalJSON()
 	if mErr != nil {

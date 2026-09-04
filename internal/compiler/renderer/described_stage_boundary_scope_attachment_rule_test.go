@@ -116,6 +116,7 @@ func boundaryScopeAttachmentHalt(
 	view := newDescribedView(
 		context.Background(), graph, facts,
 		map[string]*types.Recipe{}, lookup, nil, newStepDescriptorMemo(), nil, nil,
+		nil,
 	)
 	if view == nil {
 		t.Fatal("the presentation was not built; there is nothing for the rule to read")

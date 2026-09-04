@@ -78,6 +78,8 @@ type (
 	RenderNodeInput            = rendercore.RenderNodeInput
 	RenderNodeOutput           = rendercore.RenderNodeOutput
 	RenderedFile               = rendercore.RenderedFile
+	RenderedNameInput          = rendercore.RenderedNameInput
+	RenderedNameOutput         = rendercore.RenderedNameOutput
 	RenderedNode               = rendercore.RenderedNode
 	SourceEntry                = rendercore.SourceEntry
 	SourceFile                 = rendercore.SourceFile

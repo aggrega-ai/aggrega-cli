@@ -805,19 +805,33 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 	}
 
+	// Ask each node's own provider what name it will give the output it renders
+	// from that node's author-supplied source, before anything is evaluated.
+	//
+	// It is here because the binding above is what selects a node's provider, so
+	// this is the earliest point the question can be asked at all — and it has to
+	// be asked before the provides pass below, because a producer's provides
+	// templates are what publish an address built from the answer. One pass, one
+	// computation site, and every later reader reads the same answer.
+	renderedNames, err := CollectRenderedNames(ctx, graph, nodeRecipes, engineFactory)
+	if err != nil {
+		return nil, err
+	}
+
 	// Present what every plugin this render reaches reports about itself, with
 	// the facts complete before any of them described itself answered by the
 	// presentation the graph finalisation produced. Built here because this is
 	// the first point holding every product it names: the shared plugin
-	// retention installed above, the Recipe bound to each node, and the engine
-	// factory the provider facts read a self-report through.
+	// retention installed above, the Recipe bound to each node, the names those
+	// providers reported just above, and the engine factory the provider facts
+	// read a self-report through.
 	//
 	// It describes nothing on its own. The retention is lazy, so a plugin is
 	// loaded when a reader first asks about it and never because this
 	// presentation exists.
 	result.DescribedView = newDescribedView(
 		ctx, graph, input.GraphView, nodeRecipes, recipeLookup, releaseOf(input.ResolveResult),
-		input.stepDescriptors, input.PluginPathLookup, engineFactory,
+		input.stepDescriptors, input.PluginPathLookup, engineFactory, renderedNames,
 	)
 
 	// The rules declared over that presentation are invoked here, against the
@@ -867,6 +881,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// produced, so the refusal has to be reported before evaluation rather than
 		// from it.
 		if err := runAuthoredProvidesRule(ctx, result.DescribedView, describedAxes); err != nil {
+			return nil, err
+		}
+
+		// The rule over a provides entry that reads the name its target renders
+		// author-supplied source under, asked against the same presentation and
+		// the same enumeration and immediately after the reading above.
+		//
+		// It is here rather than at evaluation because the name is a plain string
+		// on the surface: a node whose provider reports none would render the
+		// reference away and publish an address naming a resource nothing emitted,
+		// at exit zero. Whether such a name exists is settled by the Recipe
+		// binding above, so the refusal is over a fact rather than a guess.
+		if err := runRenderedNameRule(ctx, result.DescribedView, describedAxes); err != nil {
 			return nil, err
 		}
 
@@ -931,7 +958,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// Pass 1: per node, resolve locals then provides. The locals travel with the
 	// provides so every downstream reader — Step 5b assertions and Phase B.0 —
 	// consumes one evaluation rather than repeating it.
-	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes)
+	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes, renderedNames)
 	if err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "locals and provides evaluation")
 	}
@@ -1235,7 +1262,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		// Build template context
-		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, declaredProvides, inject, injectRaw)
+		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, declaredProvides, inject, injectRaw, renderedNames)
 		if input.ResolveResult != nil && input.ResolveResult.Release != nil {
 			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
 		}

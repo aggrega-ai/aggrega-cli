@@ -52,7 +52,7 @@ const (
 	// SubjectDocumentAnnotationBinding is the subject kind (document, annotation-binding), keyed by 4 declared facts.
 	SubjectDocumentAnnotationBinding SubjectKind = "(document, annotation-binding)"
 
-	// SubjectNode is the subject kind node, keyed by 23 declared facts.
+	// SubjectNode is the subject kind node, keyed by 25 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 13 declared facts.
