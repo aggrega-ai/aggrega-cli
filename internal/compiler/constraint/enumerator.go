@@ -764,6 +764,28 @@ type TemplateFieldCoordinate struct {
 	AuthoredKeys []string
 }
 
+// NodeTemplateFieldEnumerator supplies the inline template fields one node's own
+// Recipe writes.
+//
+// It is a separate axis from the boundary-rooted one below rather than the same
+// axis reached at a different key: the two blocks are authored on two different
+// documents, a Recipe and a FeatureRecipe, and the field labels inside them are
+// chosen independently — so an axis covering both would hand the framework fields
+// from two documents under one key, and a fact keyed that way would answer with
+// whichever document was asked last.
+//
+// It enumerates what the DOCUMENT declares and never what some rule is about. An
+// implementation narrowing the set to the fields one rule cares for would make the
+// axis mean that rule rather than the document, and the coverage a caller reads off
+// the axis would then be a claim about the rule's own selection — which is the
+// unenumerable shape a field-keyed axis exists to remove. A rule with something to
+// select on reads a fact and selects.
+type NodeTemplateFieldEnumerator interface {
+	// NodeTemplateFields returns the inline template fields one node's own Recipe
+	// writes, in a deterministic order the implementation declares.
+	NodeTemplateFields(node string) []TemplateFieldCoordinate
+}
+
 // BoundaryAttachmentTemplateFieldEnumerator supplies the inline template fields
 // the FeatureRecipe one attachment declared on a boundary writes.
 //

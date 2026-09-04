@@ -227,12 +227,18 @@ spec:
           infra:
             pool_size: 20
 `,
+		// It carries a values mapping and a step input as well as the blocks the
+		// other node-rooted axes walk, because the template-field axis reaches every
+		// inline template a Recipe writes: a top-level field, a field inside a keyed
+		// block whose key travels in the label, and an artifacts entry whose key is an
+		// output filename and therefore carries the locator dialect's separator.
 		"recipes/web.yaml": `
 apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
   name: web
 spec:
+  valuesMapping: "replicaCount: 2"
   locals:
     fullname: "{{ .context.instance_id }}"
   provides:
@@ -241,6 +247,7 @@ spec:
     - id: render
       plugin: core/renderer:1.0.0
       function: mutate
+      with: "marker: web"
   artifacts:
     values-yaml: "replicas: 2"
 `,

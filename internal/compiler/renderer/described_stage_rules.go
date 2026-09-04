@@ -354,9 +354,41 @@ func runAuthoredProvidesRule(
 	return objectionsAsHalt(raised, "provides entries that reach outside the data they are evaluated against")
 }
 
-// runRenderedNameRule invokes the rule declared over a provides entry that reads
-// the name its target renders author-supplied source under, and returns what it
-// raised as the render's halt.
+// renderedNameAxes is the axis set the rules over a reference to the name a
+// target renders author-supplied source under are invoked once per: the node set,
+// the provides keys each node's Recipe declares, and the inline template fields
+// that Recipe writes.
+//
+// It names all three together rather than one per surface, and that grouping is
+// what makes a surface structurally un-skippable: a value satisfying the node and
+// provides axes and not the template-field one does not compile here, so a caller
+// cannot supply coordinates for one surface and leave another's rule invoked zero
+// times — which reports exactly what a rule that ran and approved reports.
+type renderedNameAxes interface {
+	constraint.NodeEnumerator
+	constraint.ProvidesKeyEnumerator
+	constraint.NodeTemplateFieldEnumerator
+}
+
+// runRenderedNameRule invokes the rules declared over an authored template that
+// reads the name its target renders author-supplied source under, and returns what
+// they raised as the render's halt.
+//
+// # One moment, one actor, every surface the value lands on
+//
+// The value reaches a Recipe's provides entries and its inline template fields
+// alike — the values mapping, the workload body, each artifacts entry, and each
+// pipeline step's input and its gate — because all of them render against the
+// node's own context. So both axes are walked here, in one call, rather than a
+// surface being covered at whatever later point happens to hold its text: a
+// surface left to a later reading is a surface whose reference resolves away into
+// emitted output before anything asks about it.
+//
+// The two axes are two invocations because a check is invoked once per instance of
+// its declared subject and the two subjects are different kinds. They share one
+// predicate, so an author reading either finding is told the same thing.
+//
+// # Why here, and in this order
 //
 // It is a separate call from the self-containment reading above rather than a
 // second rule inside it, because the two refuse different things and an author
@@ -373,13 +405,23 @@ func runAuthoredProvidesRule(
 //
 // It carries no plugin-resolution guard, and that is deliberate rather than an
 // oversight. A render that resolved no plugin reports no name for any node, so
-// every provides entry reading the key is refused there — which is the honest
+// every authored template reading the key is refused there — which is the honest
 // answer rather than an over-refusal: such a render has no provider to supply
 // the value and would resolve the reference away.
+//
+// # What the template-field axis does not reach, stated because an unstated bound reads as coverage
+//
+// The field axis enumerates the fields written INLINE. A values mapping, a
+// workload body or an artifacts entry supplied by an imported file or by a library
+// entry carries no text before the render resolves it, so no rule over authored
+// text is invoked over one — and a reference to this value inside such a file
+// still resolves away. Closing that needs the text at a point that has resolved
+// it, which is a later reading than this one and a second computation site for one
+// rule.
 func runRenderedNameRule(
 	ctx context.Context,
 	view constraint.DescribedView,
-	coordinates authoredProvidesAxes,
+	coordinates renderedNameAxes,
 ) error {
 	if view == nil || coordinates == nil {
 		return nil
@@ -390,7 +432,20 @@ func runRenderedNameRule(
 	if err != nil {
 		return err
 	}
-	return objectionsAsHalt(raised, "provides entries reading a name the node's provider does not report")
+	if halt := objectionsAsHalt(
+		raised, "provides entries reading a name the node's provider does not report",
+	); halt != nil {
+		return halt
+	}
+	raised, err = constraint.RunOnNodeTemplateFields(
+		ctx.Err, coordinates, coordinates, view, TemplateFieldRenderedNameAvailable,
+	)
+	if err != nil {
+		return err
+	}
+	return objectionsAsHalt(
+		raised, "templates reading a name the node's provider does not report",
+	)
 }
 
 // authoredLocalsAxes is the axis pair the rules over an authored locals entry are

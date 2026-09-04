@@ -3110,6 +3110,45 @@ var facts = []factDecl{
 			"attachment with no bound FeatureRecipe amounts to.",
 	},
 	{
+		Name:        "authored-node-template-text",
+		Stage:       "described",
+		SourceField: "renderer.RecipeTemplateFields(recipe)",
+		Subject:     []string{"node", "template-field"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "field", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "AuthoredNodeTemplateText is the template text a node's own Recipe " +
+			"writes for one of its inline template fields, as written and before " +
+			"anything is evaluated.\n\nThe field is a coordinate rather than part of " +
+			"this fact's name, and that is the whole shape rather than a detail of it. " +
+			"A Recipe carries several template fields and gains more over time; naming " +
+			"each in its own fact would put the field identity in structure, so a " +
+			"field added later would need a fact, a coordinate, a traversal entry and " +
+			"a declaration of its own — and would be silently ungated if any of the " +
+			"four were forgotten. Keyed by the field, the axis is data: one more label " +
+			"is enumerated and nothing else moves.\n\nOne fact serves every field " +
+			"because one reference set does. Every field it reaches is evaluated " +
+			"against the node's own render context, one type, so what a template on " +
+			"any of them may name is one question with one answer. The fields differ " +
+			"in the delimiter pair their text is parsed with rather than in what they " +
+			"may name, and which pair applies follows from the field, which the reader " +
+			"already holds as a coordinate.\n\nThe fact is the text and not an " +
+			"analysis of it, on the reading every authored-text fact carries: a " +
+			"collected reference set is a judgement whose direction decides which " +
+			"rules may consume it, and handing over the text leaves that direction to " +
+			"the rule that needs it.\n\nWhat it does NOT reach is stated because an " +
+			"unstated bound reads as coverage. A Recipe's provides and locals entries " +
+			"are absent, each having its own axis at this same stage, so a rule over " +
+			"one of those entries is invoked over its own subject rather than twice. " +
+			"Its assertions are absent because that surface is evaluated against a " +
+			"context carrying no identity block at all. And a field whose content is " +
+			"imported from a file or a library is not enumerated, because that content " +
+			"is resolved when the render reaches it and there is nothing authored in " +
+			"this document to hand over.",
+	},
+	{
 		Name:        "boundary-attachment-authored-template-text",
 		Stage:       "described",
 		SourceField: "renderer.BoundaryScopeFRTemplateFields(fr)",

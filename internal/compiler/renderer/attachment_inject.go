@@ -127,11 +127,22 @@ func existingPipeDeliveries(inject types.InjectPipe) []constraint.InjectDelivery
 // One scope covers both stages because they render against one context shape; two
 // would be free to disagree about what the path admits.
 //
-// One narrowing: context.rendered_name. The name is the host node's, and an
-// attachment delivering source its own author supplied renders that source
-// against its own identity rather than the host's — which is why a render carries
-// the two identities separately. Admitting the reference here would hand an
-// attachment author the host's name for resources the attachment itself emitted.
+// One narrowing: context.rendered_name. The value on this surface is the HOST
+// node's answer — the name the host's own bound provider reports for the output it
+// renders from the host Recipe's source — and an attachment is not that node: it
+// binds its own recipe and therefore its own provider. So the value is not an
+// answer about the attachment's own output at all. It is absent whenever the HOST
+// Recipe supplies no source, even where the attachment's own author did supply
+// one, and it comes from a different target entirely whenever the attachment's
+// declared capability differs from its host's.
+//
+// It is deliberately NOT narrowed on the grounds that an attachment's supplied
+// source renders under the attachment's own identity, which is what a reader
+// reasonably assumes and is not what happens: for a chart-delivering attachment
+// the name those templates render against stays the host's, precisely so the
+// resources the chart's author declared are not renamed. The two coincide on that
+// target and part on the two counts above, so the narrowing rests on where the
+// answer comes from rather than on which identity it spells.
 var attachmentFRScope = templateScope{
 	data:    ProvidesContext{},
 	subGate: map[string][]string{identityContextRoot: {renderedNameContextKey}},

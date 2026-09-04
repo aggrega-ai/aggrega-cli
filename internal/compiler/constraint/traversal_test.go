@@ -86,6 +86,12 @@ type traversalFixture struct {
 	// label. The authored keys therefore arrive from the enumerator.
 	boundaryAttachFields map[string][]TemplateFieldCoordinate
 
+	// nodeFields is the same coordinate shape on the node-rooted carrier, for the
+	// same reason: a Recipe's template fields sit in blocks that differ from one
+	// another, so the authored keys arrive from the enumerator rather than being
+	// read back out of the label.
+	nodeFields map[string][]TemplateFieldCoordinate
+
 	// boundaryPathFields carries bare names where the axis above carries a
 	// coordinate, and the difference is the carrier's rather than an
 	// inconsistency: a path field's name IS its authored key, one segment at the
@@ -165,6 +171,10 @@ func (f traversalFixture) BoundaryAttachmentTemplateFields(
 	boundary, attachment string,
 ) []TemplateFieldCoordinate {
 	return f.boundaryAttachFields[fixtureKey(boundary, attachment)]
+}
+
+func (f traversalFixture) NodeTemplateFields(node string) []TemplateFieldCoordinate {
+	return f.nodeFields[fixtureKey(node)]
 }
 
 func (f traversalFixture) BoundaryPathTemplateFields(boundary string) []string {
@@ -607,6 +617,32 @@ func newTraversalFixture() traversalFixture {
 				},
 			},
 		},
+		// The template fields a node's own Recipe writes, in the same three shapes
+		// the boundary-rooted axis above carries and for the same reasons: a
+		// top-level field, a field inside a keyed block whose key travels in the
+		// label, and a field keyed by a name carrying the locator dialect's own
+		// separator, whose locator therefore stops at the block. The last shape is
+		// the one an artifacts entry routinely takes, its key being an output
+		// filename.
+		nodeFields: map[string][]TemplateFieldCoordinate{
+			fixtureKey("web"): {
+				{
+					Value:        "valuesMapping",
+					SourceFile:   "recipes/web.yaml",
+					AuthoredKeys: []string{"valuesMapping"},
+				},
+				{
+					Value:        "pipeline[render].with",
+					SourceFile:   "recipes/web.yaml",
+					AuthoredKeys: []string{"pipeline", "render", "with"},
+				},
+				{
+					Value:        "artifacts[cm.yaml]",
+					SourceFile:   "recipes/web.yaml",
+					AuthoredKeys: []string{"artifacts", "cm.yaml"},
+				},
+			},
+		},
 		// The path fields the same scope writes. Both are carried because the two
 		// are separate subjects over one scope, which is what shows the axis is
 		// keyed by the field and not by the scope — a traversal invoking once per
@@ -953,6 +989,26 @@ func traversalCases() []traversalCase {
 			},
 			want: []string{
 				"recipes/web.yaml|.spec.provides.host",
+			},
+		},
+		{
+			// The template-field axis on the node-rooted carrier. The three records
+			// show the locator spelled from the AUTHORED KEYS rather than from the
+			// label — a top-level field, a field inside a keyed block, which a
+			// traversal splicing the label in would spell .spec.pipeline[render].with
+			// and fail here, and a field whose key carries the dialect's own separator,
+			// which positions at the block and stops. The node contributes no segment,
+			// which is what shows the finding is positioned in the Recipe rather than
+			// at whichever instance binds it.
+			kind: SubjectNodeTemplateField,
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeTemplateFields(cancelled, f, f, v,
+					raisingCheck[NodeTemplateFieldSubject]())
+			},
+			want: []string{
+				"recipes/web.yaml|.spec.valuesMapping",
+				"recipes/web.yaml|.spec.pipeline.render.with",
+				"recipes/web.yaml|.spec.artifacts",
 			},
 		},
 		{
@@ -1686,6 +1742,22 @@ func coordinateFlowCases() []coordinateFlowCase {
 				"prod/edge|shared-db|valuesMapping",
 				"prod/edge|shared-db|provides[dsn]",
 				"prod/edge|shared-db|artifacts[cm.yaml]",
+			},
+		},
+		{
+			kind: SubjectNodeTemplateField,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NodeTemplateFieldSubject]) ([]Objection, error) {
+					return RunOnNodeTemplateFields(nil, f, f, traversalView{}, c)
+				}, func(s NodeTemplateFieldSubject) string {
+					return s.NodeID() + "|" + s.TemplateField()
+				})
+			},
+			want: []string{
+				"web|valuesMapping",
+				"web|pipeline[render].with",
+				"web|artifacts[cm.yaml]",
 			},
 		},
 		{

@@ -1042,6 +1042,47 @@ func authoredFieldSegments(authoredKeys []string) []string {
 	return documentSpecSegments(authoredKeys[0], authoredKeys[1:]...)
 }
 
+// RunOnNodeTemplateFields invokes check once per inline template field each
+// node's own Recipe writes, in node order and then in the order that Recipe's
+// fields are enumerated in.
+//
+// The locator is the authored field inside the Recipe's own file, spelled from the
+// keys the enumerator supplied — .spec.valuesMapping for the values mapping,
+// .spec.artifacts.<key> for an artifacts entry, and so on. The node contributes no
+// segment, on the reading every node-rooted kind whose locator names a Recipe
+// carries: the fault is in the Recipe's text rather than in any one node that binds
+// it, so a node key spliced onto a Recipe-rooted locator would point an author at an
+// instance when the edit is in the entry every instance shares. The node remains a
+// coordinate, because that is what selects which Recipe's text is being asked about
+// and what the facts a rule over this kind reads are keyed by.
+//
+// # The field is enumerated, which is what makes coverage assertable
+//
+// The innermost coordinate is the authored field label, so a Recipe gaining a
+// template field gains a subject with no kind, fact, traversal entry or declaration
+// moving. That is the property the family is for: what a rule over this kind covers
+// is read off the enumeration rather than counted from how many declarations
+// somebody remembered to write.
+func RunOnNodeTemplateFields[V View](
+	cancelled Cancellation,
+	nodes NodeEnumerator,
+	fields NodeTemplateFieldEnumerator,
+	view V,
+	check Check[V, NodeTemplateFieldSubject],
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeTemplateFieldSubject {
+		entries := fields.NodeTemplateFields(node.ID)
+		out := make([]NodeTemplateFieldSubject, 0, len(entries))
+		for _, entry := range entries {
+			out = append(out, newNodeTemplateFieldSubject(
+				entry.SourceFile, node.ID, entry.Value,
+				authoredFieldSegments(entry.AuthoredKeys)...,
+			))
+		}
+		return out
+	})
+}
+
 // RunOnBoundaryAttachmentTemplateFields invokes check once per inline template
 // field the FeatureRecipe each attachment declared on a boundary writes, in
 // boundary order, then attachment order, then the order that FeatureRecipe's

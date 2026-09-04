@@ -340,6 +340,43 @@ func (c *describedStageCoordinates) BoundaryAttachmentPipelineSteps(
 	return stepCoordinatesOf(fr.Spec.Pipeline, fr.Metadata.Name)
 }
 
+// NodeTemplateFields returns the inline template fields a node's own Recipe
+// writes, in the order that Recipe's fields are enumerated in.
+//
+// The enumeration is [RecipeTemplateFields] — the one home of that set — so a
+// field presented here is a field the presentation beside it can answer, and a
+// field added to the set arrives on both surfaces at once. Reproducing the set
+// here would let the axis and the presentation cover different fields, and the
+// field whichever of them omitted would be unchecked with nothing reporting it.
+//
+// The Recipe is the one the render bound to the node, keyed by the identity the
+// composed graph gives it, so a component a sub-module contributed is reached here
+// exactly as the facts about it are reached.
+//
+// Each coordinate is positioned at the Recipe rather than at the Aggregate the
+// component was authored in, because the field is written in the Recipe and that
+// is the document an author edits. The Recipe's name stands in for its path, for
+// the reason the provides axis states.
+func (c *describedStageCoordinates) NodeTemplateFields(node string) []constraint.TemplateFieldCoordinate {
+	recipe, held := c.recipes[node]
+	if !held || recipe == nil {
+		return nil
+	}
+	fields := RecipeTemplateFields(recipe)
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make([]constraint.TemplateFieldCoordinate, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, constraint.TemplateFieldCoordinate{
+			Value:        field.Label,
+			SourceFile:   recipe.Metadata.Name,
+			AuthoredKeys: field.AuthoredKeys,
+		})
+	}
+	return out
+}
+
 // BoundaryAttachmentTemplateFields returns the inline template fields the
 // FeatureRecipe one boundary-declared attachment binds writes, in the order that
 // FeatureRecipe's fields are enumerated in.
@@ -546,6 +583,7 @@ var (
 	_ describedStageAxes                                  = (*describedStageCoordinates)(nil)
 	_ boundaryScopeAttachmentAxes                         = (*describedStageCoordinates)(nil)
 	_ authoredProvidesAxes                                = (*describedStageCoordinates)(nil)
+	_ renderedNameAxes                                    = (*describedStageCoordinates)(nil)
 	_ authoredLocalsAxes                                  = (*describedStageCoordinates)(nil)
 	_ crossBoundaryLinkAxis                               = (*describedStageCoordinates)(nil)
 	_ constraint.NodeEnumerator                           = (*describedStageCoordinates)(nil)
@@ -559,4 +597,5 @@ var (
 	_ constraint.BoundaryAttachmentEnumerator             = (*describedStageCoordinates)(nil)
 	_ constraint.BoundaryAttachmentPipelineStepEnumerator = (*describedStageCoordinates)(nil)
 	_ constraint.BoundaryPathTemplateFieldEnumerator      = (*describedStageCoordinates)(nil)
+	_ constraint.NodeTemplateFieldEnumerator              = (*describedStageCoordinates)(nil)
 )

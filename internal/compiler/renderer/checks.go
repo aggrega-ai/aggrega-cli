@@ -935,15 +935,19 @@ var ProvidesTemplateSelfContained = constraint.Check[
 // whether the node's provider reports such a name is settled by the Recipe
 // binding, ahead of every evaluation, so nothing here is guessed.
 //
-// It reads two facts and derives its own references from the authored text, for
+// It reads four facts and derives its own references from the authored text, for
 // the reason the self-containment rule beside it does: a template this rule
 // refuses is exactly one whose value is never produced, so the resolved value
 // cannot serve as the input.
 //
-// A template that does not parse is not this rule's finding, and neither is one
-// the self-containment rule already refuses: evaluation reports the parse error
-// against the same entry, and a reference this surface does not admit at all is
-// that rule's subject rather than this one's.
+// The predicate itself is shared with the rule over the rest of the surfaces this
+// value lands on, which is what keeps one reference from being answered two ways.
+// This value's own part is which facts to read: they are keyed by the provides
+// entry, and the entry's own position names it, so no further detail is added.
+//
+// A reference the self-containment rule already refuses is not this rule's
+// finding: a reference the surface does not admit at all is that rule's subject
+// rather than this one's.
 var ProvidesTemplateRenderedNameAvailable = constraint.Check[
 	constraint.DescribedView,
 	constraint.NodeProvidesKeySubject,
@@ -954,28 +958,129 @@ var ProvidesTemplateRenderedNameAvailable = constraint.Check[
 		v constraint.DescribedView,
 		s constraint.NodeProvidesKeySubject,
 	) []constraint.Objection {
-		if v.NodeRenderedName(s.NodeID()) != "" {
-			return nil
-		}
-		text := v.AuthoredNodeProvides(s.NodeID(), s.ProvidesKey())
-		if text == "" {
-			return nil
-		}
-		tree, err := gotmpl.ParseTree(text, "{{", "}}")
-		if err != nil {
-			return nil
-		}
-		ref, reads := renderedNameReference(tree)
-		if !reads {
-			return nil
-		}
-		return []constraint.Objection{s.RaiseWithAdvice(
-			ErrRenderedNameUnavailable(),
-			renderedNameRemedy(v.NodeDeclaresAuthoredSource(s.NodeID())),
-			constraint.Uncaptioned(ref),
-			constraint.Captioned("provider", v.NodeRenderingProvider(s.NodeID())),
-		)}
+		return renderedNameObjections(
+			s,
+			v.NodeRenderedName(s.NodeID()),
+			v.AuthoredNodeProvides(s.NodeID(), s.ProvidesKey()),
+			"{{", "}}",
+			v.NodeDeclaresAuthoredSource(s.NodeID()),
+			v.NodeRenderingProvider(s.NodeID()),
+			nil,
+		)
 	},
+}
+
+// TemplateFieldRenderedNameAvailable reports each inline template field a node's
+// own Recipe writes that reads the name its target renders author-supplied source
+// under, on a node whose provider reports no such name.
+//
+// It is the same refusal the provides rule carries, over the rest of the surfaces
+// the value lands on: the values mapping, the workload body, each artifacts entry,
+// and each pipeline step's input and its gate all render against the node's own
+// context, so a reference to that name resolves away on every one of them and
+// emits a value one segment short. One predicate serves them all, which is what
+// keeps an author from being told two different things about one reference.
+//
+// It reads five facts, and the delimiter pair is the one that makes the reference
+// set correct rather than approximate. A provider whose own target syntax uses the
+// usual pair declares an alternate one for its artifacts, so an artifacts body has
+// to be parsed with the pair that provider declared and every other field with the
+// usual one. Which of the two applies follows from the field, and the reading that
+// answers it sits beside the enumeration that built the label.
+//
+// Its detail names the offending expression, the provider, and the authored field.
+// The field is captioned as well as positioned because the position cannot always
+// name it: an artifacts entry's key is an output filename, so it carries the
+// character the locator separates its segments with and the position stops at the
+// block holding the entry. Naming the field is what makes such a finding
+// actionable in a Recipe declaring many.
+var TemplateFieldRenderedNameAvailable = constraint.Check[
+	constraint.DescribedView,
+	constraint.NodeTemplateFieldSubject,
+]{
+	Sentinel: ErrRenderedNameUnavailable(),
+	Severity: constraint.SeverityFatal,
+	Run: func(
+		v constraint.DescribedView,
+		s constraint.NodeTemplateFieldSubject,
+	) []constraint.Objection {
+		left, right := "{{", "}}"
+		if RecipeTemplateFieldReadsWithArtifactDelimiters(s.TemplateField()) {
+			delims := v.ProviderArtifactTemplateDelimiters(s.NodeID())
+			left, right = delims.Left, delims.Right
+		}
+		return renderedNameObjections(
+			s,
+			v.NodeRenderedName(s.NodeID()),
+			v.AuthoredNodeTemplateText(s.NodeID(), s.TemplateField()),
+			left, right,
+			v.NodeDeclaresAuthoredSource(s.NodeID()),
+			v.NodeRenderingProvider(s.NodeID()),
+			[]constraint.DetailValue{constraint.Captioned("field", s.TemplateField())},
+		)
+	},
+}
+
+// renderedNameSubject is the surface the rendered-name predicate needs of a
+// subject: the node whose provider is asked about, and the raising every subject
+// carries.
+//
+// It is an interface over the kinds rather than one kind, because the key lands on
+// several authored surfaces and each is enumerated along its own axis. What the
+// predicate does with a subject is identical on all of them.
+type renderedNameSubject interface {
+	constraint.Subject
+	NodeID() string
+}
+
+// renderedNameObjections is the ONE body of the rendered-name predicate: it
+// refuses one authored template that reads the name its target renders
+// author-supplied source under, on a node whose provider reports no such name.
+//
+// The facts arrive as arguments rather than being read here, because reading them
+// is precisely the part that differs between the values declared over this
+// predicate: each keys its facts by its own coordinates, and a predicate reaching
+// for a view would have to know which. The delimiter pair is among them, and it is
+// what makes the reference set correct rather than approximate on a surface whose
+// text is parsed with an alternate pair.
+//
+// surfaceDetail is what the calling value adds after the reference — the authored
+// field, where the position cannot name it. It is a positional argument rather
+// than a variadic so a value cannot omit it silently; the provides entry supplies
+// none, its own position naming the entry.
+//
+// A template that does not parse is not this predicate's finding: evaluation
+// reports the parse error against the same text, so refusing it here as well would
+// report one authoring fault twice.
+func renderedNameObjections[S renderedNameSubject](
+	s S,
+	reportedName string,
+	templateText string,
+	leftDelim, rightDelim string,
+	declaresAuthoredSource bool,
+	provider string,
+	surfaceDetail []constraint.DetailValue,
+) []constraint.Objection {
+	if reportedName != "" || templateText == "" {
+		return nil
+	}
+	tree, err := gotmpl.ParseTree(templateText, leftDelim, rightDelim)
+	if err != nil {
+		return nil
+	}
+	ref, reads := renderedNameReference(tree)
+	if !reads {
+		return nil
+	}
+	detail := []constraint.DetailValue{
+		constraint.Uncaptioned(ref),
+		constraint.Captioned("provider", provider),
+	}
+	return []constraint.Objection{s.RaiseWithAdvice(
+		ErrRenderedNameUnavailable(),
+		renderedNameRemedy(declaresAuthoredSource),
+		append(detail, surfaceDetail...)...,
+	)}
 }
 
 // renderedNameRemedy is what to write instead of a name the node's provider does
@@ -989,12 +1094,25 @@ var ProvidesTemplateRenderedNameAvailable = constraint.Check[
 // its reader to a value that names none of that node's resources. Stating the
 // wrong remedy is worse than stating none, which is why the two are separate
 // sentences rather than one that covers both loosely.
+// Neither sentence says WHY a target reports no name, and the omission is
+// deliberate rather than terseness. The reasons differ between targets — one
+// reads the resource names a Recipe wrote, another derives its name from where its
+// files were placed and does not know it while a node renders — and the compiler
+// holds no knowledge of either: the name crosses the boundary already composed, so
+// a sentence naming a reason would have the core assert something about a target it
+// deliberately understands nothing about, and it would be false for every target it
+// was not written for.
+//
+// Both sentences reach every surface the value lands on, so neither says
+// "publish": a values mapping, a workload body and an artifacts entry render a
+// value rather than publishing one, and a remedy phrased for one surface would be
+// wrong wherever the same refusal reaches another.
 func renderedNameRemedy(declaresAuthoredSource bool) string {
 	if declaresAuthoredSource {
-		return "publish a value this target does supply: this one names its resources " +
-			"from what a Recipe wrote rather than from a name it derives, so the names are already known here"
+		return "write a value that does not depend on a name this target derives: it reports none " +
+			"for the output it renders from supplied source, so there is nothing of that kind to read here"
 	}
-	return "publish {{ .context.instance_id }} instead: this node supplies no source of its own, " +
+	return "read {{ .context.instance_id }} instead: this node supplies no source of its own, " +
 		"so its resources are named after the node's identity"
 }
 

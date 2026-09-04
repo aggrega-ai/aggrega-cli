@@ -1033,6 +1033,13 @@ var subjectKindBindings = map[SubjectKind]struct {
 				"spec", "locals", "endpoint")
 		},
 	},
+	SubjectNodeTemplateField: {
+		iface: reflect.TypeOf((*NodeTemplateFieldSubject)(nil)).Elem(),
+		make: func(f string) Subject {
+			return newNodeTemplateFieldSubject(f, "web", "artifacts[cm.yaml]",
+				"spec", "artifacts", "cm.yaml")
+		},
+	},
 	SubjectBoundaryAttachmentTemplateField: {
 		iface: reflect.TypeOf((*BoundaryAttachmentTemplateFieldSubject)(nil)).Elem(),
 		make: func(f string) Subject {

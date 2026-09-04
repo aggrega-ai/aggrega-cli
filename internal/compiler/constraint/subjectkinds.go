@@ -935,6 +935,63 @@ func newBoundaryAttachmentLocalsKeySubject(
 	}
 }
 
+// NodeTemplateFieldSubject is the subject of a check invoked once per inline
+// template field one node's own Recipe writes.
+//
+// The innermost coordinate is the AUTHORED FIELD LABEL, on the reading the
+// boundary-rooted form below sets out: a Recipe carries several such fields and
+// gains more over time, so a kind per field would put the field identity in
+// structure and a field added later would be silently ungated if any of its four
+// declarations were forgotten.
+//
+// One reference set serves the whole carrier, which is the condition that makes
+// the family pay here: every field this kind reaches is evaluated against the
+// node's own render context, one type, so what a template on any of them may name
+// is one question with one answer. The fields differ in the delimiter pair their
+// text is parsed with rather than in what they may name, and that difference is a
+// property of the field the reading beside the enumeration answers.
+//
+// It is rooted at the node because that is what selects the document: the fields
+// are written in the Recipe the node binds, so a node is the coordinate that says
+// which Recipe's text is being asked about.
+type NodeTemplateFieldSubject interface {
+	Subject
+
+	// NodeID identifies the node whose Recipe writes the field, as every keyed
+	// fact takes it.
+	NodeID() string
+
+	// TemplateField is the inline template field the check was invoked for,
+	// labelled the way an author reads it back — the authored key, carrying the
+	// entry's own key or the step's id where the block is keyed.
+	TemplateField() string
+
+	nodeTemplateField()
+}
+
+type nodeTemplateFieldSubject struct {
+	provenance
+	node  string
+	field string
+}
+
+func (nodeTemplateFieldSubject) nodeTemplateField() {}
+
+func (s nodeTemplateFieldSubject) NodeID() string { return s.node }
+
+func (s nodeTemplateFieldSubject) TemplateField() string { return s.field }
+
+func newNodeTemplateFieldSubject(
+	sourceFile, node, field string,
+	segments ...string,
+) NodeTemplateFieldSubject {
+	return nodeTemplateFieldSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		field:      field,
+	}
+}
+
 // BoundaryAttachmentTemplateFieldSubject is the subject of a check invoked once
 // per inline template field the FeatureRecipe one attachment declared on a
 // boundary writes.

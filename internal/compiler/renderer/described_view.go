@@ -502,6 +502,32 @@ func (v *describedView) BoundaryAttachmentExecutionScope(
 	return fr.Spec.ExecutionScope
 }
 
+// AuthoredNodeTemplateText returns the template text a node's own Recipe writes
+// for one of its inline template fields, as written and before anything is
+// evaluated.
+//
+// It is answered from the same enumeration the field axis is built from, so a
+// field that axis presents is a field this can answer. Reading the field out of
+// the spec by name here instead would be a second reading of which fields exist,
+// and a field the two disagreed about would be enumerated with no text or carry
+// text nothing was invoked for.
+//
+// A label the enumeration does not carry answers empty, which is the honest
+// reading: the field is enumerated rather than looked up, so a label reaching
+// here that the document does not write names nothing.
+func (v *describedView) AuthoredNodeTemplateText(node string, field string) string {
+	recipe, ok := v.recipes[node]
+	if !ok || recipe == nil {
+		return ""
+	}
+	for _, entry := range RecipeTemplateFields(recipe) {
+		if entry.Label == field {
+			return entry.Text
+		}
+	}
+	return ""
+}
+
 // BoundaryAttachmentAuthoredTemplateText returns the template text the
 // FeatureRecipe one attachment declared on a boundary writes for one of its
 // inline template fields, as written and before anything is evaluated.
