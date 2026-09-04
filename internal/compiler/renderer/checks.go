@@ -1665,7 +1665,11 @@ func sourceValueDeclared(src any) bool {
 }
 
 // recipeSourceDeclared reports whether a Recipe carries a source, reading the
-// RESOLVED value rather than the text the author wrote.
+// value the author WROTE rather than the resolved one.
+//
+// That is what makes it usable as the guard resolution is gated on: it is asked
+// before a source has been resolved, and a reader wanting the resolved value
+// passes that value to sourceValueDeclared directly instead.
 //
 // The emptiness condition itself lives in sourceValueDeclared; this adds the one
 // thing an entity has that a bare value does not, which is that the entity may
