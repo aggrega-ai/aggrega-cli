@@ -72,11 +72,19 @@ import (
 // umbrella addresses it by, in dependency resolution and in values, at which
 // point the same name becomes load-bearing.
 //
-// What that change moves is the REASONING, never the asserted behaviour, and the
-// behaviour comes out better justified than it went in. So do not delete this
-// file on the grounds that the premise behind it moved: it will be pinning a
-// contract rather than a consistency, which is a stronger reason to keep it than
-// the one it was written under.
+// That change moves the REASONING for both rows — and, measured rather than
+// predicted, it moves the per-component row's expected VALUE as well. Once the
+// two charts are discovered siblings, both declaring "api" leaves the umbrella
+// able to address neither: a dependency binds to a sub-chart by the name that
+// sub-chart declares, so two siblings declaring one name is the same collision
+// this rewrite exists to remove, reappearing one level up. That row's expectation
+// therefore has to become the contributor's own identity rather than its host's.
+// Which spelling it takes is not settled here.
+//
+// So do not delete this file on the grounds that the premise behind it moved: it
+// will be pinning a contract rather than a consistency, which is a stronger
+// reason to keep it than the one it was written under. Update the row and keep
+// the file.
 
 // attachmentChartNameCase is one attachment scope's placed chart.
 type attachmentChartNameCase struct {
