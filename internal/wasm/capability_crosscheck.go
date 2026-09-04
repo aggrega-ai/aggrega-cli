@@ -219,39 +219,6 @@ func crossCheckProviderContract(entityIdentity string, want, got ProviderContrac
 			"entity %q declares nest_segment %q but the plugin's describe() reports %q: %w",
 			entityIdentity, want.NestSegment, got.NestSegment, ErrWasmContractMismatch())
 	}
-	if err := crossCheckAttachmentSegment(entityIdentity, want.AttachmentSegment, got.AttachmentSegment); err != nil {
-		return err
-	}
-	return nil
-}
-
-// crossCheckAttachmentSegment compares the authored and self-reported attachment
-// directories. Both sides are the contract's three-state carrier, so the
-// comparison is on declaredness first and then on the directory named — the same
-// shape [crossCheckDelimiters] uses, for the same reason.
-//
-// Comparing the pointers directly would type-check and read like a match while
-// testing identity rather than content, so two separately decoded reports naming
-// one directory would disagree. The dereference is what makes the comparison mean
-// what the message claims.
-//
-// Both operands carry all three states end to end: the entity's authored claim
-// reaches this function without passing through a projection that could collapse
-// one, so an author declaring no directory and an author declaring nothing arrive
-// distinct and are compared as such. A declaredness difference is reported as
-// one, rather than as a difference between two directory names — quoting two
-// empty strings at an author would name nothing they could act on.
-func crossCheckAttachmentSegment(entityIdentity string, want, got *string) error {
-	if (want == nil) != (got == nil) {
-		return fmt.Errorf(
-			"entity %q and the plugin's describe() disagree on whether attachment_segment is declared (entity declares=%t, plugin declares=%t): %w",
-			entityIdentity, want != nil, got != nil, ErrWasmContractMismatch())
-	}
-	if want != nil && *want != *got {
-		return fmt.Errorf(
-			"entity %q declares attachment_segment %q but the plugin's describe() reports %q: %w",
-			entityIdentity, *want, *got, ErrWasmContractMismatch())
-	}
 	return nil
 }
 

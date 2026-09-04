@@ -276,14 +276,20 @@ func boundaryNestingOf(engine Provider) BoundaryNesting {
 	return BoundaryNesting{PerNode: true, Segment: nestSegmentOf(engine)}
 }
 
-// DefaultAttachmentSegment is the directory an attached Feature's files sit under
-// when the provider whose dispatch group holds them declares none.
+// DefaultAttachmentSegment is the directory an attached Feature's files sit
+// under, for every provider.
+//
+// It is the host's own answer rather than a fallback behind a provider's, because
+// no declaration names an attachment's enclosing directory: a provider states how
+// it assembles a dispatch group's output, and where that assembly nests it names
+// the directory enclosing a contributor, and those two are the whole of what it
+// declares about layout.
 //
 // The word is in the provider-agnostic host on purpose rather than by omission:
-// `features:` is the block an author writes to attach one, so the default names
+// `features:` is the block an author writes to attach one, so the directory names
 // the authoring surface the output came from and belongs to no target's
-// vocabulary. A provider whose target needs those files somewhere its own loader
-// looks declares that directory instead.
+// vocabulary — which is what makes one host-side answer defensible for every
+// target at once.
 //
 // The nesting position has no counterpart default, and the asymmetry is the point
 // rather than an oversight: every directory that could enclose a contributor is
@@ -336,51 +342,26 @@ func (n BoundaryNesting) resolvedPrefix(provider string) (string, error) {
 }
 
 // attachmentPrefixFor returns the directory an attached Feature's files sit under
-// within the position of whatever it is attached to, for the provider whose
-// dispatch group holds that output.
+// within the position of whatever it is attached to.
 //
-// This is the single home of that directory — its default and its bound — and
-// both attachment scopes compose their own coordinates onto what it returns. The
-// scopes differ in which coordinates those are (a component-scope attachment
-// names its host as well as its instance; a boundary-scope one sits inside the
-// boundary already, so the instance alone identifies it), and that difference is
-// one of scope rather than of layout, so it stays at each composition while the
-// directory stays here.
+// This is the single home of that directory, and both attachment scopes compose
+// their own coordinates onto what it returns. The scopes differ in which
+// coordinates those are (a component-scope attachment names its host as well as
+// its instance; a boundary-scope one sits inside the boundary already, so the
+// instance alone identifies it), and that difference is one of scope rather than
+// of layout, so it stays at each composition while the directory stays here.
 //
-// The three states the provider's report can carry each map to one prefix. No
-// declaration keeps the host default, so a provider that says nothing emits the
-// layout the host has always given it. A declared empty directory returns the
-// empty prefix, which places an attachment's files directly at the position it is
-// attached to — the answer a target needs when it reads only the files sitting
-// directly in a directory. A declared name is bounded first and then returned with
-// its separator.
+// It takes no provider report and cannot fail. A provider states how it assembles
+// a dispatch group's output and, where that assembly nests, which directory
+// encloses a contributor — and those two declarations are what a target's layout
+// is read from. There is no third declaration naming an attachment's own
+// enclosing directory, so the host applies its own default to every provider and
+// the answer is the same for all of them.
 //
-// The empty prefix does not merely drop a directory level: it changes where each
-// composition puts the attachment's own coordinates, which move out of directory
-// segments and into an encoded filename prefix. Dropping the enclosing directory
-// alone would leave those coordinates as directory segments and so leave the
-// files nested after all. [attachmentOutputPrefix] is where both shapes are
-// composed, and it is what an attachment's placement should be read from.
-//
-// The empty prefix is returned rather than composed, because composing the
-// separator onto an empty directory would yield a leading "/" and root the
-// attachment's files instead of placing them.
-//
-// A declared empty directory is NOT a bound violation and must not be refused:
-// naming no directory is the claim, whereas the bound exists to stop a value that
-// names a path from carrying files outside the position they belong to.
-func attachmentPrefixFor(engine Provider, provider string) (string, error) {
-	declared, ok := attachmentSegmentOf(engine)
-	if !ok {
-		return DefaultAttachmentSegment + "/", nil
-	}
-	if declared == "" {
-		return "", nil
-	}
-	if !namesOneDirectory(declared) {
-		return "", notOneDirectoryErr(ErrAttachmentSegmentNotOneDirectory(), provider, "attachment_segment", declared)
-	}
-	return declared + "/", nil
+// [attachmentOutputPrefix] is where the coordinates are composed onto this
+// prefix, and it is what an attachment's placement should be read from.
+func attachmentPrefixFor() string {
+	return DefaultAttachmentSegment + "/"
 }
 
 // BoundaryAssemblyReporter is the optional interface an engine implements to
@@ -424,42 +405,6 @@ func nestSegmentOf(engine Provider) string {
 		return r.NestSegment()
 	}
 	return ""
-}
-
-// AttachmentSegmentReporter is the optional interface an engine implements to
-// report the directory its target places an attached Feature's rendered files
-// under, within the position of whatever that Feature is attached to.
-//
-// It is a report of its own rather than something read off the assembly mode,
-// because the mode does not determine it: two providers that both compose an
-// enclosing structure can need opposite answers, one whose target reads only the
-// files sitting directly in a directory and one whose target discovers its units
-// in a named child directory. The host cannot tell those two apart from anything
-// else they declare, so the answer is the guest's to state.
-//
-// The report carries a directory AND whether one was declared, because those are
-// three states rather than two: a named directory, an explicitly empty one meaning
-// the target wants no enclosing directory at all, and no declaration, which leaves
-// the host its own default. A single string cannot hold the middle state — its
-// empty value is already spoken for by the third — so declaring none and declaring
-// nothing would be one value and the difference would be unsayable.
-type AttachmentSegmentReporter interface {
-	AttachmentSegment() (segment string, declared bool)
-}
-
-// attachmentSegmentOf returns engine's reported attachment directory and whether
-// engine declared one at all. It is the single seam every reader of that report
-// goes through.
-//
-// An engine implementing no reporter and an engine reporting nothing collapse to
-// the same answer, and that collapse is correct: both mean no declaration was
-// made. What must NOT collapse is a declared empty directory, which is a claim
-// about layout rather than the absence of one.
-func attachmentSegmentOf(engine Provider) (segment string, declared bool) {
-	if r, ok := engine.(AttachmentSegmentReporter); ok {
-		return r.AttachmentSegment()
-	}
-	return "", false
 }
 
 // AssemblyNameAnnotationReporter is the optional interface an engine implements

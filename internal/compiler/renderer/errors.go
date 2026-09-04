@@ -782,31 +782,6 @@ var errNestSegmentNotOneDirectory = cerrors.Register("compiler-renderer/nest-seg
 	Message:   "provider named a directory for each contributor's own sub-directory that is not a single directory name",
 })
 
-// ErrAttachmentSegmentNotOneDirectory is the Loud Guardrail halt raised when a
-// provider declares a directory for an attached Feature's files that is not a
-// single directory name. A provider names the directory an attachment's rendered
-// files sit under within the position of whatever that Feature is attached to,
-// and the orchestrator composes the attachment's own coordinates into it — so a
-// value carrying a path separator, or naming the current or the parent
-// directory, would place those files outside the position the attachment
-// rendered into. The diagnostic names the provider that declared the value and
-// the value itself, and the remedy is to name one directory. A provider that
-// names nothing is not affected: the orchestrator then applies its own default
-// and the layout is unchanged.
-//
-// It is a condition of its own rather than the nesting one raised twice, because
-// a provider declares the two directories separately and a reader holding the
-// refusal has to know which declaration to change. Category: TRANSLATION_ERROR,
-// for the same reason its sibling carries: the value came from a provider's own
-// self-description with nothing in any catalog document to correct. Match with
-// errors.Is(err, ErrAttachmentSegmentNotOneDirectory()).
-func ErrAttachmentSegmentNotOneDirectory() error { return errAttachmentSegmentNotOneDirectory }
-
-var errAttachmentSegmentNotOneDirectory = cerrors.Register("compiler-renderer/attachment-segment-not-one-directory", cerrors.Meta{
-	ShortCode: "E0273",
-	Message:   "provider named a directory for an attached feature's files that is not a single directory name",
-})
-
 // ErrEmptySource is the Loud Guardrail halt raised when a Recipe declares
 // `source:` and gives it an empty string. The two authoring modes a Recipe's
 // source field selects between are sourceless — no external artifact, output

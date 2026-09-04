@@ -2000,18 +2000,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// /host documents. renderCtx is the render-time context every pipeline
 		// step receives.
 		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
-		// The directory this node's attachments write their own files under, read
-		// from the provider whose dispatch group holds them — this node's own, since
-		// a component-scope attachment's output lands in its host's group. Resolved
-		// once per node, through the one home of that directory's default and its
-		// one-directory bound, so a declared value becomes a path in exactly one
-		// place and no composition can reach it unbounded.
-		attachmentDir, aerr := attachmentPrefixFor(engine, providerName)
-		if aerr != nil {
-			// The refusal's own text becomes the frame's message so the provider and
-			// the value reach a reader of one frame as well as of the whole chain.
-			return nil, cerrors.Wrap(aerr, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, aerr.Error())
-		}
+		// The directory this node's attachments write their own files under,
+		// taken from the one home of that directory so this scope and the boundary
+		// scope cannot come to lay their output out differently.
+		attachmentDir := attachmentPrefixFor()
 		// Whether this node's dispatch group gives each contributor a position of
 		// its own, read from the same static self-description the attachment
 		// directory above is read from. An attachment's files are placed while this
@@ -2316,12 +2308,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if ferr != nil {
 			return nil, cerrors.Wrap(ferr, cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("boundary-scope attachment %q: selecting the plugin its output is placed by", key.FRInstance))
 		}
-		attachmentDir, aerr := attachmentPrefixFor(frEngineForPlacement, frProvider)
-		if aerr != nil {
-			// The refusal's own text becomes the frame's message so the provider and
-			// the value reach a reader of one frame as well as of the whole chain.
-			return nil, cerrors.Wrap(aerr, cerrors.TranslationError, cerrors.SourceLocation{}, aerr.Error())
-		}
+		attachmentDir := attachmentPrefixFor()
 		intermediates := []EmittedFile{}
 		nodeFiles := map[string][]byte{}
 		// The prefix this feature's own files are keyed under inside its own file
@@ -2332,10 +2319,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// followed by that prefix.
 		//
 		// Reported only where the group's provider gives each contributor a position
-		// of its own AND declares a directory for an attachment. Where it declares
-		// none, the composition below returns a filename prefix rather than a
-		// directory segment, which names no position for this feature to be reported
-		// at.
+		// of its own AND the composition below yielded a directory segment. Where it
+		// yields a filename prefix instead, there is no position for this feature to
+		// be reported at.
 		featureOutputPrefix := attachmentOutputPrefix(attachmentDir, key.FRInstance)
 		for _, f := range files {
 			if f.Intermediate {

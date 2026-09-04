@@ -250,15 +250,6 @@ type ProviderContractClaim struct {
 	// sits under, for a plugin whose boundary assembly nests. Empty when the
 	// plugin names none.
 	NestSegment string
-	// AttachmentSegment is the authored directory an attached Feature's rendered
-	// files sit under, within the position of whatever it is attached to. It is
-	// held by reference because the claim carries three states and an author
-	// reaches all three: a non-empty value names the directory, an explicitly
-	// empty value declares that the target wants no enclosing directory, and nil
-	// declares nothing, leaving the host its own default. Collapsing the last two
-	// would make an entity read as declaring nothing while its plugin declared
-	// none, which the load-time contract cross-check refuses.
-	AttachmentSegment *string
 }
 
 // PluginAssemblyNameAnnotationClaim is an entity's authored assembly-name
