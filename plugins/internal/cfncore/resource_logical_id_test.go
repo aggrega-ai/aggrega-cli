@@ -6,6 +6,8 @@ package cfncore
 import (
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/alphanumeric"
 )
 
 // resourceFragment is one fragment declaring a single resource under the given
@@ -224,12 +226,12 @@ func TestTheLogicalIDAlphabetHasOneHome(t *testing.T) {
 	}
 	for r := rune(0); r < 0x250; r++ {
 		want := oracle(r)
-		if got := isLogicalIDRune(r); got != want {
-			t.Fatalf("isLogicalIDRune(%q) = %v, want %v", r, got, want)
+		if got := alphanumeric.IsRune(r); got != want {
+			t.Fatalf("the alphabet admits %q = %v, want %v", r, got, want)
 		}
 		// The derivation's side of the same rule: it carries a character through
 		// exactly when the alphabet admits it, and drops it otherwise.
-		carried := capitalizedWords(string(r)) != ""
+		carried := alphanumeric.CapitalizedWords(string(r)) != ""
 		if carried != want {
 			t.Fatalf("the Output-name derivation %s %q, but the alphabet says %v",
 				map[bool]string{true: "carries", false: "drops"}[carried], r, want)

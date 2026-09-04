@@ -8,6 +8,8 @@ import (
 	"text/template"
 
 	sprig "github.com/Masterminds/sprig/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/alphanumeric"
 )
 
 // FuncMap returns the template-function set used by Aggrega's template
@@ -33,17 +35,45 @@ func FuncMap() template.FuncMap {
 // gets the same behavior under the same name as the full set does.
 // A fresh map is returned on each call.
 //
-// Currently the only Aggrega-specific helper is [optional]; the helper
-// surface grows additively as catalog-authoring needs surface.
+// The helper surface grows additively as catalog-authoring needs
+// surface. Two helpers are bound today: [optional] and
+// [capitalizedWords].
 //
 // The helper functions themselves are unexported. Wiring one under a
 // name of your own choosing is therefore not possible from outside this
 // package, which is what keeps an authored name meaning one thing on
-// every surface that registers it.
+// every surface that registers it. A helper whose behavior is shared
+// with a surface outside this package is bound through an unexported
+// forwarder here for that reason, rather than by naming the shared
+// implementation directly.
 func Helpers() template.FuncMap {
 	return template.FuncMap{
-		"optional": optional,
+		"optional":         optional,
+		"capitalizedWords": capitalizedWords,
 	}
+}
+
+// capitalizedWords reads a string as words separated by runs of anything
+// outside ASCII letters and digits, capitalises each word's first letter,
+// and joins them — so `payments-db` becomes `PaymentsDb`.
+//
+// Call shape from a template:
+//
+//	{{ capitalizedWords .context.instance_id }}
+//
+// It forwards to [alphanumeric.CapitalizedWords] and adds nothing. The
+// derivation has one home because two surfaces need it to agree: a
+// template rendering an authored value here, and a WebAssembly guest
+// deriving a name from the same value later. A second implementation
+// would agree on ordinary input and drift on an edge case, with nothing
+// failing while the two still agreed.
+//
+// The forwarder exists so the sentence above about unexported helpers
+// stays true: binding the shared function directly would make it
+// bindable elsewhere under another name, which is the thing that keeps
+// an authored name meaning one thing.
+func capitalizedWords(s string) string {
+	return alphanumeric.CapitalizedWords(s)
 }
 
 // optional returns the value at key in m if the key is present, otherwise

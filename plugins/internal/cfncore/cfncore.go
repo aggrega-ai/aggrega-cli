@@ -27,11 +27,15 @@
 // downstream holds the built name only, and so could refuse a collision without
 // being able to say which two entries produced it.
 //
-// A logical id also has an alphabet — letters and digits, and nothing else
-// ([isLogicalIDRune]) — and the two properties are independent: a set of ids can
-// be perfectly distinct and still name characters a template cannot hold. Output
-// names are legal by construction, because building one drops everything outside
-// the alphabet. Every name this core reads verbatim is not, so each is refused
+// A logical id also has an alphabet — letters and digits, and nothing else — and
+// the two properties are independent: a set of ids can be perfectly distinct and
+// still name characters a template cannot hold. That alphabet is a character
+// class rather than this target's invention, so the class and the fold that
+// reads it live outside this core, in [alphanumeric]; what this core states, and
+// what is genuinely its own, is that a CloudFormation logical id admits exactly
+// that class. Output names are legal by construction, because building one drops
+// everything outside the alphabet. Every name this core reads verbatim is not,
+// so each is refused
 // where it carries such a character rather than emitted into a template the
 // target will not accept: an authored resource logical id
 // ([resourceLogicalIDRefusal]), and an authored name in a carried section that
@@ -83,6 +87,7 @@ import (
 	"strings"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/internal/alphanumeric"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
@@ -969,7 +974,7 @@ func isCustomTag(tag string) bool {
 // same function, which is what lets them address a producer's output from the
 // node and entry name alone.
 func OutputLogicalID(nodeID, entry string) string {
-	return capitalizedWords(nodeID) + capitalizedWords(entry)
+	return alphanumeric.CapitalizedWords(nodeID) + alphanumeric.CapitalizedWords(entry)
 }
 
 // Fragment sections an author reaches the stack's Output names through. Each is
@@ -1112,49 +1117,10 @@ func joinPhrases(phrases []string) string {
 	}
 }
 
-// isLogicalIDRune reports whether a CloudFormation logical id admits one
-// character. A logical id admits letters and digits and nothing else — no
-// separator, no punctuation, no character outside ASCII.
-//
-// It is the one statement of that alphabet in this core, and both things that
-// need it read it here: the derivation that builds a stack Output name treats
-// everything outside the alphabet as a word boundary ([capitalizedWords]), and
-// the refusal of an authored resource logical id asks whether every character
-// lies inside it ([resourceLogicalIDRefusal]). Those two are the same rule read
-// from opposite sides, so a second copy would agree today and drift the moment
-// either side's notion of the alphabet moved — with nothing failing while they
-// still agreed.
-func isLogicalIDRune(r rune) bool {
-	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
-}
-
-// capitalizedWords reads a string as words separated by runs of anything a
-// CloudFormation logical id does not admit, capitalises each word's first
-// letter, and joins them. A word's remaining characters are left as authored, so
-// a name that already carries capitals keeps them and two inputs differing only
-// in where their separators sit stay distinguishable.
-func capitalizedWords(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	atWordStart := true
-	for _, r := range s {
-		if isLogicalIDRune(r) {
-			if atWordStart && r >= 'a' && r <= 'z' {
-				r -= 'a' - 'A'
-			}
-			b.WriteRune(r)
-			atWordStart = false
-		} else {
-			atWordStart = true
-		}
-	}
-	return b.String()
-}
-
 // resourceLogicalIDRefusal reports why a CloudFormation template cannot address
 // one contributor's resources by the logical ids it authored, and reports nil
 // where every one of them lies inside the alphabet a logical id admits
-// ([isLogicalIDRune]).
+// ([alphanumeric.IsRune]).
 //
 // A logical id is what the emitted template addresses a resource by, and this
 // core reads the ids a Recipe authored verbatim — so an id carrying a character
@@ -1188,7 +1154,7 @@ func resourceLogicalIDRefusal(nodeID string, ids []string) error {
 // carriedSectionNameRefusal reports why a CloudFormation template cannot address
 // one contributor's entries in a carried section by the names it authored, and
 // reports nil where every one of them lies inside the alphabet a logical id
-// admits ([isLogicalIDRune]).
+// admits ([alphanumeric.IsRune]).
 //
 // It is the same rule the resource logical ids follow, on the sections that carry
 // a logical id under a name their author wrote ([alphabetCheckedSections]) — so
@@ -1220,7 +1186,7 @@ func carriedSectionNameRefusal(nodeID, section string, names []string) error {
 
 // alphabetClauses reports one clause per name a CloudFormation template cannot
 // address, and nothing for a name that lies inside the alphabet a logical id
-// admits ([isLogicalIDRune]). An empty result means every name is addressable.
+// admits ([alphanumeric.IsRune]). An empty result means every name is addressable.
 //
 // subject is the noun a clause calls the thing a name addresses — a resource, an
 // entry of a carried section — so one derivation serves every space whose names
@@ -1266,7 +1232,7 @@ func charactersOutsideLogicalIDAlphabet(name string) []rune {
 	var outside []rune
 	seen := make(map[rune]bool)
 	for _, r := range name {
-		if isLogicalIDRune(r) || seen[r] {
+		if alphanumeric.IsRune(r) || seen[r] {
 			continue
 		}
 		seen[r] = true

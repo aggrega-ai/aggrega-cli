@@ -37,7 +37,7 @@ spec:
   # applications of this type deployed into one stack describe two parameters
   # rather than one.
   locals:
-    logical_id: '{{ regexReplaceAll "[^A-Za-z0-9]+" .context.instance_id " " | title | nospace }}'
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
 
   artifacts:
     template.yaml: |

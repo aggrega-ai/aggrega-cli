@@ -4,8 +4,97 @@
 package gotmpl
 
 import (
+	"strings"
 	"testing"
+	"text/template"
+
+	sprig "github.com/Masterminds/sprig/v3"
 )
+
+// TestCapitalizedWordsIsReachableFromARenderedTemplate asserts the helper is
+// invoked by name from template text and that its result reaches the rendered
+// output — not merely that the name is registered. A helper bound but
+// unreachable renders as a parse error at the first authored use, which is a
+// failure an author meets rather than one this package's tests do.
+//
+// It is asserted through both bindings, because they are different surfaces: a
+// value template renders through [FuncMap], while a surface evaluating an
+// authored coordinate takes [Helpers] alone. A helper registered in one and not
+// the other means the same authored expression answers on one surface and fails
+// to parse on the other.
+func TestCapitalizedWordsIsReachableFromARenderedTemplate(t *testing.T) {
+	bindings := map[string]template.FuncMap{
+		"FuncMap (Sprig plus Aggrega's helpers)": FuncMap(),
+		"Helpers (Aggrega's helpers alone)":      Helpers(),
+	}
+
+	for name, funcs := range bindings {
+		t.Run(name, func(t *testing.T) {
+			tpl, err := template.New("t").Funcs(funcs).Parse(`{{ capitalizedWords .instance_id }}`)
+			if err != nil {
+				t.Fatalf("the helper is not reachable by name from template text: %v", err)
+			}
+			var b strings.Builder
+			if err := tpl.Execute(&b, map[string]any{"instance_id": "payments-db.primary"}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+			if got, want := b.String(), "PaymentsDbPrimary"; got != want {
+				t.Fatalf("rendered %q, want %q — the helper's result did not reach the output", got, want)
+			}
+		})
+	}
+}
+
+// TestHelperSetIsTheSameThroughBothBindings asserts every helper [Helpers]
+// declares is also present in [FuncMap], so a helper cannot be added to one
+// binding and silently missed by the other.
+//
+// The direction is deliberate: FuncMap is Sprig's set plus Aggrega's, so it is
+// legitimately larger, while a name in Helpers that FuncMap lacks would mean the
+// layering dropped it.
+func TestHelperSetIsTheSameThroughBothBindings(t *testing.T) {
+	full := FuncMap()
+	helpers := Helpers()
+	if len(helpers) == 0 {
+		t.Fatal("Helpers() is empty, so this assertion would hold vacuously")
+	}
+	for name := range helpers {
+		if _, ok := full[name]; !ok {
+			t.Errorf("FuncMap() does not carry the helper %q that Helpers() declares", name)
+		}
+	}
+}
+
+// TestAggregaHelpersDoNotShadowSprig asserts no Aggrega helper name collides
+// with a Sprig function name.
+//
+// 🔴 This is not a style check. [FuncMap] layers Aggrega's helpers OVER Sprig's,
+// so a colliding name silently replaces a Sprig function on every template
+// surface in the product — every catalog entity using that Sprig function would
+// change behavior with nothing failing and nothing said. The collision is
+// invisible from the helper's own definition, which is why it is asserted here.
+func TestAggregaHelpersDoNotShadowSprig(t *testing.T) {
+	full := FuncMap()
+	helpers := Helpers()
+
+	// Sprig's set is FuncMap minus Aggrega's helpers, recovered by counting: a
+	// name in both maps that is shadowed cannot be seen by comparing values, so
+	// the assertion is made against a fresh Sprig set instead.
+	sprigOnly := sprigFuncNames()
+	if len(sprigOnly) == 0 {
+		t.Fatal("recovered no Sprig name, so this assertion would hold vacuously")
+	}
+	if len(full) != len(sprigOnly)+len(helpers) {
+		t.Errorf("FuncMap() carries %d names but Sprig has %d and Aggrega declares %d; "+
+			"the shortfall is a helper name shadowing a Sprig function",
+			len(full), len(sprigOnly), len(helpers))
+	}
+	for name := range helpers {
+		if _, clash := sprigOnly[name]; clash {
+			t.Errorf("the Aggrega helper %q shadows the Sprig function of the same name on every template surface", name)
+		}
+	}
+}
 
 // TestOptional_PresenceAwareFallback walks the absent-vs-authored-zero
 // discriminator that is the function's reason to exist. Each case pins
@@ -104,6 +193,18 @@ func TestOptional_PresenceAwareFallback(t *testing.T) {
 			}
 		})
 	}
+}
+
+// sprigFuncNames returns the Sprig function names, taken from Sprig itself
+// rather than from a list written here. A hand-written list would be a second
+// copy of the library's surface and would go stale on the next dependency bump,
+// which is precisely when a newly-introduced collision would need catching.
+func sprigFuncNames() map[string]bool {
+	names := map[string]bool{}
+	for name := range sprig.FuncMap() {
+		names[name] = true
+	}
+	return names
 }
 
 // deepEq compares two values for structural equality in a minimal way
