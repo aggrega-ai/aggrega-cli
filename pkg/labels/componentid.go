@@ -116,7 +116,7 @@ const identityDigestLength = 10
 // whose own derivation folds rather than escapes: an alphabet admitting the dot
 // would hand it a name it must fold, and two identities can fold to one. The
 // guest-side channel therefore carries lengths and grammars; the alphabet stays here.
-var componentIdentityEncoding = namesegment.NewEncoding(isAlphanumeric)
+var componentIdentityEncoding = namesegment.NewEncoding('-', isAlphanumeric)
 
 // nodeIdentityEncoding writes a node identity into the alphabet every authored
 // name already satisfies: the ASCII letters, the digits and the underscore.
@@ -142,7 +142,7 @@ var componentIdentityEncoding = namesegment.NewEncoding(isAlphanumeric)
 // target whose own alphabet is poorer narrows it again on its own side, and a
 // target whose derivation folds rather than escapes is protected for the reason
 // stated above: this encoding hands it no dot to fold.
-var nodeIdentityEncoding = namesegment.NewEncoding(isAuthoredNameRune)
+var nodeIdentityEncoding = namesegment.NewEncoding('-', isAuthoredNameRune)
 
 // isAuthoredNameRune reports whether a character is carried through
 // [nodeIdentityEncoding] as itself: an ASCII letter, a digit or an underscore.

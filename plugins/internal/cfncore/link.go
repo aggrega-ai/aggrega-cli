@@ -259,12 +259,12 @@ func findStackFile(files []rendercore.RenderedFile) ([]byte, bool) {
 //
 // Only the export name is authored. The output name is this core's own, built at
 // assembly from the component and the entry an author wrote ([OutputLogicalID]),
-// and that build is not injective — it drops every separator and capitalises the
-// following letter, so entries as different as db_endpoint, db-endpoint and
-// dbEndpoint all reach one output name. The authored spelling therefore cannot be
-// read back out of it, which is why a diagnostic built from this pair leans on
-// the export name and never presents the output name as something an author
-// wrote.
+// which encodes every character the logical-id alphabet refuses rather than
+// dropping it — so entries as different as db_endpoint, db-endpoint and
+// dbEndpoint reach three distinct output names. Distinct is not the same as
+// authored: the encoded name is nothing the author typed or would recognise,
+// which is why a diagnostic built from this pair leans on the export name and
+// never presents the output name as something an author wrote.
 type authoredExport struct {
 	outputName string
 	name       string

@@ -1128,7 +1128,7 @@ func composePortProtocolSuffix(protocol string) (string, error) {
 // and hyphens. The hyphen is the encoding's own — it opens every escape and
 // composes the join — so an alphabet may not admit it; everything else compose
 // accepts is carried through, which is what keeps an ordinary name readable.
-var volumeNameEncoding = namesegment.NewEncoding(isVolumeNameRune)
+var volumeNameEncoding = namesegment.NewEncoding('-', isVolumeNameRune)
 
 // isVolumeNameRune reports whether a character is carried through the encoding
 // as itself: an ASCII letter, a digit, a dot or an underscore. Every other

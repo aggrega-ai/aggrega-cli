@@ -434,7 +434,7 @@ func parseNodeFragment(nodeID string, intermediates []rendercore.EmittedFile) (*
 // and hyphens. The hyphen is the encoding's own — it opens every escape — so an
 // alphabet may not admit it; everything else compose accepts is carried
 // through, which is what keeps an ordinary name readable.
-var networkNameEncoding = namesegment.NewEncoding(isNetworkNameRune)
+var networkNameEncoding = namesegment.NewEncoding('-', isNetworkNameRune)
 
 // isNetworkNameRune reports whether a character is carried through the encoding
 // as itself: an ASCII letter, a digit, a dot or an underscore. Every other

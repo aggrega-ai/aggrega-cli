@@ -19,7 +19,7 @@ import (
 // agrees with the file prefix for every context of the first shape and diverges
 // on every context of the second.
 func releaseNameContexts() []rendercore.NodeRenderContext {
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	out := make([]rendercore.NodeRenderContext, 0, 2*len(corpus))
 	for _, s := range corpus {
 		out = append(out, rendercore.NodeRenderContext{NodeID: s})
@@ -35,7 +35,7 @@ func releaseNameContexts() []rendercore.NodeRenderContext {
 func TestReleaseNameIsInjective(t *testing.T) {
 	t.Parallel()
 	seen := make(map[string]string)
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	for _, s := range corpus {
 		got := releaseName(rendercore.NodeRenderContext{NodeID: s})
 		if prior, clash := seen[got]; clash {
@@ -167,7 +167,7 @@ func TestReleaseNameIsRecoverable(t *testing.T) {
 	t.Parallel()
 	for _, nodeCtx := range releaseNameContexts() {
 		want := rendercore.TargetNameBasis(nodeCtx)
-		got := namesegmenttest.DecodeSegment(t, releaseName(nodeCtx))
+		got := namesegmenttest.DecodeSegment(t, '-', releaseName(nodeCtx))
 		if got != want {
 			t.Errorf("release name %q read back as %q, want %q", releaseName(nodeCtx), got, want)
 		}

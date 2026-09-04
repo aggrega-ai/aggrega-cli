@@ -18,24 +18,25 @@
 // each closes a case the others structurally cannot see.
 //
 // Output names are scoped by the contributing node, so a node's outputs cannot
-// displace another node's ([OutputLogicalID]). Because building such a name drops
-// every separator and capitalises each word, the derivation is not injective on
-// its own, so each name is built through a ledger that records the authored entry
-// behind it and refuses a name two different authored entries reached
-// ([outputNameLedger]). That check sits where the names are built because that is
-// the last point at which the authored entries are still in hand: everything
-// downstream holds the built name only, and so could refuse a collision without
-// being able to say which two entries produced it.
+// displace another node's ([OutputLogicalID]). Building such a name encodes what
+// the alphabet refuses rather than dropping it, so the derivation is injective on
+// its own: two entries reach one name only where the node and the entry both
+// match. Each name is nevertheless built through a ledger that records the
+// authored entry behind it and refuses a name two different authored entries
+// reached ([outputNameLedger]). Nothing can reach that refusal while the
+// derivation holds, which is why it is kept — it is the one layer still holding
+// the authored entries, so it is the only place a derivation that stopped
+// telling two of them apart could be reported rather than silently losing one.
 //
 // A logical id also has an alphabet — letters and digits, and nothing else — and
 // the two properties are independent: a set of ids can be perfectly distinct and
 // still name characters a template cannot hold. That alphabet is a character
-// class rather than this target's invention, so the class and the fold that
-// reads it live outside this core, in [alphanumeric]; what this core states, and
-// what is genuinely its own, is that a CloudFormation logical id admits exactly
-// that class. Output names are legal by construction, because building one drops
-// everything outside the alphabet. Every name this core reads verbatim is not,
-// so each is refused
+// class rather than this target's invention, so the class lives outside this
+// core, in [alphanumeric]; what this core states, and what is genuinely its own,
+// is that a CloudFormation logical id admits exactly that class. Output names are
+// legal by construction, because building one writes everything outside the
+// alphabet as an escape spelled in characters inside it. Every name this core
+// reads verbatim is not, so each is refused
 // where it carries such a character rather than emitted into a template the
 // target will not accept: an authored resource logical id
 // ([resourceLogicalIDRefusal]), and an authored name in a carried section that
@@ -92,18 +93,19 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 	"github.com/awslabs/goformation/v7/intrinsics"
 	"go.yaml.in/yaml/v3"
 )
 
 // ErrOutputNameCollision is the loud failure raised when two different entries
 // an author wrote arrive at one stack Output name. An Output name admits only
-// letters and digits, so it is built by dropping every separator and
-// capitalising each word — a transformation that can carry two entries
-// differing only in punctuation or in a letter's case to one name. The build
-// halts rather than emit one Output where two entries were written, and the halt
-// names every entry behind the name so the author can see which of the things
-// they wrote met.
+// letters and digits, and it is built by writing what that alphabet refuses as
+// an escape spelled inside it rather than by dropping it, so two entries an
+// author wrote apart stay apart and nothing an author can write reaches this.
+// It is retained because a derivation that stopped telling two entries apart
+// would otherwise emit one Output where two were written, silently; the build
+// halts instead, and the halt names every entry behind the name.
 func ErrOutputNameCollision() error { return errOutputNameCollision }
 
 var errOutputNameCollision = cerrors.Register("cloudformation-provider-cfncore/output-name-collision", cerrors.Meta{
@@ -954,12 +956,55 @@ func isCustomTag(tag string) bool {
 	return tag != "" && strings.HasPrefix(tag, "!") && !strings.HasPrefix(tag, "!!")
 }
 
+// outputLogicalIDOpener is the character the Output-name encoding opens every
+// escape with, and it is the one letter or digit that encoding does not carry
+// through as authored.
+//
+// A target that refuses punctuation outright leaves a character sitting outside
+// its alphabet to open an escape with. This one does not: a logical id admits
+// letters and digits and nothing else, so the opener has to be spared from
+// inside the alphabet, and whichever character is spared stops being carried as
+// authored. Any letter or digit would be sound, so the choice is only about
+// which names stay legible — an uppercase Q is the rarest character in an
+// authored component or entry name, and sparing it leaves the lowercase q of
+// queue and sqs carried as written.
+const outputLogicalIDOpener = 'Q'
+
+// outputLogicalIDEncoding is the segment encoding a stack Output's logical id is
+// built with. Its admitted alphabet is the logical-id alphabet less the one
+// character reserved to open an escape.
+//
+// The alphabet is read from [alphanumeric.IsRune] rather than restated here, so
+// the characters this encoding carries through and the characters each refusal
+// of a verbatim-read name admits cannot come to disagree about what a logical id
+// accepts.
+var outputLogicalIDEncoding = namesegment.NewEncoding(outputLogicalIDOpener, isOutputLogicalIDRune)
+
+// isOutputLogicalIDRune reports whether a character is carried into a stack
+// Output's logical id as itself. Every other character is escaped, including the
+// one the alphabet admits and this encoding reserves.
+func isOutputLogicalIDRune(r rune) bool {
+	return r != outputLogicalIDOpener && alphanumeric.IsRune(r)
+}
+
 // OutputLogicalID names the stack Output one node's entry lands at: the node's
-// identity and the entry name, each read as words and joined without a separator
-// — node payments-db exporting host reaches PaymentsDbHost. A logical id admits
-// only letters and digits, so there is no separator character available to keep
-// the two apart; capitalising each word's first letter is what keeps the parts
-// legible in the emitted template without one.
+// identity and the entry name, each encoded into the logical-id alphabet and
+// joined by a sequence no encoded segment can contain — node payments-db
+// exporting host reaches paymentsQzhdbQQhost.
+//
+// The derivation is injective: two calls produce one name only where the node
+// and the entry both match. A logical id admits only letters and digits, so a
+// character an author wrote outside that alphabet is written as an escape rather
+// than dropped, which keeps two names differing only in punctuation apart; a
+// letter is carried in the case it was authored in, which keeps two names
+// differing only in case apart; and the join is a sequence an encoded segment
+// can never carry, so the split between the node and the entry is recoverable
+// and one pair of inputs cannot reach the name a differently-split pair reaches.
+//
+// The cost is legibility, and it is real: a name an author would recognise at a
+// glance becomes one they have to read. It is the price of a name that
+// identifies exactly one thing, and the alternative is a name that identifies
+// neither of the two entries that reached it.
 //
 // Scoping every output by its node, rather than only where two nodes happen to
 // collide, is what makes an output's meaning independent of who else assembles
@@ -974,7 +1019,7 @@ func isCustomTag(tag string) bool {
 // same function, which is what lets them address a producer's output from the
 // node and entry name alone.
 func OutputLogicalID(nodeID, entry string) string {
-	return alphanumeric.CapitalizedWords(nodeID) + alphanumeric.CapitalizedWords(entry)
+	return outputLogicalIDEncoding.Name(nodeID, entry)
 }
 
 // Fragment sections an author reaches the stack's Output names through. Each is
@@ -1001,22 +1046,30 @@ type authoredOutputEntry struct {
 // outputNameLedger builds stack Output names and records which authored entries
 // each one came from, over one scope that shares a set of names.
 //
-// An Output name admits only letters and digits, so building one drops every
-// separator and capitalises each word ([OutputLogicalID]). A transformation from
-// a richer alphabet into a poorer one is not injective unless something makes it
-// so, and this one is not: two entries differing only in punctuation reach one
-// name (`db-host` and `db_host` both reach `DbHost`), the two halves are joined
-// with no separator between them so the split between component and entry is not
-// recoverable either (component `payments-db` with entry `host` and component
-// `payments` with entry `db-host` both reach `PaymentsDbHost`), and a word's
-// first letter is capitalised either way so `host` and `Host` reach one name too.
+// # It is retained as a backstop, and cannot fire while the derivation holds
 //
-// The ledger is what makes the collision detectable at all, and it sits here
-// rather than downstream because of what each layer holds. Building one name is a
-// function of one entry and cannot see a second. Downstream, the built name is
-// all there is: the authored entry is gone, so a refusal there can name the
-// collision but not the two things the author would have to edit. Recording the
-// authored entry as the name is built is what keeps both in hand.
+// An Output name admits only letters and digits, and the transformation into
+// that poorer alphabet escapes what the alphabet refuses rather than dropping it
+// ([OutputLogicalID]), so it is injective: two entries reach one name only where
+// the component and the entry both match, and two such entries are one thing the
+// author named rather than a collision. No input can therefore reach this
+// ledger's refusal.
+//
+// That is a reason to keep it rather than to remove it as dead. A derivation is
+// injective because of how it is written, and nothing about a later edit
+// announces that it stopped being — so the guard that cannot fire under correct
+// behaviour is the one that reports the day the behaviour changes. Removing it
+// would leave that regression silent: two entries would reach one name, the
+// second would displace the first, and the assembled stack would carry one
+// Output where the author wrote two.
+//
+// It sits here rather than downstream because of what each layer holds. Building
+// one name is a function of one entry and cannot see a second. Downstream, the
+// built name is all there is: the authored entry is gone, so a refusal there
+// could name the collision but not the two things the author would have to edit.
+// Recording the authored entry as the name is built is what keeps both in hand,
+// and it is why this is the only layer that could report such a regression
+// usefully.
 //
 // The scope is the caller's to choose, because the scope a name has to be unique
 // in is a property of what assembles together rather than of the derivation: one
@@ -1096,7 +1149,7 @@ func (l *outputNameLedger) err() error {
 		}
 		clauses = append(clauses, fmt.Sprintf("%s reach the Output name %q", joinPhrases(phrases), name))
 	}
-	return fmt.Errorf("%w: %s; an Output name admits only letters and digits, so building one drops every separator and capitalises each word — rename an entry, or a component, so no two of them differ only by a separator or by a letter's case", ErrOutputNameCollision(), strings.Join(clauses, "; "))
+	return fmt.Errorf("%w: %s; an Output name is built by encoding the component and the entry into the letters and digits a logical id admits, rather than by dropping what it does not, so two entries an author wrote apart stay apart — renaming either end clears the build", ErrOutputNameCollision(), strings.Join(clauses, "; "))
 }
 
 // joinPhrases joins already-ordered phrases into one English list.

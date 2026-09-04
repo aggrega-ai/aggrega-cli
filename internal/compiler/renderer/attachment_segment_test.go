@@ -13,7 +13,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -333,7 +332,7 @@ func TestRenderAll_AttachmentSegmentDeclaredEmpty_IsNotTheHostDefault(t *testing
 	if err != nil {
 		t.Fatalf("declaring no enclosing directory is a claim, not a bound violation, and must render: %v", err)
 	}
-	sep := namesegment.SegmentSeparator
+	sep := renderer.AttachmentFileSeparatorForTest
 	wantFlat := []string{
 		"dist/cluster/segprov/" + segmentHost + sep + segmentComponentFeature + sep + "manifest.yaml",
 		"dist/cluster/segprov/" + segmentBoundaryFeature + sep + "manifest.yaml",
@@ -405,7 +404,7 @@ func TestRenderAll_TwoAttachmentsOnOneHostBothSurviveFlatPlacement(t *testing.T)
 	t.Parallel()
 
 	const second = "sec"
-	sep := namesegment.SegmentSeparator
+	sep := renderer.AttachmentFileSeparatorForTest
 
 	flat, err := runSegmentRenderWith(t, declares(""), []string{second})
 	if err != nil {

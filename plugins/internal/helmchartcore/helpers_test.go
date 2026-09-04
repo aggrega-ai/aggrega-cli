@@ -105,7 +105,7 @@ func TestHelmNameEncodingDistinguishesInputsThatShareOneName(t *testing.T) {
 func TestHelmNameSegmentIsInjective(t *testing.T) {
 	t.Parallel()
 	seen := make(map[string]string)
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	for _, s := range corpus {
 		got := helmNameEncoding.Segment(s)
 		if prior, clash := seen[got]; clash {
@@ -126,7 +126,7 @@ func TestHelmNameSegmentIsInjective(t *testing.T) {
 // name ending in a hyphen collide with a dispatch path beginning with one.
 func TestHelmQualifiedChartNameIsInjective(t *testing.T) {
 	t.Parallel()
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	seen := make(map[string][2]string)
 	total := 0
 	for _, a := range corpus {
@@ -153,11 +153,11 @@ func TestHelmQualifiedChartNameIsInjective(t *testing.T) {
 // with it whatever the encoder did.
 func TestHelmNameSegmentsAreRecoverable(t *testing.T) {
 	t.Parallel()
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	for _, a := range corpus {
 		for _, b := range corpus {
 			name := helmNameEncoding.Name(a, b)
-			got := namesegmenttest.ReadName(t, name)
+			got := namesegmenttest.ReadName(t, '-', name)
 			if len(got) != 2 || got[0] != a || got[1] != b {
 				t.Fatalf("chart name %q read back as %q, want [%q %q]", name, got, a, b)
 			}
@@ -172,7 +172,7 @@ func TestHelmNameSegmentsAreRecoverable(t *testing.T) {
 // and a non-ASCII letter, none of which may survive.
 func TestHelmDerivedNameUsesOnlyTheAliasAlphabet(t *testing.T) {
 	t.Parallel()
-	for _, s := range namesegmenttest.Corpus() {
+	for _, s := range namesegmenttest.Corpus('-') {
 		for _, name := range []string{helmNameEncoding.Segment(s), helmNameEncoding.Name(s, s)} {
 			for i := 0; i < len(name); i++ {
 				c := name[i]

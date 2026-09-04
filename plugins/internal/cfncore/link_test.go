@@ -70,7 +70,7 @@ func TestLinkPublishAddsExport(t *testing.T) {
 	// The Export lands on the output the producer node's own projection named, not
 	// on the bare injected key: another node in the producer's stack may export the
 	// same key, and the two are separate outputs.
-	wantPath := "/Outputs/OrdersDbHost/Export"
+	wantPath := "/Outputs/ordersQzhdbQQhost/Export"
 	if got := "/Outputs/" + OutputLogicalID("orders-db", "host") + "/Export"; got != wantPath {
 		t.Fatalf("the producer output path derives as %q, want %q", got, wantPath)
 	}
@@ -301,7 +301,7 @@ func TestLinkPublishRefusesShadowedExportName(t *testing.T) {
 		`component "orders-db"`,
 		`boundary "prod/data"`,
 		`deployment "` + testDeployment + `"`,
-		`stack output "OrdersDbEndpoint", a name this provider assembles rather than one a Recipe wrote`,
+		`stack output "ordersQzhdbQQendpoint", a name this provider assembles rather than one a Recipe wrote`,
 		"searching your Recipes for that name reaches the entry",
 	} {
 		if !strings.Contains(err.Error(), want) {

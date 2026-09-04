@@ -26,7 +26,7 @@ const exportNamePrefix = "aggrega"
 // The alphabet is stated here rather than taken from the encoding, because it is
 // a property of what a CloudFormation export name and stack name accept and not
 // of the encoding: a name derived for some other target admits its own set.
-var exportNameEncoding = namesegment.NewEncoding(isExportNameRune)
+var exportNameEncoding = namesegment.NewEncoding('-', isExportNameRune)
 
 // isExportNameRune reports whether a character is carried through the encoding as
 // itself: an ASCII letter or digit.

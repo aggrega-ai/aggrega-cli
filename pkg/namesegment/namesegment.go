@@ -15,18 +15,19 @@
 // # The scheme
 //
 // [Encoding.Segment] carries an admitted character through as itself and writes
-// every other character as an escape: a hyphen, the escape mark, a selector
-// naming what the escape stands for, and that selector's fixed-width payload.
-// The payload width is fixed rather than trimmed, so an escape is
-// self-delimiting and what follows one can never be read as part of it.
+// every other character as an escape: the encoding's escape opener, the escape
+// mark, a selector naming what the escape stands for, and that selector's
+// fixed-width payload. The payload width is fixed rather than trimmed, so an
+// escape is self-delimiting and what follows one can never be read as part of
+// it.
 //
-// A hyphen is kept as authored only where the character emitted after it is an
+// The opener is kept as authored only where the character emitted after it is an
 // admitted character other than the escape mark. Two properties follow, and both
-// are load-bearing. An encoded segment never ends with a hyphen and never
-// contains two in a row, which reserves a two-hyphen run for the join
+// are load-bearing. An encoded segment never ends with the opener and never
+// contains two in a row, which reserves a two-opener run for the join
 // [Encoding.Name] writes between segments — so an assembled name divides back
-// into exactly the segments it was built from. And a hyphen followed by the
-// escape mark is always an escape, never an authored hyphen, so reading a
+// into exactly the segments it was built from. And an opener followed by the
+// escape mark is always an escape, never an opener an author wrote, so reading a
 // segment back is unambiguous.
 //
 // An empty segment yields a mark whose selector stands for no character, so no
@@ -38,13 +39,16 @@
 // still encodes distinctly — which is where an encoding's input is least
 // controlled.
 //
-// # The admitted alphabet is the caller's
+// # The admitted alphabet and the opener are both the caller's
 //
 // Which characters are admitted is the caller's to state, because it is a
-// property of the target a name is written for rather than of the encoding. The
-// scheme's own characters are fixed, so an alphabet has to admit every character
-// an escape emits and must not admit the hyphen; [NewEncoding] refuses one that
-// does not.
+// property of the target a name is written for rather than of the encoding. So
+// is the opener, and for the same reason: a target whose alphabet refuses the
+// punctuation a name is usually opened with still has to be written in
+// something, and a target whose alphabet admits that punctuation may need to
+// keep it. The scheme's own remaining characters are fixed, so an alphabet has
+// to admit every character an escape emits and must not admit the opener;
+// [NewEncoding] refuses one that does not.
 //
 // Every derivation here is deterministic: identical input yields byte-identical
 // output.
@@ -56,46 +60,11 @@ import (
 	"unicode/utf8"
 )
 
-// escapeOpener opens every escape and composes the segment separator. It is the
-// one character an admitted alphabet may not carry: were it carried through as
-// authored, a segment could hold the separator, and an escape could not be told
-// apart from a hyphen an author wrote.
-const escapeOpener = '-'
-
-// escapeMark is the character that, immediately after [escapeOpener], marks the
-// start of an escape rather than an authored hyphen. A hyphen an author wrote
-// before this character is escaped rather than kept, so the two readings never
-// compete.
+// escapeMark is the character that, immediately after an encoding's opener,
+// marks the start of an escape rather than an opener an author wrote. An opener
+// an author wrote before this character is escaped rather than kept, so the two
+// readings never compete.
 const escapeMark = 'z'
-
-// SegmentSeparator joins the encoded segments of an assembled name.
-//
-// It is two [escapeOpener] characters rather than one because an encoded segment
-// may contain a single one and never two: a hyphen is kept only where the
-// character emitted after it is admitted and is not [escapeMark], and every
-// other character is written as an escape that begins with a hyphen and ends
-// with an admitted character. So inside a segment every run of hyphens is
-// exactly one long, and a segment can neither end with a hyphen nor contain a
-// pair. A run of two or more therefore occurs only at a join, and the join is
-// its first two hyphens — which is what lets the segments be told apart again,
-// and so what makes an assembled name injective.
-//
-// # Why a caller needs it, rather than only [Encoding.Name]
-//
-// A caller that joins an assembled name to a further component — a suffix, or
-// text this package did not write — needs that boundary to be as unambiguous as
-// the joins inside the name, and this is the only sequence that is. Joining on
-// one hyphen is unsound: an encoded segment may end in an admitted character and
-// the appended text may begin with a hyphen, so one hyphen leaves the boundary
-// indistinguishable from a hyphen either side happens to carry, and two distinct
-// pairs assemble to one string. Joining on this instead keeps the assembled name
-// readable back out of the result whatever was appended, because no encoded
-// segment can contain it.
-//
-// It is exported for exactly that reason, and a caller spelling the two
-// characters for itself would be holding a second copy of the one rule the whole
-// encoding's injectivity rests on.
-const SegmentSeparator = string(escapeOpener) + string(escapeOpener)
 
 // Escape selectors. Each names what the escape stands for and fixes how much
 // payload follows it, so an escape is self-delimiting and the encoding of one
@@ -105,6 +74,11 @@ const SegmentSeparator = string(escapeOpener) + string(escapeOpener)
 // — a hyphen or an underscore inside a name an author typed, and the dot and
 // slash a nested identity is composed from — so the common cases stay short and
 // legible. Anything else falls to the code-point selector.
+//
+// Each names a character rather than a role, which is what keeps the scheme
+// sound under a caller-declared opener: an encoding whose opener is not the
+// hyphen still writes an authored hyphen as the hyphen's own selector, so no two
+// characters can reach one escape.
 const (
 	escapeHyphen     = 'h' // the hyphen U+002D
 	escapeUnderscore = 'u' // the underscore U+005F
@@ -115,60 +89,75 @@ const (
 	escapeAbsent     = 'e' // a segment with no value at all; never written for any character
 )
 
-// absentSegmentMark is the whole-segment stand-in for a segment whose input is
-// the empty string, so an absent segment still yields a well-formed, stable name
-// rather than a name carrying an empty run between separators.
-//
-// It is an escape whose selector stands for no character, so no non-empty input
-// can produce it: every escape written for a character carries one of the
-// character selectors, and every other emitted byte is an admitted character or
-// a hyphen kept between two of them.
-const absentSegmentMark = string(escapeOpener) + string(escapeMark) + string(escapeAbsent)
-
 // hexDigits is the payload alphabet of the two selectors that carry a value.
 const hexDigits = "0123456789abcdef"
 
-// Encoding is the segment encoding over one admitted alphabet. Build one with
-// [NewEncoding] and reuse it: an Encoding holds no mutable state, so it is safe
-// for concurrent use and every call with identical input yields identical
-// output.
+// Encoding is the segment encoding over one admitted alphabet and one escape
+// opener. Build one with [NewEncoding] and reuse it: an Encoding holds no
+// mutable state, so it is safe for concurrent use and every call with identical
+// input yields identical output.
 //
 // The zero Encoding carries no alphabet and must not be used; [NewEncoding] is
 // the only way to obtain a usable one, which is what keeps an unsound alphabet
 // from reaching [Encoding.Segment].
 type Encoding struct {
-	admits func(rune) bool
+	admits    func(rune) bool
+	opener    rune
+	separator string
+	absent    string
 }
 
-// NewEncoding returns the encoding whose admitted alphabet is the set of
-// characters admits reports true for. An admitted character is carried through
-// as authored; every other character is escaped.
+// NewEncoding returns the encoding whose escape opener is opener and whose
+// admitted alphabet is the set of characters admits reports true for. An
+// admitted character is carried through as authored; every other character is
+// escaped, and every escape opens with opener.
 //
 // admits has to be a pure function of its argument, because the encoding's
 // determinism is exactly its determinism.
 //
+// # What the opener is for, and why the caller declares it
+//
+// The opener is the one character an admitted alphabet may not carry: were it
+// carried through as authored, a segment could hold the separator, and an escape
+// could not be told apart from an opener an author wrote. Which character can be
+// spared is a property of the target rather than of the encoding — a target
+// admitting only letters and digits has to spare one of those, while a target
+// admitting punctuation can spare a character no name would otherwise use — so
+// the caller states it alongside the alphabet it belongs to.
+//
 // # What an alphabet has to satisfy, and why an unsound one is refused here
 //
-// The scheme's own characters are fixed, so an alphabet is sound only where it
-// admits every character an escape emits — the escape mark, the seven selectors,
-// the ten digits and the six lowercase hex letters — and does not admit the
-// hyphen, which
-// opens every escape and composes the separator. An alphabet failing either
-// condition yields output that is ambiguous, or that leaves the very alphabet it
-// was encoded into.
+// The scheme's remaining characters are fixed, so an alphabet is sound only
+// where it admits every character an escape emits — the escape mark, the seven
+// selectors, the ten digits and the six lowercase hex letters — and does not
+// admit the opener. An alphabet failing either condition yields output that is
+// ambiguous, or that leaves the very alphabet it was encoded into. The two
+// conditions together also settle the opener itself: an opener that is one of
+// the characters an escape emits would have to be both admitted and not
+// admitted, so it is refused without a third check needing to name it.
 //
-// Both conditions are checked here and a failure panics, because an alphabet is
-// a fixed property of the caller rather than anything a build encounters: it is
-// settled when the caller is written, so a failure is a defect in the caller and
-// the first call reaching this constructor reports it. Returning an error
-// instead would put the report at a call site that has no answer for it.
-func NewEncoding(admits func(rune) bool) *Encoding {
+// The opener has to be an ASCII character. An escape's payload and the separator
+// are read back byte by byte by anything that divides an assembled name, so a
+// multi-byte opener would make the separator two characters and four bytes wide
+// and no reader assumes that.
+//
+// Every condition is checked here and a failure panics, because an alphabet and
+// an opener are fixed properties of the caller rather than anything a build
+// encounters: they are settled when the caller is written, so a failure is a
+// defect in the caller and the first call reaching this constructor reports it.
+// Returning an error instead would put the report at a call site that has no
+// answer for it.
+func NewEncoding(opener rune, admits func(rune) bool) *Encoding {
 	if admits == nil {
 		panic("namesegment: NewEncoding needs an alphabet, and was given none")
 	}
-	if admits(escapeOpener) {
+	if opener < 0 || opener > 0x7F {
+		panic(fmt.Sprintf("namesegment: the escape opener %q is not an ASCII character, so the separator "+
+			"would be wider than the one character a reader dividing a name assumes", opener))
+	}
+	if admits(opener) {
 		panic(fmt.Sprintf("namesegment: the alphabet admits %q, which opens every escape and composes "+
-			"the segment separator, so an escape could not be told apart from an authored hyphen", escapeOpener))
+			"the segment separator, so an escape could not be told apart from an opener an author wrote", opener))
 	}
 	for _, r := range escapeCharacters() {
 		if !admits(r) {
@@ -176,22 +165,63 @@ func NewEncoding(admits func(rune) bool) *Encoding {
 				"so an encoded segment would leave the alphabet it is encoded into", r))
 		}
 	}
-	return &Encoding{admits: admits}
+	return &Encoding{
+		admits:    admits,
+		opener:    opener,
+		separator: string(opener) + string(opener),
+		absent:    string(opener) + string(escapeMark) + string(escapeAbsent),
+	}
 }
 
-// Segment encodes one segment into the admitted alphabet and the hyphen.
+// SegmentSeparator returns the sequence joining the encoded segments of a name
+// this encoding assembles.
+//
+// It is two of the encoding's openers rather than one because an encoded segment
+// may contain a single one and never two: the opener is kept only where the
+// character emitted after it is admitted and is not [escapeMark], and every other
+// character is written as an escape that begins with the opener and ends with an
+// admitted character. So inside a segment every run of openers is exactly one
+// long, and a segment can neither end with an opener nor contain a pair. A run of
+// two or more therefore occurs only at a join, and the join is its first two
+// openers — which is what lets the segments be told apart again, and so what
+// makes an assembled name injective.
+//
+// The property rests on the encoding's own admitted set rather than on any
+// target's alphabet, and the distinction is what lets an opener be declared per
+// encoding: a target may perfectly well admit the character an encoding opens
+// with, so long as the encoding itself does not carry it through — which
+// [NewEncoding] refuses to build.
+//
+// # Why a caller needs it, rather than only [Encoding.Name]
+//
+// A caller that joins an assembled name to a further component — a suffix, or
+// text this package did not write — needs that boundary to be as unambiguous as
+// the joins inside the name, and this is the only sequence that is. Joining on
+// one opener is unsound: an encoded segment may end in an admitted character and
+// the appended text may begin with the opener, so one opener leaves the boundary
+// indistinguishable from an opener either side happens to carry, and two distinct
+// pairs assemble to one string. Joining on this instead keeps the assembled name
+// readable back out of the result whatever was appended, because no encoded
+// segment can contain it.
+//
+// It is exported for exactly that reason, and a caller spelling the two
+// characters for itself would be holding a second copy of the one rule the whole
+// encoding's injectivity rests on.
+func (e *Encoding) SegmentSeparator() string { return e.separator }
+
+// Segment encodes one segment into the admitted alphabet and the opener.
 //
 // The encoding is injective: distinct inputs always produce distinct output. An
-// admitted character is kept as authored. A hyphen is kept where the character
+// admitted character is kept as authored. The opener is kept where the character
 // emitted after it is admitted and is not the escape mark, which is the ordinary
-// case in an authored name. Every other character, and every hyphen that does
+// case in an authored name. Every other character, and every opener that does
 // not qualify, is written as an escape.
 //
 // An empty input yields the absent-segment mark, which carries a selector that
 // stands for no character and so cannot be produced by any non-empty input.
 func (e *Encoding) Segment(s string) string {
 	if s == "" {
-		return absentSegmentMark
+		return e.absent
 	}
 	var b strings.Builder
 	b.Grow(len(s))
@@ -207,13 +237,13 @@ func (e *Encoding) Segment(s string) string {
 			// such byte onto it and lose the distinction — a one-byte decode
 			// failure and an authored replacement character, which decodes as
 			// three bytes, are different inputs.
-			writeEscape(&b, escapeByte, uint32(s[i]), 2)
+			e.writeEscape(&b, escapeByte, uint32(s[i]), 2)
 		case e.admits(r):
 			b.WriteRune(r)
-		case r == escapeOpener && e.keepsAuthoredOpener(s[i+size:]):
-			b.WriteRune(escapeOpener)
+		case r == e.opener && e.keepsAuthoredOpener(s[i+size:]):
+			b.WriteRune(e.opener)
 		default:
-			writeEscape(&b, selectorFor(r), uint32(r), 6)
+			e.writeEscape(&b, selectorFor(r), uint32(r), 6)
 		}
 		i += size
 	}
@@ -221,7 +251,8 @@ func (e *Encoding) Segment(s string) string {
 }
 
 // Name assembles a name from segments, encoding each with [Encoding.Segment] and
-// joining them with [SegmentSeparator], which no encoded segment contains.
+// joining them with [Encoding.SegmentSeparator], which no encoded segment
+// contains.
 //
 // Reading a name back at its joins yields exactly the segments it was built
 // from, so two calls produce one name only where both were given the same
@@ -229,25 +260,26 @@ func (e *Encoding) Segment(s string) string {
 // numbers of them, since the joins say how many there were. The name is
 // byte-stable across calls with identical input.
 //
-// A caller appending anything to the result joins it with [SegmentSeparator]
-// too, for the reason stated there: any shorter boundary is ambiguous.
+// A caller appending anything to the result joins it with
+// [Encoding.SegmentSeparator] too, for the reason stated there: any shorter
+// boundary is ambiguous.
 func (e *Encoding) Name(segments ...string) string {
 	encoded := make([]string, len(segments))
 	for i, s := range segments {
 		encoded[i] = e.Segment(s)
 	}
-	return strings.Join(encoded, SegmentSeparator)
+	return strings.Join(encoded, e.separator)
 }
 
-// keepsAuthoredOpener reports whether an authored hyphen may be emitted as a
-// hyphen, given what follows it in the input. It may where the next character is
+// keepsAuthoredOpener reports whether an authored opener may be emitted as the
+// opener, given what follows it in the input. It may where the next character is
 // admitted and is not the escape mark: that character is emitted as itself, so
-// the hyphen is neither left at the end of the segment, nor placed against the
-// hyphen that opens another escape, nor left looking like the start of one.
+// the opener is neither left at the end of the segment, nor placed against the
+// opener that begins another escape, nor left looking like the start of one.
 //
 // A byte beginning no valid character never qualifies, whatever the alphabet
 // admits, because such a byte is always written as an escape and an escape opens
-// with a hyphen.
+// with the opener.
 func (e *Encoding) keepsAuthoredOpener(rest string) bool {
 	if rest == "" {
 		return false
@@ -262,9 +294,15 @@ func (e *Encoding) keepsAuthoredOpener(rest string) bool {
 // selectorFor returns the selector naming the character an escape stands for.
 // The punctuation an authored or composed identity actually carries has its own
 // selector so the escape stays short; everything else is carried by code point.
+//
+// Each arm names a character literally rather than reading the encoding's
+// opener, and that is what keeps two characters from reaching one escape: an
+// encoding whose opener is not the hyphen has to write both an authored hyphen
+// and an authored opener, and reading the opener here would give them the same
+// selector.
 func selectorFor(r rune) rune {
 	switch r {
-	case escapeOpener:
+	case '-':
 		return escapeHyphen
 	case '_':
 		return escapeUnderscore
@@ -277,12 +315,12 @@ func selectorFor(r rune) rune {
 	}
 }
 
-// writeEscape writes one escape: the opening hyphen, the escape mark, the
-// selector, and — for the two selectors that carry a value — that value as a
-// fixed run of lowercase hex digits. The run is fixed rather than trimmed so an
-// escape is self-delimiting and what follows it can never be read as part of it.
-func writeEscape(b *strings.Builder, selector rune, value uint32, digits int) {
-	b.WriteRune(escapeOpener)
+// writeEscape writes one escape: the opener, the escape mark, the selector, and
+// — for the two selectors that carry a value — that value as a fixed run of
+// lowercase hex digits. The run is fixed rather than trimmed so an escape is
+// self-delimiting and what follows it can never be read as part of it.
+func (e *Encoding) writeEscape(b *strings.Builder, selector rune, value uint32, digits int) {
+	b.WriteRune(e.opener)
 	b.WriteRune(escapeMark)
 	b.WriteRune(selector)
 	if selector != escapeCodePoint && selector != escapeByte {
@@ -293,9 +331,9 @@ func writeEscape(b *strings.Builder, selector rune, value uint32, digits int) {
 	}
 }
 
-// escapeCharacters returns every character an escape can emit after its opening
-// hyphen. An admitted alphabet has to carry all of them, or an encoded segment
-// would leave the alphabet it was encoded into.
+// escapeCharacters returns every character an escape can emit after its opener.
+// An admitted alphabet has to carry all of them, or an encoded segment would
+// leave the alphabet it was encoded into.
 func escapeCharacters() []rune {
 	emitted := []rune{
 		escapeMark,

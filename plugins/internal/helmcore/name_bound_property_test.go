@@ -46,7 +46,7 @@ func (o *helmOracle) NameBound(_ context.Context, in renderer.NameBoundInput) (r
 func TestComposedIdentitiesSettleWithinWhatTheHelmTargetAccepts(t *testing.T) {
 	t.Parallel()
 
-	instances := append(namesegmenttest.Corpus(),
+	instances := append(namesegmenttest.Corpus('-'),
 		strings.Repeat("instance", 12),
 		strings.Repeat("i", 200),
 		"bridge", "b", "a-b", "a_b", "a.b",
@@ -320,7 +320,7 @@ func TestSettleAuthoredComponentIdentity_HaltsWhereTheWrittenLabelWouldNotFit(t 
 func TestNameBoundOutput_TheReleaseNameVerdictIsBlindToTheAuthoredFlag(t *testing.T) {
 	t.Parallel()
 
-	corpus := append(namesegmenttest.Corpus(),
+	corpus := append(namesegmenttest.Corpus('-'),
 		"web", "payments-api", "documents.backend", "PAYMENTS",
 		qualifiedIdentity(55), qualifiedIdentity(61), qualifiedIdentity(62),
 		strings.Repeat("a", 60), strings.Repeat("a", 200),

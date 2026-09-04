@@ -32,7 +32,7 @@ const (
 // a property of what Helm accepts in these positions and not of the encoding.
 // The alias is the stricter of the two positions, so one alphabet keeps a
 // derived name valid in either.
-var helmNameEncoding = namesegment.NewEncoding(isHelmNameRune)
+var helmNameEncoding = namesegment.NewEncoding('-', isHelmNameRune)
 
 // isHelmNameRune reports whether a character is carried through the encoding as
 // itself: an ASCII letter, a digit, or the underscore. Those, together with the

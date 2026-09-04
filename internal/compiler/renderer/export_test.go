@@ -11,6 +11,16 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// AttachmentFileSeparatorForTest is the sequence an attachment's encoded
+// filename prefix meets the file's own name at, read from the encoding that
+// writes that prefix rather than spelled out again.
+//
+// It is exposed because the external test package cannot name that encoding, and
+// a test spelling the two characters for itself would be asserting against its
+// own copy of the rule the prefix's injectivity rests on — so it would keep
+// passing after the encoding changed the character it opens with.
+var AttachmentFileSeparatorForTest = attachmentFileEncoding.SegmentSeparator()
+
 // WrapSourceResolutionErrorForTest exposes the unexported source-resolution
 // error classifier so the external test package can assert a sentinel's
 // fetch-family categorization directly.

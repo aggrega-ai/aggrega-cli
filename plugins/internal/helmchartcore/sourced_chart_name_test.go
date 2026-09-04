@@ -348,7 +348,7 @@ annotations:
 func TestPlacedSubChartNameIsInjectiveOverVendoredManifests(t *testing.T) {
 	t.Parallel()
 	const shared = "apiVersion: v2\nname: one-name-for-every-instance\nversion: 0.1.0\n"
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	seen := make(map[string]string, len(corpus))
 	for _, identity := range corpus {
 		proj := &renderer.SourceProjection{Files: []renderer.SourceFile{

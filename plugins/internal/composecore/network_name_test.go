@@ -92,7 +92,7 @@ func TestNetworkNameKeepsAnAbsentIdentityApartFromAnAuthoredOne(t *testing.T) {
 // injective encoding can close it.
 func TestNetworkNameIsInjectiveWithinEachBranch(t *testing.T) {
 	t.Parallel()
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	if len(corpus) == 0 {
 		t.Fatal("the corpus is empty, so distinctness over it would hold vacuously")
 	}
@@ -145,16 +145,16 @@ func TestNetworkNameIsInjectiveWithinEachBranch(t *testing.T) {
 // the encoder would agree with it whatever the encoder did.
 func TestNetworkNameIsRecoverable(t *testing.T) {
 	t.Parallel()
-	for _, identity := range namesegmenttest.Corpus() {
+	for _, identity := range namesegmenttest.Corpus('-') {
 		name := deriveNodeNetworkName("", identity)
-		if got := namesegmenttest.DecodeSegment(t, name); got != identity {
+		if got := namesegmenttest.DecodeSegment(t, '-', name); got != identity {
 			t.Errorf("the network name %q read back as %q, want %q", name, got, identity)
 		}
 		if identity == "" {
 			continue
 		}
 		fromNamespace := deriveNodeNetworkName(identity, "unread-when-the-namespace-is-set")
-		if got := namesegmenttest.DecodeSegment(t, fromNamespace); got != identity {
+		if got := namesegmenttest.DecodeSegment(t, '-', fromNamespace); got != identity {
 			t.Errorf("the network name %q read back as %q, want %q", fromNamespace, got, identity)
 		}
 	}
@@ -182,7 +182,7 @@ func TestNetworkNameCarriesInvalidBytesDistinctly(t *testing.T) {
 		}
 		for _, identity := range []string{tc.left, tc.right} {
 			name := deriveNodeNetworkName(identity, "")
-			if got := namesegmenttest.DecodeSegment(t, name); got != identity {
+			if got := namesegmenttest.DecodeSegment(t, '-', name); got != identity {
 				t.Errorf("%s: the network name %q read back as %q, want %q", tc.scenario, name, got, identity)
 			}
 		}
@@ -196,7 +196,7 @@ func TestNetworkNameCarriesInvalidBytesDistinctly(t *testing.T) {
 // and a non-ASCII letter, none of which may survive.
 func TestNetworkNameUsesOnlyTheNetworkNameAlphabet(t *testing.T) {
 	t.Parallel()
-	for _, identity := range namesegmenttest.Corpus() {
+	for _, identity := range namesegmenttest.Corpus('-') {
 		for _, name := range []string{
 			deriveNodeNetworkName("", identity),
 			deriveNodeNetworkName(identity, "unread-when-the-namespace-is-set"),
@@ -219,7 +219,7 @@ func TestNetworkNameUsesOnlyTheNetworkNameAlphabet(t *testing.T) {
 // file be compared byte-for-byte between builds.
 func TestNetworkNameIsDeterministic(t *testing.T) {
 	t.Parallel()
-	for _, identity := range namesegmenttest.Corpus() {
+	for _, identity := range namesegmenttest.Corpus('-') {
 		first := deriveNodeNetworkName("", identity)
 		for i := 0; i < 4; i++ {
 			if again := deriveNodeNetworkName("", identity); again != first {

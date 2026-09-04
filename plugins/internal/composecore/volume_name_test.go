@@ -20,7 +20,7 @@ import (
 // only varies one position at a time can be entirely distinct and still never
 // contain the colliding pair.
 func volumeNamePairs() [][2]string {
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	out := make([][2]string, 0, len(corpus)*len(corpus))
 	for _, nodeID := range corpus {
 		for _, name := range corpus {
@@ -103,7 +103,7 @@ func TestVolumeNameIsRecoverable(t *testing.T) {
 	t.Parallel()
 	for _, pair := range volumeNamePairs() {
 		name := volumeName(pair[0], pair[1])
-		got := namesegmenttest.ReadName(t, name)
+		got := namesegmenttest.ReadName(t, '-', name)
 		if len(got) != 2 {
 			t.Fatalf("volume name %q for (%q,%q) read back as %d parts, want 2: %q",
 				name, pair[0], pair[1], len(got), got)
@@ -139,7 +139,7 @@ func TestVolumeNameCarriesInvalidBytesDistinctly(t *testing.T) {
 		}
 		for _, pair := range [][2]string{{tc.leftNode, tc.leftName}, {tc.rightNode, tc.rightName}} {
 			name := volumeName(pair[0], pair[1])
-			got := namesegmenttest.ReadName(t, name)
+			got := namesegmenttest.ReadName(t, '-', name)
 			if len(got) != 2 || got[0] != pair[0] || got[1] != pair[1] {
 				t.Errorf("%s: volume name %q read back as %q, want (%q,%q)",
 					tc.scenario, name, got, pair[0], pair[1])

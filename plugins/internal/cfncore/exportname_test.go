@@ -144,7 +144,7 @@ func TestStackNameDistinguishesInputsThatShareOneName(t *testing.T) {
 // A collision is reported with both tuples that produced it, so a regression
 // names the two inputs rather than only the count.
 func TestExportNameIsInjective(t *testing.T) {
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	seen := make(map[string][4]string)
 	total := 0
 	for _, a := range corpus {
@@ -173,7 +173,7 @@ func TestExportNameIsInjective(t *testing.T) {
 // is a separate name space with its own arity: an export-name-only proof would
 // leave a stack-name regression unobserved.
 func TestStackNameIsInjective(t *testing.T) {
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	seen := make(map[string][2]string)
 	total := 0
 	for _, a := range corpus {
@@ -202,14 +202,14 @@ func TestStackNameIsInjective(t *testing.T) {
 // encoder: a reader that called into the encoder would agree with it whatever the
 // encoder did, which is the one thing this assertion must not do.
 func TestExportNameSegmentsAreRecoverable(t *testing.T) {
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	for _, a := range corpus {
 		for _, b := range corpus {
 			for _, c := range corpus {
 				for _, d := range corpus {
 					want := []string{"aggrega", a, b, c, d}
 					name := ExportName(a, b, c, d)
-					got := namesegmenttest.ReadName(t, name)
+					got := namesegmenttest.ReadName(t, '-', name)
 					if len(got) != len(want) {
 						t.Fatalf("export name %q read back as %d parts, want %d", name, len(got), len(want))
 					}
@@ -229,7 +229,7 @@ func TestExportNameSegmentsAreRecoverable(t *testing.T) {
 // hyphens in a row, and never ends with one. Without both, a run of hyphens in an
 // assembled name would not say where the join is.
 func TestEncodedSegmentReservesTheJoin(t *testing.T) {
-	for _, s := range namesegmenttest.Corpus() {
+	for _, s := range namesegmenttest.Corpus('-') {
 		encoded := exportNameEncoding.Segment(s)
 		if strings.Contains(encoded, "--") {
 			t.Fatalf("segment %q encoded to %q, which contains the join sequence", s, encoded)
@@ -248,7 +248,7 @@ func TestEncodedSegmentReservesTheJoin(t *testing.T) {
 // stack names this core assembles are built from. The corpus deliberately
 // includes a space, a tab, and a non-ASCII letter, none of which may survive.
 func TestEncodedSegmentUsesOnlyTheNameAlphabet(t *testing.T) {
-	for _, s := range namesegmenttest.Corpus() {
+	for _, s := range namesegmenttest.Corpus('-') {
 		encoded := exportNameEncoding.Segment(s)
 		for i := 0; i < len(encoded); i++ {
 			c := encoded[i]

@@ -201,9 +201,15 @@ func TestResourceLogicalIDRefusalReturnsAnErrorRatherThanPanicking(t *testing.T)
 	}
 }
 
-// TestTheLogicalIDAlphabetHasOneHome asserts the alphabet the Output-name
-// derivation carries a character through on is the same alphabet each refusal of
-// a verbatim-read name admits, character by character.
+// TestTheLogicalIDAlphabetHasOneHome asserts every side of the logical-id
+// alphabet reads one statement of it, character by character: each refusal of a
+// verbatim-read name admits exactly that alphabet, and the Output-name
+// derivation carries exactly that alphabet through less the single character it
+// reserves to open an escape with.
+//
+// That subtraction is the only asymmetry, and it is stated here rather than
+// looked up, so a derivation that started reserving a second character — or
+// stopped reserving this one — reddens rather than passing quietly.
 //
 // All of them read one predicate today, so this is the guard that keeps them
 // reading it: a later edit re-stating the character class inside any one of them
@@ -229,12 +235,17 @@ func TestTheLogicalIDAlphabetHasOneHome(t *testing.T) {
 		if got := alphanumeric.IsRune(r); got != want {
 			t.Fatalf("the alphabet admits %q = %v, want %v", r, got, want)
 		}
-		// The derivation's side of the same rule: it carries a character through
-		// exactly when the alphabet admits it, and drops it otherwise.
-		carried := alphanumeric.CapitalizedWords(string(r)) != ""
-		if carried != want {
-			t.Fatalf("the Output-name derivation %s %q, but the alphabet says %v",
-				map[bool]string{true: "carries", false: "drops"}[carried], r, want)
+		// The Output-name derivation's side of the same rule. It carries a
+		// character through exactly when the alphabet admits it, with one
+		// character subtracted: the one it reserves to open an escape with, which
+		// the alphabet admits and the derivation may not carry. Stating the
+		// subtraction here rather than reading the derivation's own predicate is
+		// what makes this a cross-check — a leg that read the predicate under test
+		// would agree with it whatever it said.
+		carried := isOutputLogicalIDRune(r)
+		if carried != (want && r != outputLogicalIDOpener) {
+			t.Fatalf("the Output-name derivation %s %q, but the alphabet says %v and the reserved character is %q",
+				map[bool]string{true: "carries", false: "escapes"}[carried], r, want, outputLogicalIDOpener)
 		}
 		// The resource refusal's side: it objects to exactly the characters the
 		// alphabet does not admit.

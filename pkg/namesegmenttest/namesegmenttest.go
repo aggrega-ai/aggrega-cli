@@ -14,6 +14,11 @@
 // The reader is written against the encoding's stated contract and deliberately
 // shares no code with the encoder. A reader that called into the encoder would
 // agree with it whatever the encoder did, which is the one thing it must not do.
+//
+// Every entry point takes the escape opener the encoding under test declares,
+// because the opener is that encoding's own statement rather than the scheme's.
+// Passing the wrong one is not a subtle failure: a name divides at joins that
+// are not there, and the assertion reports segments the encoder never wrote.
 package namesegmenttest
 
 import (
@@ -23,70 +28,97 @@ import (
 )
 
 // Corpus returns the segment corpus the injectivity and recoverability
-// properties are established over. It is chosen for the encoding's edges rather
-// than for realism: the empty segment, the characters with their own escape, the
-// escape mark itself, the absent-segment selector, a hyphen in every position
-// that decides whether it is kept or escaped, a doubled hyphen, and text that
-// spells an escape out.
+// properties are established over, shaped for an encoding whose escape opener is
+// opener. It is chosen for the encoding's edges rather than for realism: the
+// empty segment, the characters with their own escape, the escape mark itself,
+// the absent-segment selector, the opener in every position that decides whether
+// it is kept or escaped, a doubled opener, and text that spells an escape out.
 //
-// It also has to be closed under moving a hyphen across a join, or an
+// It also has to be closed under moving an opener across a join, or an
 // injectivity assertion cannot see the join itself: for a one-character join,
 // ("a-a", "a") and ("a", "a-a") assemble to one string, and only a corpus
 // carrying both "a" and "a-a" contains that pair. A corpus that merely looks
 // varied does not — every segment can be distinct and every assembled name still
 // distinct, while the property the join carries goes untested.
 //
+// The hyphen appears whatever the opener is. For an encoding that opens with
+// something else the hyphen is an ordinary escaped character carrying its own
+// short selector, so it belongs in the corpus on its own account; for one that
+// opens with the hyphen those entries are the opener entries already present,
+// and the duplicates are dropped rather than repeated. So the hyphen call
+// returns the same segments in the same order it would have without the
+// parameter, which is what keeps an assertion established over it from quietly
+// weakening.
+//
 // Each call returns a fresh slice, so a caller may reorder or extend its own copy
 // without disturbing another's.
-func Corpus() []string {
-	return []string{
+func Corpus(opener rune) []string {
+	o := string(opener)
+	shaped := []string{
 		"", "a", "z", "e", "1",
-		"a-b", "a_b", "a.b", "a/b",
-		"-a", "a-", "-", "--", "a--b",
-		"a-z", "-z", "-ze", "-zh", "a-zhb",
+		"a" + o + "b", "a_b", "a.b", "a/b",
+		o + "a", "a" + o, o, o + o, "a" + o + o + "b",
+		"a" + o + "z", o + "z", o + "ze", o + "zh", "a" + o + "zhb",
 		"none", "A", "aA", "a b", "a\tb", "é",
+		"a" + o + "a", "b" + o + "a",
+		"a-b", "-a", "a-", "-", "--", "a--b",
+		"a-z", "-z", "-ze", "-zh", "a-zhb",
 		"a-a", "b-a",
 	}
+	out := make([]string, 0, len(shaped))
+	seen := make(map[string]bool, len(shaped))
+	for _, s := range shaped {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 // ReadName splits an assembled name at its joins and decodes each segment,
-// returning the segments in the order the name carries them.
+// returning the segments in the order the name carries them. opener is the
+// escape opener the encoding that wrote the name declares.
 //
-// The split is on the first two hyphens of any run of two or more, which is
-// sound exactly because an encoded segment never contains two hyphens in a row
+// The split is on the first two openers of any run of two or more, which is
+// sound exactly because an encoded segment never contains two openers in a row
 // and never ends with one — so the first such pair is always a join.
-func ReadName(tb testing.TB, name string) []string {
+func ReadName(tb testing.TB, opener rune, name string) []string {
 	tb.Helper()
+	separator := string(opener) + string(opener)
 	var parts []string
 	rest := name
 	for {
-		at := strings.Index(rest, "--")
+		at := strings.Index(rest, separator)
 		if at < 0 {
-			return append(parts, DecodeSegment(tb, rest))
+			return append(parts, DecodeSegment(tb, opener, rest))
 		}
-		parts = append(parts, DecodeSegment(tb, rest[:at]))
-		rest = rest[at+2:]
+		parts = append(parts, DecodeSegment(tb, opener, rest[:at]))
+		rest = rest[at+len(separator):]
 	}
 }
 
-// DecodeSegment reverses the segment encoding: a hyphen followed by the escape
+// DecodeSegment reverses the segment encoding: the opener followed by the escape
 // mark opens an escape whose selector fixes its payload, and every other byte
 // stands for itself. The absent-segment mark decodes to the empty string.
 //
 // The decoding is independent of which characters the encoding admitted, because
 // an escape is self-delimiting: what an alphabet admits decides which characters
-// were escaped, never how an escape is read.
+// were escaped, never how an escape is read. It is not independent of the
+// opener, which is why the caller states it.
 //
 // A segment carrying an unreadable escape fails the calling test, since only an
 // encoder defect can produce one.
-func DecodeSegment(tb testing.TB, seg string) string {
+func DecodeSegment(tb testing.TB, opener rune, seg string) string {
 	tb.Helper()
-	if seg == "-ze" {
+	if seg == string(opener)+"ze" {
 		return ""
 	}
+	open := byte(opener)
 	var out strings.Builder
 	for i := 0; i < len(seg); {
-		if seg[i] != '-' || i+2 >= len(seg) || seg[i+1] != 'z' {
+		if seg[i] != open || i+2 >= len(seg) || seg[i+1] != 'z' {
 			out.WriteByte(seg[i])
 			i++
 			continue

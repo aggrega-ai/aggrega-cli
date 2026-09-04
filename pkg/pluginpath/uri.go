@@ -36,7 +36,7 @@ func isLocalPathRef(uri string) bool {
 //
 // The alphabet is stated here rather than taken from the encoding, because it is
 // a property of what a filename has to be rather than of the encoding.
-var guestFileEncoding = namesegment.NewEncoding(isGuestFileRune)
+var guestFileEncoding = namesegment.NewEncoding('-', isGuestFileRune)
 
 // isGuestFileRune reports whether a character is carried into a guest filename
 // as itself: a lowercase ASCII letter or a digit. Every other character is

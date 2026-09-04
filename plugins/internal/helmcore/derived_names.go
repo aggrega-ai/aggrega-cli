@@ -38,7 +38,7 @@ const resourceNameSpacePrefix = "resource-names:"
 // resources whose names may legitimately coincide would then be compared against
 // each other. The two-hyphen join no encoded segment contains cannot fold that
 // way, so distinct pairs always reach distinct spaces.
-var resourceNameSpaceEncoding = namesegment.NewEncoding(isResourceNameSpaceRune)
+var resourceNameSpaceEncoding = namesegment.NewEncoding('-', isResourceNameSpaceRune)
 
 // isResourceNameSpaceRune reports whether a character is carried through the key
 // space encoding as itself: an ASCII letter or digit.

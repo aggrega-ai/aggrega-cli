@@ -105,7 +105,7 @@ func TestGuestFilenameCollidesOnlyOnEqualParts(t *testing.T) {
 func TestGuestFilenameReadsBackIntoItsParts(t *testing.T) {
 	for _, ref := range guestFilenameReferenceCorpus() {
 		name := strings.TrimSuffix(PluginLeaf(ref), guestFileSuffix)
-		got := namesegmenttest.ReadName(t, name)
+		got := namesegmenttest.ReadName(t, '-', name)
 		if want := pluginLeafParts(ref); !reflect.DeepEqual(got, want) {
 			t.Errorf("%q: filename reads back as %q, built from %q", ref, got, want)
 		}
@@ -250,7 +250,7 @@ func embeddedPluginManifestRows(t *testing.T) [][2]string {
 // different branch of the split: no pin at all, an empty pin, and a pin whose
 // text spells the separator it was split at.
 func guestFilenameReferenceCorpus() []string {
-	segments := namesegmenttest.Corpus()
+	segments := namesegmenttest.Corpus('-')
 	pins := []string{"", ":", ":1.0.0", ":a-b", ":a:b"}
 	refs := make([]string, 0, len(segments)*len(segments)*len(pins))
 	for _, socket := range segments {

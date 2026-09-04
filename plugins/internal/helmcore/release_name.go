@@ -35,7 +35,7 @@ import (
 // whose first character is escaped begins its name with the hyphen every escape
 // opens with, and an identity carrying escaped characters encodes longer than
 // it was authored.
-var releaseNameEncoding = namesegment.NewEncoding(isReleaseNameRune)
+var releaseNameEncoding = namesegment.NewEncoding('-', isReleaseNameRune)
 
 // isReleaseNameRune reports whether a character is carried through the encoding
 // as itself: a lowercase ASCII letter or a digit. Every other character,

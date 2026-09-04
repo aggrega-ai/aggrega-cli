@@ -113,7 +113,7 @@ func (a attachmentIdentity) outputPrefix(attachmentDir string) string {
 // a property of what a filename has to be rather than of the encoding — and it
 // is deliberately not the alphabet the composed identity uses, which answers to
 // what a label value accepts instead.
-var attachmentFileEncoding = namesegment.NewEncoding(isAttachmentFileRune)
+var attachmentFileEncoding = namesegment.NewEncoding('-', isAttachmentFileRune)
 
 // isAttachmentFileRune reports whether a character is carried into an
 // attachment's filename prefix as itself: a lowercase ASCII letter or a digit.
@@ -166,8 +166,9 @@ func isAttachmentFileRune(r rune) bool {
 //
 // The prefix is injective because the coordinates are encoded rather than
 // joined raw, and because the prefix meets the file's own name at
-// [namesegment.SegmentSeparator] — the one sequence no encoded coordinate can
-// contain. So for one file name, two distinct coordinate lists always reach two
+// [namesegment.Encoding.SegmentSeparator] — the one sequence no encoded
+// coordinate can contain. So for one file name, two distinct coordinate lists
+// always reach two
 // distinct filenames, including lists of different lengths, and including one
 // scope's list against the other's. A shorter boundary would not carry that: on
 // a single hyphen, coordinates ("a", "b") with the name "c-x.yaml" and
@@ -183,7 +184,7 @@ func isAttachmentFileRune(r rune) bool {
 // where that collision is answered.
 func attachmentOutputPrefix(attachmentDir string, parts ...string) string {
 	if attachmentDir == "" {
-		return attachmentFileEncoding.Name(parts...) + namesegment.SegmentSeparator
+		return attachmentFileEncoding.Name(parts...) + attachmentFileEncoding.SegmentSeparator()
 	}
 	return attachmentDir + strings.Join(parts, "/") + "/"
 }

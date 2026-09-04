@@ -43,7 +43,7 @@ func boundaryID(instance string, path []string) string {
 // input that is NOT valid UTF-8 — which is where an encoding's input is least
 // controlled and where a fold is least likely to be noticed.
 func componentIDParts() []string {
-	return append(namesegmenttest.Corpus(),
+	return append(namesegmenttest.Corpus('-'),
 		string([]byte{0xff}),
 		string([]byte{0x80, 'A'}),
 		"a"+string([]byte{0xc3})+"b",
@@ -94,7 +94,7 @@ func TestBoundaryScopeIdentity_PlainFormReadsBackToItsParts(t *testing.T) {
 			}
 			want := append([]string{BoundaryFeatureScope.prefix}, path...)
 			want = append(want, instance)
-			read := namesegmenttest.ReadName(t, got)
+			read := namesegmenttest.ReadName(t, '-', got)
 			if len(read) != len(want) {
 				t.Fatalf("(%q, %q) -> %q read back as %d parts, want %d: %q", instance, path, got, len(read), len(want), read)
 			}

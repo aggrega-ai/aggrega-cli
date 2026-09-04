@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
 	"github.com/aggrega-ai/aggrega-cli/pkg/namesegmenttest"
 )
 
@@ -55,7 +54,7 @@ var flatTails = []string{"manifest.yaml", "x.yaml", "c-x.yaml", "-x.yaml", "--x.
 // one directory — so a one-coordinate list reaching the same filename as a
 // two-coordinate list is a real collision and has to be refused here.
 func attachmentFlatCoordinateLists() [][]string {
-	corpus := namesegmenttest.Corpus()
+	corpus := namesegmenttest.Corpus('-')
 	out := make([][]string, 0, len(corpus)+len(corpus)*len(corpus))
 	for _, instance := range corpus {
 		out = append(out, []string{instance})
@@ -176,10 +175,10 @@ func TestAttachmentFlatFilenameJoinsOnTheEncodingsSeparator(t *testing.T) {
 	t.Parallel()
 
 	prefix := attachmentOutputPrefix("", "host", "instance")
-	if !strings.HasSuffix(prefix, namesegment.SegmentSeparator) {
+	if !strings.HasSuffix(prefix, attachmentFileEncoding.SegmentSeparator()) {
 		t.Errorf("the prefix does not end at the encoding's own separator: %q", prefix)
 	}
-	if want := "host" + namesegment.SegmentSeparator + "instance" + namesegment.SegmentSeparator; prefix != want {
+	if want := "host" + attachmentFileEncoding.SegmentSeparator() + "instance" + attachmentFileEncoding.SegmentSeparator(); prefix != want {
 		t.Errorf("prefix = %q, want %q", prefix, want)
 	}
 }

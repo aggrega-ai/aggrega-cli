@@ -62,11 +62,19 @@ func Helpers() template.FuncMap {
 //	{{ capitalizedWords .context.instance_id }}
 //
 // It forwards to [alphanumeric.CapitalizedWords] and adds nothing. The
-// derivation has one home because two surfaces need it to agree: a
-// template rendering an authored value here, and a WebAssembly guest
-// deriving a name from the same value later. A second implementation
-// would agree on ordinary input and drift on an edge case, with nothing
-// failing while the two still agreed.
+// derivation has one home because every template that folds a name has
+// to agree with every other about what a given string folds to: a
+// Recipe naming a resource from an instance id, and a FeatureRecipe
+// naming its own resource from that same id, meet in one rendered
+// artifact and would have to be compared by eye otherwise. A second
+// implementation would agree on ordinary input and drift on an edge
+// case, with nothing failing while the two still agreed.
+//
+// The fold is lossy, and a template author is the one who has to know
+// it: two ids differing only in punctuation fold to one name, so a
+// template deriving a name this way carries the collision the fold
+// cannot see. Where a name has to tell two authored ids apart, the fold
+// is the wrong tool for it.
 //
 // The forwarder exists so the sentence above about unexported helpers
 // stays true: binding the shared function directly would make it

@@ -4,83 +4,91 @@
 package cfncore
 
 import (
+	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 )
 
-// These tests cover the two refusals that keep something an author wrote from
-// disappearing from the assembled stack without a word: two different authored
-// entries reaching one Output name, and one mapping key written twice.
+// These tests cover what keeps something an author wrote from disappearing from
+// the assembled stack without a word: the Output-name derivation telling two
+// authored entries apart, the refusal retained behind it, and the refusal of one
+// mapping key written twice.
 //
 // Every negative row asserts the sentinel of the condition it pins rather than
-// "an error", because the two refusals and the merge's own refusal are three
+// "an error", because the retained refusal and the merge's own refusal are
 // separate gates over overlapping input. A row asserting only that something
 // failed would keep passing after a different gate started rejecting it first, at
 // which point it would have silently stopped covering its subject.
 
-// TestOutputNameCollisionRefused covers the derivation being non-injective, one
-// row per way two authored entries can arrive at a single Output name. Each row
-// names in its fixture exactly the two things an author wrote, and asserts the
-// halt names both of them — a halt naming only the name they landed on would
-// leave the author with nothing to search for.
-func TestOutputNameCollisionRefused(t *testing.T) {
+// TestEntriesThatUsedToMeetReachDistinctNames is the positive statement of the
+// derivation's injectivity at the surface an author actually meets, one row per
+// way two authored entries could once arrive at a single Output name.
+//
+// Every fixture here is legal input that the build refused: two components, or
+// two entries, differing in nothing but a separator or a letter's case. Refusing
+// them was not a corruption — the build halted rather than emit a stack missing
+// one of the two — but it made an author rename something that was legal, and
+// would have stayed legal under every other provider. So each row asserts the
+// assembly now proceeds and that BOTH entries reach the stack under names of
+// their own.
+//
+// The rows span both ways two entries could meet, because a change addressing
+// one is not a change: the punctuation and case rows are the per-segment
+// property, and the last row is the join — a component and entry pair against a
+// differently-split pair, where neither authored string appears in the other.
+func TestEntriesThatUsedToMeetReachDistinctNames(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
-		// nodes is the whole assembled stack, so a row can put its two colliding
-		// entries in one component or in two.
+		// nodes is the whole assembled stack, so a row can put its two entries in
+		// one component or in two.
 		nodes []NodeFragment
-		// wantName is the Output name the two entries met at.
-		wantName string
-		// wantAuthored is every authored string the halt has to carry: the entry
-		// names as written, the sections they were written in, and the components.
-		wantAuthored []string
+		// wantOutputs is every Output name the assembled stack has to carry. Two
+		// names, always: the point of each row is that the pair stayed a pair.
+		wantOutputs []string
 	}{
 		{
-			// Separators are dropped, so two provides keys differing only in
-			// punctuation reach one name. This is the case a fragment can reach
-			// entirely on its own.
+			// The per-segment property: a separator is escaped rather than
+			// dropped, so two provides keys differing only in punctuation stay
+			// apart. This is the case a fragment can reach entirely on its own.
 			name: "two provides keys differ only in punctuation",
 			nodes: []NodeFragment{{NodeID: "orders", Files: [][]byte{
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  db-host: first\n  db_host: second\n"),
 			}}},
-			wantName:     "OrdersDbHost",
-			wantAuthored: []string{`"db-host"`, `"db_host"`, "provides", `"orders"`},
+			wantOutputs: []string{"ordersQQdbQzhhost", "ordersQQdbQzuhost"},
 		},
 		{
-			// A word's first letter is capitalised either way, so two keys
-			// differing only in case reach one name.
+			// A letter is carried in the case it was authored in, so two keys
+			// differing only in case stay apart.
 			name: "two provides keys differ only in a letter's case",
 			nodes: []NodeFragment{{NodeID: "orders", Files: [][]byte{
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  host: first\n  Host: second\n"),
 			}}},
-			wantName:     "OrdersHost",
-			wantAuthored: []string{`"host"`, `"Host"`, `"orders"`},
+			wantOutputs: []string{"ordersQQHost", "ordersQQhost"},
 		},
 		{
-			// The two sections reach the outputs space independently, so the
-			// collision can straddle them. Bodies differ here.
+			// The two sections reach the outputs space independently, so the pair
+			// can straddle them. Bodies differ here.
 			name: "an Outputs entry and a provides key differ only in punctuation, bodies differing",
 			nodes: []NodeFragment{{NodeID: "orders", Files: [][]byte{
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nOutputs:\n  db_host:\n    Value: explicit\nprovides:\n  db-host: projected\n"),
 			}}},
-			wantName:     "OrdersDbHost",
-			wantAuthored: []string{`"db_host"`, `"db-host"`, "Outputs", "provides", `"orders"`},
+			wantOutputs: []string{"ordersQQdbQzhhost", "ordersQQdbQzuhost"},
 		},
 		{
 			// The same straddle with bodies that agree. This is the row that
-			// matters most: with equal bodies nothing downstream refuses it, so
-			// before this check one of the two entries was folded away and the
-			// stack carried a single Output where two were written.
+			// matters most: with equal bodies nothing downstream would have
+			// refused it, so a derivation that folded the two would have left the
+			// stack carrying a single Output where two were written.
 			name: "an Outputs entry and a provides key differ only in punctuation, bodies agreeing",
 			nodes: []NodeFragment{{NodeID: "orders", Files: [][]byte{
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nOutputs:\n  db_host:\n    Value: same\nprovides:\n  db-host: same\n"),
 			}}},
-			wantName:     "OrdersDbHost",
-			wantAuthored: []string{`"db_host"`, `"db-host"`, "Outputs", "provides", `"orders"`},
+			wantOutputs: []string{"ordersQQdbQzhhost", "ordersQQdbQzuhost"},
 		},
 		{
 			// Two of one component's fragments, rather than one fragment's two
@@ -90,15 +98,14 @@ func TestOutputNameCollisionRefused(t *testing.T) {
 				[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  db-host: first\n"),
 				[]byte("Resources:\n  B:\n    Type: AWS::SQS::Queue\nprovides:\n  db.host: second\n"),
 			}}},
-			wantName:     "OrdersDbHost",
-			wantAuthored: []string{`"db-host"`, `"db.host"`, `"orders"`},
+			wantOutputs: []string{"ordersQQdbQzdhost", "ordersQQdbQzhhost"},
 		},
 		{
-			// The seam: the component half and the entry half are joined with no
-			// separator between them, so the split is not recoverable and two
-			// different components reach one name from two different entries.
-			// Neither authored string appears in the other.
-			name: "two components reach one name across the join between component and entry",
+			// The join, which is a separate failure surface from the segment: the
+			// component half and the entry half meet at a sequence no encoded
+			// segment can carry, so a differently-split pair of the same letters
+			// reaches its own name. Neither authored string appears in the other.
+			name: "two components split one string differently between component and entry",
 			nodes: []NodeFragment{
 				{NodeID: "payments-db", Files: [][]byte{
 					[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  host: first\n"),
@@ -107,40 +114,44 @@ func TestOutputNameCollisionRefused(t *testing.T) {
 					[]byte("Resources:\n  B:\n    Type: AWS::SQS::Queue\nprovides:\n  db-host: second\n"),
 				}},
 			},
-			wantName:     "PaymentsDbHost",
-			wantAuthored: []string{`"host"`, `"db-host"`, `"payments-db"`, `"payments"`},
+			wantOutputs: []string{"paymentsQQdbQzhhost", "paymentsQzhdbQQhost"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			out, err := AssembleStack(tc.nodes)
-			if err == nil {
-				t.Fatalf("two authored entries reached %q and the assembly proceeded; one of them is not in the stack:\n%s", tc.wantName, out)
+			if err != nil {
+				t.Fatalf("both entries are legal and differ, so the assembly must proceed: %v", err)
 			}
-			if !errors.Is(err, ErrOutputNameCollision()) {
-				t.Fatalf("halt is not the Output-name collision: %v", err)
+			var top map[string]json.RawMessage
+			if err := json.Unmarshal(out, &top); err != nil {
+				t.Fatalf("assembled stack is not valid JSON: %v", err)
 			}
-			msg := err.Error()
-			t.Logf("halt: %s", msg)
-			if !strings.Contains(msg, `"`+tc.wantName+`"`) {
-				t.Errorf("halt does not name the Output name %q the entries met at: %s", tc.wantName, msg)
+			var outputs map[string]json.RawMessage
+			if err := json.Unmarshal(top["Outputs"], &outputs); err != nil {
+				t.Fatalf("Outputs is not an object: %v", err)
 			}
-			for _, want := range tc.wantAuthored {
-				if !strings.Contains(msg, want) {
-					t.Errorf("halt does not name the authored %s, so the author has nothing to search for: %s", want, msg)
-				}
+			got := sortedCopy(keysOf(outputs))
+			t.Logf("Outputs: %v", got)
+			if !reflect.DeepEqual(got, tc.wantOutputs) {
+				t.Fatalf("assembled Outputs %v, want %v — both entries must reach a name of their own", got, tc.wantOutputs)
 			}
 		})
 	}
 }
 
-// TestOutputNameCollisionRefusedAtDeclaration asserts the same refusal fires
-// while a component's own fragments are being read, which is before the stack is
-// assembled. The narrower scope catches strictly less — it cannot see a second
-// component — and it is the only path a sourced template reaches.
-func TestOutputNameCollisionRefusedAtDeclaration(t *testing.T) {
+// TestTwoEntriesAreDeclaredApartAtDeclaration asserts the same pair stays a pair
+// on the declaration path, which is read before the stack is assembled and is
+// the only path a sourced template reaches.
+//
+// The declaration is what the host compares across contributors, so a
+// declaration carrying one name where the author wrote two entries would let the
+// host's own collision check see nothing to compare — which is why this is
+// asserted here as well as at the assembly.
+func TestTwoEntriesAreDeclaredApartAtDeclaration(t *testing.T) {
 	t.Parallel()
 	frag := []byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\nprovides:\n  db-host: first\n  db_host: second\n")
+	want := []string{"ordersQQdbQzhhost", "ordersQQdbQzuhost"}
 
 	t.Run("fragments", func(t *testing.T) {
 		t.Parallel()
@@ -148,11 +159,13 @@ func TestOutputNameCollisionRefusedAtDeclaration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NormalizeFragment: %v", err)
 		}
-		_, _, err = DeclaredNames("orders", [][]byte{normalized})
-		if !errors.Is(err, ErrOutputNameCollision()) {
-			t.Fatalf("declaration did not refuse two entries reaching one Output name: %v", err)
+		_, outs, err := DeclaredNames("orders", [][]byte{normalized})
+		if err != nil {
+			t.Fatalf("DeclaredNames: %v", err)
 		}
-		t.Logf("halt: %s", err)
+		if got := sortedCopy(outs); !reflect.DeepEqual(got, want) {
+			t.Fatalf("declared outputs %v, want %v", got, want)
+		}
 	})
 
 	t.Run("sourced", func(t *testing.T) {
@@ -161,11 +174,13 @@ func TestOutputNameCollisionRefusedAtDeclaration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NormalizeSourced: %v", err)
 		}
-		_, _, err = DeclaredNamesSourced("orders", normalized, false)
-		if !errors.Is(err, ErrOutputNameCollision()) {
-			t.Fatalf("sourced declaration did not refuse two entries reaching one Output name: %v", err)
+		_, outs, err := DeclaredNamesSourced("orders", normalized, false)
+		if err != nil {
+			t.Fatalf("DeclaredNamesSourced: %v", err)
 		}
-		t.Logf("halt: %s", err)
+		if got := sortedCopy(outs); !reflect.DeepEqual(got, want) {
+			t.Fatalf("declared outputs %v, want %v", got, want)
+		}
 	})
 }
 
@@ -229,33 +244,73 @@ func TestOutputNameLedgerAdmitsOneEntryRestated(t *testing.T) {
 	}
 }
 
-// TestOutputNameCollisionDiagnosticIsAFunctionOfItsInput asserts the halt text is
-// byte-identical across runs of identical input, over a fixture carrying several
-// collisions so the ordering of the clauses is actually exercised. The names are
-// accumulated in a map, whose iteration order Go randomises per run, so an
+// TestTheRetainedLedgerReportsEveryCollisionDeterministically exercises the
+// refusal the derivation's injectivity has made unreachable, so that the guard
+// kept for a future regression is a guard that has been shown to work.
+//
+// The ledger is seeded directly rather than driven through the derivation,
+// because there is no longer any authored input that makes two different entries
+// meet — which is the whole point of the change and would otherwise leave this
+// code covered by nothing. What is asserted is the half a regression would
+// depend on: every collision reported rather than the first, both authored ends
+// named, and the text byte-identical across runs of identical input. The names
+// are accumulated in a map, whose iteration order Go randomises per run, so an
 // unsorted report would differ between runs of the same build.
-func TestOutputNameCollisionDiagnosticIsAFunctionOfItsInput(t *testing.T) {
+func TestTheRetainedLedgerReportsEveryCollisionDeterministically(t *testing.T) {
 	t.Parallel()
-	nodes := []NodeFragment{{NodeID: "orders", Files: [][]byte{
-		[]byte("Resources:\n  A:\n    Type: AWS::S3::Bucket\n" +
-			"provides:\n  db-host: a\n  db_host: b\n  db.host: c\n  queue-url: d\n  queue_url: e\n"),
-	}}}
-	_, first := AssembleStack(nodes)
+	seeded := func() *outputNameLedger {
+		return &outputNameLedger{sources: map[string][]authoredOutputEntry{
+			"ordersQQdbQzhhost": {
+				{component: "orders", section: sectionProvides, entry: "db-host"},
+				{component: "orders", section: sectionExplicitOutputs, entry: "db_host"},
+			},
+			"ordersQQqueueQzhurl": {
+				{component: "orders", section: sectionProvides, entry: "queue-url"},
+				{component: "orders", section: sectionProvides, entry: "queue_url"},
+			},
+		}}
+	}
+
+	first := seeded().err()
 	if first == nil {
-		t.Fatal("expected a halt")
+		t.Fatal("the ledger reported nothing for two names each reached by two entries")
+	}
+	if !errors.Is(first, ErrOutputNameCollision()) {
+		t.Fatalf("report is not the Output-name collision: %v", first)
 	}
 	t.Logf("halt: %s", first)
 	for i := range 12 {
-		_, again := AssembleStack(nodes)
+		again := seeded().err()
 		if again == nil || again.Error() != first.Error() {
 			t.Fatalf("run %d produced a different diagnostic:\nfirst: %v\nagain: %v", i, first, again)
 		}
 	}
-	// Both collisions are reported, rather than the first one found.
-	for _, want := range []string{`"OrdersDbHost"`, `"OrdersQueueUrl"`} {
+	// Every collision is reported rather than the first one found, and each
+	// carries both authored ends so an author would have something to search for.
+	for _, want := range []string{
+		`"ordersQQdbQzhhost"`, `"ordersQQqueueQzhurl"`,
+		`"db-host"`, `"db_host"`, `"queue-url"`, `"queue_url"`,
+		"provides", "Outputs", `"orders"`,
+	} {
 		if !strings.Contains(first.Error(), want) {
-			t.Errorf("halt reports only some of the collisions; %s is missing: %v", want, first)
+			t.Errorf("the report does not carry %s: %v", want, first)
 		}
+	}
+
+	// The positive control: a ledger whose names were each reached once reports
+	// nothing, so the assertions above are not passing on a report that fires
+	// whatever it holds.
+	clean := &outputNameLedger{}
+	for _, e := range []authoredOutputEntry{
+		{component: "orders", section: sectionProvides, entry: "db-host"},
+		{component: "orders", section: sectionProvides, entry: "db_host"},
+		{component: "payments-db", section: sectionProvides, entry: "host"},
+		{component: "payments", section: sectionProvides, entry: "db-host"},
+	} {
+		clean.mint(e)
+	}
+	if err := clean.err(); err != nil {
+		t.Fatalf("four entries the derivation tells apart were reported as colliding: %v", err)
 	}
 }
 
@@ -370,7 +425,7 @@ func TestDuplicateMappingKeyAdmitsOneKeyPerMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AssembleStack: %v", err)
 	}
-	for _, want := range []string{`"Bucket"`, `"Queue"`, `"OrdersFirst"`, `"OrdersSecond"`} {
+	for _, want := range []string{`"Bucket"`, `"Queue"`, `"ordersQQfirst"`, `"ordersQQsecond"`} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("assembled stack is missing %s:\n%s", want, out)
 		}
