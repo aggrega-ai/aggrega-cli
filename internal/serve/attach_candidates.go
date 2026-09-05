@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -85,16 +86,22 @@ func (r WorkspaceEntityRef) identity() WorkspaceEntityRef { return r }
 type AttachCandidate = SourcedEntityRef
 
 // Node-label provenance values, reported as labelSource so a client knows
-// which of two genuinely different label sets a match was evaluated against.
+// which of three genuinely different label sets a match was evaluated
+// against.
 //
 // The distinction is not cosmetic and it must not be smoothed away. A
-// document's declared labels are what a read over source can see; a graph
+// document's declared labels are what a read over source can see. A graph
 // node's are the finalised set the build itself evaluates applicability
-// against, after a composition or a Release has contributed whatever it
-// contributes. An answer computed over the second is a statement about what
-// the build will do; one computed over the first is not, and a response that
-// looked identical for both would invite a client to read the weaker answer
-// as the stronger one.
+// against: the labels the resolved component type declares, after any
+// label-transform attachment the workspace configuration carries has added
+// to, changed or removed them. An answer computed over the second is a
+// statement about what the build will do; one computed over the first is
+// not, and a response that looked identical for both would invite a client
+// to read the weaker answer as the stronger one.
+//
+// The third says the daemon read no labels at all. Its strength is the
+// caller's to know, which is exactly why it is reported rather than left to
+// be inferred from which parameter was sent.
 const (
 	// NodeLabelsDeclared marks a match evaluated against the labels a workspace
 	// document declares at metadata.labels.
@@ -102,29 +109,68 @@ const (
 	// NodeLabelsResolved marks a match evaluated against the finalised labels a
 	// compiled graph node carries.
 	NodeLabelsResolved = "resolved"
+	// NodeLabelsSupplied marks a match evaluated against a label set the request
+	// carried, which the daemon read from no document and cannot vouch for.
+	NodeLabelsSupplied = "supplied"
 )
 
 // attachCandidatesParams is the aggrega/attachCandidates request shape.
 //
-// The two coordinates address two different things and exactly one is given.
+// The three coordinates address three different things and exactly one is
+// given.
 //
 // Node names a workspace document by its metadata.name — the same name
 // aggrega/catalogIndex reports. GraphNode names a node in the compiled graph
 // of a Release, by the id that graph keys it under, and Release says which
-// Release's graph to build.
+// Release's graph to build. Labels carries a label set outright, and names
+// nothing at all.
 //
-// They are separate parameters because the two identifier spaces OVERLAP. A
-// graph node id is constrained to a pattern; a document's metadata.name
-// carries no pattern at all, so a name legal as one is frequently legal as
-// the other and a single parameter carrying both would be ambiguous by
-// construction. Deciding which space to search by inspecting the value would
-// be the compiler guessing meaning out of a string, which is exactly what it
-// does not do anywhere else. So the caller says which question it is asking,
-// and the daemon answers that one.
+// The first two are separate parameters because their identifier spaces
+// OVERLAP. A graph node id is constrained to a pattern; a document's
+// metadata.name carries no pattern at all, so a name legal as one is
+// frequently legal as the other and a single parameter carrying both would be
+// ambiguous by construction. Deciding which space to search by inspecting the
+// value would be the compiler guessing meaning out of a string, which is
+// exactly what it does not do anywhere else. So the caller says which question
+// it is asking, and the daemon answers that one.
+//
+// Labels is the shape underneath both of them. The match this method performs
+// is a function of a label set and the Feature declarations, and of nothing
+// else, so a caller that already holds a label set has no reason to name
+// something for the daemon to look the labels back up from. That matters most
+// for a caller holding a rendered graph: the labels it holds are the finalised
+// ones, which are better data than either name-addressed path can reach on its
+// own, and passing them costs no round trip and no graph rebuild.
 type attachCandidatesParams struct {
-	Node      string `json:"node"`
-	GraphNode string `json:"graphNode"`
-	Release   string `json:"release"`
+	Node      string            `json:"node"`
+	GraphNode string            `json:"graphNode"`
+	Release   string            `json:"release"`
+	Labels    map[string]string `json:"labels"`
+}
+
+// coordinates names the addressing parameters the request carried, in the
+// order the shape declares them, so a refusal can say which ones arrived
+// rather than describing the shape back at a client that already has it.
+//
+// A label set counts as given when the key is present at all, the empty
+// object included. An empty label set is a subject — a node carrying no
+// labels, which every Feature declaring no requirement admits — so reading it
+// as "no coordinate" would refuse a legitimate question. Absent and null both
+// decode to a nil map and neither is a coordinate; that is the distinction
+// this rests on, and it is the reason the field is a map rather than a
+// count or a flag.
+func (p attachCandidatesParams) coordinates() []string {
+	var given []string
+	if p.Node != "" {
+		given = append(given, "params.node")
+	}
+	if p.GraphNode != "" {
+		given = append(given, "params.graphNode")
+	}
+	if p.Labels != nil {
+		given = append(given, "params.labels")
+	}
+	return given
 }
 
 // attachCandidatesResult is the aggrega/attachCandidates response.
@@ -138,9 +184,18 @@ type attachCandidatesParams struct {
 // Both collections are always present on the wire — an empty object and
 // an empty array rather than null — so a client iterates without a nil
 // check.
-// LabelSource names which of the two label sets NodeLabels holds, so the
+//
+// LabelSource names which of the three label sets NodeLabels holds, so the
 // strength of the answer travels with it rather than having to be inferred
 // from which request parameter was sent.
+//
+// Node is the coordinate the answer was computed for, and it is EMPTY when
+// the request supplied a label set, because such a request addressed no node
+// and there is nothing to repeat back. An empty value there is not a field
+// the build failed to fill: LabelSource says which case it is, the same way
+// origin says why a catalog-resolved entity reports no file. The field stays
+// present rather than being omitted so the response shape is the same
+// whichever coordinate was sent.
 type attachCandidatesResult struct {
 	Node        string            `json:"node"`
 	NodeLabels  map[string]string `json:"nodeLabels"`
@@ -166,18 +221,22 @@ type attachCandidatesResult struct {
 // rather than smoothed over. Addressing a workspace document resolves
 // nothing and reaches no registry or network: the candidates come from
 // the workspace walk and from the catalog directory index, both reads of
-// content already on disk. Addressing a graph node builds the Release's
+// content already on disk. Supplying a label set resolves less still — it
+// looks nothing up at all. Addressing a graph node builds the Release's
 // graph through the same computation the graph query runs, so it resolves
 // that Release's closure through the ordinary catalog cascade — which
 // serves from the local directories and the content-addressed cache
 // first, and can reach the configured registry for an entity neither
-// carries. A surface that claimed otherwise for both coordinates would be
+// carries. A surface that claimed otherwise for every coordinate would be
 // describing only the cheaper one.
 //
-// A request naming no entity, or naming one the workspace does not
-// declare, is an error rather than an empty candidate list — those two
-// answers mean different things to a client, and collapsing them into an
-// empty array would report a typo as a node with nothing to offer.
+// A request naming an entity the workspace does not declare is an error
+// rather than an empty candidate list — those two answers mean different
+// things to a client, and collapsing them into an empty array would report
+// a typo as a node with nothing to offer. A request that names nothing
+// because it supplied a label set has no such hazard and is answered: there
+// is no name to have typed wrongly, so an empty list there means what it
+// says.
 //
 // # Addressing a node on a compiled graph
 //
@@ -187,7 +246,8 @@ type attachCandidatesResult struct {
 // Release's graph through the same computation the graph query runs, and
 // therefore carries the same lockfile precondition — but only when it is
 // used. A request addressing a workspace document by name needs no lockfile
-// and is answered exactly as it was before this path existed.
+// and is answered exactly as it was before this path existed, and a request
+// supplying a label set builds no graph either.
 func (s *Server) dispatchAttachCandidates(ctx context.Context, req *jsonRPCRequest) error {
 	var params attachCandidatesParams
 	if len(req.Params) > 0 {
@@ -195,24 +255,39 @@ func (s *Server) dispatchAttachCandidates(ctx context.Context, req *jsonRPCReque
 			return s.writeError(ctx, req.ID, jsonRPCInvalidParams, "invalid params: "+err.Error())
 		}
 	}
-	// The two coordinates are refused together rather than silently ranked.
-	// A client that sent both has a bug whichever one it meant, and picking
-	// one for it would answer a question it did not ask — on a surface where
-	// the two spaces overlap, so the wrong pick can still produce a
-	// plausible-looking answer.
+	// The coordinates are counted rather than compared in pairs, and they are
+	// refused together rather than silently ranked. A client that sent two has
+	// a bug whichever one it meant, and picking one for it would answer a
+	// question it did not ask — on a surface where two of the spaces overlap,
+	// so the wrong pick can still produce a plausible-looking answer. Counting
+	// is what keeps that true as coordinates are added: a chain of pairwise
+	// comparisons admits whichever pair nobody thought to write, and it grows
+	// quadratically while the thing being asserted stays "exactly one".
+	given := params.coordinates()
 	switch {
-	case params.Node == "" && params.GraphNode == "":
+	case len(given) == 0:
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-			"invalid params: name a workspace entity with params.node, or a node on a compiled graph with params.graphNode and params.release")
-	case params.Node != "" && params.GraphNode != "":
+			"invalid params: address a subject with exactly one of params.node (a workspace entity), "+
+				"params.graphNode with params.release (a node on a compiled graph), or params.labels (a label set)")
+	case len(given) > 1:
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-			"invalid params: params.node and params.graphNode address different things; send one, not both")
-	case params.Node != "" && params.Release != "":
+			"invalid params: "+strings.Join(given, ", ")+" address different things; send exactly one")
+	case params.Release != "" && params.GraphNode == "":
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams,
-			"invalid params: params.release applies to params.graphNode; a request naming params.node builds no graph")
+			"invalid params: params.release applies to params.graphNode; a request sending "+given[0]+" builds no graph")
 	}
 	if err := ctx.Err(); err != nil {
 		return s.writeError(ctx, req.ID, jsonRPCInternalError, err.Error())
+	}
+
+	if params.Labels != nil {
+		result, answered := s.attachCandidatesForLabels(ctx, params.Labels)
+		if !answered {
+			// Cancelled mid-traversal (shutdown). Drop the response; the
+			// dispatcher exits via the drain timer.
+			return nil
+		}
+		return s.writeResult(ctx, req.ID, result)
 	}
 
 	if params.GraphNode != "" {
@@ -299,6 +374,75 @@ func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release
 	}, nil
 }
 
+// attachCandidatesForLabels reports which Features may attach to a node
+// carrying the supplied label set. The second return is false when the
+// traversal was interrupted, in which case there is no answer to report.
+//
+// # It resolves nothing, and that is the point of the shape
+//
+// The match is a function of the label set and the Feature declarations, and
+// of nothing else — the two name-addressed paths differ from this one only in
+// where they obtain a label set before performing the identical match. So a
+// caller that already holds one has nothing to name, nothing to be refused
+// for mistyping, and no lookup to wait on. A caller holding a rendered graph
+// holds the finalised labels, which is the stronger of the two sets either
+// name-addressed path can reach, so this answers as strongly as the graph-node
+// coordinate does without rebuilding the graph to do it.
+//
+// # Where the responsibility for the label set goes
+//
+// The name-addressed path reads a document's labels through the same helper
+// aggrega/catalogIndex reports them through, and that shared read is what
+// keeps a palette built from the index and a drop filter built from that path
+// from disagreeing about what labels a node carries. This path has no such
+// guarantee to offer, because the daemon reads nothing: the label set is
+// whatever the caller sent, and the caller is the only party that knows where
+// it came from.
+//
+// So the guarantee moves to the client, and what the daemon does instead is
+// make the move legible rather than pretend it did not happen. Two things
+// carry it. The response reports labelSource "supplied", so an answer computed
+// over a caller's own label set can never be read as one the daemon vouched
+// for. And the response echoes the label set the match was actually evaluated
+// against, so a client can compare what it sent against what was used and
+// audit the answer from the response alone.
+//
+// What that leaves is a rule for the client rather than a mechanism in the
+// daemon: a client passing back a label set the daemon itself reported —
+// a graph node's labels from aggrega/irGraph, or an entity's from
+// aggrega/catalogIndex — agrees with the daemon by construction, because the
+// set never left the daemon's own answer. A client that assembles a label set
+// from somewhere else is asking a hypothetical question, which is a legitimate
+// thing to ask and is answered honestly; it is simply not a statement about
+// any node the workspace holds, and labelSource is what says so.
+//
+// # An empty answer is honest here, and elsewhere it would not be
+//
+// A label set no Feature admits comes back as an empty candidate list rather
+// than a refusal. The name-addressed paths refuse an unknown coordinate
+// precisely because an empty list would report a typo as a node with nothing
+// to offer; there is no name here to have typed wrongly, so the empty list
+// carries no such ambiguity. A malformed request is still refused, before any
+// of this runs.
+func (s *Server) attachCandidatesForLabels(ctx context.Context, labels map[string]string) (attachCandidatesResult, bool) {
+	candidates := s.matchingFeatures(ctx, orderedLabels(labels))
+	if ctx.Err() != nil {
+		// The traversal yields nothing under a cancelled context, and on this
+		// path that would surface as a SUCCESSFUL response carrying an empty
+		// candidate list — a definite answer no completed read reached. The
+		// name-addressed path degrades into a refusal instead, because an
+		// empty traversal also loses the subject; this one has no subject to
+		// lose, so the check has to be here.
+		return attachCandidatesResult{}, false
+	}
+	return attachCandidatesResult{
+		Node:        "",
+		NodeLabels:  labels,
+		LabelSource: NodeLabelsSupplied,
+		Candidates:  candidates,
+	}, true
+}
+
 // attachCandidates projects the workspace document traversal down to the
 // Features whose declared applicability the named entity's labels
 // satisfy, in a deterministic order. The second return reports whether
@@ -319,11 +463,13 @@ func (s *Server) attachCandidatesForGraphNode(ctx context.Context, node, release
 //
 // Those are the labels the document declares, which is what a read-only
 // query over source can see. A build evaluates a Feature's applicability
-// against the finalised label set of the graph node it produces, and a
-// composition or a Release may contribute labels to that set which no
-// single document declares. So this reports the match over declared
-// labels; it is not a prediction of what a build will decide for a node
-// whose labels are contributed from above.
+// against the finalised label set of the graph node it produces, and that
+// set is reached differently: a node takes the labels of the component
+// type it resolves to rather than of a document sharing its name, and a
+// label-transform attachment the workspace configuration carries may then
+// add to, change or remove them. So this reports the match over one
+// document's declared labels; it is not a prediction of what a build will
+// decide.
 //
 // # Which Features are candidates
 //
@@ -537,9 +683,10 @@ func matchFeatures(decls []featureDecl, labels types.OrderedMap[string]) []Attac
 // applicability the supplied label set satisfies, drawing on both the
 // workspace and the configured catalog directories.
 //
-// It is what the graph-node path matches against: that path has no workspace
-// document to anchor on, so it needs the candidate population without the
-// subject lookup the name-addressed path performs in the same walk.
+// It is what both label-first paths match against — the graph-node coordinate
+// and a supplied label set. Neither has a workspace document to anchor on, so
+// each needs the candidate population without the subject lookup the
+// name-addressed path performs in the same walk.
 func (s *Server) matchingFeatures(ctx context.Context, labels types.OrderedMap[string]) []AttachCandidate {
 	features, workspaceNames := s.workspaceFeatureDecls(ctx, nil)
 	features = append(features, s.catalogFeatureDecls(workspaceNames)...)

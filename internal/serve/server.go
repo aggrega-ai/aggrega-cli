@@ -54,7 +54,9 @@
 //	                               kind, name, description, labels and
 //	                               source file
 //	aggrega/attachCandidates       lists the Features whose declared
-//	                               applicability an entity's labels satisfy
+//	                               applicability a label set satisfies, for an
+//	                               entity, a graph node, or a label set sent
+//	                               outright
 //	aggrega/connectionCandidates   lists an entity's dependency sockets and,
 //	                               per socket, the components whose declared
 //	                               labels satisfy what it declares
