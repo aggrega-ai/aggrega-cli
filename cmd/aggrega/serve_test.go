@@ -117,8 +117,17 @@ func framed(id int, method string, params any) []byte {
 }
 
 // readOneResponse reads one Content-Length-framed response from r and
-// decodes it into a map keyed by field name. Times out after the
-// supplied deadline to avoid hanging the test on a deadlocked daemon.
+// decodes it into a map keyed by field name.
+//
+// The duration is a LIVENESS CEILING, never a performance budget. It
+// separates "the daemon answered" from "the daemon will never answer" and
+// says nothing about how long answering ought to take: a run that crosses
+// it is evidence of a hang or a deadlock, and never evidence that the
+// pipeline became slower. So callers pass a value far above whatever the
+// work itself costs, and nobody reads a crossing as a timing regression.
+// Where the work is a whole pipeline round trip, a fixed number cannot
+// stay far enough above it under a parallel battery — see
+// responseLivenessCeiling.
 func readOneResponse(t *testing.T, r io.Reader, deadline time.Duration) map[string]any {
 	t.Helper()
 	type result struct {
@@ -168,8 +177,67 @@ func readOneResponse(t *testing.T, r io.Reader, deadline time.Duration) map[stri
 		}
 		return r.body
 	case <-time.After(deadline):
-		t.Fatalf("readOneResponse: timeout after %s", deadline)
+		t.Fatalf("readOneResponse: no response within the liveness ceiling of %s — "+
+			"the daemon is hung or deadlocked; this bound is not a performance budget", deadline)
 		return nil
+	}
+}
+
+// responseLivenessCeiling bounds the wait for a response whose work is a
+// full pipeline round trip in a subprocess — a catalog walk, IR
+// construction and JSON serialisation — rather than one cheap exchange.
+//
+// IT IS A LIVENESS CEILING AND NOT A PERFORMANCE BUDGET, and that
+// distinction is what makes the value defensible rather than arbitrary. A
+// fixed number here has to sit above the worst case the runner can
+// produce, and the runner is a parallel battery: the round trip costs a
+// handful of seconds on an idle machine, while contention from unrelated
+// packages multiplies that by a factor no single-sample measurement
+// bounds. A bound set at a small multiple of the idle figure therefore
+// reports contention as a failure — it measures the machine's load, not
+// this code — and widening such a bound buys stability by measuring less
+// each time. So the bound is not tightened against a fresh reading; it is
+// put out of contention's reach altogether. What would replace the "handful
+// of seconds" above with a figure worth quoting is timing this one test
+// alone on an idle machine, which is the only condition under which the
+// number means anything.
+//
+// It is DERIVED FROM THE RUNNER'S OWN DEADLINE rather than written as a
+// constant, because the runner is the only thing that knows how long this
+// run is permitted to take. Expiring just inside that deadline turns a
+// genuine hang into this test's own named failure — carrying the method and
+// the wait — instead of a whole-package timeout that names no test and
+// dumps every goroutine in the binary.
+func responseLivenessCeiling(t *testing.T) time.Duration {
+	t.Helper()
+	const (
+		// The cap keeps a real hang from consuming a long package timeout
+		// before anything is reported.
+		longest = 5 * time.Minute
+		// The floor keeps a nearly-exhausted deadline from turning a working
+		// daemon into a failure. Where it applies, the package timeout was
+		// going to fire first regardless, so pre-empting it here gains
+		// nothing and costs a false accusation.
+		shortest = 30 * time.Second
+		// Reserved so the ceiling expires BEFORE the runner's deadline rather
+		// than racing it: two expiries at the same instant is a coin toss
+		// between this test's attributable failure and an unattributable one.
+		reserve = 10 * time.Second
+	)
+	deadline, ok := t.Deadline()
+	if !ok {
+		// No runner deadline was set, so there is nothing to derive from and
+		// nothing to race; the cap is then the whole bound.
+		return longest
+	}
+	remaining := time.Until(deadline) - reserve
+	switch {
+	case remaining > longest:
+		return longest
+	case remaining < shortest:
+		return shortest
+	default:
+		return remaining
 	}
 }
 
@@ -370,9 +438,24 @@ func TestServeAggregaIrGraphEndToEnd(t *testing.T) {
 	// notification (drift state for the lockfile path) alongside
 	// the irGraph response. Loop reading until we see a message
 	// with a result or error field (the response); skip notifications.
+	//
+	// The ceiling is taken ONCE, outside the loop, and shared by every read
+	// in it. The reads it covers are one round trip's worth of messages
+	// arriving together, so recomputing a remaining-time bound per iteration
+	// would vary the value across reads of the same exchange for no gain,
+	// and a bound that differs between iterations is one nobody can reason
+	// about from the failure text.
+	//
+	// The assertions this test actually makes are all below and all
+	// clock-free — the response carries no error envelope, it carries a
+	// result, and that result's graph carries the four canonical top-level
+	// keys. Nothing here asserts a duration; the ceiling is plumbing that
+	// keeps a hung daemon from stalling the package, which is why it is
+	// derived rather than tuned.
+	ceiling := responseLivenessCeiling(t)
 	var resp map[string]any
 	for i := 0; i < 5; i++ {
-		msg := readOneResponse(t, stdout, 30*time.Second)
+		msg := readOneResponse(t, stdout, ceiling)
 		if _, hasResult := msg["result"]; hasResult {
 			resp = msg
 			break
