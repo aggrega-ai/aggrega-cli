@@ -4,10 +4,15 @@
 package workspaceconfig
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
+	"go.yaml.in/yaml/v3"
 )
 
 // originDefaultsLabel is the source label a value carries when no config file or
@@ -23,11 +28,23 @@ const originAppendSep = "\x1f"
 // determined it. Field is the setting's dotted config path, Value is its
 // effective value rendered as a stable string, and Source is the origin layer:
 // a config file's absolute path, an "env:AGGREGA_X" environment override, or the
-// built-in-defaults label.
+// built-in-defaults label. Position locates the setting inside that config file.
 type ValueOrigin struct {
 	Field  string
 	Value  string
 	Source string
+
+	// Position is the span of the key in Source that supplied the value, read
+	// from the parsed document rather than by searching its text, in that
+	// document's own coordinates: 1-based line and 1-based UTF-8 byte column.
+	//
+	// It is nil — never a zero span — whenever no document key answers. An
+	// environment override and the built-in defaults have no file at all, and a
+	// file layer may have contributed through a key the setting's own path does
+	// not name. A consumer therefore separates "no position" from "position at
+	// the very start of the file" by the nil check alone: the first key of a
+	// document sits at line 1, column 1, which no absent position resembles.
+	Position *yamlpos.FieldSpan
 }
 
 // originField is one row of the fixed provenance enumeration: the setting's
@@ -64,6 +81,11 @@ type originField struct {
 // The displayed value of every setting is the effective value from the resolved
 // config, so it always reflects what applies right now. Result order is a fixed
 // field order, so the output is byte-stable for a given resolution.
+//
+// Each setting a config file was attributed to also carries the position of the
+// key in that file which supplied it, resolved from the parsed document; a
+// setting attributed to an environment override or to the built-in defaults
+// carries no position at all. See ValueOrigin.Position.
 func (r *ResolvedWorkspace) ValueOrigins() ([]ValueOrigin, error) {
 	base := r.lookup
 	if base == nil {
@@ -124,15 +146,159 @@ func (r *ResolvedWorkspace) ValueOrigins() ([]ValueOrigin, error) {
 	// with the effective (monotonically-composed) value.
 	source["signing.required"] = signingRequiredSource(r, base)
 
+	positions, err := originPositions(fields, source)
+	if err != nil {
+		return nil, err
+	}
+
 	out := make([]ValueOrigin, 0, len(fields))
 	for _, f := range fields {
 		out = append(out, ValueOrigin{
-			Field:  f.name,
-			Value:  f.display(r.config),
-			Source: source[f.name],
+			Field:    f.name,
+			Value:    f.display(r.config),
+			Source:   source[f.name],
+			Position: positions[f.name],
 		})
 	}
 	return out, nil
+}
+
+// originAppendSuffix is the sibling-key suffix a list field's additive
+// companion carries — `catalog_dirs` alongside `catalog_dirs_append` — which is
+// the convention the Config type documents. A field's companion path is derived
+// from it rather than spelled out a second time here.
+const originAppendSuffix = "_append"
+
+// originLayer is one config document parsed for position resolution: the node
+// tree, and the line index whose coordinate space its spans are read in.
+// present is false for a layer with no document to resolve against — one that
+// has gone missing, or one that is empty.
+type originLayer struct {
+	doc     *yaml.Node
+	index   yamlpos.LineIndex
+	present bool
+}
+
+// originPositions resolves, for every setting a config file was attributed to,
+// the position of the key in that file which supplied the value. A setting
+// attributed to an environment override or to the built-in defaults has no
+// document to resolve against and is absent from the result, which is what
+// makes a nil Position unambiguous rather than a coordinate to interpret. Each
+// contributing file is read and parsed at most once however many settings it
+// carries.
+func originPositions(fields []originField, source map[string]string) (map[string]*yamlpos.FieldSpan, error) {
+	layers := make(map[string]originLayer)
+	out := make(map[string]*yamlpos.FieldSpan, len(fields))
+	for _, f := range fields {
+		path := source[f.name]
+		if path == originDefaultsLabel || strings.HasPrefix(path, "env:") {
+			continue
+		}
+		layer, seen := layers[path]
+		if !seen {
+			var err error
+			layer, err = readOriginLayer(path)
+			if err != nil {
+				return nil, err
+			}
+			layers[path] = layer
+		}
+		if !layer.present {
+			continue
+		}
+		if span := originPositionIn(layer, originDocumentPaths(f)); span != nil {
+			out[f.name] = span
+		}
+	}
+	return out, nil
+}
+
+// readOriginLayer reads and parses one config file so its keys can be located.
+//
+// A file that has gone missing between the cascade's read and this one yields a
+// layer with nothing to resolve against rather than an error, because the
+// cascade's own single-file load treats absence as the documented defaults: a
+// position lookup must not be the thing that turns a working provenance view
+// into a failing one. Every other read failure, and any parse failure, is
+// reported.
+func readOriginLayer(path string) (originLayer, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return originLayer{}, nil
+		}
+		return originLayer{}, fmt.Errorf("workspaceconfig: read %s for its setting positions: %w", path, err)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return originLayer{}, fmt.Errorf("workspaceconfig: parse %s for its setting positions: %w", path, err)
+	}
+	if len(doc.Content) == 0 {
+		return originLayer{}, nil
+	}
+	return originLayer{
+		doc: &doc,
+		// UTF-8 pins a span to the document's own coordinates — 1-based line
+		// and 1-based byte column, the pair the parser records on the node —
+		// so no editor-protocol encoding is baked into a configuration value.
+		// A consumer wanting protocol coordinates converts through this same
+		// index rather than reinterpreting the numbers.
+		index:   yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF8),
+		present: true,
+	}, nil
+}
+
+// originDocumentPaths lists, in the order they are tried, the document key
+// paths that could have supplied f's value.
+//
+// A scalar leaf has exactly one. A list field additionally has its `_append`
+// companion: that companion is how a layer contributes to a list it does not
+// whole-replace, and it is why such a layer can be attributed a field whose
+// base key it never writes.
+//
+// The base key is tried first on every layer, including the CI-owned additive
+// overlay. That overlay folds a base list and its companion into one additive
+// contribution with the base's entries ahead of the companion's, so the base
+// key is what supplied the value there too whenever the document carries it.
+func originDocumentPaths(f originField) []string {
+	if f.scalar {
+		return []string{f.name}
+	}
+	return []string{f.name, f.name + originAppendSuffix}
+}
+
+// originPositionIn returns the span of the first path the layer's document
+// carries in full, or nil when it carries none of them.
+//
+// A partial resolution is rejected rather than reported. The shared field-path
+// descent returns the deepest key it reached when a document runs out before
+// the path does — the right answer for positioning a finding about a key that
+// is absent, and the wrong one here, because an origin position names the key
+// that supplied the value. A full match returns the path's last segment as the
+// key, so comparing the two separates the cases. That test is exact for every
+// attributed setting because no attributed path repeats a segment; were one
+// ever to, the worst it could cost is an enclosing key's position reported
+// where none should be.
+func originPositionIn(layer originLayer, paths []string) *yamlpos.FieldSpan {
+	for _, path := range paths {
+		node := yamlpos.FieldNode(layer.doc, path)
+		if node == nil {
+			continue
+		}
+		leaf := path
+		if i := strings.LastIndexByte(path, '.'); i >= 0 {
+			leaf = path[i+1:]
+		}
+		if node.Value != leaf {
+			continue
+		}
+		span, ok := yamlpos.FieldRange(layer.doc, layer.index, path)
+		if !ok {
+			continue
+		}
+		return &span
+	}
+	return nil
 }
 
 // attributeChanges records label as the source of every field whose per-layer

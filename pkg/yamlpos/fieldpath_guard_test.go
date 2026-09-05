@@ -16,13 +16,17 @@ import (
 	"testing"
 )
 
-// fieldPathCallers is every production file allowed to turn a validation
-// finding's field path into a source position. The guard asserts an EXACT
-// match rather than "at least these": a subset check would pass while a
-// fourth surface quietly acquired its own positioning, which is the whole
-// divergence this pins.
+// fieldPathCallers is every production file allowed to turn a dotted field
+// path into a source position. The guard asserts an EXACT match rather than
+// "at least these": a subset check would pass while another surface quietly
+// acquired its own positioning, which is the whole divergence this pins.
 //
-// The two entries that matter most are the last two. One is the terminal
+// Most callers position a validation finding. The configuration-origin surface
+// is the one that does not: it positions the key a setting was authored at, and
+// it is here for the same reason the others are — a second walk would answer
+// the same question about the same document differently.
+//
+// The two entries named in theTwoSurfaces matter most. One is the terminal
 // diagnostic a developer reads; the other is the editor diagnostic for the
 // same document. They were measurably unequal — the editor positioned its
 // findings and the terminal did not — and they are equal now because both
@@ -32,6 +36,7 @@ var fieldPathCallers = []string{
 	"internal/serve/envelope_diagnostics.go",
 	"internal/serve/tier4_validation.go",
 	"pkg/validator/envelope/envelope.go",
+	"pkg/workspaceconfig/origin.go",
 	"pkg/yamlpos/fieldpath.go",
 }
 
