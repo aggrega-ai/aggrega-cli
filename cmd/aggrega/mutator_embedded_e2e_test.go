@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -189,7 +190,7 @@ plugins:
 	}
 
 	outSettings := filepath.Join(root, "out-settings")
-	if err := dispatchBuildWithDiag(rwSettings, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: outSettings}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rwSettings, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outSettings}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build (settings form): %v", err)
 	}
 	if found, tree := distTreeContains(t, outSettings, injected); !found {
@@ -218,7 +219,7 @@ plugins:
 		t.Fatalf("pull (sources form): %v", err)
 	}
 	outSources := filepath.Join(root, "out-sources")
-	if err := dispatchBuildWithDiag(rwSources, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: outSources}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rwSources, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outSources}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build (sources form): %v", err)
 	}
 	if found, tree := distTreeContains(t, outSources, injected); !found {
@@ -309,7 +310,7 @@ plugins:
 		t.Fatalf("pull: %v", err)
 	}
 	out := filepath.Join(root, "out")
-	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	if found, tree := distTreeContains(t, out, "tag=frontend"); !found {
@@ -420,7 +421,7 @@ spec:
 		t.Fatalf("pull (no mutator): %v", err)
 	}
 	outNeg := filepath.Join(root, "out-neg")
-	errNeg := dispatchBuildWithDiag(rwNoMutator, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: outNeg}, os.Stderr, os.Stderr)
+	errNeg := dispatchBuildWithDiag(rwNoMutator, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outNeg}, os.Stderr, os.Stderr)
 	if errNeg == nil {
 		t.Fatal("negative control: build with no mutator succeeded; the feature's appliesTo should be unsatisfied and halt the build")
 	}
@@ -451,7 +452,7 @@ plugins:
 		t.Fatalf("pull (mutator attached): %v", err)
 	}
 	outPos := filepath.Join(root, "out-pos")
-	if err := dispatchBuildWithDiag(rwMutator, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: outPos}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rwMutator, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outPos}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("positive: build with the label-injector attached must succeed (injected label satisfies appliesTo): %v", err)
 	}
 	if found, tree := distTreeContains(t, outPos, "core/mutator-gate"); !found {
@@ -488,7 +489,7 @@ plugins:
 		t.Fatalf("pull: %v", err)
 	}
 	out1 := filepath.Join(root, "out1")
-	if err := dispatchBuildWithDiag(rwPull, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out1}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rwPull, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out1}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build 1: %v", err)
 	}
 	if found, tree := distTreeContains(t, out1, "inject.aggrega.ai/mark=pinned"); !found {
@@ -514,7 +515,7 @@ plugins:
                 inject.aggrega.ai/mark: changed
 `)
 	out2 := filepath.Join(root, "out2")
-	if err := dispatchBuildWithDiag(rwChanged, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out2}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rwChanged, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out2}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build 2 (settings changed, no re-pull): %v", err)
 	}
 	snap2 := snapshotDir(t, out2)
@@ -555,7 +556,7 @@ plugins:
 		t.Fatalf("pull: %v", err)
 	}
 	out1 := filepath.Join(root, "out1")
-	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out1}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out1}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build 1: %v", err)
 	}
 	if found, tree := distTreeContains(t, out1, "inject.aggrega.ai/mark=pinned"); !found {
@@ -573,7 +574,7 @@ plugins:
       inject.aggrega.ai/mark: changed
 `)
 	out2 := filepath.Join(root, "out2")
-	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out2}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out2}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build 2 (source content changed, no re-pull): %v", err)
 	}
 	snap2 := snapshotDir(t, out2)
@@ -608,11 +609,11 @@ plugins:
 		t.Fatalf("pull: %v", err)
 	}
 	outA := filepath.Join(root, "outA")
-	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: outA}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outA}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build A: %v", err)
 	}
 	outB := filepath.Join(root, "outB")
-	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: outB}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outB}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build B: %v", err)
 	}
 	if !snapshotEqual(snapshotDir(t, outA), snapshotDir(t, outB)) {

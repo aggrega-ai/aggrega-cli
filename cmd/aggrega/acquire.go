@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
@@ -42,28 +42,19 @@ func newAcquireCmd() *cobra.Command {
 	return c
 }
 
-// dispatchAcquire runs the shared build dispatch in acquisition mode with the
-// rendered artifacts written to a temporary directory that is removed
-// afterwards — the pipeline is reused whole, never forked, and dist/ is never
-// touched. After a successful run it prints one line per newly-pinned external
-// input (the dispatch already merged the pins into the lockfile) and a
-// summary naming the count.
+// dispatchAcquire runs the shared acquisition operation and reports what it
+// pinned in this command's voice: one line per newly-pinned external input (the
+// operation already merged the pins into the lockfile) and a summary naming the
+// count.
+//
+// The progress surface is left off — a nil reporter — so acquire's own report on
+// stdout is the whole of what a reader sees; the preview's advisories still
+// reach the diagnostic stream, because a deprecated pin is worth saying whatever
+// the operator asked the run to do.
 func dispatchAcquire(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, diagOut, out io.Writer) error {
-	discardDir, err := os.MkdirTemp("", "aggrega-acquire-")
+	acquired, err := buildops.Acquire(
+		buildDispatchConfig(rw, releasePath, catalogFlagDirs, false, buildops.RunOptions{}, nil, diagOut, io.Discard))
 	if err != nil {
-		return fmt.Errorf("create discard output directory: %w", err)
-	}
-	defer os.RemoveAll(discardDir)
-
-	var acquired []lockfile.ExternalInput
-	run := buildRunOptions{
-		outDir:     discardDir,
-		onAcquired: func(recs []lockfile.ExternalInput) { acquired = recs },
-	}
-	// Rendered-output suppression: the build's stdout summary goes to
-	// io.Discard along with the artifacts; acquire's own report below is
-	// the command's stdout surface.
-	if err := dispatchBuildWithDiag(rw, releasePath, catalogFlagDirs, false, buildDiagOptions{}, run, diagOut, io.Discard); err != nil {
 		return err
 	}
 

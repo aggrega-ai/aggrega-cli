@@ -21,8 +21,8 @@ import (
 //  1. No os.Getwd() in the CLI or daemon packages. Workspace-root discovery
 //     belongs to workspaceconfig.Resolve; a command re-rolling CWD discovery is
 //     exactly the divergence this work removed.
-//  2. Every command config carrying a workspace field — and the relocated
-//     lintops.Config — sets that field where production code builds it.
+//  2. Every command config carrying a workspace field — and every relocated
+//     operations-layer Config — sets that field where production code builds it.
 //     Production must pass the context-resolved workspace. A caller that leaves
 //     the field unset reaches workspaceOrResolve with a nil, which refuses; what
 //     this check adds is the site — it names the offending literal at parse time,
@@ -45,6 +45,14 @@ import (
 // Test files are exempt: a nil workspace refuses at run time, so a test that
 // fails to declare one already fails on its own, and there is nothing for a
 // parse-time check to add.
+// opsLayerConfigPackages names the operations layers whose Config carries the
+// resolved workspace, so a production literal of one is held to the same
+// requirement a same-package command config is.
+var opsLayerConfigPackages = map[string]bool{
+	"lintops":  true,
+	"buildops": true,
+}
+
 func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 	dirs := []string{".", filepath.Join("..", "..", "internal", "serve")}
 
@@ -121,11 +129,20 @@ func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 				case *ast.CompositeLit:
 					// The config-struct commands must thread the context-resolved
 					// workspace into their config literal. The same-package configs
-					// are bare identifiers carrying a `ws` field; the relocated lint
-					// config is a `lintops.Config` selector carrying a `Workspace`
-					// field. Either way, a production literal that omits the
-					// workspace field leaves the command with no workspace to
-					// resolve and no --workspace-root honoured.
+					// are bare identifiers carrying a `ws` field; a relocated
+					// operations-layer config is a `<layer>.Config` selector
+					// carrying a `Workspace` field. Either way, a production literal
+					// that omits the workspace field leaves the command with no
+					// workspace to resolve and no --workspace-root honoured.
+					//
+					// 🔴 The operations-layer package names are the one HAND-WRITTEN
+					// set in this guard, and everything else here is derived for the
+					// reason stated above. They are written out because the layers
+					// live outside the two directories this walk parses, so their
+					// declarations are not in reach to derive from. A new operations
+					// layer whose Config carries a workspace is therefore uncovered
+					// until its name is added here — add it in the same change that
+					// introduces the layer.
 					typeName, wsField := "", ""
 					switch tp := v.Type.(type) {
 					case *ast.Ident:
@@ -133,8 +150,8 @@ func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 							typeName, wsField = tp.Name, "ws"
 						}
 					case *ast.SelectorExpr:
-						if pkg, ok := tp.X.(*ast.Ident); ok && pkg.Name == "lintops" && tp.Sel.Name == "Config" {
-							typeName, wsField = "lintops.Config", "Workspace"
+						if pkg, ok := tp.X.(*ast.Ident); ok && opsLayerConfigPackages[pkg.Name] && tp.Sel.Name == "Config" {
+							typeName, wsField = pkg.Name+".Config", "Workspace"
 						}
 					}
 					if typeName == "" {

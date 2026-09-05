@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 )
 
 // TestBuildDetail_ShadowReportMatchesRenderedWinner proves the --detail catalog
@@ -124,7 +126,7 @@ spec:
 
 	var diag bytes.Buffer
 	if err := dispatchBuildWithDiag(ws, releasePath, catalogDirs, traceEnabled,
-		buildDiagOptions{}, buildRunOptions{detail: true}, &diag, os.Stdout); err != nil {
+		buildDiagOptions{}, buildops.RunOptions{Detail: true}, &diag, os.Stdout); err != nil {
 		t.Fatalf("build failed: %v\n--- diag ---\n%s", err, diag.String())
 	}
 

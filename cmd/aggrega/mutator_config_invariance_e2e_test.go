@@ -30,6 +30,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -234,7 +235,7 @@ func TestMutatorSocket_BuildIsInvariantToConfigAfterPull(t *testing.T) {
 	// First build under the pinned attachment: the mutator runs and its injected
 	// label reaches the rendered artifact.
 	out1 := filepath.Join(root, "out1")
-	if err := dispatchBuildWithDiag(rwPull, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out1}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rwPull, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out1}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build 1 (pinned mutator): %v", err)
 	}
 	if found, tree := distTreeContains(t, out1, proofMutatorLabel); !found {
@@ -253,7 +254,7 @@ func TestMutatorSocket_BuildIsInvariantToConfigAfterPull(t *testing.T) {
 	// export and produces byte-identical output.
 	rwFlipped := resolveLocalWorkspace(t, root, "plugins:\n  governance:\n    - uri: "+mutatorSocket+":1.0.0\n      role: label-transform\n      function: does-not-exist\n")
 	out2 := filepath.Join(root, "out2")
-	if err := dispatchBuildWithDiag(rwFlipped, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out2}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rwFlipped, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out2}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build 2 (config function flipped, no re-pull): %v; build must read the pinned attachment, not the config", err)
 	}
 	snap2 := snapshotDir(t, out2)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
@@ -238,7 +239,7 @@ spec:
 		[]string{catalogRoot},
 		false,
 		buildDiagOptions{},
-		buildRunOptions{verifyDeterminism: true, outDir: filepath.Join(root, "out")},
+		buildops.RunOptions{VerifyDeterminism: true, OutDir: filepath.Join(root, "out")},
 		os.Stderr, os.Stdout,
 	)
 	if err != nil {
@@ -443,7 +444,7 @@ func TestRunBuild_ProvidesContractSupersetBuildsCLI(t *testing.T) {
 		[]string{filepath.Join(root, "catalog")},
 		false,
 		buildDiagOptions{},
-		buildRunOptions{outDir: filepath.Join(root, "out")},
+		buildops.RunOptions{OutDir: filepath.Join(root, "out")},
 		os.Stderr, os.Stdout,
 	)
 	if err != nil {
@@ -626,7 +627,7 @@ func TestRunBuild_FeatureProvidesContractFulfilledBuildsCLI(t *testing.T) {
 		[]string{filepath.Join(root, "catalog")},
 		false,
 		buildDiagOptions{},
-		buildRunOptions{outDir: filepath.Join(root, "out")},
+		buildops.RunOptions{OutDir: filepath.Join(root, "out")},
 		os.Stderr, os.Stdout,
 	)
 	if err != nil {

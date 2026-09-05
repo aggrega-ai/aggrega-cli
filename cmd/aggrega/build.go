@@ -12,37 +12,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
-	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
 )
 
-// The external-input store is what the build injects as the wasm
-// loader's fetch seam; the assertion keeps the two packages' contracts
-// aligned at compile time.
-var _ wasm.FetchService = (*externalinputs.Service)(nil)
-
-// The decline recorder is injected in the store's place, so it owes the same
-// contract. It is declared against an interface of its own package rather than
-// against the loader's, so nothing else would notice the two drifting apart —
-// which is what this assertion is for.
-var _ wasm.FetchService = (*externalinputs.DeclineRecorder)(nil)
-
 // buildFlags carries the `build` command's flag state. It is constructed per
 // command so two invocations in one process cannot observe each other's flag
-// values. It is distinct from buildRunOptions and buildDiagOptions below, which
+// values. It is distinct from buildops.RunOptions and buildDiagOptions, which
 // carry the post-parse knobs the dispatch itself consumes.
 type buildFlags struct {
 	releasePath             string
@@ -135,17 +119,9 @@ the rendered tree reviewable as a diff.`,
 }
 
 // runBuild is the cobra entry point. It reads the command's own flag state and
-// delegates to dispatchBuild, which composes catalog loading,
-// lockfile verification, and dist/ writing around the in-memory pipeline
-// callable (pipeline.RunPipeline). Per-step diagnostic output (extends
-// errors, deprecation warnings, guard violations, selector violations,
-// render warnings) writes to stderr inline; the returned error is a
-// summary suitable for cobra display.
-//
-// On success, dist/boundaries/ is cleaned (stale files from prior
-// builds don't leak into this one, preserving GitOps byte-identity)
-// and the rendered files are written to dist/. A summary line writes
-// to stdout.
+// delegates to dispatchBuildWithDiag, which drives the shared build
+// orchestration in internal/buildops and renders its progress, advisories and
+// completion summary in this command's voice.
 func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 	rw, err := workspaceFromContext(cmd.Context())
 	if err != nil {
@@ -153,75 +129,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 	}
 	return dispatchBuildWithDiag(rw, opts.releasePath, opts.catalogDirs, opts.traceEnabled,
 		buildDiagOptions{quiet: opts.quiet, debug: opts.debug, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{detail: opts.detail, noAcquireInputs: opts.noAcquireInputs, disablePluginCache: opts.disablePluginCache, verifyDeterminism: opts.verifyDeterminism, autoPull: opts.autoPull, upgrade: opts.upgrade, suppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, traceUnredacted: opts.traceUnredacted, dryRun: opts.dryRun}, os.Stderr, os.Stdout)
-}
-
-// buildRunOptions carries the build-dispatch knobs that are not stderr
-// diagnostics. The zero value is the plain `aggrega build` shape:
-// acquisition on, rendered output to dist/, no acquisition report.
-type buildRunOptions struct {
-	// noAcquireInputs freezes the external-input closure: a render that
-	// requests an unpinned external URL halts with a diagnostic instead
-	// of fetching and pinning it.
-	noAcquireInputs bool
-	// disablePluginCache skips the persistent on-disk plugin compile cache
-	// for this build, compiling guests fresh in an in-memory cache that is
-	// discarded when the build ends. It changes only compilation cost, not
-	// rendered output.
-	disablePluginCache bool
-	// verifyDeterminism renders every node twice and compares the emitted
-	// bytes, halting the build on any divergence. It changes only whether the
-	// determinism check runs, not the rendered output of a deterministic build.
-	verifyDeterminism bool
-	// autoPull runs the pull step before the build (the same in-process fill the
-	// workspace auto_pull setting performs), turning it on for a single build.
-	// Effective when this flag OR workspace auto_pull is set.
-	autoPull bool
-	// detail prints, per resolved entity, what the auto-pull fill did, and reports
-	// which entities a higher-precedence catalog directory shadowed. Display-only:
-	// it changes only what is written, never the rendered output or the lockfile.
-	// The resolution report goes to stdout, which is what the flag's help promises
-	// — the per-entity rows, and the note saying so when no fill ran. The shadow
-	// report is a catalog-precedence warning rather than resolution detail, and
-	// stays on the diagnostic stream with the other warnings.
-	detail bool
-	// upgrade makes the auto-pull step a full refresh: the pull discards the
-	// existing pin set and re-resolves every dependency, floating each to the
-	// highest available version rather than honoring existing pins. It implies the
-	// auto-pull step — requesting it turns the pull step on when neither the flag
-	// nor workspace auto_pull is set.
-	upgrade bool
-	// traceUnredacted writes the declared-sensitive values into the trace files
-	// rather than the text that stands in for them, and stamps each of those
-	// files with a header saying so. It is meaningful only alongside the trace
-	// itself: requesting it without the trace halts, because a security-relevant
-	// switch that quietly does nothing is the worst of the available outcomes.
-	// It reaches the trace and nothing else — the inspect layouts and the
-	// diagnostic bodies are identical in both states.
-	traceUnredacted bool
-	// suppressUnsupportedFieldWarnings silences the unsupported-field warning class on
-	// the render-warning surface — the per-field notices a lower-fidelity target
-	// emits for authored fields it cannot honor. Display-only; other render
-	// warnings still surface and the rendered output is unchanged.
-	suppressUnsupportedFieldWarnings bool
-	// dryRun reports the render instead of persisting it: each artifact goes out
-	// as path-and-content on the same stream the build summary uses, and the
-	// output directory is neither cleaned nor written. It also freezes the
-	// external-input closure,
-	// which is what keeps the run inert rather than merely output-less — a
-	// render that met an unpinned external reference would otherwise fetch it
-	// and write a blob into the content-addressed store on its way to producing
-	// buffers nobody persists. The flags that fill dependencies are refused
-	// alongside it rather than silently ignored.
-	dryRun bool
-	// outDir overrides the rendered-artifact output directory; empty
-	// renders to dist/. The acquire command points it at a discard
-	// directory so an acquisition pass never touches dist/.
-	outDir string
-	// onAcquired, when non-nil, runs after a successful build with the
-	// external-input records this run newly pinned (empty when the run
-	// pinned nothing). The acquire command reports through it.
-	onAcquired func([]lockfile.ExternalInput)
+		buildops.RunOptions{Detail: opts.detail, NoAcquireInputs: opts.noAcquireInputs, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun}, os.Stderr, os.Stdout)
 }
 
 // dispatchBuild is the silent-diagnostics form of dispatchBuildWithDiag: it runs
@@ -231,15 +139,15 @@ type buildRunOptions struct {
 // point calls dispatchBuildWithDiag to thread the operator's --quiet / --debug
 // choices. Both share the single implementation below.
 func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut, out io.Writer) error {
-	return dispatchBuildWithDiag(rw, releasePath, catalogFlagDirs, traceEnabled, buildDiagOptions{}, buildRunOptions{}, diagOut, out)
+	return dispatchBuildWithDiag(rw, releasePath, catalogFlagDirs, traceEnabled, buildDiagOptions{}, buildops.RunOptions{}, diagOut, out)
 }
 
-// dispatchBuildWithDiag composes the filesystem-touching pre-pipeline steps
-// (catalog load, lockfile verify-or-auto-pull, extends resolution, deprecation
-// surface, raw Aggregate read, workspace config load) around
-// pipeline.RunPipeline, then writes the rendered Artifacts to dist/ and (when
-// --trace is on) the Trace map to .trace/. The in-memory pipeline orchestration
-// lives in internal/compiler/pipeline.
+// dispatchBuildWithDiag runs the shared build orchestration and renders it as
+// this command. What the shared layer owns is the work: the catalog load, the
+// lockfile step, the external-input gate, the gated preview, and the artifact,
+// trace and lockfile writes. What stays here is what a terminal surface owes —
+// the phase checklist, the advisory voice, the failure annotation, and the
+// completion summary's layout.
 //
 // Per-step diagnostics are written to diagOut (os.Stderr in production); the
 // final success summary is written to out (os.Stdout in production). Tests pass
@@ -254,39 +162,7 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 // run carries the non-diagnostic dispatch knobs: the external-input acquisition
 // switch, the output-directory override, and the acquired-pin callback the
 // acquire command reports through. The zero value is the plain build shape.
-func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, run buildRunOptions, diagOut, out io.Writer) error {
-	// Flag-pairing halt, before any work: an unredacted trace with no trace to
-	// write is a no-op, and a no-op is the one outcome a switch about withheld
-	// values must not have — an operator who asked for the values and got a build
-	// that silently ignored them has no signal that they are still withheld. The
-	// check sits here rather than in the cobra entry point so it covers every
-	// caller of this dispatch, not only the command line.
-	if run.traceUnredacted && !traceEnabled {
-		return fmt.Errorf("aggrega build: --trace-unredacted needs --trace; there is no trace to write without it. Pass both to write an unredacted trace, or neither")
-	}
-
-	// A dry run and a flag that writes cannot both be honored, so the pairing is
-	// refused here rather than resolved silently either way: ignoring the write
-	// would make a requested fill vanish, and honoring it would break the one
-	// promise the dry run makes. Each message names the flag the user actually
-	// typed, which is why --upgrade is tested before the promotion below folds it
-	// into --auto-pull — a reader told their --auto-pull conflicts, when what they
-	// passed was --upgrade, has to guess the connection.
-	if run.dryRun {
-		switch {
-		case run.upgrade:
-			return fmt.Errorf("aggrega build: --dry-run conflicts with --upgrade; a dry run writes nothing and --upgrade re-resolves every dependency and rewrites the lockfile. Run `aggrega pull --upgrade --release %s` as its own step, then `aggrega build --dry-run --release %s`", releasePath, releasePath)
-		case run.autoPull:
-			return fmt.Errorf("aggrega build: --dry-run conflicts with --auto-pull; a dry run writes nothing and --auto-pull fills the lockfile. Run `aggrega pull --release %s` as its own step, then `aggrega build --dry-run --release %s`", releasePath, releasePath)
-		case traceEnabled:
-			return fmt.Errorf("aggrega build: --dry-run conflicts with --trace; a dry run writes nothing and --trace writes per-node files to .trace/. Drop --trace to preview the render, or drop --dry-run to write a trace")
-		}
-		// The frozen-input behaviour is adopted, not reimplemented: the same switch
-		// --no-acquire-inputs sets is the one thing that makes a dry run inert, and
-		// a second frozen-input semantic would be free to drift from it.
-		run.noAcquireInputs = true
-	}
-
+func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, run buildops.RunOptions, diagOut, out io.Writer) error {
 	// Wall-clock start of the whole build run, sourced independently of the
 	// progress reporter (whose clock is unset in silent mode and only spans the
 	// progress phases) so the summary's "Build time" spans the entire dispatch.
@@ -295,264 +171,15 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// weight profile only. The visible "Plugin compilation" step is revealed
 	// separately, from whether a guest is observed to actually compile during the
 	// build, so a stale-cache rebuild that recompiles still shows it. This guess
-	// is detected before the pipeline runs so the bar's calibration is fixed for
+	// is detected before the build runs so the bar's calibration is fixed for
 	// the whole run. --disable-plugin-cache forces the cold profile.
-	coldCache := wasm.PluginCompileCacheCold(wasm.ContextWithDisablePluginCache(context.Background(), run.disablePluginCache))
+	coldCache := wasm.PluginCompileCacheCold(wasm.ContextWithDisablePluginCache(context.Background(), run.DisablePluginCache))
 	progress := newProgressReporter(diagOut, diag, buildProgressSpine(coldCache))
 	defer progress.finish()
-	// wsRoot is the resolved workspace root; the catalog renders source-file
-	// accessors relative to it so the IR's per-node SourceFile records stay
-	// byte-identical across developer machines whose workspaces live at
-	// different absolute paths.
-	rw, err := workspaceOrResolve(rw)
-	if err != nil {
-		return fmt.Errorf("workspaceconfig: %w", err)
-	}
-	wsRoot := rw.Root()
 
-	// Workspace config drives the cache directory (the catalog walk skips it as
-	// a resolution artifact, not authored catalog) and is reused by the pipeline
-	// call below.
-	wsCfg := rw.Config()
-
-	// Reproducibility guardrail: a build-critical binding supplied only by the
-	// machine's global config (and absent from this workspace's tree) makes the
-	// build non-reproducible for anyone who lacks that global file. Warn — never
-	// halt, never change the exit code — naming each global-only binding and the
-	// command that pins them into the workspace. The provenance resolve failing
-	// must not affect the build, so any error here is swallowed advisory-side.
-	if bindings, gerr := rw.GlobalOnlyBuildCritical(false); gerr == nil && len(bindings) > 0 {
-		var b strings.Builder
-		for i, bind := range bindings {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			fmt.Fprintf(&b, "%s %s", bind.Field, bind.Identity)
-		}
-		fmt.Fprintf(diagOut, "warning: this build depends on configuration present only in your global config and absent from this workspace (%s); run `aggrega config capture` to pin it into the workspace for a reproducible build\n", b.String())
-	}
-
-	// --upgrade drives a full-refresh pull, so requesting it turns the pull step
-	// on: when neither --auto-pull nor workspace auto_pull is set, --upgrade
-	// implies the auto-pull step (a full refresh runs before the build) rather
-	// than erroring.
-	if run.upgrade {
-		run.autoPull = true
-	}
-
-	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-
-	// Effective first-win catalog search stack: --catalog dirs prepended to the
-	// workspace catalog_dirs, defaulting to the current directory.
-	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, ".")
-
-	// Tolerant Pass-1 catalog load. A file that fails to read, parse, or index is
-	// SKIPPED (recorded) rather than aborting the walk — so a broken catalog entity
-	// OUTSIDE this Release's closure never fails the build. The closure walk +
-	// closure-scoped Pass-2 below validate exactly what the Release reaches;
-	// catalog-wide validation is `aggrega lint`'s job. Pass 1 does not expand
-	// cross-document $ref pillars, so a reference to a not-yet-resolved remote
-	// library does not fail here.
-	progress.phase(phaseLoadCatalog)
-	cat, skipped, err := catalog.LoadPassOneTolerant(wsRoot, cacheDir, dirs...)
-	if err != nil {
-		return fmt.Errorf("catalog load: %w", err)
-	}
-	progress.note("catalog search dirs: %d", len(dirs))
-	if len(skipped) > 0 {
-		progress.note("catalog files skipped at load: %d", len(skipped))
-	}
-
-	// When more than one catalog directory is searched, report which entities a
-	// higher-precedence directory shadowed (--detail only); the override is never
-	// silent.
-	if run.detail {
-		reportCatalogShadows(cat, diagOut)
-	}
-
-	// Ensure the per-Release lockfile exists (auto-pull when missing + permitted),
-	// returning whether it pre-existed — drift is verified only for a pre-existing
-	// lockfile; a freshly auto-pulled one matches the closure by construction. The
-	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
-	// the identical stack with the same config.
-	progress.phase(phaseLockfile)
-	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.upgrade, run.detail, run.dryRun, diagOut, out)
+	result, err := buildops.Run(buildDispatchConfig(rw, releasePath, catalogFlagDirs, traceEnabled, run, progress, diagOut, out))
 	if err != nil {
 		return err
-	}
-	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
-	if err != nil {
-		return fmt.Errorf("load lockfile: %w", err)
-	}
-
-	// External-input gate for render-time guest fetches: the service serves
-	// every aggrega_fetch_external_input call under the pin discipline —
-	// pinned URLs from the content-addressed store, unpinned URLs fetched
-	// and pinned when acquisition is on (the default), refused loudly when
-	// the closure is frozen (--no-acquire-inputs). Seeded with the
-	// lockfile's pinned view; newly-acquired pins merge back after a
-	// successful build below.
-	extInputs := newExternalInputsService(cacheDir, lf, run.noAcquireInputs, wsCfg)
-
-	// The seam the render sees is the service behind a recorder, so a reference
-	// declined for want of a pin is remembered by the host that declined it. The
-	// service itself is still held directly, because the acquisition records the
-	// lockfile write below reads are the service's own and the recorder does not
-	// carry them.
-	fetchSeam := externalinputs.NewDeclineRecorder(extInputs)
-
-	// The build's determinism-wired lazy lookup: EVERY dispatchBuild catalog
-	// consumer — guards, triad aggregate resolution, manifest-implements gate,
-	// closure computation + closure-scoped validation + extends, renderer,
-	// topology — resolves the resolved closure through this. No cache→catalog
-	// bridge: the lazy lookup reads registry-pulled entities directly from the
-	// pinned Tier-2 cache. Nil puller: Tier-3 is disabled, so the build never
-	// networks. SetPins threads the lockfile pins so a Tier-2 cache hit is
-	// verified-on-read and a miss is a loud halt rather than a silent skip —
-	// byte-identical from the lockfile.
-	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
-	lazyView.SetPins(catalog.PinsFromLockfile(lf))
-
-	// The preview computation itself — the gate sequence and the render — runs in
-	// the shared entry point every rendering surface is a transport over, so the
-	// command line, the editor's build tool and the daemon cannot come to disagree
-	// about which gates run or in what order. What stays here is what genuinely
-	// belongs to this verb: the flags, the progress surface, the diagnostic voice,
-	// and the writes.
-	//
-	// The context carries this command's own render knobs; the external-input seam
-	// is installed by the entry point, from the service handed to it below.
-	buildCtx := wasm.ContextWithDisablePluginCache(context.Background(), run.disablePluginCache)
-	buildCtx = wasm.ContextWithVerifyDeterminism(buildCtx, run.verifyDeterminism)
-
-	preview, err := compilerops.Preview(
-		buildCtx,
-		compilerops.NewPreviewInputs(
-			fetchSeam,
-			lazyView,
-			releasePath,
-			wsRoot,
-			wsCfg,
-			provenanceCompilerVersion(),
-			compilerops.WithLockfile(lf, lockfilePreexisted),
-			// The tolerant Pass-1 load's deprecation notices are this command's to
-			// produce (no other surface loads a whole catalog) and the entry point's
-			// to emit, so the advisory sequence has one order.
-			compilerops.WithCatalogWarnings(cat.DeprecationWarnings()),
-			compilerops.WithProgress(func(p compilerops.PreviewPhase) { progress.phase(previewPhaseStep(p)) }),
-		),
-		// A build emits a deployable artifact, so every gate is on and every
-		// divergence halts.
-		compilerops.ArtifactPolicy(),
-		pipeline.Options{
-			IncludeTrace:    traceEnabled,
-			TraceUnredacted: run.traceUnredacted,
-			// Per-node render progress. The callback writes only to the progress
-			// reporter's diagnostic sink (stderr); stdout carries only the final
-			// summary, so rendered output stays byte-deterministic. A no-op
-			// reporter (quiet, no debug) ignores the calls.
-			NodeProgress: progress.renderNode,
-			// Eager plugin-compilation phase callbacks for the "Plugin compilation"
-			// checklist step. Begin fires once with the number of provider guests to
-			// compile before the render loop; Running fires when a guest is observed
-			// to actually compile (revealing the step); GuestDone fires as each
-			// finishes. All write only to the progress reporter's diagnostic sink, so
-			// stdout stays byte-deterministic. A silent reporter ignores the calls;
-			// when Begin is set, the pipeline runs the eager compile pass so a guest
-			// compilation is attributed rather than buried in the first node's render.
-			PluginCompileBegin:               progress.pluginCompileBegin,
-			PluginCompileGuestDone:           progress.pluginCompileGuestDone,
-			PluginCompileRunning:             progress.pluginCompileRunning,
-			SuppressUnsupportedFieldWarnings: run.suppressUnsupportedFieldWarnings,
-		},
-	)
-	// The warnings are written before the failure is returned, because a gate that
-	// halted still found everything ahead of it and a reader who loses those
-	// findings has to re-run to see them.
-	writePreviewWarnings(preview, diagOut)
-	// The divergence note sits beside the warnings and is not conditioned on the
-	// failure: a decline halts the render, so it is the failure path in practice,
-	// but the note is owed whenever a reference was declined rather than whenever
-	// the run happened to end badly.
-	writeDryRunDivergenceNote(fetchSeam.Declined(), run.dryRun, releasePath, diagOut)
-	if err != nil {
-		// Only a resolution or validation failure can be explained by a file the
-		// tolerant load refused, so only those are annotated: a deprecation halt
-		// carrying a note about skipped catalog files would name bystanders as the
-		// cause.
-		if compilerops.IsResolutionFailure(err) {
-			return withSkipContext(err, skipped)
-		}
-		return err
-	}
-	cl := preview.Resolved.Closure
-	progress.note("closure entities: %d", len(cl.Entities))
-	progress.note("schema libraries: %d, mapping libraries: %d, workload libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries), len(cl.WorkloadLibraries))
-	result := preview.Pipeline
-
-	outDir := run.outDir
-	if outDir == "" {
-		outDir = artifactout.DefaultOutputDir
-	}
-
-	// A dry run reports the render and leaves the output directory alone —
-	// including the clean, which is itself a write: a dry run that emptied
-	// boundaries/ and wrote nothing back would have destroyed the previous build's
-	// output in order to show what the next one would contain.
-	var summary string
-	if run.dryRun {
-		artifactout.WriteDryRunReport(out, outDir, result.Artifacts)
-		summary = fmt.Sprintf("Dry run: %d files would be written to %s/; nothing was written", len(result.Artifacts), outDir)
-	} else {
-		// Write output. The boundaries subtree from a prior build of a different
-		// variant is cleared as part of the write, so GitOps consumers see exactly
-		// what the compiler just produced.
-		if err := artifactout.WriteBuildOutput(outDir, result.Artifacts); err != nil {
-			return fmt.Errorf("write output: %w", err)
-		}
-		summary = fmt.Sprintf("Build completed: %d files written to %s/", len(result.Artifacts), outDir)
-	}
-
-	// Trace surface — write the collected per-step intermediate state
-	// to .trace/ (sibling to dist/, never under). The sibling layout
-	// keeps dist/ purely deployable: no flag-conditional contents, no
-	// apply-tool walking surprises. Skip when the trace map is empty
-	// so an empty-trace fixture run does not clobber a pre-existing
-	// .trace/ from an earlier traced build.
-	//
-	// This carries no dry-run guard, and deliberately so: the refusal above is the
-	// guard, and a second one here would be a copy that agrees with it today. What
-	// keeps the two coupled is a test asserting the pairing refuses, so removing
-	// the refusal fails loudly rather than quietly re-opening this write.
-	if traceEnabled && len(result.Trace) > 0 {
-		if err := os.RemoveAll(".trace"); err != nil {
-			return fmt.Errorf("clean .trace: %w", err)
-		}
-		if err := artifactout.WriteAll(".trace", result.Trace); err != nil {
-			return fmt.Errorf("write trace: %w", err)
-		}
-	}
-
-	// Persist newly-pinned external inputs into the lockfile after the
-	// build succeeded. The service's full record view is the canonical
-	// URL-deduplicated merge of the lockfile's pinned view with this run's
-	// acquisitions; the canonical writer keeps the file byte-deterministic.
-	// A run that pinned nothing leaves the lockfile untouched.
-	//
-	// A dry run needs no guard here, and this is the stronger case rather than the
-	// same argument again: acquisition is off, so the service refuses an unpinned
-	// reference instead of pinning one, and the acquired set is empty by
-	// construction. The write is unreachable because nothing can have been
-	// acquired — not because a flag was checked.
-	acquired := extInputs.AcquiredRecords()
-	if len(acquired) > 0 {
-		lf.ExternalInputs = extInputs.Records()
-		if err := lockfile.WriteLockfilePreservingTimestamp(lockfile.PathFor(releasePath), lf); err != nil {
-			return fmt.Errorf("write lockfile external inputs: %w", err)
-		}
-	}
-	if run.onAcquired != nil {
-		run.onAcquired(acquired)
 	}
 
 	// Clear the in-place progress line (and, in debug mode, print the timing
@@ -560,24 +187,68 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// beside the final output. The deferred finish is idempotent.
 	progress.finish()
 	fmt.Fprintf(out, "%s\n", formatTotalBuildTimeLine(formatPhaseElapsed(time.Since(buildStart))))
-	fmt.Fprintln(out, summary)
+	fmt.Fprintln(out, result.Summary)
 	return nil
 }
 
-// previewPhaseStep maps a stage of the shared preview sequence onto this
+// buildDispatchConfig assembles the shared build layer's input contract from
+// this command's state: the flag-derived knobs, the two output sinks, this
+// binary's own build identity, the pull the auto-pull step runs, and the
+// progress and advisory rendering the terminal surface owns.
+//
+// progress may be nil, which reports nothing — the shape the acquisition command
+// uses, whose own report is the only thing a reader is meant to see.
+func buildDispatchConfig(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, run buildops.RunOptions, progress *progressReporter, diagOut, out io.Writer) buildops.Config {
+	return buildops.Config{
+		Workspace:       rw,
+		ReleasePath:     releasePath,
+		CatalogDirs:     catalogFlagDirs,
+		TraceEnabled:    traceEnabled,
+		CompilerVersion: provenanceCompilerVersion(),
+		Options:         run,
+		Report: buildops.Reporter{
+			Phase:                  func(p buildops.Phase) { progress.phase(buildPhaseStep(p)) },
+			Note:                   progress.note,
+			RenderNode:             progress.renderNode,
+			PluginCompileBegin:     progress.pluginCompileBegin,
+			PluginCompileGuestDone: progress.pluginCompileGuestDone,
+			PluginCompileRunning:   progress.pluginCompileRunning,
+			CatalogShadows:         func(cat *catalog.Catalog) { reportCatalogShadows(cat, diagOut) },
+			Advisories:             func(preview *compilerops.PreviewResult) { writePreviewWarnings(preview, diagOut) },
+			DryRunDivergence: func(declined []string, release string) {
+				writeDryRunDivergenceNote(declined, release, diagOut)
+			},
+		},
+		// The auto-pull step runs the pull command's own path verbatim, with the
+		// progress surface silenced so only the build's own surface shows during an
+		// implicit pull. The flag dirs (not the resolved list) are forwarded so the
+		// pull re-derives the identical stack with the same config.
+		Pull: func(upgrade, detail bool, pullDiagOut, pullOut io.Writer) error {
+			return pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: pullDiagOut, Out: pullOut, diag: buildDiagOptions{quiet: true}})
+		},
+		AnnotateResolutionFailure: withSkipContext,
+		DiagOut:                   diagOut,
+		Out:                       out,
+	}
+}
+
+// buildPhaseStep maps a stage of the shared build orchestration onto this
 // command's progress spine. The two are deliberately separate vocabularies: the
-// spine also carries steps the preview knows nothing about (the catalog load and
-// the lockfile acquisition happen before the preview begins), so a shared
-// enumeration would have to name steps that only one side has.
-func previewPhaseStep(p compilerops.PreviewPhase) int {
+// spine carries layout the shared layer knows nothing about, and the shared
+// layer names stages a surface is free to draw as one row or several.
+func buildPhaseStep(p buildops.Phase) int {
 	switch p {
-	case compilerops.PhaseClosure:
+	case buildops.PhaseLoadCatalog:
+		return phaseLoadCatalog
+	case buildops.PhaseLockfile:
+		return phaseLockfile
+	case buildops.PhaseClosure:
 		return phaseClosure
-	case compilerops.PhaseValidate:
+	case buildops.PhaseValidate:
 		return phaseValidate
-	case compilerops.PhaseInheritance:
+	case buildops.PhaseInheritance:
 		return phaseInheritance
-	case compilerops.PhaseRender:
+	case buildops.PhaseRender:
 		return phaseRender
 	}
 	return phaseClosure
@@ -619,10 +290,11 @@ func writePreviewWarnings(preview *compilerops.PreviewResult, diagOut io.Writer)
 // text wrapped on here would reach the reader only while the failure happened to
 // carry no envelope.
 //
-// It says nothing for a real build: acquisition is on there unless the operator
-// froze the closure themselves, in which case they know why it refused.
-func writeDryRunDivergenceNote(declined []string, dryRun bool, releasePath string, diagOut io.Writer) {
-	if !dryRun || len(declined) == 0 {
+// It is reached only for a dry run that declined something. A real build says
+// nothing: acquisition is on there unless the operator froze the closure
+// themselves, in which case they know why it refused.
+func writeDryRunDivergenceNote(declined []string, releasePath string, diagOut io.Writer) {
+	if len(declined) == 0 {
 		return
 	}
 	fmt.Fprint(diagOut, "  note: the lockfile does not pin every external reference this render requested, so the dry run declined the following and cannot show what a real build would emit:\n")
@@ -646,108 +318,6 @@ func formatTotalBuildTimeLine(value string) string {
 		pad = 1
 	}
 	return label + strings.Repeat(" ", pad) + value
-}
-
-// newExternalInputsService constructs the per-build external-input gate over
-// the workspace artifact cache's inputs store, seeded with the lockfile's
-// pinned view. Acquisition is on unless the operator froze the closure
-// (--no-acquire-inputs). The HTTP client comes from the network-egress gate; it
-// is nil for an offline workspace, so pinned inputs are still served from the
-// cache but any fetch (acquisition or a missing-blob refill) refuses loudly —
-// offline dominates acquire mechanically, without a separate consult.
-func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire bool, wsCfg workspaceconfig.Config) *externalinputs.Service {
-	httpClient, _ := egress.HTTPClient(wsCfg)
-	return externalinputs.NewService(externalinputs.StoreRoot(cacheDir), !noAcquire, httpClient, lf.ExternalInputs)
-}
-
-// acquireLockfile ensures the per-Release lockfile exists before the build wires
-// its lazy lookup + runs closure-scoped Pass-2, returning whether it PRE-EXISTED.
-// A present lockfile is left as-is — drift against it is verified later, against
-// the resolved closure. Build is read-only by default: a missing lockfile halts
-// with the pull-first remediation and no lockfile or source pins are written.
-// When the pull step is requested — the --auto-pull flag (autoPull) or workspace
-// auto_pull — a missing lockfile is instead filled in-process (populating the
-// lockfile + cache) before the build proceeds; upgrade makes that fill a full
-// refresh (float every dependency to the highest satisfying version rather than
-// honoring existing pins). Under offline a missing lockfile always halts,
-// regardless of the pull step, because the fill itself needs network access.
-//
-// dryRun suppresses the fill outright: the fill writes, and a dry run writes
-// nothing. It is passed in rather than inferred from autoPull because the two
-// are independent — the fill also runs from the workspace setting, which no flag
-// refusal reaches — so a dry run that only refused the flag would still fill in a
-// workspace configured to.
-//
-// The lockfile must exist before the lazy lookup is pinned: its pins drive the
-// verify-on-read Tier-2 reads through which every closure entity (and the
-// libraries a $ref names) resolves.
-//
-// The two sinks are kept apart, because --detail's own help promises the
-// resolution report on stdout. out carries that report: the no-pull note written
-// here, and the fill's per-entity rows and completion line forwarded through
-// pullConfig.Out. diagOut carries the fill's reuse/verify notices and progress
-// surface, forwarded through pullConfig.DiagOut. In production out is os.Stdout
-// and diagOut is os.Stderr.
-func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, autoPull, upgrade, detail, dryRun bool, diagOut, out io.Writer) (bool, error) {
-	lockfilePath := lockfile.PathFor(releasePath)
-
-	_, statErr := os.Stat(lockfilePath)
-	preexisted := statErr == nil
-	if statErr != nil && !stderrors.Is(statErr, os.ErrNotExist) {
-		return false, fmt.Errorf("lockfile stat %s: %w", lockfilePath, statErr)
-	}
-
-	// Offline: never network. Build is frozen against whatever lockfile exists;
-	// a missing one cannot be filled here. The offline decision is read from the
-	// egress gate (the sole home of that decision), not from the config field
-	// directly, so this pre-flight and the actual fill cannot diverge.
-	if _, egErr := egress.RoundTripper(wsCfg); stderrors.Is(egErr, egress.ErrOfflineEgress()) {
-		if preexisted {
-			return true, nil
-		}
-		return false, fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull --release %s` from a connected environment first: %w",
-			lockfilePath, releasePath, oci.ErrFetchNotFound())
-	}
-
-	// build's auto-pull is the opt-in fill: it runs when the --auto-pull flag or
-	// workspace.auto_pull is set. By default (upgrade off) it is lockfile-honoring
-	// — it honors every existing pin (resolving to the pinned version, verifying the
-	// pinned digest, halting on a drifted pin), resolves + adds un-pinned references,
-	// refills an empty cache by pin, and prunes stale pins; on a complete,
-	// cache-populated lockfile it is a no-op with NO network (every pin a Tier-2 hit),
-	// so the build stays hermetic given a complete lockfile. With upgrade the fill
-	// is a full refresh: it discards the existing pin set and re-resolves every
-	// dependency, floating each to the highest satisfying version. There is no
-	// absent-vs-partial special case: any incomplete/empty state runs the same fill,
-	// and lockfile.Verify (in dispatchBuild) is the post-condition. The build's own
-	// resolution runs through the nil-puller pinned lazy lookup, untouched — so build
-	// output is unchanged by this fill.
-	//
-	// A dry run turns the fill off however it was asked for. Asking on the command
-	// line is refused before the build starts; this leg is the workspace setting,
-	// which a dry run overrides for the one invocation rather than refusing to run
-	// at all — a workspace that fills by default would otherwise have no way to
-	// preview a render. A missing lockfile then halts with the same pull-first
-	// remediation the read-only default gives, which is the honest outcome: there
-	// is nothing to render against and filling one would be a write.
-	if !dryRun && (autoPull || wsCfg.AutoPull) {
-		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: diagOut, Out: out, diag: buildDiagOptions{quiet: true}}); err != nil {
-			return false, fmt.Errorf("auto-pull: %w", err)
-		}
-		return false, nil
-	}
-
-	// Read-only default: the build is frozen against the lockfile as it stands and
-	// never writes source pins. A present lockfile is used as-is; a missing one halts
-	// with the pull-first remediation.
-	if preexisted {
-		if detail {
-			fmt.Fprintf(out, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present, so no pull ran this build\n", lockfilePath)
-		}
-		return true, nil
-	}
-	return false, fmt.Errorf("aggrega build: lockfile %s missing; run `aggrega pull --release %s` first to create it, or pass --auto-pull (or enable auto_pull) to fill it during the build",
-		lockfilePath, releasePath)
 }
 
 // skipContextError is a resolution or validation failure carrying the catalog

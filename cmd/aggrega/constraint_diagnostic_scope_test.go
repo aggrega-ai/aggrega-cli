@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -139,7 +140,7 @@ func TestRefusedEntityNamedInReleaseScopes(t *testing.T) {
 	// already present; breaking a Component afterwards is the shape under test.
 	var diag, out bytes.Buffer
 	if err := dispatchBuildWithDiag(rw, releasePath, cleanDirs, false,
-		buildDiagOptions{}, buildRunOptions{autoPull: true}, &diag, &out); err != nil {
+		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diag, &out); err != nil {
 		t.Fatalf("the clean workspace must build: %v", err)
 	}
 	if _, serr := os.Stat(filepath.Join(root, "release.lock")); serr != nil {
@@ -155,7 +156,7 @@ func TestRefusedEntityNamedInReleaseScopes(t *testing.T) {
 	t.Run("build --release", func(t *testing.T) {
 		var diag, out bytes.Buffer
 		err := dispatchBuildWithDiag(rw, releasePath, dirs, false,
-			buildDiagOptions{}, buildRunOptions{}, &diag, &out)
+			buildDiagOptions{}, buildops.RunOptions{}, &diag, &out)
 		if err == nil {
 			t.Fatal("the build must halt on a refused in-closure entity")
 		}

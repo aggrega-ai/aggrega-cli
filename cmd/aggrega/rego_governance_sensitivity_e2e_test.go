@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
@@ -515,7 +516,7 @@ func TestRegoCachedGate_TheRecordedDigestGovernsWhichArtifactRuns(t *testing.T) 
 			buildWorkspace := resolveWorkspaceWithConfig(t, root,
 				governanceAttachment(gate.URI, "ir-verdict", "policy.rego", ""))
 			err := dispatchBuildWithDiag(buildWorkspace, releasePath, []string{catalogDir}, false,
-				buildDiagOptions{quiet: true}, buildRunOptions{outDir: filepath.Join(root, "dist")},
+				buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, "dist")},
 				os.Stderr, os.Stderr)
 			if err == nil {
 				t.Fatal("the fixture Aggregate authors a declared-sensitive leaf, so every direction stops the build; " +

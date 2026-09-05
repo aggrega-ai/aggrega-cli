@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -127,7 +128,7 @@ func buildAt(t *testing.T, root, releasePath string) error {
 	t.Helper()
 	var diagBuf, outBuf bytes.Buffer
 	return dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
-		buildDiagOptions{}, buildRunOptions{outDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf)
+		buildDiagOptions{}, buildops.RunOptions{OutDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf)
 }
 
 // pullAt runs the real pull over the workspace with the flags given.
@@ -469,7 +470,7 @@ func TestIntegration_VerdictTrustAutoPullBuildWritesTheRecord(t *testing.T) {
 
 	var diagBuf, outBuf bytes.Buffer
 	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
-		buildDiagOptions{}, buildRunOptions{autoPull: true, outDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf); err != nil {
+		buildDiagOptions{}, buildops.RunOptions{AutoPull: true, OutDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull: %v (diag=%q)", err, diagBuf.String())
 	}
 
@@ -484,7 +485,7 @@ func TestIntegration_VerdictTrustAutoPullBuildWritesTheRecord(t *testing.T) {
 		t.Fatalf("remove the record between builds: %v", err)
 	}
 	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false,
-		buildDiagOptions{}, buildRunOptions{outDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf); err != nil {
+		buildDiagOptions{}, buildops.RunOptions{OutDir: filepath.Join(root, "dist")}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build with a present lockfile: %v (diag=%q)", err, diagBuf.String())
 	}
 	if _, err := os.Stat(recordPath); !errors.Is(err, os.ErrNotExist) {

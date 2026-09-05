@@ -627,8 +627,21 @@ func TestVerdictTrustRecordHasOneWriter(t *testing.T) {
 		t.Errorf("callers of pluginstrust.Write = %v; want exactly [recordVerdictPluginTrust]", writers)
 	}
 
-	if !callers["pullRun"]["acquireLockfile"] {
-		t.Errorf("acquireLockfile does not call pullRun; the auto-pull route to the record runs the pull path verbatim (callers seen: %v)",
+	// The build's auto-pull step reaches the record by running the pull path
+	// verbatim rather than by growing a fill of its own. Assembling the shared
+	// build layer's inputs is where that path is handed over, so it is the site
+	// this checks.
+	//
+	// 🔴 THIS IS THE STRUCTURAL HALF AND IT IS THE WEAKER ONE. The shared layer
+	// invokes what this site hands it through a FUNCTION VALUE, which carries no
+	// call edge any source derivation can follow, so nothing structural can see
+	// the last hop. TestBuildAutoPullFlagFillsLockfileWhenConfigOff is the half
+	// that can: it drives a real build with the fill requested and asserts the
+	// lockfile came back with pins. Neither substitutes for the other — this one
+	// catches a second fill implementation appearing, and that one catches the
+	// hand-off being dropped.
+	if !callers["pullRun"]["buildDispatchConfig"] {
+		t.Errorf("the build dispatch does not hand the pull path to the build layer; the auto-pull route to the record runs the pull path verbatim (callers seen: %v)",
 			callers["pullRun"])
 	}
 }

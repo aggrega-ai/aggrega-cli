@@ -79,9 +79,9 @@ type progressSpine struct {
 	coldProfile bool
 }
 
-// Phase indices into the build spine's labels. dispatchBuild passes these to
-// progressReporter.phase as it crosses each boundary; keeping them adjacent to
-// the label slice keeps index and label single-sourced.
+// Phase indices into the build spine's labels. buildPhaseStep maps the shared
+// build layer's stage vocabulary onto these as the run crosses each boundary;
+// keeping them adjacent to the label slice keeps index and label single-sourced.
 const (
 	phaseLoadCatalog = iota
 	phaseLockfile

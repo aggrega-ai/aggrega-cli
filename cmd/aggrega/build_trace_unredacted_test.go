@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 )
 
 // TestBuildRejectsUnredactedTraceWithoutTrace pins the loud guardrail on the
@@ -22,7 +24,7 @@ func TestBuildRejectsUnredactedTraceWithoutTrace(t *testing.T) {
 	var diag, out bytes.Buffer
 	err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{}), "release.yaml", nil, false,
 		buildDiagOptions{quiet: true},
-		buildRunOptions{traceUnredacted: true}, &diag, &out)
+		buildops.RunOptions{TraceUnredacted: true}, &diag, &out)
 	if err == nil {
 		t.Fatal("--trace-unredacted without --trace must halt; the build proceeded")
 	}
@@ -51,7 +53,7 @@ func TestBuildWithTraceDoesNotHitTheFlagPairingHalt(t *testing.T) {
 	var diag, out bytes.Buffer
 	err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), "release.yaml", nil, true,
 		buildDiagOptions{quiet: true},
-		buildRunOptions{traceUnredacted: true}, &diag, &out)
+		buildops.RunOptions{TraceUnredacted: true}, &diag, &out)
 	if err == nil {
 		t.Fatal("a build against an empty directory must fail for its own reasons; got nil")
 	}

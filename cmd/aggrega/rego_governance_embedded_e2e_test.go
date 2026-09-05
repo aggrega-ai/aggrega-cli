@@ -33,6 +33,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
@@ -146,7 +147,7 @@ func pullThen(t *testing.T, root, releasePath string, catDirs []string, config, 
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rw, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
-	return dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: filepath.Join(root, outDir)}, os.Stderr, os.Stderr)
+	return dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: filepath.Join(root, outDir)}, os.Stderr, os.Stderr)
 }
 
 // TestRegoEmbedded_IRVerdictSeverityRouting proves the guest attached over the
@@ -455,7 +456,7 @@ labels contains {"node": id, "key": "compliance.example.com/tier", "value": "gol
 	}
 
 	out := filepath.Join(root, "out")
-	if err := dispatchBuildWithDiag(rw, releasePath, []string{catalogDir, standardCatalogDir(t)}, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rw, releasePath, []string{catalogDir, standardCatalogDir(t)}, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: out}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	if found, tree := distTreeContains(t, out, "compliance.example.com/tier=gold"); !found {
@@ -1105,7 +1106,7 @@ plugins:
 		t.Fatalf("pull: %v", err)
 	}
 	outA := filepath.Join(root, "outA")
-	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: outA}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outA}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build A: %v", err)
 	}
 	if found, tree := distTreeContains(t, outA, "a.example.com/first=set"); !found {
@@ -1115,7 +1116,7 @@ plugins:
 		t.Fatalf("build A attached no feature; the comparison would be vacuous:\n%s", tree)
 	}
 	outB := filepath.Join(root, "outB")
-	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: outB}, os.Stderr, os.Stderr); err != nil {
+	if err := dispatchBuildWithDiag(rw, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildops.RunOptions{OutDir: outB}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build B: %v", err)
 	}
 	if !snapshotEqual(snapshotDir(t, outA), snapshotDir(t, outB)) {

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 )
 
 // ttyReporter builds a checklist reporter over a forced-terminal sink.
@@ -1161,7 +1163,7 @@ func TestBuild_SingleFinalBlockOnStdout(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releaseYAML, []string{catalogRoot}, false, buildDiagOptions{}, buildRunOptions{}, &stderr, &stdout); err != nil {
+	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releaseYAML, []string{catalogRoot}, false, buildDiagOptions{}, buildops.RunOptions{}, &stderr, &stdout); err != nil {
 		t.Fatalf("build failed: %v (stderr=%q)", err, stderr.String())
 	}
 

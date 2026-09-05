@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 )
 
 // TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes is the determinism
@@ -50,7 +52,7 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 		name string
 		tty  bool
 		diag buildDiagOptions
-		run  buildRunOptions
+		run  buildops.RunOptions
 	}
 	modes := []mode{
 		{name: "auto-pipe", tty: false, diag: buildDiagOptions{}},
@@ -58,7 +60,7 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 		{name: "progress-forced-pipe", tty: false, diag: buildDiagOptions{progress: true}},
 		{name: "quiet", tty: true, diag: buildDiagOptions{quiet: true}},
 		{name: "debug", tty: true, diag: buildDiagOptions{debug: true}},
-		{name: "cold-disable-cache", tty: true, diag: buildDiagOptions{}, run: buildRunOptions{disablePluginCache: true}},
+		{name: "cold-disable-cache", tty: true, diag: buildDiagOptions{}, run: buildops.RunOptions{DisablePluginCache: true}},
 	}
 
 	origTerm := fileTerminal
@@ -82,7 +84,7 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 			t.Fatalf("%s: clean dist: %v", m.name, err)
 		}
 		run := m.run
-		run.outDir = outDir
+		run.OutDir = outDir
 
 		var stdout, stderr bytes.Buffer
 		if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releaseYAML, []string{catalogRoot}, false, m.diag, run, &stderr, &stdout); err != nil {

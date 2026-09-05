@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 )
 
 // TestBuildAutoPullFreezeMatchesStandalonePullFreeze proves that the recipe-pin
@@ -48,7 +50,7 @@ func TestBuildAutoPullFreezeMatchesStandalonePullFreeze(t *testing.T) {
 	}
 	var diagBuf, outBuf bytes.Buffer
 	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootB}), releaseB, []string{filepath.Join(rootB, "catalog")}, false,
-		buildDiagOptions{}, buildRunOptions{autoPull: true}, &diagBuf, &outBuf); err != nil {
+		buildDiagOptions{}, buildops.RunOptions{AutoPull: true}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull: %v", err)
 	}
 	recipeAfterBuild := mustReadFile(t, recipeB)

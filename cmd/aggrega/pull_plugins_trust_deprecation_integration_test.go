@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -175,7 +176,7 @@ func TestIntegration_TrustPinnedPluginWithdrawalIsRecordedAndReported(t *testing
 	// plugin the report is about.
 	var diag, out strings.Builder
 	if berr := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false,
-		buildDiagOptions{}, buildRunOptions{outDir: wsRoot + "/dist"}, &diag, &out); berr != nil {
+		buildDiagOptions{}, buildops.RunOptions{OutDir: wsRoot + "/dist"}, &diag, &out); berr != nil {
 		t.Fatalf("with no halt threshold configured a withdrawal must advise, not halt; got %v", berr)
 	}
 	t.Logf("build diagnostics:\n%s", diag.String())
@@ -230,7 +231,7 @@ func TestIntegration_TrustPinnedWithdrawalHaltsAtTheConfiguredThreshold(t *testi
 
 	var diag, out strings.Builder
 	berr := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false,
-		buildDiagOptions{}, buildRunOptions{outDir: wsRoot + "/dist"}, &diag, &out)
+		buildDiagOptions{}, buildops.RunOptions{OutDir: wsRoot + "/dist"}, &diag, &out)
 	if !errors.Is(berr, deprecation.ErrDeprecatedEntity()) {
 		t.Fatalf("a retracted trust-pinned plugin at a retracted threshold must halt the build with the shared condition; got %v\ndiagnostics:\n%s",
 			berr, diag.String())
