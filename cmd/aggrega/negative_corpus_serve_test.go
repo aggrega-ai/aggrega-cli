@@ -8,10 +8,18 @@
 // the diagnostic"; the violation CLASSES are exhausted at the build/lint/
 // engine layers, so one row proves the inheritance.
 //
-// The in-process serve harness does not run the cascade (no active
-// Release → no Tier-4), so the envelope diagnostic surfaces only against
-// the real spawned daemon — hence the subprocess, mirroring the Tier-4
-// end-to-end test.
+// Every row here drives the real spawned daemon over its real framing
+// rather than an in-process harness, because what is under test is the gate
+// as a client meets it: the request shape, the answer it draws, and the
+// notifications pushed alongside — hence the subprocess, mirroring the
+// end-to-end semantic-validation test.
+//
+// A row's request either names a Release or names none, and the two ask for
+// different work: naming one asks additionally for the checks only a Release
+// can answer, naming none asks what the document answers on its own. Each
+// row below states which it does and why, because an unnamed Release
+// narrows the answer without failing, and a narrowed answer is where a
+// negative assertion quietly stops discriminating.
 package main
 
 import (
@@ -25,15 +33,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
-// TestNegativeCorpusServe_MalformedAnchoringReleaseDiagnostic is the
-// sibling row the negative-authoring corpus recorded as a finding: a
-// Release the cascade FINDS but cannot load (here, the Invariant-5
-// values-on-boundary-component ban) must surface as a diagnostic ON THE
-// RELEASE FILE, not vanish into a generic release-not-resolved error with
-// the detail only on stderr. Red against the pre-fix daemon (1002 +
-// stderr, no diagnostic); green after — the daemon pushes an
-// aggrega/publishDiagnostics for the Release file carrying the rendered
-// envelope text.
+// TestNegativeCorpusServe_MalformedAnchoringReleaseDiagnostic — a Release
+// the disambiguation cascade FINDS but cannot load (here, the Invariant-5
+// values-on-boundary-component ban) surfaces as a diagnostic ON THE RELEASE
+// FILE: the daemon pushes an aggrega/publishDiagnostics for that file
+// carrying the rendered envelope text, so an operator authoring a broken
+// Release reads the error on the document rather than inferring it from an
+// empty answer or finding it only on stderr.
+//
+// The request driven here is aggrega/activeRelease, which is where the
+// cascade runs: it is the one method whose question — which Release should a
+// client select by default — requires walking for candidates and loading
+// them, so it is the only method positioned to discover that a candidate is
+// broken. Validation is not, because a validate request is told which
+// Release to act on and never goes looking for one.
 func TestNegativeCorpusServe_MalformedAnchoringReleaseDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	bin := buildServeBinary(t)
@@ -102,15 +115,11 @@ spec:
 	if initResp := readOneResponse(t, stdout, 5*time.Second); initResp["error"] != nil {
 		t.Fatalf("initialize returned error: %+v", initResp)
 	}
-	// Validating the (valid) Aggregate is enough to trigger the anchoring
-	// attempt; the malformed Release surfaces via publishDiagnostics on the
-	// Release file.
-	aggPath := filepath.Join(ws, "aggregate.yaml")
-	if _, err := stdin.Write(framed(2, "aggrega/validate", map[string]any{
-		"file":    aggPath,
-		"content": agg,
-	})); err != nil {
-		t.Fatalf("write validate: %v", err)
+	// Asking which Release the workspace points at is what runs the cascade,
+	// and the malformed candidate it finds surfaces via publishDiagnostics on
+	// the Release file before the answer is written.
+	if _, err := stdin.Write(framed(2, "aggrega/activeRelease", map[string]any{})); err != nil {
+		t.Fatalf("write activeRelease: %v", err)
 	}
 	// This leg publishes the LOAD ERROR's own rendered text, so the expected
 	// string is the condition's registered sentence read off the condition —
@@ -124,18 +133,27 @@ spec:
 	for i := 0; i < 6 && !found; i++ {
 		msg := readOneResponse(t, stdout, 10*time.Second)
 		// Match the publishDiagnostics NOTIFICATION specifically — not any
-		// message containing the text. The 1002 error response's enriched
-		// cascade trace also carries the path + envelope text, so a loose
-		// substring scan would pass even if the squiggle never published
-		// (proven by disabling the publish leg). Require: method ==
-		// aggrega/publishDiagnostics, params.file == the Release path, and a
-		// diagnostic whose message carries the envelope text.
+		// message containing the text. The answer to this very request carries
+		// a per-step account of the exhausted cascade, and that account names
+		// the same path and the same envelope text, so a loose substring scan
+		// over the traffic would pass with the squiggle never published.
+		// Require: method == aggrega/publishDiagnostics, params.file == the
+		// Release path, and a diagnostic whose message carries the envelope
+		// text.
 		if diagnosticPublishedFor(msg, releasePath, wantText) {
 			found = true
+			break
+		}
+		// The answer itself. The publish is written ahead of it, so once it has
+		// arrived nothing further is coming: reading on would spend the
+		// liveness ceiling and report a hang in place of the absence that
+		// actually occurred.
+		if id, ok := msg["id"].(float64); ok && id == 2 {
+			break
 		}
 	}
 	if !found {
-		t.Fatalf("daemon did not PUBLISH an envelope diagnostic on the Release file %q (%q) — a malformed anchoring Release still de-anchors silently (the 1002 trace alone does not count)", releasePath, wantText)
+		t.Fatalf("daemon did not PUBLISH an envelope diagnostic on the Release file %q (%q) — a found-but-unloadable Release still fails to anchor silently (the account carried on the answer does not count)", releasePath, wantText)
 	}
 }
 
@@ -178,14 +196,17 @@ func TestNegativeCorpusServe_EnvelopeDiagnostic(t *testing.T) {
 	// (xsurface-aggregate-component-infra). Build + serve together evidence
 	// the one gate across the two surfaces that take an Aggregate subject.
 	//
-	// Why an Aggregate violation, not the Release values-ban: a malformed
-	// Release de-anchors the serve cascade — the daemon cannot resolve a
-	// Release to establish Tier-4 context, so it returns a 1002
-	// "release-not-resolved" error with the envelope detail on stderr, not
-	// a wire diagnostic. The Aggregate violation surfaces AS a diagnostic
-	// (the cascade resolves the valid Release, then the closure load of the
-	// bad Aggregate produces a Tier-D diagnostic carrying the envelope
-	// message). This is the serve surface's actual diagnostic-bearing path.
+	// Why an Aggregate violation and not the Release values-ban: the row this
+	// one pairs with on the build surface takes an Aggregate subject, and a
+	// cross-surface pair evidences one gate only when both halves carry the
+	// same document and the same fault.
+	//
+	// The request names no Release. A document's envelope verdict is a fact
+	// about the document — the daemon classifies the buffer by its
+	// apiVersion+kind and gives it the same verdict the command line does —
+	// so this row asks for exactly that and nothing a Release could add. The
+	// valid Release and Manifest on disk are the surrounding workspace a real
+	// author has, not inputs to the assertion.
 	write := func(name, content string) {
 		if err := os.WriteFile(filepath.Join(ws, name), []byte(content), 0o644); err != nil {
 			t.Fatalf("write %s: %v", name, err)
@@ -325,13 +346,17 @@ func stringify(v any) string {
 }
 
 // serveValidateScan starts the daemon over the given workspace files,
-// initializes, validates validateFile, and returns the flattened text of
-// every response/notification it reads (up to a few). Used by the 06e3
-// per-file envelope rows, whose diagnostics arrive on the validate
-// RESPONSE (the envelope leg early-returns) rather than a publish
-// notification.
-func serveValidateScan(t *testing.T, files map[string]string, validateFile string) string {
-	return serveValidateScanBuffer(t, files, validateFile, files[validateFile])
+// initializes, validates validateFile against the named Release, and
+// returns the flattened text of every response/notification it reads (up
+// to a few). Used by the per-file envelope rows, whose diagnostics arrive
+// on the validate RESPONSE (the envelope leg early-returns) rather than a
+// publish notification.
+//
+// release is the workspace-relative path of the Release the request names,
+// or "" to name none. See serveValidateScanBuffer for what each choice
+// asks the daemon for.
+func serveValidateScan(t *testing.T, files map[string]string, validateFile, release string) string {
+	return serveValidateScanBuffer(t, files, validateFile, files[validateFile], release)
 }
 
 // envelopeSentenceInScan is what an envelope rejection looks like anywhere in a
@@ -352,8 +377,30 @@ func envelopeSentenceInScan() string { return envelope.ErrEntityEnvelope().Error
 // unsaved buffer. Needed where the on-disk document must be valid for the
 // daemon to start (the workspace config) while the buffer under test is
 // not.
-func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile, buffer string) string {
+//
+// release is the workspace-relative path of the Release the request names,
+// and it is a required argument at every call site rather than an option
+// with a default, because it decides which of two answers the daemon gives.
+// Naming one asks for the checks only a Release can answer — the semantic
+// pass, and the lockfile correlation that decides whether the buffer is
+// that Release's lockfile. Naming none ("") asks only what the document
+// answers on its own. A row whose subject needs a Release and names none
+// gets a well-formed answer about the document, which is why the choice is
+// spelled out per row: an omitted Release does not fail, it narrows, and a
+// narrowed answer is the shape a positive assertion stops seeing and a
+// negative assertion starts passing for free.
+//
+// A non-empty release must be a file the fixture writes. Naming one it does
+// not would resolve — the daemon checks the parameter's shape, not that the
+// file is there — and then report a load failure instead of the subject
+// under test, so the row would go red or green for a reason nobody chose.
+func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile, buffer, release string) string {
 	t.Helper()
+	if release != "" {
+		if _, ok := files[release]; !ok {
+			t.Fatalf("fixture writes no %q, so naming it as the request's Release would test a Release that is not there", release)
+		}
+	}
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 	if _, ok := files[".aggrega-config.yaml"]; !ok {
@@ -393,6 +440,7 @@ func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile
 	if _, err := stdin.Write(framed(2, "aggrega/validate", map[string]any{
 		"file":    vfPath,
 		"content": buffer,
+		"release": release,
 	})); err != nil {
 		t.Fatalf("write validate: %v", err)
 	}
@@ -421,10 +469,11 @@ spec:
 `
 
 // TestNegativeCorpusServe_NonAnchoringReleaseGetsDiagnostic — row (a): a
-// Release the cascade does NOT anchor (ambiguous two-Release workspace)
-// carrying the Invariant-5 values ban, validated directly, surfaces an
-// envelope diagnostic on its own file. Red today (Tier-4 returns nil for
-// a non-active file → shows clean); green with the per-file leg.
+// Release carrying the Invariant-5 values ban, in a workspace holding a
+// second Release and validated directly, surfaces an envelope diagnostic on
+// its own file. The coverage is that a Release document is reported on for
+// its own sake — not only when it is the one the client is working against,
+// which is the case a workspace holding two Releases makes concrete.
 func TestNegativeCorpusServe_NonAnchoringReleaseGetsDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	badRelease := `apiVersion: aggrega.ai/v1alpha1
@@ -461,13 +510,16 @@ spec:
           infra:
             replicas: 1
 `
-	// Two Release files → the single-Release heuristic is ambiguous → no
-	// anchor → validating the bad one is a non-anchoring-file validate.
+	// Two Release files, and the request names NEITHER: the subject is that a
+	// Release document gets its own envelope verdict on its own file whatever
+	// Release the client is working against, so naming one would narrow the
+	// row to the case where the file under test IS the named Release and lose
+	// exactly the coverage it exists for.
 	scan := serveValidateScan(t, map[string]string{
 		"release-a.yaml": otherRelease,
 		"release-b.yaml": badRelease,
 		"manifest.yaml":  minimalManifest,
-	}, "release-b.yaml")
+	}, "release-b.yaml", "")
 	if want := envelopeSentenceInScan(); !strings.Contains(scan, want) {
 		t.Fatalf("non-anchoring Release values-ban produced no envelope diagnostic (%q) on its own file:\n%s", want, scan)
 	}
@@ -492,7 +544,9 @@ spec:
     values:
       port: { type: integer }
 `
-	scan := serveValidateScan(t, map[string]string{"component.yaml": comp}, "component.yaml")
+	// No Release named: a catalog Component's envelope verdict is a property
+	// of the document, and the workspace holds no Release to name anyway.
+	scan := serveValidateScan(t, map[string]string{"component.yaml": comp}, "component.yaml", "")
 	if want := envelopeSentenceInScan(); !strings.Contains(scan, want) {
 		t.Fatalf("catalog Component junk key produced no envelope diagnostic (%q) on its file:\n%s", want, scan)
 	}
@@ -516,7 +570,9 @@ spec:
         - name: web
           image: "{{ .Values.image }}"
 `
-	scan := serveValidateScan(t, map[string]string{"templates/deployment.yaml": chartTemplate}, "templates/deployment.yaml")
+	// No Release named: whether a document is aggrega's at all is decided
+	// before any Release enters, so the guard is asserted where it lives.
+	scan := serveValidateScan(t, map[string]string{"templates/deployment.yaml": chartTemplate}, "templates/deployment.yaml", "")
 	if want := envelopeSentenceInScan(); strings.Contains(scan, want) {
 		t.Fatalf("foreign YAML wrongly produced an envelope diagnostic (%q) — the guard failed:\n%s", want, scan)
 	}
@@ -571,11 +627,16 @@ spec:
     components:
       type: {}
 `
+	// The request NAMES the Release, because the fall-through under test ends
+	// in the semantic pass and that pass is what a named Release asks for. The
+	// mismatch the row asserts is between this Aggregate's declared parameter
+	// and this Release's fulfilment of it, so it is a fact about the pair and
+	// there is no answer to it from the Aggregate alone.
 	scan := serveValidateScan(t, map[string]string{
 		"aggregate.yaml": agg,
 		"release.yaml":   release,
 		"manifest.yaml":  manifest,
-	}, "aggregate.yaml")
+	}, "aggregate.yaml", "release.yaml")
 	if want := envelopeSentenceInScan(); strings.Contains(scan, want) {
 		t.Fatalf("envelope-clean active Aggregate wrongly produced an envelope diagnostic (%q) — the leg should not fire / not short-circuit Tier-4:\n%s", want, scan)
 	}
@@ -585,9 +646,14 @@ spec:
 }
 
 // activeReleaseFixture is a clean Aggregate/Release/Manifest triad with a
-// single Release file, so the daemon's disambiguation cascade anchors it
-// and populates activeReleasePath (= <ws>/release.yaml) — the prerequisite
-// for the active Release's lockfile (<ws>/release.lock) to classify.
+// single Release file at <ws>/release.yaml — the one a request names in
+// order for that Release's lockfile (<ws>/release.lock) to classify, since
+// the lockfile carries no apiVersion+kind envelope and is reached only by
+// correlation to the Release the request is about.
+//
+// The triad is clean on purpose: every row built on it asserts something
+// about the lockfile, so a fault anywhere else would give the row a second
+// way to go red.
 func activeReleaseFixture() map[string]string {
 	return map[string]string{
 		"aggregate.yaml": `apiVersion: aggrega.ai/v1alpha1
@@ -634,33 +700,52 @@ spec:
 func TestNegativeCorpusServe_ConfigByFilenameGetsDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	badConfigBuffer := "workspace:\noffline: \"notabool\"\n"
-	scan := serveValidateScanBuffer(t, map[string]string{}, ".aggrega-config.yaml", badConfigBuffer)
+	// No Release named: the config classifies by its fixed, unique filename,
+	// which no Release participates in.
+	scan := serveValidateScanBuffer(t, map[string]string{}, ".aggrega-config.yaml", badConfigBuffer, "")
 	if want := envelopeSentenceInScan(); !strings.Contains(scan, want) {
 		t.Fatalf("invalid .aggrega-config.yaml buffer produced no envelope diagnostic (%q) on its file:\n%s", want, scan)
 	}
 }
 
-// TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic — the active
-// Release's lockfile, also envelope-less, classifies by correlation to the
-// anchored Release. A junk lockfile buffer squiggles live. Red before this
-// leg; green now.
+// TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic — a Release's
+// lockfile, which carries no apiVersion+kind envelope of its own, classifies
+// by correlation to the Release the request named, and a junk lockfile
+// buffer squiggles live.
+//
+// This is the POSITIVE half of the correlation pair whose negative half is
+// the foreign-.lock row below. The request must name the Release: correlation
+// is defined against it, so a request naming none classifies no lockfile at
+// all and this row would report an absence that says nothing about the
+// filename rule.
 func TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	badLockfileBuffer := "version: 1\nrelease: 123\ngenerated_at: \"2026-01-01T00:00:00Z\"\n"
-	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "release.lock", badLockfileBuffer)
+	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "release.lock", badLockfileBuffer, "release.yaml")
 	if want := envelopeSentenceInScan(); !strings.Contains(scan, want) {
 		t.Fatalf("invalid active-release lockfile buffer produced no envelope diagnostic (%q) on its file:\n%s", want, scan)
 	}
 }
 
 // TestNegativeCorpusServe_ForeignLockNoEnvelopeDiagnostic — the
-// foreign-.lock guard at the daemon level: with a Release anchored (so
-// release.lock WOULD classify), a different .lock file (another
-// ecosystem's lockfile) does NOT classify and is never validated against
-// the lockfile schema — zero envelope diagnostics.
+// foreign-.lock guard at the daemon level: another ecosystem's lockfile does
+// NOT classify and is never validated against the lockfile schema, so it
+// draws zero envelope diagnostics.
+//
+// 🔴 The request names the SAME Release the positive row above names, and
+// that is the whole discriminator rather than fixture furniture. What is
+// being asserted is that correlation to a named Release admits exactly that
+// Release's lockfile basename and rejects every other .lock — so the run
+// must be one in which release.lock WOULD have classified. Name no Release
+// and nothing classifies for any reason at all: the assertion goes on
+// passing, the guard is never consulted, and the green stops carrying a
+// claim about the filename rule. That failure is silent by construction —
+// no gate, no count and no diff can see a test that agrees for the wrong
+// reason — so the Release named here is load-bearing and is not to be
+// dropped as an unused argument.
 func TestNegativeCorpusServe_ForeignLockNoEnvelopeDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
-	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "Cargo.lock", "a: 1\n")
+	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "Cargo.lock", "a: 1\n", "release.yaml")
 	if want := envelopeSentenceInScan(); strings.Contains(scan, want) {
 		t.Fatalf("foreign .lock wrongly produced an envelope diagnostic (%q) — the foreign-.lock guard failed:\n%s", want, scan)
 	}

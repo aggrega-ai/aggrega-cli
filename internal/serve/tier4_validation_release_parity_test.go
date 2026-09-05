@@ -321,7 +321,6 @@ func TestRunTier4ValidationReleaseCoreParity(t *testing.T) {
 			aggPath := filepath.Join(root, "aggregate.yaml")
 
 			srv := newTestServer(t, root, nil, nil)
-			srv.activeReleasePath = releasePath
 			srv.wsConfig.Workspace.CatalogDirs = dirs
 			srv.lazyCatalog = catalog.NewLazyLookup(root, "", dirs, nil)
 
@@ -331,7 +330,7 @@ func TestRunTier4ValidationReleaseCoreParity(t *testing.T) {
 			}
 			doc := parseYAML(t, string(content))
 
-			diags := srv.runTier4Validation(context.Background(), aggPath, content, doc)
+			diags := srv.runTier4Validation(context.Background(), releasePath, aggPath, content, doc)
 
 			// Oracle: the same core over the same resolved inputs runTier4Validation
 			// builds internally (request view, resolved closure).

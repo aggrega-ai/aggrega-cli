@@ -37,10 +37,6 @@ func newPoolTestServer(in io.Reader, out io.Writer, poolSize int, hook func()) *
 		stderr:             io.Discard,
 		testInDispatchHook: hook,
 	}
-	// Pool-driven tests inject the active-Release fields directly (e.g. the
-	// pin-isolation harness sets activeReleasePath); suppress the lazy
-	// cascade so it does not overwrite that injected state.
-	srv.markCascadeDone()
 	return srv
 }
 

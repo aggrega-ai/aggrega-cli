@@ -63,10 +63,11 @@ func (s *Server) dispatchInvalidate(ctx context.Context, req *jsonRPCRequest) er
 //     enumerated recipe shell + retained entity bytes reset (re-walk on the
 //     next Component / Feature / recipe / closure resolution).
 //
-// activeRelease + cascadeAttempt are NOT invalidated. The
-// disambiguation cascade is session-immutable; workspace-shape
-// changes (Release files added or removed) require a daemon
-// restart, not an aggrega/invalidate call.
+// There is no Release state to invalidate. The daemon holds none, and
+// the disambiguation cascade runs on each active-Release query, so a
+// workspace-shape change (a Release file added or removed, a marker
+// written) is picked up by the next such query without an invalidate
+// call and without a restart.
 //
 // Returns invalidated: true unconditionally. Back-to-back calls are
 // idempotent — sequential dispatch plus per-primitive idempotent

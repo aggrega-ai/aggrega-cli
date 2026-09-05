@@ -13,7 +13,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // spellingFixture stands a real Tier-4 workspace up in a tempdir and returns the
@@ -42,20 +41,7 @@ func spellingFixture(t *testing.T) (srv *Server, ws, relSpelling, absSpelling st
 		}
 	}
 
-	releasePath := filepath.Join(ws, "release.yaml")
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
-
 	srv = newTestServer(t, ws, nil, nil)
-	srv.activeRelease = rel
-	srv.activeReleasePath = releasePath
-	srv.cascadeAttempt = cascadeAttempt{
-		AuthoringReleaseConfigured: true,
-		ReleaseCandidatesFound:     1,
-		ResolvedStep:               1,
-	}
 	return srv, ws, "aggregate.yaml", filepath.Join(ws, "aggregate.yaml")
 }
 
@@ -71,6 +57,7 @@ func validateOverTheWire(t *testing.T, srv *Server, ws, file string) []Diagnosti
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    file,
 		Content: string(content),
+		Release: "release.yaml",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {

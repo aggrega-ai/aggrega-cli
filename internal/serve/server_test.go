@@ -48,10 +48,6 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 	// then have a live parent.
 	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
 	srv.cancelTracker = newCancelRegistry()
-	// These tests inject the active-Release fields directly; suppress the
-	// lazy cascade so it does not overwrite that injected state with a
-	// walk of the empty test workspace.
-	srv.markCascadeDone()
 	t.Cleanup(srv.serverCancel)
 	return srv
 }
@@ -177,43 +173,171 @@ func newLazyCascadeServer(t *testing.T, workspaceRoot string, in io.Reader, out 
 	return srv
 }
 
-// TestInitializeDoesNotTriggerCascadeButValidateDoes pins the lazy-cascade
-// contract: aggrega/initialize answers WITHOUT running the active-Release
-// disambiguation cascade (so a large workspace cannot delay the
-// handshake), while the first request that needs Release context
-// (aggrega/validate) triggers it on demand. The workspace holds exactly
-// one Release and no marker, which the cascade resolves at Step 3 — so a
-// fired cascade is observable as a non-nil activeRelease.
-func TestInitializeDoesNotTriggerCascadeButValidateDoes(t *testing.T) {
+// TestValidateWithNoReleaseAnswersForTheDocumentAlone pins the contract for a
+// request that names no Release: it is answered, not refused, and the answer
+// says which of the two answers it is.
+//
+// Naming none is a request in its own right — for the checks a document can be
+// held to on its own — so the reply carries the findings those checks produced
+// and the checked key naming what they covered. Asserting the absence of an
+// invalid-params envelope is half the point: refusing here would take the parse
+// half of the handler down with the semantic half, and the parse half is what
+// every cache-driven operation reads.
+//
+// The workspace holds exactly one Release, which is the case a daemon inferring
+// its own would have resolved. That is deliberate in the other direction now:
+// the answer must not quietly acquire that Release. The rows below produce
+// findings a document answers for by itself, so a run that had resolved a
+// Release anyway would still be caught by the checked key.
+func TestValidateWithNoReleaseAnswersForTheDocumentAlone(t *testing.T) {
+	ws := t.TempDir()
+	writeRelease(t, ws, "release.yaml", "release/only")
+
+	// A Release with values: on a boundary component — a document-envelope
+	// violation, which the envelope leg reports without consulting any Release.
+	envelopeViolation := `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: r
+  environment: dev
+  version: "1.0.0"
+spec:
+  aggregate: a
+  manifest: m
+  boundaries:
+    main:
+      directory: ./d
+      components:
+        api:
+          values:
+            port: 9999
+`
+
+	cases := []struct {
+		name    string
+		file    string
+		content string
+	}{
+		{"unparseable-buffer", "broken.yaml", "key: [unterminated\n"},
+		{"document-envelope-violation", "candidate.yaml", envelopeViolation},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newLazyCascadeServer(t, ws, nil, nil)
+			var in, out bytes.Buffer
+			in.Write(framedRequest(1, "aggrega/validate", validateParams{
+				File:    filepath.Join(ws, tc.file),
+				Content: tc.content,
+			}))
+			resp := runOneRequest(t, srv, &in, &out)
+			if resp.Error != nil {
+				t.Fatalf("validate naming no Release was refused: %+v", resp.Error)
+			}
+			var result validateResult
+			if err := json.Unmarshal(resp.Result, &result); err != nil {
+				t.Fatalf("unmarshal result: %v", err)
+			}
+			if len(result.Diagnostics) == 0 {
+				t.Errorf("no findings reported; the checks a document answers for by itself did not run")
+			}
+			if result.Checked != checkedDocument {
+				t.Errorf("Checked = %q; want %q, so this answer cannot be read as a full verdict", result.Checked, checkedDocument)
+			}
+		})
+	}
+}
+
+// TestValidateWithAReleaseOmitsTheCheckedKey is the other side of that
+// discriminator, and without it the key above proves only that a constant can be
+// set. A request naming a Release gets the method's ordinary answer, so the key
+// is absent — which is what lets a client tell one answer from the other by
+// reading a single field.
+func TestValidateWithAReleaseOmitsTheCheckedKey(t *testing.T) {
 	ws := t.TempDir()
 	writeRelease(t, ws, "release.yaml", "release/only")
 
 	srv := newLazyCascadeServer(t, ws, nil, nil)
-
-	// initialize must not run the cascade.
-	var in1, out1 bytes.Buffer
-	in1.Write(framedRequest(1, "aggrega/initialize", initializeParams{}))
-	resp := runOneRequest(t, srv, &in1, &out1)
+	var in, out bytes.Buffer
+	in.Write(framedRequest(1, "aggrega/validate", validateParams{
+		File:    filepath.Join(ws, "x.yaml"),
+		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: x\n  version: \"1.0.0\"\nspec:\n  components: {}\n",
+		Release: "release.yaml",
+	}))
+	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
-		t.Fatalf("initialize returned error: %+v", resp.Error)
+		t.Fatalf("validate naming a Release returned an error envelope: %+v", resp.Error)
 	}
-	if srv.activeRelease != nil {
-		t.Fatalf("initialize triggered the cascade; activeRelease should still be nil")
+	// Read as a bare object rather than into validateResult: the contract is
+	// that the key is absent from the wire, and unmarshalling into the struct
+	// would report an absent key and an empty one identically.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(resp.Result, &raw); err != nil {
+		t.Fatalf("unmarshal result object: %v", err)
+	}
+	if v, present := raw["checked"]; present {
+		t.Errorf("checked is present as %s on an answer that named a Release; it must be omitted", v)
+	}
+}
+
+// TestValidateWithNoReleaseStillSeedsTheParseCache pins the capability the
+// refusing shape would have removed, at the surface that consumes it rather
+// than at the cache. aggrega/diagnostics answers only from a parse-cache entry
+// and refuses with file-not-validated when there is none, so driving it after a
+// Release-less validation is what proves the seeding happened — and by
+// extension that hover, completion, resolve, findReferences and
+// findImplementations can still answer in a workspace holding no Release.
+//
+// The workspace here holds none at all, which is the case no later work can
+// repair: there is no Release for a client to name.
+func TestValidateWithNoReleaseStillSeedsTheParseCache(t *testing.T) {
+	ws := t.TempDir()
+	srv := newLazyCascadeServer(t, ws, nil, nil)
+	file := filepath.Join(ws, "aggregate.yaml")
+	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: x\n  version: \"1.0.0\"\nspec:\n  components: {}\n"
+	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+		t.Fatalf("write aggregate: %v", err)
 	}
 
-	// validate must trigger the cascade lazily, resolving the single Release.
+	var vin, vout bytes.Buffer
+	vin.Write(framedRequest(1, "aggrega/validate", validateParams{File: file, Content: content}))
+	if resp := runOneRequest(t, srv, &vin, &vout); resp.Error != nil {
+		t.Fatalf("validate naming no Release was refused: %+v", resp.Error)
+	}
+
+	var din, dout bytes.Buffer
+	din.Write(framedRequest(2, "aggrega/diagnostics", diagnosticsParams{File: file}))
+	resp := runOneRequest(t, srv, &din, &dout)
+	if resp.Error != nil {
+		t.Fatalf("diagnostics after a Release-less validation returned %+v; the parse cache was not seeded", resp.Error)
+	}
+}
+
+// TestValidateRefusesAReleaseOutsideTheWorkspace pins the other half of the
+// parameter's contract on this surface: the value is a workspace-relative path
+// naming a document inside the root, and an absolute path or one escaping the
+// root is refused rather than normalised. Normalising would hide the same
+// mistake in every client that made it.
+func TestValidateRefusesAReleaseOutsideTheWorkspace(t *testing.T) {
+	ws := t.TempDir()
+	writeRelease(t, ws, "release.yaml", "release/only")
+
+	srv := newLazyCascadeServer(t, ws, nil, nil)
 	file := filepath.Join(ws, "x.yaml")
-	var in2, out2 bytes.Buffer
-	in2.Write(framedRequest(2, "aggrega/validate", validateParams{File: file, Content: "kind: Foo\n"}))
-	runOneRequest(t, srv, &in2, &out2)
-	if srv.activeRelease == nil {
-		t.Fatalf("validate did not trigger the cascade; activeRelease is still nil")
-	}
-	if srv.activeReleasePath == "" {
-		t.Errorf("cascade fired but activeReleasePath is empty")
-	}
-	if srv.cascadeAttempt.ResolvedStep != 3 {
-		t.Errorf("cascade ResolvedStep = %d; want 3 (single-Release heuristic)", srv.cascadeAttempt.ResolvedStep)
+
+	for _, release := range []string{filepath.Join(ws, "release.yaml"), "../elsewhere/release.yaml"} {
+		release := release
+		t.Run(release, func(t *testing.T) {
+			var in, out bytes.Buffer
+			in.Write(framedRequest(1, "aggrega/validate", validateParams{File: file, Content: "kind: Foo\n", Release: release}))
+			resp := runOneRequest(t, srv, &in, &out)
+			if resp.Error == nil {
+				t.Fatalf("validate accepted release %q: %s", release, resp.Result)
+			}
+			if resp.Error.Code != jsonRPCInvalidParams {
+				t.Errorf("Code = %d; want %d", resp.Error.Code, jsonRPCInvalidParams)
+			}
+		})
 	}
 }
 

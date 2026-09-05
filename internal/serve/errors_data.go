@@ -25,11 +25,11 @@ package serve
 // extension reads file, finds line and column undefined, and falls
 // back to file:1:1 positioning for the diagnostic.
 //
-// CascadeAttempt carries the multi-line cascade trace for 1002
-// (release-not-resolved) emissions. The short summary that goes in
-// the toast lives in the envelope's Message; the full trace surfaces
-// through the extension's OutputChannel auto-log. Other error codes
-// leave CascadeAttempt empty.
+// No field here carries an account of how a Release was chosen. That
+// account belongs to the request whose subject it is — the one reporting
+// which Release a client should select by default — and travels on its
+// successful answer, because a workspace pointing at no Release is an
+// ordinary state rather than a failed request. See activeReleaseResult.
 //
 // EndLine and EndColumn carry the end position of the source token the
 // error refers to (1-based, exclusive of nothing — they name the
@@ -58,18 +58,16 @@ package serve
 //
 // Construct via newErrorData when a clean call-site one-liner is
 // preferable; use newErrorDataWithRange when both start and end
-// positions are known; use newErrorDataWithCascade for the 1002
-// emission path; use a struct literal when the position fields would
-// otherwise be omitted.
+// positions are known; use a struct literal when the position fields
+// would otherwise be omitted.
 type errorData struct {
-	File           string `json:"file,omitempty"`
-	Line           int    `json:"line,omitempty"`
-	Column         int    `json:"column,omitempty"`
-	CascadeAttempt string `json:"cascade_attempt,omitempty"`
-	EndLine        int    `json:"end_line,omitempty"`
-	EndColumn      int    `json:"end_column,omitempty"`
-	Release        string `json:"release,omitempty"`
-	Lockfile       string `json:"lockfile,omitempty"`
+	File      string `json:"file,omitempty"`
+	Line      int    `json:"line,omitempty"`
+	Column    int    `json:"column,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
+	EndColumn int    `json:"end_column,omitempty"`
+	Release   string `json:"release,omitempty"`
+	Lockfile  string `json:"lockfile,omitempty"`
 }
 
 // newLockfileErrorData returns a populated *errorData for a
@@ -101,15 +99,4 @@ func newErrorData(file string, line, column int) *errorData {
 // back to a point-style range at the start position.
 func newErrorDataWithRange(file string, line, column, endLine, endColumn int) *errorData {
 	return &errorData{File: file, Line: line, Column: column, EndLine: endLine, EndColumn: endColumn}
-}
-
-// newErrorDataWithCascade returns a populated *errorData carrying
-// the cascade trace alongside the source-file label. Used by the
-// 1002 (release-not-resolved) emission path so the extension can
-// consume the full multi-line trace through its OutputChannel
-// while the toast displays the short summary from the envelope's
-// Message. Position fields stay zero (omitted from the wire) — the
-// 1002 emission is file-level only.
-func newErrorDataWithCascade(file, cascadeAttempt string) *errorData {
-	return &errorData{File: file, CascadeAttempt: cascadeAttempt}
 }

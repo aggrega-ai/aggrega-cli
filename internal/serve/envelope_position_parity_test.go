@@ -74,7 +74,7 @@ func TestEnvelopePositionParityAcrossSurfaces(t *testing.T) {
 
 	// The editor surface: the diagnostics the daemon publishes.
 	srv := newTestServer(t, t.TempDir(), nil, nil)
-	diags, has := srv.envelopeDiagnosticsForBuffer("release.yaml", content, parseDoc(t, string(content)))
+	diags, has := srv.envelopeDiagnosticsForBuffer("release.yaml", "", content, parseDoc(t, string(content)))
 	if !has || len(diags) == 0 {
 		t.Fatalf("the same document must produce editor diagnostics; has=%v diags=%d", has, len(diags))
 	}
@@ -148,7 +148,7 @@ func TestEnvelopeSentenceParityAcrossSurfaces(t *testing.T) {
 	// bytes. Every one, not the first: a surface that led with the sentence on
 	// one entry and not on another would still satisfy a check of diags[0].
 	srv := newTestServer(t, t.TempDir(), nil, nil)
-	diags, has := srv.envelopeDiagnosticsForBuffer("release.yaml", content, parseDoc(t, string(content)))
+	diags, has := srv.envelopeDiagnosticsForBuffer("release.yaml", "", content, parseDoc(t, string(content)))
 	if !has || len(diags) == 0 {
 		t.Fatalf("the same document must produce editor diagnostics; has=%v diags=%d", has, len(diags))
 	}

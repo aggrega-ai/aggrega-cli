@@ -26,13 +26,14 @@ import (
 const markerFilePath = ".aggrega/active-release"
 
 // cascadeAttempt records what the disambiguation cascade tried and
-// which step (if any) selected the active Release. Consumed by the
-// cascadeDiagnosticMessage helper to construct human-readable
-// error-envelope text for operations needing Release context when
-// the cascade exhausted.
+// which step (if any) selected a Release. It travels back from
+// runManifestCascade with the Release itself and is not retained: the
+// daemon holds no Release, so it holds no account of how one was chosen
+// either. Its diagnosticMessage and fullTrace methods turn it into the
+// text the active-Release query reports when the cascade exhausted.
 type cascadeAttempt struct {
 	// ResolvedStep is 1-3 when a step succeeded; 0 when the cascade
-	// exhausted into Step 4 fallback (activeRelease stays nil).
+	// exhausted into Step 4 fallback (no Release is returned).
 	ResolvedStep int
 
 	// AuthoringReleaseConfigured records whether the workspace
@@ -263,20 +264,23 @@ func shouldExcludeDir(name, path, workspaceRoot string) bool {
 	return false
 }
 
-// cascadeDiagnosticMessage returns a one-line description of what
-// the disambiguation cascade attempted. Consumed by error envelopes
-// (the 1002 release-not-resolved code) when operations needing
-// Release context find activeRelease == nil.
+// diagnosticMessage returns a one-line description of what the
+// disambiguation cascade attempted. It is the reason the active-Release
+// query reports alongside an empty path, so a client can say why no
+// Release could be offered as the default rather than only that none was.
 //
 // The returned string names every step that was attempted and what
 // was missing, so the operator's IDE can render a coherent
-// "this is why Release context could not be resolved" diagnostic.
+// "this is why no Release was selected" message.
+//
+// It hangs off the attempt log rather than off the daemon because the
+// attempt is what the cascade returns: the daemon keeps no Release and no
+// record of one, so there is no stored attempt for a method to read.
 //
 // Returns "release resolved" when ResolvedStep is non-zero — the
 // helper is intended for the cascade-exhausted case but stays
-// honest when called against a populated activeRelease.
-func (s *Server) cascadeDiagnosticMessage() string {
-	a := s.cascadeAttempt
+// honest when called against a resolved attempt.
+func (a cascadeAttempt) diagnosticMessage() string {
 	if a.ResolvedStep != 0 {
 		return fmt.Sprintf("release resolved at cascade step %d", a.ResolvedStep)
 	}
@@ -307,19 +311,16 @@ func (s *Server) cascadeDiagnosticMessage() string {
 	return strings.Join(parts, "; ")
 }
 
-// cascadeAttemptFullTrace returns the multi-line trace of what each
-// cascade step attempted and why it failed (or was skipped). Consumed
-// by the 1002 (release-not-resolved) emission path so the extension
-// can auto-log the full trace to its OutputChannel; the toast
-// continues to display the one-line summary from
-// cascadeDiagnosticMessage.
+// fullTrace returns the multi-line trace of what each cascade step
+// attempted and why it failed (or was skipped). It travels with the
+// active-Release query's answer so a client can log the whole account
+// where the operator can read it, while the one-line summary from
+// diagnosticMessage is what a compact surface displays.
 //
-// Each step appears on its own line so the OutputChannel rendering
-// remains scannable. Returns the empty string when the cascade
-// resolved a Release (the trace is informative only on the
-// exhausted-cascade path).
-func (s *Server) cascadeAttemptFullTrace() string {
-	a := s.cascadeAttempt
+// Each step appears on its own line so the rendering remains scannable.
+// Returns the empty string when the cascade resolved a Release (the trace
+// is informative only on the exhausted-cascade path).
+func (a cascadeAttempt) fullTrace() string {
 	if a.ResolvedStep != 0 {
 		return ""
 	}
@@ -363,7 +364,7 @@ func (s *Server) cascadeAttemptFullTrace() string {
 	}
 
 	// Step 4 — Aggregate-only fallback (always exhausted at this point;
-	// reaching here means none of the prior steps populated activeRelease)
+	// reaching here means none of the prior steps selected a Release)
 	lines = append(lines, "  step 4 (Aggregate-only fallback): operation requires Release context; fallback not applicable")
 
 	return strings.Join(lines, "\n")

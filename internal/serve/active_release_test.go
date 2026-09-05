@@ -11,60 +11,92 @@ import (
 	"testing"
 )
 
-// TestDispatchActiveReleaseTriggersTheCascadeAsTheFirstRequest is the
-// invocation proof for the new method: it drives aggrega/activeRelease as the
-// FIRST request of a session, over a server built WITHOUT the harness's
-// cascade suppression, and asserts the reply carries the resolved Release.
-//
-// The pre-condition assertion is what gives the test its force. A server whose
-// active-Release fields were injected by the test would answer correctly while
-// proving nothing about the handler triggering the cascade, so this asserts the
-// fields are still zero-valued before the request and populated after it. If
-// the ensureCascade call were dropped from the handler, the reply would carry
-// an empty path and this test would fail — which is the failure mode the
-// assertion exists to demonstrate.
-func TestDispatchActiveReleaseTriggersTheCascadeAsTheFirstRequest(t *testing.T) {
-	ws := t.TempDir()
-	want := writeRelease(t, ws, "release.yaml", "release/only")
-
-	srv := newLazyCascadeServer(t, ws, nil, nil)
-
-	// Pre-condition: nothing has run the cascade yet.
-	if srv.activeRelease != nil || srv.activeReleasePath != "" {
-		t.Fatalf("cascade already ran before the first request: path=%q", srv.activeReleasePath)
-	}
-
+// activeReleaseAnswer drives aggrega/activeRelease against srv over the real
+// framing and write path and returns the decoded result. Each call is an
+// independent request on the same server, which is what lets a test ask twice.
+func activeReleaseAnswer(t *testing.T, srv *Server) activeReleaseResult {
+	t.Helper()
 	var in, out bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/activeRelease", map[string]any{}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
 		t.Fatalf("activeRelease returned an error envelope: %+v", resp.Error)
 	}
-
 	var result activeReleaseResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		t.Fatalf("unmarshal result: %v (raw: %s)", err, resp.Result)
 	}
+	return result
+}
+
+// TestDispatchActiveReleaseRunsTheCascadeAsTheFirstRequest is the invocation
+// proof: it drives aggrega/activeRelease as the FIRST request of a session and
+// asserts the reply carries the Release the cascade selects.
+//
+// The assertion is on the wire answer and on nothing else, which is what gives
+// it force. The daemon retains no Release, so there is no field a test could
+// inspect instead — and none it could pre-populate to make the handler look
+// like it worked. Were the cascade call dropped, the reply would carry an empty
+// path and this test would fail.
+func TestDispatchActiveReleaseRunsTheCascadeAsTheFirstRequest(t *testing.T) {
+	ws := t.TempDir()
+	want := writeRelease(t, ws, "release.yaml", "release/only")
+
+	srv := newLazyCascadeServer(t, ws, nil, nil)
+
+	result := activeReleaseAnswer(t, srv)
 	if result.Release != want {
 		t.Errorf("release = %q; want %q", result.Release, want)
 	}
-
-	// Post-condition: the handler, not a prior aggrega/validate, ran the cascade.
-	if srv.activeRelease == nil {
-		t.Errorf("activeRelease request did not trigger the cascade; activeRelease is still nil")
+	if result.Reason != "" || result.Trace != "" {
+		t.Errorf("a resolved answer carried an explanation: reason=%q trace=%q", result.Reason, result.Trace)
 	}
-	if srv.cascadeAttempt.ResolvedStep != 3 {
-		t.Errorf("cascade ResolvedStep = %d; want 3 (the single-Release heuristic)", srv.cascadeAttempt.ResolvedStep)
+}
+
+// TestDispatchActiveReleaseAnswersAgainAfterTheWorkspaceChanges is the
+// re-answerability proof, and it is the property a once-per-process answer
+// cannot have. One server, no restart: the first request is answered against a
+// workspace holding one Release, then an operator marker is written naming a
+// different one, and the second request must report the new winner.
+//
+// A daemon that resolved the Release once and kept it would pass the first
+// assertion and fail the second with the first answer, which is exactly the
+// failure this shape exists to make impossible.
+func TestDispatchActiveReleaseAnswersAgainAfterTheWorkspaceChanges(t *testing.T) {
+	ws := t.TempDir()
+	first := writeRelease(t, ws, "release.yaml", "release/only")
+
+	srv := newLazyCascadeServer(t, ws, nil, nil)
+
+	if got := activeReleaseAnswer(t, srv).Release; got != first {
+		t.Fatalf("first answer = %q; want %q", got, first)
+	}
+
+	// The operator picks a different Release, the way they would from the
+	// editor: a second Release file plus a marker naming it. The marker
+	// outranks the single-Release inference, and with two Releases present
+	// that inference no longer applies either.
+	second := writeRelease(t, ws, "other.yaml", "release/other")
+	markerDir := filepath.Join(ws, ".aggrega")
+	if err := os.MkdirAll(markerDir, 0o755); err != nil {
+		t.Fatalf("mkdir marker dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(markerDir, "active-release"), []byte("other.yaml\n"), 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	if got := activeReleaseAnswer(t, srv).Release; got != second {
+		t.Errorf("second answer = %q; want %q — the daemon answered from a frozen resolution", got, second)
 	}
 }
 
 // TestDispatchActiveReleaseUnresolvedIsSuccessWithAnEmptyPath pins the
 // not-resolved contract: a workspace the cascade cannot resolve gets a SUCCESS
-// response whose release field is present and empty — never the
-// release-not-resolved error envelope. The distinction is load-bearing for the
-// client: it refreshes this indicator on daemon restarts, anchor changes and
-// file-watcher events, and an error reply would raise a remediation prompt on
-// every one of them in a workspace that legitimately holds no Release.
+// response whose release field is present and empty — never an error envelope.
+// The distinction is load-bearing for the client: it refreshes this indicator
+// on daemon restarts, anchor changes and file-watcher events, and an error
+// reply would raise a remediation prompt on every one of them in a workspace
+// that legitimately holds no Release.
 //
 // The raw-key assertion is separate from the decoded-value one on purpose.
 // Decoding into the result struct yields the empty string whether the field was
@@ -98,19 +130,43 @@ func TestDispatchActiveReleaseUnresolvedIsSuccessWithAnEmptyPath(t *testing.T) {
 	if result.Release != "" {
 		t.Errorf("release = %q; want the empty string (nothing resolved)", result.Release)
 	}
-	// The cascade ran and exhausted, rather than not having run at all.
-	if srv.activeRelease != nil {
-		t.Errorf("activeRelease = %+v; want nil for a workspace with no Release", srv.activeRelease)
+}
+
+// TestDispatchActiveReleaseUnresolvedCarriesTheReasonAndTrace pins the half of
+// the answer a client needs in order to explain itself. An empty path alone
+// tells a user nothing they can act on, so the exhausted cascade's account
+// travels with it: a one-line summary for a compact surface and the per-step
+// trace for a log.
+//
+// Both are asserted for content rather than for presence — a field carrying an
+// empty string would satisfy a presence check while explaining nothing.
+func TestDispatchActiveReleaseUnresolvedCarriesTheReasonAndTrace(t *testing.T) {
+	ws := t.TempDir()
+	// Two Releases and no marker: the cascade attempts every step and
+	// exhausts, which is the state the account describes.
+	writeRelease(t, ws, "a.yaml", "release/a")
+	writeRelease(t, ws, "b.yaml", "release/b")
+
+	srv := newLazyCascadeServer(t, ws, nil, nil)
+
+	result := activeReleaseAnswer(t, srv)
+	if result.Release != "" {
+		t.Fatalf("release = %q; want the empty string (two Releases, no marker)", result.Release)
+	}
+	if result.Reason == "" {
+		t.Errorf("reason is empty; an unresolved answer must say why")
+	}
+	if result.Trace == "" {
+		t.Errorf("trace is empty; an unresolved answer must carry the per-step account")
 	}
 }
 
 // TestDispatchActiveReleaseReportsTheCascadeWinnerNotTheMarker is the defect
 // this method exists to close. The workspace declares an authoring Release in
 // config AND carries an active-release marker naming a different file, both
-// loadable. The cascade prefers the config, so the daemon acts on that Release
-// — while a client re-deriving the answer by reading the marker file would
-// display the other one. The reply must carry the Release the cascade actually
-// selected.
+// loadable. The cascade prefers the config — while a client re-deriving the
+// answer by reading the marker file would display the other one. The reply must
+// carry the Release the cascade actually selected.
 func TestDispatchActiveReleaseReportsTheCascadeWinnerNotTheMarker(t *testing.T) {
 	ws := t.TempDir()
 	configured := writeRelease(t, ws, "configured.yaml", "release/configured")
@@ -127,24 +183,11 @@ func TestDispatchActiveReleaseReportsTheCascadeWinnerNotTheMarker(t *testing.T) 
 	srv := newLazyCascadeServer(t, ws, nil, nil)
 	srv.wsConfig.Build.AuthoringRelease = "configured.yaml"
 
-	var in, out bytes.Buffer
-	in.Write(framedRequest(1, "aggrega/activeRelease", map[string]any{}))
-	resp := runOneRequest(t, srv, &in, &out)
-	if resp.Error != nil {
-		t.Fatalf("activeRelease returned an error envelope: %+v", resp.Error)
-	}
-
-	var result activeReleaseResult
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		t.Fatalf("unmarshal result: %v", err)
-	}
+	result := activeReleaseAnswer(t, srv)
 	if result.Release != configured {
 		t.Errorf("release = %q; want %q (the configured authoring Release, which outranks the marker)", result.Release, configured)
 	}
 	if result.Release == marked {
 		t.Errorf("release = %q; the reply followed the marker file instead of the cascade", result.Release)
-	}
-	if srv.cascadeAttempt.ResolvedStep != 1 {
-		t.Errorf("cascade ResolvedStep = %d; want 1 (the configured authoring Release)", srv.cascadeAttempt.ResolvedStep)
 	}
 }

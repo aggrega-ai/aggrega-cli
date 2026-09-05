@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // TestRunTier4Validation_InconsistentMappingPublishesBesideOtherDiagnostics is
@@ -74,20 +73,7 @@ func TestRunTier4Validation_InconsistentMappingPublishesBesideOtherDiagnostics(t
 		}
 	}
 
-	releasePath := filepath.Join(tmp, "release.yaml")
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
-
 	srv := newTestServer(t, tmp, nil, nil)
-	srv.activeRelease = rel
-	srv.activeReleasePath = releasePath
-	srv.cascadeAttempt = cascadeAttempt{
-		AuthoringReleaseConfigured: true,
-		ReleaseCandidatesFound:     1,
-		ResolvedStep:               1,
-	}
 	srv.wsConfig.Workspace.CatalogDirs = []string{filepath.Join(tmp, "catalog")}
 	// The lazy catalog captures its catalog dirs at construction; newTestServer
 	// built it with nil dirs, so rewire it now that the fixture's dir is known.
@@ -109,6 +95,7 @@ func TestRunTier4Validation_InconsistentMappingPublishesBesideOtherDiagnostics(t
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    aggPath,
 		Content: string(aggBytes),
+		Release: "release.yaml",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {

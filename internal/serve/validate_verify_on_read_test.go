@@ -12,7 +12,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // TestServeValidateVerifiesCacheAgainstPinBeforeTier4 is the validate-handler
@@ -155,24 +154,12 @@ spec:
 		t.Fatalf("WriteLockfile: %v", err)
 	}
 
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
-
 	// The puller is wired to SUCCEED — a drift skip must not reach it. A reorder of
 	// the pin threading (pins unset at read time) runs the cascade past the cache
 	// and into Tier-3, which would call this puller and fail the assertion below.
 	puller := &recordingPuller{body: cachedComponent}
 
 	srv := newTestServer(t, tmp, nil, nil)
-	srv.activeRelease = rel
-	srv.activeReleasePath = releasePath
-	srv.cascadeAttempt = cascadeAttempt{
-		AuthoringReleaseConfigured: true,
-		ReleaseCandidatesFound:     1,
-		ResolvedStep:               1,
-	}
 	srv.wsConfig.Workspace.CatalogDirs = []string{catalogDir}
 	srv.wsConfig.ArtifactCacheDir = cacheDir
 	srv.lazyCatalog = catalog.NewLazyLookup(tmp, cacheDir, []string{catalogDir}, puller)
@@ -181,6 +168,7 @@ spec:
 	in.Write(framedRequest(7, "aggrega/validate", validateParams{
 		File:    aggPath,
 		Content: aggBody,
+		Release: "release.yaml",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 

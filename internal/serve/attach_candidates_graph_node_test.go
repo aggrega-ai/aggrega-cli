@@ -263,7 +263,6 @@ func graphNodeServer(t *testing.T, ws string, catalogDirs ...string) *Server {
 	srv.lazyCatalog = catalog.NewLazyLookup(ws, cacheDir, catalogDirs, nil)
 	srv.serverCtx, srv.serverCancel = context.WithCancel(context.Background())
 	srv.cancelTracker = newCancelRegistry()
-	srv.markCascadeDone()
 	t.Cleanup(srv.serverCancel)
 	return srv
 }

@@ -19,9 +19,16 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
-// runTier4Validation runs Steps 1-4 of the compiler pipeline against
-// the daemon's active Release context and maps per-phase violations
-// into source-positioned diagnostics for the requested file.
+// runTier4Validation runs Steps 1-4 of the compiler pipeline against the
+// Release the request named and maps per-phase violations into
+// source-positioned diagnostics for the requested file.
+//
+// releasePath is the request's own Release, resolved at the handler
+// boundary, and it is a parameter rather than daemon state so two
+// requests naming two Releases are answered about the Release each one
+// named. That is what makes a validation and a graph query about the same
+// Release describe the same thing, and it is why nothing here consults a
+// stored selection.
 //
 // Position-mapping fidelity:
 //
@@ -43,14 +50,14 @@ import (
 //	         cross-file IR assembly errors; fall back to {1, 1}
 //	         with the "Dependencies: " prefix.
 //
-// When the request file is not the active Release's Aggregate (e.g.,
+// When the request file is not the named Release's Aggregate (e.g.,
 // the operator validates a sibling catalog Component while the
 // Release points at a different Aggregate), the Tier-4 pipeline is
 // not relevant to the requested file and the function returns an
 // empty slice — the caller's existing Tier-1 diagnostics for the
 // file already populated stay in place.
-func (s *Server) runTier4Validation(ctx context.Context, file string, content []byte, doc *yaml.Node) []Diagnostic {
-	// Build the per-request catalog view, seeded with the active Release's
+func (s *Server) runTier4Validation(ctx context.Context, releasePath, file string, content []byte, doc *yaml.Node) []Diagnostic {
+	// Build the per-request catalog view, seeded with the named Release's
 	// lockfile pins, so every Tier-4 resolution read below verifies-on-read
 	// against THIS Release's pins and a concurrent request resolving a different
 	// Release's pins can never perturb this validation. The pins are loaded once
@@ -61,10 +68,10 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// inherited cross-request pin set.
 	//
 	// This is a QUIET load — pins only, no drift verify and no diagnostic
-	// publication. Lockfile drift is surfaced by the at-startup check and the
-	// irGraph handler, and those notifications persist in the client; re-publishing
-	// here (validate fires per edit) would re-send an un-deduplicated drift notice
-	// at editing cadence without adding a needed signal.
+	// publication. Lockfile drift is surfaced by the graph request, whose
+	// notification persists in the client; re-publishing here (validate fires per
+	// edit) would re-send an un-deduplicated drift notice at editing cadence
+	// without adding a needed signal.
 	//
 	// ORDERING IS LOAD-BEARING: the view's pins are set (via ForRequest) before
 	// any Tier-2 read fires. An unpinned view uses no cached slot at all, so
@@ -77,7 +84,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// change what is passed to the closure resolution: that still receives nil, so
 	// the quiet-load posture described above is untouched.
 	var pins map[string]catalog.Pin
-	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(s.activeReleasePath))
+	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
 	if lfErr != nil {
 		lf = nil
 	}
@@ -97,7 +104,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// the resolution.
 	//
 	// Past that point it is bounded exactly as every other closure-level class is:
-	// this function returns nothing once the requested file is not the active
+	// this function returns nothing once the requested file is not the named
 	// Release's Aggregate, so the notice reaches the author while the Aggregate is
 	// open rather than on whatever document they happen to be editing.
 	//
@@ -118,9 +125,9 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	}
 
 	// Quiet load — pins only, no drift verify — so the closure axes are not
-	// reconstructed here (nil lockfile). Drift is surfaced by the at-startup check
-	// and the irGraph handler, which reconstruct and verify.
-	resolved, envelope := s.resolveReleaseClosure(view, s.activeReleasePath, nil)
+	// reconstructed here (nil lockfile). Drift is surfaced by the graph request,
+	// which reconstructs and verifies.
+	resolved, envelope := s.resolveReleaseClosure(view, releasePath, nil)
 	if envelope != nil {
 		// Closure-level failure (catalog load, Release/Manifest load,
 		// Aggregate read) — Tier-D fall-back at file:1:1. The code comes off
@@ -148,10 +155,10 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
 	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
 
-	// The Tier-4 branch is meaningful only when the request file IS
-	// the active Aggregate. Validating a different file with the
-	// active Release context produces no semantic diagnostics for
-	// THAT file from this pipeline.
+	// The Tier-4 branch is meaningful only when the request file IS the
+	// named Release's Aggregate. Validating a different file against that
+	// Release produces no semantic diagnostics for THAT file from this
+	// pipeline.
 	//
 	// The two are compared in that one coordinate system rather than as the
 	// strings they arrived as. The resolved Aggregate's path and the validated
@@ -203,8 +210,8 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// describes, carried through to the pipeline. This runs on every edit, and the
 	// two things a supplied record would add are both things this surface must not
 	// do at that cadence: hold the dispatched guests to their recorded digests,
-	// which republishes on every keystroke a condition the at-startup check and the
-	// graph handler already report once; and reconstruct the transform attachments
+	// which republishes on every keystroke a condition the graph handler already
+	// reports once; and reconstruct the transform attachments
 	// from the record, which would swap the attachment set an author is editing for
 	// the one recorded at the last resolution, so the editor would stop reflecting
 	// the workspace configuration in front of them.
@@ -216,7 +223,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		View:            view,
 		Closure:         resolved.Closure,
 		Release:         resolved.Release,
-		ReleasePath:     s.activeReleasePath,
+		ReleasePath:     releasePath,
 		Manifest:        resolved.Manifest,
 		AggBytes:        resolved.AggBytes,
 		AggregatePath:   relAggPath,

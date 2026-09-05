@@ -414,16 +414,14 @@ func TestManifestCascadePrecedenceStep2MarkerOverStep3SingleRelease(t *testing.T
 
 func TestCascadeDiagnosticMessageOnExhaustion(t *testing.T) {
 	t.Parallel()
-	// Construct a Server with a Step-4 cascade attempt
-	srv := &Server{
-		cascadeAttempt: cascadeAttempt{
-			ResolvedStep:               0,
-			AuthoringReleaseConfigured: false,
-			ReleaseCandidatesFound:     3,
-			MarkerFilePresent:          false,
-		},
+	// A Step-4 cascade attempt: every step tried, none selected a Release.
+	attempt := cascadeAttempt{
+		ResolvedStep:               0,
+		AuthoringReleaseConfigured: false,
+		ReleaseCandidatesFound:     3,
+		MarkerFilePresent:          false,
 	}
-	msg := srv.cascadeDiagnosticMessage()
+	msg := attempt.diagnosticMessage()
 	for _, sub := range []string{
 		"release not resolved",
 		"no authoring_release configured",
@@ -438,18 +436,16 @@ func TestCascadeDiagnosticMessageOnExhaustion(t *testing.T) {
 
 func TestCascadeDiagnosticMessageWithMarkerLoadError(t *testing.T) {
 	t.Parallel()
-	srv := &Server{
-		cascadeAttempt: cascadeAttempt{
-			ResolvedStep:               0,
-			AuthoringReleaseConfigured: true,
-			AuthoringReleaseLoadError:  os.ErrNotExist,
-			ReleaseCandidatesFound:     2,
-			MarkerFilePresent:          true,
-			MarkerFileTarget:           "stale.yaml",
-			MarkerFileLoadError:        os.ErrNotExist,
-		},
+	attempt := cascadeAttempt{
+		ResolvedStep:               0,
+		AuthoringReleaseConfigured: true,
+		AuthoringReleaseLoadError:  os.ErrNotExist,
+		ReleaseCandidatesFound:     2,
+		MarkerFilePresent:          true,
+		MarkerFileTarget:           "stale.yaml",
+		MarkerFileLoadError:        os.ErrNotExist,
 	}
-	msg := srv.cascadeDiagnosticMessage()
+	msg := attempt.diagnosticMessage()
 	for _, sub := range []string{
 		"release not resolved",
 		"authoring_release configured but failed to load",
@@ -467,16 +463,14 @@ func TestCascadeDiagnosticMessageWithMarkerLoadError(t *testing.T) {
 // the cascade ran them, each named as well as numbered.
 func TestCascadeAttemptFullTraceReadsInExecutionOrder(t *testing.T) {
 	t.Parallel()
-	srv := &Server{
-		cascadeAttempt: cascadeAttempt{
-			ResolvedStep:           0,
-			ReleaseCandidatesFound: 2,
-			MarkerFilePresent:      true,
-			MarkerFileTarget:       "stale.yaml",
-			MarkerFileLoadError:    os.ErrNotExist,
-		},
+	attempt := cascadeAttempt{
+		ResolvedStep:           0,
+		ReleaseCandidatesFound: 2,
+		MarkerFilePresent:      true,
+		MarkerFileTarget:       "stale.yaml",
+		MarkerFileLoadError:    os.ErrNotExist,
 	}
-	trace := srv.cascadeAttemptFullTrace()
+	trace := attempt.fullTrace()
 	prev := -1
 	for _, want := range []string{
 		"  step 1 (build.authoring_release",
@@ -497,10 +491,8 @@ func TestCascadeAttemptFullTraceReadsInExecutionOrder(t *testing.T) {
 
 func TestCascadeDiagnosticMessageWhenResolved(t *testing.T) {
 	t.Parallel()
-	srv := &Server{
-		cascadeAttempt: cascadeAttempt{ResolvedStep: 1},
-	}
-	msg := srv.cascadeDiagnosticMessage()
+	attempt := cascadeAttempt{ResolvedStep: 1}
+	msg := attempt.diagnosticMessage()
 	if !strings.Contains(msg, "release resolved") {
 		t.Errorf("expected 'release resolved' framing for non-zero ResolvedStep; got: %q", msg)
 	}

@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // writeIsolationWorkspace lays down a minimal valid serve workspace under tmp: an
@@ -100,18 +99,11 @@ spec:
 	return catalogDir
 }
 
-// isolationServer builds a server over the isolation workspace with the active
-// Release resolved and the lazy catalog wired to the catalog dir.
+// isolationServer builds a server over the isolation workspace with the lazy
+// catalog wired to the catalog dir. Each request names its own Release.
 func isolationServer(t *testing.T, tmp, catalogDir string) *Server {
 	t.Helper()
-	releasePath := filepath.Join(tmp, "release.yaml")
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
 	srv := newTestServer(t, tmp, nil, nil)
-	srv.activeRelease = rel
-	srv.activeReleasePath = releasePath
 	srv.wsConfig.Workspace.CatalogDirs = []string{catalogDir}
 	srv.lazyCatalog = catalog.NewLazyLookup(tmp, "", []string{catalogDir}, nil)
 	return srv
@@ -128,7 +120,7 @@ func closureDiagnostics(t *testing.T, srv *Server) []Diagnostic {
 		t.Fatalf("read aggregate: %v", err)
 	}
 	var in, out bytes.Buffer
-	in.Write(framedRequest(1, "aggrega/validate", validateParams{File: aggPath, Content: string(aggBytes)}))
+	in.Write(framedRequest(1, "aggrega/validate", validateParams{File: aggPath, Content: string(aggBytes), Release: "release.yaml"}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
 		t.Fatalf("validate returned envelope error: %+v", resp.Error)

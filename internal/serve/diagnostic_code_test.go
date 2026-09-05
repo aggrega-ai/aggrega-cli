@@ -61,19 +61,7 @@ func rawDiagnostics(t *testing.T, fixture string, files []string) []map[string]j
 	t.Helper()
 	tmp := tier4Workspace(t, fixture, files)
 
-	releasePath := filepath.Join(tmp, "release.yaml")
-	release, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
 	srv := newTestServer(t, tmp, nil, nil)
-	srv.activeRelease = release
-	srv.activeReleasePath = releasePath
-	srv.cascadeAttempt = cascadeAttempt{
-		AuthoringReleaseConfigured: true,
-		ReleaseCandidatesFound:     1,
-		ResolvedStep:               1,
-	}
 	if catalogDir := filepath.Join(tmp, "catalog"); dirExists(catalogDir) {
 		srv.wsConfig.Workspace.CatalogDirs = []string{catalogDir}
 		srv.lazyCatalog = catalog.NewLazyLookup(tmp, "", []string{catalogDir}, nil)
@@ -88,6 +76,7 @@ func rawDiagnostics(t *testing.T, fixture string, files []string) []map[string]j
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    aggPath,
 		Content: string(aggBytes),
+		Release: "release.yaml",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
@@ -362,7 +351,7 @@ spec:
           values:
             port: 9999
 `)
-	diags, has := srv.envelopeDiagnosticsForBuffer("release.yaml", content, parseDoc(t, string(content)))
+	diags, has := srv.envelopeDiagnosticsForBuffer("release.yaml", "", content, parseDoc(t, string(content)))
 	if !has || len(diags) == 0 {
 		t.Fatalf("expected envelope findings; has=%v diags=%d", has, len(diags))
 	}
@@ -431,13 +420,13 @@ func TestDiagnosticCodeOnCascadeFailure(t *testing.T) {
 
 	var out bytes.Buffer
 	srv := newTestServer(t, tmp, nil, &out)
-	srv.cascadeAttempt = cascadeAttempt{
+	attempt := cascadeAttempt{
 		AuthoringReleaseConfigured: true,
 		AuthoringReleasePath:       unloadable,
 		AuthoringReleaseLoadError:  loadErr,
 	}
 	ctx, flush := serializerContext(t, &out)
-	if published := srv.publishCascadeFailureDiagnostics(ctx); published != 1 {
+	if published := srv.publishCascadeFailureDiagnostics(ctx, attempt); published != 1 {
 		t.Fatalf("published %d candidates; want 1", published)
 	}
 	flush()

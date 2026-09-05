@@ -18,19 +18,26 @@ const (
 //	1001 — File contents have not been validated yet; the requesting
 //	       operation depends on a parse-cache entry the client must
 //	       seed via aggrega/validate before retrying.
-//	1002 — No active Release could be resolved by the multi-Manifest
-//	       disambiguation cascade; the requested operation needs one.
-//	1003 — The workspace lockfile is absent; the requested operation
-//	       requires a generated lockfile.
+//	1003 — The lockfile for the Release the request named is absent;
+//	       the requested operation requires a generated lockfile.
 //	1004 — The requested entity could not be resolved from any
-//	       catalog tier or the active Release.
+//	       catalog tier or from the Release the request named.
 //	1005 — The daemon has received an aggrega/shutdown notification
 //	       and is draining; new requests are refused while in this
 //	       state. The client should not retry against the same
 //	       subprocess.
+//
+// 1002 is not allocated. It reported that the daemon could not resolve a
+// Release for an operation that needed one, which no request can be in:
+// every operation acting on a Release is told which one, so there is no
+// choosing left for the daemon to fail at. A request that names none asks
+// for the work that needs no Release and is answered, not refused; a
+// request naming one that cannot be loaded is answered with a diagnostic
+// on the offending document, which is something its author can act on. The
+// number is left unused rather than reassigned, so a client holding the
+// old meaning cannot mistake a later condition for it.
 const (
 	errFileNotValidated    = 1001
-	errReleaseNotResolved  = 1002
 	errLockfileAbsent      = 1003
 	errEntityNotResolvable = 1004
 	errShuttingDown        = 1005

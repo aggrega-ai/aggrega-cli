@@ -22,10 +22,11 @@ import (
 )
 
 // resolveReleaseClosure loads the Manifest + Aggregate siblings to
-// the active Release and computes the catalog closure via the shared
+// releasePath and computes the catalog closure via the shared
 // compiler-operations layer, adapting its stage-tagged failure into the
-// daemon's wire envelope. Used by handleIrGraph (existing pipeline path)
-// AND by the at-startup + per-irGraph drift checks.
+// daemon's wire envelope. Every caller supplies the Release its own
+// request named, so no two callers can be resolving different Releases
+// while believing they share one.
 //
 // view is the request-scoped catalog lookup the closure walk resolves
 // against — seeded with this request's pins, so a cache-resident entity

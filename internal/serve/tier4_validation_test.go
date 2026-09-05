@@ -114,65 +114,21 @@ func TestResolverViolationToDiagnostic_FieldMissingFallsBackToNeighborhood(t *te
 	}
 }
 
-// TestHandleValidateEmits1002WhenCascadeExhausted exercises the
-// release-not-resolved emission path: when the disambiguation
-// cascade attempted to find a Release and could not (candidates
-// exist but none selected), handleValidate emits a 1002
-// errReleaseNotResolved envelope rather than returning Tier-1
-// diagnostics. The envelope's Message is the one-line cascade
-// summary; the Data field carries the validated file path and the
-// multi-line cascade trace.
-func TestHandleValidateEmits1002WhenCascadeExhausted(t *testing.T) {
+// TestHandleValidateNoReleaseScaffoldAnswersCleanly pins the workspace shape
+// that has no Release to name at all: a single-Aggregate scaffold, a
+// catalog-only repository, a scratch directory. A client there cannot supply a
+// Release, so this is the case no client-side work can repair, and the answer
+// must be an ordinary one — a well-formed document reports nothing, and the
+// request is not refused.
+//
+// It asserts the checked key too, because "no diagnostics" is exactly the reply
+// a full verdict gives for a clean document. Without the key this test would
+// pass equally on an answer that had silently run no checks and on one that had
+// run them all, which is the confusion the key exists to remove.
+func TestHandleValidateNoReleaseScaffoldAnswersCleanly(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	srv := newTestServer(t, tmp, nil, nil)
-	// Synthesize the cascade-exhausted state: candidates found but
-	// nothing selected (no marker, no config, multiple Release files).
-	srv.cascadeAttempt = cascadeAttempt{
-		ReleaseCandidatesFound: 2,
-	}
-	// activeRelease left nil — the cascade-exhausted branch fires.
-
-	file := filepath.Join(tmp, "ambiguous.yaml")
-	var in, out bytes.Buffer
-	in.Write(framedRequest(1, "aggrega/validate", validateParams{
-		File:    file,
-		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: ambiguous\n  version: \"1.0.0\"\nspec:\n  components: {}\n",
-	}))
-	resp := runOneRequest(t, srv, &in, &out)
-
-	if resp.Error == nil {
-		t.Fatalf("expected 1002 envelope; got no error")
-	}
-	if resp.Error.Code != errReleaseNotResolved {
-		t.Errorf("Code = %d; want %d (errReleaseNotResolved)", resp.Error.Code, errReleaseNotResolved)
-	}
-	if resp.Error.Data == nil {
-		t.Fatalf("expected non-nil Data carrying cascade_attempt + file")
-	}
-	if resp.Error.Data.File != file {
-		t.Errorf("Data.File = %q; want %q", resp.Error.Data.File, file)
-	}
-	if resp.Error.Data.CascadeAttempt == "" {
-		t.Errorf("Data.CascadeAttempt empty; want multi-line trace")
-	}
-}
-
-// TestHandleValidateNoReleaseScaffoldReturnsTier1 exercises the
-// backward-compatibility path: workspaces without any Release files
-// (single-Aggregate scaffolds, catalog-only repositories, scratch
-// directories) return Tier-1 diagnostics only — no 1002, no spurious
-// toasts. The cascade-attempted-but-found-nothing state has
-// ReleaseCandidatesFound == 0 and the handler skips the 1002
-// branch.
-func TestHandleValidateNoReleaseScaffoldReturnsTier1(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	srv := newTestServer(t, tmp, nil, nil)
-	// Cascade-attempted-but-empty state: no candidates → no 1002.
-	srv.cascadeAttempt = cascadeAttempt{
-		ReleaseCandidatesFound: 0,
-	}
 
 	file := filepath.Join(tmp, "scaffold.yaml")
 	var in, out bytes.Buffer
@@ -183,51 +139,29 @@ func TestHandleValidateNoReleaseScaffoldReturnsTier1(t *testing.T) {
 	resp := runOneRequest(t, srv, &in, &out)
 
 	if resp.Error != nil {
-		t.Fatalf("expected no error for no-Release scaffold; got %+v", resp.Error)
+		t.Fatalf("expected an answer for a workspace holding no Release; got %+v", resp.Error)
 	}
 	var result validateResult
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 	if len(result.Diagnostics) != 0 {
-		t.Errorf("expected zero diagnostics for well-formed scaffold; got %d", len(result.Diagnostics))
+		t.Errorf("expected zero diagnostics for a well-formed scaffold; got %d (%+v)", len(result.Diagnostics), result.Diagnostics)
 	}
-}
-
-// TestEmitReleaseNotResolvedEnvelopeShape verifies the helper's
-// envelope construction: Code is 1002, Message is the cascade
-// summary, Data carries both the file and the multi-line trace.
-func TestEmitReleaseNotResolvedEnvelopeShape(t *testing.T) {
-	t.Parallel()
-	srv := &Server{
-		cascadeAttempt: cascadeAttempt{
-			ReleaseCandidatesFound: 3,
-		},
-	}
-	env := srv.emitReleaseNotResolvedEnvelope("/ws/aggregate.yaml")
-	if env == nil {
-		t.Fatalf("expected non-nil envelope")
-	}
-	if env.Code != errReleaseNotResolved {
-		t.Errorf("Code = %d; want %d", env.Code, errReleaseNotResolved)
-	}
-	if env.Message == "" {
-		t.Errorf("Message empty; want cascade summary")
-	}
-	if env.Data == nil || env.Data.File != "/ws/aggregate.yaml" {
-		t.Errorf("Data.File missing or wrong: %+v", env.Data)
-	}
-	if env.Data.CascadeAttempt == "" {
-		t.Errorf("Data.CascadeAttempt empty; want multi-line trace")
+	if result.Checked != checkedDocument {
+		t.Errorf("Checked = %q; want %q — an empty diagnostic list must not read as a full verdict", result.Checked, checkedDocument)
 	}
 }
 
 // runTier4FixtureCase encapsulates the end-to-end Tier-A test
-// pattern: copy a fixture into a tempdir, simulate cascade resolution
-// by directly setting Server state, drive the validate request, and
-// assert a diagnostic lands at the expected key line. Used across
-// every Tier-A class fixture so each case stays focused on its
-// expected-position assertion.
+// pattern: copy a fixture into a tempdir, drive the validate request
+// naming that fixture's Release, and assert a diagnostic lands at the
+// expected key line. Used across every Tier-A class fixture so each case
+// stays focused on its expected-position assertion.
+//
+// Nothing is injected into the server. The Release reaches the pipeline
+// on the request, the same way it does in production, so the harness
+// cannot put the daemon in a state a real client could not produce.
 type runTier4FixtureCase struct {
 	name        string
 	fixtureName string // directory under testdata/tier4/
@@ -255,20 +189,7 @@ func runTier4ValidationFixture(t *testing.T, tc runTier4FixtureCase) {
 		}
 	}
 
-	releasePath := filepath.Join(tmp, "release.yaml")
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
-
 	srv := newTestServer(t, tmp, nil, nil)
-	srv.activeRelease = rel
-	srv.activeReleasePath = releasePath
-	srv.cascadeAttempt = cascadeAttempt{
-		AuthoringReleaseConfigured: true,
-		ReleaseCandidatesFound:     1,
-		ResolvedStep:               1,
-	}
 
 	aggPath := filepath.Join(tmp, "aggregate.yaml")
 	aggBytes, err := os.ReadFile(aggPath)
@@ -279,6 +200,7 @@ func runTier4ValidationFixture(t *testing.T, tc runTier4FixtureCase) {
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    aggPath,
 		Content: string(aggBytes),
+		Release: "release.yaml",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 
@@ -524,20 +446,7 @@ func TestRunTier4Validation_DanglingExtendsFallsBackToTierD(t *testing.T) {
 		t.Fatalf("write catalog fixture: %v", err)
 	}
 
-	releasePath := filepath.Join(tmp, "release.yaml")
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
-
 	srv := newTestServer(t, tmp, nil, nil)
-	srv.activeRelease = rel
-	srv.activeReleasePath = releasePath
-	srv.cascadeAttempt = cascadeAttempt{
-		AuthoringReleaseConfigured: true,
-		ReleaseCandidatesFound:     1,
-		ResolvedStep:               1,
-	}
 	srv.wsConfig.Workspace.CatalogDirs = []string{filepath.Join(tmp, "catalog")}
 	// The lazy catalog captures catalogDirs at construction; newTestServer built it
 	// with nil dirs, so rewire it to the test's catalog dir now that it is set.
@@ -552,6 +461,7 @@ func TestRunTier4Validation_DanglingExtendsFallsBackToTierD(t *testing.T) {
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    aggPath,
 		Content: string(aggBytes),
+		Release: "release.yaml",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 
@@ -668,20 +578,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 		}
 	}
 
-	releasePath := filepath.Join(tmp, "release.yaml")
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
-
 	srv := newTestServer(t, tmp, nil, nil)
-	srv.activeRelease = rel
-	srv.activeReleasePath = releasePath
-	srv.cascadeAttempt = cascadeAttempt{
-		AuthoringReleaseConfigured: true,
-		ReleaseCandidatesFound:     1,
-		ResolvedStep:               1,
-	}
 	srv.wsConfig.Workspace.CatalogDirs = []string{filepath.Join(tmp, "catalog")}
 	// The lazy catalog captures catalogDirs at construction; newTestServer built it
 	// with nil dirs, so rewire it to the test's catalog dir now that it is set.
@@ -694,7 +591,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	// the root Aggregate file AND the sub-aggregate file before the
 	// per-file filter assertion is meaningful.
 	view := srv.lazyCatalog.ForRequest(nil)
-	resolved, env := srv.resolveReleaseClosure(view, releasePath, nil)
+	resolved, env := srv.resolveReleaseClosure(view, filepath.Join(tmp, "release.yaml"), nil)
 	if env != nil {
 		t.Fatalf("resolveReleaseClosure envelope: %+v", env)
 	}
@@ -773,6 +670,7 @@ func TestRunTier4Validation_CrossFileAnalyzerViolationsFilteredToValidatedFile(t
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    aggPath,
 		Content: string(aggBytes),
+		Release: "release.yaml",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {

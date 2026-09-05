@@ -34,8 +34,10 @@
 //	                               workspace root, the configuration layer
 //	                               that supplied it, and the marker that
 //	                               anchored it
-//	aggrega/validate               parses and semantically validates one
-//	                               file, returning its diagnostics
+//	aggrega/validate               parses one file and returns its
+//	                               diagnostics, adding the semantic checks
+//	                               when the request names a Release to run
+//	                               them against
 //	aggrega/invalidate             drops cached state for one file or for
 //	                               the whole workspace
 //	aggrega/diagnostics            returns the diagnostics already cached
@@ -59,9 +61,9 @@
 //	aggrega/releaseCandidates      lists the workspace's Release documents,
 //	                               selected by document kind rather than by
 //	                               filename
-//	aggrega/activeRelease          reports which Release the workspace's
-//	                               disambiguation cascade selected, or the
-//	                               empty path when it selected none
+//	aggrega/activeRelease          reports which Release a client should
+//	                               select by default, or the empty path and
+//	                               the reason when the workspace offers none
 //	aggrega/effectiveConfiguration reports the configuration resolved for
 //	                               this session and, per setting, the layer
 //	                               that determined it
@@ -173,9 +175,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
-	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
@@ -398,15 +398,10 @@ func stampSource(diags []Diagnostic, src string) []Diagnostic {
 //     untracks its id under the lock, so concurrent track / untrack
 //     across the pool need no external lock.
 //
-// The active-Release fields (activeRelease, activeReleasePath,
-// cascadeAttempt, lockfile) are resolved lazily by ensureCascade on the
-// first request that needs Release context, guarded by cascadeOnce. The
-// once's happens-before guarantee makes the single write inside the
-// guarded function visible to every worker that later calls ensureCascade
-// before reading, so concurrent workers under the pool observe a fully
-// populated snapshot without a per-field lock. The aggrega/initialize
-// handler does not need Release context and does not trigger the cascade,
-// so the handshake answers before any workspace walk runs.
+// No field holds a Release. A request that acts on one names it, and the
+// resolution is request-scoped from end to end, so there is no shared
+// Release state for the pool to synchronize and none to invalidate when
+// the workspace changes underneath the daemon.
 //
 // The remaining fields (workspaceRoot, configSource, compilerVersion,
 // workspaceMarker, wsConfig, lazyCatalog pointer, serverCtx/serverCancel,
@@ -502,53 +497,6 @@ type Server struct {
 	// its own immutable pin snapshot, so a concurrent request's pins never perturb
 	// it — the consistency the worker pool depends on.
 	lazyCatalog *catalog.LazyLookup
-
-	// cascadeOnce guards the lazy resolution of the active-Release
-	// fields below. The first request that needs Release context calls
-	// ensureCascade, which runs the disambiguation cascade and the
-	// at-startup lockfile + drift check exactly once; every later
-	// request finds the work already done. Resolution is deferred off
-	// the daemon's construction path so aggrega/initialize answers
-	// before any workspace-wide filesystem walk runs.
-	cascadeOnce sync.Once
-
-	// activeRelease is the workspace's session-scoped active Release,
-	// resolved by the four-step disambiguation cascade on the first
-	// request that needs Release context (see ensureCascade). nil when
-	// the cascade exhausted into Step 4 fallback (no authoring_release
-	// config, no .aggrega/active-release marker, not exactly one Release
-	// file). Operations needing Release context consult cascadeAttempt
-	// + cascadeDiagnosticMessage to construct error-envelope text when
-	// activeRelease is nil.
-	//
-	// The cascade's own correctness is pinned by direct unit tests on
-	// runManifestCascade in manifest_cascade_test.go. The wiring — that a
-	// request actually triggers the cascade and reports what it resolved —
-	// is observable from outside the process now that aggrega/activeRelease
-	// surfaces the resolved path on the wire. active_release_test.go drives
-	// that request against a server built WITHOUT the test harness's
-	// cascade suppression, so it observes the real lazy invocation: a
-	// resolved workspace, a workspace that resolves nothing, and a
-	// workspace where a configured authoring Release outranks a loadable
-	// marker.
-	activeRelease *types.Release
-
-	// activeReleasePath is the absolute filesystem path of the
-	// active Release the cascade resolved. Empty when activeRelease
-	// is nil. Tracked alongside the parsed Release object so
-	// lockfile.PathFor and the at-startup drift check can derive
-	// the conventional lockfile location from it.
-	activeReleasePath string
-
-	// cascadeAttempt records what the disambiguation cascade tried
-	// and which step (if any) selected activeRelease. Populated
-	// alongside activeRelease on first use by ensureCascade; immutable
-	// for the rest of the daemon's session lifetime.
-	cascadeAttempt cascadeAttempt
-
-	// lockfile is nil in this scaffold; populated per active Release
-	// when the lockfile machinery ships.
-	lockfile *lockfile.Lockfile
 
 	parseCache *cache
 
@@ -879,53 +827,15 @@ func Run(cfg RunConfig) error {
 	}
 	srv.setPositionEncoding(yamlpos.PositionEncodingUTF16)
 
-	// The active-Release cascade and the at-startup lockfile + drift
-	// check are NOT run here: they walk the whole workspace tree, and
-	// running them before the dispatch loop would delay the answer to
-	// aggrega/initialize until the walk finished. They run lazily via
-	// ensureCascade on the first request that needs Release context.
+	// No workspace-wide walk runs here. The daemon holds no Release of
+	// its own, so there is nothing to resolve at construction: a request
+	// that acts on a Release names one, and the query reporting which
+	// Release a client should select by default performs the walk when it
+	// is asked. That keeps the answer to aggrega/initialize independent of
+	// tree size.
 	drainTimeout := cfg.DrainTimeout
 	if drainTimeout == 0 {
 		drainTimeout = defaultDrainTimeout
 	}
 	return srv.dispatchLoop(drainTimeout)
-}
-
-// markCascadeDone marks the cascade guard as already fired without
-// running the cascade, so a subsequent ensureCascade is a no-op. It is
-// the seam the in-memory test harness uses: those tests build a Server
-// as a struct literal (bypassing Run) and inject the active-Release
-// fields directly, so the lazy cascade must not run and overwrite the
-// injected state with a walk of the empty test workspace.
-func (s *Server) markCascadeDone() {
-	s.cascadeOnce.Do(func() {})
-}
-
-// ensureCascade resolves the active-Release fields (activeRelease,
-// activeReleasePath, cascadeAttempt) and runs the at-startup lockfile +
-// drift check, exactly once for the daemon's session. Every handler that
-// reads one of those fields calls this first, so no handler observes a
-// zero-value Release the cascade would have populated.
-//
-// The work is deferred here rather than run at construction because it
-// walks the whole workspace tree: on a large tree the walk takes long
-// enough that running it before the dispatch loop would delay the answer
-// to aggrega/initialize. The initialize handler does not need Release
-// context and does not call this, so the handshake stays fast regardless
-// of tree size.
-//
-// The once's happens-before guarantee publishes the single write to the
-// active-Release fields to every worker that later calls ensureCascade
-// before reading, so the fields need no per-field lock under the worker
-// pool.
-func (s *Server) ensureCascade() {
-	s.cascadeOnce.Do(func() {
-		s.activeRelease, s.activeReleasePath, s.cascadeAttempt = runManifestCascade(s.workspaceRoot, s.wsConfig, s.stderr)
-
-		// At-startup lockfile load + drift check. Best-effort: silent
-		// no-op when there is no active Release; stderr-log-and-skip on
-		// lockfile load failure or closure-compute failure. The per-
-		// handleIrGraph check is the reliable path.
-		s.loadAndCheckLockfileAtStartup()
-	})
 }

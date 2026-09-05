@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // deprecatedPinWorkspace writes a Release whose Aggregate carries a component the
@@ -95,19 +94,7 @@ spec:
 		t.Fatalf("WriteLockfile: %v", err)
 	}
 
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
-
 	srv = newTestServer(t, tmp, nil, nil)
-	srv.activeRelease = rel
-	srv.activeReleasePath = releasePath
-	srv.cascadeAttempt = cascadeAttempt{
-		AuthoringReleaseConfigured: true,
-		ReleaseCandidatesFound:     1,
-		ResolvedStep:               1,
-	}
 	return srv, aggPath, aggBody
 }
 
@@ -121,7 +108,7 @@ const (
 func validateDiagnosticsFor(t *testing.T, srv *Server, file, content string) []Diagnostic {
 	t.Helper()
 	var in, out bytes.Buffer
-	in.Write(framedRequest(11, "aggrega/validate", validateParams{File: file, Content: content}))
+	in.Write(framedRequest(11, "aggrega/validate", validateParams{File: file, Content: content, Release: "release.yaml"}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
 		t.Fatalf("validate returned an error envelope: %+v", resp.Error)

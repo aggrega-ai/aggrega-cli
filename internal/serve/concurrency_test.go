@@ -211,7 +211,6 @@ func TestConcurrentIrGraphValidateInvalidateRaceClean(t *testing.T) {
 			stdinR, stdinW := io.Pipe()
 			stdoutR, stdoutW := io.Pipe()
 			srv := newPinIsolationServer(t, ws, stdinR, stdoutW, pool)
-			srv.activeReleasePath = releaseA
 
 			loopDone := make(chan error, 1)
 			go func() { loopDone <- srv.dispatchLoop(500 * time.Millisecond) }()
@@ -221,11 +220,17 @@ func TestConcurrentIrGraphValidateInvalidateRaceClean(t *testing.T) {
 			var feed [][]byte
 			feed = append(feed, framedRequest(1, "aggrega/initialize", initializeParams{}))
 			aggA := filepath.Join(ws, "release-a-agg.yaml")
+			// Both validations name the same file and different Releases, so
+			// the two run the whole Tier-4 path against two Releases at once.
+			// Nothing is shared between them to synchronize, which is the
+			// property under test here: the Release each one acts on arrives
+			// on its own request.
 			for i := 0; i < 40; i++ {
 				feed = append(feed,
 					framedRequest(i+2, "aggrega/irGraph", irGraphParams{Release: relA}),
 					framedRequest(i+2, "aggrega/irGraph", irGraphParams{Release: relB}),
-					framedRequest(i+2, "aggrega/validate", validateParams{File: aggA, Content: ""}),
+					framedRequest(i+2, "aggrega/validate", validateParams{File: aggA, Content: "", Release: relA}),
+					framedRequest(i+2, "aggrega/validate", validateParams{File: aggA, Content: "", Release: relB}),
 					framedRequest(i+2, "aggrega/diagnostics", diagnosticsParams{File: aggA}),
 					framedRequest(i+2, "aggrega/invalidate", invalidateParams{Granularity: "workspace"}),
 				)

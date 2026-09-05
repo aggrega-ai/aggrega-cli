@@ -87,24 +87,30 @@ func classifyAggregaDocument(doc *yaml.Node) (envelope.Kind, bool) {
 
 // classifyByFilename classifies the two flat-top-level aggrega documents
 // that carry no apiVersion+kind envelope and so cannot be reached by
-// classifyAggregaDocument: the workspace config and the active Release's
-// lockfile. The workspace config is the fixed, unique name
-// ".aggrega-config.yaml". The lockfile is matched by correlation to the
-// active Release — only the basename that lockfile.PathFor derives from
-// activeReleasePath classifies as a lockfile; with no active Release,
-// nothing does. The bare ".lock" extension is deliberately NOT used: it
-// belongs to many foreign ecosystems (Cargo.lock, flake.lock,
-// poetry.lock, yarn.lock, Gemfile.lock, …), none of which is an aggrega
-// lockfile, and validating them against the lockfile schema would
-// lint-bomb foreign files. Correlation keeps the editor's single-anchor
-// model — only the active Release's documents are validated — and never
-// touches another ecosystem's lockfile.
-func (s *Server) classifyByFilename(file string) (envelope.Kind, bool) {
+// classifyAggregaDocument: the workspace config and the lockfile of the
+// Release the request named. The workspace config is the fixed, unique
+// name ".aggrega-config.yaml". The lockfile is matched by correlation to
+// releasePath — only the basename that lockfile.PathFor derives from it
+// classifies as a lockfile; with no Release named, nothing does. The bare
+// ".lock" extension is deliberately NOT used: it belongs to many foreign
+// ecosystems (Cargo.lock, flake.lock, poetry.lock, yarn.lock,
+// Gemfile.lock, …), none of which is an aggrega lockfile, and validating
+// them against the lockfile schema would lint-bomb foreign files.
+// Correlation keeps the classification anchored to the documents of the
+// Release the request is about, and never touches another ecosystem's
+// lockfile.
+//
+// The Release is a parameter rather than daemon state so this
+// classification and the semantic validation running beside it are
+// decided against one and the same Release. Read from a stored selection
+// instead, the two could disagree — a buffer classified against one
+// Release while its findings were computed against another.
+func classifyByFilename(file, releasePath string) (envelope.Kind, bool) {
 	base := filepath.Base(file)
 	if base == workspaceconfig.ConfigFilename {
 		return envelope.KindAggregaConfig, true
 	}
-	if s.activeReleasePath != "" && base == filepath.Base(lockfile.PathFor(s.activeReleasePath)) {
+	if releasePath != "" && base == filepath.Base(lockfile.PathFor(releasePath)) {
 		return envelope.KindLockfile, true
 	}
 	return "", false
@@ -113,16 +119,17 @@ func (s *Server) classifyByFilename(file string) (envelope.Kind, bool) {
 // envelopeDiagnosticsForBuffer runs the document-envelope gate over the
 // editor BUFFER content for a classifiable aggrega document and returns
 // its findings as per-file diagnostics. Classification is by filename
-// first (the workspace config and the active Release's lockfile, which
+// first (the workspace config and the named Release's lockfile, which
 // carry no apiVersion+kind envelope) and then by the document's
 // apiVersion+kind (the twelve authored entity kinds). The second return is
 // true only when the document classifies AND the envelope rejected it —
-// the signal the caller uses to early-return (which short-circuits Tier-4
-// for the active Aggregate and is the coverage for every other file).
+// the signal the caller uses to early-return (which short-circuits the
+// semantic pass for the named Release's Aggregate and is the coverage for
+// every other file).
 // Foreign YAML and envelope-clean documents return (nil, false), so the
 // caller falls through to its existing flow unchanged.
-func (s *Server) envelopeDiagnosticsForBuffer(file string, content []byte, doc *yaml.Node) ([]Diagnostic, bool) {
-	kind, ok := s.classifyByFilename(file)
+func (s *Server) envelopeDiagnosticsForBuffer(file, releasePath string, content []byte, doc *yaml.Node) ([]Diagnostic, bool) {
+	kind, ok := classifyByFilename(file, releasePath)
 	if !ok {
 		kind, ok = classifyAggregaDocument(doc)
 	}

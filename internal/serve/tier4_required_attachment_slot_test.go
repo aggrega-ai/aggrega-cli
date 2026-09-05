@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // TestRunTier4Validation_AttachmentSlotDiagnosticsReachTheEditor drives the
@@ -58,20 +57,7 @@ func TestRunTier4Validation_AttachmentSlotDiagnosticsReachTheEditor(t *testing.T
 		}
 	}
 
-	releasePath := filepath.Join(tmp, "release.yaml")
-	release, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		t.Fatalf("load release: %v", err)
-	}
-
 	srv := newTestServer(t, tmp, nil, nil)
-	srv.activeRelease = release
-	srv.activeReleasePath = releasePath
-	srv.cascadeAttempt = cascadeAttempt{
-		AuthoringReleaseConfigured: true,
-		ReleaseCandidatesFound:     1,
-		ResolvedStep:               1,
-	}
 	srv.wsConfig.Workspace.CatalogDirs = []string{filepath.Join(tmp, "catalog")}
 	srv.lazyCatalog = catalog.NewLazyLookup(tmp, "", []string{filepath.Join(tmp, "catalog")}, nil)
 
@@ -87,6 +73,7 @@ func TestRunTier4Validation_AttachmentSlotDiagnosticsReachTheEditor(t *testing.T
 		in.Write(framedRequest(1, "aggrega/validate", validateParams{
 			File:    aggPath,
 			Content: content,
+			Release: "release.yaml",
 		}))
 		resp := runOneRequest(t, srv, &in, &out)
 		if resp.Error != nil {

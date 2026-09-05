@@ -51,12 +51,12 @@ spec:
 // Release naming the fixture gate, and returns a daemon pointed at it with attach
 // as its linter attachment set. It also returns the Aggregate path and bytes the
 // validation is requested for.
-func serveTrustServer(t *testing.T, attach ...string) (srv *Server, aggPath string, content []byte) {
+func serveTrustServer(t *testing.T, attach ...string) (srv *Server, releasePath, aggPath string, content []byte) {
 	t.Helper()
 	root := t.TempDir()
 	writeServeFile(t, filepath.Join(root, "aggregate.yaml"), serveBackendAggregate)
 	writeServeFile(t, filepath.Join(root, "manifest.yaml"), serveCleanManifest)
-	releasePath := filepath.Join(root, "release.yaml")
+	releasePath = filepath.Join(root, "release.yaml")
 	writeServeFile(t, releasePath, serveDefaultRelease)
 
 	overlay := filepath.Join(root, "overlay")
@@ -78,7 +78,6 @@ func serveTrustServer(t *testing.T, attach ...string) (srv *Server, aggPath stri
 
 	dirs := []string{overlay, serveFullstackCatalogDir(t)}
 	srv = newTestServer(t, root, nil, nil)
-	srv.activeReleasePath = releasePath
 	srv.wsConfig.Workspace.CatalogDirs = dirs
 	for _, uri := range attach {
 		srv.wsConfig.Plugins.Linter = append(srv.wsConfig.Plugins.Linter, workspaceconfig.PluginRef{URI: uri})
@@ -91,7 +90,7 @@ func serveTrustServer(t *testing.T, attach ...string) (srv *Server, aggPath stri
 	if err != nil {
 		t.Fatalf("read aggregate: %v", err)
 	}
-	return srv, aggPath, content
+	return srv, releasePath, aggPath, content
 }
 
 // TestServeValidationRefusesAGateTheConfigurationDropped is the planted defect at
@@ -99,10 +98,10 @@ func serveTrustServer(t *testing.T, attach ...string) (srv *Server, aggPath stri
 // the validation refuses and the refusal reaches the editor as a diagnostic rather
 // than being computed and discarded.
 func TestServeValidationRefusesAGateTheConfigurationDropped(t *testing.T) {
-	srv, aggPath, content := serveTrustServer(t)
+	srv, releasePath, aggPath, content := serveTrustServer(t)
 	doc := parseYAML(t, string(content))
 
-	diags := srv.runTier4Validation(context.Background(), aggPath, content, doc)
+	diags := srv.runTier4Validation(context.Background(), releasePath, aggPath, content, doc)
 	if len(diags) == 0 {
 		t.Fatal("a record naming a gate the configuration attaches nowhere must refuse; got no diagnostics")
 	}
@@ -129,7 +128,7 @@ func TestServeValidationRefusesAGateTheConfigurationDropped(t *testing.T) {
 // identical workspace and the identical record, with the configuration still
 // attaching the recorded gate, the daemon reports nothing at all.
 func TestServeValidationWithAMatchingConfigurationStaysSilent(t *testing.T) {
-	srv, aggPath, content := serveTrustServer(t, serveTrustGateURI)
+	srv, releasePath, aggPath, content := serveTrustServer(t, serveTrustGateURI)
 	// The comparison against the record is suppressed when an attachment's plugin
 	// cannot be identified — deliberately, because an unidentifiable attachment
 	// might be the very one accounting for a record entry. So a fixture whose Plugin
@@ -151,7 +150,7 @@ func TestServeValidationWithAMatchingConfigurationStaysSilent(t *testing.T) {
 	}
 	doc := parseYAML(t, string(content))
 
-	diags := srv.runTier4Validation(context.Background(), aggPath, content, doc)
+	diags := srv.runTier4Validation(context.Background(), releasePath, aggPath, content, doc)
 	if len(diags) != 0 {
 		t.Fatalf("a record whose gate is still attached must refuse nothing; got %+v", diags)
 	}

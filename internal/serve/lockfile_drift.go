@@ -6,64 +6,27 @@ package serve
 import (
 	"context"
 	"fmt"
-	"os"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
-// loadAndCheckLockfileAtStartup runs the daemon's startup-time
-// lockfile + drift flow. Best-effort in two senses:
+// The drift check runs per request, against the Release that request
+// named, and there is no startup check beside it.
 //
-//  1. Catalog-author workflows (no active Release) skip entirely —
-//     s.activeRelease == nil short-circuits before any work.
-//  2. Workspaces where the lazy closure resolution cannot complete at
-//     startup (catalog dirs unavailable, or the hermetic lookup cannot
-//     resolve an entity) stderr-log-and-skip; the next handleIrGraph retries.
+// A startup check needs a Release before any client has asked about one,
+// and the daemon holds none: a request that acts on a Release carries it.
+// Deferring the check to the first Release-bearing request would not
+// restore it either — to stay a once-per-session check it would have to
+// remember which Releases it had already examined, which is the stored
+// selection under another name, and without that memory it simply is the
+// per-request check.
 //
-// On success populates s.lockfile and writes any drift findings into
-// s.diagnostics[lockfilePath]. This runs from ensureCascade on first
-// use, not at construction; it updates the diagnostics cache without
-// firing the wire-level aggrega/publishDiagnostics notification (that is
-// left to the per-handleIrGraph drift check, which publishes as part of
-// serving the IR graph).
-func (s *Server) loadAndCheckLockfileAtStartup() {
-	if s.activeRelease == nil || s.activeReleasePath == "" {
-		return
-	}
-	lockfilePath := lockfile.PathFor(s.activeReleasePath)
-	if _, err := os.Stat(lockfilePath); err != nil {
-		// No lockfile present, or stat failure. Either way, leave
-		// s.lockfile nil; the per-handleIrGraph absent-gate
-		// surfaces the 1003 envelope when the operator invokes
-		// irGraph.
-		return
-	}
-	lf, diags, err := lockfile.LoadLockfile(lockfilePath)
-	if err != nil {
-		fmt.Fprintf(s.stderr, "  lockfile load %s: %v\n", lockfilePath, err)
-		return
-	}
-	for _, d := range diags {
-		fmt.Fprintf(s.stderr, "  lockfile: %s\n", d.Message)
-	}
-	s.lockfile = lf
-
-	// Compute the closure and verify against a request-scoped view seeded with
-	// this lockfile's pins (the same per-request resolution shape the handlers
-	// use), so the startup closure walk resolves cache-resident entities against
-	// the pin set rather than the session catalog's empty one. Best-effort —
-	// failure here is logged to stderr and skipped; per-handleIrGraph drift is
-	// the reliable path.
-	view := s.lazyCatalog.ForRequest(catalog.PinsFromLockfile(lf))
-	resolved, envelope := s.resolveReleaseClosure(view, s.activeReleasePath, lf)
-	if envelope != nil {
-		fmt.Fprintf(s.stderr, "  startup drift check: closure compute failed: %s\n", envelope.Message)
-		return
-	}
-	s.verifyDriftAndUpdateCache(lockfilePath, resolved.Closure)
-}
+// Nothing is checked less often as a result. The per-request verify runs
+// on every graph request, updates the same diagnostic entry the startup
+// pass wrote, and additionally publishes it — and it covers every Release
+// a client asks about rather than only the one a workspace-wide walk
+// would have picked.
 
 // verifyDriftAndPublish runs the lockfile verify against the
 // supplied closure, updates s.diagnostics[lockfilePath]
@@ -78,10 +41,9 @@ func (s *Server) loadAndCheckLockfileAtStartup() {
 // and still fire the publishDiagnostics so the extension drops
 // its DiagnosticCollection entry.
 //
-// Used by handleIrGraph. The at-startup path uses
-// verifyDriftAndUpdateCache (no notification) because the
-// notification flushes from dispatchInitialize's post-response
-// loop per the LSP-canonical ordering.
+// Used by handleIrGraph. The cache update is kept separable from the
+// notification so a caller that must not push — a request whose answer
+// carries its own findings — can still record what it verified.
 // Returns the loaded lockfile (nil on load failure) so the caller can thread
 // it into the render pipeline for build-time source-artifact resolution.
 func (s *Server) verifyDriftAndPublish(ctx context.Context, lockfilePath string, cl closure.Closure) *lockfile.Lockfile {
@@ -93,10 +55,9 @@ func (s *Server) verifyDriftAndPublish(ctx context.Context, lockfilePath string,
 // verifyDriftAndUpdateCache runs the lockfile verify against the
 // supplied closure and updates s.diagnostics[lockfilePath]
 // without firing the wire-level publishDiagnostics notification.
-// Used by the first-use startup check, which updates the diagnostics
-// cache silently; the per-handleIrGraph callers use
-// verifyDriftAndPublish, which wraps this and fires the
-// notification afterwards.
+// verifyDriftAndPublish wraps this and fires the notification afterwards;
+// the silent form stays separately reachable so the cache update and the
+// push remain independent choices for a caller.
 // Returns the freshly-loaded lockfile (nil on load failure). Drift is
 // non-blocking: on drift the lockfile is still returned (it parsed fine), so the
 // render pipeline can resolve sources against its pins regardless.

@@ -94,42 +94,74 @@ func (s *Server) dispatchReleaseCandidates(ctx context.Context, req *jsonRPCRequ
 }
 
 // activeReleaseResult is the aggrega/activeRelease response: the absolute
-// path of the Release the workspace's disambiguation cascade selected.
+// path of the Release the workspace's disambiguation cascade selected, and,
+// where it selected none, an account of why.
 //
 // Release is always present on the wire and carries the empty string when the
-// cascade selected none, so one field answers both which Release is active and
-// whether any is. A field that appeared only once a Release resolved would
-// leave a client unable to tell "no Release in this workspace" from "the field
-// is missing for some other reason", and guessing between those two is exactly
-// what this method exists to stop.
+// cascade selected none, so one field answers both which Release the workspace
+// points at and whether it points at any. A field that appeared only once a
+// Release resolved would leave a client unable to tell "no Release in this
+// workspace" from "the field is missing for some other reason", and guessing
+// between those two is exactly what this method exists to stop.
+//
+// Reason and Trace describe the same exhausted cascade at two lengths — a
+// one-line summary for a compact surface, and the per-step account for a log
+// or a panel the operator opens. Both are omitted when a Release resolved,
+// because there is nothing to explain. They are on this answer rather than on
+// an error because an unresolved workspace is an ordinary state and not a
+// failed request.
+//
+// Trace is diagnostic prose written for a person to read, not a structure to
+// parse: its wording, its layout and the labels it uses follow the cascade
+// itself and change whenever the cascade does. Pass it through; do not match
+// patterns against it or lift values out of it.
 type activeReleaseResult struct {
 	Release string `json:"release"`
+	Reason  string `json:"reason,omitempty"`
+	Trace   string `json:"trace,omitempty"`
 }
 
-// dispatchActiveRelease returns the Release the workspace's disambiguation
-// cascade selected — the same answer the daemon itself acts on for every
-// operation that needs Release context. An editor showing the operator which
-// Release is active asks for it here rather than re-deriving it from one of
+// dispatchActiveRelease reports which Release a client should select by
+// default: the one the workspace's disambiguation cascade picks from the
+// authoring-release configuration, the operator's marker file, and a lone
+// Release in the tree, in that order. An editor showing the operator which
+// Release is in force asks for it here rather than re-deriving it from one of
 // the cascade's inputs, because an input the cascade did not end up using
-// names a different Release than the one in force.
+// names a different Release than the one it chose.
 //
-// Takes no params: the active Release is a property of the daemon's workspace
-// root. The cascade runs here on first use, which is what makes this a query
-// and not something the handshake could carry — the cascade walks the whole
-// workspace tree, and the handshake deliberately answers before that walk so
-// a large tree cannot delay it.
+// Takes no params: the answer is a property of the daemon's workspace root.
 //
-// A workspace with no active Release is a successful answer carrying an empty
-// path, never an error. A client refreshes an active-Release indicator on
-// events the operator did not ask about — the daemon restarting, the workspace
-// anchor changing, a marker file being edited — so answering with an error
-// would raise a remediation prompt on every one of them in a workspace that
-// legitimately holds no Release.
+// The cascade runs on every call, and that is the point rather than an
+// oversight. The daemon holds no Release of its own, so this answer is a
+// reading of the workspace as it stands at the moment of asking: a client that
+// asks again after writing a marker, editing the configuration or adding a
+// Release file gets the new answer, where an answer computed once for the life
+// of the process would keep reporting the workspace the daemon started in. The
+// walk this performs is also why it is a request rather than part of the
+// handshake, which deliberately answers before any workspace-wide walk so a
+// large tree cannot delay it.
+//
+// A workspace with no Release to offer is a successful answer carrying an
+// empty path, never an error. A client refreshes an active-Release indicator
+// on events the operator did not ask about — the daemon restarting, the
+// workspace anchor changing, a marker file being edited — so answering with an
+// error would raise a remediation prompt on every one of them in a workspace
+// that legitimately holds no Release. The reason travels on the answer instead,
+// so a client can still say why nothing was offered.
+//
+// A Release the cascade found but could not load is published as a diagnostic
+// on its own file before the answer is written, so an operator authoring a
+// broken Release sees the error on the document rather than only inferring it
+// from an empty result.
 func (s *Server) dispatchActiveRelease(ctx context.Context, req *jsonRPCRequest) error {
-	// The active-Release fields resolve lazily; every reader triggers the
-	// cascade first so none observes the zero value it would have populated.
-	s.ensureCascade()
-	return s.writeResult(ctx, req.ID, activeReleaseResult{Release: s.activeReleasePath})
+	_, releasePath, attempt := runManifestCascade(s.workspaceRoot, s.wsConfig, s.stderr)
+	s.publishCascadeFailureDiagnostics(ctx, attempt)
+	result := activeReleaseResult{Release: releasePath}
+	if releasePath == "" {
+		result.Reason = attempt.diagnosticMessage()
+		result.Trace = attempt.fullTrace()
+	}
+	return s.writeResult(ctx, req.ID, result)
 }
 
 // dispatchInitialize selects a position encoding from the client's
@@ -168,10 +200,10 @@ func (s *Server) dispatchInitialize(ctx context.Context, req *jsonRPCRequest) er
 	// Post-response flush of any diagnostics already populated. The
 	// LSP-canonical pattern is to push diagnostics AFTER the initialize
 	// response so the client's handshake completes before unsolicited
-	// notifications start arriving. This handler does not trigger the
-	// active-Release cascade (initialize needs no Release context), so at
-	// handshake time the map is normally empty; the loop is a no-op
-	// then and flushes only what a prior request already produced.
+	// notifications start arriving. Nothing populates diagnostics before a
+	// request asks for them, so at handshake time the map is normally
+	// empty; the loop is a no-op then and flushes only what a prior
+	// request already produced.
 	// diagnosticsFiles returns the keys sorted for deterministic
 	// ordering across daemon runs (Go map iteration is randomized).
 	for _, file := range s.diagnosticsFiles() {
@@ -216,15 +248,53 @@ func selectPositionEncoding(caps clientCapabilities) yamlpos.PositionEncoding {
 // validateParams is the request shape for `aggrega/validate`. Content
 // carries the in-memory bytes the IDE editor holds for the file (which
 // may differ from on-disk bytes during active editing).
+//
+// Release is a path relative to the workspace root naming the Release to
+// validate against — the same value `aggrega/irGraph` takes, and the same
+// value `aggrega build --release` takes when run from the root.
+//
+// Naming one asks for the checks only a Release can answer: its closure
+// resolved, its lockfile read for pins, its semantic violations reported.
+// Naming none asks for the checks a document answers on its own, and is a
+// request in its own right rather than a malformed one — a workspace that
+// holds no Release has no value to send, and its documents are still worth
+// reporting on. Whichever is asked, the daemon acts on the Release the
+// request named and never on one of its own, which is what keeps a
+// validation and a graph query from describing two different Releases.
+//
+// A value that is present but malformed is refused either way. The field
+// states a coordinate, and an absolute path, or one resolving outside the
+// workspace root, states a coordinate the workspace does not hold.
 type validateParams struct {
 	File    string `json:"file"`
 	Content string `json:"content"`
+	Release string `json:"release"`
 }
 
 // validateResult is the response shape for `aggrega/validate`.
+//
+// Checked says which of the two answers this is, and it is carried only on
+// the narrower one: a request that named no Release is answered from the
+// document alone and carries checkedDocument, while a request that named one
+// is answered against that Release and omits the field, that being the
+// method's ordinary answer with nothing to qualify.
+//
+// The asymmetry is the point rather than an oversight. A well-formed document
+// validated without a Release answers with an empty diagnostic list, which is
+// indistinguishable on the wire from a clean full verdict, so a client reading
+// it as "nothing is wrong" would be told the semantic checks passed when they
+// never ran. The field is what separates the two, and omitting it from the
+// full answer costs a client that does not read it nothing.
 type validateResult struct {
 	Diagnostics []Diagnostic `json:"diagnostics"`
+	Checked     string       `json:"checked,omitempty"`
 }
+
+// checkedDocument is the value validateResult.Checked carries when the request
+// named no Release: the findings cover the document itself — whether it parses,
+// and whether its own shape is admissible — and nothing that needs a Release
+// was run.
+const checkedDocument = "document"
 
 // dispatchValidate parses the request params, calls handleValidate,
 // and writes the response envelope.
@@ -246,19 +316,25 @@ func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) erro
 }
 
 // handleValidate parses the supplied content via yaml.v3 and populates
-// the daemon's parse cache + diagnostic cache for the file. The
-// validation runs at Tier 1 (parse-only) when no active Release is
-// selected; Tier 4 (full resolver + semantic checks via the pipeline
-// path) when an active Release is selected.
+// the daemon's parse cache + diagnostic cache for the file, then — when the
+// request named a Release — runs the full resolver and semantic checks
+// against that Release.
 //
-// When the workspace has Release files but the disambiguation cascade
-// did not select one (multiple Releases without a marker or config
-// pointer), the Tier-4 branch emits a 1002 errReleaseNotResolved
-// envelope so the extension can surface a non-modal remediation toast
-// with action buttons. The activeRelease == nil + workspaceFiles == 0
-// scaffold case (no Release at all) returns Tier-1 diagnostics only:
-// the 1002 path fires only when the cascade attempted to find a
-// Release and could not.
+// The work divides in two and the request chooses between them. Parsing the
+// buffer, classifying its document envelope and seeding the parse cache act on
+// no Release at all; only the semantic pass needs one. So a request naming no
+// Release gets the first half and says which half it got, rather than being
+// refused. Refusing above the parse would take the parse cache down with it,
+// and that cache is what aggrega/diagnostics, hover, completion, resolve,
+// findReferences and findImplementations each read before they can answer — so
+// all of them would stop working in a workspace holding no Release, which is
+// precisely a workspace whose client has no value to send.
+//
+// Path resolution: a Release the request did name is resolved by
+// resolveReleaseParam before anything else runs, so an absolute value, or one
+// escaping the workspace root, is refused rather than half-answered. A request
+// that named none is not put through that resolution at all, because absence
+// is this handler's second request shape and not a malformed coordinate.
 //
 // Cancellation limit: cooperative cancellation (the shutdown drain) bites
 // at the Tier-4 phase boundaries — resolve, topology, IR, analyze — and at
@@ -271,15 +347,28 @@ func (s *Server) dispatchValidate(ctx context.Context, req *jsonRPCRequest) erro
 // parse below is a minor fraction of that — the heavy uncancellable cost is
 // the resolve sub-steps, not the parse.
 func (s *Server) handleValidate(ctx context.Context, params validateParams) (validateResult, *jsonRPCError) {
-	// Every Release-context read below (the active-Release nil check, the
-	// cascade-attempt diagnostics, runTier4Validation's activeReleasePath
-	// reads, and classifyByFilename via envelopeDiagnosticsForBuffer)
-	// depends on the disambiguation cascade having run. Trigger it here,
-	// on first use, so those reads never see a zero-value Release the
-	// cascade would have populated. aggrega/initialize deliberately does
-	// not reach this path, so the handshake answers before the cascade's
-	// workspace walk runs.
-	s.ensureCascade()
+	// The Release this request is about, resolved once at the boundary and
+	// threaded through everything below it — the lockfile the pins come from,
+	// the closure the semantic checks run over, and the filename correlation
+	// that decides whether the buffer is that Release's lockfile. One value
+	// reaches all three, so they cannot describe different Releases.
+	//
+	// It stays empty when the request named none, and each consumer below reads
+	// that as "this answer is about no Release" rather than as a value gone
+	// missing: the filename correlation classifies no lockfile, and the semantic
+	// pass does not run. Nothing computes a Release here — an absent one is
+	// answered as absent, never defaulted, so no request acts on a Release it
+	// did not name.
+	var releasePath, checked string
+	if params.Release == "" {
+		checked = checkedDocument
+	} else {
+		resolved, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
+		if paramErr != nil {
+			return validateResult{}, paramErr
+		}
+		releasePath = resolved
+	}
 
 	// The request's spelling of the file is resolved once, here at the boundary,
 	// and every cache and store below is reached with the result. A sender may
@@ -297,44 +386,37 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		diags := []Diagnostic{yamlErrorToDiagnostic(err)}
 		s.setDiagnostics(file, diags)
 		s.parseCache.Drop(file)
-		return validateResult{Diagnostics: diags}, nil
+		return validateResult{Diagnostics: diags, Checked: checked}, nil
 	}
 	s.parseCache.Put(file, &doc, []byte(params.Content))
 	// Per-file document-envelope validation on the buffer: any classifiable
-	// aggrega document (not just the active Aggregate) gets the same
+	// aggrega document (not just the Release's Aggregate) gets the same
 	// envelope verdict the CLI gives it, on its own file, at the offending
 	// key, on unsaved content. Findings early-return — which short-circuits
-	// Tier-4 for the active Aggregate (a structurally invalid buffer makes
-	// the disk-based semantic pipeline's verdict misleading) and is the
-	// honest coverage for every other file. Foreign YAML and envelope-clean
+	// the semantic pass for that Aggregate (a structurally invalid buffer
+	// makes the disk-based pipeline's verdict misleading) and is the honest
+	// coverage for every other file. Foreign YAML and envelope-clean
 	// documents fall through to the existing flow unchanged.
-	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(file, []byte(params.Content), &doc); hasFindings {
+	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(file, releasePath, []byte(params.Content), &doc); hasFindings {
 		s.setDiagnostics(file, diags)
-		return validateResult{Diagnostics: diags}, nil
+		return validateResult{Diagnostics: diags, Checked: checked}, nil
 	}
-	if s.activeRelease == nil {
-		// A Release the cascade FOUND but could not load (envelope
-		// violation, parse failure) is distinct from a genuinely-absent
-		// Release: squiggle it on its own file via the same publish
-		// channel lockfile-drift uses, so the Operator authoring a broken
-		// Release sees the error there rather than only in stderr. Covers
-		// all three cascade load steps (authoring_release, marker target,
-		// single-Release heuristic).
-		failed := s.publishCascadeFailureDiagnostics(ctx)
-		// Three sub-cases:
-		//   (a) cascade exhausted but Release files exist, OR a found-but-
-		//       invalid candidate exists → operator's authoring needs a
-		//       deliberate choice; emit 1002 so the extension toasts.
-		//   (b) no Release files and nothing found-but-invalid → catalog-only
-		//       or scaffold case; Tier-1 diagnostics suffice. No spurious toast.
-		if s.cascadeAttempt.ReleaseCandidatesFound > 0 || failed > 0 {
-			return validateResult{}, s.emitReleaseNotResolvedEnvelope(params.File)
-		}
+	if releasePath == "" {
+		// The request named no Release, so the half above is the whole answer.
+		// The semantic layer is cleared rather than left standing: this file may
+		// carry findings from an earlier request that DID name a Release, and
+		// returning those under an answer that says it checked the document alone
+		// would report a Release-scoped verdict the caller did not ask for and
+		// cannot attribute. Silence here is honest; a stale finding is not.
 		s.setDiagnostics(file, nil)
-		return validateResult{Diagnostics: nil}, nil
+		return validateResult{Diagnostics: s.snapshotDiagnostics(file), Checked: checked}, nil
 	}
-	// Tier 4: structured semantic violations via RunTier4Pipeline.
-	diags := s.runTier4Validation(ctx, file, []byte(params.Content), &doc)
+	// Tier 4: structured semantic violations via RunTier4Pipeline, against the
+	// Release this request named. A Release that cannot be loaded surfaces as a
+	// closure-level diagnostic from that path, on the validated file, rather
+	// than as a refusal: the request named a real coordinate, and what went
+	// wrong is something the author can read and fix.
+	diags := s.runTier4Validation(ctx, releasePath, file, []byte(params.Content), &doc)
 	if ctx.Err() != nil {
 		// Cancelled mid-pipeline. Leave the prior diagnostic cache
 		// entry intact and return without overwriting it — which means
@@ -350,15 +432,20 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 }
 
 // publishCascadeFailureDiagnostics surfaces every found-but-invalid
-// anchoring Release the cascade encountered as an editor diagnostic on
-// its own file, then pushes it via the same aggrega/publishDiagnostics
-// channel lockfile-drift uses. Returns the number of failed candidates
-// published. The load error already carries the rendered, path-pointed
-// envelope detail (the same text the CLI shows); the diagnostic anchors
-// at 1:1 because a document-envelope finding is schema-pointed, not
-// line-mapped (matching the Tier-D / lockfile-drift fallback position).
-func (s *Server) publishCascadeFailureDiagnostics(ctx context.Context) int {
-	failed := s.cascadeAttempt.failedReleaseCandidates()
+// anchoring Release the supplied cascade attempt encountered as an editor
+// diagnostic on its own file, then pushes it via the same
+// aggrega/publishDiagnostics channel lockfile-drift uses. Returns the
+// number of failed candidates published. The load error already carries
+// the rendered, path-pointed envelope detail (the same text the CLI
+// shows); the diagnostic anchors at 1:1 because a document-envelope
+// finding is schema-pointed, not line-mapped (matching the Tier-D /
+// lockfile-drift fallback position).
+//
+// It takes the attempt rather than reading one, because the attempt is
+// what the cascade returns and nothing retains it: the account of how a
+// Release was chosen belongs to the call that chose one.
+func (s *Server) publishCascadeFailureDiagnostics(ctx context.Context, attempt cascadeAttempt) int {
+	failed := attempt.failedReleaseCandidates()
 	for _, fc := range failed {
 		s.setDiagnostics(fc.Path, []Diagnostic{
 			{Line: 1, Column: 1, Severity: editorSeverityError, Message: fc.Err.Error(), Code: diagnosticCode(fc.Err)},
@@ -366,21 +453,6 @@ func (s *Server) publishCascadeFailureDiagnostics(ctx context.Context) int {
 		_ = s.publishDiagnostics(ctx, fc.Path)
 	}
 	return len(failed)
-}
-
-// emitReleaseNotResolvedEnvelope constructs the 1002 jsonRPCError
-// envelope that handlers needing Release context emit when
-// activeRelease == nil and the cascade has been attempted. The
-// envelope's Message carries the one-line cascade summary the
-// extension renders in its toast; the envelope's Data carries the
-// validated file's path plus the multi-line cascade trace the
-// extension auto-logs to its OutputChannel.
-func (s *Server) emitReleaseNotResolvedEnvelope(file string) *jsonRPCError {
-	return &jsonRPCError{
-		Code:    errReleaseNotResolved,
-		Message: s.cascadeDiagnosticMessage(),
-		Data:    newErrorDataWithCascade(file, s.cascadeAttemptFullTrace()),
-	}
 }
 
 // yamlErrorRegex extracts the line number from a yaml.v3 unmarshal
