@@ -41,7 +41,13 @@ import (
 // surface is settled, it settles both, and at that point two rows leave together
 // and this number goes down by two. A single row disposed of on its own would be
 // the split the pairing exists to prevent.
-const boundCeiling = 12
+//
+// It came down by one when the daemon began reporting the effective
+// configuration and each setting's originating layer. That row asked whether the
+// handshake's three fields were the intended extent for a session or whether the
+// daemon owed the full report; the daemon now answers the full report at a named
+// method, so the pair is disposed of and the room it held does not stay open.
+const boundCeiling = 11
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

@@ -24,6 +24,43 @@ const originDefaultsLabel = "(built-in defaults)"
 // collide with a value a config file legitimately carries.
 const originAppendSep = "\x1f"
 
+// originEnvPrefix marks a source label as an environment override rather than a
+// file path, and carries the variable's own name after it.
+const originEnvPrefix = "env:"
+
+// originLayerLabel renders one entry of the resolved cascade as the source label
+// a setting attributed to that layer carries.
+//
+// The cascade records an environment override as a "$" followed by the variable
+// name and a config file as its absolute path. A source label spells the first
+// as the variable name behind an "env:" prefix and the second as the path
+// unchanged, so the two vocabularies meet here and nowhere else: a caller
+// joining a setting's source against the cascade compares strings that were
+// produced by this one function on both sides.
+func originLayerLabel(entry string) string {
+	if strings.HasPrefix(entry, "$") {
+		return originEnvPrefix + entry[1:]
+	}
+	return entry
+}
+
+// ContributingLayers returns the layers that contributed to the merge, lowest
+// precedence first, each spelled as the source label ValueOrigins attributes a
+// setting to.
+//
+// It is ContributingFiles read in the provenance vocabulary rather than the
+// cascade's own, which is what lets a caller join a setting's Source against
+// this list directly. The built-in defaults are deliberately absent: they are
+// not a layer that contributed but what applies where no layer spoke, and
+// ValueOrigins already reports them per setting.
+func (r *ResolvedWorkspace) ContributingLayers() []string {
+	out := make([]string, 0, len(r.files))
+	for _, entry := range r.files {
+		out = append(out, originLayerLabel(entry))
+	}
+	return out
+}
+
 // ValueOrigin pairs one effective configuration setting with the layer that
 // determined it. Field is the setting's dotted config path, Value is its
 // effective value rendered as a stable string, and Source is the origin layer:
@@ -106,7 +143,7 @@ func (r *ResolvedWorkspace) ValueOrigins() ([]ValueOrigin, error) {
 			if _, err := applyEnvOverlay(&curr, singleVarLookup(base, varName)); err != nil {
 				return nil, err
 			}
-			attributeChanges(fields, source, prev, curr, "env:"+varName, false)
+			attributeChanges(fields, source, prev, curr, originLayerLabel(entry), false)
 			prev = curr
 			continue
 		}
@@ -191,7 +228,7 @@ func originPositions(fields []originField, source map[string]string) (map[string
 	out := make(map[string]*yamlpos.FieldSpan, len(fields))
 	for _, f := range fields {
 		path := source[f.name]
-		if path == originDefaultsLabel || strings.HasPrefix(path, "env:") {
+		if path == originDefaultsLabel || strings.HasPrefix(path, originEnvPrefix) {
 			continue
 		}
 		layer, seen := layers[path]
@@ -328,7 +365,7 @@ func signingRequiredSource(r *ResolvedWorkspace, base func(string) string) strin
 			if entry[1:] == "AGGREGA_SIGNING_REQUIRED" {
 				var on bool
 				if applyBool(base(entry[1:]), &on) == nil && on {
-					return "env:" + entry[1:]
+					return originLayerLabel(entry)
 				}
 			}
 			continue

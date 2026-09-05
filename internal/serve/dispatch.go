@@ -501,6 +501,7 @@ var methodRoutes = []methodRoute{
 	{"aggrega/connectionCandidates", (*Server).dispatchConnectionCandidates},
 	{"aggrega/releaseCandidates", (*Server).dispatchReleaseCandidates},
 	{"aggrega/activeRelease", (*Server).dispatchActiveRelease},
+	{"aggrega/effectiveConfiguration", (*Server).dispatchEffectiveConfiguration},
 }
 
 // methodIndex resolves a method name to its handler in one lookup. It is built

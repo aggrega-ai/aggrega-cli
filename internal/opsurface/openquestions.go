@@ -80,11 +80,6 @@ var openQuestions = []OpenQuestion{
 			"withheld on purpose, or is the absence one nobody has examined?"},
 
 	// The JSON-RPC daemon.
-	{SurfaceServe, "config-show",
-		"The handshake reports the workspace root, the configuration layer that took precedence, and the " +
-			"marker that anchored the root. It does not report the effective settings, nor where each one came " +
-			"from, which is what this capability is. Partial exposure is not a ground for declining: are the " +
-			"handshake's three fields the intended extent for a session, or does the daemon owe the full report?"},
 	{SurfaceServe, "inspect",
 		"The daemon answers entity questions addressed at a cursor and reports the workspace's entity index, " +
 			"but it resolves no entity by name and reports no dependency closure. Its subject is in the " +

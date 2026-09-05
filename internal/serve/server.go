@@ -29,41 +29,44 @@
 //
 // Requests, each answered with a result or a JSON-RPC error envelope:
 //
-//	aggrega/initialize           handshake: negotiates the position
-//	                             encoding and reports the resolved
-//	                             workspace root, the configuration layer
-//	                             that supplied it, and the marker that
-//	                             anchored it
-//	aggrega/validate             parses and semantically validates one
-//	                             file, returning its diagnostics
-//	aggrega/invalidate           drops cached state for one file or for
-//	                             the whole workspace
-//	aggrega/diagnostics          returns the diagnostics already cached
-//	                             for a file
-//	aggrega/irGraph              returns the IR graph for a Release
-//	aggrega/buildPreview         renders a Release the way a build does,
-//	                             with every gate on, and reports the
-//	                             artifacts a build would emit without
-//	                             writing any of them
-//	aggrega/catalogIndex         lists every workspace-local entity's
-//	                             kind, name, description, labels and
-//	                             source file
-//	aggrega/attachCandidates     lists the Features whose declared
-//	                             applicability an entity's labels satisfy
-//	aggrega/connectionCandidates lists an entity's dependency sockets and,
-//	                             per socket, the components whose declared
-//	                             labels satisfy what it declares
-//	aggrega/releaseCandidates    lists the workspace's Release documents,
-//	                             selected by document kind rather than by
-//	                             filename
-//	aggrega/activeRelease        reports which Release the workspace's
-//	                             disambiguation cascade selected, or the
-//	                             empty path when it selected none
-//	aggrega/resolve              position to the definition it names
-//	aggrega/findReferences       position to the sites referencing it
-//	aggrega/findImplementations  position to the entities implementing it
-//	aggrega/hover                position to hover contents
-//	aggrega/completion           position to completion items
+//	aggrega/initialize             handshake: negotiates the position
+//	                               encoding and reports the resolved
+//	                               workspace root, the configuration layer
+//	                               that supplied it, and the marker that
+//	                               anchored it
+//	aggrega/validate               parses and semantically validates one
+//	                               file, returning its diagnostics
+//	aggrega/invalidate             drops cached state for one file or for
+//	                               the whole workspace
+//	aggrega/diagnostics            returns the diagnostics already cached
+//	                               for a file
+//	aggrega/irGraph                returns the IR graph for a Release
+//	aggrega/buildPreview           renders a Release the way a build does,
+//	                               with every gate on, and reports the
+//	                               artifacts a build would emit without
+//	                               writing any of them
+//	aggrega/catalogIndex           lists every workspace-local entity's
+//	                               kind, name, description, labels and
+//	                               source file
+//	aggrega/attachCandidates       lists the Features whose declared
+//	                               applicability an entity's labels satisfy
+//	aggrega/connectionCandidates   lists an entity's dependency sockets and,
+//	                               per socket, the components whose declared
+//	                               labels satisfy what it declares
+//	aggrega/releaseCandidates      lists the workspace's Release documents,
+//	                               selected by document kind rather than by
+//	                               filename
+//	aggrega/activeRelease          reports which Release the workspace's
+//	                               disambiguation cascade selected, or the
+//	                               empty path when it selected none
+//	aggrega/effectiveConfiguration reports the configuration resolved for
+//	                               this session and, per setting, the layer
+//	                               that determined it
+//	aggrega/resolve                position to the definition it names
+//	aggrega/findReferences         position to the sites referencing it
+//	aggrega/findImplementations    position to the entities implementing it
+//	aggrega/hover                  position to hover contents
+//	aggrega/completion             position to completion items
 //
 // Notifications:
 //
@@ -426,6 +429,16 @@ type Server struct {
 	// String() wire token.
 	workspaceMarker workspaceconfig.Marker
 	wsConfig        workspaceconfig.Config
+	// resolvedWorkspace is the workspace resolution the daemon performed at
+	// startup, kept whole rather than only as the values derived from it above.
+	// It is what answers a request for the effective configuration and each
+	// setting's originating layer, so that answer is the same resolution the
+	// handshake's workspace root and configuration layer already report and
+	// cannot disagree with them.
+	//
+	// Nil only for a Server built as a struct literal, which is the in-memory
+	// test harness rather than any production path: Run always sets it.
+	resolvedWorkspace *workspaceconfig.ResolvedWorkspace
 	// buildOnInspect is the resolved serve build-on-inspect dial (the
 	// --build-on-inspect flag overriding the serve.build_on_inspect config
 	// key). When false (the default), handleIrGraph returns the IR graph
@@ -828,19 +841,20 @@ func Run(cfg RunConfig) error {
 	// the worker pool. It is a process-lifetime singleton the daemon neither
 	// creates, injects, nor closes — it is reclaimed at process exit.
 	srv := &Server{
-		workspaceRoot:   root,
-		configSource:    source.String(),
-		compilerVersion: cfg.CompilerVersion,
-		workspaceMarker: marker,
-		wsConfig:        wsCfg,
-		buildOnInspect:  resolveBuildOnInspect(cfg.BuildOnInspect, wsCfg.Serve.BuildOnInspect),
-		lazyCatalog:     lazyCatalog,
-		parseCache:      newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
-		diagnostics:     map[string][]Diagnostic{},
-		renderDiags:     map[string][]Diagnostic{},
-		in:              bufio.NewReader(cfg.Stdin),
-		out:             cfg.Stdout,
-		stderr:          stderr,
+		workspaceRoot:     root,
+		configSource:      source.String(),
+		compilerVersion:   cfg.CompilerVersion,
+		workspaceMarker:   marker,
+		wsConfig:          wsCfg,
+		resolvedWorkspace: resolved,
+		buildOnInspect:    resolveBuildOnInspect(cfg.BuildOnInspect, wsCfg.Serve.BuildOnInspect),
+		lazyCatalog:       lazyCatalog,
+		parseCache:        newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
+		diagnostics:       map[string][]Diagnostic{},
+		renderDiags:       map[string][]Diagnostic{},
+		in:                bufio.NewReader(cfg.Stdin),
+		out:               cfg.Stdout,
+		stderr:            stderr,
 	}
 	srv.setPositionEncoding(yamlpos.PositionEncodingUTF16)
 

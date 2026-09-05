@@ -106,6 +106,13 @@ var dispositions = map[string]opsurface.Disposition{
 	"release-candidates":          opsurface.Exposed("aggrega/releaseCandidates"),
 	"active-release":              opsurface.Exposed("aggrega/activeRelease"),
 
+	// The session reports the configuration it resolved at startup and the layer
+	// each setting came from. It reports no other part of this capability: the
+	// command line's single-layer verbatim dumps preserve a file's own comments
+	// and formatting, which is a reading of the bytes on disk rather than of the
+	// resolution, and a caller wanting those has the file.
+	"config-show": opsurface.Exposed("aggrega/effectiveConfiguration"),
+
 	// Capabilities no method carries, each on a property of this daemon.
 	"acquire":               opsurface.NotApplicable(groundWritesNothing),
 	"cache-clear":           opsurface.NotApplicable(groundWritesNothing),
