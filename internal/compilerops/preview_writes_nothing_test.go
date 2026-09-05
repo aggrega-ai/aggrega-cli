@@ -124,15 +124,19 @@ func TestPreviewWritesNothingToTheWorkspace(t *testing.T) {
 	// included.
 	policy := ArtifactPolicy()
 
+	// The fixture's render requests no external input, so the seam is named as
+	// absent rather than built. Naming it is the point: the constructor admits no
+	// value that leaves the choice unmade.
 	preview, err := Preview(
 		context.Background(),
-		PreviewInputs{
-			View:            view,
-			ReleasePath:     releasePath,
-			WorkspaceRoot:   workspaceRoot,
-			WorkspaceConfig: wsCfg,
-			CompilerVersion: "test",
-		},
+		NewPreviewInputs(
+			NoExternalInputs(),
+			view,
+			releasePath,
+			workspaceRoot,
+			wsCfg,
+			"test",
+		),
 		policy,
 		pipeline.Options{},
 	)

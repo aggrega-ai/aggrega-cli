@@ -24,7 +24,7 @@ type WarningClass int
 
 const (
 	// WarningCatalog is an advisory the caller's own catalog load produced and
-	// handed to Preview for emission in sequence (PreviewInputs.CatalogWarnings).
+	// handed to Preview for emission in sequence (WithCatalogWarnings).
 	WarningCatalog WarningClass = iota
 	// WarningDeprecation is a recorded deprecation marker on a pinned reference
 	// or on a plugin trusted for a verdict attachment.
@@ -45,49 +45,170 @@ type Warning struct {
 	Text  string
 }
 
-// PreviewInputs carries the explicit state Preview needs. Every field is
+// PreviewInputs carries the explicit state Preview needs. Every value is
 // supplied by the caller: the layer holds no session state and reads no
 // front-end fields.
 //
-// View is the request-scoped catalog lookup every resolution runs through, so
-// the whole preview resolves against one pin snapshot. Lockfile is the
-// Release's loaded lockfile (nil when none is present, which disables the
-// gates that read it).
+// EVERY FIELD IS UNEXPORTED AND THE ONLY WAY TO OBTAIN A USABLE VALUE IS
+// NewPreviewInputs. That is a deliberate constraint rather than a style, and the
+// reason is the render-time fetch seam: a keyed composite literal compiles
+// perfectly well with a field left out, so an options struct — however
+// exhaustively documented — cannot make omitting the seam an error. A caller
+// that omitted it got no service attached, and the same Release then rendered
+// different bytes on that surface than on the ones beside it, with no gate able
+// to report the difference.
+//
+// Unexporting the seam alone would not have helped. Go forbids NAMING an
+// unexported field from another package and forbids nothing about leaving one
+// out, so a literal that simply omitted it would still compile and still leave
+// the seam nil. Unexporting every field is what makes the whole literal
+// unwritable from outside, which leaves the constructor as the only door.
+//
+// The guarantee is hybrid, and the seam of it is worth stating rather than
+// glossing: the constructor's signature is compile-time — a caller that names no
+// seam does not build — while the bare zero value PreviewInputs{} still
+// compiles, because Go admits the zero value of any struct. Preview refuses a
+// zero-valued input at run time to close that half. Inside this package,
+// field-by-field construction remains possible; the run-time refusal catches
+// that too unless the literal also sets constructed by hand.
 type PreviewInputs struct {
-	View            *catalog.LazyLookup
-	ReleasePath     string
-	WorkspaceRoot   string
-	WorkspaceConfig workspaceconfig.Config
-	Lockfile        *lockfile.Lockfile
-	CompilerVersion string
+	// view is the request-scoped catalog lookup every resolution runs through,
+	// so the whole preview resolves against one pin snapshot.
+	view            *catalog.LazyLookup
+	releasePath     string
+	workspaceRoot   string
+	workspaceConfig workspaceconfig.Config
+	compilerVersion string
 
-	// LockfilePreexisted reports whether the lockfile was on disk before this
-	// run rather than filled during it. Only a pre-existing lockfile is drift-
-	// verified: one just filled matches the closure by construction, so
-	// verifying it would compare a set against itself.
-	LockfilePreexisted bool
-
-	// ExternalInputs is the render-time fetch seam for guest external-input
+	// externalInputs is the render-time fetch seam for guest external-input
 	// requests. When nil NO service is attached, and a guest asking for an
 	// external input receives a not-available envelope instead of the content —
 	// which renders different bytes than the same Release renders with one
 	// attached. A preview that must match a build's bytes supplies a service
 	// with acquisition off: pinned references are served from the content-
 	// addressed store, unpinned ones refuse loudly, and nothing is written.
-	ExternalInputs wasm.FetchService
+	// FrozenExternalInputs builds exactly that service.
+	externalInputs wasm.FetchService
 
-	// CatalogWarnings are advisories the caller's own catalog load produced.
+	// lockfile is the Release's loaded lockfile, nil when none is present, which
+	// disables the gates that read it.
+	lockfile *lockfile.Lockfile
+
+	// lockfilePreexisted reports whether the lockfile was on disk before this
+	// run rather than filled during it. Only a pre-existing lockfile is drift-
+	// verified: one just filled matches the closure by construction, so
+	// verifying it would compare a set against itself.
+	lockfilePreexisted bool
+
+	// catalogWarnings are advisories the caller's own catalog load produced.
 	// They are handed in rather than re-derived because only a caller that
 	// eagerly loaded a catalog has them, and emitting them here keeps the whole
 	// advisory sequence in one order with one definition.
-	CatalogWarnings []string
+	catalogWarnings []string
 
-	// Phase, when non-nil, is called as the preview enters each stage, so a
+	// phase, when non-nil, is called as the preview enters each stage, so a
 	// caller driving a progress surface can report where the run is. It is a
 	// report OF the sequence, never a hook into it: the callback cannot alter
 	// what runs or in what order. nil for a caller with no progress surface.
-	Phase func(PreviewPhase)
+	phase func(PreviewPhase)
+
+	// constructed records that this value came from NewPreviewInputs. It is what
+	// lets Preview tell a constructed input from the zero value the language
+	// still admits, and it is set nowhere else.
+	constructed bool
 }
+
+// PreviewOption supplies one of the inputs whose absence is a coherent decision
+// rather than an oversight — a Release with no lockfile, a caller with no
+// catalog advisories of its own, a caller with no progress surface. Everything
+// whose absence would be a defect is a parameter of NewPreviewInputs instead, so
+// it cannot be left out.
+type PreviewOption func(*PreviewInputs)
+
+// WithLockfile supplies the Release's loaded lockfile and whether it was on disk
+// before this run. The two travel together because neither answers anything
+// alone: "pre-existing" is a fact about a lockfile, so a caller cannot claim it
+// without naming one.
+func WithLockfile(lf *lockfile.Lockfile, preexisted bool) PreviewOption {
+	return func(in *PreviewInputs) {
+		in.lockfile = lf
+		in.lockfilePreexisted = preexisted
+	}
+}
+
+// WithCatalogWarnings supplies the advisories the caller's own catalog load
+// produced, for emission in sequence with the ones the preview raises itself.
+func WithCatalogWarnings(warnings []string) PreviewOption {
+	return func(in *PreviewInputs) { in.catalogWarnings = warnings }
+}
+
+// WithProgress supplies the callback the preview calls as it enters each stage.
+func WithProgress(phase func(PreviewPhase)) PreviewOption {
+	return func(in *PreviewInputs) { in.phase = phase }
+}
+
+// NoExternalInputs is the value a caller names to render with NO external-input
+// seam attached. It exists so that "no seam" is a decision written at the call
+// site rather than a field nobody filled in: a guest asking for an external
+// input under it receives a not-available envelope, and the surface renders
+// different bytes than a surface with a seam attached.
+//
+// It reads as a decision; it is not a second enforcement. The constructor's
+// signature is what makes a seam impossible to omit — passing nothing does not
+// compile — and a caller may still write a bare nil in its place. What this buys
+// is that a reader of the call site can tell a deliberate omission from an
+// accidental one.
+func NoExternalInputs() wasm.FetchService { return nil }
+
+// NewPreviewInputs builds the inputs Preview runs over. The external-input seam
+// is FIRST and positional precisely because it is the value whose omission was
+// invisible: a caller must name either a service or NoExternalInputs, and one
+// that names neither does not compile.
+//
+// view, releasePath, workspaceRoot, workspaceConfig and compilerVersion are
+// parameters for the same reason — each has no coherent absent form, so leaving
+// one out is a defect rather than a choice. The lockfile, the caller's catalog
+// advisories and the progress callback are options, because a caller genuinely
+// may have none of them.
+func NewPreviewInputs(
+	externalInputs wasm.FetchService,
+	view *catalog.LazyLookup,
+	releasePath string,
+	workspaceRoot string,
+	workspaceConfig workspaceconfig.Config,
+	compilerVersion string,
+	opts ...PreviewOption,
+) PreviewInputs {
+	in := PreviewInputs{
+		view:            view,
+		releasePath:     releasePath,
+		workspaceRoot:   workspaceRoot,
+		workspaceConfig: workspaceConfig,
+		compilerVersion: compilerVersion,
+		externalInputs:  externalInputs,
+		constructed:     true,
+	}
+	for _, opt := range opts {
+		opt(&in)
+	}
+	return in
+}
+
+// ExternalInputs returns the render-time fetch seam these inputs carry. It is
+// read-only on purpose: a surface's own test asserts that what its construction
+// hands the shared computation is the seam it built, which the constructor's
+// signature cannot say — a caller that named NoExternalInputs compiles just as
+// happily as one that named a service.
+func (in PreviewInputs) ExternalInputs() wasm.FetchService { return in.externalInputs }
+
+// errPreviewInputsZeroValue is the refusal for a PreviewInputs that never came
+// from NewPreviewInputs. It closes the half of the guarantee the language does
+// not: the constructor cannot be called without a seam, but the zero value of
+// any struct is still writable, and a zero-valued input would render with no
+// seam attached — the exact condition the constructor exists to prevent.
+var errPreviewInputsZeroValue = stderrors.New(
+	"preview inputs were not built by NewPreviewInputs, so no external-input seam was chosen; " +
+		"build them with NewPreviewInputs, naming either a fetch service or NoExternalInputs")
 
 // PreviewPhase names a stage of the preview sequence, for a caller reporting
 // progress. The values are the stages a caller can meaningfully display; they
@@ -316,12 +437,21 @@ func IsResolutionFailure(err error) bool {
 // failure.
 func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipeline.Options) (*PreviewResult, error) {
 	out := &PreviewResult{}
+
+	// The half of the constructor guarantee the language cannot carry. A caller
+	// that named no seam does not compile; a caller holding the zero value does,
+	// and would render with no seam attached — so it is refused here rather than
+	// silently producing the divergent bytes the constructor exists to prevent.
+	if !in.constructed {
+		return out, errPreviewInputsZeroValue
+	}
+
 	warn := func(class WarningClass, text string) {
 		out.Warnings = append(out.Warnings, Warning{Class: class, Text: text})
 	}
 	phase := func(p PreviewPhase) {
-		if in.Phase != nil {
-			in.Phase(p)
+		if in.phase != nil {
+			in.phase(p)
 		}
 	}
 
@@ -332,7 +462,7 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 	// a tampered or drifted cache surfaces as "re-pull" rather than a misleading
 	// downstream "not resolvable".
 	if pol.VerifyPinnedIntegrity {
-		if err := in.View.VerifyPinnedIntegrity(); err != nil {
+		if err := in.view.VerifyPinnedIntegrity(); err != nil {
 			out.FailedGate = GatePinnedIntegrity
 			return out, fmt.Errorf("lockfile integrity: %w", err)
 		}
@@ -343,11 +473,11 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 	// is on whenever this layer owns the reconstruction, and a caller that folded
 	// the axes itself no longer exists — the fold has one home now.
 	resolved, cerr := ResolveClosure(ClosureInputs{
-		View:            in.View,
-		ReleasePath:     in.ReleasePath,
-		WorkspaceRoot:   in.WorkspaceRoot,
-		WorkspaceConfig: in.WorkspaceConfig,
-		Lockfile:        in.Lockfile,
+		View:            in.view,
+		ReleasePath:     in.releasePath,
+		WorkspaceRoot:   in.workspaceRoot,
+		WorkspaceConfig: in.workspaceConfig,
+		Lockfile:        in.lockfile,
 		Augment:         true,
 	})
 	if cerr != nil {
@@ -371,7 +501,7 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 	// Closure-scoped validation: ONLY the entities the Release reaches, against
 	// the closure's libraries.
 	if pol.ValidateClosurePillars {
-		if err := in.View.ValidateClosureScopedPillars(resolved.Closure); err != nil {
+		if err := in.view.ValidateClosureScopedPillars(resolved.Closure); err != nil {
 			out.FailedGate = GateClosurePillars
 			return out, &resolutionFailure{err: err}
 		}
@@ -379,7 +509,7 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 
 	// Reconstruct the axes ComputeClosure leaves empty, hermetically and from the
 	// lockfile, so the drift comparison below is like-for-like.
-	if pol.ReconstructClosureAxes && in.Lockfile != nil {
+	if pol.ReconstructClosureAxes && in.lockfile != nil {
 		if err := reconstructPreviewClosureAxes(in, resolved); err != nil {
 			out.FailedGate = GateAxisReconstruction
 			return out, &resolutionFailure{err: err}
@@ -389,11 +519,11 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 	// Drift verification against the freshly-computed closure. Only a
 	// pre-existing lockfile is verified; one filled during this run matches by
 	// construction.
-	if pol.VerifyLockfileDrift && in.Lockfile != nil && in.LockfilePreexisted {
-		if err := lockfile.Verify(in.Lockfile, resolved.Closure); err != nil {
+	if pol.VerifyLockfileDrift && in.lockfile != nil && in.lockfilePreexisted {
+		if err := lockfile.Verify(in.lockfile, resolved.Closure); err != nil {
 			out.FailedGate = GateLockfileDrift
 			return out, fmt.Errorf("%w; run `aggrega pull --upgrade --release %s` to refresh the lockfile against current catalog state",
-				err, in.ReleasePath)
+				err, in.releasePath)
 		}
 	}
 
@@ -402,7 +532,7 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 	// Extends inheritance for the closure's Components and Features, so the
 	// pipeline sees fully-merged entities.
 	if pol.ResolveExtends {
-		if extErrs := in.View.ResolveClosureExtends(resolved.Closure); len(extErrs) > 0 {
+		if extErrs := in.view.ResolveClosureExtends(resolved.Closure); len(extErrs) > 0 {
 			for _, e := range extErrs {
 				warn(WarningExtends, e.Error())
 			}
@@ -413,7 +543,7 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 
 	// Advisories the caller's own catalog load produced, emitted here so the
 	// whole advisory sequence has one order.
-	for _, w := range in.CatalogWarnings {
+	for _, w := range in.catalogWarnings {
 		warn(WarningCatalog, w)
 	}
 
@@ -436,7 +566,7 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 	// Schema-pillar-overlap advisories: the warning-level sibling of the
 	// closure-scoped validation above, over the same entity set.
 	if pol.ReportCatalogLint {
-		for _, w := range in.View.ClosureLintWarnings(resolved.Closure) {
+		for _, w := range in.view.ClosureLintWarnings(resolved.Closure) {
 			warn(WarningCatalogLint, w)
 		}
 	}
@@ -446,20 +576,20 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 	// The render. The external-input seam is installed here and nowhere else, so
 	// a surface cannot acquire the pipeline without it and render different bytes
 	// than the surface beside it.
-	if in.ExternalInputs != nil {
-		ctx = wasm.ContextWithExternalInputs(ctx, in.ExternalInputs)
+	if in.externalInputs != nil {
+		ctx = wasm.ContextWithExternalInputs(ctx, in.externalInputs)
 	}
 	if pol.VerifyRecipeResolution {
-		opts.RecipeResolutionVerifier = in.View.VerifyRecipeResolution
+		opts.RecipeResolutionVerifier = in.view.VerifyRecipeResolution
 	}
 	result, err := BuildToBuffer(ctx, BuildInputs{
-		View:                             in.View,
+		View:                             in.view,
 		Resolved:                         resolved,
-		ReleasePath:                      in.ReleasePath,
-		WorkspaceConfig:                  in.WorkspaceConfig,
-		WorkspaceRoot:                    in.WorkspaceRoot,
-		Lockfile:                         in.Lockfile,
-		CompilerVersion:                  in.CompilerVersion,
+		ReleasePath:                      in.releasePath,
+		WorkspaceConfig:                  in.workspaceConfig,
+		WorkspaceRoot:                    in.workspaceRoot,
+		Lockfile:                         in.lockfile,
+		CompilerVersion:                  in.compilerVersion,
 		TolerateCatalogViewInconsistency: pol.TolerateCatalogViewInconsistency,
 	}, opts)
 	if err != nil {
@@ -482,20 +612,20 @@ func Preview(ctx context.Context, in PreviewInputs, pol PreviewPolicy, opts pipe
 func enforceDeprecation(in PreviewInputs, warn func(WarningClass, string)) (halt error, readErr error) {
 	report := func(notice string) { warn(WarningDeprecation, notice) }
 
-	halt = LockfileDeprecationVerdict(in.Lockfile, in.WorkspaceConfig.Build, report)
+	halt = LockfileDeprecationVerdict(in.lockfile, in.workspaceConfig.Build, report)
 
 	// The same gate over the other store. A plugin attached at a verdict role
 	// shapes no rendered byte, so it is recorded beside the lockfile rather than
 	// pinned in it and has no row the gate above could read. Without this, a
 	// withdrawn gate plugin is fetched, cached and run with nothing said.
-	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(in.ReleasePath))
+	trustRecord, _, trustErr := pluginstrust.LoadOrStart(pluginstrust.PathFor(in.releasePath))
 	if trustErr != nil {
 		return nil, trustErr
 	}
 	// Both walks always complete: the second runs even when the first earned a
 	// halt, so a reader is told about every withdrawn plugin rather than only
 	// about whichever store happened to be walked first.
-	if trustHalt := TrustDeprecationVerdict(trustRecord, in.WorkspaceConfig.Build, report); halt == nil {
+	if trustHalt := TrustDeprecationVerdict(trustRecord, in.workspaceConfig.Build, report); halt == nil {
 		halt = trustHalt
 	}
 	return halt, nil
@@ -513,7 +643,7 @@ func enforceDeprecation(in PreviewInputs, warn func(WarningClass, string)) (halt
 // restored to the lockfile view afterward so the render resolves exactly as it
 // would have without the reconstruction.
 func reconstructPreviewClosureAxes(in PreviewInputs, resolved *ResolvedClosure) error {
-	view := in.View
+	view := in.view
 	lookup := resolved.Lookup
 
 	aggLoader, err := closure.RequireAggregateLoader(lookup)
@@ -524,7 +654,7 @@ func reconstructPreviewClosureAxes(in PreviewInputs, resolved *ResolvedClosure) 
 	if err != nil {
 		return err
 	}
-	bindings := lockfile.ProviderBindings(in.Lockfile)
+	bindings := lockfile.ProviderBindings(in.lockfile)
 	resolvePlugin := func(ref string) (types.Plugin, bool, error) {
 		return view.ProviderPluginForTarget(ref, bindings)
 	}
@@ -533,10 +663,10 @@ func reconstructPreviewClosureAxes(in PreviewInputs, resolved *ResolvedClosure) 
 		return view.ClosureRecipeLoader(), nil
 	}
 	if err := closure.ReconstructClosureAxes(&resolved.Closure, aggLoader, recipeLoader, lookup, resolvePlugin, refold); err != nil {
-		view.SetPins(catalog.PinsFromLockfile(in.Lockfile))
+		view.SetPins(catalog.PinsFromLockfile(in.lockfile))
 		return err
 	}
-	view.SetPins(catalog.PinsFromLockfile(in.Lockfile))
+	view.SetPins(catalog.PinsFromLockfile(in.lockfile))
 
 	// The output-shaping workspace-socket plugin entities and their .wasm are
 	// pull-time choices recorded only in the lockfile, so ComputeClosure cannot
@@ -544,11 +674,11 @@ func reconstructPreviewClosureAxes(in PreviewInputs, resolved *ResolvedClosure) 
 	// a pinned socket .wasm resolves from the content-addressed cache offline;
 	// the entity and artifact are re-read so a drifted pin still surfaces as
 	// drift.
-	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(in.Lockfile)
+	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(in.lockfile)
 	if len(socketEntityURIs) == 0 {
 		return nil
 	}
-	socketLookup := view.ClosureLookupWithPins(nil, in.WorkspaceRoot, in.WorkspaceConfig.ResolvedArtifactCacheDir(), nil, catalog.PinsFromLockfile(in.Lockfile))
+	socketLookup := view.ClosureLookupWithPins(nil, in.workspaceRoot, in.workspaceConfig.ResolvedArtifactCacheDir(), nil, catalog.PinsFromLockfile(in.lockfile))
 	socketRecipeLoader, err := closure.RequireRecipeLoader(socketLookup)
 	if err != nil {
 		return err

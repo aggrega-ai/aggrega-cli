@@ -42,6 +42,14 @@ type buildResultPayload struct {
 	// one: reporting is unconditional and only halting is configured, so raising
 	// the halt threshold never reduces what the caller is told.
 	Deprecations []string `json:"deprecations,omitempty"`
+
+	// DeclinedExternalInputs names each external reference the render asked for
+	// that the lockfile does not pin. The render is frozen, so such a reference is
+	// refused rather than fetched, and the emitted files stop short of what a
+	// build — which would acquire and pin it — would produce. Naming them is what
+	// lets a caller tell an incomplete render from an accurate one; without it the
+	// difference is invisible in the returned files.
+	DeclinedExternalInputs []string `json:"declined_external_inputs,omitempty"`
 }
 
 var buildToolSpec = toolSpec{
@@ -110,27 +118,37 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	//
 	// The drift verify is the one artifact-posture gate held off, and the reason is
 	// this surface's own lockfile posture rather than a view about drift: the tool
-	// renders a Release that has NO lockfile at all, resolving against whatever
-	// pins exist. Refusing a partial lockfile while rendering an absent one would
-	// make less pinning information the more permissive input, which is not a
-	// coherent contract to give a caller.
-	//
-	// The external-input service is absent here for the same reason it was before:
-	// attaching one changes rendered bytes and is its own change with its own
-	// proof.
+	// renders a Release that may have NO lockfile at all, resolving against
+	// whatever pins exist. Refusing a partial lockfile while rendering an absent
+	// one would make less pinning information the more permissive input, which is
+	// not a coherent contract to give a caller.
 	policy := compilerops.ArtifactPolicy()
 	policy.VerifyLockfileDrift = false
 
+	// The render-time external-input seam, frozen — the same posture and the same
+	// builder the editor's inspection renders through. It is FROZEN rather than
+	// acquiring because this call is an in-memory render: a seam with acquisition
+	// on would let a tool call reach the network and write into the
+	// content-addressed store as a side effect of what the caller asked to be a
+	// preview that writes nothing.
+	//
+	// A pinned reference is therefore served from the store — which is what makes
+	// these bytes the bytes a build emits — and an unpinned one is declined and
+	// named in the answer rather than quietly rendering a not-available envelope
+	// the caller cannot tell from real content.
+	fetchSeam := compilerops.FrozenExternalInputs(tw.cacheDir, lf)
+
 	preview, err := compilerops.Preview(
 		ctx,
-		compilerops.PreviewInputs{
-			View:            view,
-			ReleasePath:     releasePath,
-			WorkspaceRoot:   tw.root,
-			WorkspaceConfig: tw.cfg,
-			Lockfile:        lf,
-			CompilerVersion: s.serverVersion,
-		},
+		compilerops.NewPreviewInputs(
+			fetchSeam,
+			view,
+			releasePath,
+			tw.root,
+			tw.cfg,
+			s.serverVersion,
+			compilerops.WithLockfile(lf, lf != nil),
+		),
 		policy,
 		pipeline.Options{},
 	)
@@ -149,6 +167,12 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	if len(deprecationNotices) > 0 {
 		payload.Deprecations = deprecationNotices
 	}
+	// A declined reference is carried in the answer whether or not the render
+	// survived it. The decline is owed because a reference was declined, not
+	// because the run happened to end badly: a guest that renders around the
+	// refusal produces output that stops short of what a build would emit, and a
+	// caller cannot tell that from an accurate render unless it is told.
+	payload.DeclinedExternalInputs = fetchSeam.Declined()
 	text := renderBuildText(payload)
 	return textResult(text, payload)
 }
@@ -249,12 +273,26 @@ func renderedFiles(result *pipeline.Result, includeContent bool) []buildFile {
 }
 
 // renderBuildText renders the human-readable build summary: the file count and
-// each rendered path, one per line.
+// each rendered path, one per line, followed by any external reference the
+// render had to decline.
+//
+// The declined references are spelled out rather than counted, and each carries
+// the remedy, because the caller has to know WHICH reference is missing to
+// supply it. Their absence prints nothing, so a fully-pinned render reads exactly
+// as it did before.
 func renderBuildText(p buildResultPayload) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Build of %s rendered %d file(s) in memory (nothing written to disk):\n", p.Release, len(p.Files))
 	for _, f := range p.Files {
 		fmt.Fprintf(&b, "  %s\n", f.Path)
+	}
+	if len(p.DeclinedExternalInputs) > 0 {
+		fmt.Fprintf(&b, "\nThis render is frozen, so it declined %d external reference(s) the lockfile does not pin. "+
+			"The files above stop short of what a build would emit; run `aggrega acquire --release %s` to pin them:\n",
+			len(p.DeclinedExternalInputs), p.Release)
+		for _, url := range p.DeclinedExternalInputs {
+			fmt.Fprintf(&b, "  %s\n", url)
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

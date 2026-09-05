@@ -427,21 +427,20 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 
 	preview, err := compilerops.Preview(
 		buildCtx,
-		compilerops.PreviewInputs{
-			View:               lazyView,
-			ReleasePath:        releasePath,
-			WorkspaceRoot:      wsRoot,
-			WorkspaceConfig:    wsCfg,
-			Lockfile:           lf,
-			CompilerVersion:    provenanceCompilerVersion(),
-			LockfilePreexisted: lockfilePreexisted,
-			ExternalInputs:     fetchSeam,
+		compilerops.NewPreviewInputs(
+			fetchSeam,
+			lazyView,
+			releasePath,
+			wsRoot,
+			wsCfg,
+			provenanceCompilerVersion(),
+			compilerops.WithLockfile(lf, lockfilePreexisted),
 			// The tolerant Pass-1 load's deprecation notices are this command's to
 			// produce (no other surface loads a whole catalog) and the entry point's
 			// to emit, so the advisory sequence has one order.
-			CatalogWarnings: cat.DeprecationWarnings(),
-			Phase:           func(p compilerops.PreviewPhase) { progress.phase(previewPhaseStep(p)) },
-		},
+			compilerops.WithCatalogWarnings(cat.DeprecationWarnings()),
+			compilerops.WithProgress(func(p compilerops.PreviewPhase) { progress.phase(previewPhaseStep(p)) }),
+		),
 		// A build emits a deployable artifact, so every gate is on and every
 		// divergence halts.
 		compilerops.ArtifactPolicy(),

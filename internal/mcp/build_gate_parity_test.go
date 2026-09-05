@@ -90,15 +90,21 @@ func TestUnmappedInstanceMisattributesWhenTheVerifierIsNotSupplied(t *testing.T)
 	policy.VerifyLockfileDrift = false
 	policy.VerifyRecipeResolution = false
 
+	// The seam is the frozen one the build tool itself attaches, built the same
+	// way. It is held identical on purpose: this run and the tool's differ in one
+	// policy field, so anything else that differed would leave the comparison
+	// below attributable to two things instead of one.
 	_, err := compilerops.Preview(
 		context.Background(),
-		compilerops.PreviewInputs{
-			View:            tw.newView(lf),
-			ReleasePath:     releasePath,
-			WorkspaceRoot:   tw.root,
-			WorkspaceConfig: tw.cfg,
-			Lockfile:        lf,
-		},
+		compilerops.NewPreviewInputs(
+			compilerops.FrozenExternalInputs(tw.cacheDir, lf),
+			tw.newView(lf),
+			releasePath,
+			tw.root,
+			tw.cfg,
+			"",
+			compilerops.WithLockfile(lf, lf != nil),
+		),
 		policy,
 		pipeline.Options{},
 	)
