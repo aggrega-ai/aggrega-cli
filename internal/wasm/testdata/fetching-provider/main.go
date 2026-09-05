@@ -22,6 +22,15 @@
 // outputs, all of them successful renders, so a byte comparison tells them apart
 // instead of one of them simply erroring.
 //
+// It emits a SECOND file carrying this guest's own revision stamp, and that file
+// is not decoration. A parity test over a shared fixture proves the two sides
+// AGREE, never that both RAN: a guest that compiles and is never invoked reports
+// nothing at all, and the comparison then certifies something that never
+// happened. The stamp only reaches an emitted byte if this render executed, so
+// the host asserting it against its own independently-declared copy is what makes
+// "the guest ran, at the revision the host was written against" observable rather
+// than assumed.
+//
 // The wire payloads are hand-written rather than taken from the plugin kit, on
 // the same terms as the other guests under this directory: the guest is built
 // with GOWORK=off against its own go.mod, so it shares no module with the host
@@ -59,6 +68,26 @@ const (
 	// contentPrefix precedes the fetch outcome in the emitted file, so the emitted
 	// bytes are never empty and a reader of a diff can see which half moved.
 	contentPrefix = "external-input:"
+
+	// revisionPath is the second file the render emits, carrying nothing but the
+	// stamp below. It is a file of its own rather than another line in the first
+	// one so that the seam's outcome and the guest's identity move independently:
+	// a change to either is readable in a diff without dragging the other with it.
+	revisionPath = "fixture-revision.txt"
+
+	// fixtureRevision identifies the contract THIS guest presents to the host test
+	// that drives it — the files it emits, their names, and the shape of their
+	// bytes. Bump it in the same edit that changes any of those.
+	//
+	// 🔴 DELIBERATE DUPLICATE, on the same terms as externalInputURL above and
+	// recorded so it is not "unified" away: the host test declares its own copy of
+	// this string and asserts the emitted stamp equals it. The duplication IS the
+	// mechanism — a cross-check that read one shared constant could not disagree
+	// with itself, and disagreement is the whole signal. A guest edited without the
+	// host (or a stale .wasm served from the fixture cache) therefore fails loudly
+	// here instead of quietly certifying a comparison against a contract that has
+	// moved.
+	fixtureRevision = "fetching-provider/1"
 )
 
 // providerDescriptor is the fixed describe() self-report. The external-input
@@ -73,7 +102,7 @@ const providerDescriptor = `{` +
 	`"exports":[` +
 	`{"name":"render_node","input_pattern":"b",` +
 	`"host_functions":["aggrega_fetch_external_input"],` +
-	`"description":"emits one file carrying the fetched external input"}` +
+	`"description":"emits the fetched external input and this guest's revision stamp"}` +
 	`],` +
 	`"contract":{"input_kinds":{"synthesized":true},"boundary_assembly":"none",` +
 	`"reusable_instance":true}` +
@@ -149,10 +178,16 @@ func describe() int32 {
 
 //go:wasmexport render_node
 func render_node() int32 {
-	out := renderNodeOutput{Files: []renderedFile{{
-		Path:    outputPath,
-		Content: []byte(contentPrefix + fetchExternalInput(externalInputURL)),
-	}}}
+	out := renderNodeOutput{Files: []renderedFile{
+		{
+			Path:    outputPath,
+			Content: []byte(contentPrefix + fetchExternalInput(externalInputURL)),
+		},
+		{
+			Path:    revisionPath,
+			Content: []byte(fixtureRevision),
+		},
+	}}
 	raw, err := json.Marshal(out)
 	if err != nil {
 		pdk.SetError(err)

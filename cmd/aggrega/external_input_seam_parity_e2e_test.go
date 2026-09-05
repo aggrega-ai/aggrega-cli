@@ -4,23 +4,101 @@
 package main
 
 // Three surfaces render a Release: the command line, the editor daemon, and the
-// tool protocol. All three run one preview computation, and that computation
-// installs a render-time external-input seam. A surface that hands it no seam
-// renders a not-available envelope where the content should be — so the SAME
-// Release emits different bytes depending on which surface asked, and every
-// completeness check still passes, because each check asserts the path exists
-// rather than what it produces.
+// tool protocol. All three run one preview computation. The guarantee they owe a
+// caller is that ONE Release built through any of them emits the SAME artifact
+// set, byte for byte — and every completeness check the product has asserts
+// something adjacent to that: that each path exists, that each runs the same
+// gates, that each name lines up. None of them compares the bytes.
 //
-// This file is the comparison that can see the difference. It needs a provider
-// guest whose render requests an external input, because that is the only shape
-// under which a seam changes an emitted byte; the fixture corpus had none, so
-// internal/wasm/testdata/fetching-provider is built here for it.
+// This file is that comparison. It compares the emitted artifact set as a SET
+// first and as content second, because a walk over only the files both sides
+// produced passes when one side emits FEWER — which is precisely the live shape
+// of a surface that renders around missing content instead of failing.
+//
+// # Why this fixture, and not a simpler one
+//
+// The computation installs a render-time external-input seam, and a surface that
+// hands it no seam renders a not-available envelope where the content should be.
+// That divergence is observable only through a provider guest whose render
+// REQUESTS an external input; the fixture corpus had none, so
+// internal/wasm/testdata/fetching-provider is built here for it. Under any other
+// provider fixture, a surface with a seam and a surface without one emit
+// identical bytes, and the comparison below would be green and worthless.
 //
 // The negative control is the load-bearing half. Three surfaces agreeing proves
 // nothing on its own: three surfaces each rendering the same not-available
 // envelope agree perfectly. So the same workspace is also rendered with the seam
 // explicitly absent, and that render must produce DIFFERENT bytes — which is what
 // establishes the fixture can tell the two apart at all.
+//
+// # The differences between the surfaces that legitimately survive, each named
+//
+// The three do not do identical work around the render, and a difference this
+// comparison silently normalised away would be a divergence it was built to hide.
+// So every one of them is named here with its reason, and the comparison is over
+// the rendered artifact CONTENT alone:
+//
+//   - WHERE THE OUTPUT GOES. The command line writes the default output directory
+//     under its working directory; the daemon writes the same directory name
+//     resolved against the workspace it opened at startup; the tool protocol
+//     writes nothing and returns buffers. Compared on OUTPUT-RELATIVE names,
+//     because the destination is each surface's own choice about where to put a
+//     render and is not an input to the render.
+//
+//   - THE LOCKFILE DRIFT VERIFY. The command line and the daemon run it; the tool
+//     protocol holds it off — the one artifact-posture gate that differs. Its
+//     reason is that surface's lockfile posture rather than a view about drift:
+//     it renders a Release that may have no lockfile at all, and refusing a
+//     partial lockfile while rendering an absent one would make less pinning
+//     information the more permissive input. The gate halts or does not; a run
+//     that does not halt renders identically, so it reaches no emitted byte. This
+//     fixture pins a complete lockfile, so no surface's verify has anything to
+//     refuse and all three reach the render.
+//
+//   - THE SEAM'S ACQUISITION POSTURE. The command line's default seam ACQUIRES an
+//     unpinned reference; the daemon's and the tool protocol's are FROZEN and
+//     decline one. For a fully-pinned Release all three serve the reference from
+//     the content-addressed store and the bytes are identical — which is why the
+//     fixture pins its reference before any surface runs, and why a decline on the
+//     tool protocol is treated as a fixture fault below rather than tolerated.
+//
+//   - THE CATALOG ADVISORIES. Only the command line eagerly loads a whole catalog,
+//     so only it hands the computation that advisory set. Advisories are reported,
+//     never rendered; they reach no emitted byte.
+//
+//   - THE PROGRESS AND COMPILE CALLBACKS. Only the command line sets them. Each is
+//     documented as writing to a diagnostic sink and carrying no authority over
+//     the render.
+//
+// # The compiler version, which would otherwise flake this
+//
+// The rendered output can carry a compiler-version value, so two renders from
+// differently-stamped binaries are not comparable. In production all three
+// surfaces read it from one derivation, so the question does not arise. Under
+// test it very nearly does — the command line's dispatch and the daemon
+// subprocess both reach that derivation, while the tool protocol takes its value
+// from the caller — so the value is passed explicitly from the same derivation
+// and asserted, rather than left to be discovered as an intermittent failure.
+//
+// 🔴 That single-sourcing is LOAD-BEARING, not belt-and-braces, and the reason is
+// measured rather than assumed: handing this surface a deliberately different
+// version leaves the comparison below GREEN. The guest here emits its own bytes
+// and never reads the value, and no artifact this fixture produces carries the
+// provenance labels that would. So the divergence is invisible today and would
+// begin flaking the day a fixture emitting those labels joins the comparison.
+// Passing one derivation to all three is what closes it in both eras.
+//
+// # What this comparison structurally CANNOT see
+//
+// It binds the BYTES. It does not bind the gate posture, and the difference was
+// measured rather than reasoned: switching the tool protocol from the
+// artifact-producing posture to the inspecting one — every refusing gate off —
+// leaves this green, because a gate that refuses nothing reaches no emitted byte
+// on a fixture where no gate had anything to refuse. That is correct behaviour
+// for a byte comparison and not a hole to plug here: the per-surface gate-parity
+// tests bind which gates each surface runs, and the two proofs are complementary.
+// Reading a green from this file as "the three surfaces are identical" overstates
+// it; what it says is that they emit the same artifacts.
 
 import (
 	"bytes"
@@ -66,6 +144,29 @@ const (
 	// the guest's own constants, on the same terms as the URL above.
 	seamFixtureFile   = "external-input.txt"
 	seamFixturePrefix = "external-input:"
+
+	// seamFixtureRevisionFile and seamFixtureRevision are the HOST side of the
+	// fixture-revision cross-check: the second file the guest emits, and the stamp
+	// its bytes must carry.
+	//
+	// 🔴 DELIBERATE DUPLICATE, and here the duplication IS the mechanism rather
+	// than a language-boundary concession — recorded so it is not "unified" away.
+	// A parity test over a shared fixture proves the two sides AGREE, never that
+	// both RAN: a guest that compiles and is never invoked reports nothing, and
+	// the green then certifies a comparison that never happened. The guest declares
+	// its own copy of this stamp and emits it, this side declares another and
+	// asserts them equal — so the assertion can only pass if the guest EXECUTED, at
+	// the revision this file was written against. One shared constant could not
+	// disagree with itself, and disagreement is the entire signal.
+	//
+	// 🔴 TWO BOUNDS SHIP WITH THIS CHECK AND NEITHER IS A DEFECT TO BE FIXED.
+	// First, it cannot catch a runner-level filter: no test observes its own
+	// non-execution, so a run that never selected this function reports exactly
+	// what a clean tree reports. Second, the two sides' constants and their
+	// comparison are deliberate near-duplicates for the reason above — sharing
+	// either would blind the cross-check to what it exists to see.
+	seamFixtureRevisionFile = "fixture-revision.txt"
+	seamFixtureRevision     = "fetching-provider/1"
 )
 
 // seamFixtureServedContent is what the emitted file must contain when a seam is
@@ -311,11 +412,117 @@ func renderedFileNamed(t *testing.T, tree map[string]string, surface string) str
 	return ""
 }
 
-// TestExternalInputSeamRendersIdenticalBytesOnEverySurface is the byte proof. It
-// renders one Release through all three surfaces' real entry points and compares
-// the emitted bytes, over a provider guest whose render requests an external
-// input — the one shape under which the seam is observable at all.
-func TestExternalInputSeamRendersIdenticalBytesOnEverySurface(t *testing.T) {
+// surfaceRender is one surface's emitted artifact set, keyed by output-relative
+// name, together with the name to call that surface in a failure message.
+type surfaceRender struct {
+	surface string
+	tree    map[string]string
+}
+
+// sortedNames returns the artifact names a render emitted, sorted, so a failure
+// message reports the same sequence on every run.
+func (r surfaceRender) sortedNames() []string {
+	names := make([]string, 0, len(r.tree))
+	for name := range r.tree {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// compareArtifactSets reports every way two surfaces' emitted artifact sets
+// differ: first the KEY SET, then the content of the names both produced.
+//
+// 🔴 The key set is compared FIRST, and separately, because it is the half a
+// naive comparison omits. A walk over only the files both sides produced passes
+// when one side emits FEWER — which is the exact live failure shape here, since a
+// guest handed no external-input seam renders around the missing content rather
+// than failing. So the names missing from each side are named, on the side they
+// are missing from, before any byte is looked at.
+//
+// It reports rather than halting, and reports every difference rather than the
+// first: a reader diagnosing a divergence needs the whole shape of it, and a
+// comparison that stopped at the first differing file would make a set-level
+// divergence look like a content-level one.
+func compareArtifactSets(t *testing.T, a, b surfaceRender) {
+	t.Helper()
+
+	missing := func(from, against surfaceRender) []string {
+		var out []string
+		for name := range against.tree {
+			if _, ok := from.tree[name]; !ok {
+				out = append(out, name)
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+
+	if only := missing(a, b); len(only) > 0 {
+		t.Errorf("%s emitted %d artifact(s) that %s did not: %v\n  %s emitted %v\n  %s emitted %v",
+			b.surface, len(only), a.surface, only,
+			a.surface, a.sortedNames(), b.surface, b.sortedNames())
+	}
+	if only := missing(b, a); len(only) > 0 {
+		t.Errorf("%s emitted %d artifact(s) that %s did not: %v\n  %s emitted %v\n  %s emitted %v",
+			a.surface, len(only), b.surface, only,
+			a.surface, a.sortedNames(), b.surface, b.sortedNames())
+	}
+
+	for _, name := range a.sortedNames() {
+		want, ok := b.tree[name]
+		if !ok {
+			continue
+		}
+		if got := a.tree[name]; got != want {
+			t.Errorf("%s and %s rendered different bytes for %s:\n  %s %q\n  %s %q",
+				a.surface, b.surface, name, a.surface, got, b.surface, want)
+		}
+	}
+}
+
+// assertFixtureRevision checks the guest's revision stamp reached this surface's
+// emitted set and names the revision this file was written against.
+//
+// It is the half of the cross-check that runs on the host side, and it is
+// deliberately NOT shared with the guest's declaration of the same string — the
+// constants' comment says why. Passing establishes that the guest EXECUTED on
+// this surface at the revision the assertions above were written for; a shared
+// fixture on its own establishes only that the surfaces agree.
+func assertFixtureRevision(t *testing.T, r surfaceRender) {
+	t.Helper()
+	for name, content := range r.tree {
+		if !strings.HasSuffix(name, seamFixtureRevisionFile) {
+			continue
+		}
+		if content != seamFixtureRevision {
+			t.Errorf("%s emitted fixture revision %q, but this test was written against %q; "+
+				"the guest and the test that drives it have moved apart, so the comparison above "+
+				"is against a contract that no longer holds",
+				r.surface, content, seamFixtureRevision)
+		}
+		return
+	}
+	t.Errorf("%s emitted no %s, so nothing establishes that the guest ran at the revision this test "+
+		"was written against; it emitted %v", r.surface, seamFixtureRevisionFile, r.sortedNames())
+}
+
+// TestThreeSurfacesEmitByteIdenticalArtifactSets is the byte proof. It builds one
+// Release through all three surfaces' real entry points — the command dispatch, a
+// request over the daemon's own wire in a spawned process, and a call through the
+// tool dispatch — and asserts the emitted artifact SETS are identical: same names,
+// same count, same content.
+//
+// Driven through the real entry points rather than by calling the shared
+// computation three times. A test that calls one function three times proves the
+// function is deterministic, which nobody doubts; the property under test is that
+// three transports hand it the same inputs.
+//
+// The file comment above carries what a reader needs before the assertions make
+// sense: why this fixture is the only one that can see the seam divergence, every
+// difference between the surfaces that legitimately survives, and how the
+// compiler-version value is kept from flaking the comparison.
+func TestThreeSurfacesEmitByteIdenticalArtifactSets(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess, and chdirs for the command line.
 	root := t.TempDir()
 
@@ -348,43 +555,48 @@ func TestExternalInputSeamRendersIdenticalBytesOnEverySurface(t *testing.T) {
 	}
 	t.Logf("negative control: with no seam the render emits %q", absent)
 
+	// The compiler-version value every surface renders under. The command line's
+	// dispatch and the daemon subprocess each reach this derivation on their own —
+	// the dispatch through its own build path, the subprocess because it IS the
+	// binary — so naming it here and handing it to the tool protocol is what makes
+	// all three stamped identically rather than two of them by luck.
+	compilerVersion := provenanceCompilerVersion()
+	if compilerVersion == "" {
+		t.Fatal("this binary reports no compiler version, so the three surfaces cannot be " +
+			"confirmed to render under the same one and any agreement below would be untrustworthy")
+	}
+	t.Logf("all three surfaces render under compiler version %q", compilerVersion)
+
 	// ---- The tool protocol, first among the surfaces because it writes nothing.
-	toolContent := renderThroughToolProtocol(t, root, releasePath)
+	tool := surfaceRender{"the tool protocol", renderThroughToolProtocol(t, root, releasePath, compilerVersion)}
 
 	// ---- The command line.
 	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("the command line's build failed: %v", err)
 	}
-	cliTree := readRenderedTree(t, filepath.Join(root, "dist"))
-	cliContent := renderedFileNamed(t, cliTree, "the command line")
+	cli := surfaceRender{"the command line", readRenderedTree(t, filepath.Join(root, "dist"))}
 	if err := os.RemoveAll(filepath.Join(root, "dist")); err != nil {
 		t.Fatalf("clear the command line's output before the daemon writes its own: %v", err)
 	}
 
 	// ---- The editor daemon, over its real wire protocol in a spawned process.
-	serveTree := renderThroughServeDaemon(t, root)
-	serveContent := renderedFileNamed(t, serveTree, "the editor daemon")
+	serve := surfaceRender{"the editor daemon", renderThroughServeDaemon(t, root)}
 
-	// ---- The three-way comparison.
-	for _, c := range []struct {
-		surface string
-		got     string
-	}{
-		{"the command line", cliContent},
-		{"the editor daemon", serveContent},
-		{"the tool protocol", toolContent},
-	} {
-		if c.got != want {
+	// ---- The artifact SETS, compared pairwise. Names and count first, content
+	// second; compareArtifactSets says why that order is the whole point.
+	compareArtifactSets(t, cli, tool)
+	compareArtifactSets(t, cli, serve)
+
+	// ---- Each surface against the value the seam is supposed to produce, so
+	// "the three agree" and "the three are right" are separate findings. Three
+	// surfaces agreeing on the WRONG bytes is a state this fixture can reach —
+	// the negative control above is exactly that state — and only this catches it.
+	for _, r := range []surfaceRender{cli, serve, tool} {
+		if got := renderedFileNamed(t, r.tree, r.surface); got != want {
 			t.Errorf("%s rendered different bytes than the seam should produce:\n got %q\nwant %q",
-				c.surface, c.got, want)
+				r.surface, got, want)
 		}
-	}
-	if cliContent != toolContent {
-		t.Errorf("the command line and the tool protocol disagree — the defect this test exists for:\n cli %q\ntool %q",
-			cliContent, toolContent)
-	}
-	if cliContent != serveContent {
-		t.Errorf("the command line and the editor daemon disagree:\n   cli %q\nserve %q", cliContent, serveContent)
+		assertFixtureRevision(t, r)
 	}
 }
 
@@ -435,8 +647,16 @@ func renderWithoutSeam(t *testing.T, root, releasePath string, ws *workspaceconf
 }
 
 // renderThroughToolProtocol drives the tool protocol's real message loop and
-// returns the content of the file its build tool reported.
-func renderThroughToolProtocol(t *testing.T, root, releasePath string) string {
+// returns the artifact set its build tool reported, keyed by output-relative
+// name — the same keying the other two surfaces' on-disk trees produce, so the
+// three compare on the names the render produced.
+//
+// compilerVersion is passed in rather than defaulted because this is the one
+// surface whose value comes from its caller: the command line's dispatch and the
+// daemon subprocess both derive it themselves, and a value invented here would
+// stamp this surface differently from the other two for no reason a reader could
+// see.
+func renderThroughToolProtocol(t *testing.T, root, releasePath, compilerVersion string) map[string]string {
 	t.Helper()
 
 	var stdin, stdout, stderr bytes.Buffer
@@ -463,7 +683,9 @@ func renderThroughToolProtocol(t *testing.T, root, releasePath string) string {
 		stdin.WriteByte('\n')
 	}
 
-	if err := mcp.Run(mcp.Config{Stdin: &stdin, Stdout: &stdout, Stderr: &stderr, ServerVersion: "test"}); err != nil {
+	if err := mcp.Run(mcp.Config{
+		Stdin: &stdin, Stdout: &stdout, Stderr: &stderr, ServerVersion: compilerVersion,
+	}); err != nil {
 		t.Fatalf("the tool protocol's message loop failed: %v\nstderr:\n%s", err, stderr.String())
 	}
 
@@ -512,13 +734,15 @@ func renderThroughToolProtocol(t *testing.T, root, releasePath string) string {
 			"so a decline means the pin and the guest name different references",
 			payload.DeclinedExternalInputs)
 	}
+	// The whole reported set, not the one file the seam moves. A surface that
+	// emitted FEWER artifacts is the failure shape the comparison exists to catch,
+	// and picking one file out here would discard exactly that evidence before any
+	// comparison could see it.
+	tree := make(map[string]string, len(payload.Files))
 	for _, f := range payload.Files {
-		if strings.HasSuffix(f.Path, seamFixtureFile) {
-			return f.Content
-		}
+		tree[f.Path] = f.Content
 	}
-	t.Fatalf("the tool protocol emitted no %s; it emitted %+v", seamFixtureFile, payload.Files)
-	return ""
+	return tree
 }
 
 // renderThroughServeDaemon spawns the real daemon, sends one aggrega/build, and
