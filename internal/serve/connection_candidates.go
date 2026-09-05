@@ -244,7 +244,13 @@ func (s *Server) connectionCandidates(ctx context.Context, node, socket string) 
 			// put an absolute host path on the wire.
 			return true
 		}
-		entity := WorkspaceEntityRef{Kind: kind, Name: name, File: rel}
+		// Workspace origin is the only one reachable here: the guard above
+		// has already dropped every document outside the root, so a target
+		// this method reports is always one with a workspace file. The field
+		// is filled explicitly rather than left to its zero value, because an
+		// empty origin would be a third state on a wire that carries exactly
+		// two.
+		entity := WorkspaceEntityRef{Kind: kind, Name: name, File: rel, Origin: EntityOriginWorkspace}
 		if name == node {
 			named = append(named, entity)
 			namedSchemas[rel] = usesSchemaOnDoc(doc.node)

@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
@@ -575,24 +576,107 @@ func (s *Server) irGraphPipelineOptions() pipeline.Options {
 // unit-tested via bytes.Buffer mocks in internal/serve/server_test.go;
 // the pipeline.RunPipeline call is covered by pipeline's own tests.
 //
-// # Why this one handler refuses where the others advise
+// # Why building a graph refuses where the other surfaces advise
 //
 // Every other surface that resolves a plugin without a recorded digest resolves
 // it anyway and says so, because reading a document is worth doing on a workspace
-// nobody has prepared yet. This handler is the exception, and it is named as one
-// rather than derived from a rule: an editor draws the graph a reader then
+// nobody has prepared yet. Building a graph is the exception, and it is named as
+// one rather than derived from a rule: an editor draws the graph a reader then
 // reasons about, and a graph built from bytes nothing vouches for would be drawn
 // exactly like one that was checked. An advisory alongside it is the wrong shape,
-// because the reader is looking at the picture rather than at the log. So the
-// gate below refuses before anything is resolved, and names what to run.
+// because the reader is looking at the picture rather than at the log. So
+// previewRelease refuses before anything is resolved, and names what to run.
 //
-// The exemption belongs to this handler and to nothing else — not to a class of
+// The refusal belongs to that computation and to nothing else — not to a class of
 // handler, and not to a predicate a later reader could satisfy elsewhere and
-// inherit the refusal by accident.
+// inherit the refusal by accident. It reaches a second caller today, the
+// graph-node coordinate of aggrega/attachCandidates, and it reaches it for the
+// same reason rather than by inheritance: that caller builds a graph too. A
+// surface that does not build one crosses no such precondition, which is what
+// keeps the name-addressed coordinate answering on an unprepared workspace.
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
-	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
+	preview, errEnvelope := s.previewRelease(ctx, params.Release, s.irGraphPipelineOptions())
+	if errEnvelope != nil {
+		return irGraphResult{}, errEnvelope
+	}
+
+	// 4. Drift verify, against the closure the preview computed. Loads the
+	//    lockfile fresh (catches the case where the operator re-pulled between
+	//    calls). On drift, publishes a Warning diagnostic on the lockfile path AND
+	//    fires the aggrega/publishDiagnostics notification. Non-blocking — irGraph
+	//    still produces the IR graph; drift is a Problems-panel signal, not a halt,
+	//    which is why it runs here rather than as one of the preview's own gates.
+	s.verifyDriftAndPublish(ctx, preview.lockfilePath, preview.resolved.Closure)
+
+	// 5. Render advisories to the Problems panel. The render step's coded
+	//    diagnostics — a target that cannot honor an authored field, an
+	//    attachment delivering a declared-sensitive datum as a literal — reach
+	//    the terminal on a CLI build and would otherwise reach nothing here, so
+	//    they are published on the file the daemon attributes semantic findings
+	//    to. Non-blocking, like drift: the graph is returned regardless. The
+	//    render only runs when the build-on-inspect dial is on, so with it off
+	//    this replaces an empty layer with an empty layer.
+	//
+	//    The declined external references travel in the SAME call rather than a
+	//    second one, and that is load-bearing: the publication replaces the whole
+	//    render layer, so a second call would erase whichever layer the first one
+	//    wrote. One call, one layer, both advisory classes.
+	s.publishRenderDiagnostics(ctx, preview.resolved.AggregatePath, preview.pipeline.RenderDiagnostics,
+		externalInputDivergenceDiagnostics(preview.fetchSeam.Declined(), preview.releasePath))
+
+	graphBytes, err := json.Marshal(preview.pipeline.IRGraph)
+	if err != nil {
+		return irGraphResult{}, &jsonRPCError{
+			Code:    jsonRPCInternalError,
+			Message: fmt.Sprintf("marshal IR graph: %v", err),
+		}
+	}
+	return irGraphResult{Graph: graphBytes}, nil
+}
+
+// releasePreview is everything one preview of a Release produces that a
+// caller downstream of it needs: the paths it resolved, the lockfile it
+// loaded, the external-input seam it rendered through, the closure it
+// computed and the pipeline result it ended with.
+//
+// It exists because two request surfaces need the same computation and must
+// not each build it. A second construction of this sequence would agree on
+// the ordinary case and part company on the awkward one — a differently
+// ordered pin seed, a lockfile loaded at a different moment — and the
+// divergence would be invisible until a preview and a graph query disagreed
+// about the same Release.
+type releasePreview struct {
+	releasePath  string
+	lockfilePath string
+	fetchSeam    *externalinputs.DeclineRecorder
+	resolved     *compilerops.ResolvedClosure
+	pipeline     *pipeline.Result
+}
+
+// previewRelease resolves the release parameter, applies the lockfile-absent
+// gate, forks a request-scoped catalog view seeded with this request's pins,
+// and runs the one preview computation in its inspection posture.
+//
+// # What it deliberately does NOT do
+//
+// It publishes nothing. Drift diagnostics and render advisories are a
+// property of the surface that asked, not of the computation: a graph query
+// draws a picture a reader then reasons about and owes them the Problems
+// panel, while a question about which Features may attach to a node owes
+// nothing to that panel and would, by publishing, replace a layer another
+// request wrote. So the publications stay with the caller that wants them.
+//
+// # Why the pipeline options are the caller's
+//
+// A caller reading only the IR graph has no use for the rendering stage, and
+// the graph is byte-identical whether or not the render ran — the render
+// never mutates it. So a caller that needs nothing rendered passes options
+// that skip it and never loads a rendering plugin, while the graph query
+// honours its own build-on-inspect dial.
+func (s *Server) previewRelease(ctx context.Context, release string, opts pipeline.Options) (*releasePreview, *jsonRPCError) {
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, release)
 	if paramErr != nil {
-		return irGraphResult{}, paramErr
+		return nil, paramErr
 	}
 
 	// 1. Lockfile-absent gate. Blocking — no IR graph produced
@@ -603,16 +687,16 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	lockfilePath := lockfile.PathFor(releasePath)
 	if _, err := os.Stat(lockfilePath); err != nil {
 		if os.IsNotExist(err) {
-			return irGraphResult{}, &jsonRPCError{
+			return nil, &jsonRPCError{
 				Code:    errLockfileAbsent,
-				Message: fmt.Sprintf("lockfile %s not found; run `aggrega pull --release %s` to generate", lockfilePath, params.Release),
-				Data:    newLockfileErrorData(lockfilePath, params.Release),
+				Message: fmt.Sprintf("lockfile %s not found; run `aggrega pull --release %s` to generate", lockfilePath, release),
+				Data:    newLockfileErrorData(lockfilePath, release),
 			}
 		}
-		return irGraphResult{}, &jsonRPCError{
+		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: fmt.Sprintf("lockfile stat %s: %v", lockfilePath, err),
-			Data:    newLockfileErrorData(lockfilePath, params.Release),
+			Data:    newLockfileErrorData(lockfilePath, release),
 		}
 	}
 
@@ -666,46 +750,19 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 		// that would REFUSE left off. An editor that declines to draw the graph
 		// leaves the reader with nothing, where a build leaves them a diagnostic.
 		compilerops.InspectionPolicy(),
-		s.irGraphPipelineOptions(),
+		opts,
 	)
 	if err != nil {
-		return irGraphResult{}, s.previewFailureEnvelope(view, releasePath, preview, err)
+		return nil, s.previewFailureEnvelope(view, releasePath, preview, err)
 	}
-	resolved := preview.Resolved
-	result := preview.Pipeline
 
-	// 4. Drift verify, against the closure the preview computed. Loads the
-	//    lockfile fresh (catches the case where the operator re-pulled between
-	//    calls). On drift, publishes a Warning diagnostic on the lockfile path AND
-	//    fires the aggrega/publishDiagnostics notification. Non-blocking — irGraph
-	//    still produces the IR graph; drift is a Problems-panel signal, not a halt,
-	//    which is why it runs here rather than as one of the preview's own gates.
-	s.verifyDriftAndPublish(ctx, lockfilePath, resolved.Closure)
-
-	// 5. Render advisories to the Problems panel. The render step's coded
-	//    diagnostics — a target that cannot honor an authored field, an
-	//    attachment delivering a declared-sensitive datum as a literal — reach
-	//    the terminal on a CLI build and would otherwise reach nothing here, so
-	//    they are published on the file the daemon attributes semantic findings
-	//    to. Non-blocking, like drift: the graph is returned regardless. The
-	//    render only runs when the build-on-inspect dial is on, so with it off
-	//    this replaces an empty layer with an empty layer.
-	//
-	//    The declined external references travel in the SAME call rather than a
-	//    second one, and that is load-bearing: the publication replaces the whole
-	//    render layer, so a second call would erase whichever layer the first one
-	//    wrote. One call, one layer, both advisory classes.
-	s.publishRenderDiagnostics(ctx, resolved.AggregatePath, result.RenderDiagnostics,
-		externalInputDivergenceDiagnostics(fetchSeam.Declined(), releasePath))
-
-	graphBytes, err := json.Marshal(result.IRGraph)
-	if err != nil {
-		return irGraphResult{}, &jsonRPCError{
-			Code:    jsonRPCInternalError,
-			Message: fmt.Sprintf("marshal IR graph: %v", err),
-		}
-	}
-	return irGraphResult{Graph: graphBytes}, nil
+	return &releasePreview{
+		releasePath:  releasePath,
+		lockfilePath: lockfilePath,
+		fetchSeam:    fetchSeam,
+		resolved:     preview.Resolved,
+		pipeline:     preview.Pipeline,
+	}, nil
 }
 
 // MarkupContent matches the LSP shape for hover content.

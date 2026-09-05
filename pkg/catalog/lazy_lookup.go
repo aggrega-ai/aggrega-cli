@@ -758,6 +758,37 @@ func (l *LazyLookup) Feature(uri string) (types.Feature, bool) {
 	return l.feature(uri)
 }
 
+// FeatureNames reports the metadata.name of every Feature the configured
+// catalog directories declare, in sorted order.
+//
+// It enumerates the Tier-1 directory index and only that, so it reads the
+// filesystem and never the network. A Feature reachable only from the
+// content-addressed cache or from a registry has no entry in that index and
+// is not reported — the honest bound, because enumerating those would mean
+// fetching, and a caller asking what is already here must not be the thing
+// that reaches out. Callers that need the whole surface resolve a URI they
+// already hold through Feature instead.
+//
+// It reports names rather than entities on purpose. The name is the lookup
+// coordinate, so a caller resolves each through Feature and the tier
+// cascade, the extends merge and the miss bookkeeping all stay in the one
+// place that implements them. Returning resolved entities here would be a
+// second resolution path free to disagree with the first.
+//
+// Sorted, so the order is a function of the catalog's content rather than of
+// directory-walk order, which varies between filesystems.
+func (l *LazyLookup) FeatureNames() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buildFeatureIndex()
+	names := make([]string, 0, len(l.featureIndex))
+	for name := range l.featureIndex {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // feature is the lock-free core of Feature, mirroring component.
 func (l *LazyLookup) feature(uri string) (types.Feature, bool) {
 	if f, ok := l.features[uri]; ok {
