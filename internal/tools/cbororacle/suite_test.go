@@ -313,6 +313,7 @@ func TestSuite_CBORVectors(t *testing.T) {
 	vec[abi.ParseOutput](t, "ErrorEnvelopeParseOutput", false)
 	vec[abi.PolicyOutput](t, "ErrorEnvelopePolicyOutput", false)
 	vec[abi.RenderNodeOutput](t, "ErrorEnvelopeRenderNodeOutput", false)
+	vec[abi.RenderedNameOutput](t, "ErrorEnvelopeRenderedNameOutput", false)
 	vec[abi.SourceFileResponse](t, "ErrorEnvelopeSourceFileResponse", false)
 	vec[abi.SourcePackResponse](t, "ErrorEnvelopeSourcePackResponse", false)
 	vec[abi.ValidateNodeOutput](t, "ErrorEnvelopeValidateNodeOutput", false)
