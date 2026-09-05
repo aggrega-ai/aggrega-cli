@@ -171,6 +171,88 @@ func TestWriteArtifactsRefusesAbsoluteName(t *testing.T) {
 	}
 }
 
+// TestWriteBuildOutputClearsTheBoundariesSubtree pins the half of a build's
+// write that is not a write: a file a previous build of a different variant left
+// under boundaries/ must not survive into a tree that no longer produces it,
+// because a consumer reading that tree would apply an artifact the compiler did
+// not just render.
+//
+// The stale file is placed at a path the second build does not emit, so its
+// disappearance can only be the clearing. The second build's own file is read
+// back in the same run, so a clearing that removed everything would fail here
+// rather than passing as a stricter version of the same guarantee.
+func TestWriteBuildOutputClearsTheBoundariesSubtree(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+
+	if err := WriteBuildOutput(tmp, map[string][]byte{
+		"boundaries/prod/old.yaml": []byte("from the previous variant"),
+	}); err != nil {
+		t.Fatalf("first WriteBuildOutput: %v", err)
+	}
+	stale := filepath.Join(tmp, "boundaries", "prod", "old.yaml")
+	if _, err := os.Stat(stale); err != nil {
+		t.Fatalf("precondition: the first build left nothing to clear: %v", err)
+	}
+
+	if err := WriteBuildOutput(tmp, map[string][]byte{
+		"boundaries/dev/new.yaml": []byte("from this variant"),
+	}); err != nil {
+		t.Fatalf("second WriteBuildOutput: %v", err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("the previous variant's %s survived the build; stat err = %v", stale, err)
+	}
+	got, err := os.ReadFile(filepath.Join(tmp, "boundaries", "dev", "new.yaml"))
+	if err != nil {
+		t.Fatalf("read this build's own output: %v", err)
+	}
+	if string(got) != "from this variant" {
+		t.Errorf("this build's output = %q", got)
+	}
+}
+
+// TestWriteBuildOutputLeavesTheRestOfTheOutputRootAlone pins the bound on the
+// clearing. Only the subtree a build regenerates in full is cleared; anything a
+// caller put beside it is theirs, and a write that emptied the output root would
+// destroy content this package never produced.
+func TestWriteBuildOutputLeavesTheRestOfTheOutputRootAlone(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	beside := filepath.Join(tmp, "notes.txt")
+	if err := os.WriteFile(beside, []byte("not the compiler's"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := WriteBuildOutput(tmp, map[string][]byte{"boundaries/prod/app.yaml": []byte("x")}); err != nil {
+		t.Fatalf("WriteBuildOutput: %v", err)
+	}
+
+	got, err := os.ReadFile(beside)
+	if err != nil {
+		t.Fatalf("the file beside the boundaries subtree was removed: %v", err)
+	}
+	if string(got) != "not the compiler's" {
+		t.Errorf("%s = %q", beside, got)
+	}
+}
+
+// TestWriteBuildOutputRefusesAnEscapingName pins that routing a build's
+// write through the clearing entry point does not bypass the check the bare
+// write owes. A name escaping the output root is refused here exactly as it is
+// there, so neither surface performing a build is the one that accepts it.
+func TestWriteBuildOutputRefusesAnEscapingName(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	err := WriteBuildOutput(tmp, map[string][]byte{"../escape.yaml": []byte("x")})
+	if err == nil {
+		t.Fatal("WriteBuildOutput accepted a name that escapes the output root")
+	}
+	if !strings.Contains(err.Error(), "escapes the output root") {
+		t.Errorf("refusal = %v; want it to name the output root", err)
+	}
+}
+
 // TestDryRunReportOrdersArtifactsDeterministically pins the report's ordering
 // against Go's randomised map iteration. Rendered output is byte-identical for
 // identical input, and a report of that output that reshuffled between runs would

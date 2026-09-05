@@ -41,6 +41,9 @@
 //	aggrega/diagnostics            returns the diagnostics already cached
 //	                               for a file
 //	aggrega/irGraph                returns the IR graph for a Release
+//	aggrega/build                  builds a Release with every gate on and
+//	                               writes the artifacts it rendered into the
+//	                               workspace's output directory
 //	aggrega/buildPreview           renders a Release the way a build does,
 //	                               with every gate on, and reports the
 //	                               artifacts a build would emit without

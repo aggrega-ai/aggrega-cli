@@ -29,12 +29,18 @@ func Dispositions() map[string]opsurface.Disposition {
 // repeated prose so that a dozen dispositions resting on one property cannot
 // drift into a dozen descriptions of it.
 const (
-	// groundWritesNothing covers an operation whose product is something
-	// written: a file, a directory, a cache entry, a stored credential. The
-	// daemon writes nothing but its own response bodies — every write in this
-	// package is in a test — so such an operation has no output here.
-	groundWritesNothing = "its product is something written to disk, and the daemon writes nothing but its " +
-		"own response bodies"
+	// groundWritesOnlyBuildOutput covers an operation whose product is something
+	// written that a build does not render: a dependency fill, a cache entry, a
+	// stored credential, a configuration file. The daemon has exactly one writing
+	// path — the artifact set an explicitly invoked build produces, plus its own
+	// response bodies — so such an operation has no output here.
+	//
+	// The ground is stated as the one path rather than as "writes nothing"
+	// because the narrower claim is the one that stays true: a reader checking it
+	// against this package finds a single write and can see that none of the
+	// products below is what it produces.
+	groundWritesOnlyBuildOutput = "its product is something written that a build does not render, and the " +
+		"daemon's only writing path is the artifact set an explicitly invoked build produces"
 
 	// groundNoRegistryTransport covers an operation that talks to a registry.
 	// The daemon links no registry, artifact-store or signing client, so such
@@ -88,12 +94,13 @@ var dispositions = map[string]opsurface.Disposition{
 	"ir-graph":           opsurface.Exposed("aggrega/irGraph"),
 
 	// The compile runs here in full, under the posture of a surface that emits an
-	// artifact: every gate on, every divergence a halt. What the daemon does not
-	// do with the result is persist it — the method reports the artifacts a build
-	// would emit and writes none of them, which is why the ground beside the
-	// entries below still holds for this package. A caller wanting the files on
-	// disk runs the build itself.
-	"build": opsurface.Exposed("aggrega/buildPreview"),
+	// artifact: every gate on, every divergence a halt. Two methods carry it and
+	// the difference between them is what happens to the result — one writes the
+	// artifacts into the workspace, the other reports what writing them would have
+	// produced. Both are named, because a caller enumerating this table is asking
+	// what the daemon can be asked for, and a capability reachable two ways under
+	// one name would be described as reachable one way.
+	"build": opsurface.Exposed("aggrega/build", "aggrega/buildPreview"),
 
 	"definition-at-position":      opsurface.Exposed("aggrega/resolve"),
 	"references-at-position":      opsurface.Exposed("aggrega/findReferences"),
@@ -114,22 +121,22 @@ var dispositions = map[string]opsurface.Disposition{
 	"config-show": opsurface.Exposed("aggrega/effectiveConfiguration"),
 
 	// Capabilities no method carries, each on a property of this daemon.
-	"acquire":               opsurface.NotApplicable(groundWritesNothing),
-	"cache-clear":           opsurface.NotApplicable(groundWritesNothing),
-	"cache-evict":           opsurface.NotApplicable(groundWritesNothing),
-	"cache-prune":           opsurface.NotApplicable(groundWritesNothing),
-	"config-capture":        opsurface.NotApplicable(groundWritesNothing),
-	"config-init":           opsurface.NotApplicable(groundWritesNothing),
-	"import":                opsurface.NotApplicable(groundWritesNothing),
-	"logout":                opsurface.NotApplicable(groundWritesNothing),
-	"plugin-add":            opsurface.NotApplicable(groundWritesNothing),
-	"plugin-gen-catalog":    opsurface.NotApplicable(groundWritesNothing),
-	"plugin-remove":         opsurface.NotApplicable(groundWritesNothing),
-	"plugin-sync":           opsurface.NotApplicable(groundWritesNothing),
-	"pull":                  opsurface.NotApplicable(groundWritesNothing),
-	"registry-add":          opsurface.NotApplicable(groundWritesNothing),
-	"registry-remove":       opsurface.NotApplicable(groundWritesNothing),
-	"registry-update":       opsurface.NotApplicable(groundWritesNothing),
+	"acquire":               opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"cache-clear":           opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"cache-evict":           opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"cache-prune":           opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"config-capture":        opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"config-init":           opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"import":                opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"logout":                opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"plugin-add":            opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"plugin-gen-catalog":    opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"plugin-remove":         opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"plugin-sync":           opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"pull":                  opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"registry-add":          opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"registry-remove":       opsurface.NotApplicable(groundWritesOnlyBuildOutput),
+	"registry-update":       opsurface.NotApplicable(groundWritesOnlyBuildOutput),
 	"deprecate":             opsurface.NotApplicable(groundNoRegistryTransport),
 	"push":                  opsurface.NotApplicable(groundNoRegistryTransport),
 	"push-artifact":         opsurface.NotApplicable(groundNoRegistryTransport),

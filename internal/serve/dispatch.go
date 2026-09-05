@@ -490,6 +490,7 @@ var methodRoutes = []methodRoute{
 	{"aggrega/invalidate", (*Server).dispatchInvalidate},
 	{"aggrega/diagnostics", (*Server).dispatchDiagnostics},
 	{"aggrega/irGraph", (*Server).dispatchIrGraph},
+	{"aggrega/build", (*Server).dispatchBuild},
 	{"aggrega/buildPreview", (*Server).dispatchBuildPreview},
 	{"aggrega/resolve", (*Server).dispatchResolve},
 	{"aggrega/findReferences", (*Server).dispatchFindReferences},

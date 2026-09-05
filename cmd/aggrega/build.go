@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -494,7 +493,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 
 	outDir := run.outDir
 	if outDir == "" {
-		outDir = filepath.Join("dist")
+		outDir = artifactout.DefaultOutputDir
 	}
 
 	// A dry run reports the render and leaves the output directory alone —
@@ -506,13 +505,10 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		artifactout.WriteDryRunReport(out, outDir, result.Artifacts)
 		summary = fmt.Sprintf("Dry run: %d files would be written to %s/; nothing was written", len(result.Artifacts), outDir)
 	} else {
-		// Write output. Clean dist/boundaries/ first so stale files from a prior
-		// build of a different variant don't leak into this one (GitOps consumers
-		// must see exactly what the compiler just produced).
-		if err := os.RemoveAll(filepath.Join(outDir, "boundaries")); err != nil {
-			return fmt.Errorf("clean %s/boundaries: %w", outDir, err)
-		}
-		if err := artifactout.WriteAll(outDir, result.Artifacts); err != nil {
+		// Write output. The boundaries subtree from a prior build of a different
+		// variant is cleared as part of the write, so GitOps consumers see exactly
+		// what the compiler just produced.
+		if err := artifactout.WriteBuildOutput(outDir, result.Artifacts); err != nil {
 			return fmt.Errorf("write output: %w", err)
 		}
 		summary = fmt.Sprintf("Build completed: %d files written to %s/", len(result.Artifacts), outDir)
