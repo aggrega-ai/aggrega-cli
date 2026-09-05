@@ -244,13 +244,13 @@ func (s *Server) connectionCandidates(ctx context.Context, node, socket string) 
 			// put an absolute host path on the wire.
 			return true
 		}
-		// Workspace origin is the only one reachable here: the guard above
-		// has already dropped every document outside the root, so a target
-		// this method reports is always one with a workspace file. The field
-		// is filled explicitly rather than left to its zero value, because an
-		// empty origin would be a third state on a wire that carries exactly
-		// two.
-		entity := WorkspaceEntityRef{Kind: kind, Name: name, File: rel, Origin: EntityOriginWorkspace}
+		// The bare identity, with no origin beside it: the guard above has
+		// already dropped every document outside the root, so every entity
+		// this method reports is a workspace document with a workspace file.
+		// A key whose value one response can only ever fill one way tells
+		// that response's client nothing, so the sourced shape is reserved
+		// for the responses whose entities genuinely come from two places.
+		entity := WorkspaceEntityRef{Kind: kind, Name: name, File: rel}
 		if name == node {
 			named = append(named, entity)
 			namedSchemas[rel] = usesSchemaOnDoc(doc.node)

@@ -83,11 +83,13 @@ func (s *Server) catalogFeatures(alreadyReported map[string]bool) []types.Featur
 // reported under, on every surface that reports one. It is one construction
 // rather than a shape each caller assembles, so the entity index and a
 // candidate list cannot disagree about how the same Feature is addressed.
-func catalogFeatureRef(feat types.Feature) WorkspaceEntityRef {
-	return WorkspaceEntityRef{
-		Kind:   "Feature",
-		Name:   feat.Metadata.Name,
-		File:   "",
+func catalogFeatureRef(feat types.Feature) SourcedEntityRef {
+	return SourcedEntityRef{
+		WorkspaceEntityRef: WorkspaceEntityRef{
+			Kind: "Feature",
+			Name: feat.Metadata.Name,
+			File: "",
+		},
 		Origin: EntityOriginCatalog,
 	}
 }

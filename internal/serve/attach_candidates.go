@@ -15,8 +15,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// WorkspaceEntityRef addresses one workspace-local document on the wire:
-// kind, name and source file, the three fields that identify it.
+// WorkspaceEntityRef is the identity one entity is addressed by on the
+// wire: kind, name and source file, the three fields that identify it.
 //
 // The identity is deliberately minimal. Everything else a palette wants to
 // show about an entity is already reported by aggrega/catalogIndex for the
@@ -28,9 +28,29 @@ import (
 // kind today, so the triple a client joins on has the same shape in every
 // response that carries one.
 //
-// Every candidate-reporting method reports its candidates as this type, so
-// the joinable triple is one declaration rather than a shape each response
-// repeats and could drift from. sortCandidates orders any of them.
+// The triple has exactly one declaration, and a response that must say more
+// about an entity embeds this type rather than restating its fields — see
+// SourcedEntityRef. That is what keeps the field names a client joins on
+// identical by construction rather than by agreement, and it is why a
+// response reports this shape unadorned wherever it has nothing to add: the
+// entities it names then arrive under the three keys and no more.
+// sortCandidates orders any reference shape.
+type WorkspaceEntityRef struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	File string `json:"file"`
+}
+
+// SourcedEntityRef is the entity identity together with where the daemon
+// read the entity from — the shape a response reports when its entities can
+// come from more than one place.
+//
+// It embeds the identity rather than restating it, so its wire shape is the
+// triple's three keys and origin in one flat object, and a client joining a
+// sourced reference against a bare one joins on the same field names by
+// construction. A response whose entities all come from a single place keeps
+// reporting the bare identity, so origin travels only where it distinguishes
+// something.
 //
 // Origin names where the entity was read from, and it is what keeps the
 // identity honest once a response can carry entities from two places. A
@@ -41,17 +61,28 @@ import (
 // empty File alone could not carry that meaning — it would be
 // indistinguishable from a build that failed to fill the field in — so the
 // origin says it explicitly rather than leaving it to be inferred.
-type WorkspaceEntityRef struct {
-	Kind   string `json:"kind"`
-	Name   string `json:"name"`
-	File   string `json:"file"`
+type SourcedEntityRef struct {
+	WorkspaceEntityRef
 	Origin string `json:"origin"`
 }
 
+// entityIdentity is answered by every reference shape: the bare identity
+// answers with itself, and a shape embedding it promotes that answer. One
+// ordering therefore serves every candidate list whatever shape carries it,
+// rather than a second comparison that would be free to disagree with the
+// first.
+type entityIdentity interface {
+	identity() WorkspaceEntityRef
+}
+
+func (r WorkspaceEntityRef) identity() WorkspaceEntityRef { return r }
+
 // AttachCandidate is one Feature in the aggrega/attachCandidates
 // response: a Feature whose declared applicability the addressed entity's
-// labels satisfy.
-type AttachCandidate = WorkspaceEntityRef
+// labels satisfy. It carries an origin because the candidates come from two
+// places — the workspace documents and the configured catalog directories —
+// so a client cannot otherwise tell which of them it is looking at.
+type AttachCandidate = SourcedEntityRef
 
 // Node-label provenance values, reported as labelSource so a client knows
 // which of two genuinely different label sets a match was evaluated against.
@@ -409,7 +440,10 @@ func (s *Server) workspaceFeatureDecls(ctx context.Context, visit func(workspace
 			// them by name and discloses no host path.
 			return true
 		}
-		entity := AttachCandidate{Kind: kind, Name: name, File: rel, Origin: EntityOriginWorkspace}
+		entity := AttachCandidate{
+			WorkspaceEntityRef: WorkspaceEntityRef{Kind: kind, Name: name, File: rel},
+			Origin:             EntityOriginWorkspace,
+		}
 		if visit != nil {
 			visit(doc, entity)
 		}
@@ -514,11 +548,12 @@ func (s *Server) matchingFeatures(ctx context.Context, labels types.OrderedMap[s
 
 // sortCandidates puts entities into the shared workspace-entity order,
 // which is the order every projection over the workspace traversal reports
-// in. It serves every candidate list, so two responses a client joins
-// against each other cannot order the same entities differently.
-func sortCandidates(entities []WorkspaceEntityRef) {
+// in. It serves every candidate list, whichever reference shape carries it,
+// so two responses a client joins against each other cannot order the same
+// entities differently.
+func sortCandidates[T entityIdentity](entities []T) {
 	sort.Slice(entities, func(i, j int) bool {
-		a, b := entities[i], entities[j]
+		a, b := entities[i].identity(), entities[j].identity()
 		return entityOrderLess(a.Kind, a.Name, a.File, b.Kind, b.Name, b.File)
 	})
 }

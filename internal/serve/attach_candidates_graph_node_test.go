@@ -278,10 +278,10 @@ func attachRequest(t *testing.T, srv *Server, params attachCandidatesParams) jso
 
 // attachResult is the decoded response shape these tests assert against.
 type attachResult struct {
-	Node        string               `json:"node"`
-	NodeLabels  map[string]string    `json:"nodeLabels"`
-	LabelSource string               `json:"labelSource"`
-	Candidates  []WorkspaceEntityRef `json:"candidates"`
+	Node        string            `json:"node"`
+	NodeLabels  map[string]string `json:"nodeLabels"`
+	LabelSource string            `json:"labelSource"`
+	Candidates  []AttachCandidate `json:"candidates"`
 }
 
 func decodeAttachResult(t *testing.T, resp jsonRPCResponse) attachResult {
@@ -299,7 +299,7 @@ func decodeAttachResult(t *testing.T, resp jsonRPCResponse) attachResult {
 // candidateNames projects a candidate list down to its names, for comparison
 // against an expected set. Names are asserted rather than counted: a count
 // agrees while naming the wrong Features.
-func refNames(cands []WorkspaceEntityRef) []string {
+func refNames(cands []AttachCandidate) []string {
 	out := make([]string, 0, len(cands))
 	for _, c := range cands {
 		out = append(out, c.Name)
