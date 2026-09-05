@@ -44,6 +44,7 @@ func newInspectCmd() *cobra.Command {
 
 		showImplementsFlag bool
 		flatFlag           bool
+		unredactedFlag     bool
 	)
 	c := &cobra.Command{
 		Use:   "inspect [identifier]",
@@ -65,9 +66,15 @@ and --detail are mutually exclusive. Resolution depth has its own pair, --raw
 for the entity exactly as authored and --resolved for the kind's full depth,
 also mutually exclusive.
 
-Note that --raw and --output yaml reproduce the file as written, so a value the
-author declared sensitive appears as authored. That is what as-authored means;
-handle such output as you would the entity file itself.`,
+Note that --raw reproduces the file as written, so a value the author declared
+sensitive appears as authored. That is what as-authored means; handle such
+output as you would the entity file itself. --output yaml reproduces the file
+the same way for every kind that has one to reproduce.
+
+A Release inspected without --raw is the exception: it has no authored form to
+reproduce, so --output yaml emits the graph this command computed. Values an
+author declared sensitive are withheld from that graph, as they are from the
+readable layouts. Pass --unredacted to print them instead.`,
 		Example: `  # A catalog entity by name
   aggrega inspect core/compute/api-server
 
@@ -135,6 +142,7 @@ handle such output as you would the entity file itself.`,
 				colorize:       newColorizer(colorMode, out, noColorSet),
 				showImplements: showImplementsFlag,
 				flat:           flatFlag,
+				unredacted:     unredactedFlag,
 			}
 			return dispatchInspect(rw, args[0], catalogDirs, opts)
 		},
@@ -149,6 +157,7 @@ handle such output as you would the entity file itself.`,
 	c.Flags().StringVarP(&outputFlag, "output", "o", "text", "Output format: text|yaml.")
 	c.Flags().BoolVar(&showImplementsFlag, "show-implements", false, "For a Recipe or FeatureRecipe, resolve spec.implements against the catalog and render the bound Component or Feature.")
 	c.Flags().BoolVar(&flatFlag, "flat", false, "Render a tree-shaped entity (Aggregate, Release) as a flat list, each node prefixed with its full dotted path. No effect on tabular kinds.")
+	c.Flags().BoolVar(&unredactedFlag, "unredacted", false, "Print the values an author declared sensitive instead of withholding them. Anything the output reaches — a terminal, a pipe, a file, a screen recording — then carries those values in the clear.")
 	c.Flags().StringVar(&pluginFlag, "plugin", "", "Filesystem path to a raw .wasm artifact; derives and prints the host functions it imports, before `aggrega plugin sync` records them in a Plugin entity. Takes no identifier argument.")
 	c.MarkFlagsMutuallyExclusive("list", "detail")
 	c.MarkFlagsMutuallyExclusive("raw", "resolved")
@@ -695,7 +704,16 @@ func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRF
 // sensitivity derivation uses, so what inspect hides and what the graph marks
 // come from one declaration. An absent Feature, or one declaring no schema,
 // reports nothing sensitive rather than guessing.
-func declaredFeatureLeaves(lookup resolver.CatalogLookup, featureType string) resolver.SensitiveLeaves {
+//
+// Asking for the unredacted view answers with the empty set, and that is where
+// the affordance is applied rather than at each place a value is printed. A
+// layout withholds a leaf because the set it was handed covers it, so emptying
+// the set reveals every leaf in every layout at once — including a layout added
+// later, which gets the behaviour without having to remember to ask for it.
+func declaredFeatureLeaves(opts inspectOptions, lookup resolver.CatalogLookup, featureType string) resolver.SensitiveLeaves {
+	if opts.unredacted {
+		return resolver.SensitiveLeaves{}
+	}
 	compiled, ok := ir.CompileFeatureSchema(lookup, featureType)
 	if !ok {
 		return resolver.SensitiveLeaves{}

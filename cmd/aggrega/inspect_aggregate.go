@@ -175,7 +175,7 @@ func renderAggregateNodes(opts inspectOptions, topo *topology.TopologyResult, lo
 		fmt.Fprintf(opts.out, "%s%s  (type: %s)\n", indent, label, opts.colorize.uri(node.ComponentType))
 		body := indent + "  "
 		values := authored.applyTo(id, node.Values)
-		renderAggregateNodeValues(opts, body, values, declaredComponentLeaves(lookup, node.ComponentType))
+		renderAggregateNodeValues(opts, body, values, declaredComponentLeaves(opts, lookup, node.ComponentType))
 		renderAggregateNodeUses(opts, body, node.Uses)
 		renderAggregateNodeRequiredAttachments(opts, body, node.ComponentType, lookup)
 	}
@@ -236,7 +236,15 @@ func renderAggregateNodeValues(opts inspectOptions, indent string, values types.
 // what inspect hides and what the trace hides come from one declaration. A
 // component absent from the catalog, or one declaring no schema, reports
 // nothing sensitive rather than guessing.
-func declaredComponentLeaves(lookup resolver.CatalogLookup, componentType string) resolver.SensitiveLeaves {
+//
+// Asking for the unredacted view answers with the empty set, on the same terms
+// as the attachment-side reader: the affordance is applied where the set is
+// produced, so every layout handed that set reveals at once and none of them
+// carries a second decision about it.
+func declaredComponentLeaves(opts inspectOptions, lookup resolver.CatalogLookup, componentType string) resolver.SensitiveLeaves {
+	if opts.unredacted {
+		return resolver.SensitiveLeaves{}
+	}
 	if lookup.Component == nil || componentType == "" {
 		return resolver.SensitiveLeaves{}
 	}

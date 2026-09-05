@@ -79,6 +79,14 @@ type inspectOptions struct {
 	// dotted path as a prefix. It is a no-op for kinds whose default render is
 	// already flat (the tabular Manifest); those renderers ignore it.
 	flat bool
+	// unredacted emits the values an author declared sensitive instead of
+	// withholding them. It is the inspect-side spelling of the concept the
+	// trace surface already carries, so the same word names it at both scopes
+	// and which output it reaches is read from the command it sits on.
+	//
+	// It reaches the surfaces that carry authored pillar data. A surface that
+	// prints no such data has nothing to reveal and is unaffected by it.
+	unredacted bool
 }
 
 // parseColorMode maps the --color string to a colorMode, returning a clear

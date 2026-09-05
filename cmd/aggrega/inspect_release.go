@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
@@ -23,9 +24,21 @@ import (
 // --output yaml emits the resolved IR graph as YAML (the pipeline result is the
 // resolved subject); the text path honours the --list / default / --detail
 // levels and the --flat boundary-tree collapse.
+//
+// Both paths withhold the values an author declared sensitive, and they withhold
+// the same ones. The subject here is the resolved graph — computed from the
+// authored entities rather than reproduced from them — so it is a view this
+// command produced for someone to read, and the sensitivity declarations that
+// govern the readable layout govern it too. The graph carries its own
+// per-authored-leaf markings, so the structured path reads the answer off the
+// subject it is about to emit rather than deriving it a second way.
 func renderReleaseResolved(opts inspectOptions, rel *types.Release, releasePath string, graph *types.IRGraph, rr *resolver.ResolveResult, lookup resolver.CatalogLookup) error {
 	if opts.output == outputYAML {
-		out, err := yaml.Marshal(graph)
+		subject := graph
+		if !opts.unredacted {
+			subject = redact.Graph(graph)
+		}
+		out, err := yaml.Marshal(subject)
 		if err != nil {
 			return fmt.Errorf("render resolved IR as YAML: %w", err)
 		}
@@ -181,6 +194,6 @@ func renderReleaseComponent(opts inspectOptions, nodeID, boundaryPath string, gr
 	}
 	fmt.Fprintln(opts.out, "    Features:")
 	for instanceName, entry := range featureMap.All() {
-		renderFeatureAttachment(opts.out, instanceName, entry, declaredFeatureLeaves(lookup, entry.Type))
+		renderFeatureAttachment(opts.out, instanceName, entry, declaredFeatureLeaves(opts, lookup, entry.Type))
 	}
 }

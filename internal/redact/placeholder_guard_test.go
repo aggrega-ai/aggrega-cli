@@ -35,6 +35,10 @@ func composedWithheldLead() string { return "<" + "withheld: " }
 // spelling would let one surface announce a weaker guarantee than another.
 func composedSubstitutedLead() string { return "<" + "re-rendered: " }
 
+// composedMarkerKey rebuilds the structured withheld marker's key from fragments,
+// with the same seam and for the same reason.
+func composedMarkerKey() string { return "aggrega" + "_withheld" }
+
 // TestPlaceholderLiteralHasOneHome is the chokepoint guard for the redaction
 // replacement. It walks every Go file in the module and requires the
 // placeholder literal to appear in exactly one file, exactly once.
@@ -75,6 +79,18 @@ func TestSubstitutedProjectionLiteralHasOneHome(t *testing.T) {
 	t.Parallel()
 	assertLiteralHasOneHome(t, composedSubstitutedLead(),
 		"the re-render announcement", "redact.SubstitutedProjection()")
+}
+
+// TestWithheldMarkerKeyHasOneHome is the same chokepoint guard for the structured
+// withheld marker's key, and it guards one more boundary than the three above: the
+// key is the join between what this module emits into a document and what a reader
+// of that document recognises as a withholding. A surface spelling its own would
+// emit an object no reader recognises, which reads as an authored value rather
+// than as a refusal — the one failure in this axis that looks like data.
+func TestWithheldMarkerKeyHasOneHome(t *testing.T) {
+	t.Parallel()
+	assertLiteralHasOneHome(t, composedMarkerKey(),
+		"the withheld marker key", "redact.WithheldMarkerKey()")
 }
 
 // assertLiteralHasOneHome is the ONE census walk both guards run. A second copy of

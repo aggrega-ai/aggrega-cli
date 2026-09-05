@@ -101,6 +101,84 @@ const substitutedProjection = "<re-rendered: the same template evaluated against
 // substituted, so a reader is never told that a re-render is the emitted document.
 func SubstitutedProjection() string { return substitutedProjection }
 
+// withheldMarkerKey is the sole key of the object a STRUCTURED surface leaves
+// where a value used to be. Like the three texts above it is declared exactly
+// once in the module, and for the same reason: two spellings would make "was
+// this withheld, or simply absent?" unanswerable, which is the one question a
+// reader of a shortened display has to be able to answer.
+// TestWithheldMarkerKeyHasOneHome enforces the single spelling.
+//
+// A structured surface cannot use the placeholder, and that is a property of
+// the surface rather than a preference. The texts above replace a value a
+// reader meets as text; a structured surface emits a document whose values
+// carry types, so putting a string where an object or a number sat changes the
+// shape of the document — and leaves a reader unable to tell the substitution
+// from a value whose author happened to write that same text.
+//
+// A removed value needs SOME representation, because dropping the key would
+// drop the field's path with it and the reader would no longer learn that the
+// field exists at all. The representation may not be one an author could have
+// written, which rules out every plain scalar. Null is the trap worth naming:
+// a reader that renders it prints the readable word where the authored value
+// used to be, which is a confident wrong answer in place of a correct refusal.
+// A single-key object is a shape a reader recognises before it reads any value
+// out of it.
+//
+// An author who writes this exact shape into their own configuration has that
+// value withheld and is told it was withheld. That is over-withholding, which
+// cannot leak.
+const withheldMarkerKey = "aggrega_withheld"
+
+// WithheldReason says WHY a structured surface withheld a value. It is a
+// distinct type rather than a bare string so a surface reaches for one of the
+// three below instead of inventing a fourth wording that a reader would not
+// recognise and would have to fall back on.
+//
+// Each is a different statement about the graph, and a reader words them apart,
+// because saying "this is a secret" about a leaf its author left readable would
+// assert something the graph does not.
+type WithheldReason string
+
+const (
+	// WithheldDeclared — the entity attached here declares this leaf, or one
+	// above it, to carry sensitive material.
+	WithheldDeclared WithheldReason = "declared"
+
+	// WithheldAttachment — the sensitivity marking arrived in a shape this
+	// surface cannot read, so no leaf under it can be judged and every one of
+	// them is withheld.
+	WithheldAttachment WithheldReason = "attachment"
+
+	// WithheldUnreadable — the value is in no shape this surface can read.
+	WithheldUnreadable WithheldReason = "unreadable"
+)
+
+// WithheldMarkerKey returns the sole key of the withheld marker, for a surface
+// that has to recognise one rather than build one.
+func WithheldMarkerKey() string { return withheldMarkerKey }
+
+// WithheldMarker returns the object a structured surface leaves where a value
+// was, carrying the reason so a reader can still say why a field is absent.
+//
+// A reason this package does not define falls back to WithheldAttachment,
+// which is the reading that claims least: it says the marking could not be read
+// rather than asserting anything about what the author declared at this path.
+// The fallback is here, on the producing side, so a reader never has to decide
+// what an unrecognised reason meant.
+//
+// A fresh map is built per call rather than a shared one being handed out.
+// Two positions holding one map value would let a YAML encoder emit the second
+// as an alias of the first, which is a shape a reader joining on the marker key
+// would have to resolve before it could recognise the marker at all.
+func WithheldMarker(reason WithheldReason) map[string]string {
+	switch reason {
+	case WithheldDeclared, WithheldUnreadable:
+	default:
+		reason = WithheldAttachment
+	}
+	return map[string]string{withheldMarkerKey: string(reason)}
+}
+
 // WorkloadDisplay records what a human-readable surface does with the rendered
 // workload projection. It is the one display decision a Keys set carries, because
 // a rendered workload is the one projection no key-addressed substitution can
@@ -291,10 +369,31 @@ func Pillar(in types.OrderedMap[any], paths map[string]bool) types.OrderedMap[an
 	if len(paths) == 0 || in.Len() == 0 {
 		return in
 	}
-	return replacePillar("", in, paths)
+	return replacePillar("", in, paths, func() any { return placeholder })
 }
 
-func replacePillar(prefix string, in types.OrderedMap[any], paths map[string]bool) types.OrderedMap[any] {
+// PillarStructured is Pillar for a surface that emits a document rather than
+// text: every declared sensitive leaf's value is replaced by the withheld
+// marker instead of by the placeholder, so the substitution stays
+// distinguishable from an authored string and the document keeps a shape a
+// reader can walk.
+//
+// It shares the descent with Pillar rather than restating it. The two differ
+// only in what they leave behind, and a second walk would be free to drift into
+// reaching a different set of leaves than the text surface reaches — which is
+// the one difference between the two surfaces that must never exist.
+func PillarStructured(in types.OrderedMap[any], paths map[string]bool, reason WithheldReason) types.OrderedMap[any] {
+	if len(paths) == 0 || in.Len() == 0 {
+		return in
+	}
+	return replacePillar("", in, paths, func() any { return WithheldMarker(reason) })
+}
+
+// replacePillar walks a pillar and replaces every marked leaf with whatever
+// replacement builds. The replacement is a constructor rather than a value so
+// each marked leaf gets its own, which keeps a document encoder from emitting
+// the second and later ones as aliases of the first.
+func replacePillar(prefix string, in types.OrderedMap[any], paths map[string]bool, replacement func() any) types.OrderedMap[any] {
 	out := types.OrderedMap[any]{}
 	for k, v := range in.All() {
 		path := k
@@ -302,7 +401,7 @@ func replacePillar(prefix string, in types.OrderedMap[any], paths map[string]boo
 			path = prefix + "." + k
 		}
 		if paths[path] {
-			out.Set(k, placeholder)
+			out.Set(k, replacement())
 			continue
 		}
 		// The descent mirrors types.FlattenLeaves exactly — same two nested
@@ -314,14 +413,14 @@ func replacePillar(prefix string, in types.OrderedMap[any], paths map[string]boo
 				out.Set(k, v)
 				continue
 			}
-			nested := replacePillar(path, *n, paths)
+			nested := replacePillar(path, *n, paths, replacement)
 			out.Set(k, &nested)
 		case types.OrderedMap[any]:
 			if n.Len() == 0 {
 				out.Set(k, v)
 				continue
 			}
-			out.Set(k, replacePillar(path, n, paths))
+			out.Set(k, replacePillar(path, n, paths, replacement))
 		default:
 			out.Set(k, v)
 		}
