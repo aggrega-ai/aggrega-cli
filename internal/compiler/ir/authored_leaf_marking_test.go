@@ -31,7 +31,7 @@ func markingNodeGraph(t *testing.T, componentType string, values types.OrderedMa
 	node := &topology.TopologyNode{InstanceID: "api", ComponentType: componentType, Values: values}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("api", node)
-	graph, _, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := buildIR(BuildIRConfig{
 		Topology: &topology.TopologyResult{Nodes: nodes},
 		ResolveResult: &resolver.ResolveResult{
 			Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
@@ -40,7 +40,7 @@ func markingNodeGraph(t *testing.T, componentType string, values types.OrderedMa
 		CatalogLookup: lookup,
 	})
 	if err != nil {
-		t.Fatalf("BuildIR: %v", err)
+		t.Fatalf("BuildIRContext: %v", err)
 	}
 	return graph
 }

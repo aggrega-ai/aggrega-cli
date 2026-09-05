@@ -15,7 +15,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -559,9 +558,9 @@ func renderCatalogMatch(rw *workspaceconfig.ResolvedWorkspace, id entityIdentity
 //     preserved provenance brackets. --flat collapses the boundary tree to one
 //     section per boundary keyed by its full path.
 //
-// This function threads opts.out as the output sink and resolves through the
-// same shared funnel build/lint/pull use, so its resolve path cannot drift from
-// the compiler's.
+// This function threads opts.out as the output sink and reaches the graph
+// through the compiler's one graph-construction entry, so the picture it draws
+// cannot drift from what a build of the same Release would render.
 func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, data []byte, catalogDirs []string, opts inspectOptions) error {
 	// --raw is the as-authored bypass: emit the Release file verbatim, no
 	// pipeline, regardless of level.
@@ -608,43 +607,36 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 	}
 	catalogLookup := cat.CatalogLookup()
 
-	// Resolve through the same shared funnel build/lint/pull use
-	// (pipeline.ResolveAndFlatten → resolver.ResolveAndUse), so inspect's resolve
-	// path cannot drift from the compiler's and the resolved view is scoped by
-	// the same producer rather than held here. The
-	// scoped callback builds the IR and prints while parameters are live. The
-	// AggregatePath / ReleasePath labels carry the source locations the
-	// annotation-expansion brackets read; they are the same strings inspect
-	// previously passed, so the bracket output is unchanged.
-	return pipeline.ResolveAndFlatten(
+	// Build the graph through the one entry that produces one, so what this
+	// command draws is the graph a build would render rather than one assembled
+	// here beside it. The products are read inside the scope, while the
+	// parameters are live; nothing is held past it.
+	//
+	// The AggregatePath / ReleasePath labels carry the source locations the
+	// annotation-expansion brackets read, and CompilerVersion is the stamp the
+	// graph records — supplied on the inputs like every other build-identity
+	// value, rather than handed to the graph build separately.
+	return pipeline.BuildGraph(
 		context.Background(),
 		pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
 			// AggregatePath is the sibling-resolved path (drives the annotation
-			// source-location brackets — kept identical to the pre-convergence
-			// value); RootAggregateFile is the workspace-relative path stamped
-			// onto the root-tier node (machine-stable), the same split inspect
-			// made before converging onto the shared funnel.
+			// source-location brackets); RootAggregateFile is the
+			// workspace-relative path stamped onto the root-tier node
+			// (machine-stable). The two are separate because this command needs
+			// different representations for them.
 			AggregatePath:     aggPath,
 			ReleasePath:       releasePath,
 			RootAggregateFile: catalog.RelativeToWorkspace(wsRoot, aggPath),
+			CompilerVersion:   provenanceCompilerVersion(),
 		},
 		catalogLookup,
 		cat.RecipeLookupWithManifest(manifest).Recipe,
 		cat.SubAggregateLoader(),
-		func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
-			graph, _, _, err := ir.BuildIR(ir.BuildIRConfig{
-				Topology:        topoResult,
-				ResolveResult:   resolveResult,
-				CatalogLookup:   catalogLookup,
-				CompilerVersion: provenanceCompilerVersion(),
-			})
-			if err != nil {
-				return fmt.Errorf("IR graph construction: %w", err)
-			}
-			return renderReleaseResolved(opts, rel, releasePath, graph, resolveResult, catalogLookup)
+		func(gs *pipeline.GraphScope) error {
+			return renderReleaseResolved(opts, rel, releasePath, gs.IRGraph, gs.ResolveResult, catalogLookup)
 		},
 	)
 }

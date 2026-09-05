@@ -10,7 +10,7 @@
 // gated, so it cannot pass on input a real build would reject.
 //
 // Hand-assembling the pipeline (resolver.Resolve -> topology.Build ->
-// ir.BuildIR -> renderer.RenderAll) in a test skips the verifier and any other
+// ir.BuildIRContext -> renderer.RenderAll) in a test skips the verifier and any other
 // gate RunPipeline runs between IR and render; do not do that for a test that
 // claims end-to-end build fidelity. Use Build for a positive build, BuildE for
 // a negative-path test that asserts on the error a real build produces, and

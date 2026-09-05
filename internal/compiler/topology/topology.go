@@ -30,7 +30,7 @@ import (
 //     OrderedMap surface; the resulting slice carries the cross-product
 //     into the IR builder without re-sorting. Build's step 4 walks
 //     flat.Nodes via OrderedMap.All() to drive the outer iteration; the
-//     IR builder's BuildIR step 2 (topology→IR edge conversion loop)
+//     IR builder's BuildIRContext step 2 (topology→IR edge conversion loop)
 //     reads this slice in slice order. The full producer-and-consumer
 //     contract is documented in this package's doc.go (Cross-package
 //     determinism contract).

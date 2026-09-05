@@ -59,9 +59,9 @@ func TestBuildIR_InheritedDefaultMaterialised(t *testing.T) {
 		},
 	}
 
-	graph, _, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: resolveResult, CatalogLookup: cl})
+	graph, _, _, err := buildIR(BuildIRConfig{Topology: topoResult, ResolveResult: resolveResult, CatalogLookup: cl})
 	if err != nil {
-		t.Fatalf("BuildIR: %v", err)
+		t.Fatalf("BuildIRContext: %v", err)
 	}
 	raw, ok := graph.Spec.ValuesMapping.Get("api")
 	if !ok {

@@ -16,10 +16,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -655,32 +653,55 @@ func pullRun(cfg pullConfig) error {
 		return withSkipContext(err, skipped)
 	}
 
-	// Per-component source resolution. Run the shared resolve+flatten pass —
-	// the same path `aggrega build` uses (pipeline.ResolveAndFlatten) — so each
-	// component's source resolves against that component's own cascade-resolved
-	// infra (not a flattened Release-wide bag), and the component-to-Recipe join
-	// uses the same Manifest mapping the closure walker recorded (lock-time
-	// cannot drift from build-time). aggBytes feeds the resolver, which
-	// re-parses internally.
+	// Per-component source resolution. Build the graph through the compiler's
+	// one graph-construction entry — the path `aggrega build` reaches too — so
+	// each component's source resolves against that component's own
+	// cascade-resolved infra (not a flattened Release-wide bag), and the
+	// component-to-Recipe join uses the same Manifest mapping the closure walker
+	// recorded (lock-time cannot drift from build-time). aggBytes feeds the
+	// resolver, which re-parses internally.
+	//
+	// What this needs is the graph, not a gated preview. A pull is the operation
+	// that FILLS the record a drift verify reads, so running that verify from
+	// inside it would compare the record against itself and refuse every first
+	// pull. The gates that belong here are the ones already run above, against
+	// the closure this pass is pinning.
 	progress.phase(pullPhaseSources)
 	aggBytes := aggRes.Bytes
 	pullLookup := lazyView.AsCatalogLookup()
-	// ResolveAndFlatten scopes the resolved view + parameter map to this
+	// The graph entry scopes the resolved view + parameter map to this
 	// callback, so the entire source-descent runs while parameters are live
 	// and nothing here can hold them past it. The descent reads BoundaryInfra
 	// and the materialised IR pillars, never the raw parameter map.
-	if err := pipeline.ResolveAndFlatten(
+	if err := pipeline.BuildGraph(
 		context.Background(),
 		pipeline.Inputs{
 			Release:           rel,
 			Manifest:          manifest,
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     catalog.RelativeToWorkspace(workspaceRoot, aggRes.Path),
+			CompilerVersion:   provenanceCompilerVersion(),
 		},
 		pullLookup,
 		lazyView.RecipeLookupWithManifest(manifest).Recipe,
 		lazyView.SubAggregateLoader(),
-		func(rr *resolver.ResolveResult, topo *topology.TopologyResult) error {
+		func(gs *pipeline.GraphScope) error {
+			topo := gs.Topology
+			// Attachment instances are derived from the IR render-set, not a Release
+			// walk. The renderer renders graph.Spec (the IR), whose attachment set is
+			// assembled across all five tiers (Aggregate component/subsystem, Release
+			// boundary-wide/component, annotation-expanded) at graph build — a
+			// Release-boundary walk and the topology are each short by tiers, so the
+			// using-set must come from the graph for the no-using-instance skip to be
+			// congruent with rendering. Per-instance infra is the resolved entry.Infra,
+			// so no Release-side join is needed.
+			//
+			// Building a graph here is acyclic: it consumes topology, resolve and
+			// catalog and copies the recipe source pointer, never a fetched artifact,
+			// so nothing it reads depends on the sources this pass is about to
+			// resolve. What that costs is the graph-build failure surface, which this
+			// operation therefore inherits.
+			graph := gs.IRGraph
 
 			// Key per-instance infra by the Manifest-mapped entity URI — the same
 			// verbatim string the closure walker records as the source-descent entity
@@ -690,25 +711,6 @@ func pullRun(cfg pullConfig) error {
 			// mapping carries no source-descent entity and is skipped.
 			perEntityInfra := map[string][]closure.ComponentSourceInfra{}
 
-			// Attachment instances: derive from the IR render-set, not a Release walk.
-			// The renderer renders graph.Spec (the IR), whose attachment set is
-			// assembled across all five tiers (Aggregate component/subsystem, Release
-			// boundary-wide/component, annotation-expanded) at IR-build — a Release-boundary
-			// walk and the topology are each short by tiers, so the using-set must come from
-			// the IR for the no-using-instance skip to be congruent with rendering. Building
-			// the IR here is acyclic (it consumes topology + resolve + catalog and copies
-			// the recipe source pointer, never a fetched artifact); pull thus inherits the
-			// IR-build failure surface. Per-instance infra is the IR-resolved entry.Infra,
-			// so no Release-side join is needed.
-			graph, _, _, err := ir.BuildIR(ir.BuildIRConfig{
-				Topology:        topo,
-				ResolveResult:   rr,
-				CatalogLookup:   pullLookup,
-				CompilerVersion: provenanceCompilerVersion(),
-			})
-			if err != nil {
-				return fmt.Errorf("ir: %w", err)
-			}
 			executionScopeOf := func(instanceName, featType string) (string, bool) {
 				// Scope classification (name tier wins over type): a miss OR a
 				// version-ambiguous mapping falls through to the per-component pin,

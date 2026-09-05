@@ -60,11 +60,11 @@ type Inputs struct {
 	// no I/O. It is distinct from AggregatePath: AggregatePath drives the
 	// resolver's annotation source-location strings, while this drives the node
 	// source stamp, and a caller may need different representations for the two
-	// (inspect uses a sibling-resolved AggregatePath for byte-identical annotation
-	// brackets but a workspace-relative RootAggregateFile for a machine-stable
-	// node stamp). Optional: when empty, ResolveAndFlatten defaults it to
-	// AggregatePath, so callers that supply a single workspace-relative path are
-	// unchanged.
+	// (a release inspection uses a sibling-resolved AggregatePath for its
+	// annotation brackets but a workspace-relative RootAggregateFile for a
+	// machine-stable node stamp). Optional: when empty, the flatten defaults it
+	// to AggregatePath, so callers that supply a single workspace-relative path
+	// are unaffected.
 	RootAggregateFile string
 	WorkspaceConfig   workspaceconfig.Config
 
@@ -432,7 +432,7 @@ type stepsOneToFourOutput struct {
 // runStepsOneToFour executes the pre-render phases of the compiler pipeline
 // (resolve, topology, IR finalisation, analyse, and Component / Feature
 // assertion evaluation) and invokes use with the phase outputs while still
-// inside the resolve scope. It routes through ResolveAndFlatten →
+// inside the resolve scope. It routes through BuildGraph →
 // resolver.ResolveAndUse, so use runs while the parameter map is live and the
 // resolved view cannot outlive the scope. Used by both RunTier4Pipeline
 // (which renders nothing) and RunPipeline (which renders from the same outputs).
@@ -461,39 +461,23 @@ func runStepsOneToFour(
 		return err
 	}
 
-	// Steps 1-2: resolve + topology flatten. Shared with `aggrega pull`'s
-	// per-component source resolution via ResolveAndFlatten, so lock-time
-	// source-descent and build-time rendering run one resolve + topology +
-	// recipe-selection path (no drift).
-	return ResolveAndFlatten(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
+	// Steps 1-3: resolve, topology flatten, label transform, graph build —
+	// through BuildGraph, the one entry that produces a graph. The release
+	// inspection and `aggrega pull`'s per-component source resolution reach it
+	// too, so what those surfaces hold is the graph a build would render rather
+	// than one assembled beside it.
+	return BuildGraph(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader, func(gs *GraphScope) error {
+		resolveResult := gs.ResolveResult
+		topoResult := gs.Topology
+		graph := gs.IRGraph
+
 		out := &stepsOneToFourOutput{
-			ResolveResult: resolveResult,
-			Topology:      topoResult,
-		}
-
-		// Step 2b: label-transform governance role. Config-driven off the
-		// label-transform attachments in WorkspaceConfig.Plugins.Governance — a no-op
-		// when unconfigured, so an unattached build is byte-identical to a build
-		// without the role. When configured, each plugin auto-tags node labels via
-		// JSON Patch (the narrow mutation exception); the tags flow into the IR
-		// because Step 3 reads its labels from this same topoResult.
-		if err := runMutatorSocket(ctx, inputs, catalogLookup, topoResult); err != nil {
-			return err
-		}
-
-		// Step 3: IR.
-		graph, featureOrder, attachmentSites, err := ir.BuildIRContext(ctx, ir.BuildIRConfig{
-			Topology:        topoResult,
 			ResolveResult:   resolveResult,
-			CatalogLookup:   catalogLookup,
-			CompilerVersion: inputs.CompilerVersion,
-		})
-		if err != nil {
-			return fmt.Errorf("IR graph construction: %w", err)
+			Topology:        topoResult,
+			IRGraph:         graph,
+			FeatureOrder:    gs.FeatureOrder,
+			AttachmentSites: gs.AttachmentSites,
 		}
-		out.IRGraph = graph
-		out.FeatureOrder = featureOrder
-		out.AttachmentSites = attachmentSites
 
 		// The carriers and the authored deliveries, paired with the connection
 		// set the composition produced. Built from that set rather than from the
@@ -610,7 +594,7 @@ func dropCatalogViewInconsistencies(errs []*resolver.ResolverError) []*resolver.
 // suite — against caller-supplied inputs, then invokes use with the resolved
 // per-component view (ResolveResult carrying per-component BoundaryInfra)
 // WITHOUT flattening topology. It is the single source of the build's
-// pre-topology validation: ResolveAndFlatten runs it and then flattens, so what a
+// pre-topology validation: resolveAndFlatten runs it and then flattens, so what a
 // build validates before topology has one implementation rather than two. The
 // guard suite operates on the resolved (post-parameter-interpolation) aggregate,
 // so templated `{{ .parameters.* }}` values are validated as resolved.
@@ -729,22 +713,25 @@ func ResolveAndValidate(
 	})
 }
 
-// ResolveAndFlatten runs Steps 1-2 of the compiler pipeline — resolve
+// resolveAndFlatten runs Steps 1-2 of the compiler pipeline — resolve
 // (parameter interpolation, annotation binding validation + expansion, guards)
 // then topology flatten — and invokes use with the resolved per-component view
 // (ResolveResult carrying per-component BoundaryInfra) and the flattened
 // TopologyResult (nodes with InstanceID / ComponentType / Values).
 //
-// It is the single source of the resolve+flatten wiring. The build pipeline
-// (runStepsOneToFour) and `aggrega pull`'s per-component source resolution both
-// call it, so lock-time source-descent cannot drift from build-time component /
-// recipe / infra resolution — recipe selection then runs through the same
-// catalog RecipeLookup at both sites.
+// It is the single source of the resolve+flatten wiring, and it is unexported
+// so that it stays one. A flattened topology is the input a graph build takes,
+// so a caller holding one is one short step from assembling a graph of its own
+// — which is how two command-layer surfaces came to build graphs outside the
+// sequence the pipeline runs around that step. BuildGraph is the exported
+// continuation of this function and the only way to reach a graph from outside
+// this package; keeping this one private is what leaves no second route to the
+// same place.
 //
 // The continuation runs inside resolver.ResolveAndUse's scope (threaded through
 // ResolveAndValidate), so the resolved view is live throughout it; a resolve,
 // guard, or topology failure returns the error without invoking use.
-func ResolveAndFlatten(
+func resolveAndFlatten(
 	ctx context.Context,
 	inputs Inputs,
 	catalogLookup resolver.CatalogLookup,
@@ -803,6 +790,113 @@ func ResolveAndFlatten(
 
 		return use(resolveResult, topoResult)
 	})
+}
+
+// GraphScope carries the products of one graph construction. Every field is
+// valid for the duration of the callback BuildGraph hands it to and no longer:
+// the resolved view — and with it the merged parameter map — is owned by
+// resolver.ResolveAndUse's scope, which closes when that callback returns.
+//
+// It is a struct rather than a parameter list because the products are
+// co-derived and a consumer that wants one of them almost always wants
+// another. Handing them over one at a time invites a caller to keep the one it
+// was given and re-derive the rest, which is the second answer this whole entry
+// exists to prevent.
+type GraphScope struct {
+	// ResolveResult is the resolved per-component view, carrying per-component
+	// BoundaryInfra and the post-cascade boundary annotations.
+	ResolveResult *resolver.ResolveResult
+
+	// Topology is the flattened composition the graph was built from: nodes
+	// with InstanceID / ComponentType / Values, in author order.
+	Topology *topology.TopologyResult
+
+	// IRGraph is the finalised graph.
+	IRGraph *types.IRGraph
+
+	// FeatureOrder is the per-node Feature execution order the graph build
+	// derived alongside the graph.
+	FeatureOrder ir.FeatureOrder
+
+	// AttachmentSites is the per-attachment-leaf record of which scope's
+	// contribution won that leaf, settled while the cascade folded.
+	AttachmentSites ir.AttachmentSites
+}
+
+// BuildGraph is the one entry that produces a compiler graph, and every surface
+// that needs one goes through it — the render pipeline, the release inspection,
+// and the artifact acquisition alike.
+//
+// It exists because there was no chokepoint. Resolve, flatten and graph build
+// were three separately reachable steps, so each surface assembled its own
+// sequence and each assembly was free to differ: two of them stamped the
+// compiler version from their own command layer while the pipeline read it off
+// its inputs, and neither ran the label-transform role that sits between the
+// flatten and the build. Nothing failed, because every assembly produced a
+// graph; what differed was what the graph said. Routing them all through one
+// function is what makes "which sequence produced this graph" have one answer.
+//
+// The sequence, and why it is here rather than at each caller:
+//
+//   - resolve and flatten, which runs the guard suite and the rules declared
+//     over the flattened composition;
+//   - the label-transform governance role, which sits between the flatten and
+//     the build precisely so its tags reach the graph. Unconfigured it returns
+//     before resolving anything, so a caller that attaches no such plugin gets
+//     a byte-identical graph either way;
+//   - the graph build itself.
+//
+// use is invoked with the products while the resolve scope is still open, so a
+// consumer reads the parameter map and the resolved view live. Nothing here
+// escapes that scope; a caller that needs a product afterwards copies what it
+// needs out of the callback.
+//
+// A resolve, guard, topology, transform or build failure returns the error
+// without invoking use.
+func BuildGraph(
+	ctx context.Context,
+	inputs Inputs,
+	catalogLookup resolver.CatalogLookup,
+	recipeFor resolver.RecipeBinding,
+	subAggregateLoader topology.SubAggregateLoader,
+	use func(*GraphScope) error,
+) error {
+	return resolveAndFlatten(ctx, inputs, catalogLookup, recipeFor, subAggregateLoader,
+		func(resolveResult *resolver.ResolveResult, topoResult *topology.TopologyResult) error {
+			// Step 2b: label-transform governance role. Config-driven off the
+			// label-transform attachments in WorkspaceConfig.Plugins.Governance — a
+			// no-op when unconfigured, so an unattached build is byte-identical to a
+			// build without the role. When configured, each plugin auto-tags node
+			// labels via JSON Patch (the narrow mutation exception); the tags flow
+			// into the graph because the build below reads its labels from this same
+			// topoResult.
+			if err := runMutatorSocket(ctx, inputs, catalogLookup, topoResult); err != nil {
+				return err
+			}
+
+			// Step 3: IR.
+			graph, featureOrder, attachmentSites, err := ir.BuildIRContext(ctx, ir.BuildIRConfig{
+				Topology:      topoResult,
+				ResolveResult: resolveResult,
+				CatalogLookup: catalogLookup,
+				// Read off the inputs rather than taken as a parameter of its own:
+				// the stamp is a property of the build being run, and a surface that
+				// supplied it separately from the rest of its inputs is a surface
+				// that can supply a different one.
+				CompilerVersion: inputs.CompilerVersion,
+			})
+			if err != nil {
+				return fmt.Errorf("IR graph construction: %w", err)
+			}
+
+			return use(&GraphScope{
+				ResolveResult:   resolveResult,
+				Topology:        topoResult,
+				IRGraph:         graph,
+				FeatureOrder:    featureOrder,
+				AttachmentSites: attachmentSites,
+			})
+		})
 }
 
 // RunTier4Pipeline executes the pre-render phases of the compiler pipeline
@@ -899,7 +993,7 @@ func RunTier4Pipeline(
 // The parameter map merged from Release.spec.parameters flows through to
 // the renderer (for orchestrator-time path-template evaluation). RunPipeline
 // runs inside resolver.ResolveAndUse's scope (via runStepsOneToFour →
-// ResolveAndFlatten), which owns that scope: the render completes inside the
+// BuildGraph), which owns that scope: the render completes inside the
 // callback, so the map is live for every render phase and reachable from no
 // caller once RunPipeline returns.
 //

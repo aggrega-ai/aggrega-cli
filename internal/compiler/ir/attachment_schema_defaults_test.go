@@ -305,7 +305,7 @@ func TestAttachmentDefaults_NoAttachmentMeansNothingToFill(t *testing.T) {
 }
 
 // TestAttachmentDefaults_TrapBothHalvesThroughTheRealBuild asserts the two
-// halves of the trap in one build through BuildIR: a required key carrying a
+// halves of the trap in one build through BuildIRContext: a required key carrying a
 // default PASSES conformance, and its value ARRIVES.
 //
 // Either half alone leaves the trap in place. Asserting only that the build
@@ -341,7 +341,7 @@ func TestAttachmentDefaults_TrapBothHalvesThroughTheRealBuild(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 	}
 
-	graph, _, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := buildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: defaultsFeatureCatalog(t),

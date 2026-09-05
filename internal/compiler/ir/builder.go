@@ -15,7 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// BuildIRConfig is the input bundle for BuildIR. The four fields are all
+// BuildIRConfig is the input bundle for BuildIRContext. The four fields are all
 // required for a successful build:
 //
 //   - Topology supplies the flattened node graph plus edges and per-node
@@ -48,7 +48,7 @@ type BuildIRConfig struct {
 	CompilerVersion string
 }
 
-// FeatureOrder is BuildIR's secondary return value: per-node, the ordered
+// FeatureOrder is BuildIRContext's secondary return value: per-node, the ordered
 // list of Feature instance names in cascade-tier sequence (sub-aggregate
 // component → root-aggregate component → root-aggregate subsystem →
 // release boundary → release component-specific). The map keys by
@@ -72,7 +72,7 @@ type AttachmentLeafKey struct {
 	Leaf       string
 }
 
-// AttachmentSites is BuildIR's third return value: per attachment leaf, the
+// AttachmentSites is BuildIRContext's third return value: per attachment leaf, the
 // site the contribution that won that leaf was written at.
 //
 // It exists because the graph cannot answer the question and nothing else can
@@ -123,7 +123,21 @@ func (s AttachmentSites) siteOf(node, attachment, pillar, leaf string) constrain
 	}]
 }
 
-// BuildIR executes Step 3 of the compiler pipeline: graph finalization.
+// BuildIRContext executes Step 3 of the compiler pipeline: graph finalization.
+//
+// It is the ONLY graph-construction entry this package exports, and the only
+// site that may call it is the compiler pipeline's own graph-construction
+// chokepoint. A surface that assembles a graph for itself gets one built
+// outside the sequence the pipeline runs around this step, and the two then
+// differ in whatever that sequence contributes — which is invisible at the call
+// site, because both produce a graph. The constraint is not expressible in the
+// language across a package boundary, so a source-walking guard asserts it; the
+// guard names its own coverage bound.
+//
+// ctx carries cooperative cancellation: the pass checks ctx.Err() at the
+// per-node build boundary so a long IR-assembly over a large graph can be
+// interrupted (for example by the daemon's shutdown drain). Cancellation only
+// aborts — it never alters a successful build's output.
 //
 // Steps performed (numbered to match the body's section comments):
 //
@@ -162,15 +176,6 @@ func (s AttachmentSites) siteOf(node, attachment, pillar, leaf string) constrain
 // CatalogLookup, missing Release, JSON-marshal failures on values/infra
 // mapping leave the slot empty rather than aborting). Each caller adds its
 // own context prefix when wrapping the returned error.
-func BuildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, AttachmentSites, error) {
-	return BuildIRContext(context.Background(), cfg)
-}
-
-// BuildIRContext is BuildIR with cooperative cancellation: it checks
-// ctx.Err() at the per-node build boundary so a long IR-assembly pass
-// over a large graph can be interrupted (e.g. by the daemon's shutdown
-// drain). BuildIR is the background-context convenience wrapper for
-// callers that do not participate in cancellation.
 func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, AttachmentSites, error) {
 	topo := cfg.Topology
 	res := cfg.ResolveResult

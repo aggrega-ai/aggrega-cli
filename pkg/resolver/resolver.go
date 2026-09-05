@@ -149,7 +149,7 @@ type ResolveResult struct {
 // and returns without invoking it.
 //
 // Higher layers compose through this entry rather than the unexported producer:
-// internal/compiler/pipeline's ResolveAndValidate / ResolveAndFlatten call
+// the compiler pipeline's own resolve and graph-construction entries call
 // ResolveAndUse and thread their own continuations, so the whole pipeline —
 // including render — runs inside the scope while the parameter map is live.
 //

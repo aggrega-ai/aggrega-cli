@@ -75,7 +75,7 @@ func buildOneEdge(t *testing.T, e topology.NormalizedEdge) error {
 	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/consumer"})
 	nodes.Set("db", &topology.TopologyNode{InstanceID: "db", ComponentType: "core/target"})
 
-	_, _, _, err := BuildIR(BuildIRConfig{
+	_, _, _, err := buildIR(BuildIRConfig{
 		Topology: &topology.TopologyResult{
 			Nodes:              nodes,
 			Edges:              []topology.NormalizedEdge{e},
@@ -243,7 +243,7 @@ func TestBuildIR_UsesInjectAllowlist_ReportsEveryOffendingEdge(t *testing.T) {
 	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/consumer"})
 	nodes.Set("db", &topology.TopologyNode{InstanceID: "db", ComponentType: "core/target"})
 
-	_, _, _, err := BuildIR(BuildIRConfig{
+	_, _, _, err := buildIR(BuildIRConfig{
 		Topology: &topology.TopologyResult{
 			Nodes: nodes,
 			Edges: []topology.NormalizedEdge{

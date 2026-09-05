@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Tests for the BuildIR orchestrator — the integration-shaped surface
+// Tests for the BuildIRContext orchestrator — the integration-shaped surface
 // that exercises the package end-to-end. testCatalog provides an in-test
 // CatalogLookup faking the two component types and one credential
 // feature the assertions depend on.
 //
-// Test cases group by behaviour cluster, one per BuildIR concern:
+// Test cases group by behaviour cluster, one per BuildIRContext concern:
 //
 //   - TestBuildIR_SimpleGraph — the happy-path pin: two nodes, one edge,
 //     ResolvedVersion populated from the catalog, CatalogAnnotations and
@@ -23,13 +23,14 @@
 //     resolver BoundaryInfra.Infra.
 //
 // Tests use the package-private symbols directly; the integration
-// surface is package-internal because BuildIR's three callers (the
-// orchestrator and two compiler-level integration tests) all sit
-// outside this package.
+// surface is package-internal because BuildIRContext's one caller outside
+// this package — the compiler pipeline's graph-construction chokepoint —
+// sits outside it.
 
 package ir
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -38,6 +39,19 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// buildIR runs the graph build under a background context, for the cases in
+// this package that do not exercise cancellation.
+//
+// It lives in test code rather than beside BuildIRContext deliberately. A
+// background-context convenience wrapper is a second name for the graph build,
+// and while it was exported it was the name two command-layer surfaces reached
+// for to assemble graphs of their own — so a census of "who builds a graph" had
+// to know both names to be complete. There is now one such name in non-test
+// code, which is what makes that census answerable.
+func buildIR(cfg BuildIRConfig) (*types.IRGraph, FeatureOrder, AttachmentSites, error) {
+	return BuildIRContext(context.Background(), cfg)
+}
 
 func testCatalog() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
@@ -123,7 +137,7 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 		},
 	}
 
-	graph, order, _, err := BuildIR(BuildIRConfig{
+	graph, order, _, err := buildIR(BuildIRConfig{
 		Topology:        topoResult,
 		ResolveResult:   resolveResult,
 		CatalogLookup:   testCatalog(),
@@ -217,7 +231,7 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 	}
 
-	graph, order, _, err := BuildIR(BuildIRConfig{
+	graph, order, _, err := buildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: testCatalog(),
@@ -276,7 +290,7 @@ func TestBuildIR_SyncWave(t *testing.T) {
 		},
 	}
 
-	graph, _, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := buildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: testCatalog(),
@@ -317,7 +331,7 @@ func TestBuildIR_SyncWave_DefaultZero(t *testing.T) {
 		},
 	}
 
-	graph, _, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := buildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: testCatalog(),
@@ -351,7 +365,7 @@ func TestBuildIR_InfraMapping(t *testing.T) {
 		},
 	}
 
-	graph, _, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := buildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: testCatalog(),
@@ -506,10 +520,10 @@ func TestConvertInjectBlock_VerboseArrayForm(t *testing.T) {
 	}
 }
 
-// TestBuildIR_InjectValidationHaltsWithSpecificError pins the BuildIR-level
+// TestBuildIR_InjectValidationHaltsWithSpecificError pins the BuildIRContext-level
 // wiring of the second-line-of-defense inject validator: a resolved
 // Aggregate carrying a both-`value:`-and-`from:`-present inject entry
-// halts BuildIR before any IR construction begins, with the error wrapping
+// halts BuildIRContext before any IR construction begins, with the error wrapping
 // ErrInjectEntryAmbiguous and the field path of the violating entry. The
 // case is schema-illegal (inject_delivery oneOf rejects it at envelope
 // load); this test exercises the schema-bypass path that motivates the
@@ -541,7 +555,7 @@ func TestBuildIR_InjectValidationHaltsWithSpecificError(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 	}
 
-	graph, _, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := buildIR(BuildIRConfig{
 		Topology:        &topology.TopologyResult{Nodes: types.OrderedMap[*topology.TopologyNode]{}},
 		ResolveResult:   resolveResult,
 		CatalogLookup:   testCatalog(),
@@ -562,7 +576,7 @@ func TestBuildIR_InjectValidationHaltsWithSpecificError(t *testing.T) {
 }
 
 // TestBuildIR_EdgeCarriesValuesInfraAndOrigin pins the edge-conversion arm of
-// BuildIR: a topology NormalizedEdge carrying per-edge values, infra, and the
+// BuildIRContext: a topology NormalizedEdge carrying per-edge values, infra, and the
 // Release-origin marker projects all three onto the emitted IREdge.
 func TestBuildIR_EdgeCarriesValuesInfraAndOrigin(t *testing.T) {
 	t.Parallel()
@@ -598,7 +612,7 @@ func TestBuildIR_EdgeCarriesValuesInfraAndOrigin(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "local/default"}},
 	}
 
-	graph, _, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := buildIR(BuildIRConfig{
 		Topology:        topoResult,
 		ResolveResult:   resolveResult,
 		CatalogLookup:   testCatalog(),

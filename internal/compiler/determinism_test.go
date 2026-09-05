@@ -5,6 +5,7 @@ package compiler_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -244,7 +245,7 @@ func tokenAsString(tok any) string {
 // source-field sequence matches the Aggregate's component declaration
 // order rather than alphabetical-by-source.
 //
-// This test builds the IR directly (topology.Build -> ir.BuildIR -> marshal)
+// This test builds the IR directly (topology.Build -> ir.BuildIRContext -> marshal)
 // against an in-memory Aggregate and a recipe-less stub catalog, with no
 // render and no recipe-resolution-completeness check. It does NOT run through
 // the build-faithful harness: the harness is file-based and gated, and the
@@ -292,14 +293,14 @@ func TestDeterministicCompilation_IRSpecEdgesPreserveCompositionalAuthorOrder(t 
 		t.Fatalf("topology.Build: %v", err)
 	}
 
-	graph, _, _, err := ir.BuildIR(ir.BuildIRConfig{
+	graph, _, _, err := ir.BuildIRContext(context.Background(), ir.BuildIRConfig{
 		Topology:        topoResult,
 		ResolveResult:   res,
 		CatalogLookup:   cat,
 		CompilerVersion: "test",
 	})
 	if err != nil {
-		t.Fatalf("ir.BuildIR: %v", err)
+		t.Fatalf("ir.BuildIRContext: %v", err)
 	}
 
 	jsonBytes, err := json.Marshal(graph)

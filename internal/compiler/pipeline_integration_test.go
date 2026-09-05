@@ -4,6 +4,7 @@
 package compiler_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -216,14 +217,14 @@ func runPipeline(t *testing.T, agg *types.Aggregate) (*types.IRGraph, *analyzer.
 		t.Fatalf("topology.Build: %v", err)
 	}
 
-	graph, _, _, err := ir.BuildIR(ir.BuildIRConfig{
+	graph, _, _, err := ir.BuildIRContext(context.Background(), ir.BuildIRConfig{
 		Topology:        topoResult,
 		ResolveResult:   res,
 		CatalogLookup:   catalog,
 		CompilerVersion: "test",
 	})
 	if err != nil {
-		t.Fatalf("ir.BuildIR: %v", err)
+		t.Fatalf("ir.BuildIRContext: %v", err)
 	}
 
 	analysis := analyzer.Analyze(graph)
@@ -479,7 +480,7 @@ func TestPipeline_FeatureTypeMismatch(t *testing.T) {
 		topology.FeatureAttachment{InstanceName: "feat", Feature: types.FeatureInstance{Type: "type-b"}},
 	)
 
-	_, _, _, err = ir.BuildIR(ir.BuildIRConfig{
+	_, _, _, err = ir.BuildIRContext(context.Background(), ir.BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: res,
 		CatalogLookup: catalog,

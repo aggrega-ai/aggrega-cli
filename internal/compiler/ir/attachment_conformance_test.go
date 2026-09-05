@@ -2,7 +2,7 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Tests for the Step-3 Feature/Secret attachment schema-conformance gate:
-// validateNodeAttachments + its wiring into BuildIR. The gate validates the
+// validateNodeAttachments + its wiring into BuildIRContext. The gate validates the
 // EFFECTIVE merged attachment values/infra (after the 5-Tier Onion merge)
 // against each attachment's declared catalog Feature/Secret schema, via the same
 // resolver.ValidatePillarConformance entry the Step-1 component gate uses.
@@ -85,7 +85,7 @@ func vmap(pairs ...any) types.OrderedMap[any] {
 	return m
 }
 
-// buildWithAttachments runs BuildIR end-to-end for a single node "api" carrying
+// buildWithAttachments runs BuildIRContext end-to-end for a single node "api" carrying
 // the given attachments, returning the build error (nil on success). This
 // exercises the real attachment-gate wiring: the builder's per-type schema
 // compile cache, validateNodeAttachments, and the joined halt.
@@ -101,7 +101,7 @@ func buildWithAttachments(t *testing.T, feats []topology.FeatureAttachment) erro
 		Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 	}
-	_, _, _, err := BuildIR(BuildIRConfig{
+	_, _, _, err := buildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: conformanceFeatureCatalog(t),
@@ -126,7 +126,7 @@ func requireConformanceHalt(t *testing.T, err error, wantFieldSubstr string) {
 	}
 }
 
-// --- Attachment values, end-to-end through BuildIR --------------------------
+// --- Attachment values, end-to-end through BuildIRContext --------------------------
 
 func TestAttachmentConformance_FeatureValuesViolationHalts(t *testing.T) {
 	t.Parallel()
@@ -254,7 +254,7 @@ func TestAttachmentConformance_InheritedFeatureConstraintEnforced(t *testing.T) 
 		Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 	}
-	_, _, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: resolveResult, CatalogLookup: cl})
+	_, _, _, err := buildIR(BuildIRConfig{Topology: topoResult, ResolveResult: resolveResult, CatalogLookup: cl})
 	requireConformanceHalt(t, err, ".spec.components.api.features.mon.values")
 }
 
@@ -289,7 +289,7 @@ func TestAttachmentConformance_PredicateReadsParameter(t *testing.T) {
 			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
 			Parameters:    map[string]any{"allowedTier": allowedTier},
 		}
-		_, _, _, err := BuildIR(BuildIRConfig{Topology: topoResult, ResolveResult: rr, CatalogLookup: cl})
+		_, _, _, err := buildIR(BuildIRConfig{Topology: topoResult, ResolveResult: rr, CatalogLookup: cl})
 		return err
 	}
 	if err := build("gold"); err != nil {

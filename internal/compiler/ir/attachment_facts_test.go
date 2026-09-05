@@ -4,7 +4,7 @@
 // Tests for the per-attachment facts a consumer needs in order to judge an
 // attachment for itself: the attached Feature's verbatim catalog labels, its
 // verbatim catalog annotations, and the declared slot the attachment fills. Each
-// runs end-to-end through BuildIR, so the production wiring is what is under
+// runs end-to-end through BuildIRContext, so the production wiring is what is under
 // test.
 //
 // The cases the surrounding end-to-end suites cannot reach live here: an
@@ -232,7 +232,7 @@ func buildAttachmentsForComponent(t *testing.T, componentType string, feats []to
 	node := &topology.TopologyNode{InstanceID: "api", ComponentType: componentType}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("api", node)
-	graph, _, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := buildIR(BuildIRConfig{
 		Topology: &topology.TopologyResult{
 			Nodes:              nodes,
 			FeatureAttachments: map[string][]topology.FeatureAttachment{"api": feats},
@@ -244,7 +244,7 @@ func buildAttachmentsForComponent(t *testing.T, componentType string, feats []to
 		CatalogLookup: sensitivityCatalog(t),
 	})
 	if err != nil {
-		t.Fatalf("BuildIR: %v", err)
+		t.Fatalf("BuildIRContext: %v", err)
 	}
 	attachments, ok := graph.Spec.FeatureValuesMapping.Get("api")
 	if !ok {

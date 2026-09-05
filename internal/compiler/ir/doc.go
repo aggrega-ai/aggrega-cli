@@ -9,7 +9,7 @@
 // — the single in-memory shape that downstream Step 4 (static analyzer)
 // and Step 5 (renderer) consume.
 //
-// BuildIR is the orchestrator entry point. Alongside the graph it returns
+// BuildIRContext is the orchestrator entry point. Alongside the graph it returns
 // a separate FeatureOrder map that the renderer's Phase A reads to iterate
 // FeatureRecipes in the deterministic cascade sequence — Go map iteration
 // alone would not preserve that order.
@@ -55,12 +55,12 @@
 // commitment from internal/compiler/topology has three points; the
 // consumer-side trust mirrors them:
 //
-//   - Nodes are trusted in author order. BuildIR iterates topo.Nodes.All()
+//   - Nodes are trusted in author order. BuildIRContext iterates topo.Nodes.All()
 //     and builds IRSpec.Nodes in that order, propagating Aggregate
 //     authoring order into the emitted IRGraph.
 //   - Edges are trusted as the compositional cross-product (component
 //     sequence × within-component `uses:` socket order × within-socket
-//     alias order × per-node attachment order). BuildIR's
+//     alias order × per-node attachment order). BuildIRContext's
 //     step 2 (the topology→IR edge conversion loop) walks topo.Edges
 //     in slice order and emits IRSpec.Edges in the same order without
 //     re-sorting; the user-visible IR JSONL output preserves the
@@ -78,7 +78,7 @@
 // flattened node ID would overwrite an existing entry in the flat node
 // map). The collision case is impossible by current schema; the guard
 // is defensive against future schema loosening or validation bypass.
-// The IR builder relies on the producer's halt: by the time BuildIR
+// The IR builder relies on the producer's halt: by the time BuildIRContext
 // reads topo.Nodes and topo.Edges, the producer has guaranteed no
 // silent overwrite happened upstream.
 //

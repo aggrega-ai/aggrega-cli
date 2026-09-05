@@ -3,7 +3,7 @@
 
 // Tests for the derived sensitivity facts an IR attachment entry carries: the
 // per-attachment roll-up and the per-delivery-key marking. Every case runs
-// end-to-end through BuildIR, so the production wiring — not just the derivation
+// end-to-end through BuildIRContext, so the production wiring — not just the derivation
 // function — is what is under test.
 //
 // Each case pairs the fact with its negative. A roll-up that returned true for
@@ -128,7 +128,7 @@ func sensitivityCatalog(t *testing.T) resolver.CatalogLookup {
 	}
 }
 
-// buildSensitivity runs BuildIR for one node "api" of type core/server carrying
+// buildSensitivity runs BuildIRContext for one node "api" of type core/server carrying
 // the given attachments, and returns the node's merged attachment map.
 func buildSensitivity(t *testing.T, feats []topology.FeatureAttachment) types.OrderedMap[types.IRFeatureEntry] {
 	t.Helper()
@@ -188,13 +188,13 @@ func buildSensitivityGraph(
 		boundaries.Set("prod", types.Boundary{Components: components})
 		resolveResult.Release = &types.Release{Spec: types.ReleaseSpec{Boundaries: boundaries}}
 	}
-	graph, _, _, err := BuildIR(BuildIRConfig{
+	graph, _, _, err := buildIR(BuildIRConfig{
 		Topology:      topoResult,
 		ResolveResult: resolveResult,
 		CatalogLookup: sensitivityCatalog(t),
 	})
 	if err != nil {
-		t.Fatalf("BuildIR: %v", err)
+		t.Fatalf("BuildIRContext: %v", err)
 	}
 	return graph
 }
