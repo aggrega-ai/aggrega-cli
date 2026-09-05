@@ -9,12 +9,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
@@ -26,7 +25,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
@@ -505,7 +503,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// output in order to show what the next one would contain.
 	var summary string
 	if run.dryRun {
-		writeDryRunReport(out, outDir, result.Artifacts)
+		artifactout.WriteDryRunReport(out, outDir, result.Artifacts)
 		summary = fmt.Sprintf("Dry run: %d files would be written to %s/; nothing was written", len(result.Artifacts), outDir)
 	} else {
 		// Write output. Clean dist/boundaries/ first so stale files from a prior
@@ -514,7 +512,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		if err := os.RemoveAll(filepath.Join(outDir, "boundaries")); err != nil {
 			return fmt.Errorf("clean %s/boundaries: %w", outDir, err)
 		}
-		if err := writeArtifacts(outDir, result.Artifacts); err != nil {
+		if err := artifactout.WriteAll(outDir, result.Artifacts); err != nil {
 			return fmt.Errorf("write output: %w", err)
 		}
 		summary = fmt.Sprintf("Build completed: %d files written to %s/", len(result.Artifacts), outDir)
@@ -535,7 +533,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		if err := os.RemoveAll(".trace"); err != nil {
 			return fmt.Errorf("clean .trace: %w", err)
 		}
-		if err := writeArtifacts(".trace", result.Trace); err != nil {
+		if err := artifactout.WriteAll(".trace", result.Trace); err != nil {
 			return fmt.Errorf("write trace: %w", err)
 		}
 	}
@@ -614,33 +612,6 @@ func writePreviewWarnings(preview *compilerops.PreviewResult, diagOut io.Writer)
 	}
 }
 
-// writeDryRunReport prints what the render produced instead of persisting it:
-// one header per artifact naming the path that file would have occupied,
-// followed by its bytes. The header is the familiar multi-file form, so a reader
-// can tell a header apart from content that happens to open with a comment
-// marker.
-//
-// The path reported is computed by the same function that computes the path a
-// real build writes to, so what a dry run says a file would be called and what a
-// build calls it cannot come apart. The order is the same one a build writes in,
-// which makes the report byte-identical across runs of the same input rather
-// than reshuffled by map iteration.
-//
-// A trailing newline is supplied where the artifact's own bytes lack one, so the
-// next header starts at a column rather than butting onto the last line of
-// content; the blank line after each artifact is the separator between them.
-func writeDryRunReport(out io.Writer, outDir string, files map[string][]byte) {
-	for _, name := range sortedArtifactNames(files) {
-		body := files[name]
-		fmt.Fprintf(out, "==> %s <==\n", artifactPath(outDir, name))
-		_, _ = out.Write(body)
-		if len(body) > 0 && body[len(body)-1] != '\n' {
-			fmt.Fprintln(out)
-		}
-		fmt.Fprintln(out)
-	}
-}
-
 // writeDryRunDivergenceNote reports the one way a dry run can diverge from the
 // build it stands in for: it declined an external reference the lockfile does
 // not pin, so the render stopped short of the bytes a real build — which would
@@ -664,31 +635,6 @@ func writeDryRunDivergenceNote(declined []string, dryRun bool, releasePath strin
 		fmt.Fprintf(diagOut, "    - %s\n", url)
 	}
 	fmt.Fprintf(diagOut, "  Run `aggrega acquire --release %s` to pin the inputs the render needs, then run the dry run again\n", releasePath)
-}
-
-// sortedArtifactNames returns a rendered file map's names in sorted order — the
-// one deterministic iteration order every surface that walks such a map uses.
-// Go randomises map iteration, so a surface rolling its own order would report
-// or emit the same build differently on every run.
-func sortedArtifactNames(files map[string][]byte) []string {
-	names := make([]string, 0, len(files))
-	for name := range files {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
-// artifactPath returns the host path an artifact name occupies under outRoot.
-// An artifact name is a slash-separated logical name rather than a path in the
-// host's own spelling, so it is converted rather than concatenated. Both the
-// surface that writes a file and the surface that reports where one would go
-// resolve it here, so a reported path is the path that would be written.
-//
-// It does not judge containment: callers that write must check the name first
-// (see writeArtifacts), and a caller that only reports has nothing to contain.
-func artifactPath(outRoot, name string) string {
-	return filepath.Join(outRoot, filepath.FromSlash(path.Clean(name)))
 }
 
 // formatTotalBuildTimeLine renders the successful-build summary's total line with
@@ -999,54 +945,4 @@ func shortCodeInHead(reason, code string) string {
 		return reason
 	}
 	return reason[:end] + " " + code + reason[end:]
-}
-
-// writeArtifacts writes the rendered file map to disk under outRoot,
-// preserving relative path structure and creating intermediate
-// directories as needed. Each entry's name is validated:
-//
-//   - Empty names are rejected (defensive guard against renderer
-//     producing a zero-key entry).
-//   - Names that escape outRoot are rejected. The check defends
-//     against a malicious or buggy renderer engine emitting a name
-//     that lands outside the output root.
-//
-// An artifact name is a slash-separated logical name rather than a
-// path in the host's own spelling, so containment is judged in slash
-// arithmetic — identically on every platform — and the name is
-// converted to a host path only to write it. Judging it as a host
-// path instead would make a backslash a separator on one platform and
-// an ordinary character on another, so the same rendered output would
-// be accepted on one machine and refused on the next.
-//
-// Entries are written in sorted name order. Go randomises map
-// iteration, so writing in range order would emit the same build's
-// files in a different sequence on every run: the bytes on disk match,
-// but the order of the mkdir and write calls that produced them does
-// not, and a consumer watching the tree as it fills — or a filesystem
-// recording creation order — sees a different build each time.
-//
-// On any per-file error (mkdir, write), the function returns the
-// wrapped error and stops — partial writes to disk persist; the
-// caller is responsible for any cleanup in the partial-write case.
-// Sorting also makes that partial prefix reproducible: the same
-// failing input stops after the same set of files.
-func writeArtifacts(outRoot string, files map[string][]byte) error {
-	outRoot = filepath.Clean(outRoot)
-	for _, name := range sortedArtifactNames(files) {
-		if name == "" {
-			return fmt.Errorf("empty artifact path")
-		}
-		if !pathscope.IsLocalSlash(name) {
-			return fmt.Errorf("invalid artifact path %q (path escapes the output root)", name)
-		}
-		full := artifactPath(outRoot, name)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			return fmt.Errorf("mkdir %q: %w", filepath.Dir(full), err)
-		}
-		if err := os.WriteFile(full, files[name], 0o644); err != nil {
-			return fmt.Errorf("write %q: %w", full, err)
-		}
-	}
-	return nil
 }

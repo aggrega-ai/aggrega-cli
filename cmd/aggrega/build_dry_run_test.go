@@ -640,33 +640,3 @@ func TestBuildDryRunFlagRegistered(t *testing.T) {
 		}
 	}
 }
-
-// TestDryRunReportOrdersArtifactsDeterministically pins the report's ordering
-// against Go's randomised map iteration. Rendered output is byte-identical for
-// identical input, and a report of that output that reshuffled between runs would
-// be useless for exactly the diff-based reading the guarantee exists for.
-func TestDryRunReportOrdersArtifactsDeterministically(t *testing.T) {
-	t.Parallel()
-	files := map[string][]byte{
-		"b/second.yaml": []byte("second\n"),
-		"a/first.yaml":  []byte("first\n"),
-		"c/third.yaml":  []byte("third"),
-	}
-	var first bytes.Buffer
-	writeDryRunReport(&first, "dist", files)
-
-	for i := 0; i < 8; i++ {
-		var again bytes.Buffer
-		writeDryRunReport(&again, "dist", files)
-		if again.String() != first.String() {
-			t.Fatalf("run %d differs from the first:\n%s\n---\n%s", i, first.String(), again.String())
-		}
-	}
-
-	want := "==> dist/a/first.yaml <==\nfirst\n\n" +
-		"==> dist/b/second.yaml <==\nsecond\n\n" +
-		"==> dist/c/third.yaml <==\nthird\n\n"
-	if first.String() != want {
-		t.Errorf("report =\n%q\nwant\n%q", first.String(), want)
-	}
-}

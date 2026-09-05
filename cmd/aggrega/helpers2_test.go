@@ -12,7 +12,7 @@ import (
 // TestRunBuild_HappyPath pins the end-to-end build flow with a
 // minimal but complete fixture set. Walks catalog load → extends
 // resolve → resolver → annotations expansion → guards → topology →
-// IR → analyzer → assertions → render → writeArtifacts. The test
+// IR → analyzer → assertions → render → artifactout.WriteAll. The test
 // runs against a real temp dir, asserts the build succeeds, and
 // inspects dist/ for the expected output files.
 func TestRunBuild_HappyPath(t *testing.T) {

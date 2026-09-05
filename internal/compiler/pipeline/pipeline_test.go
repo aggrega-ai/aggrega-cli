@@ -125,7 +125,7 @@ func TestRunPipelineProducesExpectedArtifactsFromInMemoryInputs(t *testing.T) {
 	}
 
 	// The renderer's artifact map already keys outputs under dist/<...>;
-	// the CLI wrapper passes "dist" as outDir to writeArtifacts, which
+	// the CLI wrapper passes "dist" as outDir to artifactout.WriteAll, which
 	// concatenates the prefix in filepath.Join — producing dist/dist/<...>
 	// on disk. The golden tree was captured from the on-disk physical
 	// dist/ directory, so its filepath.Rel-derived keys land at
