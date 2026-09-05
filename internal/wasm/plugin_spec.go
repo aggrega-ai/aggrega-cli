@@ -52,9 +52,11 @@ type PluginSpec struct {
 	// (DefaultMaxMemoryPages), so a load is never unbounded.
 	MaxMemoryPages uint32
 
-	// TimeoutMs caps per-Call execution wall time in milliseconds. Zero
-	// or absent applies the platform default cap (DefaultTimeoutMs), so a
-	// Call is never uncancellable.
+	// TimeoutMs caps how long the GUEST may execute during one Call, in
+	// milliseconds. Zero or absent applies the platform default cap
+	// (DefaultTimeoutMs), so a Call is never uncancellable. The time the
+	// instance spends inside host functions is measured and excluded, so a
+	// guest is not charged for work the host does on its behalf.
 	TimeoutMs uint64
 
 	// Contract is the optional authored capability claim the load gate

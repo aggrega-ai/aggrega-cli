@@ -84,12 +84,19 @@ func TestLoaderEnforcesMemoryCapTrapsAtCall(t *testing.T) {
 }
 
 // TestLoaderEnforcesTimeoutCancelsSpinningCall proves the loader's per-call
-// wall-time cap is enforced by the runtime: a plugin loaded with a small timeout
-// whose export spins forever is cancelled. The proof asserts the Call returns an
-// error WITHIN a generous outer deadline — it does not assert exact timing, only
-// that the cancellation fires before the test's own deadline. A Call that never
-// returned would block the test until the outer deadline turned the hang into a
-// loud failure.
+// ceiling still bites where it must: a plugin loaded with a small ceiling whose
+// export spins forever — calling no host function, so every millisecond it burns
+// is its own — is cancelled. The proof asserts the Call returns an error WITHIN a
+// generous outer deadline; it does not assert exact timing, only that the
+// cancellation fires before the test's own deadline. A Call that never returned
+// would block the test until the outer deadline turned the hang into a loud
+// failure.
+//
+// It is one half of a pair. This half would still pass if the ceiling charged
+// every kind of time indiscriminately, and
+// TestParseSourceProbe_HostTimeDoesNotSpendTheGuestCeiling is the other half,
+// where a guest waiting on a slow HOST call is NOT cancelled. Neither alone pins
+// the distinction the ceiling draws; together they do.
 func TestLoaderEnforcesTimeoutCancelsSpinningCall(t *testing.T) {
 	const callTimeoutMs = 50
 	const outerDeadline = 10 * time.Second

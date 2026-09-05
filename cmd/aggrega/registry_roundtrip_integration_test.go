@@ -1109,10 +1109,10 @@ spec:
 //
 // The proof is a fail-vs-succeed contrast on the one authored difference. The
 // fail arm publishes a Plugin entity authoring spec.runtime.timeoutMs: 1 — a
-// per-call wall-time cap far below what a real guest's describe()/step Call needs.
-// The runtime cap is Call-scoped, and the build invokes the plugin, so the 1 ms
-// cap trips at the guest Call and the build halts with a context-deadline
-// cancellation. The success arm publishes the SAME fixture against the SAME
+// per-call execution ceiling far below what a real guest's describe()/step Call
+// needs. The ceiling is Call-scoped, and the build invokes the plugin, so the
+// 1 ms ceiling trips at the guest Call and the build halts with the loader's
+// ceiling cancellation. The success arm publishes the SAME fixture against the SAME
 // catalog + workspace shape with a generous runtime.timeoutMs, and the build
 // completes. Because the two arms differ ONLY in the authored runtime block, the
 // fail-vs-succeed outcome is attributable to the entity's authored timeout
@@ -1138,8 +1138,8 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 
 	t.Run("tiny_timeout_fails_at_guest_call", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		// Author spec.runtime.timeoutMs: 1 — a wall-time cap a real guest's Call
-		// cannot meet. Indented two spaces under spec.
+		// Author spec.runtime.timeoutMs: 1 — an execution ceiling a real guest's
+		// Call cannot meet. Indented two spaces under spec.
 		publishPluginEntityWithRuntime(t, host, pluginName, "1.0.0", pluginPath,
 			"  runtime:\n    timeoutMs: 1\n")
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
@@ -1153,29 +1153,29 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		if err == nil {
 			t.Fatal("build SUCCEEDED with an entity-authored timeoutMs: 1; the tiny per-call cap did not reach the loader")
 		}
-		// Attributability: the failure must be a per-call wall-time cancellation,
-		// not any error. The runtime cap surfaces from the guest Call as the wazero
-		// cancellation message "module closed with context deadline exceeded" — the
-		// distinctive phrase no other build-halt path produces. It is matched by
-		// walking the error chain, because the per-call deadline trips while the
-		// guest's language runtime is initialising and the runtime SDK renders that
-		// cancellation into its message text (not as a wrapped error value), so an
-		// errors.Is(context.DeadlineExceeded) over the chain does not reach it; the
-		// message-substring match over the chain is the robust attributable signal.
-		// The top CompilerError flattens its own Error() to its message, so the scan
-		// must traverse the chain rather than read err.Error() alone.
-		const deadlinePhrase = "module closed with context deadline exceeded"
-		if !chainContains(err, deadlinePhrase) {
-			t.Fatalf("build err chain = %q; want a %q cancellation — the entity's timeoutMs: 1 must surface as a per-call wall-time cancellation at the guest Call (not an unrelated error)",
-				chainString(err), deadlinePhrase)
+		// Attributability: the failure must be the per-call execution ceiling, not
+		// any error. The loader names that condition itself — the runtime alone
+		// would report only that a module closed, which several unrelated paths
+		// also produce — so the phrase matched here is the one the ceiling
+		// contributes and nothing else does. It is matched by walking the error
+		// chain, because the ceiling trips while the guest's language runtime is
+		// initialising and the cancellation is rendered into message text rather
+		// than carried as a wrapped error value, so matching on a context error
+		// over the chain does not reach it. The top CompilerError flattens its own
+		// Error() to its message, so the scan must traverse the chain rather than
+		// read err.Error() alone.
+		const ceilingPhrase = "ran past its 1ms execution ceiling and was cancelled"
+		if !chainContains(err, ceilingPhrase) {
+			t.Fatalf("build err chain = %q; want a %q cancellation — the entity's timeoutMs: 1 must surface as a per-call execution-ceiling cancellation at the guest Call (not an unrelated error)",
+				chainString(err), ceilingPhrase)
 		}
 		t.Logf("build halted attributably on the entity-authored timeout cap; chain:\n%s", chainString(err))
 	})
 
 	t.Run("generous_timeout_succeeds", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		// The SAME fixture + catalog + workspace shape, with a generous wall-time
-		// cap the guest Call comfortably meets. The only difference from the fail
+		// The SAME fixture + catalog + workspace shape, with a generous execution
+		// ceiling the guest Call comfortably meets. The only difference from the fail
 		// arm is this authored runtime block, so the build completing here vs.
 		// halting there is attributable to the authored timeout reaching the loader.
 		publishPluginEntityWithRuntime(t, host, pluginName, "1.0.0", pluginPath,

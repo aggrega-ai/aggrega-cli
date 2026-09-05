@@ -61,6 +61,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -636,6 +637,18 @@ type Plugin struct {
 	// no-op the streaming body guards against.
 	stdout io.Writer
 	stderr io.Writer
+	// callTimeout is the per-call ceiling on GUEST execution, resolved at load
+	// from the spec's TimeoutMs or the platform default. The runtime is
+	// configured to close a module when its call context is done, and
+	// callUnderGuestTimeCap cancels that context once the guest has spent this
+	// much time executing — so the two together are what turn a guest that will
+	// not yield into a loud cancellation. Zero disables the ceiling; no load path
+	// produces a zero, since effectiveTimeoutMs substitutes the platform default.
+	callTimeout time.Duration
+	// hostTime accumulates the wall time this instance spends inside host
+	// functions during one export invocation, so callUnderGuestTimeCap can keep
+	// that time off the guest's ceiling. It is reset per invocation.
+	hostTime hostTimeAccount
 }
 
 // SetSourceRoot sets the acquired source location the pack-source and
@@ -882,21 +895,36 @@ func (l *Loader) loadCore(
 	// The loader's external-input service rides along so the
 	// aggrega_fetch_external_input closure can serve guest fetches; the
 	// CLI streams ride along so the streaming closures can emit to them.
-	p := &Plugin{name: spec.Name, externalInputs: l.ExternalInputs, hostFunctions: hostFunctions, stdout: stdout, stderr: stderr}
+	p := &Plugin{
+		name:           spec.Name,
+		externalInputs: l.ExternalInputs,
+		hostFunctions:  hostFunctions,
+		stdout:         stdout,
+		stderr:         stderr,
+		callTimeout:    time.Duration(effectiveTimeoutMs(spec)) * time.Millisecond,
+	}
 
 	functions := buildFunctions(p, hostFunctions)
 
-	config := extism.PluginConfig{
-		EnableWasi:   true,
-		ModuleConfig: deterministicModuleConfig(spec.programName()),
-	}
+	// WithCloseOnContextDone is what makes a cancelled call context unwind a
+	// running guest instead of being noticed only once the guest next returns.
+	// It is set on EVERY load, cache or no cache: it is the runtime half of the
+	// per-call ceiling (callUnderGuestTimeCap is the other), and a load that
+	// omitted it would carry a ceiling that could not cancel anything.
+	//
 	// A shared compilation cache memoizes the guest's compiled machine code so
 	// repeated loads of the same bytes skip recompilation. It carries no
 	// runtime authority and no observable behaviour of its own — it changes
 	// only compilation cost — so it leaves the deterministic ModuleConfig and
 	// the AOT-purity load gate untouched.
+	runtimeConfig := wazero.NewRuntimeConfig().WithCloseOnContextDone(true)
 	if l.Cache != nil {
-		config.RuntimeConfig = wazero.NewRuntimeConfig().WithCompilationCache(l.Cache)
+		runtimeConfig = runtimeConfig.WithCompilationCache(l.Cache)
+	}
+	config := extism.PluginConfig{
+		EnableWasi:    true,
+		ModuleConfig:  deterministicModuleConfig(spec.programName()),
+		RuntimeConfig: runtimeConfig,
 	}
 
 	// Serialize concurrent compilation of THIS guest. NewPlugin compiles the
@@ -1228,13 +1256,17 @@ func (p *Plugin) Call(ctx context.Context, funcName string, input []byte) ([]byt
 // core keeps the trap wrap and the panic-recovery net single-sourced; the two
 // callers differ only in how they treat a clean non-zero exit.
 func (p *Plugin) callRaw(ctx context.Context, funcName string, input []byte) (exitCode uint32, output []byte, err error) {
-	output, err = callWithPanicRecovery(p.name, funcName, func() ([]byte, error) {
-		code, out, e := p.plugin.CallWithContext(ctx, funcName, input)
-		if e != nil {
-			return nil, fmt.Errorf("wasm: plugin %q call to %s: %w", p.name, funcName, e)
-		}
-		exitCode = code
-		return out, nil
+	err = p.callUnderGuestTimeCap(ctx, funcName, func(ctx context.Context) error {
+		var callErr error
+		output, callErr = callWithPanicRecovery(p.name, funcName, func() ([]byte, error) {
+			code, out, e := p.plugin.CallWithContext(ctx, funcName, input)
+			if e != nil {
+				return nil, fmt.Errorf("wasm: plugin %q call to %s: %w", p.name, funcName, e)
+			}
+			exitCode = code
+			return out, nil
+		})
+		return callErr
 	})
 	if err != nil {
 		return 0, nil, err

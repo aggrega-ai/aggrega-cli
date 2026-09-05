@@ -143,12 +143,24 @@ func hostFunctionSignatureFor(name string) (hostFunctionSignature, bool) {
 // re-spelling the value-type lists. It panics if name has no registered
 // signature — a maintenance guard catching a host function added to the
 // allowlist without a matching signature entry.
-func newBoundHostFunction(name string, body extism.HostFunctionStackCallback) extism.HostFunction {
+//
+// Every real host function is bound through here, which is what makes this the
+// one place the time a body spends running host code is recorded. The per-call
+// ceiling bounds guest execution, and the recorded intervals are what keep host
+// work off that ceiling — see hostTimeAccount. Binding a real body
+// anywhere else would leave its cost charged to whichever guest happened to
+// call it.
+func (p *Plugin) newBoundHostFunction(name string, body extism.HostFunctionStackCallback) extism.HostFunction {
 	sig, ok := hostFunctionSignatureFor(name)
 	if !ok {
 		panic("wasm: no registered signature for host function " + name)
 	}
-	return extism.NewHostFunctionWithStack(name, body, sig.params, sig.results)
+	accounted := func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+		p.hostTime.enter()
+		defer p.hostTime.leave()
+		body(ctx, cp, stack)
+	}
+	return extism.NewHostFunctionWithStack(name, accounted, sig.params, sig.results)
 }
 
 // describeOnlyHostFunctions is the describe-only introspection profile's builder:
@@ -309,7 +321,7 @@ type pluginMemoryReader interface {
 // exercise the read-and-format path against a fake
 // pluginMemoryReader without fabricating an *extism.CurrentPlugin.
 func (p *Plugin) hostFunctionAggregaLog() extism.HostFunction {
-	return newBoundHostFunction(
+	return p.newBoundHostFunction(
 		"aggrega_log",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaLog(cp, stack)
@@ -373,7 +385,7 @@ type pluginRawMemoryReader interface {
 // read-and-write path against a fake memory reader and an in-memory writer
 // without fabricating an *extism.CurrentPlugin.
 func (p *Plugin) hostFunctionCLIWriteStdout() extism.HostFunction {
-	return newBoundHostFunction(
+	return p.newBoundHostFunction(
 		"aggrega_cli_write_stdout",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleCLIWrite(cp.Memory(), p.stdout, "aggrega_cli_write_stdout", stack)
@@ -386,7 +398,7 @@ func (p *Plugin) hostFunctionCLIWriteStdout() extism.HostFunction {
 // injected at LoadCLI. It carries the same runtime-only grant: the compile-time
 // build profile never binds it.
 func (p *Plugin) hostFunctionCLIWriteStderr() extism.HostFunction {
-	return newBoundHostFunction(
+	return p.newBoundHostFunction(
 		"aggrega_cli_write_stderr",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleCLIWrite(cp.Memory(), p.stderr, "aggrega_cli_write_stderr", stack)
@@ -427,7 +439,7 @@ func (p *Plugin) handleCLIWrite(mem pluginRawMemoryReader, w io.Writer, funcName
 // Body extracted into handleAggregaEmitWarning so the test suite
 // can exercise the read-format-append path against a fake reader.
 func (p *Plugin) hostFunctionAggregaEmitWarning() extism.HostFunction {
-	return newBoundHostFunction(
+	return p.newBoundHostFunction(
 		"aggrega_emit_warning",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaEmitWarning(cp, stack)
@@ -501,7 +513,7 @@ type pluginMemoryWriter interface {
 // suite can exercise the read-fetch-write path against fake memory
 // interfaces without fabricating an *extism.CurrentPlugin.
 func (p *Plugin) hostFunctionAggregaFetchExternalInput() extism.HostFunction {
-	return newBoundHostFunction(
+	return p.newBoundHostFunction(
 		"aggrega_fetch_external_input",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaFetchExternalInput(ctx, cp, cp, stack)
@@ -600,7 +612,7 @@ func (p *Plugin) writeFetchEnvelope(writer pluginMemoryWriter, env abi.FetchExte
 // read-pack-write path against fake memory interfaces without fabricating an
 // *extism.CurrentPlugin.
 func (p *Plugin) hostFunctionAggregaPackSource() extism.HostFunction {
-	return newBoundHostFunction(
+	return p.newBoundHostFunction(
 		"aggrega_pack_source",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaPackSource(cp, cp, stack)
@@ -666,7 +678,7 @@ func (p *Plugin) handleAggregaPackSource(reader pluginMemoryReader, writer plugi
 // Body extracted into handleAggregaReadSourceFile so the test suite can exercise
 // the read-read-write path against fake memory interfaces.
 func (p *Plugin) hostFunctionAggregaReadSourceFile() extism.HostFunction {
-	return newBoundHostFunction(
+	return p.newBoundHostFunction(
 		"aggrega_read_source_file",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaReadSourceFile(cp, cp, stack)
@@ -744,7 +756,7 @@ func (p *Plugin) handleAggregaReadSourceFile(reader pluginMemoryReader, writer p
 // read-guard-run-write path against fake memory interfaces without fabricating an
 // *extism.CurrentPlugin.
 func (p *Plugin) hostFunctionAggregaParseSource() extism.HostFunction {
-	return newBoundHostFunction(
+	return p.newBoundHostFunction(
 		"aggrega_parse_source",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaParseSource(ctx, cp, cp, stack)

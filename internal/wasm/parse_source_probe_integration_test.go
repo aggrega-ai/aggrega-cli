@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -142,6 +143,59 @@ func TestParseSourceProbe_ReentryGuard(t *testing.T) {
 	}
 	if !strings.Contains(got, wasm.ErrProducerConsumptionReentry().Error()) {
 		t.Fatalf("nested call was not denied with the re-entry sentinel; output = %q", got)
+	}
+}
+
+// TestParseSourceProbe_HostTimeDoesNotSpendTheGuestCeiling proves the per-call
+// ceiling bounds GUEST execution and not the host work a guest asks for: a
+// consumer loaded with a deliberately tiny ceiling asks the host for a tree, the
+// host takes far longer than that ceiling to produce one, and the call still
+// succeeds.
+//
+// The discriminator is structural rather than a timing threshold. The seam's
+// delay is a FLOOR the host is made to spend, not a duration measured — so a
+// build that charged host time to the guest cannot merely be slow here, it must
+// fail the call outright with a cancellation, whatever the machine's speed or
+// load. The two designs therefore differ in RESULT, which is what keeps this
+// assertion out of the wall-clock-threshold class it would otherwise sit in.
+//
+// It is one half of a pair, and neither half stands alone: this half would still
+// pass if the ceiling had simply been removed, and
+// TestLoaderEnforcesTimeoutCancelsSpinningCall is the other half, where a guest
+// that spins WITHOUT calling the host is cancelled. Together they pin the
+// distinction the ceiling exists to draw.
+func TestParseSourceProbe_HostTimeDoesNotSpendTheGuestCeiling(t *testing.T) {
+	// The seam delay sits well above the ceiling so the old charging is
+	// unambiguously over budget, and well below any suite-level bound so a
+	// passing run stays cheap.
+	const ceilingMs = 250
+	const seamDelay = 2 * time.Second
+
+	ctx := context.Background()
+	path := wasmtest.EnsureFixtureBuilt(t, "parse-source-probe-go.wasm")
+	loader := &wasm.Loader{}
+	plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
+		Name:      "parse-source-probe-go",
+		Path:      path,
+		TimeoutMs: ceilingMs,
+	})
+	if err != nil {
+		t.Fatalf("LoadAndDescribe parse-source-probe fixture: %v", err)
+	}
+	defer plugin.Close(ctx)
+
+	const cannedTree = `{"seam":"slow"}`
+	plugin.SetSourceParser(func(context.Context, string, []byte, json.RawMessage) (json.RawMessage, error) {
+		time.Sleep(seamDelay)
+		return json.RawMessage(cannedTree), nil
+	})
+
+	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, []byte(`{"n":1}`))
+	if err != nil {
+		t.Fatalf("a host call lasting %s under a %dms guest ceiling must not cancel the guest: %v", seamDelay, ceilingMs, err)
+	}
+	if string(out) != cannedTree {
+		t.Errorf("output = %q; want the seam tree %q", out, cannedTree)
 	}
 }
 

@@ -21,14 +21,27 @@ const DefaultMaxMemoryPages uint32 = 1024
 // only — the render path applies each plugin's own authored limits.
 const DescribeMaxMemoryPages uint32 = 4096
 
-// DefaultTimeoutMs is the platform default cap on a single plugin Call's wall
-// time, in milliseconds. 5000 ms is a wide ceiling for a per-step render or lint
-// while still turning a hung guest (an infinite loop, a frozen clock) into a
-// loud cancellation rather than an indefinite block. The loader applies this cap
-// to any plugin whose spec leaves TimeoutMs zero, so a zero is "apply the default
-// cap", never "uncancellable". It is a tunable platform value: a plugin with a
-// legitimately longer-running export raises its own ceiling through the entity's
-// runtime block.
+// DefaultTimeoutMs is the platform default cap on a single plugin Call's GUEST
+// execution time, in milliseconds. The loader applies this cap to any plugin
+// whose spec leaves TimeoutMs zero, so a zero is "apply the default cap", never
+// "uncancellable". It is a tunable platform value: a plugin with a legitimately
+// longer-running export raises its own ceiling through the entity's runtime
+// block.
+//
+// It is a LIVENESS CEILING — it separates a guest that returns from one that
+// will not yield — and it must not be read as a performance budget for an
+// export. Guest execution alone spends it: the time an instance spends inside
+// host functions is measured and subtracted, so a guest that asks the host for a
+// parsed tree is not charged for the host loading and running the parser. That
+// subtraction is what lets one number stand for every export, since the guest's
+// own share of a call is small and stable while the host's share is neither.
+//
+// 5000 ms is wide against that measurement rather than against a call's wall
+// time: a guest's own share of an export is milliseconds, so the ceiling sits
+// orders of magnitude above the work it bounds and a loaded machine does not
+// walk into it. A ceiling sized against wall time instead would have to absorb
+// however long the host takes, which is unbounded and load-dependent — the
+// reason the host's share is excluded rather than budgeted for.
 const DefaultTimeoutMs uint64 = 5000
 
 // effectiveMaxPages returns the memory cap the loader applies for spec: the
@@ -43,11 +56,11 @@ func effectiveMaxPages(spec PluginSpec) uint32 {
 	return DefaultMaxMemoryPages
 }
 
-// effectiveTimeoutMs returns the per-call wall-time cap the loader applies for
-// spec: the spec's TimeoutMs when non-zero, else DefaultTimeoutMs. Centralising
-// the zero-to-default substitution here keeps a single place where "absent limit
-// means platform default cap" is decided, so every load path gets the same
-// ceiling and a zero is never uncancellable.
+// effectiveTimeoutMs returns the per-call guest-execution cap the loader applies
+// for spec: the spec's TimeoutMs when non-zero, else DefaultTimeoutMs.
+// Centralising the zero-to-default substitution here keeps a single place where
+// "absent limit means platform default cap" is decided, so every load path gets
+// the same ceiling and a zero is never uncancellable.
 func effectiveTimeoutMs(spec PluginSpec) uint64 {
 	if spec.TimeoutMs != 0 {
 		return spec.TimeoutMs

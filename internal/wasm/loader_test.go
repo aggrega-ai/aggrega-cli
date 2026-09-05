@@ -5,12 +5,14 @@ package wasm
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	extism "github.com/extism/go-sdk"
 )
@@ -122,7 +124,7 @@ func TestTranslateMinimalSpecPasses(t *testing.T) {
 	}
 }
 
-func TestTranslateAppliesMemoryAndTimeout(t *testing.T) {
+func TestTranslateAppliesMemory(t *testing.T) {
 	spec := PluginSpec{
 		Name:           "test-plugin",
 		Path:           "fixture.wasm",
@@ -139,17 +141,20 @@ func TestTranslateAppliesMemoryAndTimeout(t *testing.T) {
 	if manifest.Memory.MaxPages != 32 {
 		t.Errorf("expected MaxPages=32, got %d", manifest.Memory.MaxPages)
 	}
-	if manifest.Timeout != 1500 {
-		t.Errorf("expected Timeout=1500, got %d", manifest.Timeout)
+	// The per-call ceiling is deliberately absent from the manifest: a manifest
+	// timeout would bound the whole call, host functions included, which charges
+	// host work to the calling guest. The loader carries the ceiling instead —
+	// TestLoadResolvesGuestTimeCeiling covers where it lands.
+	if manifest.Timeout != 0 {
+		t.Errorf("manifest must declare no timeout so the runtime does not bound host work as guest time, got %d", manifest.Timeout)
 	}
 }
 
-// TestTranslateAppliesDefaultLimitsWhenZero is the behavior-change proof: a spec
-// that declares no limits yields a manifest carrying the platform default cap on
-// BOTH memory and per-call wall time — never an unbounded memory (nil Memory) or
-// an uncancellable call (zero Timeout). This is the floor every load path gets
-// when the entity authors no runtime limits.
-func TestTranslateAppliesDefaultLimitsWhenZero(t *testing.T) {
+// TestTranslateAppliesDefaultMemoryWhenZero is the floor every load path gets
+// when the entity authors no runtime limits: a spec that declares no limits
+// still yields a manifest carrying the platform default memory cap, never an
+// unbounded memory (nil Memory).
+func TestTranslateAppliesDefaultMemoryWhenZero(t *testing.T) {
 	spec := PluginSpec{
 		Name: "test-plugin",
 		Path: "fixture.wasm",
@@ -165,8 +170,40 @@ func TestTranslateAppliesDefaultLimitsWhenZero(t *testing.T) {
 	if manifest.Memory.MaxPages != DefaultMaxMemoryPages {
 		t.Errorf("expected MaxPages=%d (DefaultMaxMemoryPages), got %d", DefaultMaxMemoryPages, manifest.Memory.MaxPages)
 	}
-	if manifest.Timeout != DefaultTimeoutMs {
-		t.Errorf("expected Timeout=%d (DefaultTimeoutMs), got %d", DefaultTimeoutMs, manifest.Timeout)
+}
+
+// TestLoadResolvesGuestTimeCeiling proves the per-call ceiling reaches a LOADED
+// plugin, which is the only place it can act: an explicit TimeoutMs is honoured
+// and a zero one takes the platform default, so a spec that authors no limit is
+// capped rather than uncancellable. It loads real guest bytes rather than
+// inspecting the translation, because the ceiling is no longer a manifest field
+// and a spec value that failed to reach the instance would leave the ceiling
+// inert while every translation assertion still passed.
+func TestLoadResolvesGuestTimeCeiling(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		timeoutMs uint64
+		want      time.Duration
+	}{
+		{"explicit ceiling is honoured", 1500, 1500 * time.Millisecond},
+		{"zero takes the platform default", 0, time.Duration(DefaultTimeoutMs) * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			loader := &Loader{}
+			plugin, err := loader.Load(context.Background(), PluginSpec{
+				Name:      "ceiling-probe",
+				Bytes:     spinLoopWasm,
+				TimeoutMs: tc.timeoutMs,
+			})
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			defer plugin.Close(context.Background())
+
+			if plugin.callTimeout != tc.want {
+				t.Errorf("loaded plugin callTimeout = %s; want %s", plugin.callTimeout, tc.want)
+			}
+		})
 	}
 }
 

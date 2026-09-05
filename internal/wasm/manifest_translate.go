@@ -24,15 +24,26 @@ func translateToManifest(spec PluginSpec) (extism.Manifest, error) {
 	// Apply the platform default cap when the spec leaves a limit zero, at this
 	// single chokepoint so every load path — entity, linter, and test — gets a
 	// consistent cap. A zero is "apply the default cap", never "unbounded": the
-	// Memory block and Timeout are ALWAYS set, so the runtime always enforces a
-	// memory ceiling and a per-call wall-time ceiling.
+	// Memory block is ALWAYS set, so the runtime always enforces a memory
+	// ceiling.
+	//
+	// The per-call ceiling is deliberately NOT declared here, and the omission is
+	// the mechanism rather than a gap. A manifest timeout makes the runtime bound
+	// the whole call, host functions included — and a host function body runs
+	// host code, up to and including loading, describing and running a second
+	// guest for a producer-consumption seam. Under that shape the ceiling reports
+	// the host's cost under the calling guest's name: it grows with machine load
+	// and names the wrong party. So the loader carries the ceiling itself, on the
+	// Plugin, and spends it against guest execution alone — see callTimeout and
+	// callUnderGuestTimeCap. The loader also sets the runtime's
+	// close-on-context-done itself, which a manifest timeout would otherwise have
+	// turned on as a side effect.
 	manifest := extism.Manifest{
 		Wasm: []extism.Wasm{
 			extism.WasmFile{Path: spec.Path, Name: spec.Name},
 		},
 		Config:       spec.ConfigKV,
 		AllowedHosts: spec.AllowedHosts,
-		Timeout:      effectiveTimeoutMs(spec),
 		Memory:       &extism.ManifestMemory{MaxPages: effectiveMaxPages(spec)},
 	}
 
