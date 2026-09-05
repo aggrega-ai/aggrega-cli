@@ -438,7 +438,10 @@ func Run(cfg Config) (Result, error) {
 	buildCtx := wasm.ContextWithDisablePluginCache(context.Background(), run.DisablePluginCache)
 	buildCtx = wasm.ContextWithVerifyDeterminism(buildCtx, run.VerifyDeterminism)
 
-	preview, err := compilerops.Preview(
+	// A build emits a deployable artifact, so every gate is on and every
+	// divergence halts. It holds the Release to its lockfile, which the phase
+	// above has already ensured exists.
+	preview, err := compilerops.PreviewForArtifact(
 		buildCtx,
 		compilerops.NewPreviewInputs(
 			fetchSeam,
@@ -454,9 +457,6 @@ func Run(cfg Config) (Result, error) {
 			compilerops.WithCatalogWarnings(cat.DeprecationWarnings()),
 			compilerops.WithProgress(func(p compilerops.PreviewPhase) { report.phase(previewPhase(p)) }),
 		),
-		// A build emits a deployable artifact, so every gate is on and every
-		// divergence halts.
-		compilerops.ArtifactPolicy(),
 		pipeline.Options{
 			IncludeTrace:    cfg.TraceEnabled,
 			TraceUnredacted: run.TraceUnredacted,

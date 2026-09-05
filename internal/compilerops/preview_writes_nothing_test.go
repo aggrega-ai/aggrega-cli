@@ -119,15 +119,14 @@ func TestPreviewWritesNothingToTheWorkspace(t *testing.T) {
 
 	before := treeSnapshot(t, workspaceRoot)
 
-	// The fixture carries no lockfile, so the gates that read one stand down; the
-	// drift verify is off for the same reason. Everything else runs, render
-	// included.
-	policy := ArtifactPolicy()
-
+	// The artifact-producing operation, so every gate is on. The fixture carries no
+	// lockfile, so the gates that read one stand down on the inputs; everything
+	// else runs, render included.
+	//
 	// The fixture's render requests no external input, so the seam is named as
 	// absent rather than built. Naming it is the point: the constructor admits no
 	// value that leaves the choice unmade.
-	preview, err := Preview(
+	preview, err := PreviewForArtifact(
 		context.Background(),
 		NewPreviewInputs(
 			NoExternalInputs(),
@@ -137,11 +136,10 @@ func TestPreviewWritesNothingToTheWorkspace(t *testing.T) {
 			wsCfg,
 			"test",
 		),
-		policy,
 		pipeline.Options{},
 	)
 	if err != nil {
-		t.Fatalf("Preview over the fixture workspace: %v", err)
+		t.Fatalf("the preview over the fixture workspace: %v", err)
 	}
 	if preview.Pipeline == nil || len(preview.Pipeline.Artifacts) == 0 {
 		t.Fatal("the render must actually produce artifacts, or 'it wrote nothing' says nothing")

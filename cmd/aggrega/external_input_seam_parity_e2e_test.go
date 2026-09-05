@@ -619,7 +619,7 @@ func renderWithoutSeam(t *testing.T, root, releasePath string, ws *workspaceconf
 	view := catalog.NewLazyLookup(root, cacheDir, []string{filepath.Join(root, "catalog")}, nil)
 	view.SetPins(catalog.PinsFromLockfile(lf))
 
-	preview, err := compilerops.Preview(
+	preview, err := compilerops.PreviewForArtifact(
 		context.Background(),
 		compilerops.NewPreviewInputs(
 			compilerops.NoExternalInputs(),
@@ -630,7 +630,6 @@ func renderWithoutSeam(t *testing.T, root, releasePath string, ws *workspaceconf
 			"test",
 			compilerops.WithLockfile(lf, true),
 		),
-		compilerops.ArtifactPolicy(),
 		pipeline.Options{},
 	)
 	if err != nil {

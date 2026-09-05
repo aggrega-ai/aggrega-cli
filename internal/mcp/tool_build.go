@@ -110,21 +110,6 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 
-	// This tool produces an artifact, so it runs the artifact posture of the one
-	// preview computation every rendering surface is a transport over: the
-	// integrity, closure-scoped validation, extends and axis-reconstruction gates
-	// all run, because an artifact rendered from a closure nothing checked is
-	// indistinguishable from one that was checked.
-	//
-	// The drift verify is the one artifact-posture gate held off, and the reason is
-	// this surface's own lockfile posture rather than a view about drift: the tool
-	// renders a Release that may have NO lockfile at all, resolving against
-	// whatever pins exist. Refusing a partial lockfile while rendering an absent
-	// one would make less pinning information the more permissive input, which is
-	// not a coherent contract to give a caller.
-	policy := compilerops.ArtifactPolicy()
-	policy.VerifyLockfileDrift = false
-
 	// The render-time external-input seam, frozen — the same posture and the same
 	// builder the editor's inspection renders through. It is FROZEN rather than
 	// acquiring because this call is an in-memory render: a seam with acquisition
@@ -138,7 +123,13 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 	// the caller cannot tell from real content.
 	fetchSeam := compilerops.FrozenExternalInputs(tw.cacheDir, lf)
 
-	preview, err := compilerops.Preview(
+	// This tool renders from the pins the workspace already carries. It neither
+	// requires a lockfile nor fills one — the two other artifact-producing
+	// surfaces do one or the other before they render — so it runs the operation
+	// shaped for that contract: every gate that judges the closure or the entities
+	// is on, and the drift verify, whose question presupposes a lockfile the
+	// operation asked for, is not this operation's to ask.
+	preview, err := compilerops.PreviewForArtifactFromAvailablePins(
 		ctx,
 		compilerops.NewPreviewInputs(
 			fetchSeam,
@@ -149,7 +140,6 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 			s.serverVersion,
 			compilerops.WithLockfile(lf, lf != nil),
 		),
-		policy,
 		pipeline.Options{},
 	)
 

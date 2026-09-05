@@ -17,7 +17,12 @@ package compilerops
 //
 // Run-time half, asserted here: the bare zero value PreviewInputs{} still
 // compiles, because Go admits the zero value of every struct. It is the one
-// bypass the constructor cannot close, so Preview refuses it.
+// bypass the constructor cannot close, so the preview refuses it.
+//
+// The entry points are named per OPERATION and each supplies its own posture, so
+// these tests drive the operation whose gates the case needs rather than
+// assembling a posture — which they could not do from outside this package, and
+// which nothing inside it should do either where an operation already says it.
 
 import (
 	"context"
@@ -44,7 +49,7 @@ func TestPreviewRefusesTheZeroValue(t *testing.T) {
 	// line below is the demonstration of it rather than incidental setup.
 	var zero PreviewInputs
 
-	out, err := Preview(context.Background(), zero, ArtifactPolicy(), pipeline.Options{})
+	out, err := PreviewForArtifact(context.Background(), zero, pipeline.Options{})
 	if err == nil {
 		t.Fatal("a zero-valued PreviewInputs must be refused; unrefused it renders with no external-input " +
 			"seam attached, which is exactly the divergence the constructor exists to prevent")
@@ -68,7 +73,7 @@ func TestPreviewRefusesTheZeroValue(t *testing.T) {
 }
 
 // TestConstructedInputsPassTheZeroValueGuard is the matched positive control. It
-// is what makes the test above falsifiable: without it, a Preview that refused
+// is what makes the test above falsifiable: without it, a preview that refused
 // EVERY input would satisfy that assertion perfectly.
 //
 // It asserts only that the guard let the run past — the run then fails on the
@@ -77,7 +82,7 @@ func TestConstructedInputsPassTheZeroValueGuard(t *testing.T) {
 	t.Parallel()
 
 	in := NewPreviewInputs(NoExternalInputs(), nil, "release.yaml", t.TempDir(), workspaceconfig.Default(), "test")
-	_, err := Preview(context.Background(), in, InspectionPolicy(), pipeline.Options{})
+	_, err := PreviewForInspection(context.Background(), in, pipeline.Options{})
 	if err != nil && errors.Is(err, errPreviewInputsZeroValue) {
 		t.Fatalf("a constructed input must clear the not-constructed guard; the guard is firing on "+
 			"everything, so the refusal above proves nothing: %v", err)
@@ -132,7 +137,7 @@ func TestNewPreviewInputsCarriesWhatItWasGiven(t *testing.T) {
 		t.Error("the carried callback is not the one supplied")
 	}
 	if !in.constructed {
-		t.Error("the constructor must mark its result constructed, or Preview refuses everything it builds")
+		t.Error("the constructor must mark its result constructed, or the preview refuses everything it builds")
 	}
 }
 

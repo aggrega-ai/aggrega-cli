@@ -816,13 +816,12 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 	//    option means irGraph returns the IR graph even when resolution is
 	//    incomplete; it does not run the render-time resolution-completeness halt
 	//    (that gate belongs to the surfaces that emit an artifact).
-	preview, err := compilerops.Preview(
+	//    Inspection posture: the same computation the build runs, with the gates
+	//    that would REFUSE left off. An editor that declines to draw the graph
+	//    leaves the reader with nothing, where a build leaves them a diagnostic.
+	preview, err := compilerops.PreviewForInspection(
 		ctx,
 		s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam),
-		// Inspection posture: the same computation the build runs, with the gates
-		// that would REFUSE left off. An editor that declines to draw the graph
-		// leaves the reader with nothing, where a build leaves them a diagnostic.
-		compilerops.InspectionPolicy(),
 		opts,
 	)
 	if err != nil {

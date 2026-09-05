@@ -140,14 +140,14 @@ func (s *Server) renderUnderArtifactPosture(ctx context.Context, release string)
 
 	fetchSeam := s.irGraphExternalInputs(lf)
 
-	preview, err := compilerops.Preview(
+	// A build emits something a person applies, so every gate is on and every
+	// divergence halts. That is the whole of what these methods add over the graph
+	// inspection, which runs the same computation with the refusing gates off. The
+	// gate above has already established that the Release carries a lockfile, so
+	// the drift verify has something to hold it to.
+	preview, err := compilerops.PreviewForArtifact(
 		ctx,
 		s.irGraphPreviewInputs(view, releasePath, lf, fetchSeam),
-		// A build emits something a person applies, so every gate is on and every
-		// divergence halts. That is the whole of what these methods add over the
-		// graph inspection, which runs the same computation with the refusing
-		// gates off.
-		compilerops.ArtifactPolicy(),
 		pipeline.Options{},
 	)
 
