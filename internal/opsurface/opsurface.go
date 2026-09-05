@@ -12,15 +12,23 @@
 //
 // Each surface — the command line, the JSON-RPC daemon, the tool protocol —
 // declares, per operation, either the names it exposes that operation under or
-// the reason it does not expose it at all. Both halves are checked against this
-// set by CheckDispositions and CheckMembers, which is what makes an omission
-// declared rather than accidental: a capability a surface simply forgot has no
-// entry, and the check names it.
+// the reason it does not expose it at all. That declaration is the surface's
+// registration: a surface registers nothing it has not first named an operation
+// for, and the name it registers under is the name the table gives. An entry
+// recording that a surface does not carry an operation therefore registers
+// nothing, which is what makes an unavailability reason decide behaviour rather
+// than decorate a check.
+//
+// Both halves are still checked against this set by CheckAvailability and
+// CheckMembers, which is what makes an omission declared rather than accidental:
+// a capability a surface simply forgot has no entry, and the check names it.
 //
 // The package deliberately holds no dependency on any surface, and none on the
 // operations layer that implements the capabilities. A surface reads the set;
 // the set reads nothing. That is what lets a projection package with a handful
-// of dependencies declare its dispositions without importing a compiler.
+// of dependencies declare its availability without importing a compiler, and it
+// is why the handler a surface binds to an operation stays in the surface's own
+// table rather than here: this package carries the vocabulary, never a callable.
 package opsurface
 
 import (
@@ -35,7 +43,7 @@ import (
 // joined by dashes — chosen for what the capability does rather than for any
 // surface's spelling of it, so a renamed command or a renamed method does not
 // rename the operation. Summary states in one line what the capability does,
-// for a reader deciding whether a surface's disposition of it is right.
+// for a reader deciding whether a surface's availability of it is right.
 type Operation struct {
 	ID      string
 	Summary string
@@ -151,13 +159,19 @@ const (
 	SurfaceMCP   Surface = "the tool protocol"
 )
 
-// Disposition is what one surface does with one operation.
+// OperationAvailability is what one surface does with one operation.
 //
 // Exactly one half is filled. Names carries the identifiers the surface exposes
 // the operation under — a command path, a wire method, a tool name — and may
 // carry several, because one capability can be reachable under more than one
-// name on the same surface. Reason states why the surface does not expose the
-// operation at all.
+// name on the same surface. UnavailabilityReason states why the surface does not
+// expose the operation at all.
+//
+// Both halves are load-bearing at run time, not only at check time. A surface
+// registers an operation under the names this record gives and under no others,
+// and a record carrying an unavailability reason registers nothing — so the
+// reason is what stops the operation reaching the surface rather than a note
+// beside the fact that it did not.
 //
 // There is deliberately no third state. A capability a surface has simply not
 // got round to is indistinguishable, in a table, from one it declines on
@@ -165,27 +179,27 @@ const (
 // and a bound that reads as backlog gets closed by someone who does not know
 // why it was a bound. An operation nobody has ruled on therefore has no entry,
 // and the checks below name it.
-type Disposition struct {
-	Names  []string
-	Reason string
+type OperationAvailability struct {
+	Names                []string
+	UnavailabilityReason string
 }
 
-// Exposed reports the disposition under the names given. Passing no name is a
+// Exposed reports availability under the names given. Passing no name is a
 // programming error the checks report, not an exposure.
-func Exposed(names ...string) Disposition {
-	return Disposition{Names: names}
+func Exposed(names ...string) OperationAvailability {
+	return OperationAvailability{Names: names}
 }
 
-// NotApplicable reports the disposition of an operation the surface declines to
-// expose, carrying the reason it declines.
-func NotApplicable(reason string) Disposition {
-	return Disposition{Reason: reason}
+// Unavailable reports an operation the surface declines to expose, carrying the
+// reason it declines.
+func Unavailable(reason string) OperationAvailability {
+	return OperationAvailability{UnavailabilityReason: reason}
 }
 
-// IsExposed reports whether the disposition exposes the operation.
-func (d Disposition) IsExposed() bool { return len(d.Names) > 0 }
+// IsExposed reports whether the surface exposes the operation.
+func (a OperationAvailability) IsExposed() bool { return len(a.Names) > 0 }
 
-// CheckDispositions reports every way a surface's disposition table disagrees
+// CheckAvailability reports every way a surface's availability table disagrees
 // with the operation set: an operation the table says nothing about, an entry
 // naming an operation that no longer exists, and an entry that is neither an
 // exposure nor a declined one.
@@ -202,56 +216,58 @@ func (d Disposition) IsExposed() bool { return len(d.Names) > 0 }
 // capability and stating why not, and a finding that only reports a mismatch
 // leaves them to work out which.
 //
-// The findings are ordered by the operation set for the undisposed and
+// The findings are ordered by the operation set for the undeclared and
 // malformed classes and lexically for the stale classes, so a failing check
 // reports the same text across runs.
-func CheckDispositions(surface Surface, table map[string]Disposition) []string {
-	return checkDispositions(surface, table, openQuestions)
+func CheckAvailability(surface Surface, table map[string]OperationAvailability) []string {
+	return checkAvailability(surface, table, openQuestions)
 }
 
-// checkDispositions is the whole of CheckDispositions with the bound supplied
+// checkAvailability is the whole of CheckAvailability with the bound supplied
 // rather than read from the package.
 //
 // The split exists so each failure class the bound introduces can be driven
 // against a bound built for it. The exported form above is a one-line
 // delegation passing the real bound, which is what makes a test of this
 // function a test of what the surfaces actually call.
-func checkDispositions(surface Surface, table map[string]Disposition, bound []OpenQuestion) []string {
+func checkAvailability(surface Surface, table map[string]OperationAvailability, bound []OpenQuestion) []string {
 	var findings []string
 
 	for _, op := range operations {
-		d, ok := table[op.ID]
+		a, ok := table[op.ID]
 		if isOpen(bound, surface, op.ID) {
 			if ok {
 				findings = append(findings, fmt.Sprintf(
-					"%s disposes of the %q operation, and %s names it as undecided. One of the two is wrong. "+
-						"If the disposition stands, delete the bound row: a capability that has been ruled on "+
-						"reads, from the bound, as a question nobody need answer, and the bound only shrinks.",
+					"%s declares the availability of the %q operation, and %s names it as undecided. One of the "+
+						"two is wrong. If the declaration stands, delete the bound row: a capability that has "+
+						"been ruled on reads, from the bound, as a question nobody need answer, and the bound "+
+						"only shrinks.",
 					surface, op.ID, boundLocation))
 			}
 			continue
 		}
 		if !ok {
 			findings = append(findings, fmt.Sprintf(
-				"%s declares nothing about the %q operation (%s). Add a disposition for it: "+
-					"Exposed(name…) with the names it is reachable under, or NotApplicable(reason) "+
+				"%s declares nothing about the %q operation (%s). Declare its availability: "+
+					"Exposed(name…) with the names it is reachable under, or Unavailable(reason) "+
 					"stating why this surface does not carry it. Naming it in %s instead is not a "+
-					"disposition — it records that nobody has decided, and it costs a deliberate second "+
+					"declaration — it records that nobody has decided, and it costs a deliberate second "+
 					"edit to the bound's own ceiling.",
 				surface, op.ID, op.Summary, boundLocation))
 			continue
 		}
 		switch {
-		case d.IsExposed() && d.Reason != "":
+		case a.IsExposed() && a.UnavailabilityReason != "":
 			findings = append(findings, fmt.Sprintf(
-				"%s disposes of the %q operation as both exposed and not applicable. "+
-					"A disposition carries names or a reason, never both.", surface, op.ID))
-		case !d.IsExposed() && d.Reason == "":
+				"%s declares the %q operation both exposed and unavailable. "+
+					"An availability record carries names or an unavailability reason, never both.",
+				surface, op.ID))
+		case !a.IsExposed() && a.UnavailabilityReason == "":
 			findings = append(findings, fmt.Sprintf(
-				"%s disposes of the %q operation with neither a name nor a reason. "+
-					"Use Exposed(name…) or NotApplicable(reason).", surface, op.ID))
-		case d.IsExposed():
-			for _, n := range d.Names {
+				"%s declares the %q operation with neither a name nor an unavailability reason. "+
+					"Use Exposed(name…) or Unavailable(reason).", surface, op.ID))
+		case a.IsExposed():
+			for _, n := range a.Names {
 				if strings.TrimSpace(n) == "" {
 					findings = append(findings, fmt.Sprintf(
 						"%s exposes the %q operation under an empty name.", surface, op.ID))
@@ -269,8 +285,8 @@ func checkDispositions(surface Surface, table map[string]Disposition, bound []Op
 	sort.Strings(stale)
 	for _, id := range stale {
 		findings = append(findings, fmt.Sprintf(
-			"%s disposes of %q, which is not an operation. Either the operation was renamed "+
-				"or removed and this entry is stale — delete it — or the identifier is misspelled.",
+			"%s declares the availability of %q, which is not an operation. Either the operation was "+
+				"renamed or removed and this entry is stale — delete it — or the identifier is misspelled.",
 			surface, id))
 	}
 
@@ -299,20 +315,28 @@ func checkDispositions(surface Surface, table map[string]Disposition, bound []Op
 }
 
 // CheckMembers reports every way a surface's exposed names disagree with what
-// the surface actually carries: a member no operation claims, and a name a
-// disposition claims that the surface does not carry.
+// the surface actually carries: a member no operation claims, and a name an
+// availability record claims that the surface does not carry.
 //
-// It is the half of the check that notices growth. CheckDispositions asks
+// It is the half of the check that notices growth. CheckAvailability asks
 // whether every known capability was ruled on, and structurally cannot notice a
 // capability nobody added to the set — a new wire method or a new command
-// reaches no operation, so no disposition is missing and nothing fails. This
-// asks the question from the surface's end, where the new member is visible.
+// reaches no operation, so no availability record is missing and nothing fails.
+// This asks the question from the surface's end, where the new member is
+// visible.
+//
+// Registering from the table closes the first half of that gap on its own: a
+// surface that can only register what the table names cannot grow a member the
+// table never claimed. This still runs, because a surface carries members the
+// registration path does not mint — a protocol's own built-ins, and the members
+// a third party contributes at run time — and those are exactly the ones no
+// authoring-time reading would catch.
 //
 // members are the identifiers the surface carries, in whatever order it
 // advertises them. Passing an empty members list reports every exposed name as
 // absent, which is the honest answer for a caller that could not enumerate the
 // surface: enumerate it, or do not call this.
-func CheckMembers(surface Surface, table map[string]Disposition, members []string) []string {
+func CheckMembers(surface Surface, table map[string]OperationAvailability, members []string) []string {
 	carried := make(map[string]bool, len(members))
 	for _, m := range members {
 		carried[m] = true
@@ -322,17 +346,17 @@ func CheckMembers(surface Surface, table map[string]Disposition, members []strin
 	var findings []string
 
 	for _, op := range operations {
-		d, ok := table[op.ID]
-		if !ok || !d.IsExposed() {
+		a, ok := table[op.ID]
+		if !ok || !a.IsExposed() {
 			continue
 		}
-		for _, n := range d.Names {
+		for _, n := range a.Names {
 			claimed[n] = op.ID
 			if !carried[n] {
 				findings = append(findings, fmt.Sprintf(
 					"%s claims to expose the %q operation as %q, which it does not carry. "+
-						"Either the name changed — update the disposition — or the exposure was removed, "+
-						"in which case state why with NotApplicable(reason).",
+						"Either the name changed — update the availability record — or the exposure was "+
+						"removed, in which case state why with Unavailable(reason).",
 					surface, op.ID, n))
 			}
 		}
@@ -348,8 +372,8 @@ func CheckMembers(surface Surface, table map[string]Disposition, members []strin
 	for _, m := range uncovered {
 		findings = append(findings, fmt.Sprintf(
 			"%s carries %q, which no operation claims. Add the capability to the operation set "+
-				"and dispose of it on every surface, or name it in the disposition of the operation "+
-				"it already implements.", surface, m))
+				"and declare its availability on every surface, or name it in the availability record of "+
+				"the operation it already implements.", surface, m))
 	}
 
 	return findings

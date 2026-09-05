@@ -18,9 +18,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// newConfigCmd builds the `config` parent command grouping the
-// configuration-management subcommands.
-func newConfigCmd() *cobra.Command {
+// attachConfigCommands builds the `config` command family under parent: the
+// grouping command, then each subcommand named by the operation it carries.
+//
+// It attaches the group before its children so that a child's invocation path is
+// the one it will actually be invoked by when the registrar checks it against
+// the operation table. Built detached and grafted on afterwards, a child's path
+// would be missing everything above the group, and the check would be comparing
+// a path no caller ever types.
+func attachConfigCommands(parent *cobra.Command) {
 	c := &cobra.Command{
 		Use:   "config",
 		Short: "Inspect and manage the workspace configuration",
@@ -49,10 +55,10 @@ global file that is not committed.`,
   # Freeze the effective build-critical settings into this workspace
   aggrega config capture`,
 	}
-	c.AddCommand(newConfigInitCmd())
-	c.AddCommand(newConfigCaptureCmd())
-	c.AddCommand(newConfigShowCmd())
-	return c
+	mustAttachGroup(parent, c)
+	mustAttach(c, newConfigInitCmd(), "config-init")
+	mustAttach(c, newConfigCaptureCmd(), "config-capture")
+	mustAttach(c, newConfigShowCmd(), "config-show")
 }
 
 // newConfigShowCmd builds the `config show` command: it reports the

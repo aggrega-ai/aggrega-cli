@@ -69,7 +69,6 @@ type validateResultPayload struct {
 }
 
 var validateToolSpec = toolSpec{
-	name:  "validate",
 	kinds: []string{"component", "feature", "featurerecipe", "plugin", "recipe", "release", "workload"},
 	description: "Check correctness without rendering or writing anything, across four scopes that mirror the CLI. " +
 		"Pass exactly one scope selector. `release` <path> runs the closure-scoped semantic-validation pipeline over " +

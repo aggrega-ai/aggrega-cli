@@ -25,9 +25,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// newPluginCmd builds the `plugin` parent command grouping the plugin-inspection
-// subcommands.
-func newPluginCmd() *cobra.Command {
+// attachPluginCommands builds the `plugin` command family under parent: the
+// grouping command, then each subcommand named by the operation it carries.
+//
+// The group is attached before its children so that a child's invocation path is
+// the one it will be invoked by when the registrar checks it against the
+// operation table.
+func attachPluginCommands(parent *cobra.Command) {
 	c := &cobra.Command{
 		Use:   "plugin",
 		Short: "Inspect the Wasm plugins the CLI can resolve",
@@ -59,13 +63,13 @@ catalog entities from a guest's own metadata.`,
   # Call one export of a local guest, without publishing it
   aggrega plugin run-local ./build/my-provider.wasm describe`,
 	}
-	c.AddCommand(newPluginListCmd())
-	c.AddCommand(newPluginGenCatalogCmd())
-	c.AddCommand(newPluginSyncCmd())
-	c.AddCommand(newPluginAddCmd())
-	c.AddCommand(newPluginRemoveCmd())
-	c.AddCommand(newPluginRunLocalCmd())
-	return c
+	mustAttachGroup(parent, c)
+	mustAttach(c, newPluginListCmd(), "plugin-list")
+	mustAttach(c, newPluginGenCatalogCmd(), "plugin-gen-catalog")
+	mustAttach(c, newPluginSyncCmd(), "plugin-sync")
+	mustAttach(c, newPluginAddCmd(), "plugin-add")
+	mustAttach(c, newPluginRemoveCmd(), "plugin-remove")
+	mustAttach(c, newPluginRunLocalCmd(), "plugin-run-local")
 }
 
 func newPluginListCmd() *cobra.Command {

@@ -43,7 +43,11 @@ import (
 //     reused across every project on the machine;
 //   - the plugin-describe cache, holding each guest's static self-report keyed
 //     by the guest's content digest.
-func newCacheCmd() *cobra.Command {
+//
+// The group is attached before its children so that a child's invocation path is
+// the one it will be invoked by when the registrar checks it against the
+// operation table.
+func attachCacheCommands(parent *cobra.Command) {
 	c := &cobra.Command{
 		Use:   "cache",
 		Short: "Inspect and maintain the on-disk caches",
@@ -54,8 +58,11 @@ prune   reclaims artifact-cache entries no workspace lockfile references.
 evict   trims the compiled-module cache to a size cap, oldest first.
 clear   wipes every cache, including the compiled-module store.`,
 	}
-	c.AddCommand(newCacheStatusCmd(), newCachePruneCmd(), newCacheEvictCmd(), newCacheClearCmd())
-	return c
+	mustAttachGroup(parent, c)
+	mustAttach(c, newCacheStatusCmd(), "cache-status")
+	mustAttach(c, newCachePruneCmd(), "cache-prune")
+	mustAttach(c, newCacheEvictCmd(), "cache-evict")
+	mustAttach(c, newCacheClearCmd(), "cache-clear")
 }
 
 // cacheElement is one enumerable unit of a cache class: a slot directory, a

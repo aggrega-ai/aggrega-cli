@@ -217,7 +217,7 @@ func registerInstalledCLIPlugins(root *cobra.Command) {
 			continue
 		}
 		added[reg.name] = true
-		root.AddCommand(newCLIPluginCmd(reg))
+		mustAttachContributed(root, newCLIPluginCmd(reg))
 	}
 }
 

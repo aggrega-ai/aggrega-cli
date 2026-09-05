@@ -15,7 +15,7 @@ var identifierForm = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // TestTheOperationSetIsWellFormed pins the properties the completeness checks
 // rely on: a unique identifier per operation, in the descriptive register, and a
-// summary a reader can judge a disposition against.
+// summary a reader can judge an availability record against.
 //
 // The count is deliberately not asserted. A pinned total agrees with the set
 // only until the set grows, and the growth is the thing every other check here
@@ -70,7 +70,7 @@ func TestLookupResolvesAndRefuses(t *testing.T) {
 	}
 }
 
-// TestCheckDispositionsNamesEveryDisagreement drives each failure class the
+// TestCheckAvailabilityNamesEveryDisagreement drives each failure class the
 // check reports, so no class is left as an assertion nobody has seen fire.
 //
 // The table is built against the real operation set rather than a synthetic one:
@@ -82,7 +82,7 @@ func TestLookupResolvesAndRefuses(t *testing.T) {
 // would be over-disposal, which the check refuses as a stale bound row, so a
 // table that ignored the bound would fail on the bound rather than on the class
 // under test.
-func TestCheckDispositionsNamesEveryDisagreement(t *testing.T) {
+func TestCheckAvailabilityNamesEveryDisagreement(t *testing.T) {
 	var ids []string
 	for _, op := range operations {
 		if isOpen(openQuestions, SurfaceCLI, op.ID) {
@@ -95,46 +95,48 @@ func TestCheckDispositionsNamesEveryDisagreement(t *testing.T) {
 	}
 	first, second := ids[0], ids[1]
 
-	complete := func() map[string]Disposition {
-		out := map[string]Disposition{}
+	complete := func() map[string]OperationAvailability {
+		out := map[string]OperationAvailability{}
 		for _, id := range ids {
 			out[id] = Exposed(id)
 		}
 		return out
 	}
 
-	if findings := CheckDispositions(SurfaceCLI, complete()); len(findings) != 0 {
+	if findings := CheckAvailability(SurfaceCLI, complete()); len(findings) != 0 {
 		t.Fatalf("a complete table produced findings: %v", findings)
 	}
 
 	tests := []struct {
 		name    string
-		mutate  func(map[string]Disposition)
+		mutate  func(map[string]OperationAvailability)
 		wantHas []string
 	}{
 		{
 			name:    "an operation the table says nothing about",
-			mutate:  func(m map[string]Disposition) { delete(m, first) },
-			wantHas: []string{"declares nothing about", first, "NotApplicable"},
+			mutate:  func(m map[string]OperationAvailability) { delete(m, first) },
+			wantHas: []string{"declares nothing about", first, "Unavailable"},
 		},
 		{
 			name:    "an entry naming an operation that does not exist",
-			mutate:  func(m map[string]Disposition) { m["retired-operation"] = Exposed("x") },
+			mutate:  func(m map[string]OperationAvailability) { m["retired-operation"] = Exposed("x") },
 			wantHas: []string{"retired-operation", "is not an operation", "stale"},
 		},
 		{
-			name:    "an entry that is both exposed and declined",
-			mutate:  func(m map[string]Disposition) { m[second] = Disposition{Names: []string{"x"}, Reason: "y"} },
-			wantHas: []string{second, "both exposed and not applicable"},
+			name: "an entry that is both exposed and declined",
+			mutate: func(m map[string]OperationAvailability) {
+				m[second] = OperationAvailability{Names: []string{"x"}, UnavailabilityReason: "y"}
+			},
+			wantHas: []string{second, "both exposed and unavailable"},
 		},
 		{
 			name:    "an entry that is neither",
-			mutate:  func(m map[string]Disposition) { m[second] = Disposition{} },
-			wantHas: []string{second, "neither a name nor a reason"},
+			mutate:  func(m map[string]OperationAvailability) { m[second] = OperationAvailability{} },
+			wantHas: []string{second, "neither a name nor an unavailability reason"},
 		},
 		{
 			name:    "an exposure under an empty name",
-			mutate:  func(m map[string]Disposition) { m[second] = Exposed("  ") },
+			mutate:  func(m map[string]OperationAvailability) { m[second] = Exposed("  ") },
 			wantHas: []string{second, "an empty name"},
 		},
 	}
@@ -143,7 +145,7 @@ func TestCheckDispositionsNamesEveryDisagreement(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			table := complete()
 			tc.mutate(table)
-			findings := CheckDispositions(SurfaceCLI, table)
+			findings := CheckAvailability(SurfaceCLI, table)
 			if len(findings) == 0 {
 				t.Fatal("the check reported nothing")
 			}
@@ -165,7 +167,7 @@ func TestCheckDispositionsNamesEveryDisagreement(t *testing.T) {
 // carry.
 func TestCheckMembersNoticesBothDirections(t *testing.T) {
 	ids := IDs()
-	table := map[string]Disposition{}
+	table := map[string]OperationAvailability{}
 	for _, id := range ids {
 		table[id] = Exposed(id)
 	}
@@ -191,9 +193,9 @@ func TestCheckMembersNoticesBothDirections(t *testing.T) {
 	})
 
 	t.Run("a declined operation is not required to be carried", func(t *testing.T) {
-		declined := map[string]Disposition{}
+		declined := map[string]OperationAvailability{}
 		for _, id := range ids {
-			declined[id] = NotApplicable("stated on purpose")
+			declined[id] = Unavailable("stated on purpose")
 		}
 		if findings := CheckMembers(SurfaceMCP, declined, nil); len(findings) != 0 {
 			t.Fatalf("declining every operation produced findings: %v", findings)

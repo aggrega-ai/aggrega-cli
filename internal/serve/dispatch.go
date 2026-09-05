@@ -466,71 +466,8 @@ func (s *Server) handle(ser *serializer, seq int64, req *jsonRPCRequest) []byte 
 // methodHandler answers one request method.
 type methodHandler func(*Server, context.Context, *jsonRPCRequest) error
 
-// methodRoute binds one wire method name to the handler that answers it.
-type methodRoute struct {
-	method  string
-	handler methodHandler
-}
-
-// methodRoutes is the daemon's request-method routing table, and the one place
-// the daemon's wire surface is stated: adding a method means adding a row here.
-//
-// It is a table rather than a switch so the method set is readable as data.
-// Whether the surface is completely accounted for is a question something has
-// to be able to ask, and a switch answers it only by being read — which is what
-// let three methods reach the wire before anything noticed they were not
-// accounted for anywhere else.
-//
-// The order is the order a reader meets the methods: the session handshake, the
-// document checks, then the workspace queries. Routing itself goes through the
-// index below, so the order carries no behaviour.
-var methodRoutes = []methodRoute{
-	{"aggrega/initialize", (*Server).dispatchInitialize},
-	{"aggrega/validate", (*Server).dispatchValidate},
-	{"aggrega/invalidate", (*Server).dispatchInvalidate},
-	{"aggrega/diagnostics", (*Server).dispatchDiagnostics},
-	{"aggrega/irGraph", (*Server).dispatchIrGraph},
-	{"aggrega/build", (*Server).dispatchBuild},
-	{"aggrega/buildPreview", (*Server).dispatchBuildPreview},
-	{"aggrega/resolve", (*Server).dispatchResolve},
-	{"aggrega/findReferences", (*Server).dispatchFindReferences},
-	{"aggrega/findImplementations", (*Server).dispatchFindImplementations},
-	{"aggrega/hover", (*Server).dispatchHover},
-	{"aggrega/completion", (*Server).dispatchCompletion},
-	{"aggrega/catalogIndex", (*Server).dispatchCatalogIndex},
-	{"aggrega/attachCandidates", (*Server).dispatchAttachCandidates},
-	{"aggrega/connectionCandidates", (*Server).dispatchConnectionCandidates},
-	{"aggrega/releaseCandidates", (*Server).dispatchReleaseCandidates},
-	{"aggrega/activeRelease", (*Server).dispatchActiveRelease},
-	{"aggrega/effectiveConfiguration", (*Server).dispatchEffectiveConfiguration},
-}
-
-// methodIndex resolves a method name to its handler in one lookup. It is built
-// from methodRoutes, so the routing table and the lookup cannot disagree.
-var methodIndex = func() map[string]methodHandler {
-	idx := make(map[string]methodHandler, len(methodRoutes))
-	for _, r := range methodRoutes {
-		idx[r.method] = r.handler
-	}
-	return idx
-}()
-
-// Methods returns every request method the daemon routes, in routing-table
-// order.
-//
-// It is exported so what the daemon carries is readable from outside this
-// package, which is what lets the operation set be checked against the wire
-// surface rather than against someone's recollection of it.
-func Methods() []string {
-	out := make([]string, 0, len(methodRoutes))
-	for _, r := range methodRoutes {
-		out = append(out, r.method)
-	}
-	return out
-}
-
-// dispatch routes a parsed request to the appropriate per-method
-// handler, through the routing table above.
+// dispatch routes a parsed request to the appropriate per-method handler,
+// through the routing index the availability table produces.
 //
 // The aggrega/shutdown message never reaches dispatch: the main loop
 // intercepts it at the acceptance boundary to drive the drain-then-abort

@@ -63,7 +63,6 @@ type describeReleasePayload struct {
 }
 
 var describeToolSpec = toolSpec{
-	name:  "describe",
 	kinds: []string{"component", "feature", "release"},
 	description: "Describe an Aggrega subject in structured form without rendering. Two modes: pass `name` to resolve a " +
 		"catalog Component or Feature by its type URI and get its fully-resolved definition (schema, uses-schema, provides, " +

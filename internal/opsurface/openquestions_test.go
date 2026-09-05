@@ -47,7 +47,36 @@ import (
 // handshake's three fields were the intended extent for a session or whether the
 // daemon owed the full report; the daemon now answers the full report at a named
 // method, so the pair is disposed of and the room it held does not stay open.
-const boundCeiling = 11
+//
+// 🔴 It was then raised by sixteen, and this is the largest raise it will ever
+// take. The argument it owes:
+//
+// Sixteen capabilities on the daemon were declined on one reason — that the
+// daemon's only writing path was the artifact set a build renders, so an
+// operation whose product is some other write had no output there. That reason
+// was retired, because it drew the line in the wrong place: what makes a write
+// acceptable is that somebody asked for it, not which artifact it is. Every one
+// of the sixteen would be explicitly invoked; what stays out of bounds is a
+// write, or a reach for a registry, performed while validating or inspecting,
+// where nobody asked.
+//
+// Retiring a reason does not decide the capabilities that rested on it. It
+// leaves them where they were before anybody wrote that reason down: undecided.
+// So they moved to the bound rather than to another reason, and the raise is the
+// bound doing exactly what it is for — making an unexamined absence visible as
+// one instead of letting it keep the clothes of a deliberate one.
+//
+// Two things it deliberately did NOT do. It exposed nothing: an operation
+// carrying a reason and an operation named here both register nothing, so no
+// wire method appeared and no behaviour changed. And it re-keyed nothing onto a
+// surviving reason on a resemblance — the capabilities declined for having their
+// subject outside the workspace keep that reason, which holds on its own and was
+// never the retired one, and no row was moved onto it because it looked close
+// enough.
+//
+// The number goes down as each row is settled, one capability at a time, and
+// each of the sixteen states the fork that settles it.
+const boundCeiling = 27
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.
@@ -56,7 +85,7 @@ func TestTheBoundOnlyShrinks(t *testing.T) {
 	case len(openQuestions) > boundCeiling:
 		t.Fatalf("the bound GREW: it enumerates %d pair(s) and its ceiling is %d.\n"+
 			"An undecided pair was added to the bound instead of being disposed of. Dispose of it — "+
-			"Exposed(name…) or NotApplicable(reason) on the surface — or raise boundCeiling in this file "+
+			"Exposed(name…) or Unavailable(reason) on the surface — or raise boundCeiling in this file "+
 			"deliberately and say why in review.", len(openQuestions), boundCeiling)
 	case len(openQuestions) < boundCeiling:
 		t.Fatalf("the bound SHRANK: it enumerates %d pair(s) and its ceiling is %d.\n"+
@@ -70,11 +99,11 @@ func TestTheBoundOnlyShrinks(t *testing.T) {
 // that exists, a question that poses one, and one row per pair.
 //
 // The question-mark assertion is the shape that keeps a bound row
-// distinguishable from a disposition. A declined operation carries a reason — a
-// clause a finding embeds, which the surfaces' own tests hold to that shape — and
-// a bound row carries a question. A row that had drifted into asserting a reason
-// would be an unexamined absence wearing the clothes of a deliberate one, which
-// is the whole thing this bound exists to keep visible.
+// distinguishable from an availability record. A declined operation carries a
+// reason — a clause a finding embeds, which the surfaces' own tests hold to that
+// shape — and a bound row carries a question. A row that had drifted into
+// asserting a reason would be an unexamined absence wearing the clothes of a
+// deliberate one, which is the whole thing this bound exists to keep visible.
 func TestTheBoundIsWellFormed(t *testing.T) {
 	known := map[Surface]bool{SurfaceCLI: true, SurfaceServe: true, SurfaceMCP: true}
 	seen := map[string]bool{}
@@ -116,8 +145,8 @@ func TestTheBoundIsHeldFromBothEnds(t *testing.T) {
 	first, second := ids[0], ids[1]
 
 	// Every operation disposed of except the first, which the bound excuses.
-	tableWithout := func(omit string) map[string]Disposition {
-		out := map[string]Disposition{}
+	tableWithout := func(omit string) map[string]OperationAvailability {
+		out := map[string]OperationAvailability{}
 		for _, id := range ids {
 			if id == omit {
 				continue
@@ -129,14 +158,14 @@ func TestTheBoundIsHeldFromBothEnds(t *testing.T) {
 
 	t.Run("an excused pair produces no finding", func(t *testing.T) {
 		bound := []OpenQuestion{{SurfaceCLI, first, "is it wanted here?"}}
-		if findings := checkDispositions(SurfaceCLI, tableWithout(first), bound); len(findings) != 0 {
+		if findings := checkAvailability(SurfaceCLI, tableWithout(first), bound); len(findings) != 0 {
 			t.Fatalf("the bound did not excuse the pair: %v", findings)
 		}
 	})
 
 	t.Run("the bound is per surface, not global", func(t *testing.T) {
 		bound := []OpenQuestion{{SurfaceCLI, first, "is it wanted here?"}}
-		findings := checkDispositions(SurfaceServe, tableWithout(first), bound)
+		findings := checkAvailability(SurfaceServe, tableWithout(first), bound)
 		joined := strings.Join(findings, "\n")
 		if !strings.Contains(joined, "declares nothing about") || !strings.Contains(joined, first) {
 			t.Fatalf("a row bound on one surface excused another surface:\n%s", joined)
@@ -145,7 +174,7 @@ func TestTheBoundIsHeldFromBothEnds(t *testing.T) {
 
 	t.Run("a row for an operation that has since been disposed of", func(t *testing.T) {
 		bound := []OpenQuestion{{SurfaceCLI, second, "is it wanted here?"}}
-		findings := checkDispositions(SurfaceCLI, tableWithout(first), bound)
+		findings := checkAvailability(SurfaceCLI, tableWithout(first), bound)
 		joined := strings.Join(findings, "\n")
 		if !strings.Contains(joined, "One of the two is wrong") || !strings.Contains(joined, second) {
 			t.Fatalf("a decided pair left on the bound was not refused:\n%s", joined)
@@ -157,7 +186,7 @@ func TestTheBoundIsHeldFromBothEnds(t *testing.T) {
 
 	t.Run("a row naming something that is not an operation", func(t *testing.T) {
 		bound := []OpenQuestion{{SurfaceCLI, "retired-operation", "is it wanted here?"}}
-		findings := checkDispositions(SurfaceCLI, tableWithout(""), bound)
+		findings := checkAvailability(SurfaceCLI, tableWithout(""), bound)
 		joined := strings.Join(findings, "\n")
 		if !strings.Contains(joined, "retired-operation") || !strings.Contains(joined, "is not an operation") {
 			t.Fatalf("a stale bound row was not refused:\n%s", joined)
@@ -183,7 +212,7 @@ func TestTheExportedCheckReadsTheRealBound(t *testing.T) {
 	}
 	surface := openQuestions[0].Surface
 
-	table := map[string]Disposition{}
+	table := map[string]OperationAvailability{}
 	var notNamed string
 	for _, op := range operations {
 		if isOpen(openQuestions, surface, op.ID) {
@@ -196,12 +225,12 @@ func TestTheExportedCheckReadsTheRealBound(t *testing.T) {
 		t.Fatalf("the bound excuses every operation on %s, so there is nothing to contrast against", surface)
 	}
 
-	if findings := CheckDispositions(surface, table); len(findings) != 0 {
+	if findings := CheckAvailability(surface, table); len(findings) != 0 {
 		t.Fatalf("the exported check did not read the real bound for %s: %v", surface, findings)
 	}
 
 	delete(table, notNamed)
-	findings := CheckDispositions(surface, table)
+	findings := CheckAvailability(surface, table)
 	joined := strings.Join(findings, "\n")
 	if !strings.Contains(joined, notNamed) || !strings.Contains(joined, "declares nothing about") {
 		t.Fatalf("the exported check excused %q, which the bound does not name:\n%s", notNamed, joined)
@@ -214,7 +243,7 @@ func TestTheExportedCheckReadsTheRealBound(t *testing.T) {
 // nothing here can rot into agreement with a number somebody wrote down.
 func TestTheBoundReportsItsOwnReach(t *testing.T) {
 	census := BoundCensus()
-	for _, want := range []string{boundLocation, "no disposition is asserted"} {
+	for _, want := range []string{boundLocation, "no availability is asserted"} {
 		if !strings.Contains(census, want) {
 			t.Errorf("the census does not mention %q:\n%s", want, census)
 		}

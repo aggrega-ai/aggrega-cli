@@ -81,7 +81,6 @@ type explainErrorResult struct {
 }
 
 var explainErrorToolSpec = toolSpec{
-	name: "explain-error",
 	description: "Expand a compiler diagnostic or error message into actionable, human-readable guidance. " +
 		"Pass the exact diagnostic text you got back from a validate or build call as `message`, and " +
 		"optionally the entity kind it concerns (release, aggregate, component, feature, recipe, manifest, " +

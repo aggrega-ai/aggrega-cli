@@ -1,0 +1,229 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package mcp
+
+import (
+	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
+)
+
+// OperationAvailability returns what the tool protocol does with every
+// operation: the tool names it is reachable under, or the reason no tool
+// carries it.
+//
+// Every operation a command carries is *derived* rather than restated: the tool
+// name is computed from the command path the command line already declares, and
+// an operation whose command is exempt from the generated surface carries that
+// exemption's own reason. Restating either would put a second copy of the
+// command surface here, and the copy is what drifts when a command is renamed.
+// The command line takes its own paths from its own table, so a generated tool's
+// name is bound to the operation table one step removed.
+//
+// What is authored here is the residue the derivation cannot reach: the curated
+// tools that answer an operation under a goal-shaped name of their own, and the
+// operations no command backs at all.
+//
+// It returns a fresh map, so a caller enumerating the availability cannot alter
+// what the completeness checks read.
+func OperationAvailability() map[string]opsurface.OperationAvailability {
+	out := make(map[string]opsurface.OperationAvailability, len(curatedToolNames)+len(unbackedAvailability))
+
+	for id, cli := range clisurface.OperationAvailability() {
+		if !cli.IsExposed() {
+			continue
+		}
+		var names []string
+		var declined string
+		for _, path := range cli.Names {
+			if exemption, exempt := CommandExempted(path); exempt {
+				declined = "no tool is generated for `" + path + "`: " + exemption.Reason
+				continue
+			}
+			names = append(names, commandToolName(path))
+		}
+		names = append(names, curatedToolNames[id]...)
+		if len(names) > 0 {
+			out[id] = opsurface.Exposed(names...)
+			continue
+		}
+		if declined != "" {
+			out[id] = opsurface.Unavailable(declined)
+		}
+	}
+
+	for id, curated := range curatedToolNames {
+		if _, ok := out[id]; ok {
+			continue
+		}
+		out[id] = opsurface.Exposed(curated...)
+	}
+
+	for id, a := range unbackedAvailability {
+		out[id] = a
+	}
+
+	return out
+}
+
+// curatedToolNames names the curated and long-tail tools that answer an
+// operation under a name of their own — the goal-shaped names the authoring loop
+// lives in, which exist alongside any generated command tool rather than
+// instead of it.
+//
+// An entry here is the one thing the derivation above cannot compute: a curated
+// tool's name is chosen for the goal it serves, so nothing about a command path
+// yields it. An operation no command backs appears here and nowhere else, which
+// is how it reaches an availability record at all.
+//
+// It is also where a curated tool's name is written, once. The registries take
+// each tool's name from here rather than from the tool's own definition, so a
+// tool cannot be advertised under a name this table does not give, and a tool
+// for an operation this table says nothing about cannot be registered at all.
+// Several names for one operation are admissible and one is used: an operation
+// backed by a command is reachable both as the generated command tool and, where
+// a curated tool answers it too, under that tool's goal-shaped name.
+var curatedToolNames = map[string][]string{
+	"validate":              {"validate"},
+	"build":                 {"build"},
+	"inspect":               {"describe"},
+	"get-schema":            {"get-schema"},
+	"plugin-gen-catalog":    {"gen-catalog"},
+	"lint":                  {"lint"},
+	"explain-error":         {"explain-error"},
+	"scaffold-entity":       {"scaffold"},
+	"describe-capabilities": {describeCapabilitiesName},
+}
+
+// curated names a tool spec after the operation it answers, and is the one way a
+// curated or deferred tool reaches a registry.
+//
+// It sets the name from the table rather than reading one off the spec, so the
+// name has a single home: a spec that carried its own name would be a second
+// place to spell it, and the two would drift the moment one was renamed. It
+// refuses an operation the table says nothing about, and one the table gives
+// more than one curated name for — a spec is one tool, so which of several names
+// it should take is a question the caller has to answer rather than one this
+// function may pick.
+//
+// It carries the handler the spec already holds and constructs nothing the
+// handler needs. A registry that assembled a handler's inputs would have to
+// describe every tool's inputs in one shape, and the only shape that fits every
+// tool is one that requires nothing — at which point each tool's own required
+// inputs stop being required.
+//
+// It panics because the registries are package-level literals: a refusal here is
+// a programming error a reader fixes by editing the table or the registry, and a
+// server that started anyway would advertise a tool nobody declared.
+func curated(id string, spec toolSpec) toolSpec {
+	if _, known := opsurface.Lookup(id); !known {
+		panic(fmt.Sprintf("mcp: %q is not an operation, so no tool can be registered for it: either the "+
+			"operation was renamed or removed, or the identifier is misspelled", id))
+	}
+	names, declared := curatedToolNames[id]
+	if !declared {
+		panic(fmt.Sprintf("mcp: the tool protocol declares no curated name for the %q operation, so a tool "+
+			"for it has nothing to be advertised as: add the name to the curated table, or reach the "+
+			"operation through the tool generated from its command", id))
+	}
+	if len(names) != 1 {
+		panic(fmt.Sprintf("mcp: the tool protocol gives the %q operation %d curated names (%v), and a tool "+
+			"spec takes one: name the tool at the registry, or reduce the table to the name this spec "+
+			"should carry", id, len(names), names))
+	}
+	spec.name = names[0]
+	return spec
+}
+
+// The reasons on which no tool carries an operation.
+//
+// Each is a property of this protocol a reader can check against the package,
+// not a judgement about the capability. A reason here decides behaviour rather
+// than annotating it: an operation carrying one appears in no registry, so the
+// reason is what keeps the tool off the surface.
+const (
+	// unavailabilityReasonNoOpenBuffer covers an operation whose request
+	// addresses a cursor position inside a document the caller holds open. A tool
+	// call carries one self-contained arguments object, and this protocol's
+	// method set has no document-synchronisation surface at all, so there is no
+	// open document for a position to be inside of.
+	unavailabilityReasonNoOpenBuffer = "the request addresses a cursor position inside a document the caller " +
+		"holds open, and this protocol has no document-synchronisation surface: a tool call carries one " +
+		"self-contained arguments object"
+
+	// unavailabilityReasonNoStateBetweenCalls covers session lifecycle. This
+	// protocol runs its own handshake, and the tool surface holds nothing
+	// per-document that a session would carry or that invalidation would discard.
+	unavailabilityReasonNoStateBetweenCalls = "it establishes or discards per-document state that outlives one " +
+		"call; this protocol runs its own handshake and the tool surface holds no such state"
+
+	// unavailabilityReasonNothingRecorded covers returning what an earlier
+	// request recorded. Nothing is recorded between calls here, so the only
+	// honest answer to such a call is to run the check, which the validate tool
+	// already is.
+	unavailabilityReasonNothingRecorded = "it returns what an earlier request already recorded, and nothing is " +
+		"recorded between calls here; running the check is the validate tool"
+
+	// unavailabilityReasonNoReleaseSelection covers an operation that reports
+	// which Release a workspace-wide selection settled on. This protocol makes no
+	// such selection: a call names the Release it means — the build tool requires
+	// one — and each call resolves its own workspace from its own arguments, so
+	// there is no selection outcome for a caller to ask about.
+	unavailabilityReasonNoReleaseSelection = "it reports which Release a workspace-wide selection settled on, " +
+		"and this protocol makes no such selection: every call names the Release it means and resolves its " +
+		"workspace from its own arguments"
+)
+
+// unbackedAvailability is what the tool protocol does with the operations no
+// command backs — the ones the derivation above cannot reach and no curated
+// tool answers.
+//
+// The operation set is deliberately not restated here: an operation absent from
+// this map, from the curated table above, and from the command surface is
+// reported by the completeness check rather than defaulting to anything.
+var unbackedAvailability = map[string]opsurface.OperationAvailability{
+	"session-initialize":          opsurface.Unavailable(unavailabilityReasonNoStateBetweenCalls),
+	"session-invalidate":          opsurface.Unavailable(unavailabilityReasonNoStateBetweenCalls),
+	"cached-diagnostics":          opsurface.Unavailable(unavailabilityReasonNothingRecorded),
+	"definition-at-position":      opsurface.Unavailable(unavailabilityReasonNoOpenBuffer),
+	"references-at-position":      opsurface.Unavailable(unavailabilityReasonNoOpenBuffer),
+	"implementations-at-position": opsurface.Unavailable(unavailabilityReasonNoOpenBuffer),
+	"hover-at-position":           opsurface.Unavailable(unavailabilityReasonNoOpenBuffer),
+	"completion-at-position":      opsurface.Unavailable(unavailabilityReasonNoOpenBuffer),
+	"active-release":              opsurface.Unavailable(unavailabilityReasonNoReleaseSelection),
+}
+
+// StaticToolNames returns the tool names this package declares statically: the
+// curated set advertised in every listing, followed by the long tail surfaced on
+// demand.
+//
+// It excludes the generated command tools, which exist only for a session that
+// was handed a command surface. A caller checking the whole tool surface builds
+// the generated names from the command tree it holds and appends them.
+func StaticToolNames() []string {
+	out := make([]string, 0, len(toolRegistry)+len(deferredToolRegistry))
+	for i := range toolRegistry {
+		out = append(out, toolRegistry[i].name)
+	}
+	for i := range deferredToolRegistry {
+		out = append(out, deferredToolRegistry[i].name)
+	}
+	return out
+}
+
+// GeneratedToolNames returns the names of the tools derived from the given
+// command surface, in catalog order.
+//
+// It runs the same derivation a session runs, so the names it reports are the
+// names a client would be offered — a command the derivation skips is absent
+// here exactly as it is absent there.
+func GeneratedToolNames(surface []CommandSurface) []string {
+	specs := deriveCommandTools(surface)
+	out := make([]string, 0, len(specs))
+	for i := range specs {
+		out = append(out, specs[i].name)
+	}
+	return out
+}

@@ -19,8 +19,13 @@ import (
 // discovers a deferred tool through the capability tool and then invokes it by
 // name through the same tools/call path as any curated tool. The order is fixed
 // so the surfaced list and its wire bytes are deterministic.
+//
+// Deferred or not, an entry names the operation it answers and takes its
+// advertised name from that operation's row: withholding a tool from the default
+// listing changes when a client learns of it, never whether the operation table
+// accounts for it.
 var deferredToolRegistry = []toolSpec{
-	lintToolSpec,
+	curated("lint", lintToolSpec),
 }
 
 // describeCapabilitiesName is the meta capability tool's name. It is referenced
@@ -56,7 +61,6 @@ type describeCapabilitiesResult struct {
 }
 
 var describeCapabilitiesToolSpec = toolSpec{
-	name: describeCapabilitiesName,
 	description: "Discover the tools not shown in the default list, on demand. The default tool set is kept small; this " +
 		"tool surfaces the long tail so an assistant loads their definitions only when it needs them. Call it with no " +
 		"arguments to get every deferred tool's full definition — name, description, and argument schema — which you can " +

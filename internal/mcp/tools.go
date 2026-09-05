@@ -22,6 +22,11 @@ import (
 // the same dispatch. The registry order is the advertised order, so tools/list
 // is byte-stable across runs.
 //
+// name is set where the spec enters a registry, from the operation table, and is
+// left unset on the definitions below. A definition that named itself would be a
+// second place the name is spelled, and the tool the protocol advertises would
+// then be able to drift from the one the operation table claims.
+//
 // kinds records the entity kinds a tool serves, so the capability tool can
 // narrow the long tail to the kind an author is working on. An empty kinds is
 // kind-agnostic: the tool serves every entity kind (schema, scaffold, and
@@ -43,6 +48,11 @@ type toolSpec struct {
 // stays small. The order is fixed so the advertised list and its wire bytes are
 // deterministic.
 //
+// Every entry names the operation it answers, and takes its advertised name from
+// that operation's row in the availability table. A tool for an operation the
+// table says nothing about does not reach this registry, and no entry can be
+// advertised under a name the table does not give.
+//
 // It is assembled in init rather than a package-level literal because the
 // capability tool's handler reads this very registry to surface the working set
 // for a kind; a literal would close a self-reference the initializer analysis
@@ -52,14 +62,14 @@ var toolRegistry []toolSpec
 
 func init() {
 	toolRegistry = []toolSpec{
-		validateToolSpec,
-		buildToolSpec,
-		describeToolSpec,
-		getSchemaToolSpec,
-		explainErrorToolSpec,
-		scaffoldToolSpec,
-		genCatalogToolSpec,
-		describeCapabilitiesToolSpec,
+		curated("validate", validateToolSpec),
+		curated("build", buildToolSpec),
+		curated("inspect", describeToolSpec),
+		curated("get-schema", getSchemaToolSpec),
+		curated("explain-error", explainErrorToolSpec),
+		curated("scaffold-entity", scaffoldToolSpec),
+		curated("plugin-gen-catalog", genCatalogToolSpec),
+		curated("describe-capabilities", describeCapabilitiesToolSpec),
 	}
 }
 

@@ -11,11 +11,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newAuthCmd builds the `auth` command group, which deals with the signing
-// identity rather than registry credentials. It carries a single leaf today,
-// `auth token`, and leaves room for further identity-scoped verbs without
-// flattening them onto the root.
-func newAuthCmd() *cobra.Command {
+// attachAuthCommands builds the `auth` command group under parent. It deals
+// with the signing identity rather than registry credentials, carries a single
+// leaf today, `auth token`, and leaves room for further identity-scoped verbs
+// without flattening them onto the root.
+//
+// The group is attached before its child so that the child's invocation path is
+// the one it will be invoked by when the registrar checks it against the
+// operation table.
+func attachAuthCommands(parent *cobra.Command) {
 	c := &cobra.Command{
 		Use:   "auth",
 		Short: "Manage the signing identity",
@@ -23,8 +27,8 @@ func newAuthCmd() *cobra.Command {
 			"`aggrega login`, which stores registry username/password credentials. The identity token " +
 			"is a short-lived secret used by keyless signing; it is never persisted by these commands.",
 	}
-	c.AddCommand(newAuthTokenCmd())
-	return c
+	mustAttachGroup(parent, c)
+	mustAttach(c, newAuthTokenCmd(), "auth-token")
 }
 
 func newAuthTokenCmd() *cobra.Command {

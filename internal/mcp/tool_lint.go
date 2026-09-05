@@ -49,7 +49,6 @@ type lintResultPayload struct {
 }
 
 var lintToolSpec = toolSpec{
-	name:  "lint",
 	kinds: []string{"aggregate", "component", "feature", "featurerecipe", "manifest", "mappinglibrary", "plugin", "recipe", "release", "schemalibrary"},
 	description: "Run the publishing-discipline linter over a catalog entity, or validate a Release's resolved " +
 		"dependency closure, driving the compiler's own lint operation. Two modes: pass `entity` (a catalog entity YAML " +

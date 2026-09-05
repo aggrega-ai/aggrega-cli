@@ -87,31 +87,34 @@ func newRootCmd() *cobra.Command {
 		"Disable ANSI color in all output. Also honored via the NO_COLOR environment variable")
 	root.PersistentFlags().BoolVar(&plainFlag, "plain", false,
 		"Accessible mode: disable color and draw plain, static progress lines with no spinner animation or cursor repaint, even on a terminal. Intended for screen readers")
-	root.AddCommand(
-		newBuildCmd(),
-		newAcquireCmd(),
-		newPullCmd(),
-		newInspectCmd(),
-		newImportCmd(),
-		newGetSchemaCmd(),
-		newServeCmd(),
-		newMCPCmd(),
-		newLintCmd(),
-		newValidateCmd(),
-		newPushCmd(),
-		newPushArtifactCmd(),
-		newSignCmd(),
-		newDeprecateCmd(),
-		newAuthCmd(),
-		newRegistryCmd(),
-		newPluginCmd(),
-		newSearchCmd(),
-		newConfigCmd(),
-		newCacheCmd(),
-		newLoginCmd(),
-		newLogoutCmd(),
-		newVersionCmd(),
-	)
+	// Every capability is attached by naming the operation it carries, so the
+	// command line registers nothing the operation table does not account for and
+	// nothing under a path the table does not give. The grouping commands run
+	// nothing and carry no capability, so they are attached as the groups they
+	// are; their children name their own operations where they are built.
+	mustAttach(root, newBuildCmd(), "build")
+	mustAttach(root, newAcquireCmd(), "acquire")
+	mustAttach(root, newPullCmd(), "pull")
+	mustAttach(root, newInspectCmd(), "inspect")
+	mustAttach(root, newImportCmd(), "import")
+	mustAttach(root, newGetSchemaCmd(), "get-schema")
+	mustAttach(root, newServeCmd(), "serve")
+	mustAttach(root, newMCPCmd(), "mcp")
+	mustAttach(root, newLintCmd(), "lint")
+	mustAttach(root, newValidateCmd(), "validate")
+	mustAttach(root, newPushCmd(), "push")
+	mustAttach(root, newPushArtifactCmd(), "push-artifact")
+	mustAttach(root, newSignCmd(), "sign")
+	mustAttach(root, newDeprecateCmd(), "deprecate")
+	attachAuthCommands(root)
+	attachRegistryCommands(root)
+	attachPluginCommands(root)
+	mustAttach(root, newSearchCmd(), "search")
+	attachConfigCommands(root)
+	attachCacheCommands(root)
+	mustAttach(root, newLoginCmd(), "login")
+	mustAttach(root, newLogoutCmd(), "logout")
+	mustAttach(root, newVersionCmd(), "version")
 	// Register a command per installed CLI plugin AFTER the static commands, so
 	// the live tree is the authoritative built-in set that always wins a name
 	// collision. This runs before silenceUsageOnRun so the dynamic commands

@@ -31,7 +31,6 @@ type getSchemaResult struct {
 }
 
 var getSchemaToolSpec = toolSpec{
-	name: "get-schema",
 	description: "Return the canonical JSON Schema for an Aggrega entity or contract kind, byte-identical to the " +
 		"distributed schema file. Use it to learn the exact structure, required fields, and value constraints of a " +
 		"kind before authoring or validating one. Pass the lowercase-hyphenated kind token as `kind` — for example " +
@@ -102,7 +101,6 @@ type scaffoldResult struct {
 }
 
 var scaffoldToolSpec = toolSpec{
-	name: "scaffold",
 	description: "Generate a minimal starter skeleton for an Aggrega entity kind, derived directly from that kind's " +
 		"JSON Schema so it always tracks the real contract — the skeleton carries exactly the required fields, with the " +
 		"fixed apiVersion and kind filled in and a placeholder for every other required value. Pass the kind token as " +

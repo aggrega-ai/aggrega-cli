@@ -16,12 +16,19 @@ import (
 // operation-completeness guard, and it runs here because this is the only
 // package that can build the command tree the check reads.
 //
-// The disposition walk in the projection package asks whether every known
+// The availability walk in the projection package asks whether every known
 // capability was ruled on, and structurally cannot notice a capability nobody
 // added to the operation set: a new command reaches no operation, so no
-// disposition is missing and nothing there fails. Asked from the tree's end,
-// the new command is visible. The inverse direction is covered too — a
-// disposition naming a command path the tree no longer carries.
+// availability record is missing and nothing there fails. Asked from the tree's
+// end, the new command is visible. The inverse direction is covered too — a row
+// naming a command path the tree no longer carries.
+//
+// Registering from the table closes most of this on its own: a command reaches
+// the tree only through the registrar, which refuses a path the table does not
+// give. What it does not close is the surface members the registrar never
+// mints — a command the command framework creates for itself when a tree runs,
+// and the commands a configured plugin contributes — which is why the walk from
+// the tree's end still runs.
 //
 // Grouping commands are excluded: a command that only holds subcommands
 // executes nothing and is therefore no capability. Hidden commands are excluded
@@ -51,7 +58,7 @@ func TestEveryCommandBelongsToAnOperation(t *testing.T) {
 		t.Fatal("no runnable commands in the tree")
 	}
 
-	if findings := opsurface.CheckMembers(opsurface.SurfaceCLI, clisurface.Dispositions(), members); len(findings) != 0 {
+	if findings := opsurface.CheckMembers(opsurface.SurfaceCLI, clisurface.OperationAvailability(), members); len(findings) != 0 {
 		t.Fatalf("the command tree and the operation set disagree over %d of %d commands:\n  %s",
 			len(findings), len(members), strings.Join(findings, "\n  "))
 	}
@@ -74,7 +81,7 @@ func TestEveryToolBelongsToAnOperation(t *testing.T) {
 		t.Fatal("no tools on the surface")
 	}
 
-	if findings := opsurface.CheckMembers(opsurface.SurfaceMCP, mcp.Dispositions(), members); len(findings) != 0 {
+	if findings := opsurface.CheckMembers(opsurface.SurfaceMCP, mcp.OperationAvailability(), members); len(findings) != 0 {
 		t.Fatalf("the tool surface and the operation set disagree over %d of %d tools:\n  %s",
 			len(findings), len(members), strings.Join(findings, "\n  "))
 	}
@@ -98,8 +105,8 @@ func TestEveryGeneratedToolTracksItsCommand(t *testing.T) {
 		generated[name] = true
 	}
 
-	mcpTable := mcp.Dispositions()
-	for id, cli := range clisurface.Dispositions() {
+	mcpTable := mcp.OperationAvailability()
+	for id, cli := range clisurface.OperationAvailability() {
 		if !cli.IsExposed() {
 			continue
 		}

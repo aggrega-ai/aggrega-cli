@@ -23,9 +23,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// newRegistryCmd builds the `registry` parent command grouping the
-// registry-management subcommands.
-func newRegistryCmd() *cobra.Command {
+// attachRegistryCommands builds the `registry` command family under parent: the
+// grouping command, then each subcommand named by the operation it carries.
+//
+// The group is attached before its children so that a child's invocation path is
+// the one it will be invoked by when the registrar checks it against the
+// operation table.
+func attachRegistryCommands(parent *cobra.Command) {
 	c := &cobra.Command{
 		Use:   "registry",
 		Short: "Manage registries and their signature trust policy",
@@ -56,11 +60,11 @@ setting: the workspace file by default, the global file with --global.`,
   # Remove an entry, by host or by alias
   aggrega registry remove registry.example.com`,
 	}
-	c.AddCommand(newRegistryAddCmd())
-	c.AddCommand(newRegistryListCmd())
-	c.AddCommand(newRegistryRemoveCmd())
-	c.AddCommand(newRegistryUpdateCmd())
-	return c
+	mustAttachGroup(parent, c)
+	mustAttach(c, newRegistryAddCmd(), "registry-add")
+	mustAttach(c, newRegistryListCmd(), "registry-list")
+	mustAttach(c, newRegistryRemoveCmd(), "registry-remove")
+	mustAttach(c, newRegistryUpdateCmd(), "registry-update")
 }
 
 // newRegistryListCmd builds `registry list`, which prints the effective merged
