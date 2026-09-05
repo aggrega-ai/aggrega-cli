@@ -726,13 +726,23 @@ type ConcurrencyConfig struct {
 // the compiler-as-service consumed by IDE integrations.
 type ServeConfig struct {
 	// BuildOnInspect selects whether the IR-graph inspection request runs the
-	// build's analysis, so the findings `aggrega build` reports also reach the
-	// editor as a second diagnostic layer. The default (false) skips that
-	// stage, matching `aggrega inspect`, which does not run it either. Nothing
-	// is written to disk under either value — no rendered artifacts, no output
-	// directory, no lockfile — and the returned graph is identical whether the
-	// analysis runs or not; only the additional findings differ. A serve
-	// --build-on-inspect flag overrides this key for one daemon invocation.
+	// artifact-rendering stage, so the advisories `aggrega build` raises while
+	// rendering also reach the editor as a second diagnostic layer. The default
+	// (false) skips that stage, matching `aggrega inspect`, which does not reach
+	// it either.
+	//
+	// It selects a stage, never a posture, and the distinction is the one a
+	// reader most often gets wrong: the inspection stands down the same
+	// refusing checks under either value, so this key adds none of the checks a
+	// build halts on and the editor still draws a graph where a build would
+	// refuse. What it adds is the advisories the rendering stage itself
+	// produces.
+	//
+	// Nothing is written to disk under either value — no rendered artifacts, no
+	// output directory, no lockfile — and the returned graph is identical
+	// whether the stage runs or not; only the additional advisories differ. A
+	// serve --build-on-inspect flag overrides this key for one daemon
+	// invocation.
 	BuildOnInspect bool `yaml:"build_on_inspect"`
 }
 

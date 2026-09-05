@@ -425,10 +425,12 @@ type Server struct {
 	// buildOnInspect is the resolved serve build-on-inspect dial (the
 	// --build-on-inspect flag overriding the serve.build_on_inspect config
 	// key). When false (the default), handleIrGraph returns the IR graph
-	// without running the build's analysis; when true that stage runs, so the
-	// build's findings surface as an additional diagnostic layer. Written once
-	// at construction, then only read during handler execution — an immutable
-	// snapshot needing no lock.
+	// without running the artifact-rendering stage; when true that stage runs,
+	// so the advisories it raises surface as an additional diagnostic layer.
+	// It selects that stage and nothing else: the preview posture is the
+	// inspection one under either value, so the dial turns no gate on. Written
+	// once at construction, then only read during handler execution — an
+	// immutable snapshot needing no lock.
 	buildOnInspect bool
 
 	// shuttingDown is set at the dispatch loop's acceptance of the first

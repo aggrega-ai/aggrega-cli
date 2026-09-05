@@ -257,7 +257,7 @@ func treeSnapshot(t *testing.T, root string) map[string]string {
 }
 
 // TestServeIrGraphWritesNothingToDisk pins the half of the dial's contract that
-// its name invites a reader to doubt: turning it on runs the build's analysis,
+// its name invites a reader to doubt: turning it on runs the rendering stage,
 // not the build's output. The dial's help text and its config-schema description
 // both state that nothing is written to disk — no rendered artifacts, no output
 // directory, no lockfile — so the claim is asserted here rather than left to the
@@ -282,7 +282,7 @@ func TestServeIrGraphWritesNothingToDisk(t *testing.T) {
 		prev, ok := before[path]
 		switch {
 		case !ok:
-			t.Errorf("inspection created %s; the dial runs the build's analysis, never its output", path)
+			t.Errorf("inspection created %s; the dial runs the rendering stage, never its output", path)
 		case prev != sum:
 			t.Errorf("inspection rewrote %s (%s -> %s)", path, prev, sum)
 		}

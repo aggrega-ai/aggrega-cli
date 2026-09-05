@@ -533,10 +533,15 @@ func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error
 
 // irGraphPipelineOptions builds the pipeline options for the irGraph
 // inspection path. Render-skip is the default: irGraph reads only the IR
-// graph and discards render output, so unless the build's findings are
+// graph and discards render output, so unless the rendering stage is
 // explicitly requested (the build-on-inspect dial) the pipeline stops
 // after the IR graph is finalised and never loads rendering plugins. The
 // returned graph is byte-identical either way — render never mutates it.
+//
+// The dial reaches this option and nothing else. It selects no preview
+// posture: the gate sequence runs ahead of the render under the inspection
+// posture either way, so turning the dial on adds the rendering stage's own
+// advisories and never a check that would refuse.
 func (s *Server) irGraphPipelineOptions() pipeline.Options {
 	return pipeline.Options{IncludeTrace: false, SkipRender: !s.buildOnInspect}
 }
