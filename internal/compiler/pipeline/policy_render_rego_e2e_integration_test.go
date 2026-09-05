@@ -75,6 +75,19 @@ deny contains msg if {
 // consumes. It mirrors the fullstack socket loader but points at the compose
 // example so the render-stage policy runs over a real docker-compose.yaml
 // (a non-Kubernetes, YAML output shape) rather than Kubernetes manifests.
+//
+// The loaded view is marked for embedded core-provider resolution, which is what
+// makes it faithful to the build command it stands in for. A real build resolves
+// through the lazy backing, which resolves core providers from the binary's own
+// embedded entity set; the eager whole-catalog view this loader uses does not do
+// that on its own. Without the mark, a core provider's entity comes from the
+// published catalog while its guest bytes come from this binary — two different
+// builds — so a contract the guest reports and the published entity does not yet
+// declare reads as a disagreement that no real build can produce. The mark pairs
+// each embedded core provider's entity with the guest bytes it was generated
+// beside, which is the pairing a build actually loads. A third-party provider the
+// binary does not embed is untouched and still resolves from the catalog, so the
+// example keeps exercising the real standard-library entities it names.
 func loadComposeExampleForSockets(t *testing.T) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
 	t.Helper()
 	rel, err := resolver.LoadRelease(filepath.Join(catalogOnlyDir, "release.yaml"))
@@ -97,6 +110,7 @@ func loadComposeExampleForSockets(t *testing.T) (pipeline.Inputs, resolver.Catal
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		t.Fatalf("catalog extends: %d error(s); first: %v", len(extErrs), extErrs[0])
 	}
+	cat.UseEmbeddedProviderResolution()
 	inputs := pipeline.Inputs{
 		Release:           rel,
 		Manifest:          manifest,
