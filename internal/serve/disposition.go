@@ -81,11 +81,20 @@ const (
 // anything.
 var dispositions = map[string]opsurface.Disposition{
 	// Capabilities a request method carries.
-	"session-initialize":          opsurface.Exposed("aggrega/initialize"),
-	"validate":                    opsurface.Exposed("aggrega/validate"),
-	"session-invalidate":          opsurface.Exposed("aggrega/invalidate"),
-	"cached-diagnostics":          opsurface.Exposed("aggrega/diagnostics"),
-	"ir-graph":                    opsurface.Exposed("aggrega/irGraph"),
+	"session-initialize": opsurface.Exposed("aggrega/initialize"),
+	"validate":           opsurface.Exposed("aggrega/validate"),
+	"session-invalidate": opsurface.Exposed("aggrega/invalidate"),
+	"cached-diagnostics": opsurface.Exposed("aggrega/diagnostics"),
+	"ir-graph":           opsurface.Exposed("aggrega/irGraph"),
+
+	// The compile runs here in full, under the posture of a surface that emits an
+	// artifact: every gate on, every divergence a halt. What the daemon does not
+	// do with the result is persist it — the method reports the artifacts a build
+	// would emit and writes none of them, which is why the ground beside the
+	// entries below still holds for this package. A caller wanting the files on
+	// disk runs the build itself.
+	"build": opsurface.Exposed("aggrega/buildPreview"),
+
 	"definition-at-position":      opsurface.Exposed("aggrega/resolve"),
 	"references-at-position":      opsurface.Exposed("aggrega/findReferences"),
 	"implementations-at-position": opsurface.Exposed("aggrega/findImplementations"),
@@ -99,7 +108,6 @@ var dispositions = map[string]opsurface.Disposition{
 
 	// Capabilities no method carries, each on a property of this daemon.
 	"acquire":               opsurface.NotApplicable(groundWritesNothing),
-	"build":                 opsurface.NotApplicable(groundWritesNothing),
 	"cache-clear":           opsurface.NotApplicable(groundWritesNothing),
 	"cache-evict":           opsurface.NotApplicable(groundWritesNothing),
 	"cache-prune":           opsurface.NotApplicable(groundWritesNothing),
