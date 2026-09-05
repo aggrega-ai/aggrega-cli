@@ -57,7 +57,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// here and the same view threads through closure compute, closure-scoped
 	// extends + Pass-2, the Tier-4 pipeline, and resolution findings, so the
 	// whole validation sees one consistent pin snapshot. A failed/absent/invalid
-	// lockfile yields nil pins (no-pin -> Tier-3 re-establish), never an
+	// lockfile yields nil pins, disabling cache trust for the request, never an
 	// inherited cross-request pin set.
 	//
 	// This is a QUIET load — pins only, no drift verify and no diagnostic
@@ -67,9 +67,9 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// at editing cadence without adding a needed signal.
 	//
 	// ORDERING IS LOAD-BEARING: the view's pins are set (via ForRequest) before
-	// any Tier-2 read fires. Resolving against an unpinned view degrades to a
-	// no-pin Tier-3 re-fetch on a drifted cache, masking the drift a
-	// verify-on-read skip would surface — guarded by an end-to-end test
+	// any Tier-2 read fires. An unpinned view uses no cached slot at all, so
+	// validation would resolve nothing from the cache and report the silence as
+	// though the workspace said it — guarded by an end-to-end test
 	// (TestServeValidateVerifiesCacheAgainstPinBeforeTier4).
 	//
 	// The loaded lockfile is retained past the pin extraction because the

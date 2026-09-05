@@ -348,8 +348,7 @@ func TestServeStartsWithCWDFallbackWhenNoMarker(t *testing.T) {
 // TestServeAggregaIrGraphEndToEnd exercises the daemon's live
 // aggrega/irGraph flow against the fullstack-app fixture. The
 // subprocess goes through Run's full startup wiring — workspace-root
-// discovery, workspace-config load, OCIPuller construction via
-// catalog.NewDefaultOCIPuller, lazy lookup construction via
+// discovery, workspace-config load, lazy lookup construction via
 // catalog.NewLazyLookup. The handler reads s.lazyCatalog.AsCatalogLookup()
 // and passes it to pipeline.RunPipeline.
 //

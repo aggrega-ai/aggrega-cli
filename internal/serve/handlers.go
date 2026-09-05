@@ -707,15 +707,16 @@ func (s *Server) previewRelease(ctx context.Context, release string, opts pipeli
 	//    view threads through closure compute (step 3), drift context, and the
 	//    render pipeline (step 5), so the whole request resolves against one
 	//    consistent pin snapshot. A failed/absent lockfile load yields nil pins,
-	//    disabling cache trust for the request (the cascade re-establishes at
-	//    Tier-3) — never an inherited cross-request pin set.
+	//    disabling cache trust for the request — never an inherited
+	//    cross-request pin set.
 	//
 	//    ORDERING IS LOAD-BEARING: the view's pins are set (via ForRequest)
 	//    before any Tier-2 read fires. Verify-on-read depends on the pins being
-	//    present before the reads; resolving against an unpinned view silently
-	//    degrades to no-pin -> Tier-3 re-fetch, re-introducing drift-masking
-	//    (serve would preview re-fetched content a local-cache-drifted build
-	//    halts on). Guarded end-to-end by
+	//    present before the reads; an unpinned view can return no cached entity
+	//    at all — a slot it cannot verify is not used, and this daemon's lookup
+	//    carries no puller to re-establish one — so the inspection would degrade
+	//    to an empty result for every cache-only entity while having verified
+	//    nothing. Guarded end-to-end by
 	//    TestServeIrGraphVerifiesCacheAgainstPinBeforePreview.
 	var pins map[string]catalog.Pin
 	lf, _, lfErr := lockfile.LoadLockfile(lockfilePath)

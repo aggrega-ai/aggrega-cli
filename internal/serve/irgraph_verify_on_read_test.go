@@ -41,10 +41,13 @@ func componentManifestFor(t *testing.T, body []byte) []byte {
 }
 
 // recordingPuller is a Tier-3 stand-in that records every Pull it receives and
-// can serve a body. In the verify-on-read ordering test it is wired so that a
-// Tier-3 fetch WOULD succeed — so if the cache-drift skip silently degrades to a
-// re-fetch (the failure mode a SetPins reorder introduces), the puller is called
-// and the test catches it.
+// can serve a body. The daemon's own lookup carries no puller, so a fall-through
+// to Tier-3 resolves to nothing in production; injecting one here is what makes
+// that fall-through OBSERVABLE. Wired so a fetch WOULD succeed, it converts the
+// shape a SetPins reorder produces — pins unset at read time, so the cascade
+// runs past the cache instead of verifying it — into a recorded call the
+// assertion can name, rather than a silent miss no test could tell apart from an
+// entity that was never resolvable.
 type recordingPuller struct {
 	body  []byte
 	calls []string
@@ -103,14 +106,14 @@ func drainFramedMessages(t *testing.T, out *bytes.Buffer) []map[string]any {
 // With the per-request pins threaded before the pipeline reads (the production
 // ordering), the drifted slot is verified-on-read, fails the pin, and is SKIPPED:
 // the entity is unavailable, the daemon returns a graph (resilient inspection,
-// no crash), and Tier-3 is NOT consulted (no self-heal re-fetch that would
-// preview content a local-cache-drifted build halts on).
+// no crash), and the cascade stops there rather than running on past the cache.
 //
 // This is the regression guard the unit tests cannot provide: a unit test that
 // constructs the lookup with pins already set cannot catch a handler reorder
-// that moves SetPins after the reads. Here the puller is wired to SUCCEED, so a
-// reorder (pins unset at read time -> no-pin -> Tier-3) would call the puller and
-// fail the assertion below.
+// that moves SetPins after the reads. The puller injected below is the probe
+// that makes such a reorder visible — production wires none, so the fall-through
+// it would cause resolves to nothing and leaves no trace to assert on. Wired to
+// SUCCEED, it records the call and fails the assertion below.
 func TestServeIrGraphVerifiesCacheAgainstPinBeforePreview(t *testing.T) {
 	tmp := t.TempDir()
 	cacheDir := ".aggrega/cache"
@@ -238,8 +241,8 @@ spec:
 	}
 
 	// The puller is wired to SUCCEED — a drift skip must not reach it. A reorder of
-	// SetPins (pins unset at read time) degrades to a no-pin Tier-3 fetch, which
-	// would call this puller and fail the assertion.
+	// SetPins (pins unset at read time) runs the cascade past the cache and into
+	// Tier-3, which would call this puller and fail the assertion.
 	puller := &recordingPuller{body: cachedComponent}
 
 	srv := newTestServer(t, tmp, nil, nil)
@@ -264,8 +267,8 @@ spec:
 	// The drift skip must NOT have reached Tier-3. This is the ordering guard: a
 	// SetPins reorder would surface here as a puller call.
 	if len(puller.calls) != 0 {
-		t.Fatalf("drift must be skipped, never self-healed via Tier-3; puller was called with %v "+
-			"(a SetPins reorder degrades verify-on-read to a no-pin Tier-3 re-fetch)", puller.calls)
+		t.Fatalf("drift must be skipped, never resolved past the cache; puller was called with %v "+
+			"(a SetPins reorder leaves the read unpinned and runs the cascade on to Tier-3)", puller.calls)
 	}
 
 	// The daemon must stay up and return a graph response (resilient inspection):

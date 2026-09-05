@@ -830,12 +830,30 @@ func Run(cfg RunConfig) error {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
-	puller := catalog.NewDefaultOCIPuller(wsCfg)
+	// The daemon's session catalog reads only what is already on disk. Nil
+	// puller: Tier-3 is disabled, so no resolution through this lookup reaches a
+	// registry — the same posture the command-line build resolves under, and the
+	// same one this daemon already holds on its two other acquisition seams (the
+	// external-input seam serves pinned references from the local store with
+	// acquisition off, and the closure reconstruction carries a nil puller). An
+	// editor session inspects the workspace as it stands; acquiring is what the
+	// verbs a user runs deliberately are for. A daemon that fetched on its own
+	// would pull content no command asked for and preview bytes a build of the
+	// same Release would not produce.
+	//
+	// Pins are deliberately NOT threaded here. This lookup is shared across
+	// concurrently-served requests, so a pin set installed on it would resolve
+	// another request's reads against the wrong Release; each request forks its
+	// own pinned view via ForRequest, which is where verify-on-read takes its
+	// pins. The nil puller is what keeps that fork honest: a request that finds
+	// no lockfile threads no pins, and an unpinned Tier-2 slot is then reported
+	// unavailable for that request rather than re-fetched and previewed
+	// unverified.
 	lazyCatalog := catalog.NewLazyLookup(
 		root,
 		wsCfg.ArtifactCacheDir,
 		wsCfg.Workspace.CatalogDirs,
-		puller,
+		nil,
 	)
 	// The render pipeline's per-request Loaders draw on the process-wide shared
 	// compilation cache (see wasm.NewCachingLoaderFromContext): a guest's

@@ -22,11 +22,12 @@ import (
 // from the lockfile pin is verified-on-read and SKIPPED — never re-fetched.
 //
 // With the per-request pins threaded before RunTier4Pipeline (the production
-// ordering), the drifted slot fails the pin and is skipped: Tier-3 is NOT consulted
-// (no self-heal that would let validate silently pass on a locally-drifted cache
-// the build halts on). The spy puller is wired to SUCCEED, so a reorder/removal of
-// SetPins (pins unset at read time -> no-pin -> Tier-3) would call the puller and
-// fail the assertion — the non-vacuity guard.
+// ordering), the drifted slot fails the pin and is skipped: the cascade stops at
+// the cache rather than running on past it, so validate cannot silently pass on a
+// locally-drifted cache the build halts on. The spy puller is the probe that keeps
+// this assertion non-vacuous — production wires none, so a reorder/removal of
+// SetPins would otherwise fall through to nothing and leave no trace. Wired to
+// SUCCEED, it records the call and fails the assertion.
 //
 // Reuses recordingPuller / contentDigestHex / writeFixtureFile from
 // irgraph_verify_on_read_test.go (same package).
@@ -160,8 +161,8 @@ spec:
 	}
 
 	// The puller is wired to SUCCEED — a drift skip must not reach it. A reorder of
-	// the pin threading (pins unset at read time) degrades to a no-pin Tier-3 fetch,
-	// which would call this puller and fail the assertion below.
+	// the pin threading (pins unset at read time) runs the cascade past the cache
+	// and into Tier-3, which would call this puller and fail the assertion below.
 	puller := &recordingPuller{body: cachedComponent}
 
 	srv := newTestServer(t, tmp, nil, nil)
@@ -186,7 +187,7 @@ spec:
 	// The drift skip must NOT have reached Tier-3. This is the ordering guard: a
 	// SetPins reorder/removal would surface here as a puller call.
 	if len(puller.calls) != 0 {
-		t.Fatalf("validate must verify-on-read and skip a drifted cache slot, never self-heal via Tier-3; "+
+		t.Fatalf("validate must verify-on-read and skip a drifted cache slot, never resolve past it; "+
 			"puller was called with %v (the pin threading was reordered after the Tier-4 reads)", puller.calls)
 	}
 
