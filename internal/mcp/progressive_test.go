@@ -9,6 +9,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
 
 // capabilityNames returns the surfaced capability names in order.
@@ -216,20 +219,73 @@ func TestDeferredLintInvocableViaToolsCall(t *testing.T) {
 	}
 }
 
+// commandBackedSurface projects the commands the command line records an
+// operation for into the surface a session is handed.
+//
+// It stands in for the live command tree, which this package cannot build, and
+// it has to get exactly one thing right: which commands back an operation, and
+// therefore which curated tools disclose a generated twin. Those paths are read
+// from the command line's own availability records rather than listed here, so a
+// command added, renamed or newly exempted moves this with it.
+//
+// Every other descriptor field is deliberately left empty. None of them reaches
+// a curated tool's definition — the disclosure it carries is built from the
+// generated tool's name and the command path alone — so filling them with
+// invented help text would put bytes into a measurement that production never
+// has.
+func commandBackedSurface() []CommandSurface {
+	table := clisurface.OperationAvailability()
+	var out []CommandSurface
+	for _, op := range opsurface.Operations() {
+		a, ok := table[op.ID]
+		if !ok || !a.IsExposed() {
+			continue
+		}
+		for _, path := range a.Names {
+			out = append(out, CommandSurface{
+				Descriptor: clisurface.Descriptor{Path: path},
+				Runnable:   true,
+			})
+		}
+	}
+	return out
+}
+
 // TestDefaultDefinitionTokenBudget measures the up-front definition budget a
 // client loads from the default tools/list — the bytes of every advertised
 // tool's name, description, and argument schema — and records it. Keeping the
 // long tail deferred is what holds this figure modest.
+//
+// It measures what a session serves rather than what the registry declares, and
+// the two are no longer the same figure: a curated tool answering a capability a
+// command also carries discloses the tool generated from that command, so those
+// bytes reach the client and a walk over the bare registry would stop counting
+// them. A budget test that measures less than a client loads reports a figure
+// nobody pays.
 func TestDefaultDefinitionTokenBudget(t *testing.T) {
+	s := &server{out: io.Discard, logw: io.Discard, commandTools: deriveCommandTools(commandBackedSurface())}
+	served := s.curatedTools()
+
 	bytesTotal := 0
-	for i := range toolRegistry {
-		bytesTotal += len(toolRegistry[i].name)
-		bytesTotal += len(toolRegistry[i].description)
-		bytesTotal += len(toolRegistry[i].inputSchema)
+	var disclosed int
+	for i := range served {
+		bytesTotal += len(served[i].name)
+		bytesTotal += len(served[i].description)
+		bytesTotal += len(served[i].inputSchema)
+		if len(served[i].description) > len(toolRegistry[i].description) {
+			disclosed++
+		}
 	}
 	approxTokens := bytesTotal / 4
-	t.Logf("default tools/list definition budget: %d tools, %d bytes, ~%d tokens (approx bytes/4)",
-		len(toolRegistry), bytesTotal, approxTokens)
+	t.Logf("default tools/list definition budget: %d tools (%d disclosing a generated twin), %d bytes, "+
+		"~%d tokens (approx bytes/4)", len(served), disclosed, bytesTotal, approxTokens)
+
+	// The measurement is only worth its ceiling if the disclosures are in it. A
+	// surface that derived none would measure the bare registry and pass a
+	// ceiling set for a figure that includes them.
+	if disclosed == 0 {
+		t.Fatal("no curated tool disclosed a generated twin, so this measures the bare registry rather than a session")
+	}
 
 	// A ceiling that fails loudly if the default set balloons — a full long-tail
 	// tool's definition runs ~2000 bytes, so this trips if one creeps back into
@@ -237,13 +293,15 @@ func TestDefaultDefinitionTokenBudget(t *testing.T) {
 	// less than one such definition, which is what makes the ceiling discriminate
 	// a creeping tool from ordinary drift.
 	//
-	// It sits where it does because the curated tools declare their
-	// argument-combination rules in their own input schemas rather than only in
-	// prose, so a caller reading a schema structurally cannot compose a call the
-	// server would refuse. Those declarations are the reason the figure this test
-	// logs is what it is; the trade is a one-off definition cost against a refused
-	// call every time a caller guesses a combination wrong.
-	const ceiling = 15000
+	// It sits where it does for two reasons, and both are a deliberate trade
+	// rather than drift. The curated tools declare their argument-combination
+	// rules in their own input schemas rather than only in prose, so a caller
+	// reading a schema structurally cannot compose a call the server would refuse;
+	// and each tool sharing a capability with a command names that command's tool
+	// and says how the two differ, so a caller choosing between two
+	// similarly-named tools is not choosing blind. Both cost definition bytes once
+	// and save a wrong call every time.
+	const ceiling = 18000
 	if bytesTotal > ceiling {
 		t.Errorf("default definition budget %d bytes exceeds %d; move long-tail tools to the deferred set", bytesTotal, ceiling)
 	}

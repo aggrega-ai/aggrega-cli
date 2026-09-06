@@ -262,3 +262,142 @@ func TestMCPServerExposesTheRealCommandSurface(t *testing.T) {
 		t.Error("the executing tree lacks cobra's help/completion commands; the exemption above proves nothing")
 	}
 }
+
+// servedToolDescriptions drives the server over its real transport with the
+// supplied command surface and returns every tool a client can reach, by name,
+// with the description that client is shown.
+//
+// Both listings are read, because the two halves of a twice-exposed pair sit on
+// different ones: the curated tool is advertised up front and the tool generated
+// from its command is surfaced only on demand.
+func servedToolDescriptions(t *testing.T, surface []mcp.CommandSurface) map[string]string {
+	t.Helper()
+
+	var stdin bytes.Buffer
+	stdin.WriteString(rpcLine(1, "initialize", `{"protocolVersion":"2025-06-18"}`))
+	stdin.WriteString(rpcLine(2, "tools/list", ""))
+	stdin.WriteString(rpcLine(3, "tools/call", `{"name":"describe-capabilities","arguments":{}}`))
+
+	var stdout, stderr bytes.Buffer
+	if err := mcp.Run(mcp.Config{
+		Stdin:         &stdin,
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		ServerVersion: "test",
+		Commands:      surface,
+	}); err != nil {
+		t.Fatalf("mcp.Run: %v (stderr: %s)", err, stderr.String())
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("got %d response lines, want 3:\n%s", len(lines), stdout.String())
+	}
+
+	out := map[string]string{}
+
+	var listResp struct {
+		Result struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &listResp); err != nil {
+		t.Fatalf("unmarshal tools/list: %v", err)
+	}
+	for _, tl := range listResp.Result.Tools {
+		out[tl.Name] = tl.Description
+	}
+
+	var callResp struct {
+		Result struct {
+			StructuredContent struct {
+				Capabilities []struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+				} `json:"capabilities"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[2]), &callResp); err != nil {
+		t.Fatalf("unmarshal describe-capabilities: %v", err)
+	}
+	for _, c := range callResp.Result.StructuredContent.Capabilities {
+		out[c.Name] = c.Description
+	}
+	return out
+}
+
+// TestTwiceExposedCapabilitiesDiscloseEachOtherOverTheWire is the end-to-end
+// half of the disclosure guarantee: the package-level guard proves the two
+// descriptions are built, and this proves they reach a client over the real
+// transport with the real command tree behind them.
+//
+// The pair set is derived here rather than listed, and derived from the
+// availability records alone, so a command that gains or loses a curated
+// counterpart moves this with no edit. A listed set would have been six on the
+// day it was written and stale on the day a command was added.
+func TestTwiceExposedCapabilitiesDiscloseEachOtherOverTheWire(t *testing.T) {
+	withCLIRegistrations(t, nil)
+	root := executingRootCmd()
+	surface := commandSurface(root)
+
+	static := map[string]bool{}
+	for _, name := range mcp.StaticToolNames() {
+		static[name] = true
+	}
+	generated := map[string]bool{}
+	for _, name := range mcp.GeneratedToolNames(surface) {
+		generated[name] = true
+	}
+
+	// A pair is one operation the tool protocol reaches under two names: one this
+	// server answers in-process, one it answers by running a command.
+	type pair struct{ curated, generated string }
+	pairs := map[string]pair{}
+	for id, availability := range mcp.OperationAvailability() {
+		if !availability.IsExposed() {
+			continue
+		}
+		var p pair
+		for _, name := range availability.Names {
+			switch {
+			case static[name]:
+				p.curated = name
+			case generated[name]:
+				p.generated = name
+			}
+		}
+		if p.curated != "" && p.generated != "" {
+			pairs[id] = p
+		}
+	}
+	if len(pairs) == 0 {
+		t.Fatal("no capability is reachable both in-process and by running its command, so this asserts nothing")
+	}
+	t.Logf("capabilities reachable both in-process and by running a command: %d", len(pairs))
+
+	served := servedToolDescriptions(t, surface)
+	for id, p := range pairs {
+		curated, ok := served[p.curated]
+		if !ok {
+			t.Errorf("the %q operation claims %q, which no listing carries", id, p.curated)
+			continue
+		}
+		gen, ok := served[p.generated]
+		if !ok {
+			t.Errorf("the %q operation claims %q, which no listing carries", id, p.generated)
+			continue
+		}
+		if !strings.Contains(curated, "`"+p.generated+"`") {
+			t.Errorf("a client is offered %q and %q for the %q capability, and %q does not mention %q:\n%s",
+				p.curated, p.generated, id, p.curated, p.generated, curated)
+		}
+		if !strings.Contains(gen, "`"+p.curated+"`") {
+			t.Errorf("a client is offered %q and %q for the %q capability, and %q does not mention %q:\n%s",
+				p.curated, p.generated, id, p.generated, p.curated, gen)
+		}
+	}
+}

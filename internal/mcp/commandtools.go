@@ -217,9 +217,12 @@ func deriveCommandTool(d clisurface.Descriptor) toolSpec {
 		arguments:  commandArguments(d),
 		positional: commandPositionalSummary(d.Use),
 	}
+	operation := commandOperation(d.Path)
 	return toolSpec{
 		name:        ct.name,
-		description: commandToolDescription(d, ct),
+		operation:   operation,
+		commandPath: d.Path,
+		description: commandToolDescription(d, ct, operation),
 		inputSchema: commandInputSchema(ct),
 		invoke:      ct.invoke,
 	}
@@ -328,7 +331,13 @@ func jsonSchemaTypeFor(flagType string) string {
 // layer and is served by the cli:// resource family, so a client that wants it
 // reads it there rather than receiving every command's full help in one
 // capability listing.
-func commandToolDescription(d clisurface.Descriptor, ct commandTool) string {
+//
+// Where a curated tool answers the same operation inside this server, its name
+// and how the two forms differ are appended, so a caller meeting two
+// similarly-named tools is told which one to reach for rather than left to
+// guess. That disclosure is derived from the operation, never from the tool's
+// name: a name-keyed skip is the enumeration that goes stale.
+func commandToolDescription(d clisurface.Descriptor, ct commandTool, operation string) string {
 	var b strings.Builder
 	short := strings.TrimSpace(d.Short)
 	if short != "" {
@@ -345,6 +354,9 @@ func commandToolDescription(d clisurface.Descriptor, ct commandTool) string {
 	}
 	fmt.Fprintf(&b, "Every other property is one of the command's flags, sent under the flag's own words in snake_case. "+
 		"Read `cli://%s` for the command's full help.", strings.Join(ct.path, "/"))
+	if sibling, paired := curatedSibling(operation); paired {
+		b.WriteString(curatedSiblingNote(sibling))
+	}
 	return b.String()
 }
 

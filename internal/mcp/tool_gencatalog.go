@@ -38,7 +38,8 @@ type genCatalogResultPayload struct {
 var genCatalogToolSpec = toolSpec{
 	kinds: []string{"plugin"},
 	description: "Generate Plugin catalog entities from Wasm guests, driving the compiler's own catalog-generation " +
-		"operation. Each entity's contract fields are derived from the guest's self-report, and its identity and runtime " +
+		"operation and writing the entities to disk under the directory you name. Each entity's contract fields are " +
+		"derived from the guest's self-report, and its identity and runtime " +
 		"limits come from an authored overlay, so a generated entity can never promise a capability the binary does not " +
 		"provide. Two modes: `from_embedded: true` generates an entity for every guest embedded in the compiler (the " +
 		"`overlay` is a directory of per-plugin overlays); or `plugin` names a single .wasm file to generate one entity " +

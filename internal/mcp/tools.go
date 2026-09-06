@@ -32,8 +32,19 @@ import (
 // kind-agnostic: the tool serves every entity kind (schema, scaffold, and
 // diagnostic helpers are the natural agnostic tools). The field is exposure
 // metadata only; it never changes what a tool does or returns.
+//
+// operation names the capability the tool answers, set alongside the name and
+// from the same source, so two tools reaching one capability under two names
+// can be recognised as reaching one capability. It is the join key: matching
+// tools by a spelling would tie the pairing to names that are chosen
+// independently on each side and exist precisely so they can differ.
+//
+// commandPath is the invocation path of the command a generated tool runs,
+// empty for a tool that runs its operation inside this server.
 type toolSpec struct {
 	name        string
+	operation   string
+	commandPath string
 	description string
 	inputSchema string
 	kinds       []string
@@ -257,13 +268,19 @@ func articled(jsonType string) string {
 // handleToolsList answers tools/list with the curated set: each tool's name,
 // its rich description, and the JSON Schema for its arguments, in registry
 // order.
+//
+// The descriptions are this session's rather than the registry's bare ones,
+// because a curated tool discloses the generated tool that reaches the same
+// capability by running its command, and which commands a session was handed is
+// a property of that session.
 func (s *server) handleToolsList() (any, *rpcError) {
-	tools := make([]tool, 0, len(toolRegistry))
-	for i := range toolRegistry {
+	curatedTools := s.curatedTools()
+	tools := make([]tool, 0, len(curatedTools))
+	for i := range curatedTools {
 		tools = append(tools, tool{
-			Name:        toolRegistry[i].name,
-			Description: toolRegistry[i].description,
-			InputSchema: json.RawMessage(toolRegistry[i].inputSchema),
+			Name:        curatedTools[i].name,
+			Description: curatedTools[i].description,
+			InputSchema: json.RawMessage(curatedTools[i].inputSchema),
 		})
 	}
 	return listToolsResult{Tools: tools}, nil

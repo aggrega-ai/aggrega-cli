@@ -33,8 +33,9 @@ type getSchemaResult struct {
 }
 
 var getSchemaToolSpec = toolSpec{
-	description: "Return the canonical JSON Schema for an Aggrega entity or contract kind, byte-identical to the " +
-		"distributed schema file. Use it to learn the exact structure, required fields, and value constraints of a " +
+	description: "Return the canonical JSON Schema for an Aggrega entity or contract kind, read from the copy built " +
+		"into this binary, byte-identical to the distributed schema file, and writing nothing. Use it to learn the " +
+		"exact structure, required fields, and value constraints of a " +
 		"kind before authoring or validating one. Pass the lowercase-hyphenated kind token as `kind` — for example " +
 		"component, aggregate, release, manifest, recipe, ir, or wasm-provider. Pass `list: true` (with no kind) to " +
 		"enumerate every addressable kind first. An unknown kind returns the full valid set so you can correct a typo " +
@@ -94,16 +95,14 @@ type scaffoldResult struct {
 }
 
 var scaffoldToolSpec = toolSpec{
-	description: "Generate a minimal starter skeleton for an Aggrega entity kind, derived directly from that kind's " +
-		"JSON Schema so it always tracks the real contract — the skeleton carries exactly the required fields, with the " +
-		"fixed apiVersion and kind filled in and a placeholder for every other required value. Pass the kind token as " +
+	description: "Generate a minimal starter skeleton for an Aggrega entity kind and return it as YAML, writing " +
+		"nothing. The skeleton is derived directly from that kind's JSON Schema so it always tracks the real " +
+		"contract: it carries exactly the required fields, with the fixed apiVersion and kind filled in and a " +
+		"placeholder for every other required value. Pass the kind token as " +
 		"`kind` (component, aggregate, release, recipe, manifest, feature, and so on) and, optionally, a `name` to seed " +
 		"metadata.name. Use it to start a new entity from a correct shape rather than from memory, then flesh out the " +
-		"placeholders and validate. The output is YAML ready to write to a file. " +
-		"The same drafting is on the command line as `aggrega scaffold <kind> [name]`, which prints these exact bytes to " +
-		"standard output, so the generated `cli-scaffold` tool reaches it too by running that command in a subprocess. " +
-		"Prefer this tool: it derives the skeleton in-process and returns it as structured data as well as text, and it " +
-		"needs no workspace.",
+		"placeholders and validate. It needs no workspace. The same drafting is on the command line as " +
+		"`aggrega scaffold <kind> [name]`, which prints these exact bytes to standard output.",
 	inputSchema: `{
   "type": "object",
   "properties": {

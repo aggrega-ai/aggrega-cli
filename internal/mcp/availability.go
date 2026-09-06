@@ -108,6 +108,13 @@ var curatedToolNames = map[string][]string{
 // it should take is a question the caller has to answer rather than one this
 // function may pick.
 //
+// It records the operation alongside the name, from the same lookup, so a tool
+// carries what it answers as well as what it is called. That is what lets a
+// curated tool and the tool generated from the command carrying the same
+// operation recognise one another: their names are chosen independently — one
+// for the goal it serves, one for the command path it runs — and exist precisely
+// so they can differ, so a name is the one thing that cannot pair them.
+//
 // It carries the handler the spec already holds and constructs nothing the
 // handler needs. A registry that assembled a handler's inputs would have to
 // describe every tool's inputs in one shape, and the only shape that fits every
@@ -134,6 +141,7 @@ func curated(id string, spec toolSpec) toolSpec {
 			"should carry", id, len(names), names))
 	}
 	spec.name = names[0]
+	spec.operation = id
 	return spec
 }
 

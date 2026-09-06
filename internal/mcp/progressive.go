@@ -87,9 +87,15 @@ var describeCapabilitiesToolSpec = toolSpec{
 //
 // The two are concatenated in a fixed order, each already in its own fixed
 // order, so the surfaced long tail and its wire bytes are stable across runs.
+//
+// The statically declared half is served as this session advertises it, since a
+// deferred tool answering a capability a command also carries discloses the
+// generated tool that reaches it. The generated half needs no such pass: each of
+// those tools already carries its curated sibling's name, derived when the tool
+// was.
 func (s *server) deferredTools() []toolSpec {
 	out := make([]toolSpec, 0, len(deferredToolRegistry)+len(s.commandTools))
-	out = append(out, deferredToolRegistry...)
+	out = append(out, s.withTwinNotes(deferredToolRegistry)...)
 	out = append(out, s.commandTools...)
 	return out
 }
@@ -116,7 +122,7 @@ func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessa
 			return errorResult(fmt.Sprintf("unknown entity kind %q. Valid kinds: %s",
 				kind, strings.Join(knownEntityKinds(), ", ")))
 		}
-		caps = capabilitiesForKind(kind)
+		caps = s.capabilitiesForKind(kind)
 	}
 
 	payload := describeCapabilitiesResult{Kind: kind, Capabilities: caps}
@@ -127,6 +133,11 @@ func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessa
 // then the deferred set so the surfaced order is deterministic. The capability
 // tool itself is skipped — it never lists itself as a capability for a kind.
 //
+// Both sets are taken as this session advertises them, which is the same
+// definition tools/list and the unscoped long tail carry: a narrowed listing
+// that dropped a tool's disclosure of its generated twin would hand an assistant
+// asking about one entity kind a different definition of the same tool.
+//
 // The generated command tools are deliberately absent from a kind-scoped
 // result, and reachable through the unscoped long tail instead. A command's
 // relevance to an entity kind is recorded nowhere the derivation could read it,
@@ -134,7 +145,7 @@ func describeCapabilitiesInvoke(s *server, _ context.Context, args json.RawMessa
 // here would answer a request to narrow with the entire command surface, which
 // is the opposite of narrowing. Claiming a subset serves a kind would mean this
 // package deciding something about the commands rather than reading it.
-func capabilitiesForKind(kind string) []capabilityDescriptor {
+func (s *server) capabilitiesForKind(kind string) []capabilityDescriptor {
 	var out []capabilityDescriptor
 	collect := func(specs []toolSpec, deferred bool) {
 		for i := range specs {
@@ -146,8 +157,8 @@ func capabilitiesForKind(kind string) []capabilityDescriptor {
 			}
 		}
 	}
-	collect(toolRegistry, false)
-	collect(deferredToolRegistry, true)
+	collect(s.curatedTools(), false)
+	collect(s.withTwinNotes(deferredToolRegistry), true)
 	return out
 }
 
@@ -218,12 +229,6 @@ func renderCapabilitiesText(p describeCapabilitiesResult) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// firstSentence returns the leading sentence of a tool description for the
-// one-line human summary, so the text rendering stays compact while the
-// structured payload carries every field in full.
-func firstSentence(desc string) string {
-	if i := strings.IndexByte(desc, '.'); i >= 0 {
-		return desc[:i+1]
-	}
-	return desc
-}
+// The one-line human summary uses firstSentence, so the text rendering stays
+// compact while the structured payload carries every field in full. It is
+// declared beside the pair disclosure that shares it.
