@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package pullops
 
 import (
 	"go/ast"
@@ -19,19 +19,20 @@ import (
 // in it resolves to.
 //
 // The chokepoint is not confined to one package: the verification home and its
-// host-function primitive are declared in internal/pluginfetchverify, and the
-// fetch tiers that must route through them are declared in the command package.
-// A guard walking one directory would see the call sites on that side and pass
-// blind on the other, so it walks both and reports one caller set per callee
-// across them.
+// host-function primitive are declared in internal/pluginfetchverify, the fetch
+// tiers that must route through them are declared here, and the install command's
+// fetch is declared in the command package. A guard walking one directory would
+// see the call sites in it and pass blind on the others, so it walks all three
+// and reports one caller set per callee across them.
 type verificationUnit struct {
 	dir    string
 	prefix string
 }
 
 var verificationUnits = []verificationUnit{
-	{dir: ".", prefix: "main"},
-	{dir: filepath.Join("..", "..", "internal", "pluginfetchverify"), prefix: "pluginfetchverify"},
+	{dir: ".", prefix: "pullops"},
+	{dir: filepath.Join("..", "pluginfetchverify"), prefix: "pluginfetchverify"},
+	{dir: filepath.Join("..", "..", "cmd", "aggrega"), prefix: "main"},
 }
 
 // qualify resolves a call expression to the package-qualified name of its
@@ -170,15 +171,15 @@ func TestPluginFetchVerificationChokepoint(t *testing.T) {
 	}{
 		{
 			callee: "pluginfetchverify.Verify",
-			want:   []string{"main.productionInstallPluginFetch", "main.verifyCachedVerdictSocketPlugin"},
+			want:   []string{"main.productionInstallPluginFetch", "pullops.verifyCachedVerdictSocketPlugin"},
 		},
 		{
 			callee: "pullverify.Verify",
-			want:   []string{"main.verifyClosureSignatures", "pluginfetchverify.Verify"},
+			want:   []string{"pluginfetchverify.Verify", "pullops.verifyClosureSignatures"},
 		},
 		{
 			callee: "pluginfetchverify.VerifyHostFunctionStamp",
-			want:   []string{"main.verifyPluginHostFunctions", "pluginfetchverify.Verify"},
+			want:   []string{"pluginfetchverify.Verify", "pullops.verifyPluginHostFunctions"},
 		},
 	}
 
@@ -206,9 +207,9 @@ func TestPluginFetchVerificationChokepoint(t *testing.T) {
 // leave the gate unverified at build; this guard fails on that regression.
 func TestVerdictSocketFetchRoutesThroughVerify(t *testing.T) {
 	callers := enclosingCallers(t)
-	if !callers["main.verifyCachedVerdictSocketPlugin"]["main.cacheVerdictSocketPlugins"] {
+	if !callers["pullops.verifyCachedVerdictSocketPlugin"]["pullops.cacheVerdictSocketPlugins"] {
 		t.Errorf("cacheVerdictSocketPlugins does not call verifyCachedVerdictSocketPlugin; "+
 			"the verdict-socket fetch loop must verify every gate it caches (callers seen: %v)",
-			callers["main.verifyCachedVerdictSocketPlugin"])
+			callers["pullops.verifyCachedVerdictSocketPlugin"])
 	}
 }

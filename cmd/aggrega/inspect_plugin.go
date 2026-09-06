@@ -13,10 +13,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"go.yaml.in/yaml/v3"
 )
 
 // inspectRawPlugin prints the pre-publish authoring view of a raw .wasm artifact

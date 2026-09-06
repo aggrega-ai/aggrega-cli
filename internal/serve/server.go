@@ -50,6 +50,14 @@
 //	                               with every gate on, and reports the
 //	                               artifacts a build would emit without
 //	                               writing any of them
+//	aggrega/resolveDependencies    resolves a Release's catalog and source
+//	                               dependencies into the cache, writes the
+//	                               per-Release lockfile, and reports what it
+//	                               pinned
+//	aggrega/acquireExternalInputs  pins the external inputs a Release's
+//	                               render consumes into the content-addressed
+//	                               store and records them in the lockfile,
+//	                               reporting the pins it added
 //	aggrega/catalogIndex           lists every workspace-local entity's
 //	                               kind, name, description, labels and
 //	                               source file
@@ -177,6 +185,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
@@ -222,6 +231,15 @@ type RunConfig struct {
 	// derives it (the daemon cannot, living below the main package); an empty
 	// value stamps an empty compiler-version.
 	CompilerVersion string
+
+	// Toolchain is the versions a dependency resolution performed here records
+	// into the lockfile it writes: this binary's compiler version and the version
+	// of each core plugin it carries. It is supplied by the command layer for the
+	// same reason CompilerVersion is — the value describes the binary, which the
+	// daemon lives below and cannot read — so a lockfile written here and one
+	// written by the command line carry the identical stamp rather than two
+	// derivations of it. A nil stamp records none.
+	Toolchain *lockfile.ToolchainStamp
 
 	// BuildOnInspect, when non-nil, overrides the serve.build_on_inspect
 	// config-file key for this daemon invocation: the command layer sets it
@@ -422,6 +440,13 @@ type Server struct {
 	// daemon produces, so inspect and Tier-4 output report the same version the
 	// CLI does.
 	compilerVersion string
+	// toolchain is the stamp a dependency resolution performed here records into
+	// the lockfile it writes, injected from the command layer
+	// (RunConfig.Toolchain) for the same reason compilerVersion is. Nil for a
+	// Server built as a struct literal, which is the in-memory test harness: the
+	// stamp is advisory, so a lockfile written without one is complete and simply
+	// records nothing about which binary produced it.
+	toolchain *lockfile.ToolchainStamp
 	// workspaceMarker names the marker tier that anchored the
 	// workspace root via discovery. The zero value (no marker) when
 	// --workspace-root was supplied explicitly, since no marker was
@@ -815,6 +840,7 @@ func Run(cfg RunConfig) error {
 		workspaceRoot:     root,
 		configSource:      source.String(),
 		compilerVersion:   cfg.CompilerVersion,
+		toolchain:         cfg.Toolchain,
 		workspaceMarker:   marker,
 		wsConfig:          wsCfg,
 		resolvedWorkspace: resolved,

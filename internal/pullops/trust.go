@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package pullops
 
 import (
 	"errors"
@@ -470,18 +470,4 @@ func prunedByThisPull(mode catalog.PinReuseMode, coordinate string) bool {
 		}
 	}
 	return false
-}
-
-// trustedPluginsSummary renders the trailing field the pull's completion line
-// carries when plugin identities were recorded, and nothing at all when none
-// were.
-//
-// Nothing rather than a zero: a workspace that attaches no verdict-returning
-// plugin has no such identities to have, so reporting `=0` would answer a
-// question that was never asked of that workspace.
-func trustedPluginsSummary(recorded int) string {
-	if recorded == 0 {
-		return ""
-	}
-	return fmt.Sprintf(", trusted_plugins=%d", recorded)
 }

@@ -19,6 +19,7 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
@@ -86,10 +87,10 @@ func keyedMarkerSigner(t *testing.T) (signing.Signer, string) {
 func attachSignedMarkerToTag(t *testing.T, store *memory.Store, tag string, marker deprecation.Marker, signer signing.Signer) {
 	t.Helper()
 	ctx := context.Background()
-	err := attachSignedMarker(ctx, io.Discard, store, tag,
+	err := registryindex.AttachSignedMarker(ctx, io.Discard, store, tag,
 		"hub.aggrega.ai/component/core/api-server:"+tag, marker, signer)
 	if err != nil {
-		t.Fatalf("attachSignedMarker(%s): %v", tag, err)
+		t.Fatalf("registryindex.AttachSignedMarker(%s): %v", tag, err)
 	}
 	markers, err := oci.ListReferrers(ctx, store, tag, deprecation.ArtifactType)
 	if err != nil || len(markers) == 0 {
@@ -316,7 +317,7 @@ func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
 	updatedPath := oci.IndexBasePath(root, cacheDir, host) + ".updated"
 	compPath := oci.IndexRepoPath(root, cacheDir, host, "component/core/api-server")
 
-	loaded, err := loadHostIndex(root, cacheDir, host)
+	loaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}
@@ -482,7 +483,7 @@ func TestRegistryUpdateSingleRegistryByAlias(t *testing.T) {
 	}
 
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
-	loaded, err := loadHostIndex(root, cacheDir, host)
+	loaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}
@@ -534,7 +535,7 @@ func TestRegistryUpdateAllRegistriesPartialOnError(t *testing.T) {
 
 	// The reachable registry is still indexed and written.
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
-	loaded, rerr := loadHostIndex(root, cacheDir, goodHost)
+	loaded, rerr := registryindex.LoadHost(root, cacheDir, goodHost)
 	if rerr != nil {
 		t.Fatalf("reachable registry index not readable: %v", rerr)
 	}
@@ -625,7 +626,7 @@ func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
 	}
 
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
-	loaded, err := loadHostIndex(root, cacheDir, host)
+	loaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}
@@ -815,7 +816,7 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (conditional): %v", err)
 	}
-	loaded, err := loadHostIndex(root, cacheDir, host)
+	loaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}
@@ -827,7 +828,7 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen, Upgrade: true}); err != nil {
 		t.Fatalf("registryUpdateRun (upgrade): %v", err)
 	}
-	loaded, err = loadHostIndex(root, cacheDir, host)
+	loaded, err = registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex (after upgrade): %v", err)
 	}
@@ -861,7 +862,7 @@ func TestRegistryUpdateListingDigestRevalidates(t *testing.T) {
 	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (build): %v", err)
 	}
-	loaded, err := loadHostIndex(root, cacheDir, host)
+	loaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}
@@ -885,7 +886,7 @@ func TestRegistryUpdateListingDigestRevalidates(t *testing.T) {
 	}
 
 	// The record is unchanged and still carries the validator.
-	reloaded, err := loadHostIndex(root, cacheDir, host)
+	reloaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex (reload): %v", err)
 	}

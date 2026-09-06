@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
@@ -175,7 +176,7 @@ func TestValidateReleaseHonoursADisagreeingRecordedDigest(t *testing.T) {
 	// search stack, so the pinned entity-fronted cascade misses and resolution falls
 	// through to the cache-not-pin read — which is the tier a recorded digest
 	// governs.
-	gate := seedCachedVerdictPlugin(t, root, filepath.Join(root, "unsearched-catalog"), "governance", "opa-gate", "1.2.0")
+	gate := verdicttest.SeedCached(t, root, filepath.Join(root, "unsearched-catalog"), "governance", "opa-gate", "1.2.0")
 
 	cfg := "plugins:\n  governance:\n    - uri: " + gate.URI + "\n      role: " + string(plugintype.RoleIRVerdict) + "\n"
 	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(cfg), 0o644); err != nil {
@@ -216,7 +217,7 @@ func TestValidateReleaseWithTheRecordedDigestResolvesTheGate(t *testing.T) {
 	releasePath := filepath.Join(root, "release.yaml")
 	writeFixture(t, releasePath, cliDefaultRelease)
 
-	gate := seedCachedVerdictPlugin(t, root, filepath.Join(root, "unsearched-catalog"), "governance", "opa-gate", "1.2.0")
+	gate := verdicttest.SeedCached(t, root, filepath.Join(root, "unsearched-catalog"), "governance", "opa-gate", "1.2.0")
 
 	cfg := "plugins:\n  governance:\n    - uri: " + gate.URI + "\n      role: " + string(plugintype.RoleIRVerdict) + "\n"
 	if err := os.WriteFile(filepath.Join(root, workspaceconfig.ConfigFilename), []byte(cfg), 0o644); err != nil {

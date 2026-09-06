@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -112,7 +113,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 
 	// ARM 1 (the fix): the closure row carries the content digest as Digest and
 	// the manifest digest as ManifestDigest. The production verify entrypoint
-	// (verifyClosureSignatures → remoteTargetForWith(&http.Client{})) discovers the real referrer and
+	// (verifyClosureSignatures → pluginfetchverify.RemoteTargetFor(&http.Client{})) discovers the real referrer and
 	// verifies the entity signature against ManifestDigest — it PASSES.
 	cl := closure.Closure{
 		Entities: []closure.ResolvedRef{
@@ -122,7 +123,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 	lf := &lockfile.Lockfile{
 		Entities: []lockfile.Entity{{URI: entityURI, Digest: contentDg, ManifestDigest: manifestDigest}},
 	}
-	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetForWith(&http.Client{})); verr != nil {
+	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginfetchverify.RemoteTargetFor(&http.Client{})); verr != nil {
 		t.Fatalf("verify against the recorded manifest digest should PASS, got: %v", verr)
 	}
 	if lf.Entities[0].Signature == nil {

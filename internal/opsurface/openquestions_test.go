@@ -184,7 +184,20 @@ import (
 // match is decided in one place. A second label match or a second socket walk would
 // agree on the ordinary case and part company on the awkward one, and the feature
 // would then be a source of wrong suggestions rather than a guard against them.
-const boundCeiling = 18
+// It came down by TWO once more when the daemon began resolving a Release's
+// dependencies and pinning the external inputs its render consumes. Both rows
+// asked the same question in different words — whether a session owes an
+// operation that goes to the network and writes what it fetched — and both are
+// answered by the same rule: what admits such an operation is that a caller
+// invoked it, not which surface the caller reached for. Settling one and leaving
+// the other would have split one answer across two rows that only ever had one.
+//
+// Nothing about the daemon's inspection posture moved with them. What that
+// posture protects is a workspace that changes, or a network that is reached,
+// while somebody is validating or typing; both of these run only when a request
+// asks for them by name, so the protection is untouched and the surface's other
+// methods still answer from the workspace and what is already cached.
+const boundCeiling = 16
 
 // TestTheBoundOnlyShrinks is the ratchet. See boundCeiling for why both
 // directions refuse.

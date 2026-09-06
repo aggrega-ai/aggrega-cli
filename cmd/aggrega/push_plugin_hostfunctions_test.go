@@ -13,10 +13,11 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"oras.land/oras-go/v2/content/memory"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"oras.land/oras-go/v2/content/memory"
 )
 
 // stampCommentedEntity is a hand-authored Plugin entity carrying comments, blank

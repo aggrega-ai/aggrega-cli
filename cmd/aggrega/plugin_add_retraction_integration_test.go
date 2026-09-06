@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
@@ -165,7 +166,7 @@ func newPluginRetractionFixture(t *testing.T, guests map[string]string, markers 
 		if uerr := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &updateOut}); uerr != nil {
 			t.Fatalf("registryUpdateRun: %v\n%s", uerr, updateOut.String())
 		}
-	} else if _, lerr := loadHostIndex(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host); !errors.Is(lerr, errIndexNotBuilt) {
+	} else if _, lerr := registryindex.LoadHost(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host); !registryindex.IsNotBuilt(lerr) {
 		// The precondition IS the fixture: an arm that means to exercise the live path
 		// proves nothing if a snapshot answered first. Asserting the absence here means a
 		// later change that starts building an index eagerly fails loudly rather than

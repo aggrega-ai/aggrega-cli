@@ -7,16 +7,17 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // sampleRecords returns a fixed record set in URI-sorted order — the order the
 // index writer produces — so the determinism assertion can compare the filtered
 // output against a stable input order.
-func sampleRecords() []IndexRecord {
+func sampleRecords() []registryindex.Record {
 	datastore := types.NewOrderedMap[string]()
 	datastore.Set(componentCategoryLabel, "datastore")
-	return []IndexRecord{
+	return []registryindex.Record{
 		{
 			URI:         "oci://h/component/postgres",
 			Name:        "postgres",
@@ -52,7 +53,7 @@ func sampleRecords() []IndexRecord {
 
 // names projects the record slice to its names in order, so assertions read as
 // the expected match set without comparing whole structs.
-func names(recs []IndexRecord) []string {
+func names(recs []registryindex.Record) []string {
 	if len(recs) == 0 {
 		return nil
 	}
@@ -158,7 +159,7 @@ func TestFilterRecords(t *testing.T) {
 // user typing --kind plugin or --kind featurerecipe matches records the publish
 // path stamped as Plugin and FeatureRecipe.
 func TestFilterRecordsKindCaseFold(t *testing.T) {
-	recs := []IndexRecord{
+	recs := []registryindex.Record{
 		{URI: "oci://h/plugin/helm", Name: "helm", Kind: "Plugin"},
 		{URI: "oci://h/featurerecipe/tls", Name: "tls", Kind: "FeatureRecipe"},
 		{URI: "oci://h/component/api", Name: "api", Kind: "Component"},

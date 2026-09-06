@@ -27,6 +27,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -480,7 +481,7 @@ func TestRegoCachedGate_TheRecordedDigestGovernsWhichArtifactRuns(t *testing.T) 
 			// The entity goes into a directory that is NOT on the catalog search
 			// stack, so the entity-fronted cascade misses it and resolution reaches
 			// the cache.
-			gate := seedCachedVerdictPluginArtifact(t, root, filepath.Join(root, "unsearched-catalog"),
+			gate := verdicttest.SeedCachedArtifact(t, root, filepath.Join(root, "unsearched-catalog"),
 				"governance", "house-policy", "1.0.0", housePolicyEntity, guest)
 			if gate.WasmDigest == plantedDigest {
 				t.Fatalf("the seeded artifact hashes to the planted digest, so the arms would be indistinguishable")

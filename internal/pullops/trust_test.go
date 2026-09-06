@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package pullops
 
 import (
 	"bytes"
@@ -15,132 +15,14 @@ import (
 	"strings"
 	"testing"
 
-	"oras.land/oras-go/v2/content/memory"
-
+	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
-
-// headerOnlyWasm is a valid, import-free Wasm 1.0 module: the four magic bytes
-// and the version word, and nothing else. It parses as a module with no imports,
-// so a plugin entity carrying no host-function stamp cross-checks against it
-// cleanly — which is what lets these tests exercise the identity plumbing without
-// compiling a real guest.
-var headerOnlyWasm = []byte{0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00}
-
-// verdictPluginEntityYAML is a schema-valid Plugin entity for a verdict-socket
-// plugin at the given socket, bare name and version.
-func verdictPluginEntityYAML(socket, name, version string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\n" +
-		"kind: Plugin\n" +
-		"metadata:\n" +
-		"  name: " + name + "\n" +
-		"  version: \"" + version + "\"\n" +
-		"  pluginType: " + socket + "\n" +
-		"spec:\n" +
-		"  abiVersion: v1alpha1\n" +
-		"  exports:\n" +
-		"    - name: verdict_ir\n"
-}
-
-// cachedVerdictPlugin describes a verdict-socket plugin seeded into a workspace:
-// the versioned entity URI an attachment names, the identity coordinate a record
-// is addressed by, the content digest of the plugin's .wasm layer, and the OCI
-// manifest digest — which is a DIFFERENT digest, and is the one a record must not
-// carry.
-type cachedVerdictPlugin struct {
-	URI            string
-	Coordinate     string
-	WasmDigest     string
-	ManifestDigest string
-	ManifestBytes  []byte
-	EntityYAML     string
-}
-
-// seedCachedVerdictPlugin lays a verdict-socket plugin into a workspace the way a
-// completed pull leaves it, with the minimal entity and the header-only .wasm that
-// let an identity-plumbing test run without compiling a guest.
-//
-// It is the default-fixture face of seedCachedVerdictPluginArtifact; a caller
-// needing a loadable guest, or an entity declaring more than one export, supplies
-// both through that function instead of assembling a second seeding path.
-func seedCachedVerdictPlugin(t *testing.T, root, catalogDir, socket, name, version string) cachedVerdictPlugin {
-	t.Helper()
-	return seedCachedVerdictPluginArtifact(t, root, catalogDir, socket, name, version,
-		verdictPluginEntityYAML(socket, name, version), headerOnlyWasm)
-}
-
-// seedCachedVerdictPluginArtifact lays a verdict-socket plugin into a workspace
-// the way a completed pull leaves it: the Plugin entity in a catalog directory,
-// and in the content cache the entity's config blob, the OCI manifest committing
-// to it, and the .wasm blob addressed by its own content digest.
-//
-// entityYAML and wasm are the artifact's two halves, supplied by the caller so
-// one seeding path serves both an identity-plumbing fixture and a real guest. The
-// entity must describe the .wasm handed alongside it — a resolution cross-checks
-// the two — so the pair travels together rather than as two independent arguments
-// a caller could mismatch silently.
-//
-// The manifest is built by the production packer rather than assembled here, so
-// the .wasm layer digest and the manifest digest are the real pair — which is what
-// makes a test that confuses the two able to fail.
-//
-// catalogDir receives the entity so a caller may put it on the catalog search
-// stack or deliberately leave it off. Left off, the entity-fronted cascade misses
-// and resolution falls through to the cache-not-pin read, which is the tier a
-// recorded digest governs; there is no other way to reach that tier from a
-// workspace with no registry.
-func seedCachedVerdictPluginArtifact(t *testing.T, root, catalogDir, socket, name, version, entityYAML string, wasm []byte) cachedVerdictPlugin {
-	t.Helper()
-
-	coordinate := types.PluginCoordinate(socket, name)
-	uri := coordinate + ":" + version
-
-	store := memory.New()
-	if _, err := oci.PushPluginManifest(context.Background(), store, version, []byte(entityYAML), wasm, nil); err != nil {
-		t.Fatalf("pack plugin manifest for %s: %v", uri, err)
-	}
-	pulled, err := oci.FetchPluginEntity(context.Background(), store, version)
-	if err != nil {
-		t.Fatalf("read back packed plugin manifest for %s: %v", uri, err)
-	}
-
-	entityPath := filepath.Join(catalogDir, "plugin", socket, name, version, "plugin.yaml")
-	if err := os.MkdirAll(filepath.Dir(entityPath), 0o755); err != nil {
-		t.Fatalf("mkdir catalog entity dir: %v", err)
-	}
-	if err := os.WriteFile(entityPath, []byte(entityYAML), 0o644); err != nil {
-		t.Fatalf("write catalog entity %s: %v", entityPath, err)
-	}
-
-	cacheDir := workspaceconfig.Config{}.ResolvedArtifactCacheDir()
-	wasmDigest := digest.ContentDigest(wasm)
-	if err := oci.WriteCached(root, cacheDir, uri, version, []byte(entityYAML)); err != nil {
-		t.Fatalf("seed cached entity blob for %s: %v", uri, err)
-	}
-	if err := oci.WriteCachedManifest(root, cacheDir, uri, version, pulled.ManifestBytes); err != nil {
-		t.Fatalf("seed cached manifest for %s: %v", uri, err)
-	}
-	if err := oci.WriteCached(root, cacheDir, coordinate, wasmDigest, wasm); err != nil {
-		t.Fatalf("seed cached .wasm for %s: %v", coordinate, err)
-	}
-
-	return cachedVerdictPlugin{
-		URI:            uri,
-		Coordinate:     coordinate,
-		WasmDigest:     wasmDigest,
-		ManifestDigest: pulled.Digest,
-		ManifestBytes:  pulled.ManifestBytes,
-		EntityYAML:     entityYAML,
-	}
-}
 
 // trustRecordAt loads the trust record beside releasePath, failing the test when
 // it is absent or unreadable.
@@ -183,44 +65,6 @@ func attachingVerdictPlugins(uris ...string) []workspaceconfig.VerdictAttachment
 	return out
 }
 
-// TestVerdictTrustNoVerdictConfigurationWritesNoFile proves the negative
-// criterion: a pull over a workspace that attaches no governance plugin and no
-// linter plugin produces NO trust record — not an empty one — and says nothing
-// about it on either sink.
-//
-// An empty file would be the wrong outcome and the easy one to ship by accident:
-// it reads as "these attachments were checked and there were none", which is a
-// claim, where absence is the honest first-run state.
-func TestVerdictTrustNoVerdictConfigurationWritesNoFile(t *testing.T) {
-	root := t.TempDir()
-	releasePath := authoringFixture(t, root)
-
-	var stdout, stderr bytes.Buffer
-	if err := pullRun(pullConfig{
-		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
-		ReleasePath: releasePath,
-		CatalogDirs: []string{filepath.Join(root, "catalog")},
-		DiagOut:     &stderr,
-		Out:         &stdout,
-	}); err != nil {
-		t.Fatalf("pullRun: %v (stderr=%q)", err, stderr.String())
-	}
-
-	recordPath := pluginstrust.PathFor(releasePath)
-	if _, err := os.Stat(recordPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("a pull with no verdict-returning attachment must write no record at %s; stat err = %v", recordPath, err)
-	}
-	if strings.Contains(stderr.String(), pluginstrust.FileName) {
-		t.Errorf("nothing was recorded, so nothing should be said about the record; stderr = %q", stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "Pull complete") {
-		t.Fatalf("expected the pull summary on stdout; got %q", stdout.String())
-	}
-	if strings.Contains(stdout.String(), "trusted_plugins") {
-		t.Errorf("the completion line must carry no count when nothing was recorded; got %q", stdout.String())
-	}
-}
-
 // TestVerdictPluginIdentityIsTheWasmLayerDigest is the load-bearing identity
 // proof, and it is written to DISCRIMINATE: the identity the verdict-plugin verify
 // reports carries the .wasm LAYER content digest read from the cached manifest,
@@ -235,7 +79,7 @@ func TestVerdictTrustNoVerdictConfigurationWritesNoFile(t *testing.T) {
 func TestVerdictPluginIdentityIsTheWasmLayerDigest(t *testing.T) {
 	root := t.TempDir()
 	catalogDir := filepath.Join(root, "catalog")
-	seeded := seedCachedVerdictPlugin(t, root, catalogDir, "governance", "trust-probe", "2.4.1")
+	seeded := verdicttest.SeedCached(t, root, catalogDir, "governance", "trust-probe", "2.4.1")
 
 	cacheDir := workspaceconfig.Config{}.ResolvedArtifactCacheDir()
 	lazy := catalog.NewLazyLookup(root, cacheDir, nil, nil)
@@ -275,7 +119,7 @@ func TestVerdictPluginIdentityIsTheWasmLayerDigest(t *testing.T) {
 func TestVerdictTrustRecordedDigestSatisfiesResolution(t *testing.T) {
 	root := t.TempDir()
 	catalogDir := filepath.Join(root, "catalog")
-	seeded := seedCachedVerdictPlugin(t, root, catalogDir, "governance", "trust-probe", "2.4.1")
+	seeded := verdicttest.SeedCached(t, root, catalogDir, "governance", "trust-probe", "2.4.1")
 
 	cacheDir := workspaceconfig.Config{}.ResolvedArtifactCacheDir()
 	sources := resolver.VerdictPluginTierSources{WorkspaceRoot: root, CacheDir: cacheDir}
@@ -315,7 +159,7 @@ func TestVerdictTrustRecordedDigestSatisfiesResolution(t *testing.T) {
 // while a coordinate the binary does not carry is.
 func TestVerdictTrustDeclinesWhatTheBinaryCarries(t *testing.T) {
 	const carried = "linter/carried-probe"
-	restore := embedded.SeedForTest(carried, headerOnlyWasm)
+	restore := embedded.SeedForTest(carried, verdicttest.HeaderOnlyWasm)
 	t.Cleanup(restore)
 
 	root := t.TempDir()
@@ -346,7 +190,7 @@ func TestVerdictTrustDeclinesWhatTheBinaryCarries(t *testing.T) {
 // file, rather than a file holding an empty list.
 func TestVerdictTrustDeclinesEverythingCarriedWritesNoFile(t *testing.T) {
 	const carried = "linter/carried-probe"
-	restore := embedded.SeedForTest(carried, headerOnlyWasm)
+	restore := embedded.SeedForTest(carried, verdicttest.HeaderOnlyWasm)
 	t.Cleanup(restore)
 
 	root := t.TempDir()
@@ -587,18 +431,6 @@ func TestVerdictTrustRefusesAnUnreadableRecord(t *testing.T) {
 	}
 }
 
-// TestTrustedPluginsSummary pins the completion-line field: absent at zero,
-// present with the count otherwise. Absent rather than `=0` because a workspace
-// attaching no verdict-returning plugin was never asked the question.
-func TestTrustedPluginsSummary(t *testing.T) {
-	if got := trustedPluginsSummary(0); got != "" {
-		t.Errorf("trustedPluginsSummary(0) = %q; want the empty string", got)
-	}
-	if got := trustedPluginsSummary(3); got != ", trusted_plugins=3" {
-		t.Errorf("trustedPluginsSummary(3) = %q; want %q", got, ", trusted_plugins=3")
-	}
-}
-
 // TestVerdictTrustRecordHasOneWriter is the structural half of the auto-pull
 // criterion: the record is written from exactly one place, and that place is the
 // pull. A build reaches it only by running the pull step; the build's own
@@ -607,13 +439,13 @@ func TestTrustedPluginsSummary(t *testing.T) {
 func TestVerdictTrustRecordHasOneWriter(t *testing.T) {
 	callers := enclosingCallers(t)
 
-	got := make([]string, 0, len(callers["main.recordVerdictPluginTrust"]))
-	for name := range callers["main.recordVerdictPluginTrust"] {
+	got := make([]string, 0, len(callers["pullops.recordVerdictPluginTrust"]))
+	for name := range callers["pullops.recordVerdictPluginTrust"] {
 		got = append(got, name)
 	}
 	sort.Strings(got)
-	if strings.Join(got, ",") != "main.pullRun" {
-		t.Errorf("callers of recordVerdictPluginTrust = %v; want exactly [main.pullRun]\n"+
+	if strings.Join(got, ",") != "pullops.Run" {
+		t.Errorf("callers of recordVerdictPluginTrust = %v; want exactly [pullops.Run]\n"+
 			"the record is written by the pull and by nothing else; a second writer would let a "+
 			"resolution that acquired nothing overwrite identities it never resolved", got)
 	}
@@ -623,8 +455,8 @@ func TestVerdictTrustRecordHasOneWriter(t *testing.T) {
 		writers = append(writers, name)
 	}
 	sort.Strings(writers)
-	if strings.Join(writers, ",") != "main.recordVerdictPluginTrust" {
-		t.Errorf("callers of pluginstrust.Write = %v; want exactly [main.recordVerdictPluginTrust]", writers)
+	if strings.Join(writers, ",") != "pullops.recordVerdictPluginTrust" {
+		t.Errorf("callers of pluginstrust.Write = %v; want exactly [pullops.recordVerdictPluginTrust]", writers)
 	}
 
 	// The build's auto-pull step reaches the record by running the pull path
@@ -800,7 +632,7 @@ func TestVerdictTrustRefusesAChangedIdentityUnlessTheRunAsksForIt(t *testing.T) 
 // different artifact — and no upgrade could ever replace it.
 func TestVerdictTrustHoldDeclinesWhatTheBinaryCarries(t *testing.T) {
 	const carried = "linter/carried-probe"
-	restore := embedded.SeedForTest(carried, headerOnlyWasm)
+	restore := embedded.SeedForTest(carried, verdicttest.HeaderOnlyWasm)
 	t.Cleanup(restore)
 
 	root := t.TempDir()
@@ -948,26 +780,26 @@ func TestVerdictUpgradeTargetsCoverAttachmentsAndTheRecord(t *testing.T) {
 func TestVerdictTrustRecordHasOneComparisonSite(t *testing.T) {
 	callers := enclosingCallers(t)
 
-	got := make([]string, 0, len(callers["main.holdVerdictPluginsToTheirRecord"]))
-	for name := range callers["main.holdVerdictPluginsToTheirRecord"] {
+	got := make([]string, 0, len(callers["pullops.holdVerdictPluginsToTheirRecord"]))
+	for name := range callers["pullops.holdVerdictPluginsToTheirRecord"] {
 		got = append(got, name)
 	}
 	sort.Strings(got)
-	if strings.Join(got, ",") != "main.pullRun" {
-		t.Errorf("callers of holdVerdictPluginsToTheirRecord = %v; want exactly [main.pullRun]\n"+
+	if strings.Join(got, ",") != "pullops.Run" {
+		t.Errorf("callers of holdVerdictPluginsToTheirRecord = %v; want exactly [pullops.Run]\n"+
 			"the resolved identities are held to the record by the pull and by nothing else; a second site "+
 			"could adopt what the first refused, and which one ran would depend on the path taken", got)
 	}
 
 	// The reduction both sides read: neither the comparison nor the write may
 	// filter the resolutions for itself, or the two could consider different sets.
-	readers := make([]string, 0, len(callers["main.recordableVerdictResolutions"]))
-	for name := range callers["main.recordableVerdictResolutions"] {
+	readers := make([]string, 0, len(callers["pullops.recordableVerdictResolutions"]))
+	for name := range callers["pullops.recordableVerdictResolutions"] {
 		readers = append(readers, name)
 	}
 	sort.Strings(readers)
-	if strings.Join(readers, ",") != "main.holdVerdictPluginsToTheirRecord,main.recordVerdictPluginTrust" {
-		t.Errorf("callers of recordableVerdictResolutions = %v; want exactly [main.holdVerdictPluginsToTheirRecord main.recordVerdictPluginTrust]", readers)
+	if strings.Join(readers, ",") != "pullops.holdVerdictPluginsToTheirRecord,pullops.recordVerdictPluginTrust" {
+		t.Errorf("callers of recordableVerdictResolutions = %v; want exactly [pullops.holdVerdictPluginsToTheirRecord pullops.recordVerdictPluginTrust]", readers)
 	}
 }
 
@@ -1067,7 +899,7 @@ func TestVerdictTrustPrunesOnlyOnAnExplicitUpgrade(t *testing.T) {
 func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testing.T) {
 	t.Run("a_coordinate_the_binary_carries_is_still_attached", func(t *testing.T) {
 		const carried = "linter/carried-probe"
-		restore := embedded.SeedForTest(carried, headerOnlyWasm)
+		restore := embedded.SeedForTest(carried, verdicttest.HeaderOnlyWasm)
 		t.Cleanup(restore)
 
 		root := t.TempDir()
@@ -1092,7 +924,7 @@ func TestVerdictTrustPruneSubjectIsTheAttachmentSetNotTheRecordableSet(t *testin
 
 	t.Run("a_binary_carried_attachment_does_not_make_the_answer_incomplete", func(t *testing.T) {
 		const carried = "linter/carried-probe"
-		restore := embedded.SeedForTest(carried, headerOnlyWasm)
+		restore := embedded.SeedForTest(carried, verdicttest.HeaderOnlyWasm)
 		t.Cleanup(restore)
 
 		root := t.TempDir()
@@ -1252,64 +1084,5 @@ func TestVerdictAttachmentCoordinatesReportsCompleteness(t *testing.T) {
 				t.Errorf("complete = %t; want %t", complete, tc.wantComplete)
 			}
 		})
-	}
-}
-
-// TestPullRefusesADamagedRecordEvenWithNothingAttached locks the reading a pull
-// now takes of a record that exists and does not satisfy its schema: it halts,
-// whether or not the workspace attaches anything.
-//
-// It is the same fail-closed reading every other consumer of the file takes, and
-// the asymmetry it removes is the one that mattered: a build and a release-scoped
-// lint already halted on a damaged record unconditionally, so a pull that passed
-// over it left the two commands disagreeing about whether the committed file was
-// usable.
-//
-// The halt is not attributable to ONE read, and that is worth stating rather than
-// guessing at: a pull now reads the record at two points — once to decide which
-// upgrade targets it accepts, and once at the write — and EITHER one is sufficient
-// on its own. So a change that made one of them lenient would leave this test
-// green, and only making both lenient loses the halt.
-//
-// The A/B is the second half: the identical workspace with the file removed pulls
-// clean, so the halt is attributable to the record's bytes rather than to the
-// fixture.
-func TestPullRefusesADamagedRecordEvenWithNothingAttached(t *testing.T) {
-	root := t.TempDir()
-	releasePath := authoringFixture(t, root)
-	recordPath := pluginstrust.PathFor(releasePath)
-	// Schema-invalid: an entry missing the required resolved_version and digest.
-	const damaged = "version: 1\nplugins:\n  - plugin: linter/x\n"
-	if err := os.WriteFile(recordPath, []byte(damaged), 0o644); err != nil {
-		t.Fatalf("write damaged record: %v", err)
-	}
-
-	pull := func() error {
-		var stdout, stderr bytes.Buffer
-		return pullRun(pullConfig{
-			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
-			ReleasePath: releasePath,
-			CatalogDirs: []string{filepath.Join(root, "catalog")},
-			DiagOut:     &stderr,
-			Out:         &stdout,
-		})
-	}
-
-	if err := pull(); err == nil {
-		t.Fatal("a record that does not satisfy its schema must halt the pull rather than be passed over")
-	}
-	onDisk, rerr := os.ReadFile(recordPath)
-	if rerr != nil {
-		t.Fatalf("read the record back: %v", rerr)
-	}
-	if string(onDisk) != damaged {
-		t.Errorf("a refused pull must leave the record exactly as it was; got %q", string(onDisk))
-	}
-
-	if err := os.Remove(recordPath); err != nil {
-		t.Fatalf("remove the damaged record: %v", err)
-	}
-	if err := pull(); err != nil {
-		t.Fatalf("with no record the identical workspace must pull clean, or the halt above proves nothing; got %v", err)
 	}
 }

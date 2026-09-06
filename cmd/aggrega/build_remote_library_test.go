@@ -12,10 +12,11 @@ import (
 	"strings"
 	"testing"
 
+	"oras.land/oras-go/v2/content/memory"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"oras.land/oras-go/v2/content/memory"
 )
 
 // fakeRegistryTrust is the trust stance a fixture must declare when its registry

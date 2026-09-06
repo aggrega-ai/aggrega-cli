@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 )
 
@@ -83,7 +84,7 @@ func TestSearchScreensOnBothConditionsTheSelectionPathUses(t *testing.T) {
 			if err != nil {
 				t.Fatalf("searchRun: %v", err)
 			}
-			uri := indexURIForReference(retractionScreenReference)
+			uri := registryindex.URIForReference(retractionScreenReference)
 			if got := searchRowVersion(t, stdout, uri); got != tc.wantVersion {
 				t.Errorf("reported version = %q; want %q\n%s", got, tc.wantVersion, stdout)
 			}
@@ -112,7 +113,7 @@ func TestSearchReportsARepositoryWhoseEveryVersionIsWithdrawn(t *testing.T) {
 		"1.0.0": {Severity: deprecation.SeverityRetracted, Reason: "withdrawn, unsupported", IssuedOn: "2026-05-01T00:00:00Z"},
 		"2.0.0": {Severity: deprecation.SeverityRetracted, Reason: "withdrawn, superseded", IssuedOn: "2026-05-02T00:00:00Z"},
 	}, true)
-	uri := indexURIForReference(retractionScreenReference)
+	uri := registryindex.URIForReference(retractionScreenReference)
 
 	t.Run("the_table_reports_it_with_no_version_to_take", func(t *testing.T) {
 		stdout, _, err := runSearch(t, rw, searchOptions{Output: "table"})
@@ -167,7 +168,7 @@ func TestSearchReportsARepositoryWhoseEveryVersionIsWithdrawn(t *testing.T) {
 func TestSearchIncludeRetractedReportsTheWithdrawnVersion(t *testing.T) {
 	// Not parallel: buildScreenIndex mutates the process-global index-source seam.
 	rw := buildScreenIndex(t, map[string]deprecation.Severity{"2.0.0": deprecation.SeverityRetracted}, true)
-	uri := indexURIForReference(retractionScreenReference)
+	uri := registryindex.URIForReference(retractionScreenReference)
 
 	stdout, _, err := runSearch(t, rw, searchOptions{Output: "table", IncludeRetracted: true})
 	if err != nil {

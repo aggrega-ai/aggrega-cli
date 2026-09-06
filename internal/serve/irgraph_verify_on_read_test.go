@@ -14,10 +14,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"oras.land/oras-go/v2/content/memory"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"oras.land/oras-go/v2/content/memory"
 )
 
 // componentManifestFor round-trips body through an in-memory CAS to obtain the

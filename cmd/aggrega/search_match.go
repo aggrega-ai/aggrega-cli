@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/selector"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -47,9 +48,9 @@ type searchFilter struct {
 //
 // The input order is preserved and no map is iterated in the result path, so the
 // output is byte-stable across runs of the same input.
-func filterRecords(records []IndexRecord, f searchFilter) ([]IndexRecord, error) {
+func filterRecords(records []registryindex.Record, f searchFilter) ([]registryindex.Record, error) {
 	query := strings.ToLower(f.Query)
-	var out []IndexRecord
+	var out []registryindex.Record
 	for _, rec := range records {
 		if query != "" {
 			name := strings.ToLower(rec.Name)

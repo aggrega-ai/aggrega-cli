@@ -6,9 +6,10 @@ package main
 import (
 	"fmt"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"go.yaml.in/yaml/v3"
 )
 
 // renderFeatureFile renders a Feature authored as a standalone file. The schema

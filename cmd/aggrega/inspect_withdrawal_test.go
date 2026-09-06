@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -148,9 +149,9 @@ func writeWithdrawalWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 // exactly like the defect under test.
 func recordWithdrawals(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, severity deprecation.Severity, signed bool) {
 	t.Helper()
-	var records []IndexRecord
+	var records []registryindex.Record
 	for _, arm := range withdrawalCorpus() {
-		entry := VersionDeprecation{
+		entry := registryindex.VersionDeprecation{
 			Version: "1.0.0",
 			Marker: deprecation.Marker{
 				Severity:    severity,
@@ -162,13 +163,13 @@ func recordWithdrawals(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, seve
 		if signed {
 			entry.Signer = verifiedIndexSigner()
 		}
-		records = append(records, IndexRecord{
+		records = append(records, registryindex.Record{
 			URI:          "oci://" + withdrawalFixtureHost + "/" + arm.repoPath,
 			Name:         arm.repoPath,
 			Version:      "1.0.0",
 			Versions:     []string{"1.0.0"},
 			Kind:         arm.kind,
-			Deprecations: []VersionDeprecation{entry},
+			Deprecations: []registryindex.VersionDeprecation{entry},
 		})
 	}
 	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), withdrawalFixtureHost,

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
@@ -194,7 +195,7 @@ func newRetractionFixtureFor(t *testing.T, subject retractionSubject, markers ma
 func (f retractionFixture) screenedPuller(t *testing.T, out *bytes.Buffer) catalog.OCIPuller {
 	t.Helper()
 	wsCfg := f.rw.Config()
-	screen := newRetractionScreen(f.rw, wsCfg.DefaultRegistry, out)
+	screen := registryindex.NewScreen(f.rw, wsCfg.DefaultRegistry, out)
 	puller := catalog.NewOCIPullerWithRetractionScreen(wsCfg, screen)
 	if puller == nil {
 		t.Fatal("puller is nil; the fixture workspace must not be offline")
@@ -522,7 +523,7 @@ func TestIntegration_RetractionExcludesAtAggregateSelection(t *testing.T) {
 // signed claim and never on an unauthenticated one.
 func TestIntegration_RetractionIndexRecordsVerifiedVerdict(t *testing.T) {
 	f := newRetractionFixture(t, map[string]string{"2.0.0": "retracted"})
-	loaded, err := loadHostIndex(f.rw.Root(), f.rw.Config().ResolvedArtifactCacheDir(), f.host)
+	loaded, err := registryindex.LoadHost(f.rw.Root(), f.rw.Config().ResolvedArtifactCacheDir(), f.host)
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}

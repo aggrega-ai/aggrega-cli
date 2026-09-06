@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/buildops"
+	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -47,13 +48,13 @@ type publishedVerdictPlugin struct {
 func publishVerdictPlugin(t *testing.T, host, socket, name, version string) publishedVerdictPlugin {
 	t.Helper()
 
-	entityYAML := verdictPluginEntityYAML(socket, name, version)
+	entityYAML := verdicttest.PluginEntityYAML(socket, name, version)
 	reference := host + "/" + catalog.OCILocation("Plugin", socket, name)
 	repo, err := oci.NewRemoteRepository(reference, http.DefaultClient)
 	if err != nil {
 		t.Fatalf("open registry repository %s: %v", reference, err)
 	}
-	if _, err := oci.PushPluginManifest(context.Background(), repo, version, []byte(entityYAML), headerOnlyWasm, nil); err != nil {
+	if _, err := oci.PushPluginManifest(context.Background(), repo, version, []byte(entityYAML), verdicttest.HeaderOnlyWasm, nil); err != nil {
 		t.Fatalf("publish verdict plugin %s: %v", reference, err)
 	}
 
@@ -61,7 +62,7 @@ func publishVerdictPlugin(t *testing.T, host, socket, name, version string) publ
 	return publishedVerdictPlugin{
 		URI:        coordinate + ":" + version,
 		Coordinate: coordinate,
-		WasmDigest: digest.ContentDigest(headerOnlyWasm),
+		WasmDigest: digest.ContentDigest(verdicttest.HeaderOnlyWasm),
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -18,8 +17,8 @@ import (
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
-	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -86,66 +85,6 @@ var registryIndexTarget = func(cfg workspaceconfig.Config, host string) (registr
 	return remoteIndexSource{reg: reg, host: host, httpClient: httpClient}, nil
 }
 
-// IndexRecord is one entity's row in a local registry index: its OCI URI, the
-// latest published version, the full list of published versions, and the
-// searchable catalog facets read back from the latest version's manifest
-// annotations. Labels is the entity's whole authored label map in author order,
-// so a search matches records with the same label selector the catalog uses; it
-// is absent when the published manifest carries no label map. PluginType and
-// Capabilities carry a plugin's socket facets and are absent on non-plugin
-// entities.
-//
-// Versions is every published tag that conforms to strict SemVer, in ascending
-// order (pre-release tags included). Version stays the selected headline
-// (highest released). ManifestDigest is the resolved manifest digest of the
-// headline version, recorded as a revalidation validator: a later refresh
-// re-resolves the version and reuses the stored record when the digest is
-// unchanged. ListingDigest is the registry's strong validator for the
-// repository's tag listing, recorded so a later refresh can revalidate the tag
-// set with a conditional request and skip the re-list when the registry answers
-// that the listing is unchanged; it is empty when the registry serves no
-// validator or the listing spanned more than one page. Deprecations records, per
-// deprecated version, the authoritative deprecation marker discovered from that
-// version's referrers together with that marker's verified signature, so a
-// consumer reads a signed claim from the local index rather than probing the
-// registry live; a version whose marker does not verify contributes no entry. All
-// are omitted when empty.
-type IndexRecord struct {
-	URI            string                    `json:"uri"`
-	Name           string                    `json:"name"`
-	Version        string                    `json:"version"`
-	Versions       []string                  `json:"versions,omitempty"`
-	Kind           string                    `json:"kind,omitempty"`
-	Description    string                    `json:"description,omitempty"`
-	Category       string                    `json:"category,omitempty"`
-	Labels         *types.OrderedMap[string] `json:"labels,omitempty"`
-	PluginType     string                    `json:"pluginType,omitempty"`
-	Capabilities   []string                  `json:"capabilities,omitempty"`
-	ManifestDigest string                    `json:"manifestDigest,omitempty"`
-	ListingDigest  string                    `json:"listingDigest,omitempty"`
-	Deprecations   []VersionDeprecation      `json:"deprecations,omitempty"`
-}
-
-// VersionDeprecation pairs a strict-SemVer version with the authoritative
-// deprecation marker discovered on that version's referrers, plus the verified
-// signature of that marker. The whole marker is stored (all its fields), so a
-// display reconstructs the same view off the local index that a live referrer
-// probe produced. The marshalled marker carries a fixed field order, so a record
-// is byte-identical for identical registry state.
-//
-// Signer is what makes the record a trust decision rather than a hint: a marker
-// is recorded only when its OWN signature verifies against the honored signer set,
-// so a present record implies a verified one and a consumer needs no second
-// judgement. It is a pointer so a record written before verification existed
-// decodes with no signer and is therefore not honored — the safe direction, since
-// an unverified record can then only fail to exclude a version, never exclude one
-// on unauthenticated evidence.
-type VersionDeprecation struct {
-	Version string                      `json:"version"`
-	Marker  deprecation.Marker          `json:"marker"`
-	Signer  *lockfile.VerifiedSignature `json:"signer,omitempty"`
-}
-
 // RegistryIndex is the in-memory aggregate a registry update builds for one
 // host: the host it was built from and the entity records, one per repository
 // whose latest version conforms to strict SemVer. It is the shape the writer
@@ -153,8 +92,8 @@ type VersionDeprecation struct {
 // the on-disk layout is per-repository files, not this struct serialized whole.
 // Records are held in URI-then-version order.
 type RegistryIndex struct {
-	Host    string        `json:"host"`
-	Records []IndexRecord `json:"records"`
+	Host    string                 `json:"host"`
+	Records []registryindex.Record `json:"records"`
 }
 
 // newRegistryUpdateCmd builds `registry update [<name|host>]`, which walks each
@@ -317,7 +256,7 @@ func updateHostIndex(ctx context.Context, cfg workspaceconfig.Config, root, cach
 	if err != nil {
 		return 0, err
 	}
-	var prior map[string]IndexRecord
+	var prior map[string]registryindex.Record
 	if !upgrade {
 		prior = loadPriorRecords(root, cacheDir, host)
 	}
@@ -356,12 +295,12 @@ func reportDeprecationScan(out io.Writer, cfg workspaceconfig.Config, policy wor
 // or unreadable prior index yields a nil map, degrading the refresh to a full
 // build rather than failing — the first update after a cache wipe re-reads
 // everything.
-func loadPriorRecords(root, cacheDir, host string) map[string]IndexRecord {
-	loaded, err := loadHostIndex(root, cacheDir, host)
+func loadPriorRecords(root, cacheDir, host string) map[string]registryindex.Record {
+	loaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		return nil
 	}
-	prior := make(map[string]IndexRecord, len(loaded.Records))
+	prior := make(map[string]registryindex.Record, len(loaded.Records))
 	for _, rec := range loaded.Records {
 		prior[rec.URI] = rec
 	}
@@ -384,7 +323,7 @@ func buildHostIndex(
 	policy workspaceconfig.RegistryConfig,
 	host string,
 	src registryIndexSource,
-	prior map[string]IndexRecord,
+	prior map[string]registryindex.Record,
 	out io.Writer,
 ) (RegistryIndex, error) {
 	repos, err := searchRegistry(ctx, src, "", catalogSearchScope)
@@ -399,27 +338,8 @@ func buildHostIndex(
 		}
 		idx.Records = append(idx.Records, rec)
 	}
-	sortIndexRecords(idx.Records)
+	registryindex.SortRecords(idx.Records)
 	return idx, nil
-}
-
-// lessIndexRecordURIVersion is the deterministic order for index records: by URI,
-// then by version within a URI. It is the single ordering both the local index
-// writer and any consumer that aggregates records across hosts sort by, so a
-// reader cannot drift from the order the writer stamped.
-func lessIndexRecordURIVersion(a, b IndexRecord) bool {
-	if a.URI != b.URI {
-		return a.URI < b.URI
-	}
-	return a.Version < b.Version
-}
-
-// sortIndexRecords sorts records in place into the deterministic
-// URI-then-version order shared by the index writer and its consumers.
-func sortIndexRecords(records []IndexRecord) {
-	sort.Slice(records, func(i, j int) bool {
-		return lessIndexRecordURIVersion(records[i], records[j])
-	})
 }
 
 // indexRepo builds the record for one repository's latest published version. It
@@ -446,13 +366,13 @@ func indexRepo(
 	host string,
 	src registryIndexSource,
 	repo string,
-	prior map[string]IndexRecord,
+	prior map[string]registryindex.Record,
 	out io.Writer,
-) (IndexRecord, bool) {
+) (registryindex.Record, bool) {
 	target, err := src.Repository(repo)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return IndexRecord{}, false
+		return registryindex.Record{}, false
 	}
 	uri := "oci://" + host + "/" + repo
 	p, hasPrior := prior[uri]
@@ -466,7 +386,7 @@ func indexRepo(
 	tags, listingDigest, notModified, truncated, err := src.ConditionalTags(ctx, repo, priorListing)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return IndexRecord{}, false
+		return registryindex.Record{}, false
 	}
 	if notModified {
 		// The tag set is unchanged. Confirm the headline manifest digest is unchanged
@@ -481,7 +401,7 @@ func indexRepo(
 		tags, listingDigest, _, truncated, err = src.ConditionalTags(ctx, repo, "")
 		if err != nil {
 			fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-			return IndexRecord{}, false
+			return registryindex.Record{}, false
 		}
 	}
 	// A truncated listing's single-request validator does not cover the whole tag set,
@@ -491,25 +411,25 @@ func indexRepo(
 		tags, err = oci.ListTags(ctx, target)
 		if err != nil {
 			fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-			return IndexRecord{}, false
+			return registryindex.Record{}, false
 		}
 		listingDigest = ""
 	}
 
 	version := oci.SelectLatestVersion(tags, false /* includePreRelease */)
 	if version == "" {
-		return IndexRecord{}, false
+		return registryindex.Record{}, false
 	}
 	versions := oci.SortedSemverTags(tags)
 
 	digest, exists, err := oci.Resolve(ctx, target, version)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return IndexRecord{}, false
+		return registryindex.Record{}, false
 	}
 	if !exists {
 		fmt.Fprintf(out, "  skipped %s: selected version %s no longer resolves\n", repo, version)
-		return IndexRecord{}, false
+		return registryindex.Record{}, false
 	}
 	if hasPrior && p.ManifestDigest != "" && p.ManifestDigest == digest && equalStrings(p.Versions, versions) {
 		// The manifest and tag set are unchanged; reuse the prior record but carry the
@@ -521,12 +441,12 @@ func indexRepo(
 	annotations, manifestDigest, err := oci.FetchManifestAnnotations(ctx, target, version)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return IndexRecord{}, false
+		return registryindex.Record{}, false
 	}
 	rec, err := recordFromAnnotations(host, repo, version, annotations)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
-		return IndexRecord{}, false
+		return registryindex.Record{}, false
 	}
 	rec.Versions = versions
 	rec.ManifestDigest = manifestDigest
@@ -604,32 +524,32 @@ func collectVersionDeprecations(
 	repo string,
 	versions []string,
 	out io.Writer,
-) []VersionDeprecation {
+) []registryindex.VersionDeprecation {
 	if !deprecationScanEnabled(wsCfg, policy) {
 		return nil
 	}
-	var deprecations []VersionDeprecation
+	var deprecations []registryindex.VersionDeprecation
 	for _, version := range versions {
 		markers, err := oci.ListReferrers(ctx, target, version, deprecation.ArtifactType)
 		if err != nil || len(markers) == 0 {
 			continue
 		}
-		markerDesc, marker, err := latestDeprecationMarker(ctx, target, markers)
+		markerDesc, marker, err := registryindex.LatestMarker(ctx, target, markers)
 		if err != nil {
 			fmt.Fprintf(out, "  deprecation: %s:%s: marker present but not readable (%v); not recorded\n", repo, version, err)
 			continue
 		}
 		var origSigner *pullverify.Result
 		if policy.PublicKey == "" {
-			origSigner = verifiedArtifactSigner(ctx, wsCfg, target, version, policy)
+			origSigner = registryindex.VerifiedArtifactSigner(ctx, wsCfg, target, version, policy)
 		}
-		signer, err := verifyMarkerSignature(ctx, wsCfg, target, markerDesc.Digest.String(), policy, origSigner)
+		signer, err := registryindex.VerifyMarkerSignature(ctx, wsCfg, target, markerDesc.Digest.String(), policy, origSigner)
 		if err != nil {
 			fmt.Fprintf(out, "  deprecation: %s:%s: marker present but not honored (%v); not recorded\n", repo, version, err)
 			continue
 		}
 		fmt.Fprintf(out, "  deprecation: %s:%s: marker present and honored; recorded as %s\n", repo, version, marker.Severity.StatedAs())
-		deprecations = append(deprecations, VersionDeprecation{Version: version, Marker: marker, Signer: signer})
+		deprecations = append(deprecations, registryindex.VersionDeprecation{Version: version, Marker: marker, Signer: signer})
 	}
 	return deprecations
 }
@@ -658,7 +578,7 @@ func countRecordedDeprecations(idx RegistryIndex) int {
 	return n
 }
 
-// recordFromAnnotations assembles an IndexRecord from a repository's latest
+// recordFromAnnotations assembles an registryindex.Record from a repository's latest
 // version and its manifest annotations. Every facet is read through the
 // searchable-annotation constants, so no annotation key is spelled here as a
 // bare string. Capabilities were stamped comma-joined in author order and are
@@ -675,8 +595,8 @@ func countRecordedDeprecations(idx RegistryIndex) int {
 // with the labels dropped: a partially-populated label map would make a selector
 // silently match nothing, which is indistinguishable from the entity not
 // existing.
-func recordFromAnnotations(host, repo, version string, ann map[string]string) (IndexRecord, error) {
-	rec := IndexRecord{
+func recordFromAnnotations(host, repo, version string, ann map[string]string) (registryindex.Record, error) {
+	rec := registryindex.Record{
 		URI:         "oci://" + host + "/" + repo,
 		Name:        repo,
 		Version:     version,
@@ -691,7 +611,7 @@ func recordFromAnnotations(host, repo, version string, ann map[string]string) (I
 	if raw := ann[oci.AnnotationLabels]; raw != "" {
 		labels := types.NewOrderedMap[string]()
 		if err := labels.UnmarshalJSON([]byte(raw)); err != nil {
-			return IndexRecord{}, fmt.Errorf("decoding labels of %s:%s: %w", repo, version, err)
+			return registryindex.Record{}, fmt.Errorf("decoding labels of %s:%s: %w", repo, version, err)
 		}
 		rec.Labels = labels
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -69,11 +70,11 @@ func withWithdrawals(t *testing.T, withdrawn map[string]string) *[]string {
 	t.Helper()
 	asked := &[]string{}
 	prev := pluginRepoWithdrawalLister
-	pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, versions []string, _ io.Writer) ([]VersionDeprecation, error) {
+	pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, versions []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
 		*asked = append(*asked, versions...)
-		var deps []VersionDeprecation
+		var deps []registryindex.VersionDeprecation
 		for _, v := range oci.SortedSemverTags(keysOf(withdrawn)) {
-			deps = append(deps, VersionDeprecation{
+			deps = append(deps, registryindex.VersionDeprecation{
 				Version: v,
 				Marker: deprecation.Marker{
 					Severity: deprecation.SeverityRetracted,
@@ -295,7 +296,7 @@ func TestResolveLatestPluginVersion_IndexDefault(t *testing.T) {
 	const repoPath = "plugin/governance/tag-injector"
 	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host, RegistryIndex{
 		Host: host,
-		Records: []IndexRecord{{
+		Records: []registryindex.Record{{
 			URI:      "oci://" + host + "/" + repoPath,
 			Name:     repoPath,
 			Version:  "1.2.0",
@@ -376,7 +377,7 @@ const (
 // a verified signer, because only a signature-verified record screens a version.
 func writeScreenedPluginIndex(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, tags []string, withdrawn map[string]string) {
 	t.Helper()
-	rec := IndexRecord{
+	rec := registryindex.Record{
 		URI:      "oci://" + screenedIndexHost + "/" + screenedIndexRepo,
 		Name:     screenedIndexRepo,
 		Version:  oci.SelectLatestVersion(tags, false /* includePreRelease */),
@@ -384,7 +385,7 @@ func writeScreenedPluginIndex(t *testing.T, rw *workspaceconfig.ResolvedWorkspac
 		Kind:     "Plugin",
 	}
 	for _, v := range oci.SortedSemverTags(keysOf(withdrawn)) {
-		rec.Deprecations = append(rec.Deprecations, VersionDeprecation{
+		rec.Deprecations = append(rec.Deprecations, registryindex.VersionDeprecation{
 			Version: v,
 			Marker: deprecation.Marker{
 				Severity: deprecation.SeverityRetracted,
@@ -394,7 +395,7 @@ func writeScreenedPluginIndex(t *testing.T, rw *workspaceconfig.ResolvedWorkspac
 		})
 	}
 	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), screenedIndexHost,
-		RegistryIndex{Host: screenedIndexHost, Records: []IndexRecord{rec}},
+		RegistryIndex{Host: screenedIndexHost, Records: []registryindex.Record{rec}},
 		"2026-08-06T09:00:00Z\n")
 }
 
@@ -507,7 +508,7 @@ func TestResolveLatestPluginVersion_WithdrawalScreening(t *testing.T) {
 		// headline stands rather than resolving to nothing.
 		rw := resolvedTestWorkspace(t)
 		writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), screenedIndexHost,
-			RegistryIndex{Host: screenedIndexHost, Records: []IndexRecord{{
+			RegistryIndex{Host: screenedIndexHost, Records: []registryindex.Record{{
 				URI:     "oci://" + screenedIndexHost + "/" + screenedIndexRepo,
 				Name:    screenedIndexRepo,
 				Version: "1.2.0",
@@ -531,13 +532,13 @@ func TestResolveLatestPluginVersion_WithdrawalScreening(t *testing.T) {
 		// here. Severity below withdrawal is a build-time concern, not a selection one.
 		rw := resolvedTestWorkspace(t)
 		writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), screenedIndexHost,
-			RegistryIndex{Host: screenedIndexHost, Records: []IndexRecord{{
+			RegistryIndex{Host: screenedIndexHost, Records: []registryindex.Record{{
 				URI:      "oci://" + screenedIndexHost + "/" + screenedIndexRepo,
 				Name:     screenedIndexRepo,
 				Version:  "2.0.0",
 				Versions: []string{"1.0.0", "2.0.0"},
 				Kind:     "Plugin",
-				Deprecations: []VersionDeprecation{{
+				Deprecations: []registryindex.VersionDeprecation{{
 					Version: "2.0.0",
 					Marker:  deprecation.Marker{Severity: deprecation.SeverityWarning, Reason: "superseded"},
 					Signer:  &lockfile.VerifiedSignature{Identity: "publisher", Mode: "keyed"},
@@ -559,13 +560,13 @@ func TestResolveLatestPluginVersion_WithdrawalScreening(t *testing.T) {
 		// what is pinned would make an unauthenticated registry-side claim load-bearing.
 		rw := resolvedTestWorkspace(t)
 		writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), screenedIndexHost,
-			RegistryIndex{Host: screenedIndexHost, Records: []IndexRecord{{
+			RegistryIndex{Host: screenedIndexHost, Records: []registryindex.Record{{
 				URI:      "oci://" + screenedIndexHost + "/" + screenedIndexRepo,
 				Name:     screenedIndexRepo,
 				Version:  "2.0.0",
 				Versions: []string{"1.0.0", "2.0.0"},
 				Kind:     "Plugin",
-				Deprecations: []VersionDeprecation{{
+				Deprecations: []registryindex.VersionDeprecation{{
 					Version: "2.0.0",
 					Marker:  deprecation.Marker{Severity: deprecation.SeverityRetracted, Reason: "withdrawn"},
 				}},
@@ -710,8 +711,8 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		rw := resolvedTestWorkspace(t)
 		withTagLister(t, []string{"1.0.0", "2.0.0"})
 		prev := pluginRepoWithdrawalLister
-		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]VersionDeprecation, error) {
-			return []VersionDeprecation{{
+		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+			return []registryindex.VersionDeprecation{{
 				Version: "2.0.0",
 				Marker:  deprecation.Marker{Severity: deprecation.SeverityWarning, Reason: "superseded"},
 				Signer:  &lockfile.VerifiedSignature{Identity: "publisher", Mode: "keyed"},
@@ -735,8 +736,8 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		rw := resolvedTestWorkspace(t)
 		withTagLister(t, []string{"1.0.0", "2.0.0"})
 		prev := pluginRepoWithdrawalLister
-		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]VersionDeprecation, error) {
-			return []VersionDeprecation{{
+		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
+			return []registryindex.VersionDeprecation{{
 				Version: "2.0.0",
 				Marker:  deprecation.Marker{Severity: deprecation.SeverityRetracted, Reason: "withdrawn"},
 			}}, nil
@@ -840,7 +841,7 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		rw := resolvedTestWorkspace(t)
 		withTagLister(t, []string{"1.0.0", "2.0.0"})
 		prev := pluginRepoWithdrawalLister
-		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]VersionDeprecation, error) {
+		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
 			return nil, errors.New("registry unreachable")
 		}
 		t.Cleanup(func() { pluginRepoWithdrawalLister = prev })
@@ -885,7 +886,7 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		}
 		t.Cleanup(func() { pluginRepoTagLister = prevTags })
 		prevMarkers := pluginRepoWithdrawalLister
-		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]VersionDeprecation, error) {
+		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]registryindex.VersionDeprecation, error) {
 			t.Fatalf("offline discovery must not network for withdrawal markers")
 			return nil, nil
 		}

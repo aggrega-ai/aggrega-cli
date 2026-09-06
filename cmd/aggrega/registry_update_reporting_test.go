@@ -15,6 +15,7 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -68,7 +69,7 @@ func TestUppercaseKeysFindsAGoFieldName(t *testing.T) {
 // across the whole document rather than one per contributing Go type.
 func TestIndexRecordEmitsOneKeyConvention(t *testing.T) {
 	t.Parallel()
-	rec := IndexRecord{
+	rec := registryindex.Record{
 		URI:            "oci://hub.aggrega.ai/component/core/api-server",
 		Name:           "component/core/api-server",
 		Version:        "2.0.0",
@@ -76,7 +77,7 @@ func TestIndexRecordEmitsOneKeyConvention(t *testing.T) {
 		Kind:           "Component",
 		ManifestDigest: "sha256:aaaa",
 		ListingDigest:  "sha256:bbbb",
-		Deprecations: []VersionDeprecation{{
+		Deprecations: []registryindex.VersionDeprecation{{
 			Version: "1.0.0",
 			Marker: deprecation.Marker{
 				Severity: deprecation.SeverityRetracted,
@@ -146,7 +147,7 @@ func TestLoadHostIndexReadsGoFieldNameSigner(t *testing.T) {
 		t.Fatalf("write prior-shaped record: %v", err)
 	}
 
-	loaded, err := loadHostIndex(root, cacheDir, host)
+	loaded, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}
@@ -154,7 +155,7 @@ func TestLoadHostIndexReadsGoFieldNameSigner(t *testing.T) {
 		t.Fatalf("loaded %+v; want one record carrying one deprecation", loaded.Records)
 	}
 	got := loaded.Records[0].Deprecations[0]
-	if !honoredRecord(got) {
+	if !registryindex.Honored(got) {
 		t.Fatal("prior-shaped record decoded without a signer, so it would not be honored")
 	}
 	want := lockfile.VerifiedSignature{

@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"

@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"strings"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"go.yaml.in/yaml/v3"
 )
 
 // emitYAMLRoundTrip writes the entity as authored — a verbatim YAML node

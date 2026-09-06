@@ -6,9 +6,10 @@ package main
 import (
 	"fmt"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"go.yaml.in/yaml/v3"
 )
 
 // renderArtifactsLibraryFile renders an ArtifactsLibrary authored as a standalone

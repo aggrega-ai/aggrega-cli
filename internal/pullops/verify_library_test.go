@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package pullops
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -192,7 +194,7 @@ func TestDiscoverLibraryDeprecationRecordsMarker(t *testing.T) {
 		Reason:   "withdrawn: unsound port range",
 		IssuedOn: "2026-08-01T00:00:00Z",
 	}
-	if err := attachSignedMarker(ctx, io.Discard, store, libTestVersion,
+	if err := registryindex.AttachSignedMarker(ctx, io.Discard, store, libTestVersion,
 		libTestHost+"/schemalibrary/portspec:"+libTestVersion, marker, signer); err != nil {
 		t.Fatalf("attachSignedMarker: %v", err)
 	}
@@ -259,7 +261,11 @@ func TestLibraryVerifyLocationEqualsPushLocation(t *testing.T) {
 			if gotKind != kind {
 				t.Errorf("%s %q: kind = %q, want %q — the org signing policy scopes on this", kind, uri, gotKind, kind)
 			}
-			if want := buildPushReference(reg, kind, "", libTestName); gotLocation != want {
+			// The push side spells this as registry + "/" + the location rule; the
+			// rule itself is what both sides must agree on, so the comparison is
+			// against the rule rather than against the command's one-line wrapper
+			// around it.
+			if want := reg + "/" + catalog.OCILocation(kind, "", libTestName); gotLocation != want {
 				t.Errorf("%s %q: verify location %q != push location %q (verify and push split the "+
 					"single location rule)", kind, uri, gotLocation, want)
 			}

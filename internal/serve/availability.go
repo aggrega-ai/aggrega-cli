@@ -91,11 +91,20 @@ func OperationAvailability() map[string]opsurface.OperationAvailability {
 // wired — "no method carries it, therefore no method should" would justify
 // itself, and the routing index would then be built from its own shape.
 const (
-	// unavailabilityReasonNoRegistryTransport covers an operation that talks to a
-	// registry. The daemon's own code links no registry, artifact-store or
-	// signing client, so such an operation has no transport here.
-	unavailabilityReasonNoRegistryTransport = "it talks to a registry, and the daemon links no registry, " +
-		"artifact-store or signing client"
+	// unavailabilityReasonWritesToARegistry covers an operation whose product is a
+	// change to a registry's contents: publishing an artifact, or attaching a
+	// signature or a withdrawal marker to one already published. A session is
+	// opened over a workspace, and what it writes is that workspace's own files
+	// and the cache that serves them.
+	//
+	// It rests on what the operation does rather than on what this process links.
+	// A reason resting on linkage would justify itself — no method carries it,
+	// therefore no method should — and it would stop being true of anything the
+	// daemon later carries, which is the failure the block comment above names.
+	// Reading a registry is not this reason: a session resolves a Release's
+	// dependencies by fetching from one, and that is carried here.
+	unavailabilityReasonWritesToARegistry = "its product is a change to a registry's contents, and what a session " +
+		"writes is the workspace's own files and the cache that serves them"
 
 	// unavailabilityReasonNoTerminal covers an operation that asks a person for
 	// something. The daemon's only stream is its request channel, so there is
@@ -179,6 +188,22 @@ var operationAvailability = map[string]serveAvailability{
 		at("aggrega/releaseClosure", (*Server).dispatchReleaseClosure),
 	),
 
+	// The session resolves a Release's dependencies and pins the external inputs
+	// its render consumes. Both reach registries and both write — the lockfile and
+	// the content-addressed cache for the first, the input store and the lockfile's
+	// external-input pins for the second — and neither is a question about the
+	// workspace: a caller sending either has asked for the work, exactly as a
+	// caller sending a build has asked for artifacts.
+	//
+	// That is the whole of what admits them here. The rule they run under is a
+	// property of when an operation runs rather than of which surface runs it — a
+	// registry-reaching or state-writing operation runs on explicit invocation and
+	// never while something is being validated or inspected — and it is stated over
+	// the shared resolution layer's own invocation path rather than restated on
+	// each row that happens to reach it.
+	"pull":    servedAt(at("aggrega/resolveDependencies", (*Server).dispatchResolveDependencies)),
+	"acquire": servedAt(at("aggrega/acquireExternalInputs", (*Server).dispatchAcquireExternalInputs)),
+
 	"definition-at-position":      servedAt(at("aggrega/resolve", (*Server).dispatchResolve)),
 	"references-at-position":      servedAt(at("aggrega/findReferences", (*Server).dispatchFindReferences)),
 	"implementations-at-position": servedAt(at("aggrega/findImplementations", (*Server).dispatchFindImplementations)),
@@ -224,10 +249,10 @@ var operationAvailability = map[string]serveAvailability{
 	"registry-list":         notServed(unavailabilityReasonOutsideTheWorkspace),
 	"search":                notServed(unavailabilityReasonOutsideTheWorkspace),
 	"version":               notServed(unavailabilityReasonOutsideTheWorkspace),
-	"deprecate":             notServed(unavailabilityReasonNoRegistryTransport),
-	"push":                  notServed(unavailabilityReasonNoRegistryTransport),
-	"push-artifact":         notServed(unavailabilityReasonNoRegistryTransport),
-	"sign":                  notServed(unavailabilityReasonNoRegistryTransport),
+	"deprecate":             notServed(unavailabilityReasonWritesToARegistry),
+	"push":                  notServed(unavailabilityReasonWritesToARegistry),
+	"push-artifact":         notServed(unavailabilityReasonWritesToARegistry),
+	"sign":                  notServed(unavailabilityReasonWritesToARegistry),
 	"auth-token":            notServed(unavailabilityReasonNoTerminal),
 	"login":                 notServed(unavailabilityReasonNoTerminal),
 	"mcp":                   notServed(unavailabilityReasonIsAStreamServer),

@@ -13,6 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
@@ -21,8 +24,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 )
 
 func newInspectCmd() *cobra.Command {

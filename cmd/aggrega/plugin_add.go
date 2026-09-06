@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -362,7 +363,7 @@ var pluginRepoTagLister = func(ctx context.Context, cfg workspaceconfig.Config, 
 // index build performs, reached through that same single home — so a version's
 // withdrawal is judged identically whether the index recorded it earlier or this
 // command reads it now, and the two cannot drift apart.
-var pluginRepoWithdrawalLister = func(ctx context.Context, cfg workspaceconfig.Config, host, repoPath string, versions []string, out io.Writer) ([]VersionDeprecation, error) {
+var pluginRepoWithdrawalLister = func(ctx context.Context, cfg workspaceconfig.Config, host, repoPath string, versions []string, out io.Writer) ([]registryindex.VersionDeprecation, error) {
 	httpClient, err := workspaceEgressClient(cfg)
 	if err != nil {
 		return nil, err
@@ -411,7 +412,7 @@ func livePluginRetractionScreen(ctx context.Context, cfg workspaceconfig.Config,
 			repoPath, err)
 		return nil
 	}
-	return newLiveRetractionScreen(reference, deps, out)
+	return registryindex.NewLiveScreen(reference, deps, out)
 }
 
 // resolveLatestPluginVersion returns the highest strict-SemVer version published
@@ -490,9 +491,9 @@ func resolveLatestPluginVersion(ctx context.Context, rw *workspaceconfig.Resolve
 // is the honest posture — an exclusion nobody can be told about is the silent
 // substitution this exists to prevent.
 func pluginVersionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, bool, error) {
-	loaded, err := loadHostIndex(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
+	loaded, err := registryindex.LoadHost(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
 	if err != nil {
-		if errors.Is(err, errIndexNotBuilt) {
+		if registryindex.IsNotBuilt(err) {
 			return "", false, nil
 		}
 		return "", false, err
@@ -500,7 +501,7 @@ func pluginVersionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPat
 	// The record lookup and the screen both key off this one reference through the
 	// single index-URI mapping, so they cannot disagree about which record they mean.
 	reference := host + "/" + repoPath
-	uri := indexURIForReference(reference)
+	uri := registryindex.URIForReference(reference)
 	for _, rec := range loaded.Records {
 		if rec.URI != uri {
 			continue
@@ -508,7 +509,7 @@ func pluginVersionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPat
 		if len(rec.Versions) == 0 {
 			return rec.Version, true, nil
 		}
-		version, serr := catalog.SelectScreenedVersion(newRetractionScreen(rw, host, out), reference, rec.Versions)
+		version, serr := catalog.SelectScreenedVersion(registryindex.NewScreen(rw, host, out), reference, rec.Versions)
 		if serr != nil {
 			return "", true, serr
 		}

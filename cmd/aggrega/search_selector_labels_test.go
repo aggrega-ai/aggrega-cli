@@ -13,6 +13,7 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -131,7 +132,7 @@ func TestPublishedLabelMapIsAuthorOrdered(t *testing.T) {
 	rw := publishAndIndexLabelledComponent(t)
 
 	cfg := rw.Config()
-	loaded, err := loadHostIndex(rw.Root(), cfg.ResolvedArtifactCacheDir(), "hub.aggrega.ai")
+	loaded, err := registryindex.LoadHost(rw.Root(), cfg.ResolvedArtifactCacheDir(), "hub.aggrega.ai")
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}

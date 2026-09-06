@@ -14,6 +14,7 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -237,7 +238,7 @@ func verifiedIndexSigner() *lockfile.VerifiedSignature {
 // TestLatestDeprecationView_NewestWins proves the index-served advisory selects
 // the recorded marker with the newest issuedOn across a repository's versions.
 func TestLatestDeprecationView_NewestWins(t *testing.T) {
-	deps := []VersionDeprecation{
+	deps := []registryindex.VersionDeprecation{
 		{Version: "1.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "older", IssuedOn: "2026-01-01T00:00:00Z"}, Signer: verifiedIndexSigner()},
 		{Version: "2.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "newer", IssuedOn: "2026-06-01T00:00:00Z"}, Signer: verifiedIndexSigner()},
 	}
@@ -277,14 +278,14 @@ func TestLatestDeprecationView_TrustAndSeverity(t *testing.T) {
 		{"unverified warning is declined", deprecation.SeverityWarning, false, false},
 	}
 	for _, c := range cases {
-		entry := VersionDeprecation{
+		entry := registryindex.VersionDeprecation{
 			Version: "1.0.0",
 			Marker:  deprecation.Marker{Severity: c.severity, Reason: "why", IssuedOn: "2026-01-01T00:00:00Z"},
 		}
 		if c.signed {
 			entry.Signer = verifiedIndexSigner()
 		}
-		v, ok := latestDeprecationView([]VersionDeprecation{entry})
+		v, ok := latestDeprecationView([]registryindex.VersionDeprecation{entry})
 		if ok != c.want {
 			t.Errorf("%s: reported = %v, want %v (view %+v)", c.name, ok, c.want, v)
 			continue
@@ -304,7 +305,7 @@ func TestLatestDeprecationView_TrustAndSeverity(t *testing.T) {
 // verified marker.
 func TestLatestDeprecationView_UnverifiedNeverOutranks(t *testing.T) {
 	t.Parallel()
-	deps := []VersionDeprecation{
+	deps := []registryindex.VersionDeprecation{
 		{Version: "1.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "verified", IssuedOn: "2026-01-01T00:00:00Z"}, Signer: verifiedIndexSigner()},
 		{Version: "2.0.0", Marker: deprecation.Marker{Severity: "retracted", Reason: "unverified", IssuedOn: "2026-06-01T00:00:00Z"}},
 	}
@@ -337,12 +338,12 @@ func TestLookupEntityDeprecation_IndexServedOffline(t *testing.T) {
 	repoPath := catalog.OCILocation("Component", "", componentName)
 	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host, RegistryIndex{
 		Host: host,
-		Records: []IndexRecord{{
+		Records: []registryindex.Record{{
 			URI:     "oci://" + host + "/" + repoPath,
 			Name:    repoPath,
 			Version: "1.0.0",
 			Kind:    "Component",
-			Deprecations: []VersionDeprecation{{
+			Deprecations: []registryindex.VersionDeprecation{{
 				Version: "1.0.0",
 				Marker:  deprecation.Marker{Severity: "warning", Reason: "old", IssuedOn: "2026-01-01T00:00:00Z"},
 				Signer:  verifiedIndexSigner(),
@@ -385,12 +386,12 @@ func TestLookupEntityDeprecation_VersionPinnedIdentifierIsNotTheName(t *testing.
 	repoPath := catalog.OCILocation("Component", "", componentName)
 	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host, RegistryIndex{
 		Host: host,
-		Records: []IndexRecord{{
+		Records: []registryindex.Record{{
 			URI:     "oci://" + host + "/" + repoPath,
 			Name:    repoPath,
 			Version: "1.0.0",
 			Kind:    "Component",
-			Deprecations: []VersionDeprecation{{
+			Deprecations: []registryindex.VersionDeprecation{{
 				Version: "1.0.0",
 				Marker:  deprecation.Marker{Severity: "retracted", Reason: "withdrawn", IssuedOn: "2026-01-01T00:00:00Z"},
 				Signer:  verifiedIndexSigner(),

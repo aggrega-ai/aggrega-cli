@@ -5,7 +5,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -33,7 +33,7 @@ var searchNow = time.Now
 // timestamp is absent, or older than indexStaleAfter relative to now — so search
 // can print a single advisory line to refresh. It reads only the already-loaded
 // timestamps and contacts no network.
-func searchIndexesStale(indexes []loadedIndex, now time.Time) bool {
+func searchIndexesStale(indexes []registryindex.Loaded, now time.Time) bool {
 	for _, li := range indexes {
 		if !li.HasTimestamp || now.Sub(li.LastUpdated) > indexStaleAfter {
 			return true
@@ -176,11 +176,11 @@ func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opt
 	root := rw.Root()
 	cacheDir := cfg.ResolvedArtifactCacheDir()
 
-	var loaded []loadedIndex
+	var loaded []registryindex.Loaded
 	for _, host := range hosts {
-		idx, err := loadHostIndex(root, cacheDir, host)
+		idx, err := registryindex.LoadHost(root, cacheDir, host)
 		if err != nil {
-			if errors.Is(err, errIndexNotBuilt) {
+			if registryindex.IsNotBuilt(err) {
 				if singleExplicit {
 					return fmt.Errorf("aggrega search: registry %s has no local index; run 'aggrega registry update'", host)
 				}
@@ -197,7 +197,7 @@ func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opt
 
 	// Freshness lines to errOut, hosts ascending, so the order is deterministic
 	// regardless of config order and stdout stays result-only.
-	byHost := make([]loadedIndex, len(loaded))
+	byHost := make([]registryindex.Loaded, len(loaded))
 	copy(byHost, loaded)
 	sort.Slice(byHost, func(i, j int) bool { return byHost[i].Host < byHost[j].Host })
 	for _, li := range byHost {
@@ -217,7 +217,7 @@ func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opt
 	}
 
 	records, screening := screenIndexRecords(loaded, opts.IncludeRetracted, errOut)
-	sortIndexRecords(records)
+	registryindex.SortRecords(records)
 
 	matched, err := filterRecords(records, searchFilter{
 		Query:        opts.Query,
@@ -284,14 +284,14 @@ type searchScreening struct {
 // A record carrying no published-version list yields no exclusions and passes
 // through unchanged, which is the honest outcome — with nothing to screen there is
 // no basis to alter what the record reports.
-func screenIndexRecords(indexes []loadedIndex, includeRetracted bool, errOut io.Writer) ([]IndexRecord, map[string]searchScreening) {
-	var records []IndexRecord
+func screenIndexRecords(indexes []registryindex.Loaded, includeRetracted bool, errOut io.Writer) ([]registryindex.Record, map[string]searchScreening) {
+	var records []registryindex.Record
 	screening := map[string]searchScreening{}
 	for _, li := range indexes {
-		screen := newRecordedRetractionScreen(li.Records, indexProvenance(li.LastUpdated, li.HasTimestamp), errOut)
+		screen := registryindex.NewScreenFromRecords(li.Records, registryindex.SnapshotProvenance(li.LastUpdated, li.HasTimestamp), errOut)
 		for _, rec := range li.Records {
 			if screen != nil {
-				eligible, excluded := screen.ScreenVersions(referenceForIndexURI(rec.URI), rec.Versions)
+				eligible, excluded := screen.ScreenVersions(registryindex.ReferenceForURI(rec.URI), rec.Versions)
 				if len(excluded) > 0 {
 					retracted := make([]string, 0, len(excluded))
 					for _, x := range excluded {
@@ -349,7 +349,7 @@ func reportedVersionCell(version string, s searchScreening) string {
 // unscreened path produced. It is deliberately not a permanent column: adding one
 // unconditionally would change every existing invocation's output to carry a
 // column that is empty on almost all of them.
-func writeSearchTable(out io.Writer, records []IndexRecord, screening map[string]searchScreening) error {
+func writeSearchTable(out io.Writer, records []registryindex.Record, screening map[string]searchScreening) error {
 	if len(records) == 0 {
 		fmt.Fprintln(out, "(no matches)")
 		return nil
@@ -400,7 +400,7 @@ func writeSearchTable(out io.Writer, records []IndexRecord, screening map[string
 // verdict rather than re-deriving one from the raw deprecation entries, which is
 // the derivation that would be free to disagree.
 type searchRecord struct {
-	IndexRecord
+	registryindex.Record
 	Retracted []string `json:"retracted,omitempty"`
 }
 
@@ -422,7 +422,7 @@ type searchJSON struct {
 // the machine-readable half of the same contract the table states: an entity whose
 // every published version is retracted carries an empty version alongside the
 // retracted list, rather than being dropped from the result.
-func writeSearchJSON(out io.Writer, indexes []loadedIndex, records []IndexRecord, screening map[string]searchScreening) error {
+func writeSearchJSON(out io.Writer, indexes []registryindex.Loaded, records []registryindex.Record, screening map[string]searchScreening) error {
 	updated := make(map[string]string, len(indexes))
 	for _, li := range indexes {
 		if li.HasTimestamp {
@@ -431,7 +431,7 @@ func writeSearchJSON(out io.Writer, indexes []loadedIndex, records []IndexRecord
 	}
 	reported := make([]searchRecord, 0, len(records))
 	for _, rec := range records {
-		reported = append(reported, searchRecord{IndexRecord: rec, Retracted: screening[rec.URI].Retracted})
+		reported = append(reported, searchRecord{Record: rec, Retracted: screening[rec.URI].Retracted})
 	}
 	return writeStructured(out, "search", searchJSON{Updated: updated, Records: reported})
 }

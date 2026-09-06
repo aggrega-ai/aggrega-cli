@@ -75,13 +75,13 @@ var openQuestions = []OpenQuestion{
 
 	// The JSON-RPC daemon.
 	//
-	// The sixteen rows below share one history and are grouped for it. Each was
-	// declined on a single reason — that the daemon's only writing path was the
-	// artifact set a build renders, so an operation whose product is some other
-	// write had no output there. That reason drew the line in the wrong place.
-	// What makes a write acceptable is that somebody asked for it, not which
-	// artifact it happens to be: a caller who invokes an acquisition, an eviction
-	// or a publication has asked, exactly as invoking a build asks for artifacts.
+	// The rows below share one history and are grouped for it. Each was declined
+	// on a single reason — that the daemon's only writing path was the artifact
+	// set a build renders, so an operation whose product is some other write had
+	// no output there. That reason drew the line in the wrong place. What makes a
+	// write acceptable is that somebody asked for it, not which artifact it
+	// happens to be: a caller who invokes an acquisition, an eviction or a
+	// publication has asked, exactly as invoking a build asks for artifacts.
 	// What stays out of bounds is a write, or a reach for a registry, performed
 	// while validating or inspecting, where nobody asked — and none of these is
 	// that.
@@ -90,18 +90,20 @@ var openQuestions = []OpenQuestion{
 	// its own capability is left at. They are not collapsed into one row, because
 	// the subjects differ — a machine-wide store, a configuration cascade, a
 	// registry, a workspace's own authored files — and a single row would assert
-	// that one answer settles all sixteen, which is the thing nobody has
+	// that one answer settles them all, which is the thing nobody has
 	// established.
+	//
+	// Two of that set have since been settled and are gone from here: resolving a
+	// Release's dependencies, and pinning the external inputs its render consumes.
+	// Both were left at the same fork — whether a session owes an operation that
+	// fetches — and both were answered the same way, that the rule which survives
+	// is explicit invocation rather than which surface asked. Their availability
+	// is declared on the surface instead, which is where an answered question
+	// belongs.
 	//
 	// A neighbouring set is deliberately untouched: the capabilities declined
 	// because their subject is outside the workspace keep that reason, which
 	// holds on its own and was never the retired one.
-	{SurfaceServe, "acquire",
-		"Pinning a Release's external inputs writes into the workspace the session already holds, and a caller " +
-			"invoking it has asked for that write, so the daemon declines it on no property of its own. What is " +
-			"unsettled is the reach: the pins are resolved over the network, and every method answered today is " +
-			"served from the workspace and what is already cached. Does a session owe an operation that fetches, " +
-			"or is fetching the boundary a session does not cross?"},
 	{SurfaceServe, "config-capture",
 		"Capture writes this project's workspace configuration file and never the global one, so its subject is " +
 			"the workspace the session opened, it reaches no registry and it prompts nobody. No property of the " +
@@ -131,12 +133,6 @@ var openQuestions = []OpenQuestion{
 			"document in the workspace — the same kind of document every method answered today is anchored to. " +
 			"The daemon declines it on nothing. Is bringing an entity file into step with the module it names a " +
 			"thing a session owes, or is it left to the surface that installed the module?"},
-	{SurfaceServe, "pull",
-		"Resolving dependencies writes the per-Release lockfile into the workspace and populates a cache, and it " +
-			"reaches registries to do both. The lockfile is a document in the workspace the session opened, so " +
-			"the subject is not uniformly outside it and no single property settles the capability. Is a " +
-			"session's build expected to find its dependencies already resolved — which is what every method " +
-			"answered today assumes — or does a session owe the resolution itself?"},
 	{SurfaceServe, "cache-clear",
 		"Wiping every cache reaches both the compiled-module store, which is shared across every project on the " +
 			"machine, and the artifact cache, which sits under the workspace's own configured cache directory. " +

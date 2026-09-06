@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"go.yaml.in/yaml/v3"
 )
 
 // renderManifestFile renders a Manifest authored as a standalone file. A

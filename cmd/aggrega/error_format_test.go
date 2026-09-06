@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"

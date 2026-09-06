@@ -286,7 +286,7 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 		ManifestDigest: result.Digest,
 		Host:           registryhost.Of(bare),
 		Kind:           catalog.EntityKindForHint("plugin"),
-	}, wsCfg, remoteTargetForWith(installVerifyClient), os.Stderr); err != nil {
+	}, wsCfg, pluginfetchverify.RemoteTargetFor(installVerifyClient), os.Stderr); err != nil {
 		return resolvedInstallable{}, err
 	}
 	pin := digest.ContentDigest(result.Bytes)

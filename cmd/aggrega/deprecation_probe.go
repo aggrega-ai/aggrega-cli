@@ -8,6 +8,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -59,14 +60,14 @@ var newRepoDeprecationLookup = func(rw *workspaceconfig.ResolvedWorkspace, host 
 	if host == "" {
 		return nil
 	}
-	loaded, err := loadHostIndex(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
+	loaded, err := registryindex.LoadHost(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
 	if err != nil {
 		// No local index for the host (not built) or an unreadable one: the
 		// advisory is best-effort and simply shows nothing, the same silent
 		// degrade the probe had when it could not reach the registry.
 		return nil
 	}
-	byURI := make(map[string][]VersionDeprecation, len(loaded.Records))
+	byURI := make(map[string][]registryindex.VersionDeprecation, len(loaded.Records))
 	for _, rec := range loaded.Records {
 		if len(rec.Deprecations) > 0 {
 			byURI[rec.URI] = rec.Deprecations
@@ -103,7 +104,7 @@ var newRepoDeprecationLookup = func(rw *workspaceconfig.ResolvedWorkspace, host 
 // wants to be told and exactly what must not change which version a build takes —
 // so mirroring the screen's severity filter here would hide the advisory
 // severities and report only the strongest one.
-func latestDeprecationView(deps []VersionDeprecation) (deprecationView, bool) {
+func latestDeprecationView(deps []registryindex.VersionDeprecation) (deprecationView, bool) {
 	var (
 		best     deprecation.Marker
 		bestVer  string
@@ -112,11 +113,11 @@ func latestDeprecationView(deps []VersionDeprecation) (deprecationView, bool) {
 		found    bool
 	)
 	for _, d := range deps {
-		if !honoredRecord(d) {
+		if !registryindex.Honored(d) {
 			continue
 		}
 		t, has := d.Marker.IssuedOnTime()
-		if !found || laterMarker(has, t, d.Version, bestHas, bestTime, bestVer) {
+		if !found || registryindex.LaterMarker(has, t, d.Version, bestHas, bestTime, bestVer) {
 			best, bestVer, bestTime, bestHas, found = d.Marker, d.Version, t, has, true
 		}
 	}

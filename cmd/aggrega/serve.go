@@ -72,6 +72,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Stderr:          cmd.ErrOrStderr(),
 		WorkspaceRoot:   root,
 		CompilerVersion: provenanceCompilerVersion(),
+		Toolchain:       toolchainStamp(),
 		BuildOnInspect:  buildOnInspect,
 	})
 }

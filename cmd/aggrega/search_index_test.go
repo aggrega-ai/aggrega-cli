@@ -5,11 +5,11 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
@@ -46,7 +46,7 @@ func TestLoadHostIndex(t *testing.T) {
 	const host = "registry.example.com"
 	idx := RegistryIndex{
 		Host: host,
-		Records: []IndexRecord{
+		Records: []registryindex.Record{
 			{URI: "oci://h/component/postgres", Name: "postgres", Kind: "Component"},
 			{URI: "oci://h/plugin/helm-render", Name: "helm-render", Kind: "Plugin"},
 		},
@@ -57,7 +57,7 @@ func TestLoadHostIndex(t *testing.T) {
 	}
 	writeIndexFixture(t, root, cacheDir, host, idx, "2026-07-16T12:00:00Z\n")
 
-	got, err := loadHostIndex(root, cacheDir, host)
+	got, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}
@@ -77,9 +77,9 @@ func TestLoadHostIndex(t *testing.T) {
 
 func TestLoadHostIndexAbsent(t *testing.T) {
 	root := t.TempDir()
-	got, err := loadHostIndex(root, "cache", "registry.example.com")
-	if !errors.Is(err, errIndexNotBuilt) {
-		t.Fatalf("loadHostIndex on absent index: err = %v; want errIndexNotBuilt", err)
+	got, err := registryindex.LoadHost(root, "cache", "registry.example.com")
+	if !registryindex.IsNotBuilt(err) {
+		t.Fatalf("loadHostIndex on absent index: err = %v; want registryindex.IsNotBuilt", err)
 	}
 	if got.Records != nil {
 		t.Errorf("records = %+v; want nil on absent index", got.Records)
@@ -92,11 +92,11 @@ func TestLoadHostIndexMissingTimestamp(t *testing.T) {
 	const host = "registry.example.com"
 	idx := RegistryIndex{
 		Host:    host,
-		Records: []IndexRecord{{URI: "oci://h/component/postgres", Name: "postgres", Kind: "Component"}},
+		Records: []registryindex.Record{{URI: "oci://h/component/postgres", Name: "postgres", Kind: "Component"}},
 	}
 	writeIndexFixture(t, root, cacheDir, host, idx, "")
 
-	got, err := loadHostIndex(root, cacheDir, host)
+	got, err := registryindex.LoadHost(root, cacheDir, host)
 	if err != nil {
 		t.Fatalf("loadHostIndex: %v", err)
 	}
@@ -122,11 +122,11 @@ func TestLoadHostIndexUnparseable(t *testing.T) {
 	if err := os.WriteFile(oci.IndexRepoPath(root, cacheDir, host, "broken"), []byte("{not json"), 0o644); err != nil {
 		t.Fatalf("write record: %v", err)
 	}
-	_, err := loadHostIndex(root, cacheDir, host)
+	_, err := registryindex.LoadHost(root, cacheDir, host)
 	if err == nil {
 		t.Fatal("loadHostIndex: want error for unparseable records, got nil")
 	}
-	if errors.Is(err, errIndexNotBuilt) {
-		t.Fatal("loadHostIndex: unparseable records must not report errIndexNotBuilt")
+	if registryindex.IsNotBuilt(err) {
+		t.Fatal("loadHostIndex: unparseable records must not report as an unbuilt index")
 	}
 }
