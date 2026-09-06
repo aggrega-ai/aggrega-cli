@@ -43,6 +43,11 @@ import (
 // supply. It is kind-agnostic rather than filed under the kinds candidacy serves,
 // because what it reads is a document's own structure — so the kind filter
 // surfaces it wherever an author is working rather than for a chosen few.
+// The attachment-container tool sits between those two on the same criterion. It
+// answers once a caller has settled what to attach and before it can ask where
+// the text goes, and it needs a node the enumeration already had to supply. It
+// carries the kinds candidacy carries rather than none, because it answers about
+// a node of a compiled graph rather than about any document's structure.
 // The two inventories sit here on the same criterion, and each was tested against
 // it rather than filed here for room. The cache inventory answers at one moment —
 // when a caller is deciding whether to reclaim space — and nothing else needs it
@@ -70,6 +75,7 @@ var deferredToolRegistry = []toolSpec{
 	curated("feature-attach-candidates", attachCandidatesToolSpec),
 	curated("connection-candidates", connectionCandidatesToolSpec),
 	curated("document-insertion-point", insertionPointToolSpec),
+	curated("attachment-container", attachmentContainerToolSpec),
 	curated("cache-status", cacheStatusToolSpec),
 	curated("registry-list", registryListToolSpec),
 	curated("search", searchToolSpec),

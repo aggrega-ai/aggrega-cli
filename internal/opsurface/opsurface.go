@@ -140,6 +140,7 @@ var operations = []Operation{
 	{"feature-attach-candidates", "Report the Features whose declared applicability an entity's labels satisfy."},
 	{"connection-candidates", "Report an entity's dependency sockets and the components whose declared labels satisfy each one."},
 	{"document-insertion-point", "Report where in an authored document a new entry under a named container belongs."},
+	{"attachment-container", "Report which document and which container a graph node's Feature attachment belongs in."},
 	{"release-candidates", "Report every Release-kind document under the workspace root, by content."},
 	{"active-release", "Report the Release the workspace's disambiguation cascade selected."},
 

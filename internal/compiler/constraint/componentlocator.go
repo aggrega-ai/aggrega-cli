@@ -91,6 +91,24 @@ func ComponentSite(componentName, subsystemPath string, synthesizedSubsystem boo
 	return AuthoredSite{ScopePath: subsystemPath, Component: componentName}
 }
 
+// AttachmentContainerSegments returns the segments naming the container a
+// component instance's Feature attachments are written in: the component's own
+// block, then the key those attachments sit under.
+//
+// It is exported because naming an existing attachment and naming where a new
+// one goes are the same question about the same key, asked from two directions.
+// A surface answering the second has to produce exactly what a locator over the
+// first produces, or a finding would point at one key while an authoring answer
+// pointed at another, and nothing would compare them. So the site is derived
+// once, here, and both read it.
+//
+// It returns no segments where the component's own block has none, which is
+// [componentInnerSegments]'s propagation rather than a case of its own: the
+// attachment key alone would name ".features", which no file contains.
+func AttachmentContainerSegments(node NodeInstance) []string {
+	return componentInnerSegments(node, authoredKeyFeatures)
+}
+
 // scopedComponentSegments returns the segments naming a component's own block
 // inside a scope of the given axis: the scope level by level under the
 // container's own key, then the component.

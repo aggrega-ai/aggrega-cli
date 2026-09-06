@@ -178,6 +178,18 @@ func TestDeclaredSchemasStateTheArgumentRulesTheToolsEnforce(t *testing.T) {
 		{"attach-candidates", "a coordinate of the wrong type", `{"node":5}`, false},
 		{"attach-candidates", "a label value that is not a string", `{"labels":{"k":5}}`, false},
 
+		// attachment-container: both coordinates required together. A node id is
+		// a key of one Release's graph, so it is meaningless without the Release
+		// whose graph it keys — which makes this a pair rather than a
+		// combination rule with alternatives.
+		{"attachment-container", "a graph node with its Release", `{"graph_node":"ledger","release":"r.yaml"}`, true},
+		{"attachment-container", "a pair with every optional argument", `{"graph_node":"g","release":"r.yaml","workspace_root":"/w","catalog_dirs":["c"]}`, true},
+		{"attachment-container", "neither coordinate", `{}`, false},
+		{"attachment-container", "a graph node with no Release", `{"graph_node":"g"}`, false},
+		{"attachment-container", "a Release with no graph node", `{"release":"r.yaml"}`, false},
+		{"attachment-container", "a blank graph node", `{"graph_node":"","release":"r.yaml"}`, false},
+		{"attachment-container", "a graph node of the wrong type", `{"graph_node":5,"release":"r.yaml"}`, false},
+
 		// connection-candidates: one required subject, with the optional single
 		// socket alongside. It carries no combination rule, and no coordinate-free
 		// form: there is deliberately no label set here.

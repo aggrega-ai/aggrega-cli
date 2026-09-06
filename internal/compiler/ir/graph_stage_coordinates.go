@@ -106,6 +106,30 @@ type GraphStageCoordinates struct {
 	connections []constraint.CarriedConnectionInstance
 }
 
+// NodeInstanceOf returns the framework node instance one node of a compiled
+// graph stands for.
+//
+// The authored name is derived from the identifier rather than read off the
+// node, because the graph carries no such field: the identifier records how the
+// node was reached — a node a sub-aggregate contributes carries the
+// contributing module's prefix — while a locator is built from what the author
+// typed, and the framework is what defines the relation between the two.
+//
+// It is exported because more than one surface needs this mapping: the
+// coordinate enumeration a stage's rules run over, and an answer about where
+// the node's own block was written. A second mapping would agree the day it was
+// written and be free to diverge the moment the graph carries another
+// provenance fact, with nothing comparing them.
+func NodeInstanceOf(id string, node types.IRNode) constraint.NodeInstance {
+	return constraint.NodeInstance{
+		ID:                   id,
+		SourceFile:           node.SourceFile,
+		AuthoredName:         constraint.AuthoredComponentName(id),
+		SubsystemPath:        node.SubsystemPath,
+		SynthesizedSubsystem: node.SynthesizedSubsystem,
+	}
+}
+
 // NewGraphStageCoordinates derives the coordinates the finalised graph carries.
 //
 // The presentation is taken as well as the graph, because the axes a fact
@@ -149,13 +173,7 @@ func NewGraphStageCoordinates(
 	}
 
 	for id, node := range graph.Spec.Nodes.All() {
-		instance := constraint.NodeInstance{
-			ID:                   id,
-			SourceFile:           node.SourceFile,
-			AuthoredName:         constraint.AuthoredComponentName(id),
-			SubsystemPath:        node.SubsystemPath,
-			SynthesizedSubsystem: node.SynthesizedSubsystem,
-		}
+		instance := NodeInstanceOf(id, node)
 		c.nodes = append(c.nodes, instance)
 		c.nodesByID[id] = instance
 	}
